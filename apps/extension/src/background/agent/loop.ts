@@ -47,9 +47,7 @@ import {
 } from "./mutation-dry-run-policy";
 import { workspaceManager } from "../workspaces/manager";
 import { ContextManager, summarizeCausalChain } from "./context";
-import {
-  detectAdmission,
-} from "./verification";
+import { detectAdmission } from "./verification";
 import { StagnationMonitor } from "./stagnation";
 import { PerceptionScreenshotState } from "../perception/perception-screenshot-state";
 import { transformScreenshot } from "../perception/screenshot-transform";
@@ -93,6 +91,14 @@ import {
   runPlanMonitorPhase,
   type PlanMonitorPhaseHost,
 } from "./turn-phases/plan-monitor";
+import {
+  runAccountAndRefreshPhase,
+  type AccountAndRefreshHost,
+} from "./turn-phases/account-and-refresh";
+import {
+  detectExplicitSuccessSignalInSnapshot,
+  type ExplicitSuccessSignalHost,
+} from "./explicit-success-signal";
 import {
   runDonePlanRejection,
   type DonePlanRejectionHost,
@@ -191,13 +197,12 @@ import {
   applyCompletionEffects,
   type CompletionEffectHost,
 } from "./completion/apply-effects";
-import {
-  buildMutationKey,
-} from "./checkpoint-types";
+import { buildMutationKey } from "./checkpoint-types";
 import type { TurnCheckpoint } from "./checkpoint-types";
 import { CheckpointCoordinator } from "./checkpoint-coordinator";
 import { AgentTelemetryController } from "./agent-telemetry-controller";
 import { TurnState } from "./turn-state";
+import { LoopSession, TurnScope } from "./loop-scope";
 import { EscalationTierController } from "./escalation-tier-controller";
 import type { MoneyTableAggregate } from "./money-table-aggregate";
 import {
@@ -334,10 +339,7 @@ import {
   updateSameToolFailureTracking,
   userExplicitlyRequestedTabManagement,
 } from "./loop-helpers";
-import {
-  buildTaskContract,
-  extractFieldValuePairs,
-} from "./task-contract";
+import { buildTaskContract, extractFieldValuePairs } from "./task-contract";
 import {
   DEESCALATION_REFLECTION,
   ESCALATION_RECOVERY,
@@ -375,9 +377,7 @@ import {
   type AgentLoopMoneyTableHost,
 } from "./loop-money-table";
 import { buildConsequentialActionTaskText } from "./consequential-action-context";
-import {
-  assessConsequentialActionApproval,
-} from "./consequential-action-policy";
+import { assessConsequentialActionApproval } from "./consequential-action-policy";
 import {
   addParallelToolResultsToContext,
   handleParallelVerificationGate,
@@ -417,9 +417,11 @@ const CAPTURE_VISIBLE_TAB_RETRY_DELAY_MS = 300;
 function shouldDeferStepWatchdogForOutcome(
   outcome: TurnToolOutcomeRecord,
 ): boolean {
-  if (/^(?:error|failed|failure|not found|unable|cannot|could not)\b/i.test(
-    outcome.resultContent,
-  )) {
+  if (
+    /^(?:error|failed|failure|not found|unable|cannot|could not)\b/i.test(
+      outcome.resultContent,
+    )
+  ) {
     return false;
   }
   switch (outcome.toolName) {
@@ -729,7 +731,13 @@ export class AgentLoop {
     providerId: ProviderConfig["providerId"] = "openrouter",
     imageCount = 0,
   ): void {
-    this.telemetry.recordVisionUsage(usage, llmMs, model, providerId, imageCount);
+    this.telemetry.recordVisionUsage(
+      usage,
+      llmMs,
+      model,
+      providerId,
+      imageCount,
+    );
   }
 
   /** Record estimated image prompt tokens for direct screenshot-backed LLM calls. */
@@ -1598,18 +1606,27 @@ export class AgentLoop {
     activeObjective?: string;
     successCriteria?: string;
   } {
-    return getActiveCompletionContext(this as unknown as CompletionEvidenceHost);
+    return getActiveCompletionContext(
+      this as unknown as CompletionEvidenceHost,
+    );
   }
 
   private recordCompletionEvidence(
     evidence: ReturnType<typeof deriveCompletionEvidenceFromSnapshot>,
     source: string,
   ): number {
-    return recordCompletionEvidence(this as unknown as CompletionEvidenceHost, evidence, source);
+    return recordCompletionEvidence(
+      this as unknown as CompletionEvidenceHost,
+      evidence,
+      source,
+    );
   }
 
   private refreshCompletionEvidenceFromSnapshot(source: string): void {
-    refreshCompletionEvidenceFromSnapshot(this as unknown as CompletionEvidenceHost, source);
+    refreshCompletionEvidenceFromSnapshot(
+      this as unknown as CompletionEvidenceHost,
+      source,
+    );
   }
 
   private recordCompletionToolEvidence(
@@ -1618,22 +1635,37 @@ export class AgentLoop {
     result: string,
     preActionSnapshot?: DomSnapshot | null,
   ): void {
-    recordCompletionToolEvidence(this as unknown as CompletionEvidenceHost, toolName, args, result, preActionSnapshot);
+    recordCompletionToolEvidence(
+      this as unknown as CompletionEvidenceHost,
+      toolName,
+      args,
+      result,
+      preActionSnapshot,
+    );
   }
 
   private evaluateCompletionCandidate(
     source: CompletionCandidateSource,
     summary: string,
   ): CompletionEvaluation {
-    return evaluateCompletionCandidate(this as unknown as CompletionEvidenceHost, source, summary);
+    return evaluateCompletionCandidate(
+      this as unknown as CompletionEvidenceHost,
+      source,
+      summary,
+    );
   }
 
   private getCompletionRecoveryHintForCurrentState(): string | null {
-    return getCompletionRecoveryHintForCurrentState(this as unknown as CompletionEvidenceHost);
+    return getCompletionRecoveryHintForCurrentState(
+      this as unknown as CompletionEvidenceHost,
+    );
   }
 
   private maybeAddCompletionRecoveryHint(trigger: string): void {
-    maybeAddCompletionRecoveryHint(this as unknown as CompletionEvidenceHost, trigger);
+    maybeAddCompletionRecoveryHint(
+      this as unknown as CompletionEvidenceHost,
+      trigger,
+    );
   }
 
   private getPendingAutocompleteCompletionEvidence(
@@ -1772,7 +1804,11 @@ export class AgentLoop {
             : { role: "user", content },
         );
       },
-      postRejectionDiagnostic: (summary, primaryReason, fallbackInstruction) => {
+      postRejectionDiagnostic: (
+        summary,
+        primaryReason,
+        fallbackInstruction,
+      ) => {
         this.context.addMessage({
           role: "tool",
           tool_call_id: toolCallId,
@@ -1822,7 +1858,11 @@ export class AgentLoop {
       return this.handleDoneToolCallInner(toolCallId, summary, tabId);
     }
     const input = this.captureCompletionDecisionInput(summary);
-    const verdict = await this.handleDoneToolCallInner(toolCallId, summary, tabId);
+    const verdict = await this.handleDoneToolCallInner(
+      toolCallId,
+      summary,
+      tabId,
+    );
     try {
       this.recordCompletionDecisionOutcome(input, verdict);
     } catch (err) {
@@ -1989,7 +2029,11 @@ export class AgentLoop {
         verdict: verdict ? "accepted" : "rejected",
         basis,
         contractKind,
-        guardId: verdict ? null : (contractKind === "unknown" ? null : contractKind),
+        guardId: verdict
+          ? null
+          : contractKind === "unknown"
+            ? null
+            : contractKind,
         reason,
         recoveryHint: this.lastCompletionRecoveryHint ?? null,
       }),
@@ -2060,7 +2104,10 @@ export class AgentLoop {
     let kernelDecision: CompletionEvaluation | null = null;
     const decision = await runCompletionPipeline(ctx, {
       getKernelDecision: () => {
-        kernelDecision = this.evaluateCompletionCandidate("model_done", summary);
+        kernelDecision = this.evaluateCompletionCandidate(
+          "model_done",
+          summary,
+        );
         if (!this.completionDeterministicAcceptanceEnabled) {
           recordShadowCompletionDecision(
             this as unknown as ShadowCompletionHost,
@@ -2145,7 +2192,11 @@ export class AgentLoop {
     if (shouldReject) {
       // Single-authority (RFC LP-16 Phase 2): don't apply the policy inline —
       // the pipeline carries a run_done_plan_rejection effect built from this.
-      return { rejected: true, reason: rejectReason ?? "", effectiveCurrentIdx };
+      return {
+        rejected: true,
+        reason: rejectReason ?? "",
+        effectiveCurrentIdx,
+      };
     }
     return { rejected: false, reason: "" };
   }
@@ -2245,7 +2296,9 @@ export class AgentLoop {
     if (running?.description) return running.description;
     const plan = this.context.getPlanStatusRaw?.();
     const currentIndex =
-      typeof plan?.currentIndex === "number" ? plan.currentIndex : this.lastPlanIndex;
+      typeof plan?.currentIndex === "number"
+        ? plan.currentIndex
+        : this.lastPlanIndex;
     return this.planSubtasks[currentIndex]?.description;
   }
 
@@ -5738,8 +5791,9 @@ export class AgentLoop {
       });
 
       const submitRejected = isServiceNowSubmitRejected(submit.result);
-      const submitStayedOnCreateForm =
-        isServiceNowSubmitStayedOnCreateForm(submit.result);
+      const submitStayedOnCreateForm = isServiceNowSubmitStayedOnCreateForm(
+        submit.result,
+      );
       // A hard validation rejection won't resolve by resubmitting identical
       // values; the controller still tries its single refill+retry, but on a
       // persistent rejection it surfaces a diagnostic instead of inviting the
@@ -6590,11 +6644,8 @@ export class AgentLoop {
    */
 
   private async loop(initialTabId: number): Promise<LoopResult> {
-    let tabId = initialTabId;
-    let prevElementCount = -1; // Track element count for empty-page retry
-    let consecutiveTextOnly = 0;
-    let totalTextOnly = 0;
-    let doneSummary = "";
+    // Session-scoped state, persists across turns (RFC LP-16 Phase 3). See loop-scope.ts.
+    const session = new LoopSession(initialTabId, this.lastPlanIndex);
     // Two-tier escalation state machine (0=executor, 1=planner). plan-then-act:
     // start at tier 1 (planner) for orientation, then hand off to tier 0
     // (executor). Exception: preferredModelTier="executor" skips orientation.
@@ -6651,13 +6702,6 @@ export class AgentLoop {
       this.escalateModel(); // Start with planner model (plan phase)
     }
 
-    // Budget urgency: track level transitions for trace events
-    let previousBudgetUrgencyLevel: "normal" | "low" | "critical" = "normal";
-
-    // Circuit breaker: consecutive all-fail turns
-    let consecutiveAllFailTurns = 0;
-    let consecutiveAllFailDeterministicTurns = 0;
-
     // Run-scoped turn accumulators (LP-15 Phase 6): same-tool failure counts,
     // the recent-success / recent-tool-call windows, result-page progress, and
     // find_element-discovered tag IDs. Owned by TurnState; consumed by the
@@ -6674,17 +6718,6 @@ export class AgentLoop {
 
     // Failed action memory: prevents exact repeats of failed tool calls
     const blockedActions: BlockedAction[] = [];
-    let turnsSinceStepEscalation = -1; // -1 = no step escalation active
-
-    // Exploration budget: nudge after N consecutive exploration-only turns
-    let consecutiveExplorationTurns = 0;
-
-    // Blind tool call detection: tool_calls present but no reasoning content
-    let consecutiveBlindToolTurns = 0;
-
-    // read_element same-ID tracker: detects repeated reads on the same element
-    let lastReadElementId: number | null = null;
-    let consecutiveReadElementSameId = 0;
 
     // Outcome-based dead-end detection: sliding window of normalized tool result fingerprints
     // Each entry pairs the outcome fingerprint with the page snapshot fingerprint
@@ -6697,11 +6730,10 @@ export class AgentLoop {
       string,
       ServiceNowMissingFieldSearchEvidence
     >();
-    let lastActionMemoryPlanIndex = this.lastPlanIndex;
 
     const resetStepScopedActionMemory = (): void => {
-      if (this.lastPlanIndex === lastActionMemoryPlanIndex) return;
-      const fromPlanIndex = lastActionMemoryPlanIndex;
+      if (this.lastPlanIndex === session.lastActionMemoryPlanIndex) return;
+      const fromPlanIndex = session.lastActionMemoryPlanIndex;
       const toPlanIndex = this.lastPlanIndex;
       const reset = clearStepScopedActionMemory({
         recentToolCalls,
@@ -6709,9 +6741,9 @@ export class AgentLoop {
         blockedActions,
         verifiedFinalClickBypassKeys,
       });
-      lastReadElementId = null;
-      consecutiveReadElementSameId = 0;
-      lastActionMemoryPlanIndex = toPlanIndex;
+      session.lastReadElementId = null;
+      session.consecutiveReadElementSameId = 0;
+      session.lastActionMemoryPlanIndex = toPlanIndex;
       this.traceRecorder?.recordEvent("step_action_memory_reset", {
         turn: this.turnCount,
         fromPlanIndex,
@@ -6730,13 +6762,13 @@ export class AgentLoop {
       subgoalAttempts.length = 0;
       recentOutcomes.length = 0;
       serviceNowMissingFieldSearchEvidence.clear();
-      consecutiveTextOnly = 0;
+      session.consecutiveTextOnly = 0;
       recentSuccesses.length = 0;
       if (options?.resetProgressSignals) {
         esc.consecutiveProgressSignals = 0;
       }
       if (options?.resetStepEscalation) {
-        turnsSinceStepEscalation = -1;
+        session.turnsSinceStepEscalation = -1;
       }
       if (options?.resetZeroEffectTurns) {
         this.consecutiveZeroEffectTurns = 0;
@@ -6767,6 +6799,9 @@ export class AgentLoop {
     };
 
     while (this.isRunning && this.turnCount < this.maxTurns) {
+      // Turn-scoped state, reset each iteration (RFC LP-16 Phase 3). See loop-scope.ts.
+      const turn = new TurnScope();
+
       // Top-of-turn control gate (RFC LP-15 Phase 11): pause / graceful-stop /
       // middleware halt + counter advance + idempotency-cache clear.
       const gate = await runGatesPhase(this as unknown as GatesPhaseHost, {
@@ -6776,7 +6811,10 @@ export class AgentLoop {
 
       // Per-turn escalation bookkeeping: cooldown tick, one-shot investigation
       // extension, and the plan-then-act orientation handoff (tier 1→0).
-      prevElementCount = await esc.onTurnStart({ tabId, prevElementCount });
+      session.prevElementCount = await esc.onTurnStart({
+        tabId: session.tabId,
+        prevElementCount: session.prevElementCount,
+      });
 
       // Feedback phase: fold pending user feedback + the turn-budget reminder
       // into context before inference. Extracted (RFC LP-16 Phase 3).
@@ -6806,7 +6844,7 @@ export class AgentLoop {
       // Emit trace events on budget urgency level transitions
       {
         const currentBudgetLevel = this.context.getBudgetUrgencyLevel();
-        if (currentBudgetLevel !== previousBudgetUrgencyLevel) {
+        if (currentBudgetLevel !== session.previousBudgetUrgencyLevel) {
           if (currentBudgetLevel === "critical") {
             this.traceRecorder?.recordEvent("budget_critical", {
               turnCount: this.turnCount,
@@ -6820,7 +6858,7 @@ export class AgentLoop {
               remaining: Math.max(0, this.maxTurns - this.turnCount),
             });
           }
-          previousBudgetUrgencyLevel = currentBudgetLevel;
+          session.previousBudgetUrgencyLevel = currentBudgetLevel;
         }
       }
       this.updateMoneyTableAggregateFromSnapshot();
@@ -6836,7 +6874,7 @@ export class AgentLoop {
         this as unknown as EscalationPhaseHost,
         {
           esc,
-          tabId,
+          tabId: session.tabId,
           subgoalAttempts,
           resetEscalationWorkingMemory,
           beginPlannerEscalation,
@@ -6850,24 +6888,25 @@ export class AgentLoop {
       // response. Extracted to the prepare_model_turn phase (RFC LP-15 Phase 11).
       const preparedTurn = await runPrepareModelTurnPhase(
         this as unknown as PrepareModelTurnHost,
-        prevElementCount,
+        session.prevElementCount,
       );
       if (preparedTurn.kind === "end_task") {
         return preparedTurn.result;
       }
-      prevElementCount = preparedTurn.prepared.previousElementCount;
+      session.prevElementCount = preparedTurn.prepared.previousElementCount;
       const response = preparedTurn.prepared.response;
       const hallucinationDetected = preparedTurn.prepared.hallucinationDetected;
       const normalizedContent = preparedTurn.prepared.normalizedContent;
       const rawContent = preparedTurn.prepared.rawContent;
       const cleanContent = preparedTurn.prepared.cleanContent;
-      const toolsRecoveredFromText = preparedTurn.prepared.toolsRecoveredFromText;
+      const toolsRecoveredFromText =
+        preparedTurn.prepared.toolsRecoveredFromText;
       const llmIntention = preparedTurn.prepared.llmIntention;
 
       // 3. Handle Response
       if (response.tool_calls && response.tool_calls.length > 0) {
         // ACTION REQUIRED
-        consecutiveTextOnly = 0;
+        session.consecutiveTextOnly = 0;
         this.throwIfGracefulStopRequested();
 
         // Keep the streaming message open across tool-calling turns.
@@ -6875,7 +6914,6 @@ export class AgentLoop {
         // or when the loop exits (by the orchestrator or exit-path handlers).
 
         // Execute Tools
-        let doneSignaled = false;
         const signalCompletedResult = (
           summary: string,
           options?: {
@@ -6883,8 +6921,8 @@ export class AgentLoop {
             completionCandidate?: TrustedCompletionCandidate;
           },
         ) => {
-          doneSummary = summary;
-          doneSignaled = true;
+          session.doneSummary = summary;
+          turn.doneSignaled = true;
           this.completeTaskResult(summary, options);
         };
         const missingFieldAdmissionSummary =
@@ -6909,9 +6947,6 @@ export class AgentLoop {
             completionEnvelope: this.completedResult?.completionEnvelope,
           };
         }
-        let domModified = false;
-        let visuallyModified = false;
-        let lastDomAffectingToolName: string | null = null;
         this.lastDomStep = null;
         this.context.setLastActionOutcome(null);
         const toolCallSetup = prepareToolCallBranch({
@@ -6920,7 +6955,7 @@ export class AgentLoop {
           cleanContent,
           toolsRecoveredFromText,
           hadThinking: normalizedContent.hadThinking,
-          consecutiveBlindToolTurns,
+          consecutiveBlindToolTurns: session.consecutiveBlindToolTurns,
           context: this.context,
           traceRecorder: this.traceRecorder,
           log: this.log,
@@ -6929,7 +6964,8 @@ export class AgentLoop {
           rewriteListDetailWorkflowToolCall: (toolCall, mode) =>
             this.rewriteListDetailWorkflowToolCall(toolCall, mode),
         });
-        consecutiveBlindToolTurns = toolCallSetup.consecutiveBlindToolTurns;
+        session.consecutiveBlindToolTurns =
+          toolCallSetup.consecutiveBlindToolTurns;
 
         if (toolCallSetup.allCallsBlocked) {
           continue; // All tool calls blocked - retry
@@ -6939,7 +6975,9 @@ export class AgentLoop {
         // inject synthetic error results for blocked exploration calls and skip their dispatch.
         // Non-exploration calls in the same response proceed normally.
         let effectiveToolCalls = response.tool_calls;
-        if (consecutiveExplorationTurns >= EXPLORATION_BUDGET.HARD_BLOCK) {
+        if (
+          session.consecutiveExplorationTurns >= EXPLORATION_BUDGET.HARD_BLOCK
+        ) {
           const hardBlockedCalls = response.tool_calls.filter((tc) =>
             EXPLORATION_ONLY_TOOLS.has(tc.function.name),
           );
@@ -6949,17 +6987,22 @@ export class AgentLoop {
                 role: "tool" as const,
                 tool_call_id: tc.id,
                 content:
-                  `Exploration blocked: ${consecutiveExplorationTurns} consecutive read-only turns. ` +
+                  `Exploration blocked: ${session.consecutiveExplorationTurns} consecutive read-only turns. ` +
                   `Take a concrete action (click, type, navigate, scroll) or call escalate() if stuck.`,
               });
             }
-            this.log.warn("agent", "Exploration hard block: blocked read-only calls", {
-              turn: this.turnCount,
-              consecutiveExplorationTurns,
-              blockedCount: hardBlockedCalls.length,
-            });
+            this.log.warn(
+              "agent",
+              "Exploration hard block: blocked read-only calls",
+              {
+                turn: this.turnCount,
+                consecutiveExplorationTurns:
+                  session.consecutiveExplorationTurns,
+                blockedCount: hardBlockedCalls.length,
+              },
+            );
             this.traceRecorder?.recordEvent("exploration_hard_block", {
-              consecutiveTurns: consecutiveExplorationTurns,
+              consecutiveTurns: session.consecutiveExplorationTurns,
               blockedCount: hardBlockedCalls.length,
             } as Record<string, unknown>);
             effectiveToolCalls = response.tool_calls.filter(
@@ -6981,31 +7024,32 @@ export class AgentLoop {
             this as unknown as ParallelToolDispatchHost,
             {
               toolCalls: effectiveToolCalls,
-              tabId,
+              tabId: session.tabId,
               repeatActionWindow: REPEAT_ACTION_WINDOW,
               llmIntention,
               state: {
                 recentToolCalls,
                 verifiedFinalClickBypassKeys,
-                lastReadElementId,
-                consecutiveReadElementSameId,
+                lastReadElementId: session.lastReadElementId,
+                consecutiveReadElementSameId:
+                  session.consecutiveReadElementSameId,
                 blockedActions,
                 recentSuccesses,
                 discoveredTagIds,
                 orientationPhase: esc.orientationPhase,
                 orientationToolsUsed: esc.orientationToolsUsed,
-                domModified,
-                visuallyModified,
-                lastDomAffectingToolName,
+                domModified: turn.domModified,
+                visuallyModified: turn.visuallyModified,
+                lastDomAffectingToolName: turn.lastDomAffectingToolName,
               },
             },
           );
-          lastReadElementId = parallelDispatch.state.lastReadElementId;
-          consecutiveReadElementSameId =
+          session.lastReadElementId = parallelDispatch.state.lastReadElementId;
+          session.consecutiveReadElementSameId =
             parallelDispatch.state.consecutiveReadElementSameId;
-          domModified = parallelDispatch.state.domModified;
-          visuallyModified = parallelDispatch.state.visuallyModified;
-          lastDomAffectingToolName =
+          turn.domModified = parallelDispatch.state.domModified;
+          turn.visuallyModified = parallelDispatch.state.visuallyModified;
+          turn.lastDomAffectingToolName =
             parallelDispatch.state.lastDomAffectingToolName;
 
           this.finalizeParallelToolResults(parallelDispatch.results);
@@ -7020,30 +7064,31 @@ export class AgentLoop {
                 llmIntention,
                 signalCompletedResult,
                 state: {
-                  tabId,
-                  prevElementCount,
+                  tabId: session.tabId,
+                  prevElementCount: session.prevElementCount,
                   escalationTier: esc.tier,
                   plannerModelStartTurn: esc.plannerModelStartTurn,
                   orientationPhase: esc.orientationPhase,
                   recentToolCalls,
                   verifiedFinalClickBypassKeys,
-                  lastReadElementId,
-                  consecutiveReadElementSameId,
+                  lastReadElementId: session.lastReadElementId,
+                  consecutiveReadElementSameId:
+                    session.consecutiveReadElementSameId,
                   blockedActions,
                   recentSuccesses,
                   discoveredTagIds,
                   orientationToolsUsed: esc.orientationToolsUsed,
-                  domModified,
-                  visuallyModified,
-                  lastDomAffectingToolName,
-                  doneSignaled,
-                  doneSummary,
+                  domModified: turn.domModified,
+                  visuallyModified: turn.visuallyModified,
+                  lastDomAffectingToolName: turn.lastDomAffectingToolName,
+                  doneSignaled: turn.doneSignaled,
+                  doneSummary: session.doneSummary,
                   resultPageProgress,
                 },
               },
             );
-          tabId = sequentialDispatch.tabId;
-          prevElementCount = sequentialDispatch.prevElementCount;
+          session.tabId = sequentialDispatch.tabId;
+          session.prevElementCount = sequentialDispatch.prevElementCount;
           if (sequentialDispatch.escalationTier > esc.tier) {
             // Voluntary escalate() tool call upgraded the tier this turn.
             this.escalationRescue.noteEscalation(this.turnCount, "voluntary");
@@ -7051,27 +7096,28 @@ export class AgentLoop {
           esc.tier = sequentialDispatch.escalationTier;
           esc.plannerModelStartTurn = sequentialDispatch.plannerModelStartTurn;
           esc.orientationPhase = sequentialDispatch.orientationPhase;
-          lastReadElementId = sequentialDispatch.lastReadElementId;
-          consecutiveReadElementSameId =
+          session.lastReadElementId = sequentialDispatch.lastReadElementId;
+          session.consecutiveReadElementSameId =
             sequentialDispatch.consecutiveReadElementSameId;
-          domModified = sequentialDispatch.domModified;
-          visuallyModified = sequentialDispatch.visuallyModified;
-          lastDomAffectingToolName =
+          turn.domModified = sequentialDispatch.domModified;
+          turn.visuallyModified = sequentialDispatch.visuallyModified;
+          turn.lastDomAffectingToolName =
             sequentialDispatch.lastDomAffectingToolName;
-          doneSignaled = sequentialDispatch.doneSignaled;
-          doneSummary = sequentialDispatch.doneSummary;
+          turn.doneSignaled = sequentialDispatch.doneSignaled;
+          session.doneSummary = sequentialDispatch.doneSummary;
         }
 
         // --- Circuit Breaker: track tool failures ---
-        if (!doneSignaled) {
+        if (!turn.doneSignaled) {
           const recentMessages = this.context.getMessages();
           const turnToolOutcomes = collectTurnToolOutcomeRecords({
             toolCalls: response.tool_calls!,
             messages: recentMessages,
             snapshot: this.context.getSnapshot(),
           });
-          const deferStepWatchdogForStateChangingAction =
-            turnToolOutcomes.some(shouldDeferStepWatchdogForOutcome);
+          const deferStepWatchdogForStateChangingAction = turnToolOutcomes.some(
+            shouldDeferStepWatchdogForOutcome,
+          );
           const observationSnapshot = this.context.getSnapshot();
           const observationSnapshotFingerprint = observationSnapshot
             ? getSnapshotFingerprint(observationSnapshot)
@@ -7086,9 +7132,8 @@ export class AgentLoop {
             const signals = detectObservationProgressSignals({
               toolName: outcome.toolName,
               resultContent: outcome.resultContent,
-              alreadySeen: recentObservationProgressKeys.includes(
-                observationKey,
-              ),
+              alreadySeen:
+                recentObservationProgressKeys.includes(observationKey),
             });
             if (signals.length === 0) continue;
             recentObservationProgressKeys.push(observationKey);
@@ -7100,9 +7145,7 @@ export class AgentLoop {
           if (observationProgressSignals.length > 0) {
             this.traceRecorder?.recordEvent("observation_progress_detected", {
               turn: this.turnCount,
-              signals: observationProgressSignals.map(
-                (signal) => signal.label,
-              ),
+              signals: observationProgressSignals.map((signal) => signal.label),
             });
             if (
               this.telemetry.recordContextProgress(
@@ -7164,14 +7207,16 @@ export class AgentLoop {
           // A. Consecutive all-fail turns
           const failureResults = turnToolOutcomes.map((o) => o.resultContent);
           const allFailResult = updateConsecutiveAllFailTurns({
-            previousCount: consecutiveAllFailTurns,
-            previousDeterministicCount: consecutiveAllFailDeterministicTurns,
+            previousCount: session.consecutiveAllFailTurns,
+            previousDeterministicCount:
+              session.consecutiveAllFailDeterministicTurns,
             turnSuccesses,
             turnFailures,
             failureResults,
           });
-          consecutiveAllFailTurns = allFailResult.count;
-          consecutiveAllFailDeterministicTurns = allFailResult.deterministicCount;
+          session.consecutiveAllFailTurns = allFailResult.count;
+          session.consecutiveAllFailDeterministicTurns =
+            allFailResult.deterministicCount;
 
           // A1. Deterministic fast-path: circuit break one turn earlier when failures are
           //     guaranteed unrecoverable (element not found, access denied, etc.)
@@ -7180,25 +7225,28 @@ export class AgentLoop {
             this.limits.maxConsecutiveAllFail - 1,
           );
           if (
-            consecutiveAllFailDeterministicTurns >= deterministicThreshold &&
-            consecutiveAllFailTurns < this.limits.maxConsecutiveAllFail
+            session.consecutiveAllFailDeterministicTurns >=
+              deterministicThreshold &&
+            session.consecutiveAllFailTurns < this.limits.maxConsecutiveAllFail
           ) {
             this.log.warn(
               "agent",
               "Circuit breaker: consecutive deterministic failures",
               {
                 turn: this.turnCount,
-                consecutiveAllFailDeterministicTurns,
+                consecutiveAllFailDeterministicTurns:
+                  session.consecutiveAllFailDeterministicTurns,
                 deterministicThreshold,
               },
             );
             this.traceRecorder?.recordEvent("deterministic_circuit_break", {
-              consecutiveAllFailTurns,
-              consecutiveAllFailDeterministicTurns,
+              consecutiveAllFailTurns: session.consecutiveAllFailTurns,
+              consecutiveAllFailDeterministicTurns:
+                session.consecutiveAllFailDeterministicTurns,
               deterministicThreshold,
             });
             this.circuitBreakerExit(
-              `Deterministic errors prevented progress for ${consecutiveAllFailDeterministicTurns} consecutive turns. ` +
+              `Deterministic errors prevented progress for ${session.consecutiveAllFailDeterministicTurns} consecutive turns. ` +
                 `Try navigating to a different page or sending new instructions.`,
             );
             return {
@@ -7210,21 +7258,23 @@ export class AgentLoop {
           }
 
           // A2. General all-fail circuit breaker
-          if (consecutiveAllFailTurns >= this.limits.maxConsecutiveAllFail) {
+          if (
+            session.consecutiveAllFailTurns >= this.limits.maxConsecutiveAllFail
+          ) {
             this.log.warn(
               "agent",
               "Circuit breaker: consecutive all-fail turns",
               {
                 turn: this.turnCount,
-                consecutiveAllFailTurns,
+                consecutiveAllFailTurns: session.consecutiveAllFailTurns,
               },
             );
             this.traceRecorder?.recordEvent("circuit_breaker", {
               reason: "consecutive_all_fail",
-              consecutiveAllFailTurns,
+              consecutiveAllFailTurns: session.consecutiveAllFailTurns,
             });
             this.circuitBreakerExit(
-              `All tool calls have failed for ${consecutiveAllFailTurns} consecutive turns. The agent cannot make progress. Send a follow-up with different instructions.`,
+              `All tool calls have failed for ${session.consecutiveAllFailTurns} consecutive turns. The agent cannot make progress. Send a follow-up with different instructions.`,
             );
             return {
               outcome: "error" as const,
@@ -7299,23 +7349,28 @@ export class AgentLoop {
                 this.turnCount,
                 "done_rejection",
               );
-              this.log.info("agent", "Escalated to planner after done() rejection mid-point", {
-                turn: this.turnCount,
-                doneRejections: this.doneRejections,
-                maxDoneRejections: this.limits.maxDoneRejections,
-              });
+              this.log.info(
+                "agent",
+                "Escalated to planner after done() rejection mid-point",
+                {
+                  turn: this.turnCount,
+                  doneRejections: this.doneRejections,
+                  maxDoneRejections: this.limits.maxDoneRejections,
+                },
+              );
             }
           }
 
           // B2. Exploration budget: nudge after N consecutive turns of only reading/inspecting
           {
             const explorationBudget = updateExplorationBudget({
-              previousCount: consecutiveExplorationTurns,
+              previousCount: session.consecutiveExplorationTurns,
               toolNames: turnToolOutcomes.map((outcome) => outcome.toolName),
               explorationOnlyTools: EXPLORATION_ONLY_TOOLS,
               maxConsecutive: EXPLORATION_BUDGET.MAX_CONSECUTIVE,
             });
-            consecutiveExplorationTurns = explorationBudget.consecutiveTurns;
+            session.consecutiveExplorationTurns =
+              explorationBudget.consecutiveTurns;
             if (explorationBudget.message) {
               this.context.addMessage({
                 role: "user",
@@ -7418,14 +7473,11 @@ export class AgentLoop {
                     pattern: deadEnd.pattern.slice(0, 80),
                   },
                 );
-                this.traceRecorder?.recordEvent(
-                  "dead_end_completion_consult",
-                  {
-                    turn: this.turnCount,
-                    action: "suppress_pivot",
-                    pattern: deadEnd.pattern.slice(0, 80),
-                  },
-                );
+                this.traceRecorder?.recordEvent("dead_end_completion_consult", {
+                  turn: this.turnCount,
+                  action: "suppress_pivot",
+                  pattern: deadEnd.pattern.slice(0, 80),
+                });
                 this.context.addMessage({
                   role: "user",
                   content: completionHint,
@@ -7452,7 +7504,7 @@ export class AgentLoop {
                 turn: this.turnCount,
                 details: `pattern: ${deadEnd.pattern.slice(0, 60)}`,
               });
-              await this.strategyPivot(tabId);
+              await this.strategyPivot(session.tabId);
               recentOutcomes.length = 0;
             } else if (deadEnd.kind === "nudge") {
               const completionHint =
@@ -7466,14 +7518,11 @@ export class AgentLoop {
                     pattern: deadEnd.pattern.slice(0, 80),
                   },
                 );
-                this.traceRecorder?.recordEvent(
-                  "dead_end_completion_consult",
-                  {
-                    turn: this.turnCount,
-                    action: "replace_nudge",
-                    pattern: deadEnd.pattern.slice(0, 80),
-                  },
-                );
+                this.traceRecorder?.recordEvent("dead_end_completion_consult", {
+                  turn: this.turnCount,
+                  action: "replace_nudge",
+                  pattern: deadEnd.pattern.slice(0, 80),
+                });
                 this.context.addMessage({
                   role: "user",
                   content: completionHint,
@@ -7511,19 +7560,19 @@ export class AgentLoop {
           // without step advancement, force a strategy pivot and clear failed-action memory.
           {
             const postEscalationPivot = updatePostEscalationPivot({
-              turnsSinceStepEscalation,
+              turnsSinceStepEscalation: session.turnsSinceStepEscalation,
               pivotTurns: FAILED_ACTION_MEMORY.POST_ESCALATION_PIVOT_TURNS,
             });
-            turnsSinceStepEscalation =
+            session.turnsSinceStepEscalation =
               postEscalationPivot.turnsSinceStepEscalation;
             if (postEscalationPivot.kind === "pivot") {
               this.log.info("agent", "Post-escalation forced pivot", {
                 turn: this.turnCount,
-                turnsSinceStepEscalation,
+                turnsSinceStepEscalation: session.turnsSinceStepEscalation,
               });
-              await this.strategyPivot(tabId);
+              await this.strategyPivot(session.tabId);
               blockedActions.length = 0;
-              turnsSinceStepEscalation = -1;
+              session.turnsSinceStepEscalation = -1;
             }
           }
 
@@ -7558,7 +7607,7 @@ export class AgentLoop {
 
               // Try replan-on-escalation first: planner replans, executor continues
               const replanSucceeded = await this.replanOnEscalation(
-                tabId,
+                session.tabId,
                 subgoalAttempts,
                 this.abortController?.signal,
               );
@@ -7570,8 +7619,8 @@ export class AgentLoop {
                   this.context.getMessages(),
                 );
                 beginPlannerEscalation({ bumpStepCounter: true });
-                turnsSinceStepEscalation = 0; // Start tracking post-escalation pivot
-                await this.strategyPivot(tabId, stepAttemptSummary);
+                session.turnsSinceStepEscalation = 0; // Start tracking post-escalation pivot
+                await this.strategyPivot(session.tabId, stepAttemptSummary);
                 this.stagnation.resetEscalation();
                 this.context.addMessage({
                   role: "user",
@@ -7595,16 +7644,20 @@ export class AgentLoop {
                 );
               }
             } else if (stepWatchdog.kind === "defer") {
-              this.log.info("agent", "Step watchdog deferred after state-changing action", {
-                turn: this.turnCount,
-                turnsOnStep: this.turnsOnCurrentStep,
-                stepIndex: this.lastPlanIndex,
-                tool: lastDomAffectingToolName,
-              });
+              this.log.info(
+                "agent",
+                "Step watchdog deferred after state-changing action",
+                {
+                  turn: this.turnCount,
+                  turnsOnStep: this.turnsOnCurrentStep,
+                  stepIndex: this.lastPlanIndex,
+                  tool: turn.lastDomAffectingToolName,
+                },
+              );
               this.traceRecorder?.recordEvent("step_watchdog_deferred", {
                 turnsOnStep: this.turnsOnCurrentStep,
                 stepIndex: this.lastPlanIndex,
-                tool: lastDomAffectingToolName,
+                tool: turn.lastDomAffectingToolName,
               });
             } else if (stepWatchdog.kind === "warn") {
               this.log.warn("agent", "Step watchdog: warn", {
@@ -7626,7 +7679,7 @@ export class AgentLoop {
 
         // Trigger A: Same-URL forced escalation — fires even without a plan/subtask structure.
         // Catches the agent spinning on one page regardless of DOM changes (Fix 5A).
-        const sameUrlEscalation = doneSignaled
+        const sameUrlEscalation = turn.doneSignaled
           ? { kind: "none" as const }
           : assessSameUrlForcedEscalation({
               escalationTier: esc.tier,
@@ -7648,7 +7701,7 @@ export class AgentLoop {
 
           // Try replan-on-escalation first
           const sameUrlReplanOk = await this.replanOnEscalation(
-            tabId,
+            session.tabId,
             subgoalAttempts,
             this.abortController?.signal,
           );
@@ -7660,7 +7713,7 @@ export class AgentLoop {
               this.context.getMessages(),
             );
             beginPlannerEscalation({ bumpStepCounter: true });
-            await this.strategyPivot(tabId, urlAttemptSummary);
+            await this.strategyPivot(session.tabId, urlAttemptSummary);
             this.stagnation.resetEscalation();
             this.context.addMessage({
               role: "user",
@@ -7669,7 +7722,7 @@ export class AgentLoop {
                   ? ESCALATION_RECOVERY(this.escalationsOnCurrentStep)
                   : `SAME-URL ESCALATION: You spent ${this.stagnation.sameUrlTurns} turns on this page without navigating away. ${ESCALATION_REFLECTION("same URL for " + this.stagnation.sameUrlTurns + " turns without progress")}`,
             });
-            consecutiveTextOnly = 0;
+            session.consecutiveTextOnly = 0;
             recentSuccesses.length = 0;
             this.stepHandler(
               {
@@ -7686,7 +7739,7 @@ export class AgentLoop {
 
         // Force snapshot refresh when tools hit stale element IDs
         // Ensures the LLM's next turn sees fresh IDs without wasting a read_page call
-        if (!domModified && !doneSignaled) {
+        if (!turn.domModified && !turn.doneSignaled) {
           const recentMsgs = this.context.getMessages();
           for (let i = recentMsgs.length - 1; i >= 0; i--) {
             const msg = recentMsgs[i];
@@ -7695,7 +7748,7 @@ export class AgentLoop {
               typeof msg.content === "string" &&
               msg.content.includes("No element with tag")
             ) {
-              domModified = true;
+              turn.domModified = true;
               this.log.info(
                 "agent",
                 "Stale element ID detected, forcing snapshot refresh",
@@ -7733,27 +7786,28 @@ export class AgentLoop {
         }
 
         // Batch snapshot refresh: ONE refresh after all tools complete
-        if (domModified && !doneSignaled) {
+        if (turn.domModified && !turn.doneSignaled) {
           try {
             const snapshotRefresh = await refreshPostToolSnapshot(
               this as unknown as PostToolSnapshotRefreshHost,
               {
-                tabId,
-                prevElementCount,
-                visuallyModified,
+                tabId: session.tabId,
+                prevElementCount: session.prevElementCount,
+                visuallyModified: turn.visuallyModified,
                 recentSuccesses,
               },
             );
             let snap = snapshotRefresh.snap;
-            prevElementCount = snapshotRefresh.prevElementCount;
+            session.prevElementCount = snapshotRefresh.prevElementCount;
 
             if (snap) {
               const explicitSuccessSignal =
-                this.detectExplicitSuccessSignalInSnapshot(snap);
-              // Suppress auto-complete for root agent (no nodeId) when query
-              // requires multiple return values (e.g. "both numbers").
-              // The explicit signal detector is scoped to the active step so
-              // prior-step handoff history cannot complete the wrong node.
+                detectExplicitSuccessSignalInSnapshot(
+                  this as unknown as ExplicitSuccessSignalHost,
+                  snap,
+                );
+              // Suppress auto-complete for root agent (no nodeId) on multi-return
+              // queries; detector is step-scoped (won't complete the wrong node).
               const taskContractMultiReturn = !this.nodeId
                 ? (buildTaskContract(this.originalQuery).multiReturnCount ?? 0)
                 : 0;
@@ -7795,8 +7849,8 @@ export class AgentLoop {
                   content: summary,
                 });
                 this.completeTaskUi(summary);
-                doneSummary = summary;
-                doneSignaled = true;
+                session.doneSummary = summary;
+                turn.doneSignaled = true;
 
                 this.broadcastFinalMetrics();
               } else if (explicitSuccessSignal && explicitStepCount >= 2) {
@@ -7872,7 +7926,7 @@ export class AgentLoop {
               // Plan monitor: check alignment every 2 turns when plan is active
               await runPlanMonitorPhase(
                 this as unknown as PlanMonitorPhaseHost,
-                tabId,
+                session.tabId,
               );
 
               // Progress tracking: detect stuck loops
@@ -7885,7 +7939,7 @@ export class AgentLoop {
               if (
                 this.pendingFormSubmissionReset &&
                 this.taskId &&
-                !doneSignaled
+                !turn.doneSignaled
               ) {
                 const pending = this.pendingFormSubmissionReset;
                 const delayedSubmitSignal = detectFormSubmissionResetSuccess({
@@ -7925,9 +7979,9 @@ export class AgentLoop {
                   this.pendingFormSubmissionReset = null;
                 }
               }
-              if (actionEffect && visuallyModified) {
+              if (actionEffect && turn.visuallyModified) {
                 this.context.setLastActionOutcome({
-                  toolName: lastDomAffectingToolName ?? "unknown",
+                  toolName: turn.lastDomAffectingToolName ?? "unknown",
                   deltaPercent: actionEffect.deltaPercent,
                   urlChanged: actionEffect.urlChanged,
                   prevUrl: actionEffect.prevUrl,
@@ -7936,30 +7990,28 @@ export class AgentLoop {
                   elementsRemoved: actionEffect.elementsRemoved,
                 });
                 this.traceRecorder?.recordEvent("action_effect", {
-                  toolName: lastDomAffectingToolName ?? "unknown",
+                  toolName: turn.lastDomAffectingToolName ?? "unknown",
                   deltaPercent: actionEffect.deltaPercent,
                   urlChanged: actionEffect.urlChanged,
                   elementsAdded: actionEffect.elementsAdded,
                   elementsRemoved: actionEffect.elementsRemoved,
                 });
                 const semanticToolName =
-                  lastDomAffectingToolName ?? lastToolName ?? null;
+                  turn.lastDomAffectingToolName ?? lastToolName ?? null;
                 const semanticToolArgs =
                   lastToolName === semanticToolName ? lastToolArgs : undefined;
-                const semanticProgressSignals =
-                  detectSemanticProgressSignals({
-                    toolName: semanticToolName,
-                    toolArgs: semanticToolArgs,
-                    previousSnapshot: preActionSnapshot,
-                    currentSnapshot: snap,
-                  });
-                const strongSemanticProgress =
-                  semanticProgressSignals.some(
-                    (signal) =>
-                      signal.observed && signal.strength === "strong",
-                  );
-                const semanticProgressObserved =
-                  semanticProgressSignals.some((signal) => signal.observed);
+                const semanticProgressSignals = detectSemanticProgressSignals({
+                  toolName: semanticToolName,
+                  toolArgs: semanticToolArgs,
+                  previousSnapshot: preActionSnapshot,
+                  currentSnapshot: snap,
+                });
+                const strongSemanticProgress = semanticProgressSignals.some(
+                  (signal) => signal.observed && signal.strength === "strong",
+                );
+                const semanticProgressObserved = semanticProgressSignals.some(
+                  (signal) => signal.observed,
+                );
                 const resetBySemanticProgress =
                   semanticProgressObserved &&
                   (strongSemanticProgress ||
@@ -7967,7 +8019,7 @@ export class AgentLoop {
                     actionEffect.urlChanged);
                 const smallObservedActionProgress =
                   actionEffect.deltaPercent > 0 &&
-                  Boolean(lastDomAffectingToolName);
+                  Boolean(turn.lastDomAffectingToolName);
                 if (semanticProgressSignals.length > 0) {
                   this.traceRecorder?.recordEvent(
                     "semantic_progress_detected",
@@ -8022,17 +8074,22 @@ export class AgentLoop {
                     spendProgressSignals,
                   )
                 ) {
-                  this.traceRecorder?.recordEvent("context_spend_progress_reset", {
-                    turn: this.turnCount,
-                    signals: spendProgressSignals.map((signal) => signal.label),
-                  });
+                  this.traceRecorder?.recordEvent(
+                    "context_spend_progress_reset",
+                    {
+                      turn: this.turnCount,
+                      signals: spendProgressSignals.map(
+                        (signal) => signal.label,
+                      ),
+                    },
+                  );
                 }
 
                 const planAfterAction = this.context.getPlanStatusRaw();
                 if (
                   this.taskId &&
                   planAfterAction &&
-                  !doneSignaled &&
+                  !turn.doneSignaled &&
                   planAfterAction.currentIndex < planAfterAction.subtasks.length
                 ) {
                   const currentSubtask =
@@ -8077,13 +8134,14 @@ export class AgentLoop {
 
                       const awaitedSnapshot =
                         await this.waitForPendingAsyncChange(
-                          tabId,
-                          prevElementCount,
+                          session.tabId,
+                          session.prevElementCount,
                           this.pendingAsyncVerification,
                         );
                       if (awaitedSnapshot) {
                         snap = awaitedSnapshot;
-                        prevElementCount = awaitedSnapshot.elements.length;
+                        session.prevElementCount =
+                          awaitedSnapshot.elements.length;
                       }
                     } else if (
                       this.pendingAsyncVerification &&
@@ -8303,7 +8361,7 @@ export class AgentLoop {
                     });
 
                     const zeroEffectReplanOk = await this.replanOnEscalation(
-                      tabId,
+                      session.tabId,
                       subgoalAttempts,
                       this.abortController?.signal,
                     );
@@ -8321,7 +8379,7 @@ export class AgentLoop {
                       this.context.getMessages(),
                     );
                     beginPlannerEscalation({ bumpStepCounter: true });
-                    await this.strategyPivot(tabId, attemptSummary);
+                    await this.strategyPivot(session.tabId, attemptSummary);
                     this.stagnation.resetEscalation();
                     this.context.addMessage({
                       role: "user",
@@ -8332,7 +8390,7 @@ export class AgentLoop {
                               "repeated DOM actions had no observable effect",
                             ),
                     });
-                    consecutiveTextOnly = 0;
+                    session.consecutiveTextOnly = 0;
                     recentSuccesses.length = 0;
                     esc.consecutiveProgressSignals = 0;
                     this.consecutiveZeroEffectTurns = 0;
@@ -8395,7 +8453,8 @@ export class AgentLoop {
 
                 // S3: Fresh-start recovery — full context reset when escalation cycles exhaust
                 if (
-                  esc.escalationCycles >= FRESH_START.TRIGGER_ESCALATION_CYCLE &&
+                  esc.escalationCycles >=
+                    FRESH_START.TRIGGER_ESCALATION_CYCLE &&
                   esc.freshStartCount < this.limits.maxFreshStarts &&
                   this.turnCount >= FRESH_START.MIN_TURNS_BEFORE_RESET
                 ) {
@@ -8441,15 +8500,15 @@ export class AgentLoop {
                   this.stagnation.reset();
                   this.toolCache.clear();
                   blockedActions.length = 0;
-                  consecutiveTextOnly = 0;
+                  session.consecutiveTextOnly = 0;
                   recentOutcomes.length = 0;
                   recentSuccesses.length = 0;
-                  consecutiveAllFailTurns = 0;
+                  session.consecutiveAllFailTurns = 0;
                   esc.escalationCycles = 0;
                   esc.cooldownRemaining = 0;
                   this.escalationsOnCurrentStep = 0;
-                  lastReadElementId = null;
-                  consecutiveReadElementSameId = 0;
+                  session.lastReadElementId = null;
+                  session.consecutiveReadElementSameId = 0;
 
                   // Ensure planner tier
                   if (esc.tier === 0) {
@@ -8460,7 +8519,7 @@ export class AgentLoop {
 
                   // Refresh snapshot
                   try {
-                    await this.refreshSnapshot(tabId);
+                    await this.refreshSnapshot(session.tabId);
                   } catch {
                     /* non-critical */
                   }
@@ -8489,7 +8548,7 @@ export class AgentLoop {
                 else if (esc.tier === 0 && esc.cooldownRemaining <= 0) {
                   // Try replan-on-escalation first
                   const stagnationReplanOk = await this.replanOnEscalation(
-                    tabId,
+                    session.tabId,
                     subgoalAttempts,
                     this.abortController?.signal,
                   );
@@ -8506,7 +8565,7 @@ export class AgentLoop {
                       this.context.getMessages(),
                     );
                     beginPlannerEscalation({ bumpStepCounter: true });
-                    await this.strategyPivot(tabId, attemptSummary);
+                    await this.strategyPivot(session.tabId, attemptSummary);
                     this.stagnation.resetEscalation();
                     this.context.addMessage({
                       role: "user",
@@ -8517,7 +8576,7 @@ export class AgentLoop {
                               "no DOM progress detected by stagnation monitor",
                             ),
                     });
-                    consecutiveTextOnly = 0;
+                    session.consecutiveTextOnly = 0;
                     recentSuccesses.length = 0;
                     esc.consecutiveProgressSignals = 0;
                     this.stepHandler(
@@ -8535,10 +8594,10 @@ export class AgentLoop {
               } else {
                 // Progress-gated de-escalation (handles both the wasStuck
                 // recovery path and the not-stuck gate reset).
-                prevElementCount = await esc.recordProgressSignal({
+                session.prevElementCount = await esc.recordProgressSignal({
                   snapUrl: snap.url,
-                  tabId,
-                  prevElementCount,
+                  tabId: session.tabId,
+                  prevElementCount: session.prevElementCount,
                 });
               }
             }
@@ -8547,23 +8606,12 @@ export class AgentLoop {
           }
         }
 
-        // S1: Rolling distillation — periodically compress older history
-        if (
-          this.turnCount > 0 &&
-          this.turnCount % ROLLING_DISTILL.INTERVAL === 0 &&
-          this.context.getMessages().length >= ROLLING_DISTILL.MIN_MESSAGES
-        ) {
-          this.context.rollingDistill(
-            ROLLING_DISTILL.KEEP_RECENT,
-            ROLLING_DISTILL.MAX_SUMMARY_ENTRIES,
-          );
-        }
-
-        if (doneSignaled) {
-          await this.saveTurnCheckpoint();
-          await this.traceRecorder?.endTurn();
-          break;
-        }
+        // End-of-turn bookkeeping: distill + checkpoint + trace flush (RFC LP-16 Phase 3).
+        const account = await runAccountAndRefreshPhase(
+          this as unknown as AccountAndRefreshHost,
+          turn,
+        );
+        if (account.kind === "end_turn") break;
       } else {
         // TEXT RESPONSE — no tool calls
 
@@ -8575,9 +8623,9 @@ export class AgentLoop {
           !cleanContent &&
           rawContent &&
           rawContent.length > 50 &&
-          consecutiveTextOnly < 2
+          session.consecutiveTextOnly < 2
         ) {
-          consecutiveTextOnly = 2; // Next text-only turn triggers escalation
+          session.consecutiveTextOnly = 2; // Next text-only turn triggers escalation
           this.log.warn(
             "agent",
             "Think-only output detected, fast-tracking escalation",
@@ -8605,8 +8653,8 @@ export class AgentLoop {
           cleanContent &&
           cleanContent.trim().length > 20
         ) {
-          consecutiveTextOnly++;
-          totalTextOnly++;
+          session.consecutiveTextOnly++;
+          session.totalTextOnly++;
           const needsGroundingRead = requiresGroundingReadBeforeDone(
             this.originalQuery,
           );
@@ -8617,7 +8665,7 @@ export class AgentLoop {
           });
           if (needsGroundingRead) {
             await this.forceGroundingRefresh(
-              tabId,
+              session.tabId,
               "text_only_before_grounding_read",
             );
           }
@@ -8646,14 +8694,17 @@ export class AgentLoop {
             // When the model admits success in text but won't call done(),
             // reuse the existing evidence gate shape instead of trusting the
             // narration alone.
-            const nextTextOnlyCount = consecutiveTextOnly + 1;
-            consecutiveTextOnly = nextTextOnlyCount;
-            totalTextOnly++;
+            const nextTextOnlyCount = session.consecutiveTextOnly + 1;
+            session.consecutiveTextOnly = nextTextOnlyCount;
+            session.totalTextOnly++;
 
             if (admission.type === "success" && this.planSubtasks.length > 0) {
               const gate = evaluateTextAdmissionAdvanceGate(
                 this as unknown as TextAdmissionGateHost,
-                { summary: cleanContent, consecutiveTextOnly: nextTextOnlyCount },
+                {
+                  summary: cleanContent,
+                  consecutiveTextOnly: nextTextOnlyCount,
+                },
               );
 
               if (gate.passed) {
@@ -8724,9 +8775,12 @@ export class AgentLoop {
         const filler = cleanContent ? isFillerText(cleanContent) : true;
         // Hallucination fast-tracks: bypass nudge, go straight to escalation
         if (hallucinationDetected) {
-          consecutiveTextOnly = Math.max(consecutiveTextOnly, 3);
+          session.consecutiveTextOnly = Math.max(
+            session.consecutiveTextOnly,
+            3,
+          );
         } else {
-          consecutiveTextOnly += 1; // Uniform counting — no filler fast-track
+          session.consecutiveTextOnly += 1; // Uniform counting — no filler fast-track
         }
 
         // Progress immunity: if the last action changed the page, don't escalate yet
@@ -8736,13 +8790,16 @@ export class AgentLoop {
           (lastEffect.deltaPercent > ACTION_EFFECT.ZERO_THRESHOLD ||
             lastEffect.urlChanged);
         if (recentProgress) {
-          consecutiveTextOnly = Math.max(0, consecutiveTextOnly - 1);
+          session.consecutiveTextOnly = Math.max(
+            0,
+            session.consecutiveTextOnly - 1,
+          );
         }
 
-        totalTextOnly++;
+        session.totalTextOnly++;
         this.log.warn("agent", "LLM emitted text instead of tools", {
           turn: this.turnCount,
-          consecutiveTextOnly,
+          consecutiveTextOnly: session.consecutiveTextOnly,
           tier: esc.tier,
           filler,
           recentProgress: !!recentProgress,
@@ -8750,25 +8807,25 @@ export class AgentLoop {
         });
 
         // S6: Record pathology for text-only responses
-        if (consecutiveTextOnly >= 3) {
+        if (session.consecutiveTextOnly >= 3) {
           this.traceRecorder?.recordEvent("multi_turn_pathology", {
             pathology: filler ? "verbosity" : "premature_generation",
             trigger: "text_only_response",
             turn: this.turnCount,
-            details: `consecutiveTextOnly=${consecutiveTextOnly} filler=${filler}`,
+            details: `consecutiveTextOnly=${session.consecutiveTextOnly} filler=${filler}`,
           });
         }
 
         // Escalate to next tier on 3rd consecutive text-only (with minimum turn gate)
         if (
-          consecutiveTextOnly >= 3 &&
+          session.consecutiveTextOnly >= 3 &&
           esc.tier < 1 &&
           esc.cooldownRemaining <= 0 &&
           this.turnCount >= 4
         ) {
           // Try replan-on-escalation first
           const textReplanOk = await this.replanOnEscalation(
-            tabId,
+            session.tabId,
             subgoalAttempts,
             this.abortController?.signal,
           );
@@ -8783,7 +8840,7 @@ export class AgentLoop {
             this.context.getMessages(),
           );
           beginPlannerEscalation({ bumpStepCounter: false });
-          await this.strategyPivot(tabId, textOnlyAttemptSummary);
+          await this.strategyPivot(session.tabId, textOnlyAttemptSummary);
           this.stagnation.resetEscalation();
           this.context.addMessage({
             role: "user",
@@ -8791,7 +8848,7 @@ export class AgentLoop {
               "consecutive text-only responses without tool calls",
             ),
           });
-          consecutiveTextOnly = 0;
+          session.consecutiveTextOnly = 0;
           recentSuccesses.length = 0;
           this.stepHandler(
             {
@@ -8809,11 +8866,11 @@ export class AgentLoop {
         }
 
         // Give-up: 4 consecutive text-only at max tier
-        if (consecutiveTextOnly >= 4) {
+        if (session.consecutiveTextOnly >= 4) {
           this.log.warn("agent", "Loop ended: consecutive text-only limit", {
             turns: this.turnCount,
-            consecutiveTextOnly,
-            totalTextOnly,
+            consecutiveTextOnly: session.consecutiveTextOnly,
+            totalTextOnly: session.totalTextOnly,
             tier: esc.tier,
           });
           const stuckMsg =
@@ -8837,12 +8894,12 @@ export class AgentLoop {
         if (
           esc.tier > 0 &&
           plannerTurns >= this.limits.stuckGiveUpPlanner &&
-          totalTextOnly >= 3
+          session.totalTextOnly >= 3
         ) {
           this.log.warn("agent", "Loop ended: planner model turn limit", {
             turns: this.turnCount,
             plannerTurns,
-            totalTextOnly,
+            totalTextOnly: session.totalTextOnly,
             tier: esc.tier,
           });
           const stuckMsg =
@@ -8861,9 +8918,9 @@ export class AgentLoop {
         }
 
         // Regular nudge: refresh snapshot + perception + inject message
-        const count = await this.refreshSnapshot(tabId);
-        if (count >= 0) prevElementCount = count;
-        await this.refreshPerceptionAndTriage(tabId);
+        const count = await this.refreshSnapshot(session.tabId);
+        if (count >= 0) session.prevElementCount = count;
+        await this.refreshPerceptionAndTriage(session.tabId);
         this.context.addMessage({
           role: "user",
           content: TEXT_ONLY_CORRECTION,
@@ -8877,12 +8934,6 @@ export class AgentLoop {
         this.finishStream();
         continue;
       }
-
-      // Durable checkpoint: persist loop state for SW restart recovery
-      this.saveTurnCheckpoint().catch(() => {});
-
-      // Trace: flush turn at end of each iteration
-      await this.traceRecorder?.endTurn();
     }
 
     if (this.turnCount >= this.maxTurns && !this.completedResult) {
@@ -8927,62 +8978,11 @@ export class AgentLoop {
     return {
       outcome: "completed" as const,
       turnCount: this.turnCount,
-      summary: doneSummary,
+      summary: session.doneSummary,
       failure: { category: "none", code: "none" },
       metrics: this.getMetrics(),
       completionEnvelope: this.completedResult?.completionEnvelope,
     };
-  }
-
-  private detectExplicitSuccessSignalInSnapshot(snap: {
-    title?: string;
-    url?: string;
-    pageContent?: string;
-    visibleContent?: string;
-  }): string | null {
-    const query = this.getActiveExplicitSuccessContext();
-    const quotedMatch =
-      query.match(/verify the page shows ['"]([^'"]+)['"]/i) ??
-      query.match(/page shows ['"]([^'"]+)['"]/i);
-    const signal = quotedMatch?.[1]?.trim();
-    if (!signal) return null;
-
-    const haystacks = [
-      snap.title ?? "",
-      snap.pageContent ?? "",
-      snap.visibleContent ?? "",
-      snap.url ?? "",
-    ];
-
-    return haystacks.some((text) => text.includes(signal)) ? signal : null;
-  }
-
-  private getActiveExplicitSuccessContext(): string {
-    const hasPlanContext =
-      this.planSubtasks.length > 0 || this.planSteps.length > 0;
-    if (!hasPlanContext) return this.originalQuery || "";
-
-    const runningIdx = this.planSubtasks.findIndex(
-      (subtask) => subtask.status === "running",
-    );
-    const stepIndex =
-      runningIdx >= 0
-        ? runningIdx
-        : this.lastPlanIndex >= 0
-          ? this.lastPlanIndex
-          : -1;
-    if (stepIndex < 0) return "";
-
-    const currentStep = this.planSteps[stepIndex];
-    const currentSubtask = this.planSubtasks[stepIndex];
-    return [
-      currentStep?.objective,
-      currentStep?.successCriteria,
-      currentStep?.verifyAfter?.trigger,
-      currentSubtask?.description,
-    ]
-      .filter(Boolean)
-      .join("\n");
   }
 
   /**

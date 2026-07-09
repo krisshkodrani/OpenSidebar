@@ -116,6 +116,10 @@ import {
   shouldBypassPlanIncompleteDoneRejection,
   type DonePlanValidationHost,
 } from "../../src/background/agent/done-plan-validation";
+import {
+  detectExplicitSuccessSignalInSnapshot,
+  type ExplicitSuccessSignalHost,
+} from "../../src/background/agent/explicit-success-signal";
 import { buildDomAwareProfile } from "../../src/background/tools/metadata";
 import { workspaceManager } from "../../src/background/workspaces/manager";
 import type { TaggedElement } from "../../src/types";
@@ -199,12 +203,15 @@ describe("AgentLoop", () => {
       snapshotText: "Incident New record Caller Short description",
     });
 
-    const result = (agent as any).detectExplicitSuccessSignalInSnapshot({
-      title: "Create INC0045669 | Incident | ServiceNow",
-      url: "https://example.com/incident.do",
-      pageContent: "Incident New record Caller Short description",
-      visibleContent: "Incident New record",
-    });
+    const result = detectExplicitSuccessSignalInSnapshot(
+      agent as unknown as ExplicitSuccessSignalHost,
+      {
+        title: "Create INC0045669 | Incident | ServiceNow",
+        url: "https://example.com/incident.do",
+        pageContent: "Incident New record Caller Short description",
+        visibleContent: "Incident New record",
+      },
+    );
 
     expect(result).toBeNull();
   });
@@ -234,12 +241,15 @@ describe("AgentLoop", () => {
       snapshotText: "Profile saved",
     });
 
-    const result = (agent as any).detectExplicitSuccessSignalInSnapshot({
-      title: "Settings",
-      url: "https://example.com/settings",
-      pageContent: "Profile saved",
-      visibleContent: "Profile saved",
-    });
+    const result = detectExplicitSuccessSignalInSnapshot(
+      agent as unknown as ExplicitSuccessSignalHost,
+      {
+        title: "Settings",
+        url: "https://example.com/settings",
+        pageContent: "Profile saved",
+        visibleContent: "Profile saved",
+      },
+    );
 
     expect(result).toBe("Profile saved");
   });
