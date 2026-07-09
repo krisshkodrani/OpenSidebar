@@ -101,6 +101,10 @@ import {
   type DonePlanRejectionHost,
 } from "./done-plan-rejection";
 import {
+  evaluateTextAdmissionAdvanceGate,
+  type TextAdmissionGateHost,
+} from "./text-admission-gate";
+import {
   getActiveCompletionContext,
   recordCompletionEvidence,
   refreshCompletionEvidenceFromSnapshot,
@@ -6985,99 +6989,6 @@ export class AgentLoop {
     return { finalSummary: signal.reason, newIndex, completionCandidate };
   }
 
-  private evaluateTextAdmissionAdvanceGate(params: {
-    summary: string;
-    consecutiveTextOnly: number;
-  }): {
-    passed: boolean;
-    runningIdx: number;
-    isLastStep: boolean;
-    reason?: string;
-  } {
-    const { summary, consecutiveTextOnly } = params;
-    const runningIdx = this.planSubtasks.findIndex(
-      (s) => s.status === "running",
-    );
-    if (runningIdx < 0) {
-      return {
-        passed: false,
-        runningIdx: -1,
-        isLastStep: false,
-        reason: "no_running_step",
-      };
-    }
-
-    const requiredTextOnlyTurns = this.verificationTurnMode ? 1 : 2;
-    if (consecutiveTextOnly < requiredTextOnlyTurns) {
-      return {
-        passed: false,
-        runningIdx,
-        isLastStep: false,
-        reason:
-          requiredTextOnlyTurns === 1
-            ? "verification_turn_waiting"
-            : "first_text_only_turn",
-      };
-    }
-
-    const currentStep = this.planSteps[runningIdx];
-    if (!currentStep?.successCriteria) {
-      return {
-        passed: false,
-        runningIdx,
-        isLastStep: false,
-        reason: "missing_success_criteria",
-      };
-    }
-
-    const sentiment = assessDoneSummary(summary);
-    if (!sentiment.confident) {
-      return {
-        passed: false,
-        runningIdx,
-        isLastStep: false,
-        reason: `failure_sentiment:${sentiment.reason ?? "unknown"}`,
-      };
-    }
-
-    const criteriaCheck = matchSuccessCriteria({
-      successCriteria: currentStep.successCriteria,
-      snapshot: this.context.getSnapshot(),
-    });
-    if (!criteriaCheck.satisfied) {
-      return {
-        passed: false,
-        runningIdx,
-        isLastStep: false,
-        reason: "criteria_mismatch",
-      };
-    }
-
-    const coherence = checkSummaryStepCoherence({
-      summary,
-      currentStepIndex: runningIdx,
-      stepDescriptions: this.planSubtasks.map((s) => s.description),
-    });
-    if (!coherence.coherent) {
-      return {
-        passed: false,
-        runningIdx,
-        isLastStep: false,
-        reason: `coherence_failed:${coherence.reason ?? "unknown"}`,
-      };
-    }
-
-    const pendingCount = this.planSubtasks.filter(
-      (s) => s.status === "pending",
-    ).length;
-
-    return {
-      passed: true,
-      runningIdx,
-      isLastStep: pendingCount === 0,
-    };
-  }
-
   private shouldBypassPlanIncompleteDoneRejection(params: {
     summary: string;
     currentStepIndex: number;
@@ -9456,10 +9367,10 @@ export class AgentLoop {
             totalTextOnly++;
 
             if (admission.type === "success" && this.planSubtasks.length > 0) {
-              const gate = this.evaluateTextAdmissionAdvanceGate({
-                summary: cleanContent,
-                consecutiveTextOnly: nextTextOnlyCount,
-              });
+              const gate = evaluateTextAdmissionAdvanceGate(
+                this as unknown as TextAdmissionGateHost,
+                { summary: cleanContent, consecutiveTextOnly: nextTextOnlyCount },
+              );
 
               if (gate.passed) {
                 if (gate.isLastStep) {
