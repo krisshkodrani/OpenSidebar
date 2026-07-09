@@ -14,6 +14,7 @@ export type ProviderMode =
   | "openai-groq"
   | "fireworks"
   | "fireworks-deepseek"
+  | "cerebras-fireworks"
   | "moonshot"
   | "xiaomi";
 
@@ -27,6 +28,7 @@ export interface E2EProviderKeys {
   deepseekKey?: string;
   kimiKey?: string;
   xiaomiKey?: string;
+  cerebrasKey?: string;
 }
 
 export interface E2EProviderDiagnostic {
@@ -134,11 +136,20 @@ export function loadXiaomiApiKey(
   return envValue("XIAOMI_API_KEY", options);
 }
 
+export function loadCerebrasApiKey(
+  options: ProviderConfigOptions = {},
+): string | undefined {
+  return envValue("CEREBRAS_API_KEY", options);
+}
+
 /** Detect provider mode from E2E config (default: fireworks). */
 export function detectProviderMode(provider: string): ProviderMode {
   const normalized = provider.toLowerCase();
   if (normalized === "deepseek" || normalized === "fireworks-deepseek") {
     return "fireworks-deepseek";
+  }
+  if (normalized === "cerebras" || normalized === "cerebras-fireworks") {
+    return "cerebras-fireworks";
   }
   if (normalized === "moonshot" || normalized === "kimi") return "moonshot";
   if (normalized === "xiaomi" || normalized === "mimo") return "xiaomi";
@@ -153,6 +164,7 @@ export function detectProviderMode(provider: string): ProviderMode {
 export function deriveLane(providerMode: ProviderMode): E2ELane {
   return providerMode === "fireworks" ||
     providerMode === "fireworks-deepseek" ||
+    providerMode === "cerebras-fireworks" ||
     providerMode === "moonshot" ||
     providerMode === "xiaomi"
     ? "dev"
@@ -173,11 +185,16 @@ export function loadProviderKeys(
     ...(providerMode === "openai-groq"
       ? { openAiKey: loadOpenAiApiKey(options) }
       : {}),
-    ...(providerMode === "fireworks" || providerMode === "fireworks-deepseek"
+    ...(providerMode === "fireworks" ||
+    providerMode === "fireworks-deepseek" ||
+    providerMode === "cerebras-fireworks"
       ? { fireworksKey: loadFireworksApiKey(options) }
       : {}),
     ...(providerMode === "fireworks-deepseek"
       ? { deepseekKey: loadDeepSeekApiKey(options) }
+      : {}),
+    ...(providerMode === "cerebras-fireworks"
+      ? { cerebrasKey: loadCerebrasApiKey(options) }
       : {}),
     ...(providerMode === "moonshot" ? { kimiKey: loadKimiApiKey(options) } : {}),
     ...(providerMode === "xiaomi"
@@ -194,6 +211,11 @@ export function loadActiveProviderApiKey(
     const fireworksKey = loadFireworksApiKey(options);
     const deepseekKey = loadDeepSeekApiKey(options);
     return fireworksKey && deepseekKey ? fireworksKey : undefined;
+  }
+  if (providerMode === "cerebras-fireworks") {
+    const cerebrasKey = loadCerebrasApiKey(options);
+    const fireworksKey = loadFireworksApiKey(options);
+    return cerebrasKey && fireworksKey ? cerebrasKey : undefined;
   }
   if (providerMode === "fireworks") return loadFireworksApiKey(options);
   if (providerMode === "moonshot") return loadKimiApiKey(options);

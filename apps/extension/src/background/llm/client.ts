@@ -284,6 +284,19 @@ function deepseekProvider(apiKey: string): ProviderConfig {
   };
 }
 
+/** Cerebras direct API (executor only; planner remains Fireworks). */
+const CEREBRAS_BASE_URL = "https://api.cerebras.ai/v1/chat/completions";
+export const CEREBRAS_MODEL_EXECUTOR = LLM_MODEL_CONFIG.cerebras.executor;
+
+function cerebrasProvider(apiKey: string): ProviderConfig {
+  return {
+    baseUrl: CEREBRAS_BASE_URL,
+    apiKey: sanitizeApiKeyForHeader(apiKey, "cerebras"),
+    headers: {},
+    providerId: "cerebras",
+  };
+}
+
 /** Options for overriding default models in LLMClient */
 export interface LLMClientOptions {
   executorModel?: string;
@@ -308,6 +321,7 @@ export interface LLMClientOptions {
     | "openai-groq"
     | "fireworks"
     | "fireworks-deepseek"
+    | "cerebras-fireworks"
     | "moonshot"
     | "xiaomi";
   /** @deprecated Use providerMode instead */
@@ -324,6 +338,8 @@ export interface LLMClientOptions {
   kimiApiKey?: string;
   /** Xiaomi MiMo API key (required for xiaomi mode) */
   xiaomiApiKey?: string;
+  /** Cerebras API key (required for cerebras-fireworks executor mode) */
+  cerebrasApiKey?: string;
   /** Override default temperature (default: 0.0) */
   temperature?: number;
 }
@@ -358,6 +374,8 @@ function getProviderDisplayName(
       return "Xiaomi MiMo";
     case "deepseek":
       return "DeepSeek";
+    case "cerebras":
+      return "Cerebras";
     case "groq":
       return "Groq";
     case "openai":
@@ -381,6 +399,8 @@ function getProviderCreditsUrl(
       return "https://platform.xiaomimimo.com";
     case "deepseek":
       return "https://platform.deepseek.com";
+    case "cerebras":
+      return "https://cloud.cerebras.ai";
     case "groq":
       return "https://console.groq.com";
     case "openai":
@@ -762,6 +782,19 @@ export class LLMClient {
         executorModel,
         executorFallbackModel: options?.executorFallbackModel,
       });
+    } else if (mode === "cerebras-fireworks") {
+      const cerebrasKey = options?.cerebrasApiKey ?? "";
+      const cerebrasProv = cerebrasProvider(cerebrasKey);
+      const executorModel = normalizeExecutorModel({
+        providerMode: "cerebras-fireworks",
+        executorModel: options?.executorModel,
+      });
+      this.executorPool = singleProviderPool(cerebrasProv, executorModel);
+      this.executorFallbackModel = normalizeExecutorFallbackModel({
+        providerMode: "cerebras-fireworks",
+        executorModel,
+        executorFallbackModel: options?.executorFallbackModel,
+      });
     } else if (mode === "fireworks" && hasFireworks) {
       const fwKey = options!.fireworksApiKey!;
       const fwProv = fireworksProvider(fwKey);
@@ -824,7 +857,10 @@ export class LLMClient {
       const xiaomiProv = xiaomiProvider(xiaomiKey);
       const plannerModel = options?.plannerModel || XIAOMI_MODEL_PLANNER;
       this.plannerPool = singleProviderPool(xiaomiProv, plannerModel);
-    } else if (mode === "fireworks" && hasFireworks) {
+    } else if (
+      (mode === "fireworks" || mode === "cerebras-fireworks") &&
+      hasFireworks
+    ) {
       const fwKey = options!.fireworksApiKey!;
       const fwProv = fireworksProvider(fwKey);
       const plannerModel = options?.plannerModel || FIREWORKS_MODEL_PLANNER;

@@ -11,6 +11,7 @@ export const DEFAULT_MULTIMODAL_EXECUTOR_BY_PROVIDER: Record<
   "openai-groq": "accounts/fireworks/models/kimi-k2p7-code",
   fireworks: "accounts/fireworks/models/kimi-k2p7-code",
   "fireworks-deepseek": "accounts/fireworks/models/kimi-k2p7-code",
+  "cerebras-fireworks": "gemma-4-31b",
   moonshot: "kimi-k2.6",
   xiaomi: "mimo-v2-omni",
 };
@@ -26,6 +27,14 @@ const FIREWORKS_EXECUTOR_MODELS = new Set([
 const MOONSHOT_EXECUTOR_MODELS = new Set(["kimi-k2.6", "kimi-k2.5"]);
 
 const XIAOMI_EXECUTOR_MODELS = new Set(["mimo-v2-omni"]);
+
+/**
+ * Cerebras executor candidates (eval, 2026-07-09): gemma-4-31b is multimodal
+ * and under evaluation against the K2.7-Code reliability floor — listed here
+ * so the cerebras-fireworks mode can seat it; not part of any other
+ * provider's curated set.
+ */
+const CEREBRAS_EXECUTOR_MODELS = new Set(["gemma-4-31b"]);
 
 const OPENROUTER_EXECUTOR_MODELS = new Set([
   ...FIREWORKS_EXECUTOR_MODELS,
@@ -47,6 +56,7 @@ const OPENROUTER_EXECUTOR_MODELS = new Set([
 export const EXECUTOR_ELIGIBLE_MODELS: ReadonlySet<string> = new Set([
   ...OPENROUTER_EXECUTOR_MODELS,
   ...XIAOMI_EXECUTOR_MODELS,
+  ...CEREBRAS_EXECUTOR_MODELS,
 ]);
 
 /**
@@ -87,6 +97,9 @@ export function isExecutorEligible(
   }
   if (providerMode === "xiaomi") {
     return XIAOMI_EXECUTOR_MODELS.has(normalized);
+  }
+  if (providerMode === "cerebras-fireworks") {
+    return CEREBRAS_EXECUTOR_MODELS.has(normalized);
   }
   if (
     providerMode === "fireworks" ||

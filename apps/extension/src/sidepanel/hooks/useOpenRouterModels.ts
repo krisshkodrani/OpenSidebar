@@ -13,7 +13,8 @@ export interface ProviderModelOption {
     | "groq"
     | "moonshot"
     | "deepseek"
-    | "xiaomi";
+    | "xiaomi"
+    | "cerebras";
   source?: "live" | "curated";
   effectiveDate?: string;
 }
@@ -227,12 +228,26 @@ export const GROQ_MODELS: ProviderModelOption[] = [
   },
 ];
 
+export const CEREBRAS_MODELS: ProviderModelOption[] = [
+  {
+    id: "gemma-4-31b",
+    name: "Gemma 4 31B (Cerebras)",
+    promptPrice: 0,
+    completionPrice: 0,
+    supportsVision: true,
+    provider: "cerebras",
+    source: "curated",
+    effectiveDate: "2026-07-09",
+  },
+];
+
 type ProviderMode =
   | "openrouter"
   | "openrouter-groq"
   | "openai-groq"
   | "fireworks"
   | "fireworks-deepseek"
+  | "cerebras-fireworks"
   | "moonshot"
   | "xiaomi";
 type ModelRole = "executor" | "planner" | "perception" | "writer";
@@ -253,6 +268,11 @@ export function getProviderModelOptions(args: {
     return role === "executor"
       ? filterExecutorModels(FIREWORKS_MODELS)
       : DEEPSEEK_MODELS;
+  }
+  if (providerMode === "cerebras-fireworks") {
+    return role === "executor"
+      ? filterExecutorModels(CEREBRAS_MODELS)
+      : FIREWORKS_MODELS;
   }
   if (providerMode === "moonshot") return filterExecutorModels(MOONSHOT_MODELS);
   if (providerMode === "xiaomi") return filterExecutorModels(XIAOMI_MODELS);
@@ -284,6 +304,11 @@ export function getProviderModelCatalogNote(args: {
     return role === "executor"
       ? "Executor models come from vision-capable, executor-eligible Fireworks models with curated pricing."
       : "Scoped to DeepSeek planner models with curated pricing.";
+  }
+  if (providerMode === "cerebras-fireworks") {
+    return role === "executor"
+      ? "Scoped to multimodal Cerebras executor models (eval). Pricing is unknown until Cerebras rates are curated."
+      : "Scoped to Fireworks models with curated pricing.";
   }
   if (providerMode === "moonshot") {
     return role === "executor"

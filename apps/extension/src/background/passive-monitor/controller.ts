@@ -242,6 +242,7 @@ function llmOptionsFromSettings(settings: UserSettings): LLMClientOptions {
     deepseekApiKey: settings.deepseekApiKey,
     kimiApiKey: settings.kimiApiKey,
     xiaomiApiKey: settings.xiaomiApiKey,
+    cerebrasApiKey: settings.cerebrasApiKey,
     temperature: settings.temperature,
   };
 }

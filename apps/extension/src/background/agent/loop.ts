@@ -515,7 +515,7 @@ export class AgentLoop {
     | "openrouter-groq"
     | "openai-groq"
     | "fireworks"
-    | "fireworks-deepseek"
+    | "fireworks-deepseek" | "cerebras-fireworks"
     | "moonshot"
     | "xiaomi";
   /** When true, mutation replay guard persists across turns (set after done() rejection) */
@@ -754,7 +754,7 @@ export class AgentLoop {
         | "openrouter-groq"
         | "openai-groq"
         | "fireworks"
-        | "fireworks-deepseek"
+        | "fireworks-deepseek" | "cerebras-fireworks"
         | "moonshot"
         | "xiaomi";
       provider?: "openrouter" | "openai" | "groq"; // legacy compat
@@ -763,7 +763,7 @@ export class AgentLoop {
       fireworksApiKey?: string;
       deepseekApiKey?: string;
       kimiApiKey?: string;
-      xiaomiApiKey?: string;
+      xiaomiApiKey?: string; cerebrasApiKey?: string;
       temperature?: number;
       perceptionMode?: PerceptionRuntimeMode;
       maxImagePromptTokenEstimate?: number;
@@ -844,7 +844,7 @@ export class AgentLoop {
       fireworksApiKey: options?.fireworksApiKey,
       deepseekApiKey: options?.deepseekApiKey,
       kimiApiKey: options?.kimiApiKey,
-      xiaomiApiKey: options?.xiaomiApiKey,
+      xiaomiApiKey: options?.xiaomiApiKey, cerebrasApiKey: options?.cerebrasApiKey,
       temperature: options?.temperature,
     };
     this.llm = new LLMClient(openRouterApiKey, modelOverrides);
