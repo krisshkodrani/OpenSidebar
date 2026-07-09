@@ -108,6 +108,10 @@ import {
 } from "../../src/background/agent/checkpoint-types";
 import { buildTrustedReadAnswerCompletionCandidate } from "../../src/background/agent/completion-kernel";
 import { assessInlineEditTextEntryRetarget } from "../../src/background/agent/text-entry-guards";
+import {
+  evaluateTextAdmissionAdvanceGate,
+  type TextAdmissionGateHost,
+} from "../../src/background/agent/text-admission-gate";
 import { buildDomAwareProfile } from "../../src/background/tools/metadata";
 import { workspaceManager } from "../../src/background/workspaces/manager";
 import type { TaggedElement } from "../../src/types";
@@ -5785,7 +5789,7 @@ Showing 6-10 of 50`,
       snapshotText: "Warehouse Gamma inventory count: 6,412 units",
     });
 
-    const result = (agent as any).evaluateTextAdmissionAdvanceGate({
+    const result = evaluateTextAdmissionAdvanceGate(agent as unknown as TextAdmissionGateHost, {
       summary:
         "## Completed\nI navigated to Warehouse Gamma and verified 6,412 units.",
       consecutiveTextOnly: 2,
@@ -5813,7 +5817,7 @@ Showing 6-10 of 50`,
       snapshotText: "Warehouse Gamma inventory count: 6,412 units",
     });
 
-    const result = (agent as any).evaluateTextAdmissionAdvanceGate({
+    const result = evaluateTextAdmissionAdvanceGate(agent as unknown as TextAdmissionGateHost, {
       summary: "## Completed\nWarehouse Gamma inventory count is 6,412 units.",
       consecutiveTextOnly: 2,
     });
@@ -5841,7 +5845,7 @@ Showing 6-10 of 50`,
       snapshotText: "Warehouse Gamma inventory count: 6,412 units",
     });
 
-    const result = (agent as any).evaluateTextAdmissionAdvanceGate({
+    const result = evaluateTextAdmissionAdvanceGate(agent as unknown as TextAdmissionGateHost, {
       summary:
         "Unable to complete the Warehouse Gamma check even though the page changed.",
       consecutiveTextOnly: 2,
@@ -5870,7 +5874,7 @@ Showing 6-10 of 50`,
       snapshotText: "Warehouse Alpha inventory count: 4,827 units",
     });
 
-    const result = (agent as any).evaluateTextAdmissionAdvanceGate({
+    const result = evaluateTextAdmissionAdvanceGate(agent as unknown as TextAdmissionGateHost, {
       summary: "## Completed\nWarehouse Gamma inventory count is visible.",
       consecutiveTextOnly: 2,
     });
@@ -5898,7 +5902,7 @@ Showing 6-10 of 50`,
       snapshotText: "Warehouse Gamma inventory count: 6,412 units",
     });
 
-    const result = (agent as any).evaluateTextAdmissionAdvanceGate({
+    const result = evaluateTextAdmissionAdvanceGate(agent as unknown as TextAdmissionGateHost, {
       summary: "## Completed\nWarehouse Gamma inventory count is 6,412 units.",
       consecutiveTextOnly: 1,
     });
@@ -5929,7 +5933,7 @@ Showing 6-10 of 50`,
       snapshotText: "Warehouse Gamma inventory count: 6,412 units",
     });
 
-    const result = (agent as any).evaluateTextAdmissionAdvanceGate({
+    const result = evaluateTextAdmissionAdvanceGate(agent as unknown as TextAdmissionGateHost, {
       summary: "## Completed\nWarehouse Gamma inventory count is 6,412 units.",
       consecutiveTextOnly: 1,
     });
