@@ -101,6 +101,16 @@ import {
   type DonePlanRejectionHost,
 } from "./done-plan-rejection";
 import {
+  getActiveCompletionContext,
+  recordCompletionEvidence,
+  refreshCompletionEvidenceFromSnapshot,
+  recordCompletionToolEvidence,
+  evaluateCompletionCandidate,
+  getCompletionRecoveryHintForCurrentState,
+  maybeAddCompletionRecoveryHint,
+  type CompletionEvidenceHost,
+} from "./completion-evidence";
+import {
   buildServiceNowMissingFieldInfeasibleSummary,
   extractServiceNowFormMissingFieldLabels,
   extractServiceNowModuleRequest,
@@ -127,11 +137,9 @@ import { EvidenceAccumulator } from "./evidence";
 import { EscalationRescueTracker } from "./escalation-rescue-policy";
 import {
   buildCompletionEnvelope,
-  buildCompletionRecoveryHint,
   buildTrustedCompletionCandidate,
   CompletionEvidenceLedger,
   deriveCompletionEvidenceFromSnapshot,
-  deriveCompletionEvidenceFromToolOutcome,
   evaluateCompletionEarlyMultiStepPreflight,
   evaluateCompletionGroundingReadPreflight,
   evaluateCompletionListDetailReviewPreflight,
@@ -2062,56 +2070,18 @@ export class AgentLoop {
     activeObjective?: string;
     successCriteria?: string;
   } {
-    const activePlanIdx =
-      this.planSubtasks.length > 0
-        ? this.planSubtasks.findIndex((s) => s.status === "running")
-        : -1;
-    const effectivePlanIdx =
-      activePlanIdx >= 0
-        ? activePlanIdx
-        : Math.min(
-            this.planSubtasks.filter((s) => s.status === "completed").length,
-            this.planSubtasks.length - 1,
-          );
-    return {
-      activeObjective:
-        effectivePlanIdx >= 0
-          ? this.planSubtasks[effectivePlanIdx]?.description
-          : undefined,
-      successCriteria:
-        effectivePlanIdx >= 0
-          ? this.planSteps[effectivePlanIdx]?.successCriteria
-          : undefined,
-    };
+    return getActiveCompletionContext(this as unknown as CompletionEvidenceHost);
   }
 
   private recordCompletionEvidence(
     evidence: ReturnType<typeof deriveCompletionEvidenceFromSnapshot>,
     source: string,
   ): number {
-    const added = this.completionEvidence.addMany(evidence);
-    if (added === 0) return 0;
-    this.traceRecorder?.recordEvent("completion_evidence_recorded", {
-      turn: this.turnCount,
-      source,
-      added,
-      evidence: evidence.map((event) => ({
-        type: event.type,
-        confidence: event.confidence,
-        logicalKey: event.logicalKey,
-      })),
-    });
-    return added;
+    return recordCompletionEvidence(this as unknown as CompletionEvidenceHost, evidence, source);
   }
 
   private refreshCompletionEvidenceFromSnapshot(source: string): void {
-    this.recordCompletionEvidence(
-      deriveCompletionEvidenceFromSnapshot(
-        this.context.getSnapshot(),
-        this.turnCount,
-      ),
-      source,
-    );
+    refreshCompletionEvidenceFromSnapshot(this as unknown as CompletionEvidenceHost, source);
   }
 
   private recordCompletionToolEvidence(
@@ -2120,92 +2090,22 @@ export class AgentLoop {
     result: string,
     preActionSnapshot?: DomSnapshot | null,
   ): void {
-    const added = this.recordCompletionEvidence(
-      deriveCompletionEvidenceFromToolOutcome({
-        toolName,
-        args,
-        result,
-        preActionSnapshot,
-        currentSnapshot: this.context.getSnapshot(),
-        turn: this.turnCount,
-      }),
-      "tool_result",
-    );
-    if (added > 0) {
-      this.maybeAddCompletionRecoveryHint("tool_result");
-    }
+    recordCompletionToolEvidence(this as unknown as CompletionEvidenceHost, toolName, args, result, preActionSnapshot);
   }
 
   private evaluateCompletionCandidate(
     source: CompletionCandidateSource,
     summary: string,
   ): CompletionEvaluation {
-    this.refreshCompletionEvidenceFromSnapshot("candidate_evaluation");
-    const completionContext = this.getActiveCompletionContext();
-    const snapshot = this.context.getSnapshot();
-    const { generated, decision } = evaluateGeneratedCompletionCandidate({
-      userRequest: this.originalQuery,
-      snapshot,
-      activeObjective: completionContext.activeObjective,
-      successCriteria: completionContext.successCriteria,
-      evidence: this.completionEvidence.toArray(),
-      candidateSource: source,
-      summary,
-    });
-    this.traceRecorder?.recordEvent("completion_candidate", {
-      turn: this.turnCount,
-      source,
-      contractKind: generated?.contract.kind ?? "none",
-      confidence: generated?.confidence ?? "none",
-    });
-    if (generated?.notes.length) {
-      this.traceRecorder?.recordEvent("completion_contract_repaired", {
-        turn: this.turnCount,
-        notes: generated.notes,
-        contractKind: generated.contract.kind,
-      });
-    }
-    if (decision.status !== "accepted") {
-      this.lastCompletionRejection = decision;
-    }
-    return decision;
+    return evaluateCompletionCandidate(this as unknown as CompletionEvidenceHost, source, summary);
   }
 
   private getCompletionRecoveryHintForCurrentState(): string | null {
-    this.refreshCompletionEvidenceFromSnapshot("recovery_consult");
-    const completionContext = this.getActiveCompletionContext();
-    const snapshot = this.context.getSnapshot();
-    const { generated, decision } = evaluateGeneratedCompletionCandidate({
-      userRequest: this.originalQuery,
-      snapshot,
-      activeObjective: completionContext.activeObjective,
-      successCriteria: completionContext.successCriteria,
-      evidence: this.completionEvidence.toArray(),
-      candidateSource: "model_done",
-    });
-    if (generated?.notes.length) {
-      this.traceRecorder?.recordEvent("completion_contract_repaired", {
-        turn: this.turnCount,
-        notes: generated.notes,
-        contractKind: generated.contract.kind,
-        source: "recovery_consult",
-      });
-    }
-    return buildCompletionRecoveryHint(decision);
+    return getCompletionRecoveryHintForCurrentState(this as unknown as CompletionEvidenceHost);
   }
 
   private maybeAddCompletionRecoveryHint(trigger: string): void {
-    const hint = this.getCompletionRecoveryHintForCurrentState();
-    if (!hint || hint === this.lastCompletionRecoveryHint) return;
-    this.lastCompletionRecoveryHint = hint;
-    this.traceRecorder?.recordEvent("completion_recovery_hint", {
-      turn: this.turnCount,
-      trigger,
-    });
-    this.context.addMessage({
-      role: "user",
-      content: hint,
-    });
+    maybeAddCompletionRecoveryHint(this as unknown as CompletionEvidenceHost, trigger);
   }
 
   private getPendingAutocompleteCompletionEvidence(
@@ -6444,7 +6344,6 @@ export class AgentLoop {
       await this.traceRecorder?.endTurn();
     }
   }
-
 
   private shouldAutoSubmitTrustedServiceNowForm(params: {
     toolName: string;
