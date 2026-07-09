@@ -54,6 +54,8 @@ export const TURN_PHASE_ORDER: readonly TurnPhaseId[] = [
  * What a phase tells the driver to do next:
  *   - `continue`  → advance to the next phase (optionally carrying a value);
  *   - `skip_to`   → jump to a later phase this turn (skip the ones between);
+ *   - `next_turn` → abandon the remaining phases and start the next while
+ *                   iteration immediately (maps to today's `continue`);
  *   - `end_turn`  → stop this turn's phase sequence; the while-loop decides
  *                   whether to start another turn (maps to today's `break`);
  *   - `end_task`  → terminate the whole loop with a LoopResult (today's `return`).
@@ -61,6 +63,7 @@ export const TURN_PHASE_ORDER: readonly TurnPhaseId[] = [
 export type TurnPhaseResult<T = void> =
   | { kind: "continue"; value?: T }
   | { kind: "skip_to"; phase: TurnPhaseId }
+  | { kind: "next_turn" }
   | { kind: "end_turn" }
   | { kind: "end_task"; result: LoopResult };
 
@@ -86,8 +89,6 @@ export interface TurnContext {
 /** Narrow helpers for the driver. */
 export function isTerminalResult(
   result: TurnPhaseResult<unknown>,
-): result is
-  | { kind: "end_turn" }
-  | { kind: "end_task"; result: LoopResult } {
+): result is { kind: "end_turn" } | { kind: "end_task"; result: LoopResult } {
   return result.kind === "end_turn" || result.kind === "end_task";
 }
