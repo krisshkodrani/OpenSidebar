@@ -90,7 +90,23 @@ export type CompletionEffect =
   /** Run `checkAndSetDoneRejectionEscalation()` (may set the escalation flag). */
   | { type: "check_done_rejection_escalation" }
   /** Force a grounding snapshot refresh (async). */
-  | { type: "force_grounding_refresh" };
+  | { type: "force_grounding_refresh" }
+  /**
+   * Run the done-against-active-plan rejection policy (RFC LP-16 Phase 2
+   * single-authority): retry_step nudge / three-layer auto-advance gate / normal
+   * rejection. Carries the structured inputs so the effect host replays the
+   * policy at apply time. Previously applied inline inside the injected
+   * `validatePlan` dep; now routed through the pipeline's effect stream. Safe
+   * because a planner reject short-circuits the remaining pipeline stages, so no
+   * stage reads the mutated plan/rejection state between the dep and apply time.
+   */
+  | {
+      type: "run_done_plan_rejection";
+      toolCallId: string;
+      summary: string;
+      rejectReason: string;
+      effectiveCurrentIdx: number;
+    };
 
 /** Discriminant of the effect union — handy for exhaustive assertions/tests. */
 export type CompletionEffectType = CompletionEffect["type"];

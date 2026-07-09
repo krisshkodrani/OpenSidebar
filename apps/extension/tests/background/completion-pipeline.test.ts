@@ -52,6 +52,7 @@ function deps(over: Partial<CompletionPipelineDeps> = {}): CompletionPipelineDep
     isDuplicateTerminal: false,
     validatePlan: async () => null,
     buildKernelRejectionEffects: () => [],
+    buildPlanRejectionEffects: () => [],
     ...over,
   };
 }
@@ -128,5 +129,37 @@ describe("runCompletionPipeline", () => {
     expect(d.verdict).toBe("reject");
     expect(d.rejectedBy).toBe("plan_validation");
     expect(d.reason).toBe("step incomplete");
+  });
+
+  test("planner rejection carries the run_done_plan_rejection effect (single authority)", async () => {
+    // RFC LP-16 Phase 2: the rejection policy is no longer applied inline inside
+    // validatePlan — the pipeline surfaces it as an effect for the loop to apply.
+    const d = await runCompletionPipeline(
+      ctx(),
+      deps({
+        validatePlan: async () => ({
+          rejected: true,
+          reason: "step incomplete",
+          effectiveCurrentIdx: 1,
+        }),
+        buildPlanRejectionEffects: (plan) => [
+          {
+            type: "run_done_plan_rejection",
+            toolCallId: "tc",
+            summary: "done",
+            rejectReason: plan.reason,
+            effectiveCurrentIdx: plan.effectiveCurrentIdx ?? -1,
+          },
+        ],
+      }),
+    );
+    expect(d.verdict).toBe("reject");
+    const effect = d.effects.find((e) => e.type === "run_done_plan_rejection");
+    expect(effect).toBeDefined();
+    expect(effect).toMatchObject({
+      type: "run_done_plan_rejection",
+      rejectReason: "step incomplete",
+      effectiveCurrentIdx: 1,
+    });
   });
 });

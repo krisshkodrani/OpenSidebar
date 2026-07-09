@@ -43,6 +43,12 @@ import {
 export interface PlannerValidationResult {
   rejected: boolean;
   reason: string;
+  /**
+   * Running plan-step index at validation time, used to build the
+   * run_done_plan_rejection effect (RFC LP-16 Phase 2). Optional so shadow/replay
+   * records — which return [] from buildPlanRejectionEffects — need not carry it.
+   */
+  effectiveCurrentIdx?: number;
 }
 
 export interface CompletionPipelineDeps {
@@ -75,6 +81,16 @@ export interface CompletionPipelineDeps {
    */
   buildKernelRejectionEffects: (
     decision: CompletionEvaluation,
+  ) => CompletionEffect[];
+  /**
+   * Build the done-against-active-plan rejection effects (RFC LP-16 Phase 2
+   * single-authority): rather than the injected validatePlan dep applying the
+   * rejection policy inline, the loop returns a run_done_plan_rejection effect
+   * and the pipeline carries it so applyCompletionEffects runs the policy.
+   * Called only on a planner reject; returns [] in shadow/replay.
+   */
+  buildPlanRejectionEffects: (
+    plan: PlannerValidationResult,
   ) => CompletionEffect[];
 }
 
@@ -224,7 +240,11 @@ export async function runCompletionPipeline(
       rejectedBy: "plan_validation",
       reason: plan.reason,
       recoveryHint: null,
-      effects: [...effects],
+      // Prepend the plan-rejection effect so the policy applies before any
+      // accumulated pass-time effects — matching the pre-absorption order where
+      // handleDonePlanRejection ran inline (during this stage) ahead of the
+      // deferred applyCompletionEffects pass.
+      effects: [...deps.buildPlanRejectionEffects(plan), ...effects],
     };
   }
 
