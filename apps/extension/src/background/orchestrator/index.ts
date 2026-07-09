@@ -156,6 +156,7 @@ import { BudgetEstimator } from "./budget-estimator";
 import { BudgetEstimatorRegistry } from "./budget-estimator-registry";
 import { PendingResolverRegistry } from "./pending-resolver-registry";
 import { LaneRegistry } from "./lane-registry";
+import { WorkspaceRegistry } from "./workspace-registry";
 import {
   CreateAgentLoopInput,
   EscalationDecisionPayload,
@@ -262,10 +263,10 @@ function isLargeExhaustiveReviewGraph(nodes: TaskNode[]): boolean {
 }
 
 export class Orchestrator {
-  private tasksByWorkspace = new Map<string, OrchestratorTask>();
+  private tasksByWorkspace = new WorkspaceRegistry<OrchestratorTask>();
   private recentCompletionTracker = new RecentCompletionTracker();
   private completionWaiters = new CompletionWaiterRegistry();
-  private workersByWorkspace = new Map<string, WorkspaceLanePools>();
+  private workersByWorkspace = new WorkspaceRegistry<WorkspaceLanePools>();
   private pendingFeedback = new PendingFeedbackQueue();
   private budgetEstimators = new BudgetEstimatorRegistry();
   private lanes = new LaneRegistry();
