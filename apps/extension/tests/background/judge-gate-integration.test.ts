@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, test, vi } from "vitest";
 import "../setup";
-import { Orchestrator } from "../../src/background/orchestrator";
+import { runHighRiskJudgeGate } from "../../src/background/orchestrator/high-risk-judge-gate";
 import {
   TRUSTED_CORPUS_STORAGE_KEY,
   type TrustedCorpusEntry,
@@ -67,8 +67,7 @@ describe("high-risk judge gate against a seeded corpus fact", () => {
         providerId: "fireworks",
       })),
     };
-    const orch = new Orchestrator();
-    const outcome = await (orch as any).runHighRiskJudgeGate(
+    const outcome = await runHighRiskJudgeGate(
       task,
       node,
       verifierWithJudgeSeat(seat),
@@ -91,8 +90,7 @@ describe("high-risk judge gate against a seeded corpus fact", () => {
         providerId: "fireworks",
       })),
     };
-    const orch = new Orchestrator();
-    const outcome = await (orch as any).runHighRiskJudgeGate(
+    const outcome = await runHighRiskJudgeGate(
       task,
       node,
       verifierWithJudgeSeat(seat),
@@ -104,8 +102,7 @@ describe("high-risk judge gate against a seeded corpus fact", () => {
 
   test("returns null when the verifier has no judge seat (gate skipped)", async () => {
     seedCorpus([]);
-    const orch = new Orchestrator();
-    const outcome = await (orch as any).runHighRiskJudgeGate(
+    const outcome = await runHighRiskJudgeGate(
       task,
       node,
       { verifyNode: async () => ({ decision: "accept", reason: "", confidence: 1 }) },

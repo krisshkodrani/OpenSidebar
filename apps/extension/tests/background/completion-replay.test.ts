@@ -50,7 +50,8 @@ async function replayPipelineVerdict(
     deterministicAcceptanceEnabled: input.deterministicAcceptanceEnabled,
     isDuplicateTerminal: input.isDuplicateTerminal,
     validatePlan: async () => input.plannerResult,
-    onKernelReject: () => {},
+    buildKernelRejectionEffects: () => [],
+    buildPlanRejectionEffects: () => [],
   });
   return pipelineDecision.verdict === "accept" ? "accepted" : "rejected";
 }

@@ -4,16 +4,13 @@ import { extractedFactToCorpusEntry } from "../memory/trusted-corpus-migration";
 import { AgentLoop } from "../agent";
 import {
   AgentStatus,
-  AgentStep,
   EscalationOption,
   EscalationOptionId,
   EscalationPacket,
-  EscalationRisk,
   MessageSource,
   SubtaskResult,
   TaskCompletionMessage,
   ToolName,
-  UserSettings,
 } from "../../types";
 import {
   createHttpRunTraceWriter,
@@ -21,12 +18,8 @@ import {
   RunManifest,
   RunTraceWriter,
 } from "../../utils";
-import { loadSettings } from "../../utils/settings-storage";
 import {
-  formatMissingProviderKeys,
-  getProviderKeyStatus,
 } from "../../utils/provider-keys";
-import { listPromptDescriptors } from "../../prompts";
 import {
   buildPersonalProfilePlannerContext,
   EMPTY_PERSONALIZATION_STATE,
@@ -45,22 +38,65 @@ import {
   buildFallbackNodes,
   OrchestratorPlanner,
 } from "./planner";
-import { inferToolProfileForStep } from "../agent/planner";
+
 import type { TokenUsage } from "../llm/types";
-import type { ToolProfile } from "../tools/metadata";
 import {
   assessTaskContractCoverage,
   buildTaskContract,
 } from "../agent/task-contract";
 import {
-  NodeHandoffArtifact,
   OrchestratorStartInput,
   OrchestratorTask,
   StructuredEvidence,
   TaskNode,
-  type VerificationGate,
   WorkerInstance,
 } from "./types";
+import { buildProgrammaticSummary } from "./task-summary";
+import {
+  RecentCompletionTracker,
+  MAX_RECENT_COMPLETION_CONTEXT_CHARS,
+} from "./recent-completion-tracker";
+import { PendingFeedbackQueue } from "./pending-feedback-queue";
+import { CompletionWaiterRegistry } from "./completion-waiter-registry";
+import { PendingInteractionTimers } from "./pending-interaction-timers";
+import { buildResumeInput } from "./resume-input";
+import {
+  buildTaskManifest,
+  buildSyntheticPendingInteractionSummary,
+  buildSubtaskResults,
+} from "./builders";
+import {
+  classifyEscalationRisk,
+  shouldEscalateForDecision,
+} from "./escalation-decisions";
+import {
+  getPendingInteractionRemainingMs,
+  isPendingInteractionResolved,
+} from "./pending-interaction";
+import {
+  runHighRiskJudgeGate,
+} from "./high-risk-judge-gate";
+import {
+  appendHandoffArtifact,
+  notifyTaskCompletion,
+  sendMessage,
+} from "./task-messaging";
+import {
+  emitLaneIsolationStep,
+  emitVerifierStep,
+  sendStatus,
+} from "./status-emitters";
+import {
+  getNodeToolProfile,
+  buildParallelRunState,
+  isTabOccupiedByRunningNode,
+  synthesizePlanStateFromSingleNode,
+} from "./plan-state";
+export { buildInitialPlanState } from "./plan-state";
+import {
+  isNavigationOnlyRequest,
+  assessNavigationGoalCompletion,
+} from "./navigation-goal-heuristics";
 import {
   bindNodeToTaskTab,
   claimTaskTab,
@@ -80,10 +116,6 @@ import {
   OrchestratorVerifier,
   programmaticVerify,
 } from "./verifier";
-import {
-  corpusEntryToFactRef,
-  type JudgeGateOutcome,
-} from "../agent/completion/judge-gate";
 import { getLoadedSkillContract } from "./skills";
 import {
   buildAssumptionDriftSignal,
@@ -99,6 +131,16 @@ import {
   shouldUseVerificationTurnMode,
 } from "./handoff";
 import {
+  isTurnCheckpointCompatible,
+  verifyDeterministicCompletionEnvelope,
+} from "./completion-envelope-verification";
+import {
+  summaryOfCompletedNodes,
+  isUnpenalizedGoalShortcutSkip,
+  isActionOrMutationNode,
+  appendRecentSideEffects,
+} from "./node-heuristics";
+import {
   getSnapshotFingerprint,
   matchSuccessCriteria,
 } from "../agent/loop-helpers";
@@ -111,6 +153,10 @@ import {
 } from "./scheduling";
 import { decideRetryPolicy } from "./retry-policy";
 import { BudgetEstimator } from "./budget-estimator";
+import { BudgetEstimatorRegistry } from "./budget-estimator-registry";
+import { PendingResolverRegistry } from "./pending-resolver-registry";
+import { LaneRegistry } from "./lane-registry";
+import { WorkspaceRegistry } from "./workspace-registry";
 import {
   CreateAgentLoopInput,
   EscalationDecisionPayload,
@@ -122,11 +168,10 @@ import {
   RuntimeLane,
   WorkspaceLanePools,
 } from "./lane-types";
-import type { OrchestratorDeps, VerifierLike } from "./lane-types";
+import type { OrchestratorDeps } from "./lane-types";
 import {
   beginLaneOperation,
   buildLaneTelemetrySnapshot as buildLaneTelemetrySnapshotData,
-  clearLaneSupervisorTimers,
   createWorkspaceLanePools,
   createWorkspaceLaneRuntime,
   createWorkspaceLaneSupervisors,
@@ -176,493 +221,11 @@ import {
 } from "../agent/checkpoint-types";
 import type { TaskRunProgressInput } from "@shared-types/progress";
 import type {
-  SideEffectEntry,
   TurnCheckpoint,
 } from "../agent/checkpoint-types";
 import type { PendingUserInteraction } from "../agent/loop-types";
 import type { CompletionEnvelope } from "../agent/completion-kernel";
 import { hasUsefulPartialProgressHandoff } from "../agent/partial-progress-handoff";
-
-function isTurnCheckpointCompatible(
-  checkpoint: TurnCheckpoint,
-  snapshot:
-    | {
-        url?: string;
-        elements?: { length: number };
-        visibleContent?: string;
-        pageContent?: string;
-      }
-    | null
-    | undefined,
-): boolean {
-  if (!snapshot) return false;
-  if ((snapshot.url ?? null) !== checkpoint.pageUrl) return false;
-  return getSnapshotFingerprint(snapshot) === checkpoint.snapshotFingerprint;
-}
-
-function buildCompletionEnvelopeRepairObjective(
-  objective: string | undefined,
-): string {
-  const trimmedObjective = objective?.trim();
-  const prefix = trimmedObjective
-    ? `Verify and repair the completion for: ${trimmedObjective}.`
-    : "Verify and repair the previous completion.";
-  return (
-    `${prefix} The previous executor lane reported completion through a ` +
-    "deterministic envelope, but the envelope lacked required evidence. " +
-    "Re-check the current page state, complete only missing verification or repair actions, then call done with explicit evidence."
-  );
-}
-
-function verifyDeterministicCompletionEnvelope(
-  envelope: CompletionEnvelope,
-  objective?: string,
-): NodeVerificationResult | null {
-  if (envelope.contractKind === "legacy_done_guards") {
-    return null;
-  }
-
-  if (
-    envelope.status !== "completed" ||
-    !envelope.resultId ||
-    !envelope.contractKind ||
-    !envelope.decisionReason ||
-    !envelope.evidenceEpoch ||
-    !Array.isArray(envelope.evidenceKeys) ||
-    envelope.evidenceKeys.length === 0
-  ) {
-    return {
-      decision: "reroute",
-      reason:
-        "Completion envelope was present but lacked the deterministic evidence required for node acceptance.",
-      confidence: 0.85,
-      failureType: "insufficient_evidence",
-      rerouteObjective: buildCompletionEnvelopeRepairObjective(objective),
-    };
-  }
-
-  return {
-    decision: "accept",
-    reason: `Accepted deterministic completion envelope (${envelope.contractKind}): ${envelope.decisionReason}`,
-    confidence: 0.95,
-  };
-}
-
-function summaryOfCompletedNodes(nodes: TaskNode[]): string {
-  return nodes
-    .map((node) => `${node.description}\n${node.result || ""}`)
-    .join("\n");
-}
-
-function isGlobalGoalShortcutSkip(node: TaskNode): boolean {
-  return (
-    node.status === "skipped" &&
-    String(node.result || "").includes("Skipped: global goal already achieved")
-  );
-}
-
-function isNavigationGoalShortcutSkip(node: TaskNode): boolean {
-  return (
-    node.status === "skipped" &&
-    String(node.result || "").includes(
-      "Skipped: navigation goal already achieved",
-    )
-  );
-}
-
-function isUnpenalizedGoalShortcutSkip(node: TaskNode): boolean {
-  return isGlobalGoalShortcutSkip(node) || isNavigationGoalShortcutSkip(node);
-}
-
-function normalizeNavigationText(value: string | undefined | null): string {
-  return String(value || "")
-    .toLowerCase()
-    .replace(/https?:\/\//g, " ")
-    .replace(/[_/|>.-]+/g, " ")
-    .replace(/[^a-z0-9]+/g, " ")
-    .replace(/\s+/g, " ")
-    .trim();
-}
-
-function tokenizeNavigationLabel(label: string): string[] {
-  const stopwords = new Set([
-    "the",
-    "a",
-    "an",
-    "module",
-    "page",
-    "application",
-    "app",
-    "section",
-    "screen",
-    "of",
-    "in",
-    "to",
-  ]);
-  return normalizeNavigationText(label)
-    .split(" ")
-    .filter((token) => token.length >= 3 && !stopwords.has(token));
-}
-
-function navigationLabelMatches(label: string, corpus: string): boolean {
-  const tokens = tokenizeNavigationLabel(label);
-  if (tokens.length === 0) return false;
-  const normalizedCorpus = ` ${normalizeNavigationText(corpus)} `;
-  return tokens.every((token) => normalizedCorpus.includes(` ${token} `));
-}
-
-function cleanNavigationLabel(value: string): string {
-  return value
-    .trim()
-    .replace(/^["']+|["']+$/g, "")
-    .replace(/\s+/g, " ");
-}
-
-function extractQuotedNavigationLabels(query: string): string[] {
-  const labels: string[] = [];
-  for (const match of query.matchAll(/"([^"]+)"|'([^']+)'/g)) {
-    const label = cleanNavigationLabel(match[1] || match[2] || "");
-    if (!label) continue;
-    labels.push(label);
-    if (label.includes(">")) {
-      labels.push(
-        ...label.split(">").map(cleanNavigationLabel).filter(Boolean),
-      );
-    }
-  }
-  return [...new Set(labels)];
-}
-
-function extractNavigationTargetLabels(query: string): {
-  labels: string[];
-  terminalLabels: string[];
-} {
-  const quotedLabels = extractQuotedNavigationLabels(query);
-  const terminalLabels: string[] = [];
-  for (const label of quotedLabels) {
-    const parts = label
-      .split(">")
-      .map((part) => part.trim())
-      .filter(Boolean);
-    if (parts.length > 0) terminalLabels.push(parts[parts.length - 1]);
-  }
-
-  const unquotedMatch = query.match(
-    /\b(?:navigate to|go to|open|visit|show|display|take me to)\s+(?:the\s+)?([^.\n]+?)(?:\s+(?:module|page|screen|section|application|app)\b|[.!?]|$)/i,
-  );
-  if (unquotedMatch?.[1]) {
-    const label = cleanNavigationLabel(
-      unquotedMatch[1].replace(
-        /\b(?:of|in)\s+the\s+["'][^"']+["']\s+(?:application|app)\b/gi,
-        "",
-      ),
-    );
-    if (label) {
-      quotedLabels.push(label);
-      const parts = label.split(">").map(cleanNavigationLabel).filter(Boolean);
-      terminalLabels.push(parts.length > 0 ? parts[parts.length - 1] : label);
-    }
-  }
-
-  return {
-    labels: [...new Set(quotedLabels)],
-    terminalLabels: [...new Set(terminalLabels)],
-  };
-}
-
-function isNavigationOnlyRequest(query: string): boolean {
-  const normalized = normalizeNavigationText(query);
-  if (
-    !/\b(navigate to|go to|open|visit|show|display|take me to)\b/i.test(query)
-  ) {
-    return false;
-  }
-
-  const nonNavigationWork =
-    /\b(filter|sort|search for|find|look up|answer|read|summari[sz]e|extract|report|compare|create|add|fill|submit|save|update|edit|delete|remove|order|purchase|checkout|impersonate|type|enter|select|choose)\b/i;
-  if (nonNavigationWork.test(query)) return false;
-
-  return !/\b(return|go back|then|after that|and then)\b/.test(normalized);
-}
-
-function assessNavigationGoalCompletion(input: {
-  query: string;
-  snapshot?: {
-    title?: string;
-    url?: string;
-    visibleContent?: string;
-    pageContent?: string;
-  };
-  completedNodes: TaskNode[];
-}): { satisfied: boolean; matchedLabels: string[]; reason: string } {
-  if (!isNavigationOnlyRequest(input.query)) {
-    return {
-      satisfied: false,
-      matchedLabels: [],
-      reason: "Original request is not navigation-only.",
-    };
-  }
-
-  const { labels, terminalLabels } = extractNavigationTargetLabels(input.query);
-  const targetLabels = labels.length > 0 ? labels : terminalLabels;
-  if (targetLabels.length === 0 && terminalLabels.length === 0) {
-    return {
-      satisfied: false,
-      matchedLabels: [],
-      reason: "No concrete navigation target labels were detected.",
-    };
-  }
-
-  const currentCorpus = [
-    input.snapshot?.title,
-    input.snapshot?.url,
-    input.snapshot?.visibleContent,
-    input.snapshot?.pageContent,
-  ]
-    .filter(Boolean)
-    .join("\n");
-  const currentLocationCorpus = [input.snapshot?.title, input.snapshot?.url]
-    .filter(Boolean)
-    .join("\n");
-  const evidenceCorpus = [
-    currentCorpus,
-    ...input.completedNodes.map((node) => node.result || ""),
-  ].join("\n");
-
-  const currentMatches = (
-    terminalLabels.length > 0 ? terminalLabels : targetLabels
-  ).filter((label) => navigationLabelMatches(label, currentLocationCorpus));
-  const evidenceMatches = targetLabels.filter((label) =>
-    navigationLabelMatches(label, evidenceCorpus),
-  );
-
-  if (currentMatches.length === 0) {
-    return {
-      satisfied: false,
-      matchedLabels: evidenceMatches,
-      reason: "Current page does not match the requested destination.",
-    };
-  }
-
-  const enoughEvidence =
-    targetLabels.length <= 1 ||
-    evidenceMatches.length >= Math.min(2, targetLabels.length);
-  if (!enoughEvidence) {
-    return {
-      satisfied: false,
-      matchedLabels: evidenceMatches,
-      reason:
-        "Completed evidence does not cover enough requested destination labels.",
-    };
-  }
-
-  return {
-    satisfied: true,
-    matchedLabels: [...new Set([...currentMatches, ...evidenceMatches])],
-    reason: "Navigation-only destination is already open.",
-  };
-}
-
-function isActionOrMutationNode(node: TaskNode): boolean {
-  const text = `${node.description}\n${node.successCriteria}`.toLowerCase();
-  return [
-    /\bsearch(?:ing)?\b/,
-    /\bsubmit(?:ting)?\b/,
-    /\bapply(?:ing)?\b/,
-    /\btype\b|\btyping\b/,
-    /\benter\b|\bentering\b/,
-    /\bfill\b|\bfilling\b/,
-    /\bclick\b|\bclicking\b/,
-    /\bselect\b|\bselecting\b/,
-    /\bremove\b|\bremoving\b/,
-    /\badd\b|\badding\b/,
-    /\bswap\b|\bswapping\b/,
-    /\breplace\b|\breplacing\b/,
-    /\bcheckout\b/,
-    /\bpurchase\b/,
-    /\bplace order\b/,
-    /\bcomplete order\b/,
-    /\bconfirm\b|\bconfirming\b/,
-    /\bfinalize\b|\bfinalizing\b/,
-    /\bdelete\b|\bdeleting\b/,
-    /\bsave\b|\bsaving\b/,
-    /\bsend\b|\bsending\b/,
-    /\bswitch\b|\bswitching\b/,
-    /\bimpersonate\b|\bimpersonating\b|\bimpersonation\b/,
-  ].some((pattern) => pattern.test(text));
-}
-
-function formatRecentSideEffects(
-  entries: SideEffectEntry[] | undefined,
-): string {
-  if (!entries || entries.length === 0) return "";
-  const recent = entries.slice(-3);
-  return recent
-    .map((entry) => {
-      const result = String(entry.result || "").trim();
-      return `${entry.toolName}: ${result.slice(0, 120) || "executed"}`;
-    })
-    .join("; ");
-}
-
-function appendRecentSideEffects(
-  message: string,
-  entries: SideEffectEntry[] | undefined,
-): string {
-  const sideEffects = formatRecentSideEffects(entries);
-  if (!sideEffects) return message;
-  return `${message}\nRecent side effects: ${sideEffects}`;
-}
-
-function getNodeToolProfile(
-  node: Pick<TaskNode, "description" | "successCriteria" | "toolProfile">,
-): ToolProfile | undefined {
-  return (
-    node.toolProfile ??
-    inferToolProfileForStep(node.description, node.successCriteria)
-  );
-}
-
-function buildParallelRunState(task: OrchestratorTask): {
-  activeWorkerCount: number;
-  resourceLocks: Array<{
-    nodeId: string;
-    parallelism: string;
-    resources: NonNullable<TaskNode["parallelContract"]>["resourceHints"];
-  }>;
-} {
-  const runningNodes = task.nodes.filter((node) => node.status === "running");
-  return {
-    activeWorkerCount: runningNodes.length,
-    resourceLocks: runningNodes.map((node) => ({
-      nodeId: node.id,
-      parallelism: node.parallelContract?.parallelism ?? "unknown",
-      resources: node.parallelContract?.resourceHints ?? [],
-    })),
-  };
-}
-
-export function buildInitialPlanState(
-  task: OrchestratorTask,
-  activeNodeId?: string,
-) {
-  if (task.nodes.length === 1) {
-    const synthesized = synthesizePlanStateFromSingleNode(task.nodes[0]);
-    if (synthesized && synthesized.subtasks.length >= 2) {
-      return synthesized;
-    }
-  }
-
-  const activeIndex =
-    activeNodeId != null
-      ? task.nodes.findIndex((node) => node.id === activeNodeId)
-      : -1;
-  const runningIndex = task.nodes.findIndex(
-    (node) => node.status === "running",
-  );
-  return {
-    subtasks: task.nodes.map((node) => {
-      const toolProfile = getNodeToolProfile(node);
-      return {
-        description: node.description,
-        successCriteria: node.successCriteria,
-        status: node.status,
-        turnsUsed: 0,
-        turnBudget: 0,
-        ...(node.result ? { result: node.result } : {}),
-        ...(node.verificationGate
-          ? { verificationGate: node.verificationGate }
-          : {}),
-        ...(toolProfile ? { toolProfile } : {}),
-        ...(node.selectedSkillId
-          ? { selectedSkillId: node.selectedSkillId }
-          : {}),
-      };
-    }),
-    currentIndex:
-      activeIndex >= 0
-        ? activeIndex
-        : runningIndex >= 0
-          ? runningIndex
-          : Math.max(0, task.currentIndex),
-  };
-}
-
-function isTabOccupiedByRunningNode(
-  tabId: number,
-  nodeTabMap: Map<string, number>,
-  nodes: TaskNode[],
-): boolean {
-  for (const [nodeId, assignedTabId] of nodeTabMap) {
-    if (assignedTabId !== tabId) continue;
-    const node = nodes.find((n) => n.id === nodeId);
-    if (node?.status === "running") return true;
-  }
-  return false;
-}
-
-function synthesizePlanStateFromSingleNode(node: TaskNode): {
-  subtasks: Array<{
-    description: string;
-    successCriteria: string;
-    status: "pending" | "running" | "completed" | "failed" | "skipped";
-    turnsUsed: number;
-    turnBudget: number;
-    result?: string;
-    verificationGate?: VerificationGate;
-    toolProfile?: ToolProfile;
-    selectedSkillId?: string;
-  }>;
-  currentIndex: number;
-} | null {
-  const stepPattern =
-    /(?:^|\n)\s*Step\s+(\d+)\s*:\s*([\s\S]*?)(?=(?:\n\s*Step\s+\d+\s*:)|$)/gi;
-  const matches = [...node.description.matchAll(stepPattern)];
-  if (matches.length < 2) return null;
-
-  const currentIndex = 0;
-  const baseStatus: "pending" | "completed" | "failed" =
-    node.status === "completed" || node.status === "failed"
-      ? node.status
-      : "pending";
-
-  return {
-    subtasks: matches
-      .map((match, index) => {
-        const description = match[2]?.trim();
-        if (!description) return null;
-        const toolProfile = inferToolProfileForStep(
-          description,
-          node.successCriteria,
-        );
-        const status: "pending" | "running" | "completed" | "failed" =
-          node.status === "completed"
-            ? "completed"
-            : index < currentIndex
-              ? "completed"
-              : index === currentIndex
-                ? node.status === "running"
-                  ? "running"
-                  : baseStatus
-                : "pending";
-        return {
-          description,
-          successCriteria: node.successCriteria,
-          status,
-          turnsUsed: 0,
-          turnBudget: 0,
-          ...(index === matches.length - 1 && node.verificationGate
-            ? { verificationGate: node.verificationGate }
-            : {}),
-          ...(toolProfile ? { toolProfile } : {}),
-        };
-      })
-      .filter(
-        (subtask): subtask is NonNullable<typeof subtask> => subtask !== null,
-      ),
-    currentIndex,
-  };
-}
 
 export * from "./lane-types";
 export * from "./sanitizers";
@@ -672,10 +235,6 @@ const DEFAULT_MAX_WORKERS = 3;
 const MAX_HORIZON_EXPANSIONS = 30;
 const ESCALATION_RESPONSE_TIMEOUT_MS = 60_000;
 const ESCALATION_MAX_REASON_CHARS = 220;
-const RECENT_COMPLETION_TTL_MS = 5 * 60 * 1000; // 5 minutes
-const MAX_RECENT_COMPLETION_HISTORY = 6;
-const MAX_RECENT_COMPLETION_CONTEXT_CHARS = 1400;
-const MAX_RECENT_COMPLETION_LINE_CHARS = 260;
 const MAX_PERSISTED_MESSAGES = 200;
 const E2E_SYNTHETIC_QUERY_PREFIX = "__e2e_pending_interaction__:";
 const E2E_PENDING_INTERACTION_TIMEOUT_MS = 10 * 60 * 1000;
@@ -704,52 +263,20 @@ function isLargeExhaustiveReviewGraph(nodes: TaskNode[]): boolean {
 }
 
 export class Orchestrator {
-  private tasksByWorkspace = new Map<string, OrchestratorTask>();
-  private recentCompletion = new Map<
-    string,
-    {
-      payload: TaskCompletionMessage["payload"];
-      timestamp: number;
-    }
-  >();
-  private recentCompletionHistory = new Map<
-    string,
-    Array<{
-      payload: TaskCompletionMessage["payload"];
-      timestamp: number;
-    }>
-  >();
-  private completionWaiters = new Map<
-    string,
-    Set<(payload: TaskCompletionMessage["payload"]) => void>
-  >();
-  private workersByWorkspace = new Map<string, WorkspaceLanePools>();
-  private pendingFeedbackQueue = new Map<string, string[]>();
-  private budgetEstimatorsByWorkspace = new Map<string, BudgetEstimator>();
-  private laneRuntimeByWorkspace = new Map<
-    string,
-    Record<RuntimeLane, LaneRuntimeState>
-  >();
-  private pendingEscalationResolvers = new Map<
-    string,
-    (decision: EscalationDecisionPayload) => void
-  >();
-  private pendingPlanConfirmationResolvers = new Map<
-    string,
-    (result: { decision: "approve" | "cancel"; feedback?: string }) => void
-  >();
-  private pendingInteractionTimers = new Map<
-    string,
-    ReturnType<typeof setTimeout>
-  >();
-  private laneSupervisorsByWorkspace = new Map<
-    string,
-    Record<RuntimeLane, LaneSupervisorState>
-  >();
-  private durableControlWatermarks = new Map<
-    string,
-    { resumeRequestedAt?: number; stopRequestedAt?: number }
-  >();
+  private tasksByWorkspace = new WorkspaceRegistry<OrchestratorTask>();
+  private recentCompletionTracker = new RecentCompletionTracker();
+  private completionWaiters = new CompletionWaiterRegistry();
+  private workersByWorkspace = new WorkspaceRegistry<WorkspaceLanePools>();
+  private pendingFeedback = new PendingFeedbackQueue();
+  private budgetEstimators = new BudgetEstimatorRegistry();
+  private lanes = new LaneRegistry();
+  private pendingEscalationResolvers =
+    new PendingResolverRegistry<EscalationDecisionPayload>();
+  private pendingPlanConfirmationResolvers = new PendingResolverRegistry<{
+    decision: "approve" | "cancel";
+    feedback?: string;
+  }>();
+  private pendingInteractionTimers = new PendingInteractionTimers();
   private traceWriter: RunTraceWriter = createHttpRunTraceWriter();
   private traceFallbackWriter = new RunTraceWriter(async (record) => {
     if (record.kind === "manifest") {
@@ -1008,26 +535,6 @@ export class Orchestrator {
     );
   }
 
-  private buildTaskManifest(
-    task: OrchestratorTask,
-    _input: OrchestratorStartInput,
-  ): RunManifest {
-    const promptSet = listPromptDescriptors([
-      "orchestrator.verifier.system",
-      "orchestrator.advisory.system",
-    ]);
-    return {
-      runId: task.runId || task.id,
-      correlationId: task.runId || task.id,
-      environment: "production",
-      startedAt: new Date().toISOString(),
-      source: "background.orchestrator",
-      promptSet,
-      taskId: task.id,
-      workspaceId: task.workspaceId,
-    };
-  }
-
   private createWorkspaceLanePools(): WorkspaceLanePools {
     return createWorkspaceLanePools();
   }
@@ -1049,13 +556,10 @@ export class Orchestrator {
     const topology = resolveLaneTopologyFromSettings({
       laneTopologyMode: task?.laneTopologyMode,
     });
-    this.budgetEstimatorsByWorkspace.set(workspaceId, new BudgetEstimator());
+    this.budgetEstimators.reset(workspaceId);
     this.workersByWorkspace.set(workspaceId, this.createWorkspaceLanePools());
-    this.laneSupervisorsByWorkspace.set(
-      workspaceId,
-      createWorkspaceLaneSupervisors(),
-    );
-    this.laneRuntimeByWorkspace.set(
+    this.lanes.setSupervisors(workspaceId, createWorkspaceLaneSupervisors());
+    this.lanes.setRuntime(
       workspaceId,
       createWorkspaceLaneRuntime({
         maxWorkers,
@@ -1073,23 +577,18 @@ export class Orchestrator {
 
   private cleanupWorkspaceRuntime(workspaceId: string): void {
     this.clearPendingInteractionTimer(workspaceId);
-    const supervisors = this.laneSupervisorsByWorkspace.get(workspaceId);
-    clearLaneSupervisorTimers(supervisors);
-    this.laneSupervisorsByWorkspace.delete(workspaceId);
+    this.lanes.clear(workspaceId);
     this.workersByWorkspace.delete(workspaceId);
-    this.budgetEstimatorsByWorkspace.delete(workspaceId);
-    this.laneRuntimeByWorkspace.delete(workspaceId);
-    this.recentCompletion.delete(workspaceId);
-    this.pendingFeedbackQueue.delete(workspaceId);
+    this.budgetEstimators.clear(workspaceId);
+    this.recentCompletionTracker.clear(workspaceId);
+    this.pendingFeedback.clear(workspaceId);
   }
 
   private queueFeedback(workspaceId: string, text: string): void {
-    const queue = this.pendingFeedbackQueue.get(workspaceId) ?? [];
-    queue.push(text);
-    this.pendingFeedbackQueue.set(workspaceId, queue);
+    const queueLength = this.pendingFeedback.enqueue(workspaceId, text);
     logger.warn("orchestrator", "Feedback queued without active executor", {
       workspaceId,
-      queueLength: queue.length,
+      queueLength,
     });
 
     const task = this.tasksByWorkspace.get(workspaceId);
@@ -1102,13 +601,13 @@ export class Orchestrator {
     workerId: string,
     nodeId: string,
   ): void {
-    const pending = this.pendingFeedbackQueue.get(workspaceId);
+    const pending = this.pendingFeedback.peek(workspaceId);
     if (!pending?.length) return;
 
     for (const text of pending) {
       loop.injectFeedback(text);
     }
-    this.pendingFeedbackQueue.delete(workspaceId);
+    this.pendingFeedback.clear(workspaceId);
     logger.info("orchestrator", "Queued feedback delivered to executor", {
       workspaceId,
       workerId,
@@ -1121,22 +620,17 @@ export class Orchestrator {
   }
 
   private getBudgetEstimator(workspaceId: string): BudgetEstimator {
-    let estimator = this.budgetEstimatorsByWorkspace.get(workspaceId);
-    if (!estimator) {
-      estimator = new BudgetEstimator();
-      this.budgetEstimatorsByWorkspace.set(workspaceId, estimator);
-    }
-    return estimator;
+    return this.budgetEstimators.get(workspaceId);
   }
 
   private getLaneRuntimeState(
     workspaceId: string,
     lane: RuntimeLane,
   ): LaneRuntimeState {
-    const runtime = this.laneRuntimeByWorkspace.get(workspaceId);
+    const runtime = this.lanes.getRuntime(workspaceId);
     if (!runtime) {
       this.initializeWorkspaceRuntime(workspaceId, DEFAULT_MAX_WORKERS);
-      return this.laneRuntimeByWorkspace.get(workspaceId)![lane];
+      return this.lanes.getRuntime(workspaceId)![lane];
     }
     return runtime[lane];
   }
@@ -1145,10 +639,10 @@ export class Orchestrator {
     workspaceId: string,
     lane: RuntimeLane,
   ): LaneSupervisorState {
-    const supervisors = this.laneSupervisorsByWorkspace.get(workspaceId);
+    const supervisors = this.lanes.getSupervisors(workspaceId);
     if (!supervisors) {
       this.initializeWorkspaceRuntime(workspaceId, DEFAULT_MAX_WORKERS);
-      return this.laneSupervisorsByWorkspace.get(workspaceId)![lane];
+      return this.lanes.getSupervisors(workspaceId)![lane];
     }
     return supervisors[lane];
   }
@@ -1168,8 +662,8 @@ export class Orchestrator {
     >;
   } {
     return buildLaneTelemetrySnapshotData({
-      runtime: this.laneRuntimeByWorkspace.get(workspaceId),
-      supervisors: this.laneSupervisorsByWorkspace.get(workspaceId),
+      runtime: this.lanes.getRuntime(workspaceId),
+      supervisors: this.lanes.getSupervisors(workspaceId),
     });
   }
 
@@ -1181,7 +675,7 @@ export class Orchestrator {
     const activeFromLanes = Object.values(telemetry.lanes).some(
       (lane) => lane.activeCalls > 0 || lane.queueDepth > 0,
     );
-    this.sendMessage({
+    sendMessage({
       type: "AGENT_ACTIVITY",
       workspaceId,
       payload: {
@@ -1193,28 +687,6 @@ export class Orchestrator {
 
   private isLaneIsolated(state: LaneRuntimeState): boolean {
     return isLaneIsolated(state);
-  }
-
-  private emitLaneIsolationStep(
-    workspaceId: string,
-    state: LaneRuntimeState,
-    detail: string,
-  ): void {
-    this.sendMessage({
-      type: "AGENT_STEP",
-      workspaceId,
-      payload: {
-        step: {
-          id: crypto.randomUUID(),
-          type: "warning",
-          label: `${state.lane} lane isolated`,
-          detail,
-          status: "done",
-          timestamp: Date.now(),
-        },
-        update: false,
-      },
-    });
   }
 
   private async executeLaneOperation<T>(
@@ -1315,7 +787,7 @@ export class Orchestrator {
           },
           lane,
         );
-        this.emitLaneIsolationStep(task.workspaceId, state, failure.detail);
+        emitLaneIsolationStep(task.workspaceId, state, failure.detail);
         throw new LaneIsolationError(
           lane,
           state.policy.isolationCooldownMs,
@@ -1483,23 +955,6 @@ export class Orchestrator {
     return stopped;
   }
 
-  private appendHandoffArtifact(
-    node: TaskNode,
-    artifact: Omit<NodeHandoffArtifact, "timestamp">,
-  ): void {
-    const entry: NodeHandoffArtifact = {
-      ...artifact,
-      timestamp: Date.now(),
-    };
-    node.handoffArtifacts.push(entry);
-    logger.debug("orchestrator", "Handoff artifact appended", {
-      nodeId: node.id,
-      role: entry.role,
-      phase: entry.phase,
-      note: entry.note.slice(0, 180),
-    });
-  }
-
   private setStructuredProgressEntry(
     task: OrchestratorTask,
     entry: TaskRunProgressInput,
@@ -1597,45 +1052,10 @@ export class Orchestrator {
    * null on any error so a gate failure can never block a legitimate accept —
    * the gate only ever tightens completion, never loosens it.
    */
-  private async runHighRiskJudgeGate(
-    task: OrchestratorTask,
-    node: TaskNode,
-    verifier: VerifierLike,
-    evidence: StructuredEvidence[],
-    summary: string,
-  ): Promise<JudgeGateOutcome | null> {
-    if (!verifier.judgeGate) return null;
-    try {
-      const entries = await getTrustedCorpusStore().load();
-      const corpusFacts = entries
-        .filter(
-          (entry) =>
-            entry.kind === "personal_profile_fact" ||
-            entry.kind === "extracted_fact",
-        )
-        .map(corpusEntryToFactRef);
-      const evidenceLines = evidence
-        .map((item) => item.claim ?? item.event?.detail ?? item.event?.type ?? "")
-        .filter((line): line is string => Boolean(line));
-      return await verifier.judgeGate({
-        claim: node.description,
-        successCriteria: node.successCriteria,
-        evidence: evidenceLines.length > 0 ? evidenceLines : [summary],
-        corpusFacts,
-      });
-    } catch (error) {
-      logger.warn(
-        "orchestrator",
-        "High-risk judge gate failed; keeping the verifier accept",
-        { taskId: task.id, nodeId: node.id, error },
-      );
-      return null;
-    }
-  }
 
   private async persistTaskCheckpoint(task: OrchestratorTask): Promise<void> {
     const checkpoints = await loadOrchestratorCheckpoints();
-    const pendingFeedback = this.pendingFeedbackQueue.get(task.workspaceId);
+    const pendingFeedback = this.pendingFeedback.peek(task.workspaceId);
     checkpoints[task.workspaceId] = {
       version: CHECKPOINT_VERSION,
       savedAt: Date.now(),
@@ -1710,108 +1130,14 @@ export class Orchestrator {
     return selectResumeOwnedTab(taskLike, liveTabs, preferredTabId);
   }
 
-  private async buildResumeInput(
-    task: OrchestratorTask,
-    resumeTabId: number,
-  ): Promise<OrchestratorStartInput | null> {
-    const settings = (await loadSettings()) ?? ({} as UserSettings);
-    type ProviderMode = NonNullable<UserSettings["providerMode"]>;
-    const pickFallbackProvider = (): {
-      mode: ProviderMode;
-      activeKey: string;
-    } | null => {
-      const candidateModes: ProviderMode[] = [
-        "openrouter",
-        "fireworks-deepseek",
-        "fireworks",
-        "moonshot",
-        "xiaomi",
-        "openai-groq",
-      ];
-      for (const mode of candidateModes) {
-        const status = getProviderKeyStatus({
-          ...settings,
-          providerMode: mode,
-        });
-        if (status.hasRequiredKeys && status.activeKey) {
-          return { mode, activeKey: status.activeKey };
-        }
-      }
-      return null;
-    };
-    const configuredMode: ProviderMode =
-      settings.providerMode ??
-      (settings.openRouterApiKey
-        ? "openrouter"
-        : settings.fireworksApiKey && settings.deepseekApiKey
-          ? "fireworks-deepseek"
-          : settings.kimiApiKey
-            ? "moonshot"
-            : settings.xiaomiApiKey
-              ? "xiaomi"
-              : "fireworks");
-    const configuredStatus = getProviderKeyStatus({
-      ...settings,
-      providerMode: configuredMode,
-    });
-    const provider =
-      configuredStatus.hasRequiredKeys && configuredStatus.activeKey
-        ? { mode: configuredMode, activeKey: configuredStatus.activeKey }
-        : pickFallbackProvider();
-    if (!provider) {
-      logger.warn(
-        "orchestrator",
-        "Cannot resume task without API key for active provider",
-        {
-          workspaceId: task.workspaceId,
-          providerMode: configuredMode,
-          missingKeys: formatMissingProviderKeys(configuredStatus),
-        },
-      );
-      return null;
-    }
-    const resumeSettings: UserSettings = {
-      ...settings,
-      providerMode: provider.mode,
-    };
-
-    return {
-      query: task.query,
-      tabId: resumeTabId,
-      workspaceId: task.workspaceId,
-      settings: resumeSettings,
-      openRouterApiKey: provider.activeKey,
-    };
-  }
-
-  private getPendingInteractionRemainingMs(
-    interaction: PendingUserInteraction,
-  ): number {
-    return Math.max(
-      0,
-      interaction.timeoutMs - (Date.now() - interaction.requestedAt),
-    );
-  }
-
-  private isPendingInteractionResolved(
-    interaction: PendingUserInteraction | undefined,
-  ): boolean {
-    if (!interaction) return false;
-    return interaction.kind === "approval"
-      ? typeof interaction.approved === "boolean"
-      : typeof interaction.answer === "string";
-  }
-
   private clearPendingInteractionTimer(workspaceId: string): void {
-    const timer = this.pendingInteractionTimers.get(workspaceId);
-    if (timer) clearTimeout(timer);
-    this.pendingInteractionTimers.delete(workspaceId);
+    this.pendingInteractionTimers.clear(workspaceId);
   }
 
   private emitPendingInteraction(task: OrchestratorTask): void {
     const interaction = task.pendingInteraction;
-    if (!interaction || this.isPendingInteractionResolved(interaction)) return;
-    const remainingMs = this.getPendingInteractionRemainingMs(interaction);
+    if (!interaction || isPendingInteractionResolved(interaction)) return;
+    const remainingMs = getPendingInteractionRemainingMs(interaction);
     if (remainingMs <= 0) return;
 
     if (interaction.kind === "clarification") {
@@ -1819,7 +1145,7 @@ export class Orchestrator {
     }
 
     if (interaction.kind === "approval") {
-      this.sendMessage({
+      sendMessage({
         type: "APPROVAL_REQUEST",
         workspaceId: task.workspaceId,
         payload: {
@@ -1842,7 +1168,7 @@ export class Orchestrator {
       return;
     }
 
-    this.sendMessage({
+    sendMessage({
       type: "CLARIFICATION_REQUEST",
       workspaceId: task.workspaceId,
       payload: {
@@ -1866,29 +1192,15 @@ export class Orchestrator {
     return task.query.startsWith(E2E_SYNTHETIC_QUERY_PREFIX);
   }
 
-  private buildSyntheticPendingInteractionSummary(
-    interaction: PendingUserInteraction,
-  ): string {
-    if (interaction.kind === "approval") {
-      return interaction.approved
-        ? `E2E synthetic approval recovered and approved for ${interaction.toolName}.`
-        : `E2E synthetic approval recovered and denied for ${interaction.toolName}.`;
-    }
-    const answer = String(interaction.answer || "").trim();
-    return answer
-      ? `E2E synthetic clarification recovered and answered: ${answer}`
-      : "E2E synthetic clarification recovered without an answer.";
-  }
-
   private async finalizeSyntheticPendingInteractionTask(
     task: OrchestratorTask,
   ): Promise<void> {
     const interaction = task.pendingInteraction;
-    if (!interaction || !this.isPendingInteractionResolved(interaction)) {
+    if (!interaction || !isPendingInteractionResolved(interaction)) {
       return;
     }
 
-    const summary = this.buildSyntheticPendingInteractionSummary(interaction);
+    const summary = buildSyntheticPendingInteractionSummary(interaction);
     const terminalStatus =
       interaction.kind === "approval" && interaction.approved === false
         ? "failed"
@@ -1916,7 +1228,7 @@ export class Orchestrator {
     }
 
     task.currentIndex = currentIndex(task.nodes);
-    this.sendMessage({
+    sendMessage({
       type: "STREAM_CHUNK",
       workspaceId: task.workspaceId,
       payload: { delta: "", done: true },
@@ -1928,7 +1240,7 @@ export class Orchestrator {
       totalTurnsUsed: 0,
       totalTimeMs: task.finishedAt - (task.startedAt || task.createdAt),
       summary,
-      subtaskResults: this.buildSubtaskResults(task),
+      subtaskResults: buildSubtaskResults(task),
       urlHistory: [],
       metrics: task.sessionMetrics,
       terminationReason: terminalStatus === "failed" ? summary : undefined,
@@ -1936,13 +1248,13 @@ export class Orchestrator {
 
     this.cacheAndPersistCompletion(task.workspaceId, completionPayload);
     await this.persistTaskCheckpoint(task);
-    this.sendMessage({
+    sendMessage({
       type: "TASK_COMPLETION",
       workspaceId: task.workspaceId,
       payload: completionPayload,
     });
-    this.notifyTaskCompletion(task, completionPayload);
-    this.sendStatus(
+    notifyTaskCompletion(task, completionPayload);
+    sendStatus(
       task.workspaceId,
       AgentStatus.IDLE,
       terminalStatus === "completed" ? "Task complete" : "Task failed",
@@ -1983,7 +1295,7 @@ export class Orchestrator {
     }
     const resumeTabId = resumeSelection.tabId;
 
-    const resumeInput = await this.buildResumeInput(task, resumeTabId);
+    const resumeInput = await buildResumeInput(task, resumeTabId);
     if (!resumeInput) {
       task.status = "failed";
       task.finishedAt = Date.now();
@@ -1996,7 +1308,7 @@ export class Orchestrator {
       return;
     }
 
-    this.sendStatus(task.workspaceId, AgentStatus.ACTING, "Resuming...");
+    sendStatus(task.workspaceId, AgentStatus.ACTING, "Resuming...");
     this.sendProgress(task);
     this.runTask(task, resumeInput).catch(async (error) => {
       logger.error("orchestrator", "Resumed interaction task failed", {
@@ -2013,7 +1325,7 @@ export class Orchestrator {
       await this.clearTaskCheckpoint(task.workspaceId);
       this.tasksByWorkspace.delete(task.workspaceId);
       this.cleanupWorkspaceRuntime(task.workspaceId);
-      this.sendStatus(
+      sendStatus(
         task.workspaceId,
         AgentStatus.ERROR,
         "Task failed after resuming from user interaction",
@@ -2024,9 +1336,9 @@ export class Orchestrator {
   private armPendingInteractionTimeout(task: OrchestratorTask): void {
     this.clearPendingInteractionTimer(task.workspaceId);
     const interaction = task.pendingInteraction;
-    if (!interaction || this.isPendingInteractionResolved(interaction)) return;
+    if (!interaction || isPendingInteractionResolved(interaction)) return;
 
-    const remainingMs = this.getPendingInteractionRemainingMs(interaction);
+    const remainingMs = getPendingInteractionRemainingMs(interaction);
     if (remainingMs <= 0) {
       void this.handlePendingInteractionTimeout(task.workspaceId);
       return;
@@ -2046,7 +1358,7 @@ export class Orchestrator {
     if (
       !task ||
       !interaction ||
-      this.isPendingInteractionResolved(interaction)
+      isPendingInteractionResolved(interaction)
     ) {
       return;
     }
@@ -2137,7 +1449,7 @@ export class Orchestrator {
     (task as any)._turnCheckpoints = turnCheckpointsByNodeId;
 
     const hasPendingInteraction = Boolean(task.pendingInteraction);
-    const pendingInteractionResolved = this.isPendingInteractionResolved(
+    const pendingInteractionResolved = isPendingInteractionResolved(
       task.pendingInteraction,
     );
 
@@ -2175,7 +1487,7 @@ export class Orchestrator {
     this.initializeWorkspaceRuntime(task.workspaceId, task.maxWorkers, task);
     await this.persistTaskCheckpoint(task);
     await this.emitTraceManifest({
-      ...this.buildTaskManifest(task, resumeInput),
+      ...buildTaskManifest(task, resumeInput),
       source:
         source === "backend"
           ? "background.orchestrator.backend-recovery"
@@ -2227,7 +1539,7 @@ export class Orchestrator {
     const pendingSubtasks = task.nodes.filter(
       (n) => n.status === "pending",
     ).length;
-    this.sendMessage({
+    sendMessage({
       type: "TASK_RECOVERY",
       workspaceId: task.workspaceId,
       payload: {
@@ -2237,7 +1549,7 @@ export class Orchestrator {
         pendingSubtasks,
       },
     });
-    this.sendStatus(
+    sendStatus(
       task.workspaceId,
       hasPendingInteraction && !pendingInteractionResolved
         ? AgentStatus.PAUSED
@@ -2259,7 +1571,7 @@ export class Orchestrator {
           taskId: task.id,
           nodeId: interaction.nodeId,
           kind: interaction.kind,
-          remainingMs: this.getPendingInteractionRemainingMs(interaction),
+          remainingMs: getPendingInteractionRemainingMs(interaction),
           interactionId:
             interaction.kind === "approval"
               ? interaction.approvalId
@@ -2284,7 +1596,7 @@ export class Orchestrator {
       await this.clearTaskCheckpoint(task.workspaceId);
       this.tasksByWorkspace.delete(task.workspaceId);
       this.cleanupWorkspaceRuntime(task.workspaceId);
-      this.sendStatus(
+      sendStatus(
         task.workspaceId,
         AgentStatus.ERROR,
         "Recovered task failed",
@@ -2315,13 +1627,7 @@ export class Orchestrator {
         await this.clearTaskCheckpoint(task.workspaceId);
         continue;
       }
-      if (cp.pendingFeedback?.length) {
-        this.pendingFeedbackQueue.set(task.workspaceId, [
-          ...cp.pendingFeedback,
-        ]);
-      } else {
-        this.pendingFeedbackQueue.delete(task.workspaceId);
-      }
+      this.pendingFeedback.restore(task.workspaceId, cp.pendingFeedback);
 
       const resumeSelection = await this.resolveResumeTabId(
         task,
@@ -2352,7 +1658,7 @@ export class Orchestrator {
       }
       const resumeTabId = resumeSelection.tabId;
 
-      const resumeInput = await this.buildResumeInput(task, resumeTabId);
+      const resumeInput = await buildResumeInput(task, resumeTabId);
       if (!resumeInput) {
         await this.clearTaskCheckpoint(task.workspaceId);
         continue;
@@ -2472,7 +1778,7 @@ export class Orchestrator {
     this.tasksByWorkspace.set(input.workspaceId, task);
     this.initializeWorkspaceRuntime(input.workspaceId, task.maxWorkers);
     await this.persistTaskCheckpoint(task);
-    this.sendStatus(
+    sendStatus(
       input.workspaceId,
       AgentStatus.PAUSED,
       "Awaiting user input...",
@@ -2500,29 +1806,6 @@ export class Orchestrator {
     return this.tasksByWorkspace.has(workspaceId);
   }
 
-  private getRecentCompletionContext(workspaceId: string): string {
-    const now = Date.now();
-    const freshEntries = (this.recentCompletionHistory.get(workspaceId) ?? [])
-      .filter((entry) => now - entry.timestamp < RECENT_COMPLETION_TTL_MS)
-      .slice(-MAX_RECENT_COMPLETION_HISTORY);
-    if (freshEntries.length === 0) {
-      this.recentCompletionHistory.delete(workspaceId);
-      return "";
-    }
-    this.recentCompletionHistory.set(workspaceId, freshEntries);
-    return freshEntries
-      .map((entry, index) => {
-        const summary = (entry.payload.summary || "")
-          .replace(/\s+/g, " ")
-          .trim()
-          .slice(0, MAX_RECENT_COMPLETION_LINE_CHARS);
-        return summary ? `- Assistant result ${index + 1}: ${summary}` : "";
-      })
-      .filter(Boolean)
-      .join("\n")
-      .slice(0, MAX_RECENT_COMPLETION_CONTEXT_CHARS);
-  }
-
   /**
    * Re-broadcast the current state for a workspace so the side panel can
    * recover transient UI state after a workspace switch.
@@ -2532,22 +1815,21 @@ export class Orchestrator {
 
     if (!task) {
       // Check for a recent completion that the panel may have missed
-      const cached = this.recentCompletion.get(workspaceId);
-      if (cached && Date.now() - cached.timestamp < RECENT_COMPLETION_TTL_MS) {
-        this.sendMessage({
+      const cached = this.recentCompletionTracker.getCachedFresh(workspaceId);
+      if (cached) {
+        sendMessage({
           type: "TASK_COMPLETION",
           workspaceId,
           payload: cached.payload,
         });
       }
-      this.sendStatus(workspaceId, AgentStatus.IDLE, "No active task");
+      sendStatus(workspaceId, AgentStatus.IDLE, "No active task");
       return;
     }
 
-
     if (task.status === "running" || task.status === "planning") {
       // Task is in-flight — re-send current status + progress
-      this.sendStatus(
+      sendStatus(
         workspaceId,
         task.status === "planning"
           ? AgentStatus.THINKING
@@ -2562,7 +1844,7 @@ export class Orchestrator {
       );
       this.sendProgress(task);
       if (task.sessionMetrics) {
-        this.sendMessage({
+        sendMessage({
           type: "SESSION_METRICS",
           workspaceId,
           payload: { ...task.sessionMetrics },
@@ -2574,12 +1856,12 @@ export class Orchestrator {
       }
     } else {
       // Task finished (completed / failed / stopped) — re-send completion
-      const subtaskResults: SubtaskResult[] = this.buildSubtaskResults(task);
+      const subtaskResults: SubtaskResult[] = buildSubtaskResults(task);
       const completed = subtaskResults.filter(
         (r) => r.status === "completed",
       ).length;
 
-      this.sendMessage({
+      sendMessage({
         type: "TASK_COMPLETION",
         workspaceId,
         payload: {
@@ -2601,7 +1883,7 @@ export class Orchestrator {
           summary:
             task.status === "stopped"
               ? task.terminationReason || "Stopped by user"
-              : this.buildProgrammaticSummary(task),
+              : buildProgrammaticSummary(task),
           subtaskResults,
           urlHistory: [],
           metrics: task.sessionMetrics,
@@ -2612,13 +1894,13 @@ export class Orchestrator {
         },
       });
       if (task.sessionMetrics) {
-        this.sendMessage({
+        sendMessage({
           type: "SESSION_METRICS",
           workspaceId,
           payload: { ...task.sessionMetrics },
         });
       }
-      this.sendStatus(workspaceId, AgentStatus.IDLE, "Task finished");
+      sendStatus(workspaceId, AgentStatus.IDLE, "Task finished");
     }
   }
 
@@ -2667,7 +1949,7 @@ export class Orchestrator {
       },
     );
 
-    this.sendMessage({
+    sendMessage({
       type: "AGENT_STEP",
       workspaceId: task.workspaceId,
       payload: {
@@ -2694,7 +1976,7 @@ export class Orchestrator {
       input.query,
       await loadPersonalizationState().catch(() => EMPTY_PERSONALIZATION_STATE),
     );
-    const recentCompletionContext = this.getRecentCompletionContext(
+    const recentCompletionContext = this.recentCompletionTracker.getContext(
       input.workspaceId,
     );
     const conversationContextBrief = [
@@ -2764,7 +2046,7 @@ export class Orchestrator {
     this.tasksByWorkspace.set(input.workspaceId, task);
     this.initializeWorkspaceRuntime(input.workspaceId, task.maxWorkers, task);
     await this.persistTaskCheckpoint(task);
-    await this.emitTraceManifest(this.buildTaskManifest(task, input));
+    await this.emitTraceManifest(buildTaskManifest(task, input));
     this.emitTraceEvent(
       task,
       "task_started",
@@ -2778,7 +2060,7 @@ export class Orchestrator {
     );
     this.emitTabCoordinationState(task, "initialized");
 
-    this.sendStatus(
+    sendStatus(
       input.workspaceId,
       AgentStatus.THINKING,
       "Planning task...",
@@ -2827,7 +2109,7 @@ export class Orchestrator {
         },
         "planner",
       );
-      this.sendMessage({
+      sendMessage({
         type: "AGENT_STEP",
         workspaceId: input.workspaceId,
         payload: {
@@ -2925,7 +2207,7 @@ export class Orchestrator {
           },
           "planner",
         );
-        this.sendMessage({
+        sendMessage({
           type: "AGENT_STEP",
           workspaceId: input.workspaceId,
           payload: {
@@ -2989,7 +2271,7 @@ export class Orchestrator {
           },
           "planner",
         );
-        this.sendMessage({
+        sendMessage({
           type: "AGENT_STEP",
           workspaceId: input.workspaceId,
           payload: {
@@ -3021,7 +2303,7 @@ export class Orchestrator {
         { taskId: task.id, phase: "planning" },
         "system",
       );
-      this.sendStatus(task.workspaceId, AgentStatus.IDLE, "Stopped");
+      sendStatus(task.workspaceId, AgentStatus.IDLE, "Stopped");
       resetTabGroupAppearance(task.workspaceId);
       return;
     }
@@ -3088,7 +2370,7 @@ export class Orchestrator {
           { taskId: task.id },
           "system",
         );
-        this.sendStatus(task.workspaceId, AgentStatus.IDLE, "Plan cancelled");
+        sendStatus(task.workspaceId, AgentStatus.IDLE, "Plan cancelled");
         resetTabGroupAppearance(task.workspaceId);
         return;
       }
@@ -3154,7 +2436,7 @@ export class Orchestrator {
     await this.persistTaskCheckpoint(task);
 
     this.sendProgress(task);
-    this.sendStatus(
+    sendStatus(
       input.workspaceId,
       AgentStatus.ACTING,
       "Executing subtasks...",
@@ -3175,7 +2457,7 @@ export class Orchestrator {
         task,
         `Task failed: ${error instanceof Error ? error.message : "unexpected error"}`,
       );
-      this.sendStatus(input.workspaceId, AgentStatus.ERROR, "Task failed");
+      sendStatus(input.workspaceId, AgentStatus.ERROR, "Task failed");
       resetTabGroupAppearance(input.workspaceId);
       this.tasksByWorkspace.delete(task.workspaceId);
       this.cleanupWorkspaceRuntime(task.workspaceId);
@@ -3319,7 +2601,7 @@ export class Orchestrator {
         totalCost: task.sessionMetrics.totalCost,
         elapsedMs: Date.now() - (task.startedAt || task.createdAt),
       });
-      this.sendMessage({
+      sendMessage({
         type: "AGENT_STEP",
         workspaceId: task.workspaceId,
         payload: {
@@ -3358,7 +2640,7 @@ export class Orchestrator {
         },
         "executor",
       );
-      this.appendHandoffArtifact(node, {
+      appendHandoffArtifact(node, {
         role: "executor",
         phase: "executor_started",
         note: `Executor started objective: ${node.description}`,
@@ -3596,7 +2878,7 @@ export class Orchestrator {
             const resolvedLabel = isSingleNode
               ? step.label
               : `Executor: ${step.label}`;
-            this.sendMessage({
+            sendMessage({
               type: "AGENT_STEP",
               workspaceId: task.workspaceId,
               payload: {
@@ -3651,7 +2933,7 @@ export class Orchestrator {
                 const shouldForwardReplaceContent =
                   replaceContent !== undefined && !done;
                 if (shouldForwardReplaceContent || done || thinking) {
-                  this.sendMessage({
+                  sendMessage({
                     type: "STREAM_CHUNK",
                     workspaceId: task.workspaceId,
                     payload: {
@@ -3807,7 +3089,7 @@ export class Orchestrator {
             );
             if (advisory) {
               executorInstruction += `\n\nPre-execution advisory:\n${advisory}`;
-              this.appendHandoffArtifact(node, {
+              appendHandoffArtifact(node, {
                 role: "verifier",
                 phase: "verifier_advisory",
                 note: advisory.slice(0, 200),
@@ -3949,7 +3231,7 @@ export class Orchestrator {
             );
           }
           this.armPendingInteractionTimeout(task);
-          this.sendStatus(
+          sendStatus(
             task.workspaceId,
             AgentStatus.PAUSED,
             result.outcome === "awaiting_approval"
@@ -4005,7 +3287,7 @@ export class Orchestrator {
               ]
             : []),
         ];
-        this.appendHandoffArtifact(node, {
+        appendHandoffArtifact(node, {
           role: "executor",
           phase: "executor_finished",
           note: compactResultSummary || "Executor finished without summary.",
@@ -4196,7 +3478,7 @@ export class Orchestrator {
               rerouteObjective: verification.rerouteObjective,
               handoffContextChars: verifierHandoffContext.length,
             });
-            this.emitVerifierStep(
+            emitVerifierStep(
               task.workspaceId,
               node.id,
               verification.reason,
@@ -4217,7 +3499,7 @@ export class Orchestrator {
 
             if (
               task.status === "running" &&
-              this.shouldEscalateForDecision(task, node, verification)
+              shouldEscalateForDecision(task, node, verification)
             ) {
               const escalationPacket =
                 task.pendingEscalation?.packet.nodeId === node.id
@@ -4286,7 +3568,7 @@ export class Orchestrator {
                 successCriteria: node.successCriteria,
               }) === "high"
             ) {
-              const gate = await this.runHighRiskJudgeGate(
+              const gate = await runHighRiskJudgeGate(
                 task,
                 node,
                 verifier,
@@ -4316,7 +3598,7 @@ export class Orchestrator {
             }
 
             if (verification.decision === "accept") {
-              this.appendHandoffArtifact(node, {
+              appendHandoffArtifact(node, {
                 role: "verifier",
                 phase: "verifier_accept",
                 note: verification.reason,
@@ -4340,7 +3622,7 @@ export class Orchestrator {
               task.status === "running" &&
               node.handoffDepth < MAX_HANDOFF_DEPTH
             ) {
-              this.appendHandoffArtifact(node, {
+              appendHandoffArtifact(node, {
                 role: "verifier",
                 phase: "verifier_reroute",
                 note: `${verification.reason} Reroute: ${verification.rerouteObjective}`,
@@ -4378,7 +3660,7 @@ export class Orchestrator {
               ) {
                 if (task.replansUsed >= task.maxReplans) {
                   const reason = `Replan budget exhausted (${task.replansUsed}/${task.maxReplans}). ${verification.reason}`;
-                  this.appendHandoffArtifact(node, {
+                  appendHandoffArtifact(node, {
                     role: "planner",
                     phase: "planner_replan",
                     note: reason,
@@ -4409,7 +3691,7 @@ export class Orchestrator {
                       verifierReason: verification.reason,
                     },
                   );
-                  this.sendMessage({
+                  sendMessage({
                     type: "AGENT_STEP",
                     workspaceId: task.workspaceId,
                     payload: {
@@ -4446,7 +3728,7 @@ export class Orchestrator {
                         ),
                     );
                     if (expandedNodes && expandedNodes.length > 0) {
-                      this.appendHandoffArtifact(node, {
+                      appendHandoffArtifact(node, {
                         role: "planner",
                         phase: "planner_replan",
                         note:
@@ -4490,7 +3772,7 @@ export class Orchestrator {
                           error,
                         },
                       );
-                      this.sendMessage({
+                      sendMessage({
                         type: "AGENT_STEP",
                         workspaceId: task.workspaceId,
                         payload: {
@@ -4535,7 +3817,7 @@ export class Orchestrator {
                   node.retries,
                 );
 
-                this.appendHandoffArtifact(node, {
+                appendHandoffArtifact(node, {
                   role: "verifier",
                   phase:
                     verification.decision === "reroute"
@@ -4630,7 +3912,7 @@ export class Orchestrator {
                 }
               }
             } else {
-              this.appendHandoffArtifact(node, {
+              appendHandoffArtifact(node, {
                 role: "verifier",
                 phase:
                   verification.decision === "reroute"
@@ -4907,9 +4189,9 @@ export class Orchestrator {
       }
       if (
         task.pendingInteraction &&
-        !this.isPendingInteractionResolved(task.pendingInteraction)
+        !isPendingInteractionResolved(task.pendingInteraction)
       ) {
-        this.sendStatus(
+        sendStatus(
           task.workspaceId,
           AgentStatus.PAUSED,
           "Awaiting user input...",
@@ -5411,14 +4693,14 @@ export class Orchestrator {
     // Build summary for the structured completion card. The final visible
     // result is emitted only as TASK_COMPLETION so the UI does not briefly show
     // a plain assistant bubble before converting it to a completion card.
-    const summary = this.buildProgrammaticSummary(task);
-    this.sendMessage({
+    const summary = buildProgrammaticSummary(task);
+    sendMessage({
       type: "STREAM_CHUNK",
       workspaceId: task.workspaceId,
       payload: { delta: "", done: true },
     });
 
-    const subtaskResults = this.buildSubtaskResults(task);
+    const subtaskResults = buildSubtaskResults(task);
     const penalizedSkipped = task.nodes.filter(
       (node) =>
         node.status === "skipped" && !isUnpenalizedGoalShortcutSkip(node),
@@ -5519,12 +4801,12 @@ export class Orchestrator {
       ...(task.partialHandoff ? { partialHandoff: task.partialHandoff } : {}),
     };
     this.cacheAndPersistCompletion(task.workspaceId, completionPayload);
-    this.sendMessage({
+    sendMessage({
       type: "TASK_COMPLETION",
       workspaceId: task.workspaceId,
       payload: completionPayload,
     });
-    this.notifyTaskCompletion(task, completionPayload);
+    notifyTaskCompletion(task, completionPayload);
     const totalDurationMs =
       task.finishedAt - (task.startedAt || task.createdAt);
     if (completionStatus === "completed") {
@@ -5551,7 +4833,7 @@ export class Orchestrator {
       "system",
     );
 
-    this.sendStatus(
+    sendStatus(
       task.workspaceId,
       AgentStatus.IDLE,
       "Task complete",
@@ -5571,7 +4853,7 @@ export class Orchestrator {
     if (task?.status === "stopped" || task?.status === "stopping") {
       return "stopped";
     }
-    const recent = this.recentCompletion.get(workspaceId);
+    const recent = this.recentCompletionTracker.getCached(workspaceId);
     if (!recent) return null;
     if (recent.payload.status === "stopped") return "stopped";
     // "partial" maps to "completed" — partial success is still success at the overlay level
@@ -5584,12 +4866,11 @@ export class Orchestrator {
   ): Promise<TaskCompletionMessage["payload"] | null> {
     const hasActiveTask = this.tasksByWorkspace.has(workspaceId);
     if (!hasActiveTask) {
-      const cached = this.recentCompletion.get(workspaceId);
+      const cached = this.recentCompletionTracker.getCached(workspaceId);
       return Promise.resolve(cached?.payload ?? null);
     }
 
     return new Promise((resolve) => {
-      const listeners = this.completionWaiters.get(workspaceId) ?? new Set();
       let settled = false;
       let timer: ReturnType<typeof setTimeout> | null = null;
 
@@ -5597,22 +4878,15 @@ export class Orchestrator {
         if (settled) return;
         settled = true;
         if (timer) clearTimeout(timer);
-        listeners.delete(handleCompletion);
-        if (listeners.size === 0) {
-          this.completionWaiters.delete(workspaceId);
-        }
+        this.completionWaiters.remove(workspaceId, handleCompletion);
         resolve(payload);
       };
 
-      listeners.add(handleCompletion);
-      this.completionWaiters.set(workspaceId, listeners);
+      this.completionWaiters.add(workspaceId, handleCompletion);
       timer = setTimeout(() => {
         if (settled) return;
         settled = true;
-        listeners.delete(handleCompletion);
-        if (listeners.size === 0) {
-          this.completionWaiters.delete(workspaceId);
-        }
+        this.completionWaiters.remove(workspaceId, handleCompletion);
         resolve(null);
       }, timeoutMs);
       (timer as unknown as { unref?: () => void }).unref?.();
@@ -5702,7 +4976,7 @@ export class Orchestrator {
 
     targetNode.status = "skipped";
     targetNode.error = "Skipped by user from Plan Board.";
-    this.appendHandoffArtifact(targetNode, {
+    appendHandoffArtifact(targetNode, {
       role: "planner",
       phase: "planner_replan",
       note: "Skipped by user from Plan Board.",
@@ -5710,7 +4984,7 @@ export class Orchestrator {
 
     task.currentIndex = currentIndex(task.nodes);
     this.sendProgress(task);
-    this.sendMessage({
+    sendMessage({
       type: "AGENT_STEP",
       workspaceId: task.workspaceId,
       payload: {
@@ -5756,7 +5030,7 @@ export class Orchestrator {
       { taskId: task.id, phase },
       "system",
     );
-    this.sendStatus(task.workspaceId, AgentStatus.IDLE, "Stopped");
+    sendStatus(task.workspaceId, AgentStatus.IDLE, "Stopped");
     void agentNotifications.notifyStopped({
       workspaceId: task.workspaceId,
       taskId: task.id,
@@ -5791,10 +5065,7 @@ export class Orchestrator {
       task.pendingEscalation = undefined;
     }
     // Cancel any pending plan confirmation
-    for (const [id, resolver] of this.pendingPlanConfirmationResolvers) {
-      resolver({ decision: "cancel" });
-      this.pendingPlanConfirmationResolvers.delete(id);
-    }
+    this.pendingPlanConfirmationResolvers.resolveAll({ decision: "cancel" });
     if (shouldDrainActiveWorkers) {
       task.status = "stopping";
       void this.persistTaskCheckpoint(task);
@@ -5820,7 +5091,7 @@ export class Orchestrator {
       }
       pools?.planner.clear();
       pools?.verifier.clear();
-      this.sendStatus(
+      sendStatus(
         workspaceId,
         AgentStatus.ACTING,
         "Stopping at next safe point...",
@@ -5859,7 +5130,7 @@ export class Orchestrator {
     for (const worker of workers?.values() || []) {
       worker.loop.pause();
     }
-    this.sendStatus(workspaceId, AgentStatus.PAUSED, "Paused by user");
+    sendStatus(workspaceId, AgentStatus.PAUSED, "Paused by user");
   }
 
   private resumeWorkspace(workspaceId: string): void {
@@ -5867,7 +5138,7 @@ export class Orchestrator {
     for (const worker of workers?.values() || []) {
       worker.loop.resume();
     }
-    this.sendStatus(workspaceId, AgentStatus.ACTING, "Resumed");
+    sendStatus(workspaceId, AgentStatus.ACTING, "Resumed");
   }
 
   private async createWorkerTab(
@@ -5939,64 +5210,6 @@ export class Orchestrator {
       );
       return undefined;
     }
-  }
-
-  private buildProgrammaticSummary(task: OrchestratorTask): string {
-    const completedNodes = task.nodes.filter((n) => n.status === "completed");
-    const failed = task.nodes.filter((n) => n.status === "failed").length;
-    const lastCompleted = [...task.nodes]
-      .reverse()
-      .find((n) => n.status === "completed");
-    const lastFailed = [...task.nodes]
-      .reverse()
-      .find((n) => n.status === "failed" && (n.error || "").trim().length > 0);
-
-    // Single-node completed: show executor's actual output directly
-    if (
-      task.planClassification?.isSingleNode &&
-      failed === 0 &&
-      (lastCompleted?.userFacingResult || lastCompleted?.result)
-    ) {
-      return lastCompleted.userFacingResult || lastCompleted.result || "";
-    }
-
-    // Multi-node completed: aggregate results from all completed nodes.
-    // Each node may have collected data that the final summary needs
-    // (e.g. "read inventory on page A, go back, read inventory on page B,
-    // report both"). Only the combined results satisfy the full task.
-    if (completedNodes.length > 1 && lastCompleted?.result) {
-      const nodeResults = completedNodes
-        .map((n) => n.userFacingResult || n.result || "")
-        .filter((result) => result.trim())
-        .map((result) => result.trim());
-
-      // If the last node's result already covers all prior results
-      // (e.g. it explicitly mentions all key data), use it alone.
-      // Otherwise combine all unique node results.
-      const lastResult = lastCompleted.result;
-      const priorResults = nodeResults.slice(0, -1);
-      const missingPrior = priorResults.filter(
-        (r) => !lastResult.includes(r.slice(0, 40)),
-      );
-
-      if (missingPrior.length > 0) {
-        return nodeResults.join("\n\n");
-      }
-      return lastResult;
-    }
-
-    if (
-      completedNodes.length > 0 &&
-      (lastCompleted?.userFacingResult || lastCompleted?.result)
-    ) {
-      return lastCompleted.userFacingResult || lastCompleted.result || "";
-    }
-
-    if (failed > 0 && lastFailed?.error) {
-      return lastFailed.error;
-    }
-
-    return "";
   }
 
   private async tryHorizonExpansion(
@@ -6096,7 +5309,7 @@ export class Orchestrator {
       currentIndex: task.currentIndex,
       totalTurnsUsed: 0,
     };
-    this.sendMessage({
+    sendMessage({
       type: "TASK_PROGRESS",
       workspaceId: task.workspaceId,
       payload,
@@ -6119,24 +5332,9 @@ export class Orchestrator {
     workspaceId: string,
     payload: TaskCompletionMessage["payload"],
   ): void {
-    // Cache for resync on panel reopen
-    this.recentCompletion.set(workspaceId, {
-      payload,
-      timestamp: Date.now(),
-    });
-    if (payload.summary) {
-      const history = this.recentCompletionHistory.get(workspaceId) ?? [];
-      history.push({ payload, timestamp: Date.now() });
-      this.recentCompletionHistory.set(
-        workspaceId,
-        history.slice(-MAX_RECENT_COMPLETION_HISTORY),
-      );
-    }
-    const waiters = this.completionWaiters.get(workspaceId);
-    if (waiters) {
-      for (const resolve of waiters) resolve(payload);
-      this.completionWaiters.delete(workspaceId);
-    }
+    // Cache for resync on panel reopen (+ append to the recent-completion history)
+    this.recentCompletionTracker.record(workspaceId, payload);
+    this.completionWaiters.resolveAll(workspaceId, payload);
 
     // Persist summary as a chat message directly to storage (bypasses panel)
     if (payload.summary) {
@@ -6170,52 +5368,19 @@ export class Orchestrator {
     }
   }
 
-  private notifyTaskCompletion(
-    task: OrchestratorTask,
-    payload: TaskCompletionMessage["payload"],
-  ): void {
-    if (task.status === "stopped") return;
-    void agentNotifications.notifyTaskCompletion({
-      workspaceId: task.workspaceId,
-      tabId: task.rootTabId,
-      payload,
-    });
-  }
-
-  private buildSubtaskResults(task: OrchestratorTask): SubtaskResult[] {
-    const taskStopped = task.status === "stopped" || task.status === "stopping";
-    return task.nodes.map((node) => ({
-      description: node.description,
-      status:
-        node.status === "completed"
-          ? "completed"
-          : isUserSkippedNode(node)
-            ? "skipped"
-            : taskStopped &&
-                (node.status !== "failed" ||
-                  /(?:stopped|cancelled) by user/i.test(
-                    `${node.result || ""}\n${node.error || ""}`,
-                  ))
-              ? "stopped"
-              : "failed",
-      turnsUsed: 0,
-      result: node.result || node.error || "",
-    }));
-  }
-
   private async sendTerminationCompletion(
     task: OrchestratorTask,
     terminationReason: string,
   ): Promise<void> {
     // Finalize the stream first so the side panel exits isStreaming state.
     // Without this, the UI stays stuck showing "Thinking..." after a stop.
-    this.sendMessage({
+    sendMessage({
       type: "STREAM_CHUNK",
       workspaceId: task.workspaceId,
       payload: { delta: "", done: true },
     });
 
-    const subtaskResults = this.buildSubtaskResults(task);
+    const subtaskResults = buildSubtaskResults(task);
     const completed = subtaskResults.filter(
       (r) => r.status === "completed",
     ).length;
@@ -6239,68 +5404,12 @@ export class Orchestrator {
       ...(task.partialHandoff ? { partialHandoff: task.partialHandoff } : {}),
     };
     this.cacheAndPersistCompletion(task.workspaceId, completionPayload);
-    this.sendMessage({
+    sendMessage({
       type: "TASK_COMPLETION",
       workspaceId: task.workspaceId,
       payload: completionPayload,
     });
-    this.notifyTaskCompletion(task, completionPayload);
-  }
-
-  private emitVerifierStep(
-    workspaceId: string,
-    nodeId: string,
-    reason: string,
-  ): void {
-    const step: AgentStep = {
-      id: crypto.randomUUID(),
-      type: "info",
-      label: `Verifier: checked node ${nodeId.slice(0, 6)}`,
-      detail: reason,
-      status: "done",
-      timestamp: Date.now(),
-    };
-    this.sendMessage({
-      type: "AGENT_STEP",
-      workspaceId,
-      payload: { step, update: false },
-    });
-  }
-
-  private classifyEscalationRisk(
-    verification: NodeVerificationResult,
-    node: TaskNode,
-  ): EscalationRisk {
-    if (verification.failureType === "blocked") return "critical";
-    if (verification.decision === "reroute") return "high";
-    if (node.retries >= 2) return "high";
-    return "medium";
-  }
-
-  private shouldEscalateForDecision(
-    task: OrchestratorTask,
-    node: TaskNode,
-    verification: NodeVerificationResult,
-  ): boolean {
-    const confidence = clampConfidence(verification.confidence);
-    const tokenRatio =
-      task.budget.maxTotalTokens > 0
-        ? task.sessionMetrics.totalTokens / task.budget.maxTotalTokens
-        : 0;
-    const costRatio =
-      task.budget.maxTotalCostUsd > 0
-        ? task.sessionMetrics.totalCost / task.budget.maxTotalCostUsd
-        : 0;
-    if (verification.failureType === "blocked") return true;
-    if (verification.decision !== "accept" && confidence < 0.45) return true;
-    if (verification.decision !== "accept" && node.retries >= 2) return true;
-    if (
-      verification.decision !== "accept" &&
-      (tokenRatio >= 0.85 || costRatio >= 0.85)
-    ) {
-      return true;
-    }
-    return false;
+    notifyTaskCompletion(task, completionPayload);
   }
 
   private buildEscalationPacket(input: {
@@ -6310,7 +5419,7 @@ export class Orchestrator {
     snapshot?: { title?: string; url?: string };
   }): EscalationPacket {
     const { task, node, verification, snapshot } = input;
-    const risk = this.classifyEscalationRisk(verification, node);
+    const risk = classifyEscalationRisk(verification, node);
     const reason = verification.reason.slice(0, ESCALATION_MAX_REASON_CHARS);
     const options: EscalationOption[] = [
       {
@@ -6419,7 +5528,7 @@ export class Orchestrator {
       },
       "system",
     );
-    this.sendMessage({
+    sendMessage({
       type: "ESCALATION_REQUEST",
       workspaceId: task.workspaceId,
       payload: packet,
@@ -6432,7 +5541,7 @@ export class Orchestrator {
       reason: "Escalation required",
       detail: packet.reason,
     });
-    this.sendMessage({
+    sendMessage({
       type: "AGENT_STEP",
       workspaceId: task.workspaceId,
       payload: {
@@ -6475,7 +5584,9 @@ export class Orchestrator {
         resolve(fallback);
       }, packet.timeoutMs);
 
-      this.pendingEscalationResolvers.set(packet.escalationId, (decision) => {
+      this.pendingEscalationResolvers.register(
+        packet.escalationId,
+        (decision) => {
         clearTimeout(timeout);
         this.pendingEscalationResolvers.delete(packet.escalationId);
         this.emitTraceEvent(
@@ -6605,12 +5716,12 @@ export class Orchestrator {
   ): Promise<{ decision: "approve" | "cancel"; feedback?: string }> {
     const confirmationId = crypto.randomUUID();
 
-    this.sendStatus(
+    sendStatus(
       task.workspaceId,
       AgentStatus.PAUSED,
       "Awaiting plan confirmation...",
     );
-    this.sendMessage({
+    sendMessage({
       type: "PLAN_CONFIRMATION_REQUEST",
       workspaceId: task.workspaceId,
       payload: {
@@ -6641,7 +5752,9 @@ export class Orchestrator {
 
     return new Promise<{ decision: "approve" | "cancel"; feedback?: string }>(
       (resolve) => {
-        this.pendingPlanConfirmationResolvers.set(confirmationId, (result) => {
+        this.pendingPlanConfirmationResolvers.register(
+          confirmationId,
+          (result) => {
           this.pendingPlanConfirmationResolvers.delete(confirmationId);
           logger.info("orchestrator", "Plan confirmation received", {
             taskId: task.id,
@@ -6666,37 +5779,8 @@ export class Orchestrator {
     );
   }
 
-  private sendStatus(
-    workspaceId: string,
-    status: AgentStatus,
-    detail: string,
-    completionStatus?: "completed" | "partial" | "failed" | "stopped",
-  ): void {
-    this.sendMessage({
-      type: "AGENT_STATUS",
-      workspaceId,
-      payload: { status, detail, completionStatus },
-    });
-    updateTabGroupAppearance(workspaceId, { status, completionStatus });
-  }
-
-  private sendMessage(message: {
-    type: string;
-    payload: any;
-    workspaceId?: string | null;
-  }): void {
-    chrome.runtime
-      .sendMessage({
-        ...message,
-        requestId: crypto.randomUUID(),
-        source: MessageSource.BACKGROUND,
-      } as any)
-      .catch((error) => {
-        logger.debug("orchestrator", "Failed to send runtime message", {
-          error,
-        });
-      });
-  }
 }
 
 export const orchestrator = new Orchestrator();
+
+

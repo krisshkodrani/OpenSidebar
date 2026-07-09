@@ -241,3 +241,41 @@ export function inferServiceNowCreateRecordUrlFromListUrl(
   if (!table) return null;
   return `${url.origin}/${table}.do?sys_id=-1`;
 }
+
+/**
+ * Resolve a ServiceNow create-record URL from the tab's current list view
+ * (RFC LP-16 Phase 2 reclaim — relocated pure helper out of the agent loop).
+ * Probes the tab URL and all frame URLs, returning the first that maps to a
+ * create-record URL. Pure aside from the chrome APIs it reads.
+ */
+export async function resolveServiceNowCreateRecordUrlFromCurrentList(
+  tabId: number,
+): Promise<string | null> {
+  const candidates: string[] = [];
+  try {
+    const tab = await chrome.tabs.get(tabId);
+    if (tab.url) candidates.push(tab.url);
+  } catch {
+    // Fall through to frame URL probing below.
+  }
+
+  try {
+    const frameResults = await chrome.scripting.executeScript({
+      target: { tabId, allFrames: true },
+      func: () => window.location.href,
+    });
+    for (const frameResult of frameResults as Array<{ result?: unknown }>) {
+      if (typeof frameResult.result === "string") {
+        candidates.push(frameResult.result);
+      }
+    }
+  } catch {
+    // Frame URL probing is best-effort; the tab URL may still be enough.
+  }
+
+  for (const candidate of candidates) {
+    const createUrl = inferServiceNowCreateRecordUrlFromListUrl(candidate);
+    if (createUrl) return createUrl;
+  }
+  return null;
+}
