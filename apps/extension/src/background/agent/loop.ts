@@ -48,8 +48,6 @@ import {
 import { workspaceManager } from "../workspaces/manager";
 import { ContextManager, summarizeCausalChain } from "./context";
 import {
-  assessDoneSummary,
-  checkSummaryStepCoherence,
   detectAdmission,
 } from "./verification";
 import { StagnationMonitor } from "./stagnation";
@@ -326,7 +324,6 @@ import {
   requiresGroundingReadBeforeDone,
   shouldTrackFormSubmissionReset,
   SubgoalAttempt,
-  tokenizeStepText,
   updateConsecutiveAllFailTurns,
   updateExplorationBudget,
   updatePostEscalationPivot,
@@ -6573,184 +6570,6 @@ export class AgentLoop {
     });
 
     return { finalSummary: signal.reason, newIndex, completionCandidate };
-  }
-
-  private shouldBypassPlanIncompleteDoneRejection(params: {
-    summary: string;
-    currentStepIndex: number;
-  }): boolean {
-    const { summary, currentStepIndex } = params;
-    if (
-      currentStepIndex < 0 ||
-      currentStepIndex >= this.planSubtasks.length - 1 ||
-      currentStepIndex >= this.planSteps.length
-    ) {
-      return false;
-    }
-
-    const currentStep = this.planSteps[currentStepIndex];
-    if (!currentStep?.successCriteria) return false;
-
-    const taskContext = [
-      this.originalQuery,
-      this.planSubtasks[currentStepIndex]?.description,
-      currentStep.successCriteria,
-    ]
-      .filter(
-        (part): part is string => typeof part === "string" && part.length > 0,
-      )
-      .join("\n");
-
-    const sentiment = assessDoneSummary(summary);
-    if (!sentiment.confident) return false;
-
-    if (this.nodeId) {
-      const snapshot = this.context.getSnapshot();
-      const summaryTokens = new Set(tokenizeStepText(summary));
-      const snapshotText = normalizeGuardText(
-        `${snapshot?.title || ""}\n${snapshot?.url || ""}\n${snapshot?.visibleContent || ""}\n${snapshot?.pageContent || ""}`,
-      );
-      const groundedSummaryTokens = [...summaryTokens].filter((token) =>
-        snapshotText.includes(token),
-      );
-      if (groundedSummaryTokens.length >= 2) {
-        return true;
-      }
-    }
-
-    const summaryText = normalizeGuardText(summary);
-    const snapshot = this.context.getSnapshot();
-    const snapshotText = normalizeGuardText(
-      `${snapshot?.title || ""}\n${snapshot?.url || ""}\n${snapshot?.visibleContent || ""}\n${snapshot?.pageContent || ""}`,
-    );
-    const confirmationIntent =
-      /\b(submit|submission|confirm|confirmation|sent|saved|applied|placed)\b/i.test(
-        taskContext,
-      );
-    const summaryShowsFinalization =
-      /\b(submitted?|submission complete|completed?|confirmed?|confirmation|saved|applied|sent|placed|finished)\b/i.test(
-        summaryText,
-      );
-    const snapshotShowsFinalState =
-      /\b(submission complete|submitted successfully|success(?:fully)?|thank you|reference(?: number)?|confirmation(?: number| page)?|has been submitted|request received|completed successfully|order confirmed|receipt)\b/i.test(
-        snapshotText,
-      );
-
-    const multiTabChecklistIntent =
-      this.selectedSkillId === "multi-tab-checklist-workflow" ||
-      /\b(procurement|purchase|buy|checklist|source list|separate tabs?|new tabs?)\b/i.test(
-        taskContext,
-      );
-    if (multiTabChecklistIntent) {
-      const summaryShowsTargetWork =
-        /\b(purchase|purchased|order|ordered|confirmed|bought|place(?:d)? order|reviewed|captured|extracted|recorded)\b/i.test(
-          summaryText,
-        );
-      const summaryShowsSourceReturn =
-        /\b(check(?:ed|ing)? off|mark(?:ed|ing)? .* (?:done|complete|reviewed)|record(?:ed|ing)? .* reviewed|returned? to .* (?:list|checklist|procurement|board|source)|back on .* (?:list|checklist|procurement|board|source))\b/i.test(
-          summaryText,
-        );
-      const sourceLooksComplete =
-        /\b\d+\s+of\s+\d+\s+items?\s+completed\b/i.test(snapshotText) ||
-        /\b(mark .* as done|all items procured|viewed|reviewed|completed)\b/i.test(
-          snapshotText,
-        );
-
-      if (
-        summaryShowsTargetWork &&
-        summaryShowsSourceReturn &&
-        sourceLooksComplete
-      ) {
-        return true;
-      }
-    }
-
-    if (
-      confirmationIntent &&
-      summaryShowsFinalization &&
-      snapshotShowsFinalState
-    ) {
-      return true;
-    }
-
-    const nextStepText = normalizeGuardText(
-      [
-        this.planSubtasks[currentStepIndex + 1]?.description,
-        this.planSteps[currentStepIndex + 1]?.objective,
-        this.planSteps[currentStepIndex + 1]?.successCriteria,
-      ]
-        .filter(
-          (part): part is string => typeof part === "string" && part.length > 0,
-        )
-        .join("\n"),
-    );
-    const nextStepIsFinalizationOnly =
-      /\b(?:terminate|end|close|finali[sz]e)\b[\s\S]{0,80}\b(?:task|workflow|run)\b/i.test(
-        nextStepText,
-      ) ||
-      /\b(?:finish|complete)\s+(?:the\s+)?(?:task|workflow|run)\b/i.test(
-        nextStepText,
-      ) ||
-      /\b(?:task|workflow|run)\s+(?:is\s+)?(?:finished|complete|completed|done)\b/i.test(
-        nextStepText,
-      ) ||
-      /\b(?:call|use)\s+done\b/i.test(nextStepText) ||
-      /\breport\s+(?:success|completion|that\b[\s\S]{0,80}\bcomplete)/i.test(
-        nextStepText,
-      );
-    const terminalMutationIntent =
-      /\b(confirm|confirmation|delete|deletion|remove|removal|submit|submission|save|apply|send|post|complete|success|close|dismiss|update|change)\b/i.test(
-        taskContext,
-      );
-    const summaryShowsTerminalState =
-      /\b(success(?:fully)?|completed?|confirmed?|deleted?|removed?|saved|submitted?|sent|posted|closed|dismissed|updated|changed|finished)\b/i.test(
-        summaryText,
-      );
-    const snapshotShowsTerminalMutation =
-      /\b(?:deleted|removed|saved|submitted|sent|posted|closed|dismissed|updated|changed|completed|confirmed)\s+successfully\b/i.test(
-        snapshotText,
-      ) ||
-      /\b(?:success|successful|thank you|confirmation|receipt|completed)\b/i.test(
-        snapshotText,
-      );
-    if (
-      nextStepIsFinalizationOnly &&
-      terminalMutationIntent &&
-      summaryShowsTerminalState &&
-      snapshotShowsTerminalMutation
-    ) {
-      const coherence = checkSummaryStepCoherence({
-        summary,
-        currentStepIndex,
-        stepDescriptions: this.planSubtasks.map((s) => s.description),
-      });
-      if (coherence.coherent) return true;
-    }
-
-    const editIntent =
-      /\b(change|edit|update|replace|set|type|enter|revise|rewrite)\b/i.test(
-        taskContext,
-      );
-    const inPlaceSurface =
-      /\b(spreadsheet|grid|cell|row|column|sheet|table|field|value|draft|reply|email|message|text|copy|wording)\b/i.test(
-        taskContext,
-      );
-    if (!editIntent || !inPlaceSurface) return false;
-
-    const criteriaCheck = matchSuccessCriteria({
-      successCriteria: currentStep.successCriteria,
-      snapshot,
-    });
-    if (!criteriaCheck.satisfied) return false;
-
-    const coherence = checkSummaryStepCoherence({
-      summary,
-      currentStepIndex,
-      stepDescriptions: this.planSubtasks.map((s) => s.description),
-    });
-    if (!coherence.coherent) return false;
-
-    return true;
   }
 
   private getActiveToolProfileForStep(

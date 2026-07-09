@@ -112,6 +112,10 @@ import {
   evaluateTextAdmissionAdvanceGate,
   type TextAdmissionGateHost,
 } from "../../src/background/agent/text-admission-gate";
+import {
+  shouldBypassPlanIncompleteDoneRejection,
+  type DonePlanValidationHost,
+} from "../../src/background/agent/done-plan-validation";
 import { buildDomAwareProfile } from "../../src/background/tools/metadata";
 import { workspaceManager } from "../../src/background/workspaces/manager";
 import type { TaggedElement } from "../../src/types";
@@ -6367,7 +6371,7 @@ Showing 6-10 of 50`,
     (agent as any).originalQuery =
       "In the spreadsheet, change the Q1 Sales value in the first row to 999.";
 
-    const result = (agent as any).shouldBypassPlanIncompleteDoneRejection({
+    const result = shouldBypassPlanIncompleteDoneRejection(agent as unknown as DonePlanValidationHost, {
       summary:
         "Updated the spreadsheet so the first-row Q1 Sales cell now shows 999.",
       currentStepIndex: 0,
@@ -6417,7 +6421,7 @@ Showing 6-10 of 50`,
     (agent as any).originalQuery =
       'Navigate to the "Database Instances > HBase" module of the "Configuration" application.';
 
-    const result = (agent as any).shouldBypassPlanIncompleteDoneRejection({
+    const result = shouldBypassPlanIncompleteDoneRejection(agent as unknown as DonePlanValidationHost, {
       summary:
         "Successfully navigated to Configuration > Database Instances > HBase. The HBase Instances page displays no records.",
       currentStepIndex: 0,
@@ -6457,7 +6461,7 @@ Showing 6-10 of 50`,
     (agent as any).originalQuery =
       "Buy the first two items from the procurement list. Open each store in a new tab, purchase the item, then come back and check it off.";
 
-    const result = (agent as any).shouldBypassPlanIncompleteDoneRejection({
+    const result = shouldBypassPlanIncompleteDoneRejection(agent as unknown as DonePlanValidationHost, {
       summary:
         "Purchased the first procurement item, returned to the procurement list, and checked off the completed row.",
       currentStepIndex: 1,
@@ -6782,7 +6786,7 @@ Showing 6-10 of 50`,
     (agent as any).originalQuery =
       "Select Business for the category, pick the Standard budget, and submit the form.";
 
-    const result = (agent as any).shouldBypassPlanIncompleteDoneRejection({
+    const result = shouldBypassPlanIncompleteDoneRejection(agent as unknown as DonePlanValidationHost, {
       summary:
         "Submitted the form successfully and reached the submission complete page with Bob's details and a reference number.",
       currentStepIndex: 1,
@@ -6825,7 +6829,7 @@ Showing 6-10 of 50`,
     (agent as any).originalQuery =
       "Dismiss the overlays, fill in the email, then delete the account and confirm it.";
 
-    const result = (agent as any).shouldBypassPlanIncompleteDoneRejection({
+    const result = shouldBypassPlanIncompleteDoneRejection(agent as unknown as DonePlanValidationHost, {
       summary:
         "Clicked Confirm Delete and verified the account was deleted successfully.",
       currentStepIndex: 0,
@@ -6865,7 +6869,7 @@ Showing 6-10 of 50`,
     (agent as any).originalQuery =
       "Complete all form sections before submitting.";
 
-    const result = (agent as any).shouldBypassPlanIncompleteDoneRejection({
+    const result = shouldBypassPlanIncompleteDoneRejection(agent as unknown as DonePlanValidationHost, {
       summary: "Completed the first form section successfully.",
       currentStepIndex: 0,
     });
