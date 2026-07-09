@@ -177,6 +177,18 @@ export const DEFAULT_MODEL_PRICING: ModelPricing[] = [
     confidence: "official",
   },
   {
+    providerId: "cerebras",
+    // gemma-4-31b executor eval (2026-07-09). Rate from the Cerebras pricing
+    // page; caching discount not published, so cachedInputUsdPerMillion is
+    // omitted (cost falls back to the full input rate for cached tokens).
+    model: "gemma-4-31b",
+    inputUsdPerMillion: 0.99,
+    outputUsdPerMillion: 1.49,
+    effectiveDate: "2026-07-09",
+    sourceUrl: "https://cloud.cerebras.ai",
+    confidence: "official",
+  },
+  {
     providerId: "xiaomi",
     model: "mimo-v2-omni",
     inputUsdPerMillion: 0,

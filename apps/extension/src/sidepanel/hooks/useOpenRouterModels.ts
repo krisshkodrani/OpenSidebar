@@ -232,8 +232,8 @@ export const CEREBRAS_MODELS: ProviderModelOption[] = [
   {
     id: "gemma-4-31b",
     name: "Gemma 4 31B (Cerebras)",
-    promptPrice: 0,
-    completionPrice: 0,
+    promptPrice: 0.99 / 1_000_000,
+    completionPrice: 1.49 / 1_000_000,
     supportsVision: true,
     provider: "cerebras",
     source: "curated",
