@@ -223,6 +223,18 @@ export function evaluateCompletionGroundingReadPreflight(params: {
   if (elementCount <= 5 || visibleLen <= 100) {
     return { status: "valid", needsGroundingRead };
   }
+  // Non-summarize task with a substantive current snapshot: the page content
+  // is already in the model's prompt (the snapshot's pageContent, up to 60K
+  // chars), so grounding is satisfied — the same rationale as the start()-time
+  // `hasReadPage` pre-set, re-applied to the current turn's snapshot. This
+  // removes a timing dependence where the pre-set missed a snapshot that was
+  // thin at warmup but substantive once the page hydrated, which otherwise
+  // preempted the completion kernel's own contract with a spurious
+  // "read_page first" rejection on compose/action tasks. Summarize/report
+  // tasks (needsGroundingRead) keep the stricter summary-grounding check below.
+  if (!needsGroundingRead) {
+    return { status: "valid", needsGroundingRead };
+  }
   if (
     isDoneSummaryGroundedInSnapshot(params.summary, params.snapshot ?? null)
   ) {

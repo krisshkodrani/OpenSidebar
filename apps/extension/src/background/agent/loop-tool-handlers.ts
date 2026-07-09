@@ -69,7 +69,12 @@ export function toolProvidesPageGrounding(toolName: ToolName): boolean {
   return (
     toolName === ToolName.READ_PAGE ||
     toolName === ToolName.XRAY_PAGE ||
-    toolName === ToolName.INSPECT_CHART
+    toolName === ToolName.INSPECT_CHART ||
+    // Reading a specific element's live value is genuine page grounding for a
+    // compose/action task (the agent read actual current page content). It sets
+    // only the weaker `hasReadPage`, not `hasExplicitPageRead`, so summarize/
+    // report tasks still require a full read_page.
+    toolName === ToolName.READ_ELEMENT
   );
 }
 

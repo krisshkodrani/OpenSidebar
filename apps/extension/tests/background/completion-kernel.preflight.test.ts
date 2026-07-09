@@ -314,6 +314,38 @@ describe("completion kernel preflights", () => {
     });
   });
 
+  test("non-summarize task with a substantive snapshot is grounded (page content is in-prompt)", () => {
+    const decision = evaluateCompletionGroundingReadPreflight({
+      userRequest:
+        "Draft a reply in the composer explaining the delay. Do not send it.",
+      summary:
+        "Drafted an apology reply in the composer and left it unsent for review.",
+      snapshot: snapshot({
+        title: "Messaging",
+        visibleContent:
+          "Conversation with David Park. Reply composer is open with the drafted apology message ready for review before sending.",
+        pageContent:
+          "Conversation with David Park. Reply composer is open with the drafted apology message ready for review before sending.",
+        elements: [
+          choice(201, "Reply", false),
+          choice(202, "Send", false),
+          choice(203, "Attach", false),
+          choice(204, "Discard", false),
+          choice(205, "Composer", false),
+          choice(206, "Editor", false),
+        ],
+      }),
+      // The summary describes the drafted reply, not page content, so it would
+      // NOT pass the summary-grounding check — but for a non-summarize task a
+      // substantive snapshot means the page is already in the prompt.
+      hasReadPage: false,
+      hasExplicitPageRead: false,
+      hasTaskId: true,
+    });
+
+    expect(decision).toEqual({ status: "valid", needsGroundingRead: false });
+  });
+
   test("rejects first early done for explicit multi-step tasks", () => {
     const decision = evaluateCompletionEarlyMultiStepPreflight({
       userRequest:

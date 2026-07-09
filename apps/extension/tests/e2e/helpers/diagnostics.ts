@@ -21,7 +21,9 @@ const moduleDir = import.meta.url.startsWith("file:")
   : dirname(import.meta.url);
 const __dirname = moduleDir;
 const PROJECT_ROOT = resolve(__dirname, "../../../../..");
-const TRACE_DIR = join(PROJECT_ROOT, "traces");
+/** Absolute path to the repo-root traces dir. Exported so tests never read it
+ * CWD-relative (vitest runs with cwd = apps/extension, where it does not exist). */
+export const TRACE_DIR = join(PROJECT_ROOT, "traces");
 const RUN_TRACE_DIR = join(TRACE_DIR, "runs");
 const LOG_SERVER_SCRIPT = join(PROJECT_ROOT, "scripts", "log-server.ts");
 const TSX_CLI = join(PROJECT_ROOT, "node_modules", "tsx", "dist", "cli.mjs");
