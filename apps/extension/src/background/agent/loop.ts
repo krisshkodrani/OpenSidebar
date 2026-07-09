@@ -118,6 +118,7 @@ import {
 } from "./turn-checkpoint";
 import {
   recordShadowCompletionDecision,
+  shadowCompareCompletionPipeline,
   type ShadowCompletionHost,
 } from "./shadow-completion";
 import {
@@ -166,7 +167,6 @@ import {
   type CompletionEvaluation,
   type TrustedCompletionCandidate,
 } from "./completion-kernel";
-import { evaluateGeneratedCompletionCandidate } from "./completion-evaluation-service";
 import {
   buildCompletionDecisionRecord,
   computeSnapshotDigest,
@@ -1831,7 +1831,11 @@ export class AgentLoop {
         error: err instanceof Error ? err.message : String(err),
       });
     }
-    await this.shadowCompareCompletionPipeline(input, verdict);
+    await shadowCompareCompletionPipeline(
+      this as unknown as ShadowCompletionHost,
+      input,
+      verdict,
+    );
     return verdict;
   }
 
@@ -1843,52 +1847,6 @@ export class AgentLoop {
    * carries the pre-inner guard context + the captured planner result, so the
    * pipeline runs without a second model call.
    */
-  private async shadowCompareCompletionPipeline(
-    input: CompletionDecisionRecordInput,
-    legacyVerdict: boolean,
-  ): Promise<void> {
-    try {
-      const { decision: kernelDecision } = evaluateGeneratedCompletionCandidate({
-        userRequest: input.userRequest,
-        snapshot: input.snapshot,
-        activeObjective: input.activeObjective,
-        successCriteria: input.successCriteria,
-        evidence: input.evidence,
-        candidateSource: input.candidateSource,
-        summary: input.summary,
-      });
-      const pipelineDecision = await runCompletionPipeline(input.guardContext, {
-        getKernelDecision: () => kernelDecision,
-        deterministicAcceptanceEnabled: input.deterministicAcceptanceEnabled,
-        isDuplicateTerminal: input.isDuplicateTerminal,
-        validatePlan: async () => input.plannerResult,
-        buildKernelRejectionEffects: () => [],
-        buildPlanRejectionEffects: () => [],
-      });
-      const pipelineAccepted = pipelineDecision.verdict === "accept";
-      if (pipelineAccepted !== legacyVerdict) {
-        this.traceRecorder?.recordEvent("completion_pipeline_divergence", {
-          turn: this.turnCount,
-          legacyVerdict: legacyVerdict ? "accepted" : "rejected",
-          pipelineVerdict: pipelineDecision.verdict,
-          pipelineBasis: pipelineDecision.basis,
-          pipelineRejectedBy: pipelineDecision.rejectedBy,
-          pipelineReason: pipelineDecision.reason,
-        });
-        this.log.warn("agent", "completion pipeline shadow divergence", {
-          turn: this.turnCount,
-          legacyVerdict: legacyVerdict ? "accepted" : "rejected",
-          pipelineVerdict: pipelineDecision.verdict,
-          pipelineRejectedBy: pipelineDecision.rejectedBy,
-        });
-      }
-    } catch (err) {
-      this.log.warn("agent", "completion pipeline shadow comparison failed", {
-        turn: this.turnCount,
-        error: err instanceof Error ? err.message : String(err),
-      });
-    }
-  }
 
   /**
    * Snapshot the completion decision input surface as the kernel will see it,

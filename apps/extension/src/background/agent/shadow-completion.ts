@@ -10,15 +10,20 @@
  */
 
 import type { TraceRecorder } from "./trace";
+import type { logger, SessionScopedLogger } from "../../utils";
 import type {
   CompletionEvaluation,
   CompletionEnvelope,
   CompletionCandidateSource,
 } from "./completion-kernel";
+import type { CompletionDecisionRecordInput } from "./completion/decision-record";
+import { runCompletionPipeline } from "./completion/pipeline";
+import { evaluateGeneratedCompletionCandidate } from "./completion-evaluation-service";
 
 export interface ShadowCompletionHost {
   readonly turnCount: number;
   readonly traceRecorder: TraceRecorder | null;
+  readonly log: typeof logger | SessionScopedLogger;
   createCompletionEnvelope(params: {
     source: CompletionCandidateSource;
     contractKind: string;
@@ -76,6 +81,54 @@ export function recordShadowCompletionDecision(
       contractKind: decision.contract.kind,
       evidenceKeys: decision.evidence.map((event) => event.logicalKey),
       ...metadata,
+    });
+  }
+}
+
+export async function shadowCompareCompletionPipeline(
+  host: ShadowCompletionHost,
+  input: CompletionDecisionRecordInput,
+  legacyVerdict: boolean,
+): Promise<void> {
+  try {
+    const { decision: kernelDecision } = evaluateGeneratedCompletionCandidate({
+      userRequest: input.userRequest,
+      snapshot: input.snapshot,
+      activeObjective: input.activeObjective,
+      successCriteria: input.successCriteria,
+      evidence: input.evidence,
+      candidateSource: input.candidateSource,
+      summary: input.summary,
+    });
+    const pipelineDecision = await runCompletionPipeline(input.guardContext, {
+      getKernelDecision: () => kernelDecision,
+      deterministicAcceptanceEnabled: input.deterministicAcceptanceEnabled,
+      isDuplicateTerminal: input.isDuplicateTerminal,
+      validatePlan: async () => input.plannerResult,
+      buildKernelRejectionEffects: () => [],
+      buildPlanRejectionEffects: () => [],
+    });
+    const pipelineAccepted = pipelineDecision.verdict === "accept";
+    if (pipelineAccepted !== legacyVerdict) {
+      host.traceRecorder?.recordEvent("completion_pipeline_divergence", {
+        turn: host.turnCount,
+        legacyVerdict: legacyVerdict ? "accepted" : "rejected",
+        pipelineVerdict: pipelineDecision.verdict,
+        pipelineBasis: pipelineDecision.basis,
+        pipelineRejectedBy: pipelineDecision.rejectedBy,
+        pipelineReason: pipelineDecision.reason,
+      });
+      host.log.warn("agent", "completion pipeline shadow divergence", {
+        turn: host.turnCount,
+        legacyVerdict: legacyVerdict ? "accepted" : "rejected",
+        pipelineVerdict: pipelineDecision.verdict,
+        pipelineRejectedBy: pipelineDecision.rejectedBy,
+      });
+    }
+  } catch (err) {
+    host.log.warn("agent", "completion pipeline shadow comparison failed", {
+      turn: host.turnCount,
+      error: err instanceof Error ? err.message : String(err),
     });
   }
 }
