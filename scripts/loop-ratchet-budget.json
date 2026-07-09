@@ -3,7 +3,7 @@
   "budgets": {
     "apps/extension/src/background/agent/loop.ts": {
       "fileLines": 9862,
-      "methodCount": 185,
+      "methodCount": 184,
       "loopMethodLines": 2344
     },
     "apps/extension/src/background/agent/completion-kernel.ts": {

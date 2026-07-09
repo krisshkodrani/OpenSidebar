@@ -51,6 +51,7 @@ async function replayPipelineVerdict(
     isDuplicateTerminal: input.isDuplicateTerminal,
     validatePlan: async () => input.plannerResult,
     buildKernelRejectionEffects: () => [],
+    buildPlanRejectionEffects: () => [],
   });
   return pipelineDecision.verdict === "accept" ? "accepted" : "rejected";
 }

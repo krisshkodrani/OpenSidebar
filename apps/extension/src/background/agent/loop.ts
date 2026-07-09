@@ -2051,20 +2051,6 @@ export class AgentLoop {
     return { shouldReject, rejectReason };
   }
 
-  private handleDonePlanRejection(
-    toolCallId: string,
-    summary: string,
-    rejectReason: string,
-    effectiveCurrentIdx: number,
-  ): void {
-    runDonePlanRejection(
-      this as unknown as DonePlanRejectionHost,
-      toolCallId,
-      summary,
-      rejectReason,
-      effectiveCurrentIdx,
-    );
-  }
 
   private getActiveCompletionContext(): {
     activeObjective?: string;
@@ -2267,6 +2253,14 @@ export class AgentLoop {
       forceGroundingRefresh: async () => {
         await this.forceGroundingRefresh(tabId, "done_before_grounding_read");
       },
+      runDonePlanRejection: (id, summary, rejectReason, idx) =>
+        runDonePlanRejection(
+          this as unknown as DonePlanRejectionHost,
+          id,
+          summary,
+          rejectReason,
+          idx,
+        ),
     };
   }
 
@@ -2327,6 +2321,7 @@ export class AgentLoop {
         isDuplicateTerminal: input.isDuplicateTerminal,
         validatePlan: async () => input.plannerResult,
         buildKernelRejectionEffects: () => [],
+        buildPlanRejectionEffects: () => [],
       });
       const pipelineAccepted = pipelineDecision.verdict === "accept";
       if (pipelineAccepted !== legacyVerdict) {
@@ -2581,6 +2576,15 @@ export class AgentLoop {
           summary,
           decision as CompletionRejectionDecision,
         ),
+      buildPlanRejectionEffects: (plan) => [
+        {
+          type: "run_done_plan_rejection",
+          toolCallId,
+          summary,
+          rejectReason: plan.reason,
+          effectiveCurrentIdx: plan.effectiveCurrentIdx ?? -1,
+        },
+      ],
     });
 
     await applyCompletionEffects(
@@ -2633,13 +2637,9 @@ export class AgentLoop {
     };
 
     if (shouldReject) {
-      this.handleDonePlanRejection(
-        toolCallId,
-        summary,
-        rejectReason,
-        effectiveCurrentIdx,
-      );
-      return { rejected: true, reason: rejectReason ?? "" };
+      // Single-authority (RFC LP-16 Phase 2): don't apply the policy inline —
+      // the pipeline carries a run_done_plan_rejection effect built from this.
+      return { rejected: true, reason: rejectReason ?? "", effectiveCurrentIdx };
     }
     return { rejected: false, reason: "" };
   }
