@@ -7,6 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.5.0] - 2026-07-09
+
+Agent-loop decomposition (RFC LP-16, Phase 3 "driver-flip"): the ~2,300-line
+`loop()` turn method is now a ~260-line driver over nine focused, individually
+tested turn phases (gates, escalation, feedback, prepare-model-turn,
+prepare-turn-context, dispatch-tools, post-tool-guards, plan-monitor,
+completion) plus the text-response path and an escalation-controller factory.
+Turn state moved onto explicit per-run / per-turn scopes; behavior-preserving,
+validated end-to-end (full unit suite + staged e2e). The decomposition ratchet
+that guards the landmine files is tightened accordingly. Also ships the demo
+recording/promo tooling.
+
 ## [0.4.0] - 2026-07-07
 
 Verification subsystem + loop decomposition (RFC LP-15, "three consolidations"):
