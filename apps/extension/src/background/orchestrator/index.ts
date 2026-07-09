@@ -153,6 +153,7 @@ import {
 } from "./scheduling";
 import { decideRetryPolicy } from "./retry-policy";
 import { BudgetEstimator } from "./budget-estimator";
+import { BudgetEstimatorRegistry } from "./budget-estimator-registry";
 import {
   CreateAgentLoopInput,
   EscalationDecisionPayload,
@@ -265,7 +266,7 @@ export class Orchestrator {
   private completionWaiters = new CompletionWaiterRegistry();
   private workersByWorkspace = new Map<string, WorkspaceLanePools>();
   private pendingFeedback = new PendingFeedbackQueue();
-  private budgetEstimatorsByWorkspace = new Map<string, BudgetEstimator>();
+  private budgetEstimators = new BudgetEstimatorRegistry();
   private laneRuntimeByWorkspace = new Map<
     string,
     Record<RuntimeLane, LaneRuntimeState>
@@ -566,7 +567,7 @@ export class Orchestrator {
     const topology = resolveLaneTopologyFromSettings({
       laneTopologyMode: task?.laneTopologyMode,
     });
-    this.budgetEstimatorsByWorkspace.set(workspaceId, new BudgetEstimator());
+    this.budgetEstimators.reset(workspaceId);
     this.workersByWorkspace.set(workspaceId, this.createWorkspaceLanePools());
     this.laneSupervisorsByWorkspace.set(
       workspaceId,
@@ -594,7 +595,7 @@ export class Orchestrator {
     clearLaneSupervisorTimers(supervisors);
     this.laneSupervisorsByWorkspace.delete(workspaceId);
     this.workersByWorkspace.delete(workspaceId);
-    this.budgetEstimatorsByWorkspace.delete(workspaceId);
+    this.budgetEstimators.clear(workspaceId);
     this.laneRuntimeByWorkspace.delete(workspaceId);
     this.recentCompletionTracker.clear(workspaceId);
     this.pendingFeedback.clear(workspaceId);
@@ -636,12 +637,7 @@ export class Orchestrator {
   }
 
   private getBudgetEstimator(workspaceId: string): BudgetEstimator {
-    let estimator = this.budgetEstimatorsByWorkspace.get(workspaceId);
-    if (!estimator) {
-      estimator = new BudgetEstimator();
-      this.budgetEstimatorsByWorkspace.set(workspaceId, estimator);
-    }
-    return estimator;
+    return this.budgetEstimators.get(workspaceId);
   }
 
   private getLaneRuntimeState(
