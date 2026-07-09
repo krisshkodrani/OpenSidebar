@@ -18,10 +18,6 @@ import {
   normalizeOrigin,
   navigationBoundaryError,
 } from "./tab-navigation-helpers";
-import {
-} from "./download-helpers";
-import {
-} from "./main-world-bridge";
 import { sanitizeUrl } from "../security";
 import {
 } from "../../utils/personal-profile";
