@@ -93,6 +93,10 @@ import {
   type EscalationPhaseHost,
 } from "./turn-phases/escalation";
 import {
+  runPlanMonitorPhase,
+  type PlanMonitorPhaseHost,
+} from "./turn-phases/plan-monitor";
+import {
   buildServiceNowMissingFieldInfeasibleSummary,
   extractServiceNowFormMissingFieldLabels,
   extractServiceNowModuleRequest,
@@ -8984,40 +8988,10 @@ export class AgentLoop {
               }
 
               // Plan monitor: check alignment every 2 turns when plan is active
-              this.turnsSinceLastMonitor++;
-              if (
-                this.taskId &&
-                this.planSteps.length > 0 &&
-                this.turnsSinceLastMonitor >= 2 &&
-                this.perception.getInterpretation() &&
-                !this.abortController?.signal.aborted
-              ) {
-                this.turnsSinceLastMonitor = 0;
-                const monitorResult = await this.runPlanMonitor(
-                  this.abortController?.signal,
-                );
-                if (monitorResult) {
-                  if (
-                    monitorResult.alignment === "deviated" &&
-                    this.replanCount < this.limits.maxReplans
-                  ) {
-                    await this.handlePlanDeviation(
-                      monitorResult,
-                      tabId,
-                      this.abortController?.signal,
-                    );
-                  } else if (
-                    monitorResult.alignment === "blocked" &&
-                    monitorResult.blocker
-                  ) {
-                    this.context.addMessage({
-                      role: "user",
-                      content: `[Plan Monitor]: Blocker detected — ${monitorResult.blocker}. Address this before continuing with the current step.`,
-                    });
-                  }
-                  // aligned/progressing → no action needed
-                }
-              }
+              await runPlanMonitorPhase(
+                this as unknown as PlanMonitorPhaseHost,
+                tabId,
+              );
 
               // Progress tracking: detect stuck loops
               const progressSignal = this.stagnation.onSnapshotRefresh(snap);
