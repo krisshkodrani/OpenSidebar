@@ -101,6 +101,10 @@ import {
   type TextResponsePhaseHost,
 } from "./turn-phases/text-response";
 import {
+  runPrepareTurnContextPhase,
+  type PrepareTurnContextHost,
+} from "./turn-phases/prepare-turn-context";
+import {
   runDonePlanRejection,
   type DonePlanRejectionHost,
 } from "./done-plan-rejection";
@@ -283,7 +287,6 @@ export {
 } from "./perception-done-validation";
 import {
   AGENT_LIMITS,
-  BROADCAST_INTERVALS,
   STRING_LIMITS,
   TOOL_CACHE,
   DEFAULT_RUNTIME_LIMITS,
@@ -292,9 +295,7 @@ import type { Difficulty, RuntimeLimits } from "./constants";
 // reassessRuntimeLimits is available from "./constants" for mid-session S5 reassessment
 import { APPROVAL_TIMEOUT_MS, MAX_SESSION_MS } from "./loop-metrics";
 import type { LoopResult } from "./loop-types";
-import type {
-  PendingUserInteraction,
-} from "./loop-types";
+import type { PendingUserInteraction } from "./loop-types";
 import { getLoadedSkillContract } from "../orchestrator/skills";
 import { evaluateWorkflowTabRedirect } from "./workflow-tab-controller";
 import {
@@ -1019,7 +1020,11 @@ export class AgentLoop {
       return true;
     }
 
-    const replay = lookupMutationReplay(this as unknown as LoopQueriesHost, toolName, args);
+    const replay = lookupMutationReplay(
+      this as unknown as LoopQueriesHost,
+      toolName,
+      args,
+    );
     if (!replay) return false;
 
     this.log.info("agent", "Idempotency guard: returning cached result", {
@@ -3148,7 +3153,6 @@ export class AgentLoop {
     return true;
   }
 
-
   private async getWorkflowTabToolRedirect(params: {
     toolName: ToolName;
     args: Record<string, unknown>;
@@ -3185,7 +3189,7 @@ export class AgentLoop {
     } catch {
       return null;
     }
-    const tabs = await getWorkspaceTabs(this as unknown as LoopQueriesHost, );
+    const tabs = await getWorkspaceTabs(this as unknown as LoopQueriesHost);
     const decision = evaluateWorkflowTabRedirect({
       skillId: this.selectedSkillId,
       toolName,
@@ -6547,53 +6551,14 @@ export class AgentLoop {
       // into context before inference. Extracted (RFC LP-16 Phase 3).
       runFeedbackPhase(this as unknown as FeedbackPhaseHost);
 
-      // Broadcast turn progress to side panel (throttled)
-      if (
-        this.turnCount === 1 ||
-        this.turnCount % BROADCAST_INTERVALS.TURN_PROGRESS === 0
-      ) {
-        this.broadcast({
-          type: "AGENT_TURN",
-          payload: {
-            turn: this.turnCount,
-            maxTurns: this.maxTurns,
-            provider: this.llm.getActiveProviderInfo().providerId,
-          },
-        });
-      }
-
-      // Set time context for turn budget indicator
-      this.context.setTimeContext(
-        this.turnCount,
-        this.maxTurns,
-        this.telemetry.sessionStartTime,
+      // Pre-inference turn bookkeeping: turn-progress broadcast, time context,
+      // budget-urgency trace, money-table refresh, catalog-order snapshot
+      // completion. Extracted (RFC LP-16 Phase 3b).
+      const turnContext = runPrepareTurnContextPhase(
+        this as unknown as PrepareTurnContextHost,
+        session,
       );
-      // Emit trace events on budget urgency level transitions
-      {
-        const currentBudgetLevel = this.context.getBudgetUrgencyLevel();
-        if (currentBudgetLevel !== session.previousBudgetUrgencyLevel) {
-          if (currentBudgetLevel === "critical") {
-            this.traceRecorder?.recordEvent("budget_critical", {
-              turnCount: this.turnCount,
-              maxTurns: this.maxTurns,
-              remaining: Math.max(0, this.maxTurns - this.turnCount),
-            });
-          } else if (currentBudgetLevel === "low") {
-            this.traceRecorder?.recordEvent("budget_warning", {
-              turnCount: this.turnCount,
-              maxTurns: this.maxTurns,
-              remaining: Math.max(0, this.maxTurns - this.turnCount),
-            });
-          }
-          session.previousBudgetUrgencyLevel = currentBudgetLevel;
-        }
-      }
-      this.updateMoneyTableAggregateFromSnapshot();
-      const catalogSnapshotCompletion =
-        this.maybeCompleteCatalogOrderFromSnapshot();
-      if (catalogSnapshotCompletion) {
-        return catalogSnapshotCompletion;
-      }
+      if (turnContext.kind === "end_task") return turnContext.result;
 
       // Escalation phase: escalation-rescue policy (RFC LP-2) — fail-fast or
       // replan/strategy-pivot on no verified progress. Extracted (LP-16 Phase 3).
