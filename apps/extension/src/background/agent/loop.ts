@@ -113,6 +113,12 @@ import {
   type DoneDiagnosticsHost,
 } from "./done-diagnostics";
 import {
+  saveTurnCheckpoint,
+  restoreFromTurnCheckpoint,
+  clearTurnCheckpoint,
+  type TurnCheckpointHost,
+} from "./turn-checkpoint";
+import {
   getActiveCompletionContext,
   recordCompletionEvidence,
   refreshCompletionEvidenceFromSnapshot,
@@ -184,7 +190,6 @@ import {
   type CompletionEffectHost,
 } from "./completion/apply-effects";
 import {
-  TURN_CHECKPOINT_VERSION,
   buildMutationKey,
 } from "./checkpoint-types";
 import type { TurnCheckpoint } from "./checkpoint-types";
@@ -1010,57 +1015,7 @@ export class AgentLoop {
    * LLM call. Fire-and-forget — checkpoint failure must not block the loop.
    */
   private async saveTurnCheckpoint(): Promise<void> {
-    if (!this.nodeId || !this.workspaceId) return;
-    try {
-      const snapshot = this.context.getSnapshot?.() ?? null;
-      const cp: TurnCheckpoint = {
-        version: TURN_CHECKPOINT_VERSION,
-        workspaceId: this.workspaceId,
-        nodeId: this.nodeId,
-        savedAt: Date.now(),
-
-        // Loop runtime
-        turnCount: this.turnCount,
-        maxTurns: this.maxTurns,
-        currentPlanIndex: this.lastPlanIndex,
-        turnsOnCurrentStep: this.turnsOnCurrentStep,
-        escalationsOnCurrentStep: this.escalationsOnCurrentStep,
-        guardAfterDoneRejection: this.guardAfterDoneRejection,
-
-        // Context / prompt state
-        history: this.context.exportForCheckpoint(),
-        planStatus: this.context.getPlanStatusRaw(),
-        workingNotes: this.context.getWorkingNotes(),
-        lastActionOutcome: this.context.getLastActionOutcome(),
-        modelTier: this.llm.isPlannerTier() ? "planner" : "executor",
-        isFirstTurn: this.context.getIsFirstTurn(),
-
-        // Resume validation
-        snapshotFingerprint: getSnapshotFingerprint(snapshot),
-        pageUrl: snapshot?.url ?? null,
-
-        // Phase 2
-        stepMutationLedger: this.checkpoints.entries,
-
-        // Phase 4
-        sideEffectsLog: this.checkpoints.sideEffects,
-        completedResult: this.completedResult
-          ? {
-              outcome: "completed",
-              summary: this.completedResult.summary,
-              ...(this.completedResult.completionEnvelope
-                ? {
-                    completionEnvelope:
-                      this.completedResult.completionEnvelope,
-                  }
-                : {}),
-            }
-          : undefined,
-      };
-      await this.checkpoints.persist(this.workspaceId, this.nodeId, cp);
-    } catch (e) {
-      this.log.warn("agent", "Failed to save turn checkpoint", { error: e });
-    }
+    await saveTurnCheckpoint(this as unknown as TurnCheckpointHost);
   }
 
   /**
@@ -1071,73 +1026,14 @@ export class AgentLoop {
    * calling this — if the page diverged materially, skip restore.
    */
   private restoreFromTurnCheckpoint(cp: TurnCheckpoint): boolean {
-    try {
-      // Runtime counters
-      this.turnCount = cp.turnCount;
-      this.maxTurns = applySkillTurnCap(
-        this.selectedSkillId,
-        Math.max(this.maxTurns, cp.maxTurns),
-      );
-      this.lastPlanIndex = cp.currentPlanIndex;
-      this.turnsOnCurrentStep = cp.turnsOnCurrentStep;
-      this.escalationsOnCurrentStep = cp.escalationsOnCurrentStep;
-      this.guardAfterDoneRejection = cp.guardAfterDoneRejection;
-
-      // Context / history
-      this.context.restoreFromCheckpointHistory(cp.history, cp.isFirstTurn);
-      if (cp.planStatus) {
-        this.context.setPlanStatus(
-          cp.planStatus.subtasks,
-          cp.planStatus.currentIndex,
-        );
-      }
-      if (cp.workingNotes) {
-        this.context.setWorkingNotes(cp.workingNotes);
-      }
-      if (cp.lastActionOutcome) {
-        this.context.setLastActionOutcome(cp.lastActionOutcome);
-      }
-      if (cp.modelTier === "planner") {
-        this.llm.switchToPlanner();
-      } else {
-        this.llm.switchToExecutor();
-      }
-
-      this.checkpoints.restoreLedger(cp.stepMutationLedger, cp.sideEffectsLog);
-      this.completedResult = cp.completedResult
-        ? {
-            outcome: "completed",
-            summary: cp.completedResult.summary,
-            ...(cp.completedResult.completionEnvelope
-              ? { completionEnvelope: cp.completedResult.completionEnvelope }
-              : {}),
-          }
-        : null;
-
-      this.log.info("agent", "Restored from turn checkpoint", {
-        turn: cp.turnCount,
-        historyMessages: cp.history.originalCount,
-        ledgerEntries: this.checkpoints.entries.length,
-        sideEffects: this.checkpoints.sideEffects.length,
-        completed: Boolean(this.completedResult),
-      });
-      return true;
-    } catch (e) {
-      this.log.warn("agent", "Failed to restore turn checkpoint", { error: e });
-      return false;
-    }
+    return restoreFromTurnCheckpoint(this as unknown as TurnCheckpointHost, cp);
   }
 
   /**
    * Delete the turn checkpoint for this node (called on terminal states).
    */
   private async clearTurnCheckpoint(): Promise<void> {
-    if (!this.nodeId || !this.workspaceId) return;
-    try {
-      await this.checkpoints.clear(this.workspaceId, this.nodeId);
-    } catch {
-      // Best-effort cleanup
-    }
+    await clearTurnCheckpoint(this as unknown as TurnCheckpointHost);
   }
 
   private lookupMutationReplay(
