@@ -32,7 +32,6 @@ import {
 } from "../../utils/perception-mode";
 import { LLMClient } from "../llm";
 import { toolRegistry } from "../tools";
-import { resolveToolProfile } from "../tools/metadata";
 import type { ToolProfile } from "../tools/metadata";
 import { waitForDomReady } from "../tab-ready";
 import {
@@ -104,6 +103,11 @@ import {
   evaluateTextAdmissionAdvanceGate,
   type TextAdmissionGateHost,
 } from "./text-admission-gate";
+import {
+  evaluateDonePlanPrecheck,
+  evaluateDonePlanValidation,
+  type DonePlanValidationHost,
+} from "./done-plan-validation";
 import {
   getActiveCompletionContext,
   recordCompletionEvidence,
@@ -259,7 +263,6 @@ import {
 } from "./agent-plan-progress";
 import { applySkillTurnCap } from "./skill-turn-cap-policy";
 import { countExplicitSteps } from "./explicit-steps";
-import { shouldOmitPerceptionForDoneValidation } from "./perception-done-validation";
 export {
   isPerceptionFailurePlaceholder,
   shouldOmitPerceptionForDoneValidation,
@@ -312,7 +315,6 @@ import {
   detectTrustedFormFillStepCompletion,
   detectTrustedFormSubmitCompletion,
   extractAttemptSummary,
-  formatStateEvidence,
   formatStructuredFailureContext,
   getSnapshotFingerprint,
   isPendingAsyncChangeSatisfied,
@@ -1876,186 +1878,6 @@ export class AgentLoop {
     );
   }
 
-  private evaluateDonePlanPrecheck(summary: string): {
-    shouldReject: boolean;
-    rejectReason: string;
-    effectiveCurrentIdx: number;
-    completedMoneyTableAggregate: boolean;
-  } {
-    let shouldReject = false;
-    let rejectReason = "";
-    const completedMoneyTableAggregate =
-      this.isCompletedMoneyTableAggregateSummary(summary);
-    const completedCount = this.planSubtasks.filter(
-      (s) => s.status === "completed",
-    ).length;
-    const runningIdx = this.planSubtasks.findIndex(
-      (s) => s.status === "running",
-    );
-    const effectiveCurrentIdx = runningIdx >= 0 ? runningIdx : completedCount;
-    const uncommittedInlineEditRejection =
-      this.getUncommittedInlineEditDoneRejection(effectiveCurrentIdx);
-    if (uncommittedInlineEditRejection) {
-      shouldReject = true;
-      rejectReason = uncommittedInlineEditRejection;
-    }
-
-    const bypassPlanIncompleteRejection = shouldReject
-      ? false
-      : completedMoneyTableAggregate ||
-        this.shouldBypassPlanIncompleteDoneRejection({
-          summary,
-          currentStepIndex: effectiveCurrentIdx,
-        });
-    if (
-      effectiveCurrentIdx < this.planSubtasks.length - 1 &&
-      !shouldReject &&
-      !bypassPlanIncompleteRejection
-    ) {
-      shouldReject = true;
-      rejectReason = `Plan incomplete. Step ${effectiveCurrentIdx + 1}/${this.planSubtasks.length} is active; continue to the next planned step instead of ending the task.`;
-    } else if (bypassPlanIncompleteRejection) {
-      this.log.info(
-        "agent",
-        "Bypassing stale plan done rejection for satisfied task",
-        {
-          turn: this.turnCount,
-          step: effectiveCurrentIdx,
-          remainingSteps: this.planSubtasks.length - effectiveCurrentIdx - 1,
-          selectedSkillId: this.selectedSkillId,
-          reason: completedMoneyTableAggregate
-            ? "completed_money_table_aggregate"
-            : "satisfied_edit_task",
-        },
-      );
-      this.traceRecorder?.recordEvent("done_plan_incomplete_bypassed", {
-        step: effectiveCurrentIdx,
-        remainingSteps: this.planSubtasks.length - effectiveCurrentIdx - 1,
-        selectedSkillId: this.selectedSkillId,
-        reason: completedMoneyTableAggregate
-          ? "completed_money_table_aggregate"
-          : "satisfied_edit_task",
-      });
-    }
-
-    const activeAsyncExpectation =
-      this.pendingAsyncVerification &&
-      this.pendingAsyncVerification.stepIndex === effectiveCurrentIdx
-        ? this.pendingAsyncVerification
-        : null;
-    if (
-      this.pendingAsyncVerification &&
-      this.pendingAsyncVerification.stepIndex !== effectiveCurrentIdx
-    ) {
-      this.pendingAsyncVerification = null;
-    }
-    if (
-      activeAsyncExpectation &&
-      !isPendingAsyncChangeSatisfied({
-        snapshot: this.context.getSnapshot(),
-        expectedTokens: activeAsyncExpectation.expectedTokens,
-        baselineLoadingKeywords: activeAsyncExpectation.baselineLoadingKeywords,
-      }) &&
-      !this.hasRecentToolEvidenceForTokens(
-        activeAsyncExpectation.expectedTokens,
-      )
-    ) {
-      shouldReject = true;
-      rejectReason = `The last action likely triggered delayed page content, but the expected result is not visible yet. ${activeAsyncExpectation.reason} Wait for the update and verify it before ending the task.`;
-    } else if (activeAsyncExpectation) {
-      this.pendingAsyncVerification = null;
-    }
-
-    return {
-      shouldReject,
-      rejectReason,
-      effectiveCurrentIdx,
-      completedMoneyTableAggregate,
-    };
-  }
-
-  private async evaluateDonePlanValidation(
-    summary: string,
-    effectiveCurrentIdx: number,
-    completedMoneyTableAggregate: boolean,
-    initialShouldReject: boolean,
-    initialRejectReason: string,
-  ): Promise<{ shouldReject: boolean; rejectReason: string }> {
-    let shouldReject = initialShouldReject;
-    let rejectReason = initialRejectReason;
-
-    try {
-      this.stepHandler(
-        {
-          id: crypto.randomUUID(),
-          type: "thinking",
-          label: "Verifying completion...",
-          status: "running",
-          timestamp: Date.now(),
-        },
-        false,
-      );
-
-      // Skip planner validateDone for orchestrator sub-nodes.
-      // Sub-nodes only need to satisfy their node-level objective;
-      // the orchestrator's own verifier checks node completion.
-      // Calling validateDone with the full original query would
-      // reject because sibling steps aren't done yet.
-      if (!shouldReject && !this.nodeId && !completedMoneyTableAggregate) {
-        const currentSubtask =
-          effectiveCurrentIdx >= 0
-            ? this.planSubtasks[effectiveCurrentIdx]
-            : undefined;
-        const interpretation = this.perception.getInterpretation();
-        const validationPerception = shouldOmitPerceptionForDoneValidation({
-          interpretation,
-          hasReadPage: this.hasReadPage,
-          originalQuery: this.originalQuery,
-          activeStepDescription: currentSubtask?.description,
-          activeStepToolProfile:
-            currentSubtask?.toolProfile &&
-            resolveToolProfile(currentSubtask.toolProfile as ToolProfile)
-              ? (currentSubtask.toolProfile as ToolProfile)
-              : undefined,
-        })
-          ? undefined
-          : (interpretation ?? undefined);
-        const lastEffect = this.stagnation.lastActionEffect;
-        const stateEvidence = lastEffect
-          ? formatStateEvidence(lastEffect)
-          : undefined;
-        const validation = await this.planner.validateDone(
-          this.originalQuery,
-          this.planSubtasks,
-          summary,
-          this.context.getSnapshot()?.title || "",
-          this.context.getSnapshot()?.url || "",
-          this.abortController!.signal,
-          validationPerception,
-          this.planSteps[effectiveCurrentIdx]?.successCriteria,
-          stateEvidence ?? undefined,
-        );
-
-        if (!validation.approved) {
-          shouldReject = true;
-          rejectReason = validation.reason || "Task is not yet complete.";
-        }
-      }
-    } catch (_err: any) {
-      // Planner call failed - structural fallback
-      const completedCount = this.planSubtasks.filter(
-        (s) => s.status === "completed",
-      ).length;
-      if (completedCount < this.planSubtasks.length) {
-        shouldReject = true;
-        rejectReason = `Planner unavailable. ${completedCount}/${this.planSubtasks.length} subtasks completed. Continue.`;
-      }
-    }
-
-    return { shouldReject, rejectReason };
-  }
-
-
   private getActiveCompletionContext(): {
     activeObjective?: string;
     successCriteria?: string;
@@ -2620,14 +2442,16 @@ export class AgentLoop {
       this.lastDonePlanValidation = null;
       return null;
     }
-    const donePlanPrecheck = this.evaluateDonePlanPrecheck(summary);
+    const host = this as unknown as DonePlanValidationHost;
+    const donePlanPrecheck = evaluateDonePlanPrecheck(host, summary);
     let shouldReject = donePlanPrecheck.shouldReject;
     let rejectReason = donePlanPrecheck.rejectReason;
     const effectiveCurrentIdx = donePlanPrecheck.effectiveCurrentIdx;
     const completedMoneyTableAggregate =
       donePlanPrecheck.completedMoneyTableAggregate;
 
-    ({ shouldReject, rejectReason } = await this.evaluateDonePlanValidation(
+    ({ shouldReject, rejectReason } = await evaluateDonePlanValidation(
+      host,
       summary,
       effectiveCurrentIdx,
       completedMoneyTableAggregate,
