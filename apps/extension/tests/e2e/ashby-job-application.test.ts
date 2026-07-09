@@ -43,8 +43,8 @@ describe.skipIf(!h.apiKey)("E2E: Ashby Job Application Skill", () => {
     expect(tabId).toBeGreaterThan(0);
 
     const prompt = [
-      "Fill this Ashby application but do not submit using these data.",
-      "| Field | Copy This |",
+      "Fill out this Ashby application with my details below, exactly as written — but don't submit it, I want to review it first.",
+      "| Field | Value |",
       "|---|---|",
       "| Name | Jordan Rivera |",
       "| Email | jordan.rivera@example.com |",
