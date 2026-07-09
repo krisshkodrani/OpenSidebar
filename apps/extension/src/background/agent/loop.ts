@@ -206,7 +206,9 @@ import {
   getActiveSubtaskDescription,
   getMatchingApprovalInteraction,
   getMatchingClarificationInteraction,
+  getWorkspaceTabs,
   isPureListFilterWorkflowRequest,
+  lookupMutationReplay,
   shouldEscalateOnDoneRejection,
   type LoopQueriesHost,
 } from "./loop-queries";
@@ -967,19 +969,6 @@ export class AgentLoop {
     await clearTurnCheckpoint(this as unknown as TurnCheckpointHost);
   }
 
-  private lookupMutationReplay(
-    toolName: ToolName,
-    args: Record<string, unknown>,
-  ): { result: string; source: "ledger" | "ephemeral" } | null {
-    const currentSnapshot = this.context.getSnapshot?.() ?? null;
-    return this.checkpoints.lookupReplay(
-      toolName,
-      args,
-      currentSnapshot,
-      this.guardAfterDoneRejection,
-    );
-  }
-
   private replayMutationSensitiveAction(
     toolCallId: string,
     toolName: ToolName,
@@ -1030,7 +1019,7 @@ export class AgentLoop {
       return true;
     }
 
-    const replay = this.lookupMutationReplay(toolName, args);
+    const replay = lookupMutationReplay(this as unknown as LoopQueriesHost, toolName, args);
     if (!replay) return false;
 
     this.log.info("agent", "Idempotency guard: returning cached result", {
@@ -3159,21 +3148,6 @@ export class AgentLoop {
     return true;
   }
 
-  private async getWorkspaceTabs(): Promise<chrome.tabs.Tab[]> {
-    const wsTabIds = await this.getWorkspaceTabIds();
-    if (!wsTabIds) {
-      return await chrome.tabs.query({});
-    }
-    const tabs: chrome.tabs.Tab[] = [];
-    for (const id of wsTabIds) {
-      try {
-        tabs.push(await chrome.tabs.get(id));
-      } catch {
-        // Ignore tabs closed outside the agent loop.
-      }
-    }
-    return tabs;
-  }
 
   private async getWorkflowTabToolRedirect(params: {
     toolName: ToolName;
@@ -3211,7 +3185,7 @@ export class AgentLoop {
     } catch {
       return null;
     }
-    const tabs = await this.getWorkspaceTabs();
+    const tabs = await getWorkspaceTabs(this as unknown as LoopQueriesHost, );
     const decision = evaluateWorkflowTabRedirect({
       skillId: this.selectedSkillId,
       toolName,
