@@ -42,7 +42,8 @@ import {
   registerOpenServiceNowModuleTool,
   registerConfigureServiceNowFormTool,
   registerServiceNowKnowledgeBaseTool,
-  registerServiceNowListAndCatalogTools,
+  registerServiceNowListActionTools,
+  registerServiceNowCatalogTools,
 } from "./servicenow";
 
 // Re-export submodules for barrel compatibility
@@ -126,7 +127,8 @@ export function registerTools() {
 
   registerInspectionTools(toolRegistry);
 
-  registerServiceNowListAndCatalogTools(toolRegistry);
+  registerServiceNowListActionTools(toolRegistry);
+  registerServiceNowCatalogTools(toolRegistry);
 
   // Registration order is catalog order; keep this at its ordinal position —
   // grouping it with open_servicenow_module above would shift the catalog.
