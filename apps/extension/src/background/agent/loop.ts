@@ -6630,46 +6630,6 @@ export class AgentLoop {
    * either side has them so SPA view-state URLs remain distinct. Hash is ignored.
    * Returns a block message if matched, or null to allow navigation.
    */
-  private checkNavigateGuard(targetUrl: string): string | null {
-    if (this.planSubtasks.length === 0) return null;
-
-    const completedWithUrls = this.planSubtasks
-      .map((s, i) => ({ ...s, index: i }))
-      .filter((s) => s.status === "completed" && s.completedAtUrl);
-
-    if (completedWithUrls.length === 0) return null;
-
-    let target: URL;
-    try {
-      target = new URL(targetUrl);
-    } catch {
-      return null; // Unparseable URL — let it through
-    }
-
-    for (const step of completedWithUrls) {
-      try {
-        const completed = new URL(step.completedAtUrl!);
-        const includeSearch = Boolean(target.search || completed.search);
-        const targetKey =
-          target.origin + target.pathname + (includeSearch ? target.search : "");
-        const completedKey =
-          completed.origin +
-          completed.pathname +
-          (includeSearch ? completed.search : "");
-        if (targetKey === completedKey) {
-          return (
-            `BLOCKED: Cannot navigate to "${targetUrl}" — matches completed step ${step.index + 1} ("${step.description}").\n` +
-            `Navigating back would undo progress. Continue with the current step.\n` +
-            `If re-visiting is genuinely needed, revise your plan first.`
-          );
-        }
-      } catch {
-        continue;
-      }
-    }
-
-    return null;
-  }
 
   private async loop(initialTabId: number): Promise<LoopResult> {
     let tabId = initialTabId;
