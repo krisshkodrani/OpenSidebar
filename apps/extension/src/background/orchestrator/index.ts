@@ -57,6 +57,7 @@ import {
   MAX_RECENT_COMPLETION_CONTEXT_CHARS,
 } from "./recent-completion-tracker";
 import { PendingFeedbackQueue } from "./pending-feedback-queue";
+import { CompletionWaiterRegistry } from "./completion-waiter-registry";
 import { buildResumeInput } from "./resume-input";
 import {
   buildTaskManifest,
@@ -260,10 +261,7 @@ function isLargeExhaustiveReviewGraph(nodes: TaskNode[]): boolean {
 export class Orchestrator {
   private tasksByWorkspace = new Map<string, OrchestratorTask>();
   private recentCompletionTracker = new RecentCompletionTracker();
-  private completionWaiters = new Map<
-    string,
-    Set<(payload: TaskCompletionMessage["payload"]) => void>
-  >();
+  private completionWaiters = new CompletionWaiterRegistry();
   private workersByWorkspace = new Map<string, WorkspaceLanePools>();
   private pendingFeedback = new PendingFeedbackQueue();
   private budgetEstimatorsByWorkspace = new Map<string, BudgetEstimator>();
@@ -4898,7 +4896,6 @@ export class Orchestrator {
     }
 
     return new Promise((resolve) => {
-      const listeners = this.completionWaiters.get(workspaceId) ?? new Set();
       let settled = false;
       let timer: ReturnType<typeof setTimeout> | null = null;
 
@@ -4906,22 +4903,15 @@ export class Orchestrator {
         if (settled) return;
         settled = true;
         if (timer) clearTimeout(timer);
-        listeners.delete(handleCompletion);
-        if (listeners.size === 0) {
-          this.completionWaiters.delete(workspaceId);
-        }
+        this.completionWaiters.remove(workspaceId, handleCompletion);
         resolve(payload);
       };
 
-      listeners.add(handleCompletion);
-      this.completionWaiters.set(workspaceId, listeners);
+      this.completionWaiters.add(workspaceId, handleCompletion);
       timer = setTimeout(() => {
         if (settled) return;
         settled = true;
-        listeners.delete(handleCompletion);
-        if (listeners.size === 0) {
-          this.completionWaiters.delete(workspaceId);
-        }
+        this.completionWaiters.remove(workspaceId, handleCompletion);
         resolve(null);
       }, timeoutMs);
       (timer as unknown as { unref?: () => void }).unref?.();
@@ -5372,11 +5362,7 @@ export class Orchestrator {
   ): void {
     // Cache for resync on panel reopen (+ append to the recent-completion history)
     this.recentCompletionTracker.record(workspaceId, payload);
-    const waiters = this.completionWaiters.get(workspaceId);
-    if (waiters) {
-      for (const resolve of waiters) resolve(payload);
-      this.completionWaiters.delete(workspaceId);
-    }
+    this.completionWaiters.resolveAll(workspaceId, payload);
 
     // Persist summary as a chat message directly to storage (bypasses panel)
     if (payload.summary) {
