@@ -22,7 +22,9 @@ import {
 import {
   readRunCompletionForTraceFiles,
   readTrace,
+  TRACE_DIR,
 } from "./helpers/diagnostics";
+import { join } from "path";
 
 const enabled = process.env.E2E_LOCAL_MOCK_PROVIDER === "1";
 
@@ -104,7 +106,7 @@ function readTraceSessionsForTraceFiles(
 ): TraceSessionRecord[] {
   const sessionIds = traceSessionIds(traceFiles);
   try {
-    return readFileSync("traces/index.jsonl", "utf-8")
+    return readFileSync(join(TRACE_DIR, "index.jsonl"), "utf-8")
       .trim()
       .split("\n")
       .filter(Boolean)

@@ -99,6 +99,12 @@ describe("tool result recording", () => {
     expect(toolProvidesPageGrounding(ToolName.FIND_ELEMENT)).toBe(false);
   });
 
+  test("treats reading a specific element's value as page grounding", () => {
+    // A compose/action task that reads back an element value has grounded in
+    // live page content (sets hasReadPage only, not hasExplicitPageRead).
+    expect(toolProvidesPageGrounding(ToolName.READ_ELEMENT)).toBe(true);
+  });
+
   test("records successful tool execution side effects", () => {
     vi.spyOn(Date, "now").mockReturnValue(145);
     const loop = host();

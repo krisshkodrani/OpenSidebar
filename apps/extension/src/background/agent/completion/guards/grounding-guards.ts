@@ -14,6 +14,7 @@
  */
 
 import { evaluateCompletionGroundingReadPreflight } from "../preflight";
+import { taskIntentForGrounding } from "../../loop-helpers";
 import type { CompletionGuardContext } from "./context";
 import type { CompletionEffect, GuardOutcome } from "../pipeline-types";
 
@@ -21,7 +22,12 @@ export function assessGroundingGuard(
   ctx: CompletionGuardContext,
 ): GuardOutcome {
   const preflight = evaluateCompletionGroundingReadPreflight({
-    userRequest: ctx.userRequest,
+    // Classify the grounding requirement from the actual task intent (the node
+    // objective, or the composed prompt's `Objective:` section) — never the
+    // full composed prompt, whose skill boilerplate incidentally mentions
+    // "summarize"/"read the page" and false-positives the summarize-task
+    // heuristic, wrongly demanding a read_page on a compose/action task.
+    userRequest: taskIntentForGrounding(ctx.activeObjective, ctx.userRequest),
     summary: ctx.summary,
     snapshot: ctx.snapshot,
     hasReadPage: ctx.hasReadPage,

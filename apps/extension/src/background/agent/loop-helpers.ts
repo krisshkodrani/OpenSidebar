@@ -2336,6 +2336,27 @@ export function requiresGroundingReadBeforeDone(query: string): boolean {
 }
 
 /**
+ * The task-intent string to classify for the grounding-read guard. Prefer the
+ * clean node objective; otherwise, in orchestrator mode the composed node
+ * prompt begins with `Objective: <intent>\nSuccess criteria: ...` — classify
+ * from that objective, NOT the skill boilerplate that follows (which
+ * incidentally mentions "summarize"/"read the page" and would false-positive
+ * the summarize-task heuristic on a compose/action task). Falls back to the raw
+ * request for planless tasks (which have no `Objective:` prefix).
+ */
+export function taskIntentForGrounding(
+  activeObjective: string | undefined | null,
+  userRequest: string,
+): string {
+  const objective = activeObjective?.trim();
+  if (objective) return objective;
+  const match = userRequest.match(
+    /^\s*Objective:\s*([\s\S]*?)(?:\n\s*Success criteria:|\n\s*\n|$)/i,
+  );
+  return match ? match[1].trim() : userRequest;
+}
+
+/**
  * Build the first-turn recovery nudge for text-only responses.
  * Summarize/report tasks should re-ground with read_page before done().
  */
