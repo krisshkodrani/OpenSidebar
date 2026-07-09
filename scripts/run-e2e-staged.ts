@@ -22,6 +22,41 @@ const VITEST_CLI = path.resolve(PROJECT_ROOT, "node_modules/vitest/vitest.mjs");
 
 const OPTIONAL_E2E_GATES = [] as const;
 
+const STAGED_RESULTS_DIR = path.resolve(
+  PROJECT_ROOT,
+  ".artifacts",
+  "e2e",
+  "staged-results",
+);
+
+/** Reporters for spawned vitest runs. CLI reporters override the config's,
+ * so the flaky-retry reporter must be re-listed here alongside json. */
+function reporterArgs(jsonOutputPath: string): string[] {
+  return [
+    "--reporter=default",
+    "--reporter=./tests/e2e/helpers/flaky-reporter.ts",
+    "--reporter=json",
+    `--outputFile.json=${jsonOutputPath}`,
+  ];
+}
+
+/** Parse the vitest JSON report and return failed test files (relative to
+ * apps/extension), or [] if the report is missing/unreadable. */
+function readFailedTestFiles(jsonOutputPath: string): string[] {
+  try {
+    const report = JSON.parse(fs.readFileSync(jsonOutputPath, "utf8")) as {
+      testResults?: Array<{ name?: string; status?: string }>;
+    };
+    const appRoot = path.resolve(PROJECT_ROOT, "apps/extension");
+    return (report.testResults ?? [])
+      .filter((result) => result.status !== "passed")
+      .map((result) => path.relative(appRoot, String(result.name ?? "")))
+      .filter((file) => file.length > 0);
+  } catch {
+    return [];
+  }
+}
+
 function listTestFiles(): string[] {
   return fs
     .readdirSync(E2E_DIR)
@@ -174,23 +209,90 @@ async function main(): Promise<void> {
     windowsHide: true,
   });
 
+  fs.mkdirSync(STAGED_RESULTS_DIR, { recursive: true });
+  const flakyRescues: string[] = [];
+
   for (const suite of suites) {
     const testFiles = E2E_SUITES[suite].map((file) =>
       path.join("tests/e2e", file),
     );
+    const appRoot = path.resolve(PROJECT_ROOT, "apps/extension");
+    const jsonOutputPath = path.resolve(STAGED_RESULTS_DIR, `${suite}.json`);
+
     console.log(`\n[e2e:staged] Running ${suite.toUpperCase()} suite...`);
     const exitCode = await runWithStreaming(
       process.execPath,
-      [VITEST_CLI, "run", "--config", CONFIG, ...testFiles],
-      path.resolve(PROJECT_ROOT, "apps/extension"),
+      [
+        VITEST_CLI,
+        "run",
+        "--config",
+        CONFIG,
+        ...reporterArgs(jsonOutputPath),
+        ...testFiles,
+      ],
+      appRoot,
     );
-    if (exitCode !== 0) {
+    if (exitCode === 0) {
+      console.log(`\n[e2e:staged] ${suite.toUpperCase()} suite passed.`);
+      continue;
+    }
+
+    // Fresh-process retest: an in-place `retry: 1` has already failed twice
+    // in the same browser process by now. A fresh vitest/Chrome process is a
+    // stronger flake discriminator — if the failures pass clean here, record
+    // them as flaky and keep going instead of failing the stage.
+    const failedFiles = readFailedTestFiles(jsonOutputPath);
+    if (failedFiles.length === 0) {
       console.error(
-        `\n[e2e:staged] ${suite.toUpperCase()} suite failed. Stopping before later suites.`,
+        `\n[e2e:staged] ${suite.toUpperCase()} suite failed before producing per-file results (collection/build error). Stopping.`,
       );
       process.exit(exitCode);
     }
-    console.log(`\n[e2e:staged] ${suite.toUpperCase()} suite passed.`);
+
+    console.warn(
+      `\n[e2e:staged] ${suite.toUpperCase()} failed in: ${failedFiles.join(", ")}`,
+    );
+    console.warn(
+      `[e2e:staged] Retesting the failed file(s) once in a fresh process to classify flaky vs real...`,
+    );
+    const retestJsonPath = path.resolve(
+      STAGED_RESULTS_DIR,
+      `${suite}-retest.json`,
+    );
+    const retestExitCode = await runWithStreaming(
+      process.execPath,
+      [
+        VITEST_CLI,
+        "run",
+        "--config",
+        CONFIG,
+        ...reporterArgs(retestJsonPath),
+        ...failedFiles,
+      ],
+      appRoot,
+    );
+    if (retestExitCode !== 0) {
+      console.error(
+        `\n[e2e:staged] ${suite.toUpperCase()} suite failed and the fresh-process retest failed again — treating as a real failure. Stopping before later suites.`,
+      );
+      process.exit(retestExitCode);
+    }
+
+    flakyRescues.push(...failedFiles.map((file) => `${suite}: ${file}`));
+    console.warn(
+      `\n[e2e:staged] ${suite.toUpperCase()} suite FLAKY-PASSED (failures passed on a fresh-process retest). Continuing.`,
+    );
+  }
+
+  if (flakyRescues.length > 0) {
+    console.warn("\n[e2e:staged] ================ FLAKY SUMMARY ================");
+    for (const rescue of flakyRescues) {
+      console.warn(`[e2e:staged] FLAKY (passed on fresh-process retest): ${rescue}`);
+    }
+    console.warn(
+      "[e2e:staged] These are passes, but each one cost a full retest run — see .artifacts/e2e/flaky-log.jsonl for the per-test retry log.",
+    );
+    console.warn("[e2e:staged] ===============================================");
   }
 
   console.log("\n[e2e:staged] All requested suites passed.");

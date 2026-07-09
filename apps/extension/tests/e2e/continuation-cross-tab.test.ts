@@ -78,11 +78,17 @@ describe.skipIf(!h.apiKey)("E2E: Continuation — Cross-Tab Synthesis", () => {
     const turn1Answer = extractDoneMessage(turn1Traces);
     console.log(`[cross-tab] Turn 1: ${turn1Answer.slice(0, 150)}`);
 
-    // Should mention numbers from the Overview
+    // Should report the actual Overview facts (tolerant of comma formatting)
+    const t1Lower = turn1Answer.toLowerCase();
+    const t1Facts = [
+      /12,?847/.test(turn1Answer),
+      /48,?392/.test(turn1Answer),
+      t1Lower.includes("google"),
+    ].filter(Boolean).length;
     expect(
-      /\d/.test(turn1Answer),
-      "Turn 1 should include numeric data",
-    ).toBe(true);
+      t1Facts,
+      `Turn 1 should report at least 2 of the 3 Overview facts. Got: ${turn1Answer}`,
+    ).toBeGreaterThanOrEqual(2);
 
     // =================================================================
     // TRANSITION
@@ -97,8 +103,8 @@ describe.skipIf(!h.apiKey)("E2E: Continuation — Cross-Tab Synthesis", () => {
 
     await sendUserChat(
       h.ctx,
-      "Use the in-page Reports tab on this same dashboard and tell me the report names shown. " +
-        "Do not open or download any report.",
+      "Now check the Reports tab and tell me which reports are listed. " +
+        "Don't open or download any of them — I just want the names.",
       tabId,
       workspaceId,
     );
@@ -110,16 +116,18 @@ describe.skipIf(!h.apiKey)("E2E: Continuation — Cross-Tab Synthesis", () => {
     const turn2Answer = extractDoneMessage(turn2Traces);
     console.log(`[cross-tab] Turn 2: ${turn2Answer.slice(0, 150)}`);
 
-    // Should mention report names
+    // Should name the actual reports (not just say the word "report")
     const t2Lower = turn2Answer.toLowerCase();
+    const t2Names = [
+      t2Lower.includes("monthly performance"),
+      t2Lower.includes("user engagement"),
+      t2Lower.includes("conversion funnel"),
+      t2Lower.includes("traffic breakdown"),
+    ].filter(Boolean).length;
     expect(
-      t2Lower.includes("performance") ||
-        t2Lower.includes("engagement") ||
-        t2Lower.includes("conversion") ||
-        t2Lower.includes("traffic") ||
-        t2Lower.includes("report"),
-      "Turn 2 should describe the available reports",
-    ).toBe(true);
+      t2Names,
+      `Turn 2 should list at least 2 of the 4 report names. Got: ${turn2Answer}`,
+    ).toBeGreaterThanOrEqual(2);
 
     // =================================================================
     // TRANSITION
@@ -135,7 +143,7 @@ describe.skipIf(!h.apiKey)("E2E: Continuation — Cross-Tab Synthesis", () => {
     await sendUserChat(
       h.ctx,
       "Based on what you saw in both tabs, which area of the business looks strongest — " +
-        "user growth, revenue, or traffic? Use the Overview numbers already reported and do not open or download reports.",
+        "user growth, revenue, or traffic? No need to dig any further, just go on what you've already seen.",
       tabId,
       workspaceId,
     );

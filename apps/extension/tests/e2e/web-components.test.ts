@@ -37,7 +37,7 @@ describe.skipIf(!h.apiKey)("E2E: Web Components", () => {
     const tabId = await getActiveTabId(h.ctx.serviceWorker);
     expect(tabId).toBeGreaterThan(0);
 
-    const prompt = "Activate the Notification Settings and Privacy Settings actions, then turn on dark mode.";
+    const prompt = "Apply both the notification and privacy settings on this page, then turn on dark mode.";
 
     const workspaceId = await sendUserChat(h.ctx, prompt, tabId);
 

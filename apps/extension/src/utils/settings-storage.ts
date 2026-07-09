@@ -26,6 +26,7 @@ const LOCAL_FIREWORKS_KEY = "fireworksApiKey_local";
 const LOCAL_DEEPSEEK_KEY = "deepseekApiKey_local";
 const LOCAL_KIMI_KEY = "kimiApiKey_local";
 const LOCAL_XIAOMI_KEY = "xiaomiApiKey_local";
+const LOCAL_CEREBRAS_KEY = "cerebrasApiKey_local";
 const LEGACY_LOCAL_JOBAGENT_MCP_TOKEN_KEY = "jobAgentMcpToken_local";
 
 export type SettingsStorageKeys =
@@ -123,6 +124,7 @@ export async function saveSettings(
     deepseekApiKey,
     kimiApiKey,
     xiaomiApiKey,
+    cerebrasApiKey,
     ...rest
   } = normalized;
   await Promise.all([
@@ -135,6 +137,7 @@ export async function saveSettings(
       [LOCAL_DEEPSEEK_KEY]: deepseekApiKey ?? "",
       [LOCAL_KIMI_KEY]: kimiApiKey ?? "",
       [LOCAL_XIAOMI_KEY]: xiaomiApiKey ?? "",
+      [LOCAL_CEREBRAS_KEY]: cerebrasApiKey ?? "",
     }),
     storage.sync.set({ [SYNC_KEY]: rest }),
     // Clean up legacy session key if present
@@ -161,6 +164,7 @@ export async function loadSettings(
       LOCAL_DEEPSEEK_KEY,
       LOCAL_KIMI_KEY,
       LOCAL_XIAOMI_KEY,
+      LOCAL_CEREBRAS_KEY,
     ]),
     // Check legacy session key for migration
     storage.session.get(SESSION_KEY).catch(() => ({}) as Record<string, unknown>),
@@ -182,6 +186,8 @@ export async function loadSettings(
   const kimiApiKey = (localResult[LOCAL_KIMI_KEY] as string | undefined) || "";
   const xiaomiApiKey =
     (localResult[LOCAL_XIAOMI_KEY] as string | undefined) || "";
+  const cerebrasApiKey =
+    (localResult[LOCAL_CEREBRAS_KEY] as string | undefined) || "";
 
   void storage.local.remove(LEGACY_LOCAL_JOBAGENT_MCP_TOKEN_KEY).catch(() => {});
 
@@ -194,7 +200,8 @@ export async function loadSettings(
     !fireworksApiKey &&
     !deepseekApiKey &&
     !kimiApiKey &&
-    !xiaomiApiKey
+    !xiaomiApiKey &&
+    !cerebrasApiKey
   ) {
     return null;
   }
@@ -271,6 +278,7 @@ export async function loadSettings(
   delete raw.deepseekApiKey;
   delete raw.kimiApiKey;
   delete raw.xiaomiApiKey;
+  delete raw.cerebrasApiKey;
   delete raw.jobAgentMcpToken;
 
   if (shouldCleanRemovedSettings) {
@@ -287,6 +295,7 @@ export async function loadSettings(
     deepseekApiKey: deepseekApiKey,
     kimiApiKey: kimiApiKey,
     xiaomiApiKey: xiaomiApiKey,
+    cerebrasApiKey: cerebrasApiKey,
   } as UserSettings;
 }
 

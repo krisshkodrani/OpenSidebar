@@ -33,8 +33,8 @@ const expectedWhyLangfuse = [
 
 function buildShowcasePrompt(): string {
   return [
-    "Fill this Ashby application but do not submit using these data.",
-    "| Field | Copy This |",
+    "Fill out this Ashby application with my details below, exactly as written — but don't submit it, I want to review it first.",
+    "| Field | Value |",
     "|---|---|",
     "| Name | John Doe |",
     "| Email | john.doe@example.com |",

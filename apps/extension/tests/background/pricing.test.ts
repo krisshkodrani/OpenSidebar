@@ -51,6 +51,17 @@ describe("LLM pricing table", () => {
     });
   });
 
+  test("includes official Cerebras pricing for Gemma 4 31B", () => {
+    const pricing = findModelPricing("cerebras", "gemma-4-31b");
+    expect(pricing).toMatchObject({
+      inputUsdPerMillion: 0.99,
+      outputUsdPerMillion: 1.49,
+      effectiveDate: "2026-07-09",
+      sourceUrl: "https://cloud.cerebras.ai",
+      confidence: "official",
+    });
+  });
+
   test("includes Groq pricing for GPT-OSS 120B", () => {
     const pricing = findModelPricing("groq", "openai/gpt-oss-120b");
     expect(pricing).toMatchObject({

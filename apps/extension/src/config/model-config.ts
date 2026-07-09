@@ -31,6 +31,9 @@ export interface LLMModelDefaults {
     planner: string;
     plannerPro: string;
   };
+  cerebras: {
+    executor: string;
+  };
 }
 
 export const DEFAULT_LLM_MODEL_CONFIG: LLMModelDefaults = {
@@ -62,6 +65,9 @@ export const DEFAULT_LLM_MODEL_CONFIG: LLMModelDefaults = {
   deepseek: {
     planner: "deepseek-v4-flash",
     plannerPro: "deepseek-v4-pro",
+  },
+  cerebras: {
+    executor: DEFAULT_MULTIMODAL_EXECUTOR_BY_PROVIDER["cerebras-fireworks"],
   },
 };
 
@@ -128,6 +134,7 @@ export function resolveLLMModelConfig(
     moonshot: readGroup(record, "moonshot", DEFAULT_LLM_MODEL_CONFIG.moonshot),
     xiaomi: readGroup(record, "xiaomi", DEFAULT_LLM_MODEL_CONFIG.xiaomi),
     deepseek: readGroup(record, "deepseek", DEFAULT_LLM_MODEL_CONFIG.deepseek),
+    cerebras: readGroup(record, "cerebras", DEFAULT_LLM_MODEL_CONFIG.cerebras),
   };
 }
 

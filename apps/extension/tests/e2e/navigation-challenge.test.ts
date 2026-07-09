@@ -37,7 +37,7 @@ describe.skipIf(!h.apiKey)("E2E: Navigation Challenge", () => {
     const tabId = await getActiveTabId(h.ctx.serviceWorker);
     expect(tabId).toBeGreaterThan(0);
 
-    const prompt = "Please complete the navigation challenge on this page.";
+    const prompt = "Can you complete this challenge for me?";
 
     const workspaceId = await sendUserChat(h.ctx, prompt, tabId);
 
