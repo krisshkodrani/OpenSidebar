@@ -74,6 +74,7 @@ import {
   isPendingInteractionResolved,
 } from "./pending-interaction";
 import {
+  applyJudgeGateOutcome,
   runHighRiskJudgeGate,
 } from "./high-risk-judge-gate";
 import {
@@ -3575,26 +3576,13 @@ export class Orchestrator {
                 executorEvidence,
                 result.summary,
               );
-              if (gate && gate.decision === "reroute") {
-                verification.decision = "reroute";
-                verification.reason = gate.reason;
-                verification.failureType =
-                  verification.failureType ?? "state_mismatch";
-                verification.rerouteObjective =
-                  verification.rerouteObjective ||
-                  `Re-verify and complete: ${node.description}`;
-                this.emitTraceEvent(
-                  task,
-                  "judge_gate_reroute",
-                  {
-                    nodeId: node.id,
-                    judged: gate.judged,
-                    verdictSource: gate.verdict?.source,
-                    reason: gate.reason.slice(0, 300),
-                  },
-                  "verifier",
-                );
-              }
+              applyJudgeGateOutcome({
+                gate,
+                node,
+                verification,
+                emit: (type, data) =>
+                  this.emitTraceEvent(task, type, data, "verifier"),
+              });
             }
 
             if (verification.decision === "accept") {

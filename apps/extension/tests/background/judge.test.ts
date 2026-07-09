@@ -66,21 +66,37 @@ describe("runRubricJudge", () => {
     expect(v.entailment).toEqual([{ claimKey: "k2", label: "contradicted" }]);
   });
 
-  test("fails open to human on a seat error", async () => {
+  test("fails open to human on a seat error, naming the cause", async () => {
     const seat: JudgeSeat = { runJudge: vi.fn(async () => { throw new Error("boom"); }) };
     const v = await runRubricJudge(rubric, { seat });
     expect(v).toMatchObject({ source: "fail_open", pass: false, confidence: 0 });
+    expect(v.failureCause).toBe("seat_error");
+    expect(v.failureDetail).toBe("boom");
+    expect(typeof v.durationMs).toBe("number");
   });
 
-  test("fails open to human on unparseable output", async () => {
+  test("fails open to human on unparseable output, naming the cause", async () => {
     const v = await runRubricJudge(rubric, { seat: seatReturning("no json here") });
     expect(v.source).toBe("fail_open");
+    expect(v.failureCause).toBe("parse_error");
+    expect(v.failureDetail).toBe("no json here");
+    expect(v.model).toBe("glm-5p2");
   });
 
-  test("fails open to human on timeout", async () => {
+  test("fails open to human on timeout, naming the cause", async () => {
     const seat: JudgeSeat = { runJudge: vi.fn(() => new Promise(() => {})) };
     const v = await runRubricJudge(rubric, { seat, timeoutMs: 10 });
     expect(v.source).toBe("fail_open");
+    expect(v.failureCause).toBe("timeout");
+  });
+
+  test("a real verdict carries model and duration but no failure cause", async () => {
+    const seat = seatReturning('{"pass": false, "confidence": 0.5, "perCriterion": [], "entailment": []}');
+    const v = await runRubricJudge(rubric, { seat });
+    expect(v.source).toBe("judge");
+    expect(v.model).toBe("glm-5p2");
+    expect(typeof v.durationMs).toBe("number");
+    expect(v.failureCause).toBeUndefined();
   });
 
   test("caches a real verdict but not a fail-open", async () => {
