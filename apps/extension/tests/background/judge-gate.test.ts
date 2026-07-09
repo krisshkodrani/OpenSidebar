@@ -118,13 +118,16 @@ describe("runJudgeGate", () => {
     expect(outcome.reason).toMatch(/contradict/i);
   });
 
-  test("judge unavailable (fail-open) → reroute, defers to human-gated action", async () => {
+  test("judge unavailable (fail-open) → accept stands; infrastructure failure must not punish the task", async () => {
     const seat: JudgeSeat = { runJudge: vi.fn(async () => { throw new Error("down"); }) };
     const outcome = await runJudgeGate(
       { claim: "x", successCriteria: "obscure unmatched criterion phrase", evidence, corpusFacts: [] },
       { seat },
     );
-    expect(outcome.decision).toBe("reroute");
+    expect(outcome.decision).toBe("accept");
+    expect(outcome.judged).toBe(true);
     expect(outcome.verdict?.source).toBe("fail_open");
+    expect(outcome.verdict?.failureCause).toBe("seat_error");
+    expect(outcome.reason).toMatch(/unavailable/i);
   });
 });

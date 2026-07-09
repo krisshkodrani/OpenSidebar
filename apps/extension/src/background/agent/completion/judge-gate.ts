@@ -5,8 +5,11 @@
  * turns the result into a completion decision adjustment. It runs ONLY for
  * high-risk nodes whose verification already decided `accept` — so it can only
  * make completion STRICTER, never looser: a passing accept is confirmed, and a
- * judge that fails, finds a contradiction, or is unavailable downgrades the
- * accept to `reroute` (an existing re-plan decision). The human gate for the
+ * judge that RULES against the claim (failed criteria or a contradiction)
+ * downgrades the accept to `reroute` (an existing re-plan decision). A judge
+ * that is UNAVAILABLE (timeout / seat error / garbage output) fails open: the
+ * verifier accept stands and the failure is loud in `judge_call` telemetry —
+ * infrastructure failure must not punish the task. The human gate for the
  * risky ACTION itself remains the pre-existing consequential-action approval
  * (approval-policy.ts) at tool-execution time; this gate governs whether the
  * OUTCOME is trusted enough to mark the node done.
@@ -133,10 +136,18 @@ export async function runJudgeGate(
   const verdict = await runRubricJudge(rubric, deps);
 
   if (verdict.source === "fail_open") {
+    // Fail-open-to-human (RFC LP-15 Phase 10): when the judge itself is
+    // unavailable (timeout / seat error / unparseable output) the verifier's
+    // accept STANDS — the risky action was already human-gated by the
+    // consequential-action approval at execution time, and the judge may only
+    // make completion stricter when it actually rules. Rerouting here turned
+    // every judge-infrastructure failure into a re-verify loop (observed
+    // live: stacked "Re-verify and complete:" churn until the turn budget
+    // died). The failure stays loud via the judge_call telemetry.
     return {
-      decision: "reroute",
+      decision: "accept",
       reason:
-        "Verification judge was unavailable; deferring completion (the risky action stays human-gated).",
+        "Verification judge was unavailable; verifier accept stands (action was human-gated at execution).",
       judged: true,
       verdict,
     };
