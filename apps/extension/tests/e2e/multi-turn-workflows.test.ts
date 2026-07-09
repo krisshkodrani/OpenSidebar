@@ -195,7 +195,7 @@ describe.skipIf(!h.apiKey)("E2E: Multi-turn user workflows", () => {
     const finalDraft = await actUntil<any>(
       ctx,
       "email turn 5",
-      "Add a line that I'll send over the Q3 budget numbers before the meeting. Keep the Monday 11 AM part. Still just a draft.",
+      "Also add a line to the draft that I'll send over the Q3 budget numbers before the meeting. Keep the Monday 11 AM part, and still don't send it.",
       async () => {
         const result = await h.page.evaluate(
           () => (window as any).emailResult ?? null,
