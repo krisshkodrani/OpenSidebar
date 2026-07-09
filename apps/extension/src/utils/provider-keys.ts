@@ -21,9 +21,24 @@ export function getProviderKeyStatus(
     | "deepseekApiKey"
     | "kimiApiKey"
     | "xiaomiApiKey"
+    | "cerebrasApiKey"
   >,
 ): ProviderKeyStatus {
   const mode = settings.providerMode ?? "fireworks";
+
+  if (mode === "cerebras-fireworks") {
+    const missingKeyNames: string[] = [];
+    if (!settings.cerebrasApiKey) missingKeyNames.push("Cerebras");
+    if (!settings.fireworksApiKey) missingKeyNames.push("Fireworks AI");
+    return {
+      mode,
+      activeKey:
+        missingKeyNames.length === 0 ? settings.cerebrasApiKey : undefined,
+      activeKeyName: "Cerebras and Fireworks AI",
+      missingKeyNames,
+      hasRequiredKeys: missingKeyNames.length === 0,
+    };
+  }
 
   if (mode === "fireworks-deepseek") {
     const missingKeyNames: string[] = [];

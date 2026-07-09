@@ -930,6 +930,7 @@ export function createE2EHarness(options: HarnessOptions = {}): E2EHarness {
         deepseekKey,
         kimiKey,
         xiaomiKey,
+        cerebrasKey,
       } = providerConfig.keys;
       const e2eConfig = readE2EConfig();
       const executorModel = e2eConfig.model;
@@ -953,6 +954,7 @@ export function createE2EHarness(options: HarnessOptions = {}): E2EHarness {
           deepseekKey: string | null,
           kimiKey: string | null,
           xiaomiKey: string | null,
+          cerebrasKey: string | null,
           execModel: string | null,
           plannerModelOverride: string | null,
           temp: number | null,
@@ -966,6 +968,7 @@ export function createE2EHarness(options: HarnessOptions = {}): E2EHarness {
           if (deepseekKey) localData.deepseekApiKey_local = deepseekKey;
           if (kimiKey) localData.kimiApiKey_local = kimiKey;
           if (xiaomiKey) localData.xiaomiApiKey_local = xiaomiKey;
+          if (cerebrasKey) localData.cerebrasApiKey_local = cerebrasKey;
           await chrome.storage.local.set(localData);
           const settings: Record<string, unknown> = {
             requireApprovals: false,
@@ -990,6 +993,7 @@ export function createE2EHarness(options: HarnessOptions = {}): E2EHarness {
         deepseekKey ?? null,
         kimiKey ?? null,
         xiaomiKey ?? null,
+        cerebrasKey ?? null,
         executorModel ?? null,
         plannerModel ?? null,
         temperature ?? null,

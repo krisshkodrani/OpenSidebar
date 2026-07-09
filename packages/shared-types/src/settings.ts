@@ -24,6 +24,7 @@ export interface UserSettings {
     | "openai-groq"
     | "fireworks"
     | "fireworks-deepseek"
+    | "cerebras-fireworks"
     | "moonshot"
     | "xiaomi";
   /** @deprecated Use providerMode instead. Kept for migration. */
@@ -42,6 +43,8 @@ export interface UserSettings {
   kimiApiKey?: string;
   /** Xiaomi MiMo API key (required for xiaomi mode) */
   xiaomiApiKey?: string;
+  /** Cerebras API key (required for cerebras-fireworks executor mode) */
+  cerebrasApiKey?: string;
   maxTurns: number;
   theme: "light" | "dark" | "system";
   /** Show token usage and cost metrics during and after agent sessions */

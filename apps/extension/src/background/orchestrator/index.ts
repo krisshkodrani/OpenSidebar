@@ -2152,7 +2152,7 @@ export class Orchestrator {
           fireworksApiKey: input.settings.fireworksApiKey,
           deepseekApiKey: input.settings.deepseekApiKey,
           kimiApiKey: input.settings.kimiApiKey,
-          xiaomiApiKey: input.settings.xiaomiApiKey,
+          xiaomiApiKey: input.settings.xiaomiApiKey, cerebrasApiKey: input.settings.cerebrasApiKey,
         };
         const planner = this.deps.createPlanner(
           input.openRouterApiKey,
@@ -2394,7 +2394,7 @@ export class Orchestrator {
               fireworksApiKey: input.settings.fireworksApiKey,
               deepseekApiKey: input.settings.deepseekApiKey,
               kimiApiKey: input.settings.kimiApiKey,
-              xiaomiApiKey: input.settings.xiaomiApiKey,
+              xiaomiApiKey: input.settings.xiaomiApiKey, cerebrasApiKey: input.settings.cerebrasApiKey,
             },
           );
           this.attachPlannerUsageTrace(
@@ -2497,7 +2497,7 @@ export class Orchestrator {
       fireworksApiKey: input.settings.fireworksApiKey,
       deepseekApiKey: input.settings.deepseekApiKey,
       kimiApiKey: input.settings.kimiApiKey,
-      xiaomiApiKey: input.settings.xiaomiApiKey,
+      xiaomiApiKey: input.settings.xiaomiApiKey, cerebrasApiKey: input.settings.cerebrasApiKey,
     };
     const verifier = this.deps.createVerifier(
       input.openRouterApiKey,
@@ -2986,7 +2986,7 @@ export class Orchestrator {
           fireworksApiKey: input.settings.fireworksApiKey,
           deepseekApiKey: input.settings.deepseekApiKey,
           kimiApiKey: input.settings.kimiApiKey,
-          xiaomiApiKey: input.settings.xiaomiApiKey,
+          xiaomiApiKey: input.settings.xiaomiApiKey, cerebrasApiKey: input.settings.cerebrasApiKey,
           temperature: input.settings.temperature,
           perceptionMode: input.settings.perceptionMode,
           maxImagePromptTokenEstimate:
