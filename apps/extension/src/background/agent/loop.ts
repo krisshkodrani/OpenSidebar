@@ -46,8 +46,7 @@ import {
   type DryRunClassification,
 } from "./mutation-dry-run-policy";
 import { workspaceManager } from "../workspaces/manager";
-import { ContextManager, summarizeCausalChain } from "./context";
-import { detectAdmission } from "./verification";
+import { ContextManager } from "./context";
 import { StagnationMonitor } from "./stagnation";
 import { PerceptionScreenshotState } from "../perception/perception-screenshot-state";
 import { transformScreenshot } from "../perception/screenshot-transform";
@@ -69,10 +68,6 @@ import { TaskPlanner, PlanStep, PlanMonitorResult } from "./planner";
 import { TraceRecorder } from "./trace";
 import { ToolResultCache } from "./tool-cache";
 import {
-  detectSemanticProgressSignals,
-  type ContextProgressSignal,
-} from "./context-economy";
-import {
   runPrepareModelTurnPhase,
   type PrepareModelTurnHost,
 } from "./turn-phases/prepare-model-turn";
@@ -86,10 +81,6 @@ import {
   type EscalationPhaseHost,
 } from "./turn-phases/escalation";
 import {
-  runPlanMonitorPhase,
-  type PlanMonitorPhaseHost,
-} from "./turn-phases/plan-monitor";
-import {
   runAccountAndRefreshPhase,
   type AccountAndRefreshHost,
 } from "./turn-phases/account-and-refresh";
@@ -102,17 +93,17 @@ import {
   type PostToolGuardsHost,
 } from "./turn-phases/post-tool-guards";
 import {
-  detectExplicitSuccessSignalInSnapshot,
-  type ExplicitSuccessSignalHost,
-} from "./explicit-success-signal";
+  runCompletionPhase,
+  type CompletionPhaseHost,
+} from "./turn-phases/completion";
+import {
+  runTextResponsePhase,
+  type TextResponsePhaseHost,
+} from "./turn-phases/text-response";
 import {
   runDonePlanRejection,
   type DonePlanRejectionHost,
 } from "./done-plan-rejection";
-import {
-  evaluateTextAdmissionAdvanceGate,
-  type TextAdmissionGateHost,
-} from "./text-admission-gate";
 import {
   evaluateDonePlanPrecheck,
   evaluateDonePlanValidation,
@@ -274,7 +265,6 @@ import {
   type RestorablePlanState,
 } from "./agent-plan-progress";
 import { applySkillTurnCap } from "./skill-turn-cap-policy";
-import { countExplicitSteps } from "./explicit-steps";
 export {
   isPerceptionFailurePlaceholder,
   shouldOmitPerceptionForDoneValidation,
@@ -284,10 +274,7 @@ import {
   BROADCAST_INTERVALS,
   STRING_LIMITS,
   ORIENTATION,
-  ROLLING_DISTILL,
-  FRESH_START,
   TOOL_CACHE,
-  ACTION_EFFECT,
   DEFAULT_RUNTIME_LIMITS,
 } from "./constants";
 import type { Difficulty, RuntimeLimits } from "./constants";
@@ -303,37 +290,25 @@ import { getLoadedSkillContract } from "../orchestrator/skills";
 import { evaluateWorkflowTabRedirect } from "./workflow-tab-controller";
 import {
   BlockedAction,
-  buildFailureBrief,
   buildHandoffBriefing,
   buildStructuredFailureContext,
-  buildZeroEffectDecision,
   clearStepScopedActionMemory,
-  buildFirstTurnTextOnlyNudge,
   detectInstructionContradiction,
   detectFormSubmissionResetSuccess,
-  detectPendingAsyncChange,
-  detectStructuralStepAdvance,
   detectTrustedFormFillStepCompletion,
   detectTrustedFormSubmitCompletion,
   extractAttemptSummary,
   formatStructuredFailureContext,
   isPendingAsyncChangeSatisfied,
-  isFillerText,
-  matchSuccessCriteria,
   type RecentOutcome,
-  requiresGroundingReadBeforeDone,
-  shouldTrackFormSubmissionReset,
   SubgoalAttempt,
   userExplicitlyRequestedTabManagement,
 } from "./loop-helpers";
-import { buildTaskContract, extractFieldValuePairs } from "./task-contract";
+import { extractFieldValuePairs } from "./task-contract";
 import {
   DEESCALATION_REFLECTION,
-  ESCALATION_RECOVERY,
-  ESCALATION_REFLECTION,
   HANDOFF_REFLECTION,
   PIVOT_MESSAGE,
-  TEXT_ONLY_CORRECTION,
 } from "./loop-prompts";
 import {
   advanceCompletedSubtasks,
@@ -371,10 +346,6 @@ import {
   type ParallelToolExecutionResult,
 } from "./parallel-tool-execution";
 import { type TurnToolOutcomeRecord } from "./turn-tool-outcomes";
-import {
-  refreshPostToolSnapshot,
-  type PostToolSnapshotRefreshHost,
-} from "./post-tool-snapshot-refresh";
 export { isDoneSummaryAskingClarification } from "./completion-kernel";
 
 type CompletionRejectionDecision = Extract<
@@ -6907,844 +6878,24 @@ export class AgentLoop {
         if (guards.kind === "end_turn") break;
         if (guards.kind === "next_turn") continue;
 
-        // Capture pre-action snapshot for diff-based loading detection.
-        // Used to distinguish structural loading keywords (present before the
-        // action) from transient ones (appeared due to the action).
-        const preActionSnapshot = this.context.getSnapshot();
-        const lastToolCall =
-          response.tool_calls[response.tool_calls.length - 1];
-        const lastToolName = lastToolCall?.function.name;
-        let lastToolArgs: Record<string, unknown> | undefined;
-        if (lastToolCall?.function.arguments) {
-          try {
-            lastToolArgs = JSON.parse(
-              lastToolCall.function.arguments,
-            ) as Record<string, unknown>;
-          } catch {
-            lastToolArgs = undefined;
-          }
-        }
-
-        // Batch snapshot refresh: ONE refresh after all tools complete
-        if (turn.domModified && !turn.doneSignaled) {
-          try {
-            const snapshotRefresh = await refreshPostToolSnapshot(
-              this as unknown as PostToolSnapshotRefreshHost,
-              {
-                tabId: session.tabId,
-                prevElementCount: session.prevElementCount,
-                visuallyModified: turn.visuallyModified,
-                recentSuccesses,
-              },
-            );
-            let snap = snapshotRefresh.snap;
-            session.prevElementCount = snapshotRefresh.prevElementCount;
-
-            if (snap) {
-              const explicitSuccessSignal =
-                detectExplicitSuccessSignalInSnapshot(
-                  this as unknown as ExplicitSuccessSignalHost,
-                  snap,
-                );
-              // Suppress auto-complete for root agent (no nodeId) on multi-return
-              // queries; detector is step-scoped (won't complete the wrong node).
-              const taskContractMultiReturn = !this.nodeId
-                ? (buildTaskContract(this.originalQuery).multiReturnCount ?? 0)
-                : 0;
-              const explicitStepCount = countExplicitSteps(
-                this.originalQuery || "",
-              );
-              if (
-                explicitSuccessSignal &&
-                taskContractMultiReturn < 2 &&
-                explicitStepCount < 2
-              ) {
-                const summary = [
-                  `- Verified "${explicitSuccessSignal}" is visible on the page.`,
-                  `- URL: ${snap.url}`,
-                  `- The task completion state is present in the refreshed page content.`,
-                ].join("\n");
-
-                this.context.clearPlanStatus();
-                this.log.info(
-                  "agent",
-                  "Auto-completing from explicit success signal",
-                  {
-                    turn: this.turnCount,
-                    signal: explicitSuccessSignal,
-                    url: snap.url,
-                  },
-                );
-                this.traceRecorder?.recordEvent(
-                  "explicit_success_auto_completed",
-                  {
-                    turn: this.turnCount,
-                    signal: explicitSuccessSignal,
-                    url: snap.url,
-                  },
-                );
-                this.context.addMessage({
-                  role: "tool",
-                  tool_call_id: crypto.randomUUID(),
-                  content: summary,
-                });
-                this.completeTaskUi(summary);
-                session.doneSummary = summary;
-                turn.doneSignaled = true;
-
-                this.broadcastFinalMetrics();
-              } else if (explicitSuccessSignal && explicitStepCount >= 2) {
-                this.traceRecorder?.recordEvent(
-                  "explicit_success_auto_complete_blocked",
-                  {
-                    turn: this.turnCount,
-                    signal: explicitSuccessSignal,
-                    url: snap.url,
-                    reason: "multi_step_original_query",
-                    explicitStepCount,
-                  },
-                );
-              } else if (
-                explicitSuccessSignal &&
-                taskContractMultiReturn >= 2 &&
-                this.planSubtasks.length > 0
-              ) {
-                // Multi-return query: auto-complete blocked because not all
-                // returns are collected yet. But the current step IS done.
-                // Advance to the next step instead of blocking the executor.
-                const runningIdx = this.planSubtasks.findIndex(
-                  (s) => s.status === "running",
-                );
-                if (
-                  runningIdx >= 0 &&
-                  runningIdx < this.planSubtasks.length - 1
-                ) {
-                  const newIdx = advanceCompletedSubtasks(
-                    this as unknown as AgentLoopPlanProgressHost,
-                  );
-                  const nextDesc =
-                    this.planSubtasks[newIdx]?.description ||
-                    "Continue to next step";
-                  this.syncPlanStatus(newIdx, "multi_return_step_advanced", {
-                    signal: explicitSuccessSignal,
-                    advancedTo: newIdx,
-                  });
-                  this.context.addMessage({
-                    role: "user",
-                    content:
-                      `Current step verified ("${explicitSuccessSignal}" visible). ` +
-                      `But the task requires multiple results — advancing to next step.\n` +
-                      `YOUR NEW OBJECTIVE: ${nextDesc}`,
-                  });
-                  this.log.info(
-                    "agent",
-                    "Multi-return: auto-advanced step instead of auto-completing",
-                    {
-                      turn: this.turnCount,
-                      signal: explicitSuccessSignal,
-                      advancedTo: newIdx,
-                      nextObjective: nextDesc,
-                    },
-                  );
-                }
-              }
-
-              // Retroactive screenshot attachment: update the last DOM-modifying step with the screenshot
-              const lastScreenshot = this.perception.getLastScreenshot();
-              const lastDomStep = this.lastDomStep as AgentStep | null;
-              if (lastScreenshot && lastDomStep) {
-                this.stepHandler(
-                  {
-                    ...lastDomStep,
-                    screenshotUrl: lastScreenshot,
-                  },
-                  true,
-                );
-                this.lastDomStep = null;
-              }
-
-              // Plan monitor: check alignment every 2 turns when plan is active
-              await runPlanMonitorPhase(
-                this as unknown as PlanMonitorPhaseHost,
-                session.tabId,
-              );
-
-              // Progress tracking: detect stuck loops
-              const progressSignal = this.stagnation.onSnapshotRefresh(snap);
-              let suppressStuckSignal = false;
-
-              // P0: Surface action effect — tell the agent whether its last action changed the page
-              // Use visuallyModified (not domModified) so read_page doesn't produce misleading deltas
-              const actionEffect = this.stagnation.lastActionEffect;
-              if (
-                this.pendingFormSubmissionReset &&
-                this.taskId &&
-                !turn.doneSignaled
-              ) {
-                const pending = this.pendingFormSubmissionReset;
-                const delayedSubmitSignal = detectFormSubmissionResetSuccess({
-                  currentStepDescription: pending.stepDescription,
-                  currentStepSuccessCriteria: pending.successCriteria,
-                  preActionSnapshot: pending.preActionSnapshot,
-                  currentSnapshot: snap,
-                  actionEffect: {
-                    deltaPercent: 1,
-                    urlChanged: true,
-                    currentUrl: snap.url,
-                    elementsAdded: 0,
-                    elementsRemoved: 0,
-                    addedSignatures: [],
-                    prevCount: pending.preActionSnapshot.elements.length,
-                    currentCount: snap.elements.length,
-                  },
-                  toolName: pending.toolName,
-                  toolArgs: pending.toolArgs,
-                });
-
-                if (delayedSubmitSignal) {
-                  const { finalSummary, completionCandidate } =
-                    this.completeSubmitFormReset(
-                      pending.stepIndex,
-                      delayedSubmitSignal,
-                    );
-                  this.pendingFormSubmissionReset = null;
-                  signalCompletedResult(finalSummary, {
-                    completionCandidate,
-                  });
-                  await this.traceRecorder?.endTurn();
-                  break;
-                }
-
-                if (this.turnCount - pending.startedTurn > 5) {
-                  this.pendingFormSubmissionReset = null;
-                }
-              }
-              if (actionEffect && turn.visuallyModified) {
-                this.context.setLastActionOutcome({
-                  toolName: turn.lastDomAffectingToolName ?? "unknown",
-                  deltaPercent: actionEffect.deltaPercent,
-                  urlChanged: actionEffect.urlChanged,
-                  prevUrl: actionEffect.prevUrl,
-                  currentUrl: actionEffect.currentUrl,
-                  elementsAdded: actionEffect.elementsAdded,
-                  elementsRemoved: actionEffect.elementsRemoved,
-                });
-                this.traceRecorder?.recordEvent("action_effect", {
-                  toolName: turn.lastDomAffectingToolName ?? "unknown",
-                  deltaPercent: actionEffect.deltaPercent,
-                  urlChanged: actionEffect.urlChanged,
-                  elementsAdded: actionEffect.elementsAdded,
-                  elementsRemoved: actionEffect.elementsRemoved,
-                });
-                const semanticToolName =
-                  turn.lastDomAffectingToolName ?? lastToolName ?? null;
-                const semanticToolArgs =
-                  lastToolName === semanticToolName ? lastToolArgs : undefined;
-                const semanticProgressSignals = detectSemanticProgressSignals({
-                  toolName: semanticToolName,
-                  toolArgs: semanticToolArgs,
-                  previousSnapshot: preActionSnapshot,
-                  currentSnapshot: snap,
-                });
-                const strongSemanticProgress = semanticProgressSignals.some(
-                  (signal) => signal.observed && signal.strength === "strong",
-                );
-                const semanticProgressObserved = semanticProgressSignals.some(
-                  (signal) => signal.observed,
-                );
-                const resetBySemanticProgress =
-                  semanticProgressObserved &&
-                  (strongSemanticProgress ||
-                    actionEffect.deltaPercent > ACTION_EFFECT.ZERO_THRESHOLD ||
-                    actionEffect.urlChanged);
-                const smallObservedActionProgress =
-                  actionEffect.deltaPercent > 0 &&
-                  Boolean(turn.lastDomAffectingToolName);
-                if (semanticProgressSignals.length > 0) {
-                  this.traceRecorder?.recordEvent(
-                    "semantic_progress_detected",
-                    {
-                      turn: this.turnCount,
-                      toolName: semanticToolName ?? "unknown",
-                      signals: semanticProgressSignals.map(
-                        (signal) => signal.label,
-                      ),
-                    },
-                  );
-                }
-                if (resetBySemanticProgress || smallObservedActionProgress) {
-                  suppressStuckSignal = true;
-                  this.stagnation.resetProgressCounters();
-                }
-                const spendProgressSignals: ContextProgressSignal[] = [
-                  ...semanticProgressSignals,
-                ];
-                if (actionEffect.deltaPercent >= 0.1) {
-                  spendProgressSignals.push({
-                    strength: "strong" as const,
-                    label: "action_effect_delta",
-                    observed: true,
-                  });
-                } else if (
-                  actionEffect.deltaPercent > ACTION_EFFECT.ZERO_THRESHOLD
-                ) {
-                  spendProgressSignals.push({
-                    strength: "medium" as const,
-                    label: "action_effect_delta",
-                    observed: true,
-                  });
-                }
-                if (smallObservedActionProgress) {
-                  spendProgressSignals.push({
-                    strength: "weak" as const,
-                    label: "targeted_action_effect",
-                    observed: true,
-                  });
-                }
-                if (actionEffect.urlChanged) {
-                  spendProgressSignals.push({
-                    strength: "weak" as const,
-                    label: "url_changed",
-                    observed: true,
-                  });
-                }
-                if (
-                  this.telemetry.recordContextProgress(
-                    this.turnCount,
-                    spendProgressSignals,
-                  )
-                ) {
-                  this.traceRecorder?.recordEvent(
-                    "context_spend_progress_reset",
-                    {
-                      turn: this.turnCount,
-                      signals: spendProgressSignals.map(
-                        (signal) => signal.label,
-                      ),
-                    },
-                  );
-                }
-
-                const planAfterAction = this.context.getPlanStatusRaw();
-                if (
-                  this.taskId &&
-                  planAfterAction &&
-                  !turn.doneSignaled &&
-                  planAfterAction.currentIndex < planAfterAction.subtasks.length
-                ) {
-                  const currentSubtask =
-                    planAfterAction.subtasks[planAfterAction.currentIndex];
-
-                  if (currentSubtask && lastToolName) {
-                    const asyncSignal = detectPendingAsyncChange({
-                      currentStepDescription: currentSubtask.description,
-                      currentStepSuccessCriteria:
-                        this.planSteps[planAfterAction.currentIndex]
-                          ?.successCriteria,
-                      currentSnapshot: snap,
-                      preActionSnapshot,
-                      actionEffect,
-                      toolName: lastToolName,
-                    });
-
-                    if (asyncSignal) {
-                      this.pendingAsyncVerification = {
-                        stepIndex: planAfterAction.currentIndex,
-                        expectedTokens: asyncSignal.expectedTokens,
-                        baselineLoadingKeywords:
-                          asyncSignal.baselineLoadingKeywords,
-                        reason: asyncSignal.reason,
-                        startedTurn: this.turnCount,
-                      };
-                      this.context.addMessage({
-                        role: "user",
-                        content:
-                          `ASYNC CHECKPOINT: ${asyncSignal.reason} ` +
-                          "Wait for the page update and verify the new content before continuing.",
-                      });
-                      this.traceRecorder?.recordEvent(
-                        "pending_async_change_detected",
-                        {
-                          turn: this.turnCount,
-                          stepIndex: planAfterAction.currentIndex,
-                          expectedTokens: asyncSignal.expectedTokens,
-                          loadingIndicator: asyncSignal.loadingIndicator,
-                        },
-                      );
-
-                      const awaitedSnapshot =
-                        await this.waitForPendingAsyncChange(
-                          session.tabId,
-                          session.prevElementCount,
-                          this.pendingAsyncVerification,
-                        );
-                      if (awaitedSnapshot) {
-                        snap = awaitedSnapshot;
-                        session.prevElementCount =
-                          awaitedSnapshot.elements.length;
-                      }
-                    } else if (
-                      this.pendingAsyncVerification &&
-                      this.pendingAsyncVerification.stepIndex ===
-                        planAfterAction.currentIndex &&
-                      isPendingAsyncChangeSatisfied({
-                        snapshot: snap,
-                        expectedTokens:
-                          this.pendingAsyncVerification.expectedTokens,
-                      })
-                    ) {
-                      this.pendingAsyncVerification = null;
-                    }
-                  }
-
-                  if (
-                    currentSubtask &&
-                    lastToolName &&
-                    this.getActiveToolProfileForStep(
-                      planAfterAction.currentIndex,
-                    ) === "submit_form"
-                  ) {
-                    const submitResetSignal = detectFormSubmissionResetSuccess({
-                      currentStepDescription: currentSubtask.description,
-                      currentStepSuccessCriteria:
-                        this.planSteps[planAfterAction.currentIndex]
-                          ?.successCriteria,
-                      preActionSnapshot,
-                      currentSnapshot: snap,
-                      actionEffect,
-                      toolName: lastToolName,
-                      toolArgs: lastToolArgs,
-                    });
-
-                    if (submitResetSignal) {
-                      this.consecutiveAutoAdvances = 0;
-                      const fromStep = planAfterAction.currentIndex;
-                      const { finalSummary, completionCandidate } =
-                        this.completeSubmitFormReset(
-                          fromStep,
-                          submitResetSignal,
-                        );
-                      signalCompletedResult(finalSummary, {
-                        completionCandidate,
-                      });
-                      await this.traceRecorder?.endTurn();
-                      break;
-                    } else if (
-                      shouldTrackFormSubmissionReset({
-                        currentStepDescription: currentSubtask.description,
-                        currentStepSuccessCriteria:
-                          this.planSteps[planAfterAction.currentIndex]
-                            ?.successCriteria,
-                        preActionSnapshot,
-                        toolName: lastToolName,
-                        toolArgs: lastToolArgs,
-                      })
-                    ) {
-                      this.pendingFormSubmissionReset = {
-                        stepIndex: planAfterAction.currentIndex,
-                        stepDescription: currentSubtask.description,
-                        successCriteria:
-                          this.planSteps[planAfterAction.currentIndex]
-                            ?.successCriteria,
-                        preActionSnapshot: preActionSnapshot!,
-                        toolName: lastToolName,
-                        toolArgs: lastToolArgs,
-                        startedTurn: this.turnCount,
-                      };
-                      this.traceRecorder?.recordEvent(
-                        "pending_submit_form_reset",
-                        {
-                          stepIndex: planAfterAction.currentIndex,
-                          turn: this.turnCount,
-                        },
-                      );
-                    }
-                  }
-
-                  const nextSubtask =
-                    planAfterAction.subtasks[planAfterAction.currentIndex + 1];
-                  if (currentSubtask && nextSubtask && lastToolName) {
-                    const advanceSignal = detectStructuralStepAdvance({
-                      currentStepDescription: currentSubtask.description,
-                      currentStepSuccessCriteria:
-                        this.planSteps[planAfterAction.currentIndex]
-                          ?.successCriteria,
-                      nextStepDescription: nextSubtask.description,
-                      currentSnapshot: snap,
-                      actionEffect,
-                      toolName: lastToolName,
-                    });
-
-                    // Passive step advancement: if structural advance didn't fire,
-                    // check if the current step's success criteria are satisfied in DOM.
-                    // Advances silently so the agent continues acting instead of calling done().
-                    const passiveCriteria = !advanceSignal
-                      ? matchSuccessCriteria({
-                          successCriteria:
-                            this.planSteps[planAfterAction.currentIndex]
-                              ?.successCriteria,
-                          snapshot: snap,
-                        })
-                      : null;
-                    const shouldPassiveAdvance =
-                      passiveCriteria?.satisfied &&
-                      passiveCriteria.totalTokens > 0 &&
-                      passiveCriteria.matchedTokens.length >= 2;
-
-                    if (advanceSignal || shouldPassiveAdvance) {
-                      this.consecutiveAutoAdvances = 0;
-                      const fromStep = planAfterAction.currentIndex;
-                      const newIdx = completeSingleSubtask(
-                        this as unknown as AgentLoopPlanProgressHost,
-                        fromStep,
-                      );
-                      const isStructural = !!advanceSignal;
-                      const reason = isStructural
-                        ? advanceSignal!.reason
-                        : `Step criteria satisfied (${passiveCriteria!.matchedTokens.join(", ")})`;
-                      const matchedTokens = isStructural
-                        ? advanceSignal!.matchedTokens
-                        : passiveCriteria!.matchedTokens;
-                      const traceEvent = isStructural
-                        ? ("structural_step_advance" as const)
-                        : ("passive_step_advance" as const);
-
-                      this.syncPlanStatus(newIdx, traceEvent, {
-                        reason,
-                        matchedTokens,
-                        advancedTo: newIdx,
-                      });
-                      const completedAllSteps =
-                        newIdx >= this.planSubtasks.length;
-                      const nextStepDesc =
-                        this.planSubtasks[newIdx]?.description ||
-                        "Finish the remaining plan";
-                      if (!completedAllSteps) {
-                        this.context.addMessage({
-                          role: "user",
-                          content:
-                            `STEP COMPLETED: ${reason}. ` +
-                            `Continue with the next step: ${nextStepDesc}. ` +
-                            `Do NOT call done() - keep acting.`,
-                        });
-                      }
-                      this.broadcastTaskProgress(newIdx);
-                      if (completedAllSteps) {
-                        const finalSummary = `Completed final planned step: ${reason}.`;
-                        signalCompletedResult(finalSummary, {
-                          saveCheckpoint: false,
-                        });
-                      }
-                      this.log.info("agent", `${traceEvent} triggered`, {
-                        turn: this.turnCount,
-                        fromStep,
-                        toStep: newIdx,
-                        matchedTokens,
-                      });
-                      this.traceRecorder?.recordEvent(traceEvent, {
-                        fromStep,
-                        toStep: newIdx,
-                        matchedTokens,
-                        reason,
-                        completedAllSteps,
-                      });
-                      if (completedAllSteps) {
-                        this.saveTurnCheckpoint().catch(() => {});
-                        await this.traceRecorder?.endTurn();
-                        break;
-                      }
-                    }
-                  }
-                }
-
-                // P1b: Track consecutive zero-effect turns with warn-then-escalate recovery
-                if (
-                  actionEffect.deltaPercent < ACTION_EFFECT.ZERO_THRESHOLD &&
-                  !actionEffect.urlChanged &&
-                  !resetBySemanticProgress &&
-                  !smallObservedActionProgress
-                ) {
-                  this.consecutiveZeroEffectTurns++;
-                  const failureBrief = buildFailureBrief(subgoalAttempts);
-                  const zeroEffectDecision = buildZeroEffectDecision({
-                    consecutiveTurns: this.consecutiveZeroEffectTurns,
-                    failureBrief,
-                    warningThreshold: ACTION_EFFECT.WARNING_THRESHOLD,
-                    escalateThreshold: ACTION_EFFECT.ESCALATE_THRESHOLD,
-                  });
-
-                  if (
-                    zeroEffectDecision.kind === "warn" &&
-                    zeroEffectDecision.message
-                  ) {
-                    this.context.addMessage({
-                      role: "user",
-                      content: zeroEffectDecision.message,
-                    });
-                    this.traceRecorder?.recordEvent("zero_effect_warning", {
-                      consecutiveTurns: this.consecutiveZeroEffectTurns,
-                      hasFailureBrief: !!failureBrief,
-                    });
-                  } else if (
-                    zeroEffectDecision.kind === "escalate" &&
-                    zeroEffectDecision.message &&
-                    esc.tier === 0 &&
-                    esc.cooldownRemaining <= 0
-                  ) {
-                    this.context.addMessage({
-                      role: "user",
-                      content: zeroEffectDecision.message,
-                    });
-                    this.traceRecorder?.recordEvent("zero_effect_escalation", {
-                      consecutiveTurns: this.consecutiveZeroEffectTurns,
-                      hasFailureBrief: !!failureBrief,
-                    });
-
-                    const zeroEffectReplanOk = await this.replanOnEscalation(
-                      session.tabId,
-                      subgoalAttempts,
-                      this.abortController?.signal,
-                    );
-                    if (zeroEffectReplanOk) {
-                      resetEscalationWorkingMemory({
-                        resetProgressSignals: true,
-                        resetZeroEffectTurns: true,
-                        clearStuckFlag: true,
-                      });
-                      continue;
-                    }
-
-                    this.perception.invalidateCache();
-                    const attemptSummary = extractAttemptSummary(
-                      this.context.getMessages(),
-                    );
-                    beginPlannerEscalation({ bumpStepCounter: true });
-                    await this.strategyPivot(session.tabId, attemptSummary);
-                    this.stagnation.resetEscalation();
-                    this.context.addMessage({
-                      role: "user",
-                      content:
-                        this.escalationsOnCurrentStep >= 2
-                          ? ESCALATION_RECOVERY(this.escalationsOnCurrentStep)
-                          : ESCALATION_REFLECTION(
-                              "repeated DOM actions had no observable effect",
-                            ),
-                    });
-                    session.consecutiveTextOnly = 0;
-                    recentSuccesses.length = 0;
-                    esc.consecutiveProgressSignals = 0;
-                    this.consecutiveZeroEffectTurns = 0;
-                    subgoalAttempts.length = 0;
-                    this.stepHandler(
-                      {
-                        id: crypto.randomUUID(),
-                        type: "info",
-                        label:
-                          "Repeated no-effect actions - escalating to planner model",
-                        status: "done",
-                        timestamp: Date.now(),
-                      },
-                      false,
-                    );
-                    continue;
-                  }
-                } else {
-                  this.consecutiveZeroEffectTurns = 0;
-                  subgoalAttempts.length = 0; // reset on progress
-                }
-              }
-
-              if (progressSignal && suppressStuckSignal) {
-                this.traceRecorder?.recordEvent(
-                  "stuck_signal_suppressed_by_semantic_progress",
-                  {
-                    turn: this.turnCount,
-                    type: progressSignal.type,
-                    stagnantTurns: progressSignal.stagnantTurns,
-                  },
-                );
-              } else if (progressSignal) {
-                this.traceRecorder?.recordProgress(
-                  progressSignal.stagnantTurns,
-                  progressSignal.type,
-                );
-                this.traceRecorder?.recordEvent("stuck_signal", {
-                  type: progressSignal.type,
-                  stagnantTurns: progressSignal.stagnantTurns,
-                });
-                this.log.warn("agent", "Progress stuck detected", {
-                  turn: this.turnCount,
-                  type: progressSignal.type,
-                  stagnantTurns: progressSignal.stagnantTurns,
-                  url: snap.url,
-                });
-
-                // Broadcast stagnation signal to side panel
-                this.broadcast({
-                  type: "AGENT_STAGNATION",
-                  payload: {
-                    signal: "escalate",
-                    stagnantTurns: progressSignal.stagnantTurns,
-                    url: snap.url,
-                    message: progressSignal.message,
-                  },
-                });
-                esc.wasStuck = true;
-
-                // S3: Fresh-start recovery — full context reset when escalation cycles exhaust
-                if (
-                  esc.escalationCycles >=
-                    FRESH_START.TRIGGER_ESCALATION_CYCLE &&
-                  esc.freshStartCount < this.limits.maxFreshStarts &&
-                  this.turnCount >= FRESH_START.MIN_TURNS_BEFORE_RESET
-                ) {
-                  esc.freshStartCount++;
-                  const causalSummary = summarizeCausalChain(
-                    this.context.getMessages(),
-                    ROLLING_DISTILL.MAX_SUMMARY_ENTRIES,
-                  );
-                  const planState =
-                    this.planSubtasks.length > 0
-                      ? `Plan: ${this.planSubtasks.map((s, i) => `${i + 1}.[${s.status}] ${s.description}`).join(", ")}`
-                      : "";
-                  const currentUrl = this.context.getCurrentUrl();
-                  const brief = [
-                    `FRESH START #${esc.freshStartCount} — previous approach exhausted after ${this.turnCount} turns.`,
-                    `Original task: "${this.originalQuery}"`,
-                    planState,
-                    causalSummary ? `What was tried:\n${causalSummary}` : "",
-                    currentUrl ? `Current page: ${currentUrl}` : "",
-                    "Start with a completely different strategy. Do NOT repeat previous approaches.",
-                  ]
-                    .filter(Boolean)
-                    .join("\n\n");
-
-                  // Record trace events
-                  this.traceRecorder?.recordEvent("fresh_start_recovery", {
-                    freshStartNumber: esc.freshStartCount,
-                    totalTurnsSoFar: this.turnCount,
-                    escalationCycles: esc.escalationCycles,
-                  });
-                  this.traceRecorder?.recordEvent("multi_turn_pathology", {
-                    pathology: "compound_degradation",
-                    trigger: "fresh_start",
-                    turn: this.turnCount,
-                    details: `esc.escalationCycles=${esc.escalationCycles} freshStart=${esc.freshStartCount}`,
-                  });
-
-                  // Reset context with the brief
-                  this.context.clearHistory();
-                  this.context.addMessage({ role: "user", content: brief });
-
-                  // Reset loop state
-                  this.stagnation.reset();
-                  this.toolCache.clear();
-                  blockedActions.length = 0;
-                  session.consecutiveTextOnly = 0;
-                  recentOutcomes.length = 0;
-                  recentSuccesses.length = 0;
-                  session.consecutiveAllFailTurns = 0;
-                  esc.escalationCycles = 0;
-                  esc.cooldownRemaining = 0;
-                  this.escalationsOnCurrentStep = 0;
-                  session.lastReadElementId = null;
-                  session.consecutiveReadElementSameId = 0;
-
-                  // Ensure planner tier
-                  if (esc.tier === 0) {
-                    this.escalateModel();
-                    esc.tier = 1;
-                  }
-                  esc.plannerModelStartTurn = this.turnCount;
-
-                  // Refresh snapshot
-                  try {
-                    await this.refreshSnapshot(session.tabId);
-                  } catch {
-                    /* non-critical */
-                  }
-
-                  this.stepHandler(
-                    {
-                      id: crypto.randomUUID(),
-                      type: "info",
-                      label: `Fresh start #${esc.freshStartCount} — resetting context`,
-                      status: "done",
-                      timestamp: Date.now(),
-                    },
-                    false,
-                  );
-
-                  this.log.info("agent", "Fresh-start recovery", {
-                    freshStartCount: esc.freshStartCount,
-                    turn: this.turnCount,
-                    escalationCycles: esc.escalationCycles,
-                  });
-                  esc.wasStuck = false;
-                  continue;
-                }
-
-                // Escalate: executor → planner (try replan first)
-                else if (esc.tier === 0 && esc.cooldownRemaining <= 0) {
-                  // Try replan-on-escalation first
-                  const stagnationReplanOk = await this.replanOnEscalation(
-                    session.tabId,
-                    subgoalAttempts,
-                    this.abortController?.signal,
-                  );
-                  if (stagnationReplanOk) {
-                    resetEscalationWorkingMemory({
-                      resetProgressSignals: true,
-                      clearStuckFlag: true,
-                    });
-                  } else {
-                    // Fallback: old escalation behavior
-                    // Invalidate perception cache so the planner model gets a fresh interpretation
-                    this.perception.invalidateCache();
-                    const attemptSummary = extractAttemptSummary(
-                      this.context.getMessages(),
-                    );
-                    beginPlannerEscalation({ bumpStepCounter: true });
-                    await this.strategyPivot(session.tabId, attemptSummary);
-                    this.stagnation.resetEscalation();
-                    this.context.addMessage({
-                      role: "user",
-                      content:
-                        this.escalationsOnCurrentStep >= 2
-                          ? ESCALATION_RECOVERY(this.escalationsOnCurrentStep)
-                          : ESCALATION_REFLECTION(
-                              "no DOM progress detected by stagnation monitor",
-                            ),
-                    });
-                    session.consecutiveTextOnly = 0;
-                    recentSuccesses.length = 0;
-                    esc.consecutiveProgressSignals = 0;
-                    this.stepHandler(
-                      {
-                        id: crypto.randomUUID(),
-                        type: "info",
-                        label: "Stuck — switching to smarter model",
-                        status: "done",
-                        timestamp: Date.now(),
-                      },
-                      false,
-                    );
-                  }
-                }
-              } else {
-                // Progress-gated de-escalation (handles both the wasStuck
-                // recovery path and the not-stuck gate reset).
-                session.prevElementCount = await esc.recordProgressSignal({
-                  snapUrl: snap.url,
-                  tabId: session.tabId,
-                  prevElementCount: session.prevElementCount,
-                });
-              }
-            }
-          } catch {
-            // Non-critical: snapshot refresh failed, continue with stale data
-          }
-        }
+        const completion = await runCompletionPhase(
+          this as unknown as CompletionPhaseHost,
+          {
+            session,
+            turn,
+            esc,
+            toolCalls: response.tool_calls!,
+            signalCompletedResult,
+            beginPlannerEscalation,
+            resetEscalationWorkingMemory,
+            subgoalAttempts,
+            recentSuccesses,
+            recentOutcomes,
+            blockedActions,
+          },
+        );
+        if (completion.kind === "end_turn") break;
+        if (completion.kind === "next_turn") continue;
 
         // End-of-turn bookkeeping: distill + checkpoint + trace flush (RFC LP-16 Phase 3).
         const account = await runAccountAndRefreshPhase(
@@ -7753,325 +6904,21 @@ export class AgentLoop {
         );
         if (account.kind === "end_turn") break;
       } else {
-        // TEXT RESPONSE — no tool calls
-
-        // Think-only output: model reasoned (rawContent has tokens) but produced
-        // no visible text or tool calls after think-tag stripping. Fast-track the
-        // text-only counter so escalation fires sooner — the generic nudge doesn't
-        // help a model that's stuck in a think loop.
-        if (
-          !cleanContent &&
-          rawContent &&
-          rawContent.length > 50 &&
-          session.consecutiveTextOnly < 2
-        ) {
-          session.consecutiveTextOnly = 2; // Next text-only turn triggers escalation
-          this.log.warn(
-            "agent",
-            "Think-only output detected, fast-tracking escalation",
-            {
-              turn: this.turnCount,
-              rawLen: rawContent.length,
-            },
-          );
-          this.context.addMessage({
-            role: "user",
-            content:
-              "Your response contained only internal reasoning with no output or tool calls. " +
-              "You MUST include at least one tool call. Use read_page to inspect the page, " +
-              "or done() if the task is already complete.",
-          });
-          this.finishStream();
-          await this.traceRecorder?.endTurn();
-          continue;
-        }
-
-        // Soft nudge: turn 1, no plan, substantive text — likely an answer to a question
-        if (
-          this.turnCount === 1 &&
-          !this.taskId &&
-          cleanContent &&
-          cleanContent.trim().length > 20
-        ) {
-          session.consecutiveTextOnly++;
-          session.totalTextOnly++;
-          const needsGroundingRead = requiresGroundingReadBeforeDone(
-            this.originalQuery,
-          );
-          this.log.info("agent", "Soft nudge: turn 1 text response", {
-            turn: this.turnCount,
-            textLen: cleanContent.trim().length,
-            requiresGroundingReadBeforeDone: needsGroundingRead,
-          });
-          if (needsGroundingRead) {
-            await this.forceGroundingRefresh(
-              session.tabId,
-              "text_only_before_grounding_read",
-            );
-          }
-          this.context.addMessage({
-            role: "user",
-            content: buildFirstTurnTextOnlyNudge(this.originalQuery),
-          });
-          this.finishStream();
-          continue;
-        }
-
-        // Text-admission detection: catch when the LLM states success/failure in text
-        if (cleanContent) {
-          const admission = detectAdmission(cleanContent);
-          if (admission) {
-            this.log.info("agent", "Text admission detected", {
-              turn: this.turnCount,
-              type: admission.type,
-              match: admission.match,
-            });
-            this.traceRecorder?.recordEvent("text_admission_detected", {
-              type: admission.type,
-              match: admission.match,
-            });
-
-            // When the model admits success in text but won't call done(),
-            // reuse the existing evidence gate shape instead of trusting the
-            // narration alone.
-            const nextTextOnlyCount = session.consecutiveTextOnly + 1;
-            session.consecutiveTextOnly = nextTextOnlyCount;
-            session.totalTextOnly++;
-
-            if (admission.type === "success" && this.planSubtasks.length > 0) {
-              const gate = evaluateTextAdmissionAdvanceGate(
-                this as unknown as TextAdmissionGateHost,
-                {
-                  summary: cleanContent,
-                  consecutiveTextOnly: nextTextOnlyCount,
-                },
-              );
-
-              if (gate.passed) {
-                if (gate.isLastStep) {
-                  this.log.info(
-                    "agent",
-                    "Text admission matched final step; nudging done()",
-                    {
-                      turn: this.turnCount,
-                      step: gate.runningIdx,
-                      text: cleanContent.slice(0, 100),
-                    },
-                  );
-                  this.context.addMessage({
-                    role: "user",
-                    content:
-                      `You stated: "${admission.match}". All step criteria are met. ` +
-                      `Call done({"summary": "..."}) now with the complete result ` +
-                      `including all requested data.`,
-                  });
-                  this.finishStream();
-                  continue;
-                }
-
-                const newIdx = completeSingleSubtask(
-                  this as unknown as AgentLoopPlanProgressHost,
-                  gate.runningIdx,
-                );
-                const nextDesc =
-                  this.planSubtasks[newIdx]?.description ||
-                  "Continue to next step";
-                this.syncPlanStatus(newIdx, "text_admission_criteria_advance", {
-                  turn: this.turnCount,
-                  fromStep: gate.runningIdx,
-                });
-                this.log.info(
-                  "agent",
-                  "Text admission criteria advanced step",
-                  {
-                    turn: this.turnCount,
-                    fromStep: gate.runningIdx,
-                    advancedTo: newIdx,
-                    nextObjective: nextDesc,
-                  },
-                );
-                this.context.addMessage({
-                  role: "user",
-                  content:
-                    `Step verified complete (criteria matched, text confirms success). ` +
-                    `Advancing.\nYOUR NEW OBJECTIVE: ${nextDesc}`,
-                });
-                this.finishStream();
-                continue;
-              }
-            }
-
-            const nudge =
-              admission.type === "success"
-                ? `You stated: "${admission.match}". Call done() to deliver the result.`
-                : `You stated: "${admission.match}". Call done() to report inability, or call escalate() for help.`;
-            this.context.addMessage({ role: "user", content: nudge });
-            this.finishStream();
-            continue;
-          }
-        }
-
-        // Text-only escalation: uniform counting, progress-aware
-        const filler = cleanContent ? isFillerText(cleanContent) : true;
-        // Hallucination fast-tracks: bypass nudge, go straight to escalation
-        if (hallucinationDetected) {
-          session.consecutiveTextOnly = Math.max(
-            session.consecutiveTextOnly,
-            3,
-          );
-        } else {
-          session.consecutiveTextOnly += 1; // Uniform counting — no filler fast-track
-        }
-
-        // Progress immunity: if the last action changed the page, don't escalate yet
-        const lastEffect = this.stagnation.lastActionEffect;
-        const recentProgress =
-          lastEffect &&
-          (lastEffect.deltaPercent > ACTION_EFFECT.ZERO_THRESHOLD ||
-            lastEffect.urlChanged);
-        if (recentProgress) {
-          session.consecutiveTextOnly = Math.max(
-            0,
-            session.consecutiveTextOnly - 1,
-          );
-        }
-
-        session.totalTextOnly++;
-        this.log.warn("agent", "LLM emitted text instead of tools", {
-          turn: this.turnCount,
-          consecutiveTextOnly: session.consecutiveTextOnly,
-          tier: esc.tier,
-          filler,
-          recentProgress: !!recentProgress,
-          text: cleanContent?.slice(0, 80),
-        });
-
-        // S6: Record pathology for text-only responses
-        if (session.consecutiveTextOnly >= 3) {
-          this.traceRecorder?.recordEvent("multi_turn_pathology", {
-            pathology: filler ? "verbosity" : "premature_generation",
-            trigger: "text_only_response",
-            turn: this.turnCount,
-            details: `consecutiveTextOnly=${session.consecutiveTextOnly} filler=${filler}`,
-          });
-        }
-
-        // Escalate to next tier on 3rd consecutive text-only (with minimum turn gate)
-        if (
-          session.consecutiveTextOnly >= 3 &&
-          esc.tier < 1 &&
-          esc.cooldownRemaining <= 0 &&
-          this.turnCount >= 4
-        ) {
-          // Try replan-on-escalation first
-          const textReplanOk = await this.replanOnEscalation(
-            session.tabId,
+        const text = await runTextResponsePhase(
+          this as unknown as TextResponsePhaseHost,
+          {
+            session,
+            esc,
+            cleanContent,
+            rawContent,
+            hallucinationDetected,
             subgoalAttempts,
-            this.abortController?.signal,
-          );
-          if (textReplanOk) {
-            resetEscalationWorkingMemory();
-            this.finishStream();
-            continue;
-          }
-
-          // Fallback: old escalation behavior
-          const textOnlyAttemptSummary = extractAttemptSummary(
-            this.context.getMessages(),
-          );
-          beginPlannerEscalation({ bumpStepCounter: false });
-          await this.strategyPivot(session.tabId, textOnlyAttemptSummary);
-          this.stagnation.resetEscalation();
-          this.context.addMessage({
-            role: "user",
-            content: ESCALATION_REFLECTION(
-              "consecutive text-only responses without tool calls",
-            ),
-          });
-          session.consecutiveTextOnly = 0;
-          recentSuccesses.length = 0;
-          this.stepHandler(
-            {
-              id: crypto.randomUUID(),
-              type: "info",
-              label: "Switching to smarter model",
-              status: "done",
-              timestamp: Date.now(),
-            },
-            false,
-          );
-          this.statusHandler(AgentStatus.THINKING, "Escalating model...");
-          this.finishStream();
-          continue;
-        }
-
-        // Give-up: 4 consecutive text-only at max tier
-        if (session.consecutiveTextOnly >= 4) {
-          this.log.warn("agent", "Loop ended: consecutive text-only limit", {
-            turns: this.turnCount,
-            consecutiveTextOnly: session.consecutiveTextOnly,
-            totalTextOnly: session.totalTextOnly,
-            tier: esc.tier,
-          });
-          const stuckMsg =
-            cleanContent || "The agent appears stuck and cannot continue.";
-          this.broadcast({
-            type: "STREAM_CHUNK",
-            payload: { delta: "", done: false, replaceContent: stuckMsg },
-          });
-          this.finishStream();
-          this.statusHandler(
-            AgentStatus.IDLE,
-            "Stalled — send a follow-up to continue",
-          );
-          await this.traceRecorder?.endTurn();
-          break;
-        }
-
-        // Planner model turn-based give-up
-        const plannerTurns =
-          esc.tier > 0 ? this.turnCount - esc.plannerModelStartTurn : 0;
-        if (
-          esc.tier > 0 &&
-          plannerTurns >= this.limits.stuckGiveUpPlanner &&
-          session.totalTextOnly >= 3
-        ) {
-          this.log.warn("agent", "Loop ended: planner model turn limit", {
-            turns: this.turnCount,
-            plannerTurns,
-            totalTextOnly: session.totalTextOnly,
-            tier: esc.tier,
-          });
-          const stuckMsg =
-            "The agent is struggling to make progress. Send a follow-up with more specific instructions.";
-          this.broadcast({
-            type: "STREAM_CHUNK",
-            payload: { delta: "", done: false, replaceContent: stuckMsg },
-          });
-          this.finishStream();
-          this.statusHandler(
-            AgentStatus.IDLE,
-            "Stalled — send a follow-up to continue",
-          );
-          await this.traceRecorder?.endTurn();
-          break;
-        }
-
-        // Regular nudge: refresh snapshot + perception + inject message
-        const count = await this.refreshSnapshot(session.tabId);
-        if (count >= 0) session.prevElementCount = count;
-        await this.refreshPerceptionAndTriage(session.tabId);
-        this.context.addMessage({
-          role: "user",
-          content: TEXT_ONLY_CORRECTION,
-        });
-
-        // Durable checkpoint: persist loop state for SW restart recovery
-        this.saveTurnCheckpoint().catch(() => {});
-
-        // Trace: flush turn
-        await this.traceRecorder?.endTurn();
-        this.finishStream();
+            recentSuccesses,
+            beginPlannerEscalation,
+            resetEscalationWorkingMemory,
+          },
+        );
+        if (text.kind === "end_turn") break;
         continue;
       }
     }
