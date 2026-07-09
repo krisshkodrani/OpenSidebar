@@ -155,6 +155,7 @@ import { decideRetryPolicy } from "./retry-policy";
 import { BudgetEstimator } from "./budget-estimator";
 import { BudgetEstimatorRegistry } from "./budget-estimator-registry";
 import { PendingResolverRegistry } from "./pending-resolver-registry";
+import { LaneRegistry } from "./lane-registry";
 import {
   CreateAgentLoopInput,
   EscalationDecisionPayload,
@@ -170,7 +171,6 @@ import type { OrchestratorDeps } from "./lane-types";
 import {
   beginLaneOperation,
   buildLaneTelemetrySnapshot as buildLaneTelemetrySnapshotData,
-  clearLaneSupervisorTimers,
   createWorkspaceLanePools,
   createWorkspaceLaneRuntime,
   createWorkspaceLaneSupervisors,
@@ -268,10 +268,7 @@ export class Orchestrator {
   private workersByWorkspace = new Map<string, WorkspaceLanePools>();
   private pendingFeedback = new PendingFeedbackQueue();
   private budgetEstimators = new BudgetEstimatorRegistry();
-  private laneRuntimeByWorkspace = new Map<
-    string,
-    Record<RuntimeLane, LaneRuntimeState>
-  >();
+  private lanes = new LaneRegistry();
   private pendingEscalationResolvers =
     new PendingResolverRegistry<EscalationDecisionPayload>();
   private pendingPlanConfirmationResolvers = new PendingResolverRegistry<{
@@ -279,10 +276,6 @@ export class Orchestrator {
     feedback?: string;
   }>();
   private pendingInteractionTimers = new PendingInteractionTimers();
-  private laneSupervisorsByWorkspace = new Map<
-    string,
-    Record<RuntimeLane, LaneSupervisorState>
-  >();
   private traceWriter: RunTraceWriter = createHttpRunTraceWriter();
   private traceFallbackWriter = new RunTraceWriter(async (record) => {
     if (record.kind === "manifest") {
@@ -564,11 +557,8 @@ export class Orchestrator {
     });
     this.budgetEstimators.reset(workspaceId);
     this.workersByWorkspace.set(workspaceId, this.createWorkspaceLanePools());
-    this.laneSupervisorsByWorkspace.set(
-      workspaceId,
-      createWorkspaceLaneSupervisors(),
-    );
-    this.laneRuntimeByWorkspace.set(
+    this.lanes.setSupervisors(workspaceId, createWorkspaceLaneSupervisors());
+    this.lanes.setRuntime(
       workspaceId,
       createWorkspaceLaneRuntime({
         maxWorkers,
@@ -586,12 +576,9 @@ export class Orchestrator {
 
   private cleanupWorkspaceRuntime(workspaceId: string): void {
     this.clearPendingInteractionTimer(workspaceId);
-    const supervisors = this.laneSupervisorsByWorkspace.get(workspaceId);
-    clearLaneSupervisorTimers(supervisors);
-    this.laneSupervisorsByWorkspace.delete(workspaceId);
+    this.lanes.clear(workspaceId);
     this.workersByWorkspace.delete(workspaceId);
     this.budgetEstimators.clear(workspaceId);
-    this.laneRuntimeByWorkspace.delete(workspaceId);
     this.recentCompletionTracker.clear(workspaceId);
     this.pendingFeedback.clear(workspaceId);
   }
@@ -639,10 +626,10 @@ export class Orchestrator {
     workspaceId: string,
     lane: RuntimeLane,
   ): LaneRuntimeState {
-    const runtime = this.laneRuntimeByWorkspace.get(workspaceId);
+    const runtime = this.lanes.getRuntime(workspaceId);
     if (!runtime) {
       this.initializeWorkspaceRuntime(workspaceId, DEFAULT_MAX_WORKERS);
-      return this.laneRuntimeByWorkspace.get(workspaceId)![lane];
+      return this.lanes.getRuntime(workspaceId)![lane];
     }
     return runtime[lane];
   }
@@ -651,10 +638,10 @@ export class Orchestrator {
     workspaceId: string,
     lane: RuntimeLane,
   ): LaneSupervisorState {
-    const supervisors = this.laneSupervisorsByWorkspace.get(workspaceId);
+    const supervisors = this.lanes.getSupervisors(workspaceId);
     if (!supervisors) {
       this.initializeWorkspaceRuntime(workspaceId, DEFAULT_MAX_WORKERS);
-      return this.laneSupervisorsByWorkspace.get(workspaceId)![lane];
+      return this.lanes.getSupervisors(workspaceId)![lane];
     }
     return supervisors[lane];
   }
@@ -674,8 +661,8 @@ export class Orchestrator {
     >;
   } {
     return buildLaneTelemetrySnapshotData({
-      runtime: this.laneRuntimeByWorkspace.get(workspaceId),
-      supervisors: this.laneSupervisorsByWorkspace.get(workspaceId),
+      runtime: this.lanes.getRuntime(workspaceId),
+      supervisors: this.lanes.getSupervisors(workspaceId),
     });
   }
 
