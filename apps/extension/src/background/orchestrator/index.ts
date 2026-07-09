@@ -58,6 +58,7 @@ import {
 } from "./recent-completion-tracker";
 import { PendingFeedbackQueue } from "./pending-feedback-queue";
 import { CompletionWaiterRegistry } from "./completion-waiter-registry";
+import { PendingInteractionTimers } from "./pending-interaction-timers";
 import { buildResumeInput } from "./resume-input";
 import {
   buildTaskManifest,
@@ -277,10 +278,7 @@ export class Orchestrator {
     string,
     (result: { decision: "approve" | "cancel"; feedback?: string }) => void
   >();
-  private pendingInteractionTimers = new Map<
-    string,
-    ReturnType<typeof setTimeout>
-  >();
+  private pendingInteractionTimers = new PendingInteractionTimers();
   private laneSupervisorsByWorkspace = new Map<
     string,
     Record<RuntimeLane, LaneSupervisorState>
@@ -1154,9 +1152,7 @@ export class Orchestrator {
   }
 
   private clearPendingInteractionTimer(workspaceId: string): void {
-    const timer = this.pendingInteractionTimers.get(workspaceId);
-    if (timer) clearTimeout(timer);
-    this.pendingInteractionTimers.delete(workspaceId);
+    this.pendingInteractionTimers.clear(workspaceId);
   }
 
   private emitPendingInteraction(task: OrchestratorTask): void {
