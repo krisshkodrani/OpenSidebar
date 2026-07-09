@@ -32,7 +32,6 @@ import {
 } from "../../utils/perception-mode";
 import { LLMClient } from "../llm";
 import { toolRegistry } from "../tools";
-import { resolveToolProfile } from "../tools/metadata";
 import type { ToolProfile } from "../tools/metadata";
 import { waitForDomReady } from "../tab-ready";
 import {
@@ -49,8 +48,6 @@ import {
 import { workspaceManager } from "../workspaces/manager";
 import { ContextManager, summarizeCausalChain } from "./context";
 import {
-  assessDoneSummary,
-  checkSummaryStepCoherence,
   detectAdmission,
 } from "./verification";
 import { StagnationMonitor } from "./stagnation";
@@ -85,10 +82,60 @@ import {
 } from "./turn-phases/prepare-model-turn";
 import { runGatesPhase, type GatesPhaseHost } from "./turn-phases/gates";
 import {
+  runFeedbackPhase,
+  type FeedbackPhaseHost,
+} from "./turn-phases/feedback";
+import {
+  runEscalationPhase,
+  type EscalationPhaseHost,
+} from "./turn-phases/escalation";
+import {
+  runPlanMonitorPhase,
+  type PlanMonitorPhaseHost,
+} from "./turn-phases/plan-monitor";
+import {
+  runDonePlanRejection,
+  type DonePlanRejectionHost,
+} from "./done-plan-rejection";
+import {
+  evaluateTextAdmissionAdvanceGate,
+  type TextAdmissionGateHost,
+} from "./text-admission-gate";
+import {
+  evaluateDonePlanPrecheck,
+  evaluateDonePlanValidation,
+  type DonePlanValidationHost,
+} from "./done-plan-validation";
+import {
+  collectDoneDiagnosticIssues,
+  type DoneDiagnosticsHost,
+} from "./done-diagnostics";
+import {
+  saveTurnCheckpoint,
+  restoreFromTurnCheckpoint,
+  clearTurnCheckpoint,
+  type TurnCheckpointHost,
+} from "./turn-checkpoint";
+import {
+  recordShadowCompletionDecision,
+  shadowCompareCompletionPipeline,
+  type ShadowCompletionHost,
+} from "./shadow-completion";
+import {
+  getActiveCompletionContext,
+  recordCompletionEvidence,
+  refreshCompletionEvidenceFromSnapshot,
+  recordCompletionToolEvidence,
+  evaluateCompletionCandidate,
+  getCompletionRecoveryHintForCurrentState,
+  maybeAddCompletionRecoveryHint,
+  type CompletionEvidenceHost,
+} from "./completion-evidence";
+import {
   buildServiceNowMissingFieldInfeasibleSummary,
   extractServiceNowFormMissingFieldLabels,
   extractServiceNowModuleRequest,
-  inferServiceNowCreateRecordUrlFromListUrl,
+  resolveServiceNowCreateRecordUrlFromCurrentList,
   maybeInferServiceNowModuleNavigationEvidence,
   serviceNowFieldSearchTokens,
   type ModuleNavEvidenceHost,
@@ -111,27 +158,15 @@ import { EvidenceAccumulator } from "./evidence";
 import { EscalationRescueTracker } from "./escalation-rescue-policy";
 import {
   buildCompletionEnvelope,
-  buildCompletionRecoveryHint,
   buildTrustedCompletionCandidate,
   CompletionEvidenceLedger,
   deriveCompletionEvidenceFromSnapshot,
-  deriveCompletionEvidenceFromToolOutcome,
-  evaluateCompletionEarlyMultiStepPreflight,
-  evaluateCompletionGroundingReadPreflight,
-  evaluateCompletionListDetailReviewPreflight,
-  evaluateCompletionMoneyTableAggregatePreflight,
-  evaluateCompletionPendingAutocompletePreflight,
-  evaluateCompletionRequiredEvidencePreflight,
-  evaluateCompletionSummaryPreflight,
-  evaluateCompletionTaskContractPreflight,
-  evaluateCompletionWorkflowContractPreflight,
   generateCompletionContract,
   type CompletionCandidateSource,
   type CompletionEnvelope,
   type CompletionEvaluation,
   type TrustedCompletionCandidate,
 } from "./completion-kernel";
-import { evaluateGeneratedCompletionCandidate } from "./completion-evaluation-service";
 import {
   buildCompletionDecisionRecord,
   computeSnapshotDigest,
@@ -148,13 +183,15 @@ import {
   runCompletionPipeline,
   type PlannerValidationResult,
 } from "./completion/pipeline";
-import type { CompletionPipelineDecision } from "./completion/pipeline-types";
+import type {
+  CompletionEffect,
+  CompletionPipelineDecision,
+} from "./completion/pipeline-types";
 import {
   applyCompletionEffects,
   type CompletionEffectHost,
 } from "./completion/apply-effects";
 import {
-  TURN_CHECKPOINT_VERSION,
   buildMutationKey,
 } from "./checkpoint-types";
 import type { TurnCheckpoint } from "./checkpoint-types";
@@ -228,7 +265,6 @@ import {
 } from "./agent-plan-progress";
 import { applySkillTurnCap } from "./skill-turn-cap-policy";
 import { countExplicitSteps } from "./explicit-steps";
-import { shouldOmitPerceptionForDoneValidation } from "./perception-done-validation";
 export {
   isPerceptionFailurePlaceholder,
   shouldOmitPerceptionForDoneValidation,
@@ -281,7 +317,6 @@ import {
   detectTrustedFormFillStepCompletion,
   detectTrustedFormSubmitCompletion,
   extractAttemptSummary,
-  formatStateEvidence,
   formatStructuredFailureContext,
   getSnapshotFingerprint,
   isPendingAsyncChangeSatisfied,
@@ -293,7 +328,6 @@ import {
   requiresGroundingReadBeforeDone,
   shouldTrackFormSubmissionReset,
   SubgoalAttempt,
-  tokenizeStepText,
   updateConsecutiveAllFailTurns,
   updateExplorationBudget,
   updatePostEscalationPivot,
@@ -982,57 +1016,7 @@ export class AgentLoop {
    * LLM call. Fire-and-forget — checkpoint failure must not block the loop.
    */
   private async saveTurnCheckpoint(): Promise<void> {
-    if (!this.nodeId || !this.workspaceId) return;
-    try {
-      const snapshot = this.context.getSnapshot?.() ?? null;
-      const cp: TurnCheckpoint = {
-        version: TURN_CHECKPOINT_VERSION,
-        workspaceId: this.workspaceId,
-        nodeId: this.nodeId,
-        savedAt: Date.now(),
-
-        // Loop runtime
-        turnCount: this.turnCount,
-        maxTurns: this.maxTurns,
-        currentPlanIndex: this.lastPlanIndex,
-        turnsOnCurrentStep: this.turnsOnCurrentStep,
-        escalationsOnCurrentStep: this.escalationsOnCurrentStep,
-        guardAfterDoneRejection: this.guardAfterDoneRejection,
-
-        // Context / prompt state
-        history: this.context.exportForCheckpoint(),
-        planStatus: this.context.getPlanStatusRaw(),
-        workingNotes: this.context.getWorkingNotes(),
-        lastActionOutcome: this.context.getLastActionOutcome(),
-        modelTier: this.llm.isPlannerTier() ? "planner" : "executor",
-        isFirstTurn: this.context.getIsFirstTurn(),
-
-        // Resume validation
-        snapshotFingerprint: getSnapshotFingerprint(snapshot),
-        pageUrl: snapshot?.url ?? null,
-
-        // Phase 2
-        stepMutationLedger: this.checkpoints.entries,
-
-        // Phase 4
-        sideEffectsLog: this.checkpoints.sideEffects,
-        completedResult: this.completedResult
-          ? {
-              outcome: "completed",
-              summary: this.completedResult.summary,
-              ...(this.completedResult.completionEnvelope
-                ? {
-                    completionEnvelope:
-                      this.completedResult.completionEnvelope,
-                  }
-                : {}),
-            }
-          : undefined,
-      };
-      await this.checkpoints.persist(this.workspaceId, this.nodeId, cp);
-    } catch (e) {
-      this.log.warn("agent", "Failed to save turn checkpoint", { error: e });
-    }
+    await saveTurnCheckpoint(this as unknown as TurnCheckpointHost);
   }
 
   /**
@@ -1043,73 +1027,14 @@ export class AgentLoop {
    * calling this — if the page diverged materially, skip restore.
    */
   private restoreFromTurnCheckpoint(cp: TurnCheckpoint): boolean {
-    try {
-      // Runtime counters
-      this.turnCount = cp.turnCount;
-      this.maxTurns = applySkillTurnCap(
-        this.selectedSkillId,
-        Math.max(this.maxTurns, cp.maxTurns),
-      );
-      this.lastPlanIndex = cp.currentPlanIndex;
-      this.turnsOnCurrentStep = cp.turnsOnCurrentStep;
-      this.escalationsOnCurrentStep = cp.escalationsOnCurrentStep;
-      this.guardAfterDoneRejection = cp.guardAfterDoneRejection;
-
-      // Context / history
-      this.context.restoreFromCheckpointHistory(cp.history, cp.isFirstTurn);
-      if (cp.planStatus) {
-        this.context.setPlanStatus(
-          cp.planStatus.subtasks,
-          cp.planStatus.currentIndex,
-        );
-      }
-      if (cp.workingNotes) {
-        this.context.setWorkingNotes(cp.workingNotes);
-      }
-      if (cp.lastActionOutcome) {
-        this.context.setLastActionOutcome(cp.lastActionOutcome);
-      }
-      if (cp.modelTier === "planner") {
-        this.llm.switchToPlanner();
-      } else {
-        this.llm.switchToExecutor();
-      }
-
-      this.checkpoints.restoreLedger(cp.stepMutationLedger, cp.sideEffectsLog);
-      this.completedResult = cp.completedResult
-        ? {
-            outcome: "completed",
-            summary: cp.completedResult.summary,
-            ...(cp.completedResult.completionEnvelope
-              ? { completionEnvelope: cp.completedResult.completionEnvelope }
-              : {}),
-          }
-        : null;
-
-      this.log.info("agent", "Restored from turn checkpoint", {
-        turn: cp.turnCount,
-        historyMessages: cp.history.originalCount,
-        ledgerEntries: this.checkpoints.entries.length,
-        sideEffects: this.checkpoints.sideEffects.length,
-        completed: Boolean(this.completedResult),
-      });
-      return true;
-    } catch (e) {
-      this.log.warn("agent", "Failed to restore turn checkpoint", { error: e });
-      return false;
-    }
+    return restoreFromTurnCheckpoint(this as unknown as TurnCheckpointHost, cp);
   }
 
   /**
    * Delete the turn checkpoint for this node (called on terminal states).
    */
   private async clearTurnCheckpoint(): Promise<void> {
-    if (!this.nodeId || !this.workspaceId) return;
-    try {
-      await this.checkpoints.clear(this.workspaceId, this.nodeId);
-    } catch {
-      // Best-effort cleanup
-    }
+    await clearTurnCheckpoint(this as unknown as TurnCheckpointHost);
   }
 
   private lookupMutationReplay(
@@ -1579,53 +1504,6 @@ export class AgentLoop {
     });
   }
 
-  private recordShadowCompletionDecision(
-    decision: CompletionEvaluation,
-    summary: string,
-  ): void {
-    const metadata = {
-      authoritative: false,
-      gatedBy: "completionDeterministicAcceptanceEnabled",
-      fallback: "legacy_done_guards",
-    };
-    if (decision.status === "accepted") {
-      const completionEnvelope = this.createCompletionEnvelope({
-        source: "model_done",
-        contractKind: decision.contract.kind,
-        decisionReason: decision.reason,
-        evidence: decision.evidence,
-        summary,
-      });
-      this.traceRecorder?.recordEvent("completion_decision", {
-        turn: this.turnCount,
-        status: decision.status,
-        source: "model_done",
-        reason: decision.reason,
-        contractKind: decision.contract.kind,
-        resultId: completionEnvelope.resultId,
-        evidenceKeys: decision.evidence.map((event) => event.logicalKey),
-        completionEnvelope,
-        ...metadata,
-      });
-      this.recordCompletionEnvelope(completionEnvelope, metadata);
-      return;
-    }
-    if (
-      decision.status === "rejected" ||
-      decision.status === "needs_verification"
-    ) {
-      this.traceRecorder?.recordEvent("completion_decision", {
-        turn: this.turnCount,
-        status: decision.status,
-        source: "model_done",
-        reason: decision.reason,
-        contractKind: decision.contract.kind,
-        evidenceKeys: decision.evidence.map((event) => event.logicalKey),
-        ...metadata,
-      });
-    }
-  }
-
   private acceptDoneToolCall(
     summary: string,
     toolCallId: string,
@@ -1681,138 +1559,6 @@ export class AgentLoop {
     this.broadcastFinalMetrics();
   }
 
-  private collectDoneDiagnosticIssues(summary: string): string[] {
-    const issues = new Set<string>();
-    const addIssue = (label: string, reason: string | null | undefined) => {
-      const clean = reason?.trim();
-      if (clean) issues.add(`${label}: ${clean}`);
-    };
-
-    const summaryPreflight = evaluateCompletionSummaryPreflight({
-      summary,
-      taskContext: this.getCompletionSummaryTaskContext(),
-      turnCount: this.turnCount,
-      rootUserRequest: this.originalQuery,
-      isOrchestratorNode: Boolean(this.nodeId),
-    });
-    if (summaryPreflight.status !== "valid") {
-      addIssue("summary", summaryPreflight.reason);
-    }
-
-    const groundingPreflight = evaluateCompletionGroundingReadPreflight({
-      userRequest: this.originalQuery,
-      summary,
-      snapshot: this.context.getSnapshot(),
-      hasReadPage: this.hasReadPage,
-      hasExplicitPageRead: this.hasExplicitPageRead,
-      hasTaskId: Boolean(this.taskId),
-    });
-    if (groundingPreflight.status === "rejected") {
-      issues.add("grounding: call read_page first to verify actual page content");
-    }
-
-    const incompleteMoneyTableScan =
-      this.getIncompleteMoneyTableAggregateDoneRejection();
-    const moneyTablePreflight = evaluateCompletionMoneyTableAggregatePreflight({
-      incompleteScanReason: incompleteMoneyTableScan,
-      incorrectAnswerReason: incompleteMoneyTableScan
-        ? null
-        : this.getIncorrectMoneyTableAggregateDoneRejection(summary),
-    });
-    if (moneyTablePreflight.status !== "valid") {
-      addIssue("money table", moneyTablePreflight.reason);
-    }
-
-    const earlyMultiStepPreflight = evaluateCompletionEarlyMultiStepPreflight({
-      userRequest: this.originalQuery,
-      doneRejections: this.doneRejections,
-      turnCount: this.turnCount,
-      hasNodeId: Boolean(this.nodeId),
-    });
-    if (earlyMultiStepPreflight.status !== "valid") {
-      issues.add(
-        `plan progress: task has ${earlyMultiStepPreflight.stepCount} steps and is not ready to finish`,
-      );
-    }
-
-    const taskContractGuard = this.isSkillOwnedListDetailReview()
-      ? null
-      : evaluateCompletionTaskContractPreflight({
-          userRequest: this.originalQuery,
-          summary,
-          snapshot: this.context.getSnapshot(),
-        });
-    if (taskContractGuard?.blocked) {
-      addIssue("task contract", taskContractGuard.reason);
-    }
-
-    const workflowSnapshot = this.context.getSnapshot();
-    const workflowDoneGuard = evaluateCompletionWorkflowContractPreflight({
-      userRequest: this.originalQuery,
-      summary,
-      selectedSkillId: this.selectedSkillId,
-      pageUrl: workflowSnapshot?.url,
-      pageTitle: workflowSnapshot?.title,
-    });
-    if (workflowDoneGuard.blocked) {
-      addIssue("workflow contract", workflowDoneGuard.reason);
-    }
-
-    const visibleDetailActionCount = Math.max(
-      this.listDetailVisibleActionCount,
-      countVisibleListDetailActions(this.context.getSnapshot()),
-    );
-    const listDetailPreflight = evaluateCompletionListDetailReviewPreflight({
-      selectedSkillId: this.selectedSkillId,
-      userRequest: this.originalQuery,
-      reviewedDetailCount: this.listDetailReviewedTargets.size,
-      visibleDetailActionCount,
-    });
-    if (listDetailPreflight.status !== "valid") {
-      addIssue("list-detail review", listDetailPreflight.reason);
-    }
-
-    const activePlanIdx =
-      this.planSubtasks.length > 0
-        ? this.planSubtasks.findIndex((s) => s.status === "running")
-        : -1;
-    const effectivePlanIdx =
-      activePlanIdx >= 0
-        ? activePlanIdx
-        : Math.min(
-            this.planSubtasks.filter((s) => s.status === "completed").length,
-            this.planSubtasks.length - 1,
-          );
-    const autocompletePreflight = evaluateCompletionPendingAutocompletePreflight({
-      snapshot: this.context.getSnapshot(),
-      userRequest: this.originalQuery,
-      activeObjective:
-        effectivePlanIdx >= 0
-          ? this.planSubtasks[effectivePlanIdx]?.description
-          : undefined,
-      successCriteria:
-        effectivePlanIdx >= 0
-          ? this.planSteps[effectivePlanIdx]?.successCriteria
-          : undefined,
-      summary,
-    });
-    if (autocompletePreflight.status !== "valid") {
-      addIssue("autocomplete", autocompletePreflight.reason);
-    }
-
-    const requiredEvidencePreflight =
-      evaluateCompletionRequiredEvidencePreflight({
-        missingRequiredEvidence: this.getMissingRequiredEvidenceTypes(),
-      });
-    if (requiredEvidencePreflight.status !== "valid") {
-      issues.add(
-        `typed evidence: missing ${requiredEvidencePreflight.missingRequiredEvidence.join(", ")}`,
-      );
-    }
-
-    return Array.from(issues);
-  }
-
   private doneRejectionDiagnosticContent(params: {
     summary: string;
     primaryReason: string;
@@ -1828,7 +1574,10 @@ export class AgentLoop {
       );
     }
 
-    const issues = this.collectDoneDiagnosticIssues(params.summary);
+    const issues = collectDoneDiagnosticIssues(
+      this as unknown as DoneDiagnosticsHost,
+      params.summary,
+    );
     if (!issues.some((issue) => issue.includes(params.primaryReason))) {
       issues.unshift(params.primaryReason);
     }
@@ -1845,470 +1594,22 @@ export class AgentLoop {
     );
   }
 
-  private rejectDoneAfterPlanValidation(
-    toolCallId: string,
-    summary: string,
-    rejectReason: string,
-    effectiveCurrentIdx: number,
-  ): void {
-    this.doneRejections++;
-    this.checkAndSetDoneRejectionEscalation();
-    // Activate idempotency guard: prevent re-execution of actions
-    // that already succeeded but whose done() was rejected by verifier
-    this.guardAfterDoneRejection = true;
-
-    this.log.warn("agent", "DONE rejected", {
-      turn: this.turnCount,
-      rejections: this.doneRejections,
-      advancedTo: effectiveCurrentIdx,
-      reason: rejectReason.slice(0, STRING_LIMITS.REJECTION_REASON),
-    });
-    this.traceRecorder?.recordEvent("done_rejected", {
-      rejections: this.doneRejections,
-      reason: rejectReason,
-      advancedTo: effectiveCurrentIdx,
-    });
-
-    // Build next-step hint for actionable rejection
-    const nextStepIdx = effectiveCurrentIdx + 1;
-    const nextStepDesc =
-      nextStepIdx < this.planSubtasks.length
-        ? this.planSubtasks[nextStepIdx].description
-        : null;
-    const nextStepHint = nextStepDesc
-      ? `\nYOUR NEXT ACTION: ${nextStepDesc}\nDo NOT call done(). Execute this step now.`
-      : "";
-
-    if (this.doneRejections >= this.limits.maxDoneRejections) {
-      this.log.warn("agent", "DONE blocked after max rejections", {
-        turn: this.turnCount,
-        rejections: this.doneRejections,
-      });
-      this.traceRecorder?.recordEvent("done_blocked_max_rejections", {
-        rejections: this.doneRejections,
-        reason: rejectReason,
-        source: "plan_validation",
-      });
-      this.context.addMessage({
-        role: "tool",
-        tool_call_id: toolCallId,
-        content: this.doneRejectionDiagnosticContent({
-          summary,
-          primaryReason: rejectReason,
-          fallbackInstruction:
-            "You have repeated done() too many times while the task is still incomplete. " +
-            "Do not call done() again from this state. Take a different action or call escalate().",
-          nextStepHint,
-        }),
-      });
-      return;
-    }
-
-    this.context.addMessage({
-      role: "tool",
-      tool_call_id: toolCallId,
-      content: this.doneRejectionDiagnosticContent({
-        summary,
-        primaryReason: rejectReason,
-        fallbackInstruction:
-          "Take concrete actions to complete this step - click, type, scroll, or navigate. " +
-          "Do NOT call done() again until you have performed the missing actions.",
-        nextStepHint,
-      }),
-    });
-    this.stepHandler(
-      {
-        id: crypto.randomUUID(),
-        type: "info",
-        label: `Not done yet (${this.doneRejections}/${this.limits.maxDoneRejections})`,
-        status: "done",
-        timestamp: Date.now(),
-      },
-      false,
-    );
-  }
-
-  private evaluateDonePlanPrecheck(summary: string): {
-    shouldReject: boolean;
-    rejectReason: string;
-    effectiveCurrentIdx: number;
-    completedMoneyTableAggregate: boolean;
-  } {
-    let shouldReject = false;
-    let rejectReason = "";
-    const completedMoneyTableAggregate =
-      this.isCompletedMoneyTableAggregateSummary(summary);
-    const completedCount = this.planSubtasks.filter(
-      (s) => s.status === "completed",
-    ).length;
-    const runningIdx = this.planSubtasks.findIndex(
-      (s) => s.status === "running",
-    );
-    const effectiveCurrentIdx = runningIdx >= 0 ? runningIdx : completedCount;
-    const uncommittedInlineEditRejection =
-      this.getUncommittedInlineEditDoneRejection(effectiveCurrentIdx);
-    if (uncommittedInlineEditRejection) {
-      shouldReject = true;
-      rejectReason = uncommittedInlineEditRejection;
-    }
-
-    const bypassPlanIncompleteRejection = shouldReject
-      ? false
-      : completedMoneyTableAggregate ||
-        this.shouldBypassPlanIncompleteDoneRejection({
-          summary,
-          currentStepIndex: effectiveCurrentIdx,
-        });
-    if (
-      effectiveCurrentIdx < this.planSubtasks.length - 1 &&
-      !shouldReject &&
-      !bypassPlanIncompleteRejection
-    ) {
-      shouldReject = true;
-      rejectReason = `Plan incomplete. Step ${effectiveCurrentIdx + 1}/${this.planSubtasks.length} is active; continue to the next planned step instead of ending the task.`;
-    } else if (bypassPlanIncompleteRejection) {
-      this.log.info(
-        "agent",
-        "Bypassing stale plan done rejection for satisfied task",
-        {
-          turn: this.turnCount,
-          step: effectiveCurrentIdx,
-          remainingSteps: this.planSubtasks.length - effectiveCurrentIdx - 1,
-          selectedSkillId: this.selectedSkillId,
-          reason: completedMoneyTableAggregate
-            ? "completed_money_table_aggregate"
-            : "satisfied_edit_task",
-        },
-      );
-      this.traceRecorder?.recordEvent("done_plan_incomplete_bypassed", {
-        step: effectiveCurrentIdx,
-        remainingSteps: this.planSubtasks.length - effectiveCurrentIdx - 1,
-        selectedSkillId: this.selectedSkillId,
-        reason: completedMoneyTableAggregate
-          ? "completed_money_table_aggregate"
-          : "satisfied_edit_task",
-      });
-    }
-
-    const activeAsyncExpectation =
-      this.pendingAsyncVerification &&
-      this.pendingAsyncVerification.stepIndex === effectiveCurrentIdx
-        ? this.pendingAsyncVerification
-        : null;
-    if (
-      this.pendingAsyncVerification &&
-      this.pendingAsyncVerification.stepIndex !== effectiveCurrentIdx
-    ) {
-      this.pendingAsyncVerification = null;
-    }
-    if (
-      activeAsyncExpectation &&
-      !isPendingAsyncChangeSatisfied({
-        snapshot: this.context.getSnapshot(),
-        expectedTokens: activeAsyncExpectation.expectedTokens,
-        baselineLoadingKeywords: activeAsyncExpectation.baselineLoadingKeywords,
-      }) &&
-      !this.hasRecentToolEvidenceForTokens(
-        activeAsyncExpectation.expectedTokens,
-      )
-    ) {
-      shouldReject = true;
-      rejectReason = `The last action likely triggered delayed page content, but the expected result is not visible yet. ${activeAsyncExpectation.reason} Wait for the update and verify it before ending the task.`;
-    } else if (activeAsyncExpectation) {
-      this.pendingAsyncVerification = null;
-    }
-
-    return {
-      shouldReject,
-      rejectReason,
-      effectiveCurrentIdx,
-      completedMoneyTableAggregate,
-    };
-  }
-
-  private async evaluateDonePlanValidation(
-    summary: string,
-    effectiveCurrentIdx: number,
-    completedMoneyTableAggregate: boolean,
-    initialShouldReject: boolean,
-    initialRejectReason: string,
-  ): Promise<{ shouldReject: boolean; rejectReason: string }> {
-    let shouldReject = initialShouldReject;
-    let rejectReason = initialRejectReason;
-
-    try {
-      this.stepHandler(
-        {
-          id: crypto.randomUUID(),
-          type: "thinking",
-          label: "Verifying completion...",
-          status: "running",
-          timestamp: Date.now(),
-        },
-        false,
-      );
-
-      // Skip planner validateDone for orchestrator sub-nodes.
-      // Sub-nodes only need to satisfy their node-level objective;
-      // the orchestrator's own verifier checks node completion.
-      // Calling validateDone with the full original query would
-      // reject because sibling steps aren't done yet.
-      if (!shouldReject && !this.nodeId && !completedMoneyTableAggregate) {
-        const currentSubtask =
-          effectiveCurrentIdx >= 0
-            ? this.planSubtasks[effectiveCurrentIdx]
-            : undefined;
-        const interpretation = this.perception.getInterpretation();
-        const validationPerception = shouldOmitPerceptionForDoneValidation({
-          interpretation,
-          hasReadPage: this.hasReadPage,
-          originalQuery: this.originalQuery,
-          activeStepDescription: currentSubtask?.description,
-          activeStepToolProfile:
-            currentSubtask?.toolProfile &&
-            resolveToolProfile(currentSubtask.toolProfile as ToolProfile)
-              ? (currentSubtask.toolProfile as ToolProfile)
-              : undefined,
-        })
-          ? undefined
-          : (interpretation ?? undefined);
-        const lastEffect = this.stagnation.lastActionEffect;
-        const stateEvidence = lastEffect
-          ? formatStateEvidence(lastEffect)
-          : undefined;
-        const validation = await this.planner.validateDone(
-          this.originalQuery,
-          this.planSubtasks,
-          summary,
-          this.context.getSnapshot()?.title || "",
-          this.context.getSnapshot()?.url || "",
-          this.abortController!.signal,
-          validationPerception,
-          this.planSteps[effectiveCurrentIdx]?.successCriteria,
-          stateEvidence ?? undefined,
-        );
-
-        if (!validation.approved) {
-          shouldReject = true;
-          rejectReason = validation.reason || "Task is not yet complete.";
-        }
-      }
-    } catch (_err: any) {
-      // Planner call failed - structural fallback
-      const completedCount = this.planSubtasks.filter(
-        (s) => s.status === "completed",
-      ).length;
-      if (completedCount < this.planSubtasks.length) {
-        shouldReject = true;
-        rejectReason = `Planner unavailable. ${completedCount}/${this.planSubtasks.length} subtasks completed. Continue.`;
-      }
-    }
-
-    return { shouldReject, rejectReason };
-  }
-
-  private handleDonePlanRejection(
-    toolCallId: string,
-    summary: string,
-    rejectReason: string,
-    effectiveCurrentIdx: number,
-  ): void {
-    // retry_step: when the current step uses retry semantics
-    // (infinite scroll, pagination), reject done() without
-    // counting toward doneRejections — the executor should
-    // keep trying the same step.
-    const currentStep = this.planSteps[effectiveCurrentIdx];
-    if (currentStep?.verifyAfter?.action === "retry_step") {
-      const maxRetries = currentStep.verifyAfter.maxRetries ?? 8;
-      if (this.stepRetryCount < maxRetries) {
-        this.stepRetryCount++;
-        this.context.addMessage({
-          role: "tool",
-          tool_call_id: toolCallId,
-          content:
-            `Step not yet complete (attempt ${this.stepRetryCount}/${maxRetries}). ` +
-            `${currentStep.verifyAfter.trigger} not detected yet. ` +
-            `Keep trying: scroll down further, wait for content to load, then check again.`,
-        });
-        this.log.info("agent", "retry_step: attempt", {
-          turn: this.turnCount,
-          step: effectiveCurrentIdx,
-          attempt: this.stepRetryCount,
-          maxRetries,
-        });
-        return;
-      }
-      // Exhausted retries — fall through to normal rejection
-    }
-
-    const planIncompleteOnly = rejectReason.startsWith("Plan incomplete.");
-    const canAdvanceStep =
-      planIncompleteOnly &&
-      effectiveCurrentIdx >= 0 &&
-      effectiveCurrentIdx < this.planSubtasks.length - 1;
-
-    if (canAdvanceStep) {
-      // Three-layer verification gate before auto-advance
-      const sentiment = assessDoneSummary(summary);
-      const criteriaCheck = matchSuccessCriteria({
-        successCriteria: this.planSteps[effectiveCurrentIdx]?.successCriteria,
-        snapshot: this.context.getSnapshot(),
-      });
-      const autoAdvanceCap = Math.max(
-        2,
-        Math.ceil(this.planSubtasks.length / 2),
-      );
-      const rateLimited = this.consecutiveAutoAdvances >= autoAdvanceCap;
-
-      const coherence = checkSummaryStepCoherence({
-        summary,
-        currentStepIndex: effectiveCurrentIdx,
-        stepDescriptions: this.planSubtasks.map((s) => s.description),
-      });
-
-      let gateBlockReason: string | null = null;
-      if (!sentiment.confident) {
-        gateBlockReason = `Summary admits failure: ${sentiment.reason}`;
-      } else if (!coherence.coherent) {
-        gateBlockReason = `Summary doesn't match current step: ${coherence.reason}`;
-      } else if (!criteriaCheck.satisfied) {
-        const evidenceParts = [
-          `${criteriaCheck.matchedTokens.length}/${criteriaCheck.totalTokens} tokens matched`,
-        ];
-        if (criteriaCheck.requiredQuotedPhrases.length > 0) {
-          evidenceParts.push(
-            `${criteriaCheck.matchedQuotedPhrases.length}/${criteriaCheck.requiredQuotedPhrases.length} quoted phrases matched`,
-          );
-        }
-        if (criteriaCheck.requiredNumbers.length > 0) {
-          evidenceParts.push(
-            `${criteriaCheck.matchedNumbers.length}/${criteriaCheck.requiredNumbers.length} numeric values matched`,
-          );
-        }
-        gateBlockReason = `Success criteria not met (${evidenceParts.join(", ")})`;
-      } else if (rateLimited) {
-        gateBlockReason = `Rate limited: ${this.consecutiveAutoAdvances} consecutive auto-advances without DOM action`;
-      }
-
-      if (gateBlockReason) {
-        // Gate blocked — fall through to rejection path below
-        this.log.warn("agent", "Auto-advance blocked by verification gate", {
-          turn: this.turnCount,
-          step: effectiveCurrentIdx,
-          reason: gateBlockReason,
-          sentiment: sentiment.confident,
-          criteriaMatched: criteriaCheck.matchedTokens,
-          criteriaTotal: criteriaCheck.totalTokens,
-          quotedMatched: criteriaCheck.matchedQuotedPhrases,
-          quotedTotal: criteriaCheck.requiredQuotedPhrases,
-          numbersMatched: criteriaCheck.matchedNumbers,
-          numbersTotal: criteriaCheck.requiredNumbers,
-          consecutiveAutoAdvances: this.consecutiveAutoAdvances,
-        });
-        this.traceRecorder?.recordEvent("auto_advance_blocked", {
-          step: effectiveCurrentIdx,
-          reason: gateBlockReason,
-          summary: summary.slice(0, 200),
-        });
-        // Fall through to doneRejections++ below
-      } else {
-        // Gate passed — proceed with auto-advance
-        this.consecutiveAutoAdvances++;
-        const previousIdx = effectiveCurrentIdx;
-        const newIdx = advanceCompletedSubtasks(
-          this as unknown as AgentLoopPlanProgressHost,
-        );
-        const completedStep =
-          this.planSubtasks[previousIdx]?.description ||
-          `Step ${previousIdx + 1}`;
-        const nextStep =
-          this.planSubtasks[newIdx]?.description || "Finish the remaining plan";
-
-        this.syncPlanStatus(newIdx, "step_advanced_by_done_rejection", {
-          rejections: this.doneRejections,
-          advancedTo: newIdx,
-          convertedFromDone: true,
-        });
-        this.broadcastTaskProgress(newIdx);
-        this.log.info("agent", "DONE converted into step completion", {
-          turn: this.turnCount,
-          completedStep: completedStep.slice(0, 200),
-          nextStep: nextStep.slice(0, 200),
-        });
-        this.context.addMessage({
-          role: "tool",
-          tool_call_id: toolCallId,
-          content:
-            `Step ${previousIdx + 1} verified complete.\n\n` +
-            `Now active: Step ${newIdx + 1} — ${nextStep}.\n` +
-            "Observe the page with read_page first, then act. Do NOT call done() until this step is completed and verified.",
-        });
-        return;
-      }
-    }
-
-    this.rejectDoneAfterPlanValidation(
-      toolCallId,
-      summary,
-      rejectReason,
-      effectiveCurrentIdx,
-    );
-  }
-
   private getActiveCompletionContext(): {
     activeObjective?: string;
     successCriteria?: string;
   } {
-    const activePlanIdx =
-      this.planSubtasks.length > 0
-        ? this.planSubtasks.findIndex((s) => s.status === "running")
-        : -1;
-    const effectivePlanIdx =
-      activePlanIdx >= 0
-        ? activePlanIdx
-        : Math.min(
-            this.planSubtasks.filter((s) => s.status === "completed").length,
-            this.planSubtasks.length - 1,
-          );
-    return {
-      activeObjective:
-        effectivePlanIdx >= 0
-          ? this.planSubtasks[effectivePlanIdx]?.description
-          : undefined,
-      successCriteria:
-        effectivePlanIdx >= 0
-          ? this.planSteps[effectivePlanIdx]?.successCriteria
-          : undefined,
-    };
+    return getActiveCompletionContext(this as unknown as CompletionEvidenceHost);
   }
 
   private recordCompletionEvidence(
     evidence: ReturnType<typeof deriveCompletionEvidenceFromSnapshot>,
     source: string,
   ): number {
-    const added = this.completionEvidence.addMany(evidence);
-    if (added === 0) return 0;
-    this.traceRecorder?.recordEvent("completion_evidence_recorded", {
-      turn: this.turnCount,
-      source,
-      added,
-      evidence: evidence.map((event) => ({
-        type: event.type,
-        confidence: event.confidence,
-        logicalKey: event.logicalKey,
-      })),
-    });
-    return added;
+    return recordCompletionEvidence(this as unknown as CompletionEvidenceHost, evidence, source);
   }
 
   private refreshCompletionEvidenceFromSnapshot(source: string): void {
-    this.recordCompletionEvidence(
-      deriveCompletionEvidenceFromSnapshot(
-        this.context.getSnapshot(),
-        this.turnCount,
-      ),
-      source,
-    );
+    refreshCompletionEvidenceFromSnapshot(this as unknown as CompletionEvidenceHost, source);
   }
 
   private recordCompletionToolEvidence(
@@ -2317,92 +1618,22 @@ export class AgentLoop {
     result: string,
     preActionSnapshot?: DomSnapshot | null,
   ): void {
-    const added = this.recordCompletionEvidence(
-      deriveCompletionEvidenceFromToolOutcome({
-        toolName,
-        args,
-        result,
-        preActionSnapshot,
-        currentSnapshot: this.context.getSnapshot(),
-        turn: this.turnCount,
-      }),
-      "tool_result",
-    );
-    if (added > 0) {
-      this.maybeAddCompletionRecoveryHint("tool_result");
-    }
+    recordCompletionToolEvidence(this as unknown as CompletionEvidenceHost, toolName, args, result, preActionSnapshot);
   }
 
   private evaluateCompletionCandidate(
     source: CompletionCandidateSource,
     summary: string,
   ): CompletionEvaluation {
-    this.refreshCompletionEvidenceFromSnapshot("candidate_evaluation");
-    const completionContext = this.getActiveCompletionContext();
-    const snapshot = this.context.getSnapshot();
-    const { generated, decision } = evaluateGeneratedCompletionCandidate({
-      userRequest: this.originalQuery,
-      snapshot,
-      activeObjective: completionContext.activeObjective,
-      successCriteria: completionContext.successCriteria,
-      evidence: this.completionEvidence.toArray(),
-      candidateSource: source,
-      summary,
-    });
-    this.traceRecorder?.recordEvent("completion_candidate", {
-      turn: this.turnCount,
-      source,
-      contractKind: generated?.contract.kind ?? "none",
-      confidence: generated?.confidence ?? "none",
-    });
-    if (generated?.notes.length) {
-      this.traceRecorder?.recordEvent("completion_contract_repaired", {
-        turn: this.turnCount,
-        notes: generated.notes,
-        contractKind: generated.contract.kind,
-      });
-    }
-    if (decision.status !== "accepted") {
-      this.lastCompletionRejection = decision;
-    }
-    return decision;
+    return evaluateCompletionCandidate(this as unknown as CompletionEvidenceHost, source, summary);
   }
 
   private getCompletionRecoveryHintForCurrentState(): string | null {
-    this.refreshCompletionEvidenceFromSnapshot("recovery_consult");
-    const completionContext = this.getActiveCompletionContext();
-    const snapshot = this.context.getSnapshot();
-    const { generated, decision } = evaluateGeneratedCompletionCandidate({
-      userRequest: this.originalQuery,
-      snapshot,
-      activeObjective: completionContext.activeObjective,
-      successCriteria: completionContext.successCriteria,
-      evidence: this.completionEvidence.toArray(),
-      candidateSource: "model_done",
-    });
-    if (generated?.notes.length) {
-      this.traceRecorder?.recordEvent("completion_contract_repaired", {
-        turn: this.turnCount,
-        notes: generated.notes,
-        contractKind: generated.contract.kind,
-        source: "recovery_consult",
-      });
-    }
-    return buildCompletionRecoveryHint(decision);
+    return getCompletionRecoveryHintForCurrentState(this as unknown as CompletionEvidenceHost);
   }
 
   private maybeAddCompletionRecoveryHint(trigger: string): void {
-    const hint = this.getCompletionRecoveryHintForCurrentState();
-    if (!hint || hint === this.lastCompletionRecoveryHint) return;
-    this.lastCompletionRecoveryHint = hint;
-    this.traceRecorder?.recordEvent("completion_recovery_hint", {
-      turn: this.turnCount,
-      trigger,
-    });
-    this.context.addMessage({
-      role: "user",
-      content: hint,
-    });
+    maybeAddCompletionRecoveryHint(this as unknown as CompletionEvidenceHost, trigger);
   }
 
   private getPendingAutocompleteCompletionEvidence(
@@ -2447,57 +1678,63 @@ export class AgentLoop {
     }
   }
 
-  private rejectDoneFromCompletionDecision(
-    toolCallId: string,
+  /**
+   * Build the deterministic-kernel-rejection effects (RFC LP-16 Phase 2 — single
+   * completion authority): the mutations flow through the pipeline effect stream
+   * instead of a side-effecting callback. post_rejection_diagnostic renders at
+   * apply-time (after increment); the log + autocomplete `rejections` use the
+   * post-increment value (`doneRejections + 1`), matching the prior ordering.
+   */
+  private buildKernelRejectionEffects(
     summary: string,
     decision: CompletionRejectionDecision,
-  ): void {
-    if (this.lastContractRejectionKind === decision.contract.kind) {
-      this.consecutiveSameKindRejections++;
-    } else {
-      this.lastContractRejectionKind = decision.contract.kind;
-      this.consecutiveSameKindRejections = 1;
-    }
-    this.doneRejections++;
-    this.checkAndSetDoneRejectionEscalation();
-    this.lastCompletionRejection = decision;
+  ): CompletionEffect[] {
     this.log.warn("agent", "DONE rejected by deterministic completion kernel", {
       turn: this.turnCount,
-      rejections: this.doneRejections,
+      rejections: this.doneRejections + 1,
       status: decision.status,
       reason: decision.reason,
       contractKind: decision.contract.kind,
     });
-    this.traceRecorder?.recordEvent("completion_decision", {
-      turn: this.turnCount,
-      status: decision.status,
-      source: "model_done",
-      reason: decision.reason,
-      contractKind: decision.contract.kind,
-      evidenceKeys: decision.evidence.map((event) => event.logicalKey),
-    });
+    const effects: CompletionEffect[] = [
+      { type: "record_contract_rejection", kind: decision.contract.kind },
+      { type: "increment_done_rejections" },
+      { type: "check_done_rejection_escalation" },
+      { type: "set_last_completion_rejection", decision },
+      {
+        type: "emit_trace",
+        event: "completion_decision",
+        data: {
+          turn: this.turnCount,
+          status: decision.status,
+          source: "model_done",
+          reason: decision.reason,
+          contractKind: decision.contract.kind,
+          evidenceKeys: decision.evidence.map((event) => event.logicalKey),
+        },
+      },
+    ];
     const pendingAutocomplete =
       this.getPendingAutocompleteCompletionEvidence(decision);
     if (pendingAutocomplete) {
-      this.traceRecorder?.recordEvent(
-        "done_rejected_autocomplete_suggestion_pending",
-        {
-          rejections: this.doneRejections,
+      effects.push({
+        type: "emit_trace",
+        event: "done_rejected_autocomplete_suggestion_pending",
+        data: {
+          rejections: this.doneRejections + 1,
           inputTag: pendingAutocomplete.detail.inputElementId,
           suggestionTag: pendingAutocomplete.detail.suggestionElementId,
           value: String(pendingAutocomplete.detail.value ?? "").toLowerCase(),
         },
-      );
+      });
     }
-    this.context.addMessage({
-      role: "tool",
-      tool_call_id: toolCallId,
-      content: this.doneRejectionDiagnosticContent({
-        summary,
-        primaryReason: decision.reason,
-        fallbackInstruction: this.getCompletionRejectionInstruction(decision),
-      }),
+    effects.push({
+      type: "post_rejection_diagnostic",
+      summary,
+      primaryReason: decision.reason,
+      fallbackInstruction: this.getCompletionRejectionInstruction(decision),
     });
+    return effects;
   }
 
   /**
@@ -2558,6 +1795,14 @@ export class AgentLoop {
       forceGroundingRefresh: async () => {
         await this.forceGroundingRefresh(tabId, "done_before_grounding_read");
       },
+      runDonePlanRejection: (id, summary, rejectReason, idx) =>
+        runDonePlanRejection(
+          this as unknown as DonePlanRejectionHost,
+          id,
+          summary,
+          rejectReason,
+          idx,
+        ),
     };
   }
 
@@ -2586,7 +1831,11 @@ export class AgentLoop {
         error: err instanceof Error ? err.message : String(err),
       });
     }
-    await this.shadowCompareCompletionPipeline(input, verdict);
+    await shadowCompareCompletionPipeline(
+      this as unknown as ShadowCompletionHost,
+      input,
+      verdict,
+    );
     return verdict;
   }
 
@@ -2598,51 +1847,6 @@ export class AgentLoop {
    * carries the pre-inner guard context + the captured planner result, so the
    * pipeline runs without a second model call.
    */
-  private async shadowCompareCompletionPipeline(
-    input: CompletionDecisionRecordInput,
-    legacyVerdict: boolean,
-  ): Promise<void> {
-    try {
-      const { decision: kernelDecision } = evaluateGeneratedCompletionCandidate({
-        userRequest: input.userRequest,
-        snapshot: input.snapshot,
-        activeObjective: input.activeObjective,
-        successCriteria: input.successCriteria,
-        evidence: input.evidence,
-        candidateSource: input.candidateSource,
-        summary: input.summary,
-      });
-      const pipelineDecision = await runCompletionPipeline(input.guardContext, {
-        getKernelDecision: () => kernelDecision,
-        deterministicAcceptanceEnabled: input.deterministicAcceptanceEnabled,
-        isDuplicateTerminal: input.isDuplicateTerminal,
-        validatePlan: async () => input.plannerResult,
-        onKernelReject: () => {},
-      });
-      const pipelineAccepted = pipelineDecision.verdict === "accept";
-      if (pipelineAccepted !== legacyVerdict) {
-        this.traceRecorder?.recordEvent("completion_pipeline_divergence", {
-          turn: this.turnCount,
-          legacyVerdict: legacyVerdict ? "accepted" : "rejected",
-          pipelineVerdict: pipelineDecision.verdict,
-          pipelineBasis: pipelineDecision.basis,
-          pipelineRejectedBy: pipelineDecision.rejectedBy,
-          pipelineReason: pipelineDecision.reason,
-        });
-        this.log.warn("agent", "completion pipeline shadow divergence", {
-          turn: this.turnCount,
-          legacyVerdict: legacyVerdict ? "accepted" : "rejected",
-          pipelineVerdict: pipelineDecision.verdict,
-          pipelineRejectedBy: pipelineDecision.rejectedBy,
-        });
-      }
-    } catch (err) {
-      this.log.warn("agent", "completion pipeline shadow comparison failed", {
-        turn: this.turnCount,
-        error: err instanceof Error ? err.message : String(err),
-      });
-    }
-  }
 
   /**
    * Snapshot the completion decision input surface as the kernel will see it,
@@ -2858,7 +2062,11 @@ export class AgentLoop {
       getKernelDecision: () => {
         kernelDecision = this.evaluateCompletionCandidate("model_done", summary);
         if (!this.completionDeterministicAcceptanceEnabled) {
-          this.recordShadowCompletionDecision(kernelDecision, summary);
+          recordShadowCompletionDecision(
+            this as unknown as ShadowCompletionHost,
+            kernelDecision,
+            summary,
+          );
         }
         return kernelDecision;
       },
@@ -2866,13 +2074,21 @@ export class AgentLoop {
         this.completionDeterministicAcceptanceEnabled,
       isDuplicateTerminal: false, // handled inline above
       validatePlan: () => this.runDonePlanValidation(toolCallId, summary),
-      onKernelReject: (decision) =>
+      buildKernelRejectionEffects: (decision) =>
         // Only invoked on a kernel rejection, so the evaluation is a rejection.
-        this.rejectDoneFromCompletionDecision(
-          toolCallId,
+        this.buildKernelRejectionEffects(
           summary,
           decision as CompletionRejectionDecision,
         ),
+      buildPlanRejectionEffects: (plan) => [
+        {
+          type: "run_done_plan_rejection",
+          toolCallId,
+          summary,
+          rejectReason: plan.reason,
+          effectiveCurrentIdx: plan.effectiveCurrentIdx ?? -1,
+        },
+      ],
     });
 
     await applyCompletionEffects(
@@ -2904,14 +2120,16 @@ export class AgentLoop {
       this.lastDonePlanValidation = null;
       return null;
     }
-    const donePlanPrecheck = this.evaluateDonePlanPrecheck(summary);
+    const host = this as unknown as DonePlanValidationHost;
+    const donePlanPrecheck = evaluateDonePlanPrecheck(host, summary);
     let shouldReject = donePlanPrecheck.shouldReject;
     let rejectReason = donePlanPrecheck.rejectReason;
     const effectiveCurrentIdx = donePlanPrecheck.effectiveCurrentIdx;
     const completedMoneyTableAggregate =
       donePlanPrecheck.completedMoneyTableAggregate;
 
-    ({ shouldReject, rejectReason } = await this.evaluateDonePlanValidation(
+    ({ shouldReject, rejectReason } = await evaluateDonePlanValidation(
+      host,
       summary,
       effectiveCurrentIdx,
       completedMoneyTableAggregate,
@@ -2925,13 +2143,9 @@ export class AgentLoop {
     };
 
     if (shouldReject) {
-      this.handleDonePlanRejection(
-        toolCallId,
-        summary,
-        rejectReason,
-        effectiveCurrentIdx,
-      );
-      return { rejected: true, reason: rejectReason ?? "" };
+      // Single-authority (RFC LP-16 Phase 2): don't apply the policy inline —
+      // the pipeline carries a run_done_plan_rejection effect built from this.
+      return { rejected: true, reason: rejectReason ?? "", effectiveCurrentIdx };
     }
     return { rejected: false, reason: "" };
   }
@@ -6367,7 +5581,7 @@ export class AgentLoop {
             this.isServiceNowRecordFormLoadMiss(fill.result)
           ) {
             const createRecordUrl =
-              await this.resolveServiceNowCreateRecordUrlFromCurrentList(tabId);
+              await resolveServiceNowCreateRecordUrlFromCurrentList(tabId);
             if (createRecordUrl) {
               const navigateArgs = { url: createRecordUrl };
               const navigateToolCall: ToolCall = {
@@ -6635,38 +5849,6 @@ export class AgentLoop {
     } finally {
       await this.traceRecorder?.endTurn();
     }
-  }
-
-  private async resolveServiceNowCreateRecordUrlFromCurrentList(
-    tabId: number,
-  ): Promise<string | null> {
-    const candidates: string[] = [];
-    try {
-      const tab = await chrome.tabs.get(tabId);
-      if (tab.url) candidates.push(tab.url);
-    } catch {
-      // Fall through to frame URL probing below.
-    }
-
-    try {
-      const frameResults = await chrome.scripting.executeScript({
-        target: { tabId, allFrames: true },
-        func: () => window.location.href,
-      });
-      for (const frameResult of frameResults as Array<{ result?: unknown }>) {
-        if (typeof frameResult.result === "string") {
-          candidates.push(frameResult.result);
-        }
-      }
-    } catch {
-      // Frame URL probing is best-effort; the tab URL may still be enough.
-    }
-
-    for (const candidate of candidates) {
-      const createUrl = inferServiceNowCreateRecordUrlFromListUrl(candidate);
-      if (createUrl) return createUrl;
-    }
-    return null;
   }
 
   private shouldAutoSubmitTrustedServiceNowForm(params: {
@@ -7309,277 +6491,6 @@ export class AgentLoop {
     return { finalSummary: signal.reason, newIndex, completionCandidate };
   }
 
-  private evaluateTextAdmissionAdvanceGate(params: {
-    summary: string;
-    consecutiveTextOnly: number;
-  }): {
-    passed: boolean;
-    runningIdx: number;
-    isLastStep: boolean;
-    reason?: string;
-  } {
-    const { summary, consecutiveTextOnly } = params;
-    const runningIdx = this.planSubtasks.findIndex(
-      (s) => s.status === "running",
-    );
-    if (runningIdx < 0) {
-      return {
-        passed: false,
-        runningIdx: -1,
-        isLastStep: false,
-        reason: "no_running_step",
-      };
-    }
-
-    const requiredTextOnlyTurns = this.verificationTurnMode ? 1 : 2;
-    if (consecutiveTextOnly < requiredTextOnlyTurns) {
-      return {
-        passed: false,
-        runningIdx,
-        isLastStep: false,
-        reason:
-          requiredTextOnlyTurns === 1
-            ? "verification_turn_waiting"
-            : "first_text_only_turn",
-      };
-    }
-
-    const currentStep = this.planSteps[runningIdx];
-    if (!currentStep?.successCriteria) {
-      return {
-        passed: false,
-        runningIdx,
-        isLastStep: false,
-        reason: "missing_success_criteria",
-      };
-    }
-
-    const sentiment = assessDoneSummary(summary);
-    if (!sentiment.confident) {
-      return {
-        passed: false,
-        runningIdx,
-        isLastStep: false,
-        reason: `failure_sentiment:${sentiment.reason ?? "unknown"}`,
-      };
-    }
-
-    const criteriaCheck = matchSuccessCriteria({
-      successCriteria: currentStep.successCriteria,
-      snapshot: this.context.getSnapshot(),
-    });
-    if (!criteriaCheck.satisfied) {
-      return {
-        passed: false,
-        runningIdx,
-        isLastStep: false,
-        reason: "criteria_mismatch",
-      };
-    }
-
-    const coherence = checkSummaryStepCoherence({
-      summary,
-      currentStepIndex: runningIdx,
-      stepDescriptions: this.planSubtasks.map((s) => s.description),
-    });
-    if (!coherence.coherent) {
-      return {
-        passed: false,
-        runningIdx,
-        isLastStep: false,
-        reason: `coherence_failed:${coherence.reason ?? "unknown"}`,
-      };
-    }
-
-    const pendingCount = this.planSubtasks.filter(
-      (s) => s.status === "pending",
-    ).length;
-
-    return {
-      passed: true,
-      runningIdx,
-      isLastStep: pendingCount === 0,
-    };
-  }
-
-  private shouldBypassPlanIncompleteDoneRejection(params: {
-    summary: string;
-    currentStepIndex: number;
-  }): boolean {
-    const { summary, currentStepIndex } = params;
-    if (
-      currentStepIndex < 0 ||
-      currentStepIndex >= this.planSubtasks.length - 1 ||
-      currentStepIndex >= this.planSteps.length
-    ) {
-      return false;
-    }
-
-    const currentStep = this.planSteps[currentStepIndex];
-    if (!currentStep?.successCriteria) return false;
-
-    const taskContext = [
-      this.originalQuery,
-      this.planSubtasks[currentStepIndex]?.description,
-      currentStep.successCriteria,
-    ]
-      .filter(
-        (part): part is string => typeof part === "string" && part.length > 0,
-      )
-      .join("\n");
-
-    const sentiment = assessDoneSummary(summary);
-    if (!sentiment.confident) return false;
-
-    if (this.nodeId) {
-      const snapshot = this.context.getSnapshot();
-      const summaryTokens = new Set(tokenizeStepText(summary));
-      const snapshotText = normalizeGuardText(
-        `${snapshot?.title || ""}\n${snapshot?.url || ""}\n${snapshot?.visibleContent || ""}\n${snapshot?.pageContent || ""}`,
-      );
-      const groundedSummaryTokens = [...summaryTokens].filter((token) =>
-        snapshotText.includes(token),
-      );
-      if (groundedSummaryTokens.length >= 2) {
-        return true;
-      }
-    }
-
-    const summaryText = normalizeGuardText(summary);
-    const snapshot = this.context.getSnapshot();
-    const snapshotText = normalizeGuardText(
-      `${snapshot?.title || ""}\n${snapshot?.url || ""}\n${snapshot?.visibleContent || ""}\n${snapshot?.pageContent || ""}`,
-    );
-    const confirmationIntent =
-      /\b(submit|submission|confirm|confirmation|sent|saved|applied|placed)\b/i.test(
-        taskContext,
-      );
-    const summaryShowsFinalization =
-      /\b(submitted?|submission complete|completed?|confirmed?|confirmation|saved|applied|sent|placed|finished)\b/i.test(
-        summaryText,
-      );
-    const snapshotShowsFinalState =
-      /\b(submission complete|submitted successfully|success(?:fully)?|thank you|reference(?: number)?|confirmation(?: number| page)?|has been submitted|request received|completed successfully|order confirmed|receipt)\b/i.test(
-        snapshotText,
-      );
-
-    const multiTabChecklistIntent =
-      this.selectedSkillId === "multi-tab-checklist-workflow" ||
-      /\b(procurement|purchase|buy|checklist|source list|separate tabs?|new tabs?)\b/i.test(
-        taskContext,
-      );
-    if (multiTabChecklistIntent) {
-      const summaryShowsTargetWork =
-        /\b(purchase|purchased|order|ordered|confirmed|bought|place(?:d)? order|reviewed|captured|extracted|recorded)\b/i.test(
-          summaryText,
-        );
-      const summaryShowsSourceReturn =
-        /\b(check(?:ed|ing)? off|mark(?:ed|ing)? .* (?:done|complete|reviewed)|record(?:ed|ing)? .* reviewed|returned? to .* (?:list|checklist|procurement|board|source)|back on .* (?:list|checklist|procurement|board|source))\b/i.test(
-          summaryText,
-        );
-      const sourceLooksComplete =
-        /\b\d+\s+of\s+\d+\s+items?\s+completed\b/i.test(snapshotText) ||
-        /\b(mark .* as done|all items procured|viewed|reviewed|completed)\b/i.test(
-          snapshotText,
-        );
-
-      if (
-        summaryShowsTargetWork &&
-        summaryShowsSourceReturn &&
-        sourceLooksComplete
-      ) {
-        return true;
-      }
-    }
-
-    if (
-      confirmationIntent &&
-      summaryShowsFinalization &&
-      snapshotShowsFinalState
-    ) {
-      return true;
-    }
-
-    const nextStepText = normalizeGuardText(
-      [
-        this.planSubtasks[currentStepIndex + 1]?.description,
-        this.planSteps[currentStepIndex + 1]?.objective,
-        this.planSteps[currentStepIndex + 1]?.successCriteria,
-      ]
-        .filter(
-          (part): part is string => typeof part === "string" && part.length > 0,
-        )
-        .join("\n"),
-    );
-    const nextStepIsFinalizationOnly =
-      /\b(?:terminate|end|close|finali[sz]e)\b[\s\S]{0,80}\b(?:task|workflow|run)\b/i.test(
-        nextStepText,
-      ) ||
-      /\b(?:finish|complete)\s+(?:the\s+)?(?:task|workflow|run)\b/i.test(
-        nextStepText,
-      ) ||
-      /\b(?:task|workflow|run)\s+(?:is\s+)?(?:finished|complete|completed|done)\b/i.test(
-        nextStepText,
-      ) ||
-      /\b(?:call|use)\s+done\b/i.test(nextStepText) ||
-      /\breport\s+(?:success|completion|that\b[\s\S]{0,80}\bcomplete)/i.test(
-        nextStepText,
-      );
-    const terminalMutationIntent =
-      /\b(confirm|confirmation|delete|deletion|remove|removal|submit|submission|save|apply|send|post|complete|success|close|dismiss|update|change)\b/i.test(
-        taskContext,
-      );
-    const summaryShowsTerminalState =
-      /\b(success(?:fully)?|completed?|confirmed?|deleted?|removed?|saved|submitted?|sent|posted|closed|dismissed|updated|changed|finished)\b/i.test(
-        summaryText,
-      );
-    const snapshotShowsTerminalMutation =
-      /\b(?:deleted|removed|saved|submitted|sent|posted|closed|dismissed|updated|changed|completed|confirmed)\s+successfully\b/i.test(
-        snapshotText,
-      ) ||
-      /\b(?:success|successful|thank you|confirmation|receipt|completed)\b/i.test(
-        snapshotText,
-      );
-    if (
-      nextStepIsFinalizationOnly &&
-      terminalMutationIntent &&
-      summaryShowsTerminalState &&
-      snapshotShowsTerminalMutation
-    ) {
-      const coherence = checkSummaryStepCoherence({
-        summary,
-        currentStepIndex,
-        stepDescriptions: this.planSubtasks.map((s) => s.description),
-      });
-      if (coherence.coherent) return true;
-    }
-
-    const editIntent =
-      /\b(change|edit|update|replace|set|type|enter|revise|rewrite)\b/i.test(
-        taskContext,
-      );
-    const inPlaceSurface =
-      /\b(spreadsheet|grid|cell|row|column|sheet|table|field|value|draft|reply|email|message|text|copy|wording)\b/i.test(
-        taskContext,
-      );
-    if (!editIntent || !inPlaceSurface) return false;
-
-    const criteriaCheck = matchSuccessCriteria({
-      successCriteria: currentStep.successCriteria,
-      snapshot,
-    });
-    if (!criteriaCheck.satisfied) return false;
-
-    const coherence = checkSummaryStepCoherence({
-      summary,
-      currentStepIndex,
-      stepDescriptions: this.planSubtasks.map((s) => s.description),
-    });
-    if (!coherence.coherent) return false;
-
-    return true;
-  }
-
   private getActiveToolProfileForStep(
     stepIndex: number,
   ): ToolProfile | undefined {
@@ -7677,46 +6588,6 @@ export class AgentLoop {
    * either side has them so SPA view-state URLs remain distinct. Hash is ignored.
    * Returns a block message if matched, or null to allow navigation.
    */
-  private checkNavigateGuard(targetUrl: string): string | null {
-    if (this.planSubtasks.length === 0) return null;
-
-    const completedWithUrls = this.planSubtasks
-      .map((s, i) => ({ ...s, index: i }))
-      .filter((s) => s.status === "completed" && s.completedAtUrl);
-
-    if (completedWithUrls.length === 0) return null;
-
-    let target: URL;
-    try {
-      target = new URL(targetUrl);
-    } catch {
-      return null; // Unparseable URL — let it through
-    }
-
-    for (const step of completedWithUrls) {
-      try {
-        const completed = new URL(step.completedAtUrl!);
-        const includeSearch = Boolean(target.search || completed.search);
-        const targetKey =
-          target.origin + target.pathname + (includeSearch ? target.search : "");
-        const completedKey =
-          completed.origin +
-          completed.pathname +
-          (includeSearch ? completed.search : "");
-        if (targetKey === completedKey) {
-          return (
-            `BLOCKED: Cannot navigate to "${targetUrl}" — matches completed step ${step.index + 1} ("${step.description}").\n` +
-            `Navigating back would undo progress. Continue with the current step.\n` +
-            `If re-visiting is genuinely needed, revise your plan first.`
-          );
-        }
-      } catch {
-        continue;
-      }
-    }
-
-    return null;
-  }
 
   private async loop(initialTabId: number): Promise<LoopResult> {
     let tabId = initialTabId;
@@ -7907,47 +6778,9 @@ export class AgentLoop {
       // extension, and the plan-then-act orientation handoff (tier 1→0).
       prevElementCount = await esc.onTurnStart({ tabId, prevElementCount });
 
-      // Inject pending hint from user before LLM call
-      if (this.pendingFeedback) {
-        this.traceRecorder?.recordEvent("feedback", {
-          text: this.pendingFeedback,
-        });
-        this.context.addMessage({
-          role: "user",
-          content: `[User feedback]: ${this.pendingFeedback}`,
-        });
-        this.pendingFeedback = null;
-        // User redirection restarts the rescue-policy progress clocks.
-        this.escalationRescue.noteUserIntervention(this.turnCount);
-      }
-
-      const historicalToolCalls = this.context
-        .getMessages()
-        .reduce(
-          (count, msg) =>
-            count +
-            (msg.role === "assistant" && Array.isArray(msg.tool_calls)
-              ? msg.tool_calls.length
-              : 0),
-          0,
-        );
-      const shouldInjectTurnBudgetReminder =
-        (this.turnCount > 0 && this.turnCount % 15 === 0) ||
-        (this.turnCount === 1 && historicalToolCalls >= 15);
-      if (shouldInjectTurnBudgetReminder) {
-        const attemptsSoFar = this.turnCount + historicalToolCalls;
-        this.traceRecorder?.recordEvent("turn_budget_reminder", {
-          turn: this.turnCount,
-          historicalToolCalls,
-        });
-        this.context.addMessage({
-          role: "user",
-          content:
-            `TURN BUDGET: You have already used about ${attemptsSoFar} action turns on this objective. ` +
-            `If the goal is already satisfied, call done(). Otherwise, if you are not making clear progress, ` +
-            `call escalate({"reason": "Stuck after ${attemptsSoFar} turns without completing the goal"}) now. Do not keep cycling.`,
-        });
-      }
+      // Feedback phase: fold pending user feedback + the turn-budget reminder
+      // into context before inference. Extracted (RFC LP-16 Phase 3).
+      runFeedbackPhase(this as unknown as FeedbackPhaseHost);
 
       // Broadcast turn progress to side panel (throttled)
       if (
@@ -7997,75 +6830,20 @@ export class AgentLoop {
         return catalogSnapshotCompletion;
       }
 
-      // Escalation rescue policy (RFC LP-2): fail fast when a prior escalation
-      // produced no verified progress, then fire progress-based triggers that
-      // the snapshot-delta monitors cannot see (moving page, frozen progress).
-      {
-        const rescueAssessment = this.escalationRescue.assess({
-          turn: this.turnCount,
-          maxTurns: this.maxTurns,
-          escalationTier: esc.tier,
-          cooldownRemaining: esc.cooldownRemaining,
-          planSubtaskCount: this.planSubtasks.length,
-          planCompletedCount: this.planSubtasks.filter(
-            (subtask) => subtask.status === "completed",
-          ).length,
-        });
-        if (rescueAssessment.kind === "fail_fast") {
-          this.flushEscalationRescueEvents();
-          await this.traceRecorder?.endTurn();
-          return this.failFastAfterEscalation(rescueAssessment.reason);
-        }
-        if (rescueAssessment.kind === "escalate") {
-          this.log.warn("agent", "Escalation rescue trigger fired", {
-            turn: this.turnCount,
-            trigger: rescueAssessment.trigger,
-            reason: rescueAssessment.reason,
-          });
-          this.escalationRescue.noteEscalation(
-            this.turnCount,
-            rescueAssessment.trigger,
-          );
-
-          // Try replan-on-escalation first (planner replans, executor continues)
-          const rescueReplanOk = await this.replanOnEscalation(
-            tabId,
-            subgoalAttempts,
-            this.abortController?.signal,
-          );
-          if (rescueReplanOk) {
-            resetEscalationWorkingMemory();
-          } else {
-            // Fallback: prompt-based persona escalation + strategy pivot
-            const rescueAttemptSummary = extractAttemptSummary(
-              this.context.getMessages(),
-            );
-            beginPlannerEscalation({ bumpStepCounter: true });
-            await this.strategyPivot(tabId, rescueAttemptSummary);
-            this.stagnation.resetEscalation();
-            this.context.addMessage({
-              role: "user",
-              content:
-                rescueAssessment.trigger === "budget_stall"
-                  ? `BUDGET STALL: ${rescueAssessment.reason}. ${ESCALATION_REFLECTION("over half the turn budget is gone with most of the plan incomplete")}`
-                  : `NO-PROGRESS ESCALATION: ${rescueAssessment.reason}. ${ESCALATION_REFLECTION(rescueAssessment.reason)}`,
-            });
-            this.stepHandler(
-              {
-                id: crypto.randomUUID(),
-                type: "info",
-                label:
-                  rescueAssessment.trigger === "budget_stall"
-                    ? "Budget stall — escalating to planner model"
-                    : "No verified progress — escalating to planner model",
-                status: "done",
-                timestamp: Date.now(),
-              },
-              false,
-            );
-          }
-        }
-        this.flushEscalationRescueEvents();
+      // Escalation phase: escalation-rescue policy (RFC LP-2) — fail-fast or
+      // replan/strategy-pivot on no verified progress. Extracted (LP-16 Phase 3).
+      const escalationOutcome = await runEscalationPhase(
+        this as unknown as EscalationPhaseHost,
+        {
+          esc,
+          tabId,
+          subgoalAttempts,
+          resetEscalationWorkingMemory,
+          beginPlannerEscalation,
+        },
+      );
+      if (escalationOutcome.kind === "end_task") {
+        return escalationOutcome.result;
       }
 
       // 1. LLM Inference: prepare request → model call (w/ retries) → process
@@ -9092,40 +7870,10 @@ export class AgentLoop {
               }
 
               // Plan monitor: check alignment every 2 turns when plan is active
-              this.turnsSinceLastMonitor++;
-              if (
-                this.taskId &&
-                this.planSteps.length > 0 &&
-                this.turnsSinceLastMonitor >= 2 &&
-                this.perception.getInterpretation() &&
-                !this.abortController?.signal.aborted
-              ) {
-                this.turnsSinceLastMonitor = 0;
-                const monitorResult = await this.runPlanMonitor(
-                  this.abortController?.signal,
-                );
-                if (monitorResult) {
-                  if (
-                    monitorResult.alignment === "deviated" &&
-                    this.replanCount < this.limits.maxReplans
-                  ) {
-                    await this.handlePlanDeviation(
-                      monitorResult,
-                      tabId,
-                      this.abortController?.signal,
-                    );
-                  } else if (
-                    monitorResult.alignment === "blocked" &&
-                    monitorResult.blocker
-                  ) {
-                    this.context.addMessage({
-                      role: "user",
-                      content: `[Plan Monitor]: Blocker detected — ${monitorResult.blocker}. Address this before continuing with the current step.`,
-                    });
-                  }
-                  // aligned/progressing → no action needed
-                }
-              }
+              await runPlanMonitorPhase(
+                this as unknown as PlanMonitorPhaseHost,
+                tabId,
+              );
 
               // Progress tracking: detect stuck loops
               const progressSignal = this.stagnation.onSnapshotRefresh(snap);
@@ -9903,10 +8651,10 @@ export class AgentLoop {
             totalTextOnly++;
 
             if (admission.type === "success" && this.planSubtasks.length > 0) {
-              const gate = this.evaluateTextAdmissionAdvanceGate({
-                summary: cleanContent,
-                consecutiveTextOnly: nextTextOnlyCount,
-              });
+              const gate = evaluateTextAdmissionAdvanceGate(
+                this as unknown as TextAdmissionGateHost,
+                { summary: cleanContent, consecutiveTextOnly: nextTextOnlyCount },
+              );
 
               if (gate.passed) {
                 if (gate.isLastStep) {

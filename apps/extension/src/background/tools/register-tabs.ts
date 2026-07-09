@@ -1,0 +1,102 @@
+/**
+ * Tab-management tool registrations (RFC LP-16 Phase 4). create_tab /
+ * close_tab / switch_tab, coordinated with the workspace manager. Verbatim
+ * movement from tools/index.ts.
+ */
+import { ToolName } from "../../types";
+import { logger } from "../../utils";
+import { sanitizeUrl } from "../security";
+import { isUsableTabUrl } from "../infrastructure/tab-resolution";
+import { workspaceManager } from "../workspaces/manager";
+import { ToolRegistry } from "./registry";
+import { getTabUrl } from "./helpers";
+import {
+  getAllowedNavigationOrigins,
+  navigationBoundaryError,
+  normalizeOrigin,
+} from "./tab-navigation-helpers";
+import { CREATE_TAB_DEF, CLOSE_TAB_DEF, SWITCH_TAB_DEF } from "./definitions";
+
+export function registerTabTools(toolRegistry: ToolRegistry): void {
+    toolRegistry.register(ToolName.CREATE_TAB, CREATE_TAB_DEF, async (args) => {
+      const allowedOrigins = await getAllowedNavigationOrigins();
+      if (allowedOrigins.length > 0) {
+        const targetOrigin = normalizeOrigin(args.url as string);
+        const normalizedAllowed = allowedOrigins
+          .map(normalizeOrigin)
+          .filter((origin): origin is string => Boolean(origin));
+        if (!targetOrigin || !normalizedAllowed.includes(targetOrigin)) {
+          return navigationBoundaryError(
+            args.url as string,
+            normalizedAllowed.length > 0 ? normalizedAllowed : allowedOrigins,
+          );
+        }
+      }
+      const urlResult = sanitizeUrl(args.url as string);
+      if (!urlResult.ok) return `Error: ${urlResult.error}`;
+      logger.info("tools", "create_tab", { url: urlResult.value });
+      const tab = await chrome.tabs.create({ url: urlResult.value });
+      logger.info("tools", "create_tab created", {
+        tabId: tab.id,
+        url: urlResult.value,
+      });
+  
+      // Auto-add to active workspace if exists
+      const activeWorkspace = await workspaceManager.getActiveWorkspace();
+      if (activeWorkspace && tab.id) {
+        try {
+          await workspaceManager.addTabToWorkspace(tab.id, activeWorkspace.id);
+          logger.info("tools", "create_tab grouped", {
+            tabId: tab.id,
+            workspace: activeWorkspace.name,
+          });
+          return `Created new tab (ID: ${tab.id}) with URL: ${urlResult.value} (added to ${activeWorkspace.name})`;
+        } catch (e) {
+          logger.warn("tools", "Failed to auto-group tab to workspace", {
+            tabId: tab.id,
+            error: e,
+          });
+        }
+      }
+  
+      return `Created new tab (ID: ${tab.id}) with URL: ${urlResult.value}`;
+    });
+  
+    toolRegistry.register(
+      ToolName.CLOSE_TAB,
+      CLOSE_TAB_DEF,
+      async (args, tabId) => {
+        const targetTabId = (args.tabId as number) || tabId;
+        logger.info("tools", "close_tab", {
+          targetTabId,
+          requestedTabId: args.tabId,
+          currentTabId: tabId,
+        });
+        try {
+          await chrome.tabs.remove(targetTabId);
+          return `Closed tab ${targetTabId}`;
+        } catch (e: any) {
+          return `Error closing tab ${targetTabId}: ${e.message}`;
+        }
+      },
+    );
+  
+    toolRegistry.register(ToolName.SWITCH_TAB, SWITCH_TAB_DEF, async (args) => {
+      const targetTabId = args.tabId as number;
+      logger.info("tools", "switch_tab", { targetTabId });
+      try {
+        const targetTab = await chrome.tabs.get(targetTabId);
+        const targetUrl = getTabUrl(targetTab);
+        if (!isUsableTabUrl(targetUrl)) {
+          return (
+            `Error: Cannot switch to tab ${targetTabId} (${targetUrl || "about:blank"}) for this web task. ` +
+            "Browser, extension, blank, and internal pages cannot run page tools. Use a controllable web tab from list_tabs or navigate the current page instead."
+          );
+        }
+        await chrome.tabs.update(targetTabId, { active: true });
+        return `Switched to tab ${targetTabId}. Fresh page snapshot is available.`;
+      } catch (e: any) {
+        return `Error switching to tab ${targetTabId}: ${e.message}`;
+      }
+    });
+}

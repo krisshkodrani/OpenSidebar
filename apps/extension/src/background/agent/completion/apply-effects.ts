@@ -36,6 +36,13 @@ export interface CompletionEffectHost {
   setGuardAfterDoneRejection(): void;
   checkDoneRejectionEscalation(): void;
   forceGroundingRefresh(): Promise<void>;
+  /** Run the done-against-active-plan rejection policy (retry/advance/reject). */
+  runDonePlanRejection(
+    toolCallId: string,
+    summary: string,
+    rejectReason: string,
+    effectiveCurrentIdx: number,
+  ): void;
 }
 
 /**
@@ -81,6 +88,14 @@ export async function applyCompletionEffects(
         break;
       case "force_grounding_refresh":
         await host.forceGroundingRefresh();
+        break;
+      case "run_done_plan_rejection":
+        host.runDonePlanRejection(
+          effect.toolCallId,
+          effect.summary,
+          effect.rejectReason,
+          effect.effectiveCurrentIdx,
+        );
         break;
       default: {
         // Exhaustiveness guard: adding a CompletionEffect variant without a

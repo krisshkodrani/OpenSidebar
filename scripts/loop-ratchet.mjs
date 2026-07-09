@@ -1,23 +1,50 @@
 /**
- * Loop decomposition ratchet (RFC LP-15, Phase 11).
+ * Decomposition ratchet (RFC LP-15 Phase 11; generalized in RFC LP-16 Phase 0).
  *
- * Enforces that the agent-loop monolith only shrinks. It measures a few robust
- * size metrics for `loop.ts` and fails if any exceeds its checked-in budget, so
- * a PR can never grow the file back — the Phase 11 decomposition proceeds
+ * Enforces that the repo's oversized "landmine" files only shrink. It measures a
+ * few robust size metrics per guarded file and fails if any exceeds its
+ * checked-in budget, so a PR can never grow a file back — decomposition proceeds
  * incrementally and is protected against regression between passes.
  *
- * Budgets live in `scripts/loop-ratchet-budget.json` and may ONLY go down. Run
- * `node scripts/loop-ratchet.mjs --report` to print the current metrics (used to
- * tighten the budget after an extraction). Mirrors the rfc-decision baseline
- * pattern already wired into the lint step.
+ * The SET of guarded files and the metrics each one tracks live in code
+ * (`RATCHET_FILES`); the numeric limits live in `scripts/loop-ratchet-budget.json`
+ * and may ONLY go down. Run `node scripts/loop-ratchet.mjs --report` to print the
+ * current metrics for every guarded file (used to tighten a budget after an
+ * extraction). Mirrors the rfc-decision baseline pattern already wired into lint.
  */
 
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 
 const repoRoot = process.cwd();
-const LOOP_PATH = "apps/extension/src/background/agent/loop.ts";
 const budgetPath = join(repoRoot, "scripts", "loop-ratchet-budget.json");
+
+const LOOP_PATH = "apps/extension/src/background/agent/loop.ts";
+
+/**
+ * The guarded files and which metrics apply to each. `fileLines` is universal;
+ * the two structural metrics (`methodCount`, `loopMethodLines`) are specific to
+ * the AgentLoop monolith and only measured for loop.ts.
+ */
+const RATCHET_FILES = [
+  { path: LOOP_PATH, metrics: ["fileLines", "methodCount", "loopMethodLines"] },
+  {
+    path: "apps/extension/src/background/agent/completion-kernel.ts",
+    metrics: ["fileLines"],
+  },
+  {
+    path: "apps/extension/src/background/tools/index.ts",
+    metrics: ["fileLines"],
+  },
+  {
+    path: "apps/extension/src/background/orchestrator/index.ts",
+    metrics: ["fileLines"],
+  },
+  {
+    path: "apps/extension/src/background/orchestrator/skills.ts",
+    metrics: ["fileLines"],
+  },
+];
 
 /** Count lines spanned by a method, brace-matching from its signature line. */
 function methodLineSpan(lines, signatureRe) {
@@ -48,67 +75,102 @@ function methodLineSpan(lines, signatureRe) {
 const METHOD_RE =
   /^ {2}(?:public |private |protected |static |async |override |get |set |\* )*[A-Za-z_$][\w$]*\s*(?:<[^={}]*>)?\s*\(/;
 
-export function measureLoopMetrics(repo = repoRoot) {
-  const src = readFileSync(join(repo, LOOP_PATH), "utf8");
+/** Measure the requested metrics for a single guarded file. */
+function measureFile(repo, relPath, metrics) {
+  const src = readFileSync(join(repo, relPath), "utf8");
   const lines = src.split(/\r?\n/);
-  const methodCount = lines.filter((line) => METHOD_RE.test(line)).length;
-  const loopMethodLines = methodLineSpan(lines, /^ {2}private async loop\(/);
-  return {
-    fileLines: lines.length,
-    methodCount,
-    loopMethodLines: loopMethodLines ?? 0,
-  };
+  const out = {};
+  for (const metric of metrics) {
+    if (metric === "fileLines") {
+      out.fileLines = lines.length;
+    } else if (metric === "methodCount") {
+      out.methodCount = lines.filter((line) => METHOD_RE.test(line)).length;
+    } else if (metric === "loopMethodLines") {
+      out.loopMethodLines =
+        methodLineSpan(lines, /^ {2}private async loop\(/) ?? 0;
+    }
+  }
+  return out;
+}
+
+/** Back-compat: loop.ts metrics only. Retained for any external caller. */
+export function measureLoopMetrics(repo = repoRoot) {
+  return measureFile(repo, LOOP_PATH, [
+    "fileLines",
+    "methodCount",
+    "loopMethodLines",
+  ]);
+}
+
+/** Measure every guarded file. Keyed by repo-relative path. */
+export function measureAll(repo = repoRoot) {
+  const out = {};
+  for (const { path, metrics } of RATCHET_FILES) {
+    out[path] = measureFile(repo, path, metrics);
+  }
+  return out;
 }
 
 const METRIC_LABELS = {
-  fileLines: "loop.ts total lines",
-  methodCount: "AgentLoop method-decl count",
+  fileLines: "total lines",
+  methodCount: "method-decl count",
   loopMethodLines: "loop() method length (lines)",
 };
 
 function main() {
-  const metrics = measureLoopMetrics();
   const report = process.argv.includes("--report");
 
   if (report) {
     // eslint-disable-next-line no-console
-    console.log(JSON.stringify(metrics, null, 2));
+    console.log(JSON.stringify(measureAll(), null, 2));
     return;
   }
 
   const budget = JSON.parse(readFileSync(budgetPath, "utf8"));
+  const budgets = budget.budgets ?? {};
   const failures = [];
   const slack = [];
-  for (const key of Object.keys(METRIC_LABELS)) {
-    const limit = budget[key];
-    const actual = metrics[key];
-    if (typeof limit !== "number") {
-      failures.push(`budget is missing a numeric "${key}"`);
+
+  for (const { path, metrics } of RATCHET_FILES) {
+    const measured = measureFile(repoRoot, path, metrics);
+    const fileBudget = budgets[path];
+    if (typeof fileBudget !== "object" || fileBudget === null) {
+      failures.push(`budget is missing an entry for "${path}"`);
       continue;
     }
-    if (actual > limit) {
-      failures.push(
-        `${METRIC_LABELS[key]} grew: ${actual} > budget ${limit}. ` +
-          `Extract code out of loop.ts; do not raise the budget.`,
-      );
-    } else if (actual < limit) {
-      slack.push(`${METRIC_LABELS[key]}: ${actual} (budget ${limit} — tighten it)`);
+    for (const key of metrics) {
+      const limit = fileBudget[key];
+      const actual = measured[key];
+      const label = METRIC_LABELS[key] ?? key;
+      if (typeof limit !== "number") {
+        failures.push(`${path}: budget is missing a numeric "${key}"`);
+        continue;
+      }
+      if (actual > limit) {
+        failures.push(
+          `${path} ${label} grew: ${actual} > budget ${limit}. ` +
+            `Extract code out; do not raise the budget.`,
+        );
+      } else if (actual < limit) {
+        slack.push(`${path} ${label}: ${actual} (budget ${limit} — tighten it)`);
+      }
     }
   }
 
   if (failures.length > 0) {
     // eslint-disable-next-line no-console
-    console.error("Loop ratchet FAILED:\n- " + failures.join("\n- "));
+    console.error("Decomposition ratchet FAILED:\n- " + failures.join("\n- "));
     process.exit(1);
   }
   if (slack.length > 0) {
     // eslint-disable-next-line no-console
     console.warn(
-      "Loop ratchet slack (budget can be tightened):\n- " + slack.join("\n- "),
+      "Decomposition ratchet slack (budgets can be tightened):\n- " +
+        slack.join("\n- "),
     );
   }
   // eslint-disable-next-line no-console
-  console.log("Loop ratchet passed.");
+  console.log("Decomposition ratchet passed.");
 }
 
 main();

@@ -18,5 +18,8 @@ export * from "./records";
 export * from "./references";
 export * from "./navigation";
 export * from "./register";
+export * from "./register-knowledge-base";
+export * from "./register-list-actions";
+export * from "./register-catalog";
 export * from "./definitions";
 export * from "./tool-hooks";

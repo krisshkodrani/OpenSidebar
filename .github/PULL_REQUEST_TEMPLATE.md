@@ -23,7 +23,7 @@ without a stamped RFC will be asked to step back to an issue first.
 ## Checklist
 
 - [ ] `pnpm run verify` passes locally (rfcs + lint + typecheck + test + build + dist-check)
-- [ ] Did not grow `loop.ts` past its ratchet budget (`node scripts/loop-ratchet.mjs`); tightened `scripts/loop-ratchet-budget.json` if code was extracted
+- [ ] Did not grow any landmine file (`loop.ts`, `completion-kernel.ts`, `tools/index.ts`, `orchestrator/index.ts`, `skills.ts`) past its ratchet budget (`node scripts/loop-ratchet.mjs`); tightened `scripts/loop-ratchet-budget.json` if code was extracted
 - [ ] Added or updated the narrowest test that proves this change (a failing E2E fixture counts)
 - [ ] For a tool change: parameter names match across all three layers (schema, args type, `actions.ts`)
 - [ ] No benchmark-specific / task-id / seed branches; no domain logic outside adapters
