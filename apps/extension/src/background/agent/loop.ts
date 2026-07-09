@@ -69,8 +69,6 @@ import { TaskPlanner, PlanStep, PlanMonitorResult } from "./planner";
 import { TraceRecorder } from "./trace";
 import { ToolResultCache } from "./tool-cache";
 import {
-  buildObservationProgressKey,
-  detectObservationProgressSignals,
   detectSemanticProgressSignals,
   type ContextProgressSignal,
 } from "./context-economy";
@@ -99,6 +97,10 @@ import {
   runDispatchToolsPhase,
   type DispatchToolsHost,
 } from "./turn-phases/dispatch-tools";
+import {
+  runPostToolGuardsPhase,
+  type PostToolGuardsHost,
+} from "./turn-phases/post-tool-guards";
 import {
   detectExplicitSuccessSignalInSnapshot,
   type ExplicitSuccessSignalHost,
@@ -282,16 +284,11 @@ import {
   BROADCAST_INTERVALS,
   STRING_LIMITS,
   ORIENTATION,
-  REDUNDANT_ACTION,
-  FAILED_ACTION_MEMORY,
-  STAGNATION_DETECTION,
   ROLLING_DISTILL,
   FRESH_START,
   TOOL_CACHE,
   ACTION_EFFECT,
   DEFAULT_RUNTIME_LIMITS,
-  EXPLORATION_BUDGET,
-  EXPLORATION_ONLY_TOOLS,
 } from "./constants";
 import type { Difficulty, RuntimeLimits } from "./constants";
 // reassessRuntimeLimits is available from "./constants" for mid-session S5 reassessment
@@ -306,18 +303,12 @@ import { getLoadedSkillContract } from "../orchestrator/skills";
 import { evaluateWorkflowTabRedirect } from "./workflow-tab-controller";
 import {
   BlockedAction,
-  assessDeadEndPattern,
-  assessSameUrlForcedEscalation,
-  assessStepDurationWatchdog,
-  buildOverlayRecoveryCompletionSummary,
   buildFailureBrief,
   buildHandoffBriefing,
-  buildSubgoalAttempt,
   buildStructuredFailureContext,
   buildZeroEffectDecision,
   clearStepScopedActionMemory,
   buildFirstTurnTextOnlyNudge,
-  countTrailingToolResultOutcomes,
   detectInstructionContradiction,
   detectFormSubmissionResetSuccess,
   detectPendingAsyncChange,
@@ -326,20 +317,13 @@ import {
   detectTrustedFormSubmitCompletion,
   extractAttemptSummary,
   formatStructuredFailureContext,
-  getSnapshotFingerprint,
   isPendingAsyncChangeSatisfied,
   isFillerText,
   matchSuccessCriteria,
-  recordRecentOutcome,
-  recordRecentSuccessfulAction,
   type RecentOutcome,
   requiresGroundingReadBeforeDone,
   shouldTrackFormSubmissionReset,
   SubgoalAttempt,
-  updateConsecutiveAllFailTurns,
-  updateExplorationBudget,
-  updatePostEscalationPivot,
-  updateSameToolFailureTracking,
   userExplicitlyRequestedTabManagement,
 } from "./loop-helpers";
 import { buildTaskContract, extractFieldValuePairs } from "./task-contract";
@@ -386,10 +370,7 @@ import {
   handleParallelVerificationGate,
   type ParallelToolExecutionResult,
 } from "./parallel-tool-execution";
-import {
-  collectTurnToolOutcomeRecords,
-  type TurnToolOutcomeRecord,
-} from "./turn-tool-outcomes";
+import { type TurnToolOutcomeRecord } from "./turn-tool-outcomes";
 import {
   refreshPostToolSnapshot,
   type PostToolSnapshotRefreshHost,
@@ -406,30 +387,6 @@ type CompletionValidationErrorEvidence = Extract<
 >;
 
 const CAPTURE_VISIBLE_TAB_RETRY_DELAY_MS = 300;
-
-function shouldDeferStepWatchdogForOutcome(
-  outcome: TurnToolOutcomeRecord,
-): boolean {
-  if (
-    /^(?:error|failed|failure|not found|unable|cannot|could not)\b/i.test(
-      outcome.resultContent,
-    )
-  ) {
-    return false;
-  }
-  switch (outcome.toolName) {
-    case ToolName.TYPE_TEXT:
-    case ToolName.SELECT_OPTION:
-    case ToolName.SET_CHECKBOX:
-      return true;
-    case ToolName.CLICK_ELEMENT:
-      return /\b(?:add(?:ed)?\b.{0,80}\b(?:cart|basket|bag)|apply|applied|place\s+order|placed\s+order|checkout|submit|submitted|confirm|confirmed|save|saved)\b/i.test(
-        outcome.resultContent,
-      );
-    default:
-      return false;
-  }
-}
 
 function isNegativeFindElementResult(result: string): boolean {
   return /\bText ".+?" not found on this page\./i.test(result);
@@ -6927,665 +6884,28 @@ export class AgentLoop {
         if (dispatch.kind === "end_task") return dispatch.result;
         if (dispatch.kind === "next_turn") continue;
 
-        // --- Circuit Breaker: track tool failures ---
-        if (!turn.doneSignaled) {
-          const recentMessages = this.context.getMessages();
-          const turnToolOutcomes = collectTurnToolOutcomeRecords({
+        const guards = await runPostToolGuardsPhase(
+          this as unknown as PostToolGuardsHost,
+          {
+            session,
+            turn,
+            esc,
             toolCalls: response.tool_calls!,
-            messages: recentMessages,
-            snapshot: this.context.getSnapshot(),
-          });
-          const deferStepWatchdogForStateChangingAction = turnToolOutcomes.some(
-            shouldDeferStepWatchdogForOutcome,
-          );
-          const observationSnapshot = this.context.getSnapshot();
-          const observationSnapshotFingerprint = observationSnapshot
-            ? getSnapshotFingerprint(observationSnapshot)
-            : undefined;
-          const observationProgressSignals: ContextProgressSignal[] = [];
-          for (const outcome of turnToolOutcomes) {
-            const observationKey = buildObservationProgressKey({
-              toolName: outcome.toolName,
-              resultContent: outcome.resultContent,
-              snapshotFingerprint: observationSnapshotFingerprint,
-            });
-            const signals = detectObservationProgressSignals({
-              toolName: outcome.toolName,
-              resultContent: outcome.resultContent,
-              alreadySeen:
-                recentObservationProgressKeys.includes(observationKey),
-            });
-            if (signals.length === 0) continue;
-            recentObservationProgressKeys.push(observationKey);
-            if (recentObservationProgressKeys.length > 30) {
-              recentObservationProgressKeys.shift();
-            }
-            observationProgressSignals.push(...signals);
-          }
-          if (observationProgressSignals.length > 0) {
-            this.traceRecorder?.recordEvent("observation_progress_detected", {
-              turn: this.turnCount,
-              signals: observationProgressSignals.map((signal) => signal.label),
-            });
-            if (
-              this.telemetry.recordContextProgress(
-                this.turnCount,
-                observationProgressSignals,
-              )
-            ) {
-              this.traceRecorder?.recordEvent("context_spend_progress_reset", {
-                turn: this.turnCount,
-                signals: observationProgressSignals.map(
-                  (signal) => signal.label,
-                ),
-              });
-            }
-          }
-          const missingFieldInfeasibleSummary =
-            this.assessServiceNowMissingFieldInfeasibility(
-              turnToolOutcomes,
-              serviceNowMissingFieldSearchEvidence,
-            );
-          if (missingFieldInfeasibleSummary) {
-            signalCompletedResult(missingFieldInfeasibleSummary);
-            this.traceRecorder?.recordEvent(
-              "servicenow_record_missing_field_infeasible",
-              {
-                turn: this.turnCount,
-                summary: missingFieldInfeasibleSummary,
-              },
-            );
-            await this.traceRecorder?.endTurn();
-            return {
-              outcome: "completed",
-              turnCount: this.turnCount,
-              summary: missingFieldInfeasibleSummary,
-              failure: { category: "none", code: "none" },
-              metrics: this.getMetrics(),
-              evidence: this.evidenceAccumulator.toArray(),
-            };
-          }
-          const overlayRecoveryCompletion =
-            buildOverlayRecoveryCompletionSummary({
-              originalQuery: this.originalQuery,
-              selectedSkillId: this.selectedSkillId,
-              snapshot: this.context.getSnapshot(),
-              toolOutcomes: turnToolOutcomes,
-            });
-          if (overlayRecoveryCompletion) {
-            signalCompletedResult(overlayRecoveryCompletion);
-            this.traceRecorder?.recordEvent("overlay_recovery_completed", {
-              turn: this.turnCount,
-              selectedSkillId: this.selectedSkillId,
-            });
-            await this.traceRecorder?.endTurn();
-            break;
-          }
-          const { turnSuccesses, turnFailures } =
-            countTrailingToolResultOutcomes(recentMessages);
-
-          // A. Consecutive all-fail turns
-          const failureResults = turnToolOutcomes.map((o) => o.resultContent);
-          const allFailResult = updateConsecutiveAllFailTurns({
-            previousCount: session.consecutiveAllFailTurns,
-            previousDeterministicCount:
-              session.consecutiveAllFailDeterministicTurns,
-            turnSuccesses,
-            turnFailures,
-            failureResults,
-          });
-          session.consecutiveAllFailTurns = allFailResult.count;
-          session.consecutiveAllFailDeterministicTurns =
-            allFailResult.deterministicCount;
-
-          // A1. Deterministic fast-path: circuit break one turn earlier when failures are
-          //     guaranteed unrecoverable (element not found, access denied, etc.)
-          const deterministicThreshold = Math.max(
-            1,
-            this.limits.maxConsecutiveAllFail - 1,
-          );
-          if (
-            session.consecutiveAllFailDeterministicTurns >=
-              deterministicThreshold &&
-            session.consecutiveAllFailTurns < this.limits.maxConsecutiveAllFail
-          ) {
-            this.log.warn(
-              "agent",
-              "Circuit breaker: consecutive deterministic failures",
-              {
-                turn: this.turnCount,
-                consecutiveAllFailDeterministicTurns:
-                  session.consecutiveAllFailDeterministicTurns,
-                deterministicThreshold,
-              },
-            );
-            this.traceRecorder?.recordEvent("deterministic_circuit_break", {
-              consecutiveAllFailTurns: session.consecutiveAllFailTurns,
-              consecutiveAllFailDeterministicTurns:
-                session.consecutiveAllFailDeterministicTurns,
-              deterministicThreshold,
-            });
-            this.circuitBreakerExit(
-              `Deterministic errors prevented progress for ${session.consecutiveAllFailDeterministicTurns} consecutive turns. ` +
-                `Try navigating to a different page or sending new instructions.`,
-            );
-            return {
-              outcome: "error" as const,
-              turnCount: this.turnCount,
-              summary: "Circuit breaker: deterministic tool failures",
-              metrics: this.getMetrics(),
-            };
-          }
-
-          // A2. General all-fail circuit breaker
-          if (
-            session.consecutiveAllFailTurns >= this.limits.maxConsecutiveAllFail
-          ) {
-            this.log.warn(
-              "agent",
-              "Circuit breaker: consecutive all-fail turns",
-              {
-                turn: this.turnCount,
-                consecutiveAllFailTurns: session.consecutiveAllFailTurns,
-              },
-            );
-            this.traceRecorder?.recordEvent("circuit_breaker", {
-              reason: "consecutive_all_fail",
-              consecutiveAllFailTurns: session.consecutiveAllFailTurns,
-            });
-            this.circuitBreakerExit(
-              `All tool calls have failed for ${session.consecutiveAllFailTurns} consecutive turns. The agent cannot make progress. Send a follow-up with different instructions.`,
-            );
-            return {
-              outcome: "error" as const,
-              turnCount: this.turnCount,
-              summary: "Circuit breaker: consecutive tool failures",
-              metrics: this.getMetrics(),
-            };
-          }
-
-          // B. Same-tool repeat failure tracking
-          for (const { toolName, argsKey, resultContent } of turnToolOutcomes) {
-            const failureTracking = updateSameToolFailureTracking({
-              blockedActions,
-              toolFailCounts,
-              toolName,
-              argsKey,
-              resultContent,
-              turn: this.turnCount,
-              bufferSize: FAILED_ACTION_MEMORY.BUFFER_SIZE,
-              warnThreshold: this.limits.toolFailureWarn,
-              exitThreshold: this.limits.toolFailureExit,
-            });
-
-            if (failureTracking.kind === "exit") {
-              this.log.warn(
-                "agent",
-                "Circuit breaker: same-tool repeat failure",
-                {
-                  turn: this.turnCount,
-                  tool: toolName,
-                  count: failureTracking.count,
-                },
-              );
-              this.traceRecorder?.recordEvent("circuit_breaker", {
-                reason: "same_tool_repeat",
-                tool: toolName,
-                count: failureTracking.count,
-              });
-              this.circuitBreakerExit(failureTracking.message);
-              return {
-                outcome: "error" as const,
-                turnCount: this.turnCount,
-                summary: "Circuit breaker: repeated tool failure",
-                metrics: this.getMetrics(),
-              };
-            }
-
-            if (failureTracking.kind === "warn") {
-              this.log.warn(
-                "agent",
-                "Circuit breaker warning: tool repeating failures",
-                {
-                  turn: this.turnCount,
-                  tool: toolName,
-                  count: failureTracking.count,
-                },
-              );
-              this.context.addMessage({
-                role: "user",
-                content: failureTracking.message,
-              });
-            }
-          }
-
-          // B1.5. Done-rejection escalation: if the mid-point threshold was crossed in a
-          //        rejection handler this turn, escalate to planner mode now.
-          if (this.pendingDoneRejectionEscalation) {
-            this.pendingDoneRejectionEscalation = false;
-            if (esc.tier === 0) {
-              beginPlannerEscalation({ bumpStepCounter: false });
-              this.escalationRescue.noteEscalation(
-                this.turnCount,
-                "done_rejection",
-              );
-              this.log.info(
-                "agent",
-                "Escalated to planner after done() rejection mid-point",
-                {
-                  turn: this.turnCount,
-                  doneRejections: this.doneRejections,
-                  maxDoneRejections: this.limits.maxDoneRejections,
-                },
-              );
-            }
-          }
-
-          // B2. Exploration budget: nudge after N consecutive turns of only reading/inspecting
-          {
-            const explorationBudget = updateExplorationBudget({
-              previousCount: session.consecutiveExplorationTurns,
-              toolNames: turnToolOutcomes.map((outcome) => outcome.toolName),
-              explorationOnlyTools: EXPLORATION_ONLY_TOOLS,
-              maxConsecutive: EXPLORATION_BUDGET.MAX_CONSECUTIVE,
-            });
-            session.consecutiveExplorationTurns =
-              explorationBudget.consecutiveTurns;
-            if (explorationBudget.message) {
-              this.context.addMessage({
-                role: "user",
-                content: explorationBudget.message,
-              });
-            }
-          }
-
-          // C. Redundant successful action detection
-          for (const { toolName, argsKey, resultContent } of turnToolOutcomes) {
-            const recentSuccessDecision = recordRecentSuccessfulAction({
-              recentSuccesses,
-              toolName,
-              argsKey,
-              resultContent,
-              snapshot: this.context.getSnapshot(),
-              windowSize: REDUNDANT_ACTION.WINDOW,
-              infoThreshold: REDUNDANT_ACTION.INFO_THRESHOLD,
-              toolNameInfoThreshold: REDUNDANT_ACTION.TOOL_NAME_INFO_THRESHOLD,
-            });
-
-            if (recentSuccessDecision.kind === "redundant_nudge") {
-              this.log.info("agent", "Redundant action nudge", {
-                turn: this.turnCount,
-                tool: toolName,
-                sameStateCount: recentSuccessDecision.sameStateCount,
-                totalRepeats: recentSuccessDecision.totalRepeatCount,
-              });
-              this.traceRecorder?.recordEvent("redundant_action_nudge", {
-                tool: toolName,
-                count: recentSuccessDecision.sameStateCount,
-              });
-              this.traceRecorder?.recordEvent("multi_turn_pathology", {
-                pathology: "anchoring",
-                trigger: "redundant_action_nudge",
-                turn: this.turnCount,
-                details: `${toolName} x${recentSuccessDecision.sameStateCount} same state`,
-              });
-              this.context.addMessage({
-                role: "user",
-                content: recentSuccessDecision.message,
-              });
-            } else if (recentSuccessDecision.kind === "tool_name_pattern") {
-              this.log.info("agent", "Tool-name pattern noted", {
-                turn: this.turnCount,
-                tool: toolName,
-                count: recentSuccessDecision.toolNameCount,
-              });
-              this.traceRecorder?.recordEvent("tool_name_pattern", {
-                tool: toolName,
-                count: recentSuccessDecision.toolNameCount,
-              });
-              this.context.addMessage({
-                role: "user",
-                content: recentSuccessDecision.message,
-              });
-            }
-          }
-
-          // D2. Outcome-based dead-end detection: fingerprint tool results and detect patterns
-          {
-            const currentSnapshotFp = getSnapshotFingerprint(
-              this.context.getSnapshot(),
-            );
-            for (const outcome of turnToolOutcomes) {
-              recordRecentOutcome({
-                recentOutcomes,
-                resultContent: outcome.resultContent,
-                snapshotFp: currentSnapshotFp,
-                windowSize: STAGNATION_DETECTION.WINDOW,
-              });
-
-              subgoalAttempts.push(
-                buildSubgoalAttempt({
-                  turn: this.turnCount,
-                  toolName: outcome.toolName,
-                  toolArguments: outcome.toolCall.function.arguments,
-                  resultContent: outcome.resultContent,
-                  snapshotFp: currentSnapshotFp,
-                }),
-              );
-            }
-          }
-          // Check for dead-end pattern (all recent outcomes identical AND same page state)
-          {
-            const deadEnd = assessDeadEndPattern({
-              recentOutcomes,
-              reflectionThreshold: this.limits.stagnationReflection,
-              pivotThreshold: this.limits.stagnationPivot,
-            });
-            if (deadEnd.kind === "pivot") {
-              const completionHint =
-                this.getCompletionRecoveryHintForCurrentState();
-              if (completionHint) {
-                this.log.info(
-                  "agent",
-                  "Dead-end pivot suppressed by completion evidence",
-                  {
-                    turn: this.turnCount,
-                    pattern: deadEnd.pattern.slice(0, 80),
-                  },
-                );
-                this.traceRecorder?.recordEvent("dead_end_completion_consult", {
-                  turn: this.turnCount,
-                  action: "suppress_pivot",
-                  pattern: deadEnd.pattern.slice(0, 80),
-                });
-                this.context.addMessage({
-                  role: "user",
-                  content: completionHint,
-                });
-                recentOutcomes.length = 0;
-                continue;
-              }
-              this.log.warn(
-                "agent",
-                "Dead-end detected: forcing strategy pivot",
-                {
-                  turn: this.turnCount,
-                  pattern: deadEnd.pattern.slice(0, 80),
-                  count: deadEnd.count,
-                },
-              );
-              this.traceRecorder?.recordEvent("dead_end_pivot", {
-                pattern: deadEnd.pattern.slice(0, 80),
-                count: deadEnd.count,
-              });
-              this.traceRecorder?.recordEvent("multi_turn_pathology", {
-                pathology: "anchoring",
-                trigger: "dead_end_pivot",
-                turn: this.turnCount,
-                details: `pattern: ${deadEnd.pattern.slice(0, 60)}`,
-              });
-              await this.strategyPivot(session.tabId);
-              recentOutcomes.length = 0;
-            } else if (deadEnd.kind === "nudge") {
-              const completionHint =
-                this.getCompletionRecoveryHintForCurrentState();
-              if (completionHint) {
-                this.log.info(
-                  "agent",
-                  "Dead-end nudge replaced by completion evidence",
-                  {
-                    turn: this.turnCount,
-                    pattern: deadEnd.pattern.slice(0, 80),
-                  },
-                );
-                this.traceRecorder?.recordEvent("dead_end_completion_consult", {
-                  turn: this.turnCount,
-                  action: "replace_nudge",
-                  pattern: deadEnd.pattern.slice(0, 80),
-                });
-                this.context.addMessage({
-                  role: "user",
-                  content: completionHint,
-                });
-                recentOutcomes.length = 0;
-                continue;
-              }
-              this.log.info(
-                "agent",
-                "Dead-end nudge: repeated outcome pattern",
-                {
-                  turn: this.turnCount,
-                  pattern: deadEnd.pattern.slice(0, 80),
-                  count: deadEnd.count,
-                },
-              );
-              this.traceRecorder?.recordEvent("dead_end_nudge", {
-                pattern: deadEnd.pattern.slice(0, 80),
-                count: deadEnd.count,
-              });
-              this.traceRecorder?.recordEvent("multi_turn_pathology", {
-                pathology: "anchoring",
-                trigger: "dead_end_nudge",
-                turn: this.turnCount,
-                details: `pattern: ${deadEnd.pattern.slice(0, 60)}`,
-              });
-              this.context.addMessage({
-                role: "user",
-                content: deadEnd.message,
-              });
-            }
-          }
-
-          // E-pre. Post-escalation forced pivot: if N turns passed since step watchdog escalation
-          // without step advancement, force a strategy pivot and clear failed-action memory.
-          {
-            const postEscalationPivot = updatePostEscalationPivot({
-              turnsSinceStepEscalation: session.turnsSinceStepEscalation,
-              pivotTurns: FAILED_ACTION_MEMORY.POST_ESCALATION_PIVOT_TURNS,
-            });
-            session.turnsSinceStepEscalation =
-              postEscalationPivot.turnsSinceStepEscalation;
-            if (postEscalationPivot.kind === "pivot") {
-              this.log.info("agent", "Post-escalation forced pivot", {
-                turn: this.turnCount,
-                turnsSinceStepEscalation: session.turnsSinceStepEscalation,
-              });
-              await this.strategyPivot(session.tabId);
-              blockedActions.length = 0;
-              session.turnsSinceStepEscalation = -1;
-            }
-          }
-
-          // E. Step duration watchdog
-          {
-            const stepWatchdog = assessStepDurationWatchdog({
-              hasTaskId: Boolean(this.taskId),
-              planSubtaskCount: this.planSubtasks.length,
-              turnsOnCurrentStep: this.turnsOnCurrentStep,
-              escalationTier: esc.tier,
-              cooldownRemaining: esc.cooldownRemaining,
-              warnTurns: this.limits.stepWarnTurns,
-              escalateTurns: this.limits.stepEscalateTurns,
-              deferForStateChangingAction:
-                deferStepWatchdogForStateChangingAction,
-            });
-            if (stepWatchdog.kind === "escalate") {
-              this.log.warn("agent", "Step watchdog: force escalation", {
-                turn: this.turnCount,
-                turnsOnStep: this.turnsOnCurrentStep,
-                stepIndex: this.lastPlanIndex,
-                fromTier: esc.tier,
-              });
-              this.traceRecorder?.recordEvent("step_watchdog_escalate", {
-                turnsOnStep: this.turnsOnCurrentStep,
-                stepIndex: this.lastPlanIndex,
-              });
-              this.escalationRescue.noteEscalation(
-                this.turnCount,
-                "step_watchdog",
-              );
-
-              // Try replan-on-escalation first: planner replans, executor continues
-              const replanSucceeded = await this.replanOnEscalation(
-                session.tabId,
-                subgoalAttempts,
-                this.abortController?.signal,
-              );
-              if (replanSucceeded) {
-                resetEscalationWorkingMemory({ resetStepEscalation: true });
-              } else {
-                // Fallback: old escalation behavior
-                const stepAttemptSummary = extractAttemptSummary(
-                  this.context.getMessages(),
-                );
-                beginPlannerEscalation({ bumpStepCounter: true });
-                session.turnsSinceStepEscalation = 0; // Start tracking post-escalation pivot
-                await this.strategyPivot(session.tabId, stepAttemptSummary);
-                this.stagnation.resetEscalation();
-                this.context.addMessage({
-                  role: "user",
-                  content:
-                    this.escalationsOnCurrentStep >= 2
-                      ? ESCALATION_RECOVERY(
-                          this.escalationsOnCurrentStep,
-                          `step ${this.lastPlanIndex + 1}`,
-                        )
-                      : `STEP WATCHDOG: You spent ${this.turnsOnCurrentStep} turns on step ${this.lastPlanIndex + 1} without advancing. ${ESCALATION_REFLECTION("stuck on step " + (this.lastPlanIndex + 1) + " for " + this.turnsOnCurrentStep + " turns")}\nEither complete this step and move forward, or revise the plan if the step is impossible.`,
-                });
-                this.stepHandler(
-                  {
-                    id: crypto.randomUUID(),
-                    type: "info",
-                    label: `Stuck on step ${this.lastPlanIndex + 1} — escalating to planner model`,
-                    status: "done",
-                    timestamp: Date.now(),
-                  },
-                  false,
-                );
-              }
-            } else if (stepWatchdog.kind === "defer") {
-              this.log.info(
-                "agent",
-                "Step watchdog deferred after state-changing action",
-                {
-                  turn: this.turnCount,
-                  turnsOnStep: this.turnsOnCurrentStep,
-                  stepIndex: this.lastPlanIndex,
-                  tool: turn.lastDomAffectingToolName,
-                },
-              );
-              this.traceRecorder?.recordEvent("step_watchdog_deferred", {
-                turnsOnStep: this.turnsOnCurrentStep,
-                stepIndex: this.lastPlanIndex,
-                tool: turn.lastDomAffectingToolName,
-              });
-            } else if (stepWatchdog.kind === "warn") {
-              this.log.warn("agent", "Step watchdog: warn", {
-                turn: this.turnCount,
-                turnsOnStep: this.turnsOnCurrentStep,
-                stepIndex: this.lastPlanIndex,
-              });
-              this.traceRecorder?.recordEvent("step_watchdog_warn", {
-                turnsOnStep: this.turnsOnCurrentStep,
-                stepIndex: this.lastPlanIndex,
-              });
-              this.context.addMessage({
-                role: "user",
-                content: `You have spent ${this.turnsOnCurrentStep} turns on this step. Either the step is ALREADY COMPLETE (advance) or your approach isn't working (try escalate or a different approach).`,
-              });
-            }
-          }
-        }
-
-        // Trigger A: Same-URL forced escalation — fires even without a plan/subtask structure.
-        // Catches the agent spinning on one page regardless of DOM changes (Fix 5A).
-        const sameUrlEscalation = turn.doneSignaled
-          ? { kind: "none" as const }
-          : assessSameUrlForcedEscalation({
-              escalationTier: esc.tier,
-              cooldownRemaining: esc.cooldownRemaining,
-              sameUrlTurns: this.stagnation.sameUrlTurns,
-              sameUrlEscalate: this.limits.sameUrlEscalate,
-            });
-        if (sameUrlEscalation.kind === "escalate") {
-          this.log.warn("agent", "Same-URL forced escalation", {
-            turn: this.turnCount,
-            sameUrlTurns: this.stagnation.sameUrlTurns,
-            threshold: this.limits.sameUrlEscalate,
-          });
-          this.traceRecorder?.recordEvent("same_url_forced_escalation", {
-            sameUrlTurns: this.stagnation.sameUrlTurns,
-            threshold: this.limits.sameUrlEscalate,
-          });
-          this.escalationRescue.noteEscalation(this.turnCount, "same_url");
-
-          // Try replan-on-escalation first
-          const sameUrlReplanOk = await this.replanOnEscalation(
-            session.tabId,
+            signalCompletedResult,
+            beginPlannerEscalation,
+            resetEscalationWorkingMemory,
             subgoalAttempts,
-            this.abortController?.signal,
-          );
-          if (sameUrlReplanOk) {
-            resetEscalationWorkingMemory();
-          } else {
-            // Fallback: old escalation behavior
-            const urlAttemptSummary = extractAttemptSummary(
-              this.context.getMessages(),
-            );
-            beginPlannerEscalation({ bumpStepCounter: true });
-            await this.strategyPivot(session.tabId, urlAttemptSummary);
-            this.stagnation.resetEscalation();
-            this.context.addMessage({
-              role: "user",
-              content:
-                this.escalationsOnCurrentStep >= 2
-                  ? ESCALATION_RECOVERY(this.escalationsOnCurrentStep)
-                  : `SAME-URL ESCALATION: You spent ${this.stagnation.sameUrlTurns} turns on this page without navigating away. ${ESCALATION_REFLECTION("same URL for " + this.stagnation.sameUrlTurns + " turns without progress")}`,
-            });
-            session.consecutiveTextOnly = 0;
-            recentSuccesses.length = 0;
-            this.stepHandler(
-              {
-                id: crypto.randomUUID(),
-                type: "info",
-                label: `Stuck on same page — escalating`,
-                status: "done",
-                timestamp: Date.now(),
-              },
-              false,
-            );
-          }
-        }
-
-        // Force snapshot refresh when tools hit stale element IDs
-        // Ensures the LLM's next turn sees fresh IDs without wasting a read_page call
-        if (!turn.domModified && !turn.doneSignaled) {
-          const recentMsgs = this.context.getMessages();
-          for (let i = recentMsgs.length - 1; i >= 0; i--) {
-            const msg = recentMsgs[i];
-            if (msg.role !== "tool") break;
-            if (
-              typeof msg.content === "string" &&
-              msg.content.includes("No element with tag")
-            ) {
-              turn.domModified = true;
-              this.log.info(
-                "agent",
-                "Stale element ID detected, forcing snapshot refresh",
-                {
-                  turn: this.turnCount,
-                },
-              );
-              break;
-            }
-          }
-        }
-
-        // Track last tool name for perception stale threshold selection
-        if (response.tool_calls.length > 0) {
-          this.lastToolNameForPerception =
-            response.tool_calls[response.tool_calls.length - 1].function.name;
-        }
+            recentOutcomes,
+            recentObservationProgressKeys,
+            blockedActions,
+            toolFailCounts,
+            recentSuccesses,
+            serviceNowMissingFieldSearchEvidence,
+          },
+        );
+        if (guards.kind === "end_task") return guards.result;
+        if (guards.kind === "end_turn") break;
+        if (guards.kind === "next_turn") continue;
 
         // Capture pre-action snapshot for diff-based loading detection.
         // Used to distinguish structural loading keywords (present before the
