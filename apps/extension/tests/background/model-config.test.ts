@@ -19,7 +19,9 @@ describe("LLM model config", () => {
     // seat made ~75% of judge calls time out behind planner traffic and fail
     // open. The judge is a text-only strict-JSON rubric task — GPT-OSS-120B
     // (Fireworks-served) answers fast enough to actually rule.
-    expect(LLM_MODEL_CONFIG.judge).toBe("openai/gpt-oss-120b");
+    expect(LLM_MODEL_CONFIG.judge).toBe(
+      "accounts/fireworks/models/gpt-oss-120b",
+    );
     expect(LLM_MODEL_CONFIG.judge).not.toBe(LLM_MODEL_CONFIG.planner);
   });
 

@@ -374,7 +374,7 @@ describe("LLMClient construction & tier switching", () => {
     });
     await client.runJudge({ systemPrompt: "s", userPrompt: "u" });
     expect(sentModel).toBe(MODEL_JUDGE);
-    expect(MODEL_JUDGE).toBe("openai/gpt-oss-120b");
+    expect(MODEL_JUDGE).toBe("accounts/fireworks/models/gpt-oss-120b");
     // Tier restored so the next turn routes normally.
     expect(client.getCurrentModel()).toBe(MODEL_EXECUTOR);
   });

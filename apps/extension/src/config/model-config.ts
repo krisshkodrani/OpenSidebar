@@ -48,7 +48,9 @@ export const DEFAULT_LLM_MODEL_CONFIG: LLMModelDefaults = {
   // mostly failed open instead of ruling. GPT-OSS-120B (Fireworks-served) is
   // fast and ~4x cheaper; judge quality needs JSON discipline, not GLM's
   // planning strength.
-  judge: "openai/gpt-oss-120b",
+  // NOTE: must be the Fireworks API id (accounts/... form) — the catalog-style
+  // "openai/gpt-oss-120b" id 404s on the Fireworks endpoint (proven live).
+  judge: "accounts/fireworks/models/gpt-oss-120b",
   openai: {
     executor: DEFAULT_MULTIMODAL_EXECUTOR_BY_PROVIDER["openai-groq"],
     planner: "accounts/fireworks/models/glm-5p2",
