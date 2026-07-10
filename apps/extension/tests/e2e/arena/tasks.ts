@@ -377,8 +377,11 @@ export const ARENA_TASKS: readonly ArenaTask[] = [
     startRoute: "/job-board",
     prompt:
       "I'm a senior frontend engineer with 5 years of experience specializing in React and TypeScript, with strong Node.js and GraphQL experience, looking for a fully remote position in the $120K–$160K range. Review the job listings, pick the two best matches for my profile, and start an application for each in its own tab. Fill in every field using my details: Name: Jordan Reyes, Email: jordan.reyes@example.com, LinkedIn: https://www.linkedin.com/in/jordanreyes, Phone: +1 555 010 0199, Current Location: Denver, CO, EU Work Permit: No, Salary Expectation: $120,000–$160,000 depending on role, Earliest Start Date: 2026-08-03. For the 'why do you care' question write 2–3 sentences grounded in that job's posting. Leave the Resume/CV upload empty — I'll attach that myself — and do NOT submit either application; leave both ready for me to review and send.",
-    maxTurns: 60,
-    timeoutMs: 900_000,
+    // Budget: board research alone measures ~30-40 turns (the solo job-board
+    // task passed at 42), and each application form costs ~15 more — run 2
+    // completed research + one full form in 57 turns before running dry.
+    maxTurns: 80,
+    timeoutMs: 1_080_000,
     allowNavigation: true,
     tags: [
       "long-horizon",
