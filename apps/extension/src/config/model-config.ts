@@ -41,6 +41,12 @@ export const DEFAULT_LLM_MODEL_CONFIG: LLMModelDefaults = {
   executorEmptyResponseFallback:
     DEFAULT_MULTIMODAL_EXECUTOR_BY_PROVIDER.openrouter,
   planner: "accounts/fireworks/models/glm-5p2",
+  // Writer seat is DORMANT: this default is consumed by nothing (MODEL_WRITER
+  // has no callers). The writer only activates when settings.writerModel is
+  // explicitly configured — hasWriterModel() gates the compose_text tool —
+  // and when unset the writer pool aliases the EXECUTOR pool, not this value.
+  // Zero writer activity in 1,618 recorded traces (2026-07-10 audit); the
+  // executor composes prose directly via type_text and does it well.
   writer: "accounts/fireworks/models/glm-5p2",
   // Judge seat (RFC LP-15 Phase 10): a text-only strict-JSON rubric task that
   // must answer fast — sharing the GLM planner seat made ~75% of judge calls
