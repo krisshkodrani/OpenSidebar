@@ -4,7 +4,7 @@ Date: 2026-05-12
 
 Scope: Trace Viewer metrics, trace indexing, and retention direction.
 
-Related: [Trace Viewer AI Concepts](../guides/trace-viewer-ai-concepts.md) for a concise explanation of the agent concepts and how the viewer makes those concepts observable.
+Related: [Trace Viewer Architecture](trace-viewer.md) for how the harness is structured (pipeline, log-server API, app layout); [Trace Viewer AI Concepts](../guides/trace-viewer-ai-concepts.md) for a concise explanation of the agent concepts and how the viewer makes those concepts observable.
 
 ## Goal
 
