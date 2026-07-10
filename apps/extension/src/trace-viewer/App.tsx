@@ -24,6 +24,7 @@ import TrajectoryScorecard from "./components/traces/TrajectoryScorecard";
 import PerceptionList from "./components/traces/PerceptionList";
 import LogList from "./components/traces/LogList";
 import OverviewTab from "./components/traces/OverviewTab";
+import StoryTab from "./components/traces/story/StoryTab";
 import PlanTab from "./components/traces/PlanTab";
 import SkillsTab from "./components/traces/SkillsTab";
 import PromptsTab from "./components/traces/PromptsTab";
@@ -60,9 +61,11 @@ function parseHash(): {
 }
 
 const VALID_SUBVIEWS = new Set([
+  "story",
   "overview",
   "plan",
   "turns",
+  "trajectory",
   "perception",
   "prompts",
   "skills",
@@ -144,7 +147,7 @@ export default function App() {
       if (currentSessionId) parts.push(`session=${currentSessionId}`);
       else if (activeTopLevelView !== "sessions")
         parts.push(`top=${activeTopLevelView}`);
-      if (currentSessionId && activeSubview && activeSubview !== "overview")
+      if (currentSessionId && activeSubview && activeSubview !== "story")
         parts.push(`view=${activeSubview}`);
     }
     const newHash = parts.length > 0 ? `#${parts.join("&")}` : "";
@@ -232,7 +235,7 @@ function ViewerBody({
       setCurrentSessionId(sessionId);
       setCurrentEntries([]);
       setSearchQuery("");
-      setActiveSubview("overview");
+      setActiveSubview("story");
     },
     [
       currentSessionId,
@@ -305,7 +308,7 @@ function ViewerBody({
       } else if (currentSessionId) {
         if (e.key === "1") {
           e.preventDefault();
-          setActiveSubview("overview");
+          setActiveSubview("story");
         } else if (e.key === "2") {
           e.preventDefault();
           setActiveSubview("plan");
@@ -461,7 +464,11 @@ function ViewerBody({
           onScroll={handleScroll}
           className="flex-1 min-h-0 overflow-y-auto scrollbar-thin"
         >
-          {activeSubview === "turns" ? (
+          {activeSubview === "story" ? (
+            <div className="px-5 py-4">
+              <StoryTab session={currentSession} />
+            </div>
+          ) : activeSubview === "turns" ? (
             <div className="flex flex-col px-5 py-4">
               <TrajectoryScorecard session={currentSession} />
               <TurnSearchBar />

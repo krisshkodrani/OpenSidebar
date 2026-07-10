@@ -264,6 +264,16 @@ describe("trace-viewer App regression flows", () => {
       row!.dispatchEvent(new MouseEvent("click", { bubbles: true }));
     });
 
+    // A trace now opens on the Story subview; the investigation panels live on
+    // the Overview tab, so switch there before asserting them.
+    const overviewTab = Array.from(container.querySelectorAll("button")).find(
+      (button) => button.textContent === "Overview",
+    );
+    expect(overviewTab).toBeTruthy();
+    await act(async () => {
+      overviewTab!.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    });
+
     await waitFor(() => {
       expect(container.textContent).toContain("Investigation");
       expect(container.textContent).toContain("Related Traces");
@@ -323,6 +333,15 @@ describe("trace-viewer App regression flows", () => {
 
     await act(async () => {
       row!.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    });
+
+    // Opens on Story; the Evidence Trail / Turn Diff panels are on Overview.
+    const overviewTab = Array.from(container.querySelectorAll("button")).find(
+      (button) => button.textContent === "Overview",
+    );
+    expect(overviewTab).toBeTruthy();
+    await act(async () => {
+      overviewTab!.dispatchEvent(new MouseEvent("click", { bubbles: true }));
     });
 
     await waitFor(() => {

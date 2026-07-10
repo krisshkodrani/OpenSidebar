@@ -115,6 +115,7 @@ export interface TracesSlice {
 }
 
 export type Subview =
+  | "story"
   | "overview"
   | "plan"
   | "turns"
