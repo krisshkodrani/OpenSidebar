@@ -12,6 +12,7 @@ export default function TraceSubviewToggle() {
   const perceptionCount = entries.filter((e) => e.perception).length;
 
   const views: { key: Subview; label: string }[] = [
+    { key: "story", label: "Story" },
     { key: "overview", label: "Overview" },
     { key: "plan", label: "Plan" },
     { key: "turns", label: `Trajectory (${turnCount})` },

@@ -92,7 +92,7 @@ export const createTracesSlice: SliceCreator<TracesSlice> = (set) => ({
   sessionLogsLoading: false,
   logsWarning: null,
   searchQuery: "",
-  activeSubview: "overview" as const,
+  activeSubview: "story" as const,
   scrollPositions: {} as ScrollPositions,
   scrollPositionOrder: [],
   saveScrollPosition: (view, position) =>
