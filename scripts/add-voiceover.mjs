@@ -96,6 +96,23 @@ SPECS.store = {
   ],
 };
 
+// The job-pipeline voiced story (--show jobs): one filmed run cut into four
+// beats. Structure: intro 3.0 · [card 3.0 + scene 14] · [card 3.0 + scene 12] ·
+// [card 3.0 + scene 16] · [card 3.0 + scene 12] · outro 3.0 = 72.0s.
+// Scene starts: 6.0 / 23.0 / 38.0 / 57.0 · outro 69.0.
+SPECS.jobs = {
+  in: "opensidebar-jobpipeline-demo.mp4",
+  out: "opensidebar-jobpipeline-demo-voiced.mp4",
+  lines: [
+    { at: 0.5, maxSec: 5.0, text: "One prompt. Two job applications, ready to send. This is OpenSidebar." },
+    { at: 6.3, maxSec: 13.4, text: "The candidate wants senior frontend work — React and TypeScript, fully remote, one twenty to one sixty. The agent reads all ten listings and screens them against that profile, like a recruiter would." },
+    { at: 23.3, maxSec: 11.4, text: "It picks the two best matches and opens each application in its own tab — no copy-paste, no tab juggling." },
+    { at: 38.3, maxSec: 15.4, text: "Then it fills every field on both forms — contact details, salary, start date — and writes a short 'why this company' answer grounded in each posting. The one thing it leaves untouched: the CV upload." },
+    { at: 57.3, maxSec: 11.4, text: "And here's the point — it stops before send. You review, attach your CV, and click submit yourself." },
+    { at: 69.2, maxSec: 2.6, text: "OpenSidebar. The click stays yours." },
+  ],
+};
+
 const spec = SPECS[WHICH];
 if (!spec) {
   console.error(`Unknown --video "${WHICH}" (use: ${Object.keys(SPECS).join("|")})`);
