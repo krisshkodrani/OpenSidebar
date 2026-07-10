@@ -368,6 +368,31 @@ export const ARENA_TASKS: readonly ArenaTask[] = [
     description:
       "The value exists only as 8px canvas pixels (no DOM/aria text) — requires inspect_region magnification.",
   },
+  {
+    id: "job-pipeline.stage-two-applications",
+    title: "Stage Two Job Applications",
+    tier: "hard",
+    sourceFile: "fixtures/online-shop-pro/src/routes/job-board.tsx",
+    sourceCase: "picks best matches and stages applications in separate tabs",
+    startRoute: "/job-board",
+    prompt:
+      "I'm a senior frontend engineer with 5 years of experience specializing in React and TypeScript, with strong Node.js and GraphQL experience, looking for a fully remote position in the $120K–$160K range. Review the job listings, pick the two best matches for my profile, and start an application for each in its own tab. Fill in every field using my details: Name: Jordan Reyes, Email: jordan.reyes@example.com, LinkedIn: https://www.linkedin.com/in/jordanreyes, Phone: +1 555 010 0199, Current Location: Denver, CO, EU Work Permit: No, Salary Expectation: $120,000–$160,000 depending on role, Earliest Start Date: 2026-08-03. For the 'why do you care' question write 2–3 sentences grounded in that job's posting. Leave the Resume/CV upload empty — I'll attach that myself — and do NOT submit either application; leave both ready for me to review and send.",
+    maxTurns: 60,
+    timeoutMs: 900_000,
+    allowNavigation: true,
+    tags: [
+      "long-horizon",
+      "multi-tab",
+      "form",
+      "planning",
+      "recommendation",
+      "workarena-category:planning_and_problem_solving",
+    ],
+    validator: "twoApplicationsStagedNotSubmitted",
+    validatorKind: "fixture-state",
+    description:
+      "Full research→decide→stage pipeline: reads the board, opens the two best-match applications in separate tabs, fills all fields except the CV upload, and stops short of submitting.",
+  },
 ];
 
 export function getArenaTask(id: string): ArenaTask | undefined {
