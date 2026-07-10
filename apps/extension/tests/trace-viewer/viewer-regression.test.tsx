@@ -229,7 +229,12 @@ describe("trace-viewer App regression flows", () => {
     mockFetchRunTraceEvents.mockResolvedValue([]);
     mockFetchSessionLogs.mockResolvedValue([]);
 
-    useStore.setState({ traceListMode: "sessions" } as any);
+    // These flows exercise the sessions table; the viewer now defaults to the
+    // Attention inbox, so select the Traces view explicitly.
+    useStore.setState({
+      traceListMode: "sessions",
+      activeTopLevelView: "sessions",
+    } as any);
     container = document.createElement("div");
     document.body.appendChild(container);
     root = createRoot(container);

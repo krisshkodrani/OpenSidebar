@@ -166,7 +166,12 @@ export type Subview =
   | "skills"
   | "logs";
 
-export type TopLevelView = "sessions" | "runs" | "insights" | "metrics";
+export type TopLevelView =
+  | "attention"
+  | "sessions"
+  | "runs"
+  | "insights"
+  | "metrics";
 
 export interface ScrollPositions {
   [key: string]: number;

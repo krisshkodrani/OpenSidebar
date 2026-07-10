@@ -80,7 +80,7 @@ function computeRunGroups(sessions: TraceSession[]): RunGroup[] {
 export const createTracesSlice: SliceCreator<TracesSlice> = (set) => ({
   sessions: [],
   runGroups: [],
-  activeTopLevelView: "sessions",
+  activeTopLevelView: "attention",
   traceListMode: "sessions",
   availableDays: [],
   availableModels: [],

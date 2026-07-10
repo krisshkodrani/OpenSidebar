@@ -33,6 +33,9 @@ vi.mock("../../src/trace-viewer/components/traces/RunsTableView", () => ({
 vi.mock("../../src/trace-viewer/components/traces/MetricsTab", () => ({
   default: () => <div>MetricsTab</div>,
 }));
+vi.mock("../../src/trace-viewer/components/traces/AttentionTab", () => ({
+  default: () => <div>AttentionTab</div>,
+}));
 vi.mock(
   "../../src/trace-viewer/components/traces/UnifiedSessionsTableView",
   () => ({
@@ -169,7 +172,7 @@ describe("trace-viewer App", () => {
     });
   });
 
-  test("ignores unknown top-level hash routes", async () => {
+  test("ignores unknown top-level hash routes (stays on the Attention default)", async () => {
     window.location.hash = "#top=docs";
 
     await act(async () => {
@@ -177,15 +180,18 @@ describe("trace-viewer App", () => {
     });
 
     await waitFor(() => {
-      expect(useStore.getState().activeTopLevelView).toBe("sessions");
-      expect(container.textContent).toContain("UnifiedSessionsTableView");
+      // Unknown route is ignored → the default landing (Attention) stands.
+      expect(useStore.getState().activeTopLevelView).toBe("attention");
+      expect(container.textContent).toContain("AttentionTab");
       expect(container.textContent).toContain("FilterBar");
-      expect(container.textContent).toContain("FleetOverview");
-      expect(container.textContent).toContain("FleetInsights");
+      // The Attention inbox is a focused view — no fleet overview clutter.
+      expect(container.textContent).not.toContain("FleetOverview");
+      expect(container.textContent).not.toContain("FleetInsights");
     });
   });
 
-  test("renders traces as the default trace list", async () => {
+  test("renders traces as the trace list on the Traces tab", async () => {
+    window.location.hash = "#top=sessions";
     mockUseTraceData.mockReturnValue({
       sessions: [
         {
