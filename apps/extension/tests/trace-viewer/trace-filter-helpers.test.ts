@@ -19,6 +19,7 @@ describe("trace filter helpers", () => {
       model: "all",
       skill: "all",
       runId: "",
+      adjudication: "all",
     });
     expect(hasActiveTraceFilters(def)).toBe(false);
     expect(isDefaultTraceWindow(def)).toBe(true);

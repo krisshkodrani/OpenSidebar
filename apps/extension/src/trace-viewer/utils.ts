@@ -239,6 +239,7 @@ export function defaultTraceFilters(): TraceFilters {
     model: "all",
     skill: "all",
     runId: "",
+    adjudication: "all",
   };
 }
 
@@ -258,7 +259,8 @@ export function hasActiveTraceFilters(filters: TraceFilters): boolean {
     filters.domain !== def.domain ||
     filters.model !== def.model ||
     filters.skill !== def.skill ||
-    filters.runId !== def.runId
+    filters.runId !== def.runId ||
+    filters.adjudication !== def.adjudication
   );
 }
 

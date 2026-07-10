@@ -4,6 +4,7 @@ import { useStore } from "../../../store";
 import { buildRunStory } from "../../../analysis/spine";
 import TrajectorySpine from "./TrajectorySpine";
 import SystemEventsDrawer from "./SystemEventsDrawer";
+import AdjudicationPanel from "./AdjudicationPanel";
 import { TurnChip } from "./spine-ui";
 
 // The Story subview — the run's trajectory as a narrative a HUMAN reads to
@@ -26,6 +27,8 @@ export default function StoryTab({ session }: { session: TraceSession }) {
 
   return (
     <div className="flex flex-col gap-3">
+      <AdjudicationPanel session={session} story={story} />
+
       {noRunEvents && (
         <div className="rounded-lg border border-trace-border bg-trace-panel/60 px-3 py-2 text-[11px] text-trace-muted">
           No orchestrator run events for this session — showing the turn

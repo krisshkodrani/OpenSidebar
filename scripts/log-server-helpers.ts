@@ -304,3 +304,141 @@ export function serializeTraceSearchSession(
     domain: extractDomain(session.startUrl),
   };
 }
+
+// ── Human adjudication annotations ──────────────────────────────
+// A human's verdict on a run's outcome (does the run's computed outcome match
+// what actually happened?). Persisted append-only to evals/annotations.jsonl;
+// the latest annotation per run (keyed runId ?? sessionId) wins. These helpers
+// are pure (no fs / no clock) so the route handler stays thin and testable.
+
+export type AnnotationVerdict = "agree" | "disagree" | "unsure";
+
+export interface RunAnnotationRecord extends Record<string, unknown> {
+  id: string;
+  sessionId: string;
+  runId?: string;
+  annotatedAt: string;
+  annotator?: string;
+  verdict: AnnotationVerdict;
+  correctedOutcome?: string;
+  note?: string;
+  criteriaOverrides?: Array<{
+    nodeId: string;
+    criterionId: string;
+    pass: boolean;
+    note?: string;
+  }>;
+  computed?: Record<string, unknown>;
+  exported?: Record<string, unknown>;
+}
+
+const ANNOTATION_VERDICTS = new Set<AnnotationVerdict>([
+  "agree",
+  "disagree",
+  "unsure",
+]);
+
+/** The dedup key: a run when present, else the individual session. */
+export function annotationKey(a: {
+  runId?: string;
+  sessionId?: string;
+}): string {
+  return a.runId && a.runId.length > 0 ? `run:${a.runId}` : `session:${a.sessionId}`;
+}
+
+/**
+ * Validate + coerce an incoming annotation body. Returns the normalized record
+ * (minus server-stamped id/annotatedAt) or a reason string. A `disagree`
+ * verdict must supply the corrected outcome — that is the whole point of
+ * disagreeing.
+ */
+export function normalizeAnnotationInput(
+  body: unknown,
+): { ok: true; value: Omit<RunAnnotationRecord, "id" | "annotatedAt"> } | { ok: false; error: string } {
+  if (!body || typeof body !== "object") {
+    return { ok: false, error: "Expected an annotation object" };
+  }
+  const b = body as Record<string, unknown>;
+  const sessionId = typeof b.sessionId === "string" ? b.sessionId : "";
+  if (!sessionId) return { ok: false, error: "sessionId is required" };
+  const verdict = b.verdict;
+  if (typeof verdict !== "string" || !ANNOTATION_VERDICTS.has(verdict as AnnotationVerdict)) {
+    return { ok: false, error: "verdict must be agree | disagree | unsure" };
+  }
+  const correctedOutcome =
+    typeof b.correctedOutcome === "string" ? b.correctedOutcome : undefined;
+  if (verdict === "disagree" && !correctedOutcome) {
+    return { ok: false, error: "correctedOutcome is required when verdict is disagree" };
+  }
+  const overrides = Array.isArray(b.criteriaOverrides)
+    ? (b.criteriaOverrides as Array<Record<string, unknown>>)
+        .map((o) => ({
+          nodeId: String(o.nodeId ?? ""),
+          criterionId: String(o.criterionId ?? ""),
+          pass: o.pass === true,
+          note: typeof o.note === "string" ? o.note : undefined,
+        }))
+        .filter((o) => o.nodeId && o.criterionId)
+    : undefined;
+  return {
+    ok: true,
+    value: {
+      sessionId,
+      runId: typeof b.runId === "string" && b.runId ? b.runId : undefined,
+      annotator: typeof b.annotator === "string" ? b.annotator : undefined,
+      verdict: verdict as AnnotationVerdict,
+      correctedOutcome,
+      note: typeof b.note === "string" ? b.note.slice(0, 2000) : undefined,
+      criteriaOverrides: overrides,
+      computed:
+        b.computed && typeof b.computed === "object"
+          ? (b.computed as Record<string, unknown>)
+          : undefined,
+      exported:
+        b.exported && typeof b.exported === "object"
+          ? (b.exported as Record<string, unknown>)
+          : undefined,
+    },
+  };
+}
+
+/**
+ * Collapse an append-only annotation log to the latest annotation per key.
+ * Later records in the array win (the file is appended chronologically);
+ * `annotatedAt` breaks ties when present.
+ */
+export function dedupeAnnotationsLatestWins(
+  records: RunAnnotationRecord[],
+): RunAnnotationRecord[] {
+  const byKey = new Map<string, RunAnnotationRecord>();
+  for (const rec of records) {
+    const key = annotationKey(rec);
+    const prev = byKey.get(key);
+    if (!prev) {
+      byKey.set(key, rec);
+      continue;
+    }
+    const prevAt = Date.parse(prev.annotatedAt) || 0;
+    const curAt = Date.parse(rec.annotatedAt) || 0;
+    // Later timestamp wins; equal/invalid timestamps → later array position wins.
+    if (curAt >= prevAt) byKey.set(key, rec);
+  }
+  return [...byKey.values()];
+}
+
+/** Parse a JSONL annotation file body into records (skips blank/garbage lines). */
+export function parseAnnotationsJsonl(text: string): RunAnnotationRecord[] {
+  const out: RunAnnotationRecord[] = [];
+  for (const line of text.split(/\r?\n/)) {
+    if (!line.trim()) continue;
+    try {
+      const rec = JSON.parse(line) as RunAnnotationRecord;
+      if (rec && typeof rec.sessionId === "string" && typeof rec.verdict === "string") {
+        out.push(rec);
+      }
+    } catch {
+      // tolerate a torn final line / hand-edits
+    }
+  }
+  return out;
+}
