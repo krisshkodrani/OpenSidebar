@@ -10,9 +10,9 @@
  * from the default e2e sweep. Enable with the `arena` suite flag, and optionally
  * narrow the set:
  *
- *   E2E_SUITES=arena pnpm exec vitest run --config tests/e2e/vitest.e2e.config.ts tests/e2e/arena-suite.test.ts
- *   ARENA_TIER=easy,medium E2E_SUITES=arena <…>      # filter by tier
- *   ARENA_TASK=procurement.complete-first-two E2E_SUITES=arena <…>  # one task by id
+ *   E2E_SUITE_FLAGS=arena pnpm exec vitest run --config tests/e2e/vitest.e2e.config.ts tests/e2e/arena-suite.test.ts
+ *   ARENA_TIER=easy,medium E2E_SUITE_FLAGS=arena <…>      # filter by tier
+ *   ARENA_TASK=procurement.complete-first-two E2E_SUITE_FLAGS=arena <…>  # one task by id
  */
 
 import {
