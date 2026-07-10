@@ -88,11 +88,11 @@ pnpm run dev
 This starts:
 
 - the local server/backend/log server
-- the trace viewer at `http://127.0.0.1:7589/viewer`
-- the Vite/CRXJS dev process
+- the trace viewer at `http://127.0.0.1:7589/viewer` (works from the first run)
+- a Vite watch build (`--mode e2e`) that keeps a complete `dist-dev/` on disk
 - a loadable dev extension under `dist-dev/`
 
-When the shell prints the CRXJS instruction, load `dist-dev/` in `chrome://extensions/` and keep `pnpm run dev` running. For a standalone build that does not depend on the dev server, run `pnpm run dist` and load `dist/`.
+Once the first build finishes, load `dist-dev/` in `chrome://extensions/` and keep `pnpm run dev` running. There is no HMR — after a source change the watch build rebuilds `dist-dev/`; reload the unpacked extension and refresh the viewer. If you want fast sidepanel React hot-swap, use `pnpm run dev:hmr` instead (the trace viewer then stays static until the next `pnpm run build:e2e`). For a standalone build that does not depend on the dev stack, run `pnpm run dist` and load `dist/`.
 
 ## Trace Maintenance
 

@@ -50,7 +50,10 @@ Three mechanisms keep the viewer and its pipe out of the production extension:
    surface; `build` produces `dist/` without it. `scripts/check-dist-dev.js`
    asserts the dev surface is present in `dist-dev/`; `scripts/check-dist.js`
    fails the build if `src/trace-viewer` or any log-server reference leaks
-   into `dist/`.
+   into `dist/`. `pnpm run dev` runs the same e2e build in `--watch` mode, so the
+   viewer is always present on disk and tracks edits (the log-server serves it
+   from `dist-dev/`); the plain CRXJS dev server — `pnpm run dev:hmr` — does not
+   emit the viewer, which is why it must be built at least once for `/viewer`.
 3. **Store policy.** The viewer must never appear in Chrome Web Store assets
    (see `docs/guides/demo-video-style.md`).
 

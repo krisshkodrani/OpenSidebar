@@ -34,6 +34,7 @@
   ],
   "scripts": {
     "dev": "nx run tools:dev-stack",
+    "dev:hmr": "tsx scripts/dev-stack.ts --hmr",
     "dist": "nx run extension:build",
     "build": "nx run extension:build",
     "build:e2e": "nx run extension:build-e2e",
