@@ -19,6 +19,27 @@ The trace viewer is a local React app served by the dev log server at
 traces: every model call, tool call, screenshot, verification event, judge
 verdict, token count, and cost. It is a development tool — it never ships.
 
+<p align="center">
+  <img src="../assets/trace-viewer-story.png" alt="The Story subview: a run replayed as plan nodes with verifier confidence, a judge ACCEPT card with per-criterion reasoning and cost, and the completion event chain" width="900" />
+</p>
+
+<p align="center"><sub>The Story subview: one run replayed as its plan — each node with its verifier confidence, the judge's verdict card (model, confidence, tokens, cost, per-criterion reasoning), and the completion event chain.</sub></p>
+
+### Reading Path
+
+New to the harness? Read in this order:
+
+1. [AI Concepts](../guides/trace-viewer-ai-concepts.md) — the agent concepts
+   the viewer makes observable (agent loop, verification, judge gate,
+   adjudication).
+2. **This document** — how the pieces fit: pipeline, storage, server, app.
+3. [Developer Workflow](../guides/trace-viewer-developer-workflow.md) — how to
+   actually debug a failing run with it.
+4. [Metric Semantics](trace-viewer-metric-semantics.md) — the pinned
+   definitions behind every investigation metric.
+5. [Observability & Retention](trace-viewer-observability.md) — the storage
+   tiers and maintenance commands in depth.
+
 ## The Dev-Only Boundary
 
 Three mechanisms keep the viewer and its pipe out of the production extension:
@@ -37,12 +58,27 @@ Three mechanisms keep the viewer and its pipe out of the production extension:
 
 The extension (dev build) pushes; the log server owns all files on disk:
 
-```
-background/agent/trace.ts        POST /traces            traces/{sessionId}.jsonl
-  (per-turn TraceEntry)          POST /traces/screenshot traces/screenshots/…
-session end                      POST /traces/session    traces/index.jsonl
-orchestrator run events          POST /run-traces        run-traces/{runId}.jsonl
-  (plan/node/judge/completion)   POST /run-traces/session  run-traces/index.jsonl
+```mermaid
+flowchart LR
+  subgraph EXT["Extension (dist-dev only)"]
+    LOOP["agent loop<br/>per-turn TraceEntry"]
+    ORCH["orchestrator<br/>plan / node / judge / completion"]
+  end
+  subgraph SRV["log server :7589"]
+    T["POST /traces<br/>/traces/screenshot<br/>/traces/session"]
+    R["POST /run-traces<br/>/run-traces/session"]
+  end
+  subgraph DISK["disk"]
+    SJ["traces/*.jsonl<br/>index.jsonl + screenshots/"]
+    RJ["run-traces/*.jsonl<br/>index.jsonl"]
+    SQL[".artifacts/trace-index.sqlite"]
+    EV["evals/annotations.jsonl<br/>evals/golden/"]
+  end
+  LOOP --> T --> SJ
+  ORCH --> R --> RJ
+  SJ -- "traces:index" --> SQL
+  V["viewer app"] -- "GET /api/*" --> SRV
+  V -- "verdicts / exports" --> EV
 ```
 
 Two parallel stores: **session traces** are the executor's turn-by-turn record
@@ -120,6 +156,12 @@ shareable URL.
 | Insights | `InsightsTab` | Fleet aggregates, failure clusters |
 | Metrics | `MetricsTab` | Token/cost/latency roll-ups |
 
+<p align="center">
+  <img src="../assets/trace-viewer-attention.png" alt="The Attention inbox: unreviewed runs queued for adjudication, with outcome chips and filters for outcome, adjudication state, day, model, skill, and website" width="900" />
+</p>
+
+<p align="center"><sub>The Attention inbox — the default landing. Every unreviewed failure, stop, or flagged run queues here until a human records a verdict.</sub></p>
+
 Opening a trace lands on the **Story** subview; the others are Overview, Plan,
 Trajectory (turns), Perception, Prompts, Skills, and Logs.
 
@@ -138,6 +180,12 @@ The adjudication loop is the viewer's newest layer:
 3. `story/AdjudicationPanel.tsx` shows the run's claim next to its evidence
    and records a human verdict — agree / disagree (with corrected outcome) /
    unsure — via `POST /api/annotations`.
+
+   <p align="center">
+     <img src="../assets/trace-viewer-adjudicate.png" alt="The adjudication panel: the run's claim on the left, the trajectory verdict and judge evidence on the right, and agree/disagree/unsure verdict controls with an optional note" width="900" />
+   </p>
+
+   <p align="center"><sub>Adjudication: the run's claim beside its evidence (trajectory verdict + judge decision), with the human verdict controls. The optional note is carried into the exported fixture.</sub></p>
 4. Verdicts land in `evals/annotations.jsonl` (append-only; readers dedupe
    latest-wins per run). `AdjudicationBadge` surfaces the verdict in the
    fleet tables, and the Attention inbox drains as runs get reviewed.
