@@ -33,7 +33,7 @@ const X264 = [
   "-r", String(FPS),
 ];
 
-const BRAND_CHIP = "OpenSidebar · Kimi K2.7 Code + GLM 5.2 · Fireworks AI";
+const BRAND_CHIP = "OpenSidebar · Kimi K2.7 Code + GLM 5.2 · Judge: GPT-OSS 120B · Fireworks AI";
 
 // ---- story ----------------------------------------------------------------
 // segments: [{from,to,speed}] in source-clip seconds; the last segment of each
@@ -79,7 +79,7 @@ const CTA = {
     { text: "OpenSidebar", color: "white", size: 84, y: "(h/2)-120", at: 0.2 },
     { text: "Free · Open source · Bring your own key", color: ACCENT, size: 38, y: "(h/2)-10", at: 0.7 },
     { text: "github.com/krisshkodrani/OpenSidebar", color: "white", size: 32, y: "(h/2)+60", at: 1.2 },
-    { text: "Executor: Kimi K2.7 Code (vision) · Planner: GLM 5.2 · Fireworks AI", color: GREY, size: 22, y: "(h/2)+130", at: 1.7 },
+    { text: "Executor: Kimi K2.7 Code (vision) · Planner: GLM 5.2 · Judge: GPT-OSS 120B · Fireworks AI", color: GREY, size: 22, y: "(h/2)+130", at: 1.7 },
   ],
   sec: 7,
 };
