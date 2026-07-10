@@ -7,6 +7,7 @@ import { logger } from "../../utils";
 import { getTrustedCorpusStore } from "../memory/corpus-runtime";
 import {
   corpusEntryToFactRef,
+  deriveCriteria,
   type JudgeGateOutcome,
 } from "../agent/completion/judge-gate";
 import type { VerifierLike } from "./lane-types";
@@ -44,16 +45,35 @@ export function applyJudgeGateOutcome(args: {
 }): void {
   const { gate, node, verification, emit } = args;
   if (!gate) return;
+  const verdict = gate.verdict;
   emit("judge_call", {
     nodeId: node.id,
     decision: gate.decision,
     judged: gate.judged,
-    verdictSource: gate.verdict?.source,
-    failureCause: gate.verdict?.failureCause,
-    failureDetail: gate.verdict?.failureDetail,
-    durationMs: gate.verdict?.durationMs,
-    model: gate.verdict?.model,
-    confidence: gate.verdict?.confidence,
+    verdictSource: verdict?.source,
+    failureCause: verdict?.failureCause,
+    failureDetail: verdict?.failureDetail,
+    durationMs: verdict?.durationMs,
+    model: verdict?.model,
+    providerId: verdict?.providerId,
+    confidence: verdict?.confidence,
+    // The full rubric of criteria (id → description) so the viewer can render
+    // every criterion, including corpus-entailed ones the judge never saw.
+    // Descriptions truncated — this run-event pipe is dev-only and unredacted.
+    criteria: deriveCriteria(node.successCriteria).map((c) => ({
+      id: c.id,
+      description: c.description.slice(0, 160),
+      required: c.required,
+    })),
+    // Per-criterion pass/fail + rationale from the model (subset of `criteria`
+    // — the unresolved ones the judge actually adjudicated).
+    perCriterion: verdict?.perCriterion?.map((c) => ({
+      id: c.id,
+      pass: c.pass,
+      rationale: c.rationale?.slice(0, 240),
+    })),
+    entailment: verdict?.entailment,
+    usage: verdict?.usage,
   });
   if (gate.decision !== "reroute") return;
   verification.decision = "reroute";

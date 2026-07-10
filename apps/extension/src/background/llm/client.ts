@@ -17,8 +17,31 @@ import {
   TokenUsage,
 } from "./types";
 import { LLM_MODEL_CONFIG } from "../../config/model-config";
+import { estimateCostUsd } from "./pricing";
+import type { JudgeUsage } from "../agent/completion/judge";
 
 const OPENROUTER_BASE_URL = "https://openrouter.ai/api/v1/chat/completions";
+
+/**
+ * Normalize a raw provider `TokenUsage` into the judge's camelCase `JudgeUsage`
+ * and attach an estimated USD cost from the pricing table. Returns undefined
+ * when the provider reported no usage (e.g. a cache-only path).
+ */
+function toJudgeUsage(
+  usage: TokenUsage | undefined,
+  providerId: ProviderConfig["providerId"],
+  model: string,
+): JudgeUsage | undefined {
+  if (!usage) return undefined;
+  const costUsd = estimateCostUsd(providerId, model, usage);
+  return {
+    promptTokens: usage.prompt_tokens ?? 0,
+    completionTokens: usage.completion_tokens ?? 0,
+    totalTokens: usage.total_tokens ?? 0,
+    ...(usage.cached_tokens != null ? { cachedTokens: usage.cached_tokens } : {}),
+    ...(costUsd != null ? { costUsd } : {}),
+  };
+}
 
 const HEADER_PASTE_ARTIFACTS = /[\u200B-\u200D\uFEFF]/g;
 const WRAPPING_QUOTES = /^[`"'\u201C\u201D\u2018\u2019]+|[`"'\u201C\u201D\u2018\u2019]+$/g;
@@ -1110,7 +1133,12 @@ export class LLMClient {
     maxTokens?: number;
     temperature?: number;
     signal?: AbortSignal;
-  }): Promise<{ text: string; model: string; providerId: string }> {
+  }): Promise<{
+    text: string;
+    model: string;
+    providerId: string;
+    usage?: JudgeUsage;
+  }> {
     const prevTier = this._activeTier;
     this._activeTier = "judge";
     try {
@@ -1124,10 +1152,13 @@ export class LLMClient {
         temperature: args.temperature ?? 0,
         signal: args.signal,
       });
+      const actualModel = resp.actualModel ?? model;
+      const actualProviderId = resp.actualProviderId ?? providerId;
       return {
         text: stripThinkTags(resp.content ?? "").trim(),
-        model: resp.actualModel ?? model,
-        providerId: resp.actualProviderId ?? providerId,
+        model: actualModel,
+        providerId: actualProviderId,
+        usage: toJudgeUsage(resp.usage, actualProviderId, actualModel),
       };
     } finally {
       this._activeTier = prevTier;
