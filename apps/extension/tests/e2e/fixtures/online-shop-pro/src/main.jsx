@@ -85,7 +85,10 @@ const routes = [
   { path: "/support-ticket", label: "Ticket", title: "TICKET-4271 — CSV Export Timeout", component: SupportTicket },
   { path: "/job-board", label: "Jobs", title: "TechJobs Board", component: JobBoard },
   { path: "/job-application", label: "Apply", title: "Frontend Engineer Application", component: JobApplication },
-  { path: "/ashby-job-application", label: "Ashby", title: "Senior Product Engineer @ Langfuse | Ashby", component: AshbyJobApplication },
+  // navHidden: reachable only via a job posting's Apply Now link (or direct
+  // URL in tests) — a global-nav shortcut lets agents land on the parameterless
+  // fallback form and fill the wrong job entirely.
+  { path: "/ashby-job-application", label: "Ashby", title: "Senior Product Engineer @ Langfuse | Ashby", component: AshbyJobApplication, navHidden: true },
   { path: "/experience-application", label: "Experience", title: "Work Experience Application", component: ExperienceApplication },
   { path: "/vendor-onboarding", label: "Vendor", title: "Vendor Access Request", component: VendorOnboarding },
   { path: "/partner-registration", label: "Partner", title: "Partner Registration", component: PartnerRegistration },
@@ -114,7 +117,7 @@ function Layout({ children, currentPath }) {
               <span className="fixture-menu-caret">▾</span>
             </summary>
             <nav className="fixture-menu-panel" aria-label="Fixture pages">
-              {routes.map((route) => (
+              {routes.filter((route) => !route.navHidden).map((route) => (
                 <a
                   key={route.path}
                   href={route.path}
