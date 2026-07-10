@@ -41,7 +41,7 @@ const SPECS = {
       { at: 0.6, maxSec: 12.0, text: "This is OpenSidebar — an AI agent in your browser. Give it a task, and it does the clicking: cart, coupon, checkout. Done." },
       { at: 13.6, maxSec: 13.0, text: "It reads data on one page and writes it into another — here, turning dashboard numbers into an email reply." },
       { at: 27.4, maxSec: 8.5, text: "And it can simply watch. The moment this product is back in stock — it speaks up." },
-      { at: 36.5, maxSec: 14.0, text: "It's not just the open web. The same agent drives enterprise apps like ServiceNow, end to end." },
+      { at: 36.5, maxSec: 14.0, text: "It's not just the open web. It drives enterprise apps like ServiceNow, too — and because it's open source, you can fork it and add your own." },
       { at: 51.5, maxSec: 6.3, text: "OpenSidebar. Free, open source, bring your own key." },
     ],
   },
