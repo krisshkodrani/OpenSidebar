@@ -7,8 +7,11 @@ import type { JudgeGateOutcome } from "../../src/background/agent/completion/jud
 import type { NodeVerificationResult } from "../../src/background/orchestrator/verifier";
 import type { TaskNode } from "../../src/background/orchestrator/types";
 
-function makeNode(description: string): TaskNode {
-  return { id: "n1", description } as TaskNode;
+function makeNode(
+  description: string,
+  successCriteria = "The form is submitted; a confirmation is shown",
+): TaskNode {
+  return { id: "n1", description, successCriteria } as TaskNode;
 }
 
 function makeVerification(): NodeVerificationResult {
@@ -84,6 +87,48 @@ describe("applyJudgeGateOutcome", () => {
       durationMs: 15001,
     });
     expect(verification.decision).toBe("accept");
+  });
+
+  test("judge_call carries the derived criteria, per-criterion rulings, entailment, and usage", () => {
+    const verification = makeVerification();
+    const events: Array<[string, Record<string, unknown>]> = [];
+    const longRationale = "x".repeat(400);
+    const gate: JudgeGateOutcome = {
+      decision: "reroute",
+      reason: "Verification judge did not confirm the task outcome.",
+      judged: true,
+      verdict: {
+        pass: false,
+        perCriterion: [
+          { id: "c1", pass: false, rationale: longRationale },
+          { id: "c2", pass: true },
+        ],
+        entailment: [{ claimKey: "fact:x", label: "contradicted" }],
+        confidence: 0.82,
+        source: "judge",
+        model: "gpt-oss-120b",
+        providerId: "fireworks",
+        usage: { promptTokens: 500, completionTokens: 90, totalTokens: 590, costUsd: 0.0005 },
+      },
+    };
+    applyJudgeGateOutcome({
+      gate,
+      node: makeNode("Submit the form", "The form is submitted; a confirmation is shown"),
+      verification,
+      emit: (type, data) => events.push([type, data]),
+    });
+    const payload = events[0][1];
+    // Two clauses split from successCriteria → two criteria with descriptions.
+    expect(payload.criteria).toEqual([
+      { id: "c1", description: "The form is submitted", required: true },
+      { id: "c2", description: "a confirmation is shown", required: true },
+    ]);
+    const perCriterion = payload.perCriterion as Array<{ id: string; pass: boolean; rationale?: string }>;
+    expect(perCriterion[0]).toMatchObject({ id: "c1", pass: false });
+    expect(perCriterion[0].rationale?.length).toBe(240); // truncated
+    expect(payload.entailment).toEqual([{ claimKey: "fact:x", label: "contradicted" }]);
+    expect(payload.providerId).toBe("fireworks");
+    expect(payload.usage).toMatchObject({ totalTokens: 590, costUsd: 0.0005 });
   });
 
   test("reroute gate: verification downgraded, objective prefix does not stack, both events emitted", () => {
