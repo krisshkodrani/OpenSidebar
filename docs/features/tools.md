@@ -4,7 +4,7 @@ This document provides a comprehensive reference for all tools available in Open
 
 ## Overview
 
-OpenSidebar provides **51 tools** organized into categories: DOM interaction, navigation, browser management, page analysis, ServiceNow & list workflow, control flow, and memory & profile.
+OpenSidebar provides **52 tools** organized into categories: DOM interaction, navigation, browser management, page analysis, ServiceNow & list workflow, control flow, and memory & profile.
 
 ---
 

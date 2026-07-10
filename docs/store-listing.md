@@ -36,7 +36,7 @@ WHAT IT CAN DO
 
 - Complete real tasks end to end: shopping checkouts, job applications, multi-step wizards, reading data on one page to write on another
 - See the page like you do: the agent works from the live screenshot plus the page structure, so it reads charts, zooms into fine print, and handles pages that defeat text-only bots
-- Use 51 browser tools: clicking, typing, and scrolling, but also file upload and download, tab and window management, and structured table, chart, and filter extraction
+- Use 52 browser tools: clicking, typing, and scrolling, but also file upload and download, tab and window management, and structured table, chart, and filter extraction
 - Plan, execute, and verify: a planner breaks hard tasks into steps, an executor drives each one, and a verifier confirms completion before moving on
 
 YOU STAY IN CONTROL
