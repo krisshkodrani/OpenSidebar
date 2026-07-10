@@ -1,4 +1,5 @@
 import { useEffect, useState, type ChangeEvent } from "react";
+import { getJobById } from "../data/jobs";
 
 type AshbyDraft = {
   name: string;
@@ -26,14 +27,28 @@ const emptyDraft: AshbyDraft = {
   resumeName: "",
 };
 
+// Without a ?job= param (or with an unknown id) the route renders exactly the
+// historical hardcoded posting, so the existing Ashby tests are unaffected.
+const FALLBACK_ROLE = {
+  title: "Senior Product Engineer",
+  company: "Langfuse",
+};
+
 export default function AshbyJobApplication() {
   const [draft, setDraft] = useState<AshbyDraft>(emptyDraft);
   const [submitted, setSubmitted] = useState(false);
+  const job = getJobById(
+    new URLSearchParams(window.location.search).get("job"),
+  );
+  const role = job ?? FALLBACK_ROLE;
 
   useEffect(() => {
     (window as any).ashbyApplicationDraft = {
       ...draft,
       submitted,
+      jobId: job?.id ?? null,
+      jobTitle: role.title,
+      company: role.company,
       completeRequestedFields: [
         draft.name,
         draft.email,
@@ -44,7 +59,10 @@ export default function AshbyJobApplication() {
         draft.whyLangfuse,
       ].filter((value) => value.trim()).length,
     };
-  }, [draft, submitted]);
+    if (job) {
+      document.title = `${job.title} @ ${job.company} | Ashby`;
+    }
+  }, [draft, submitted, job, role.title, role.company]);
 
   const updateField =
     (field: keyof AshbyDraft) =>
@@ -90,7 +108,7 @@ export default function AshbyJobApplication() {
       <div className="container">
         <div className="card">
           <p className="lede">Powered by Ashby</p>
-          <h1>Senior Product Engineer @ Langfuse</h1>
+          <h1>{role.title} @ {role.company}</h1>
           <p>
             Complete the application below. Required fields are marked with an
             asterisk.
@@ -218,7 +236,7 @@ export default function AshbyJobApplication() {
 
             <div className="field">
               <label htmlFor="ashby-why-langfuse">
-                Why Do You Care About Langfuse? *
+                Why Do You Care About {role.company}? *
               </label>
               <textarea
                 id="ashby-why-langfuse"
