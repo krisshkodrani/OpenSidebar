@@ -68,6 +68,17 @@ export const DEFAULT_MODEL_PRICING: ModelPricing[] = [
   },
   {
     providerId: "fireworks",
+    // The Fireworks API id form (the judge seat bills under this id; the
+    // catalog-style openai/... row above is kept for UI/catalog lookups).
+    model: "accounts/fireworks/models/gpt-oss-120b",
+    inputUsdPerMillion: 0.15,
+    outputUsdPerMillion: 0.6,
+    effectiveDate: "2026-04-19",
+    sourceUrl: "https://fireworks.ai/pricing",
+    confidence: "official",
+  },
+  {
+    providerId: "fireworks",
     model: "qwen/qwen3-vl-30b-a3b-instruct",
     inputUsdPerMillion: 0.15,
     outputUsdPerMillion: 0.6,
