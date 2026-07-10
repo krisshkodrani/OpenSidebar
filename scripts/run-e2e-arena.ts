@@ -562,7 +562,19 @@ async function main(): Promise<void> {
       console.log(
         `\n[e2e:arena:run] Running ${task.id} (${attempt}/${repeat})...`,
       );
-      const record = await runTask(task, attempt, repeat);
+      let record = await runTask(task, attempt, repeat);
+      if (
+        !record.success &&
+        record.reason.startsWith("runner_error") &&
+        record.traces === 0
+      ) {
+        // Infra failure before the agent produced any trace — the attempt says
+        // nothing about the agent, so it gets one replacement run.
+        console.log(
+          `[e2e:arena:run] ${task.id} (${attempt}/${repeat}): infra failure with no agent traces — retrying once. Discarded reason: ${record.reason}`,
+        );
+        record = await runTask(task, attempt, repeat);
+      }
       records.push(record);
       console.log(
         `[e2e:arena:run] ${task.id} (${attempt}/${repeat}): ${record.success ? "PASS" : "FAIL"} (${record.reason})`,
