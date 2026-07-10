@@ -33,9 +33,11 @@ import UnifiedSessionsTableView from "./components/traces/UnifiedSessionsTableVi
 import RunsTableView from "./components/traces/RunsTableView";
 import InsightsTab from "./components/traces/InsightsTab";
 import MetricsTab from "./components/traces/MetricsTab";
+import AttentionTab from "./components/traces/AttentionTab";
 import SkillDetail from "./components/traces/SkillDetail";
 import { TRACE_SESSION_SEARCH_LIMIT } from "./api";
 import type { Subview, TopLevelView } from "./store/types";
+import { annotationKeyFor } from "./store/types";
 import { formatCount } from "./utils";
 
 // URL hash helpers
@@ -73,6 +75,7 @@ const VALID_SUBVIEWS = new Set([
 ]);
 
 const VALID_TOP_LEVEL_VIEWS = new Set([
+  "attention",
   "sessions",
   "runs",
   "insights",
@@ -145,7 +148,7 @@ export default function App() {
       parts.push(`skill=${currentSkillId}`);
     } else {
       if (currentSessionId) parts.push(`session=${currentSessionId}`);
-      else if (activeTopLevelView !== "sessions")
+      else if (activeTopLevelView !== "attention")
         parts.push(`top=${activeTopLevelView}`);
       if (currentSessionId && activeSubview && activeSubview !== "story")
         parts.push(`view=${activeSubview}`);
@@ -539,14 +542,18 @@ function ViewerBody({
       />
       <FilterBar onFiltersChanged={refreshSessions} />
       {activeTopLevelView !== "insights" &&
-        activeTopLevelView !== "metrics" && (
+        activeTopLevelView !== "metrics" &&
+        activeTopLevelView !== "attention" && (
         <FleetOverview onFiltersChanged={refreshSessions} />
       )}
       {activeTopLevelView !== "insights" &&
-        activeTopLevelView !== "metrics" && (
+        activeTopLevelView !== "metrics" &&
+        activeTopLevelView !== "attention" && (
           <FleetInsights onSelectSession={selectSession} />
         )}
-      {activeTopLevelView === "insights" ? (
+      {activeTopLevelView === "attention" ? (
+        <AttentionTab onSelectSession={selectSession} />
+      ) : activeTopLevelView === "insights" ? (
         <InsightsTab onSelectSession={selectSession} onFocusRun={focusRun} />
       ) : activeTopLevelView === "metrics" ? (
         <MetricsTab />
@@ -580,6 +587,7 @@ function TopLevelTabs({
 }) {
   const sessions = useStore((s) => s.sessions);
   const runGroups = useStore((s) => s.runGroups);
+  const annotations = useStore((s) => s.annotations);
   const sessionsLimitReached = sessions.length >= TRACE_SESSION_SEARCH_LIMIT;
   const sessionsCountLabel = `${formatCount(sessions.length)}${
     sessionsLimitReached ? "+" : ""
@@ -587,7 +595,31 @@ function TopLevelTabs({
   const runsCountLabel = `${formatCount(runGroups.length)}${
     sessionsLimitReached ? "+" : ""
   }`;
+  // The Attention badge counts unreviewed failed/partial runs — the size of the
+  // adjudication backlog.
+  const attentionCount = useMemo(
+    () =>
+      sessions.filter((s) => {
+        const reviewed =
+          !!annotations[
+            annotationKeyFor({ runId: s.runId, sessionId: s.sessionId })
+          ];
+        if (reviewed) return false;
+        return (
+          s.outcome === "error" ||
+          s.outcome === "max_turns" ||
+          s.outcome === "stopped" ||
+          !!s.partialHandoff
+        );
+      }).length,
+    [sessions, annotations],
+  );
   const tabs: Array<{ id: TopLevelView; label: string; countLabel?: string }> = [
+    {
+      id: "attention",
+      label: "Attention",
+      countLabel: attentionCount > 0 ? formatCount(attentionCount) : undefined,
+    },
     { id: "runs", label: "Runs", countLabel: runsCountLabel },
     { id: "sessions", label: "Traces", countLabel: sessionsCountLabel },
     { id: "insights", label: "Insights" },
