@@ -37,7 +37,7 @@ function buildShowcasePrompt(): string {
   return [
     "I'm a senior frontend engineer with 5 years of experience specializing in React and TypeScript, with strong Node.js and GraphQL experience, looking for a fully remote position in the $120K–$160K range.",
     "",
-    "Review the job listings, pick the two best matches for my profile, and start an application for each in its own tab. Fill in every field using my details:",
+    "Review the job listings, pick the two best matches for my profile, and start an application for each in its own new tab — you have my permission to open tabs, no need to ask. Fill in every field using my details:",
     "| Field | Value |",
     "|---|---|",
     "| Name | Jordan Reyes |",
