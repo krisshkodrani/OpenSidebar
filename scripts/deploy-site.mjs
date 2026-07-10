@@ -69,8 +69,15 @@ if (!args.has("--skip-media")) {
 // ---------- 2. build ----------
 if (!args.has("--skip-build")) {
   console.log("\n== Build ==");
+  // Call vite's binary directly through node — robust across platforms
+  // (Windows execFileSync can't resolve the corepack/pnpm/nx .cmd shims).
   // SITE_BASE_URL flows through to vite's define via the inherited env.
-  run("corepack", ["pnpm", "exec", "nx", "run", "site:build"]);
+  run(process.execPath, [
+    "node_modules/vite/bin/vite.js",
+    "build",
+    "--config",
+    "apps/site/vite.config.ts",
+  ]);
 }
 if (!fs.existsSync(DIST)) fail(`Build output not found at ${DIST}.`);
 
