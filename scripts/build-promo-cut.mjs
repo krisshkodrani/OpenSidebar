@@ -51,8 +51,9 @@ const BEATS = [
     task: "cross-page-compose",
     headline: "Reads one page, writes on another",
     segments: [
-      { from: 70, to: 148, speed: 13 },     // dashboard read → mail traversal
-      { from: 150, to: 160, speed: 1.25 },  // drafted reply visible
+      { from: 3, to: 15, speed: 3 },        // SOURCE page: the dashboard — Total Users / Revenue / Bounce Rate legible
+      { from: 15, to: 150, speed: 67.5 },   // fast traversal: dashboard → email compose
+      { from: 150, to: 160, speed: 1.25 },  // TARGET page: the drafted reply carrying those exact numbers
     ],
   },
   {
@@ -63,7 +64,7 @@ const BEATS = [
       { from: 4, to: 10, speed: 1 },    // flips in stock → suggestion pops
     ],
   },
-  { divider: "Works on your enterprise apps too" },
+  { divider: "Fork it for your enterprise" },
   {
     task: "order-developer-laptop",
     headline: "The same agent, driving ServiceNow",
