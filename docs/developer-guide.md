@@ -38,10 +38,30 @@ What it starts:
 
 - local log server
 - trace viewer at `http://127.0.0.1:7589/viewer`
-- Vite/CRXJS dev process
+- a Vite **watch build** (`--mode e2e`) that keeps a complete `dist-dev/` on disk
 - loadable dev extension output in `dist-dev/`
 
-For manual dev testing, load `dist-dev/` in `chrome://extensions/` after `pnpm run dev` prints the CRXJS instruction. Keep that shell running while testing.
+The watch build produces a full `dist-dev/` — the extension **and** the trace
+viewer — so `http://127.0.0.1:7589/viewer` works from the first run and both
+track your edits. The initial build takes a few seconds before `/viewer` is live.
+
+Trade-off: there is **no HMR**. After a source change, the watch build rebuilds
+`dist-dev/` incrementally; reload the unpacked extension in `chrome://extensions/`
+and refresh the viewer tab to see it.
+
+For manual dev testing, load `dist-dev/` in `chrome://extensions/` once the first
+build completes. Keep that shell running while testing.
+
+If you're iterating heavily on the sidepanel React UI and want fast hot-swap, use
+the HMR opt-in instead:
+
+```bash
+pnpm run dev:hmr
+```
+
+This runs the CRXJS dev server (HMR) alongside the log server. Note the trace
+viewer is **not** rebuilt in this mode — it stays at whatever the last
+`pnpm run build:e2e` produced until you rebuild it.
 
 For a standalone production/manual extension build, run:
 
