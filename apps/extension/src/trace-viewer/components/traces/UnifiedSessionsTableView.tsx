@@ -11,9 +11,11 @@ import {
 } from "@tanstack/react-table";
 import { useVirtualizer } from "@tanstack/react-virtual";
 import { useStore } from "../../store";
+import { annotationKeyFor } from "../../store/types";
 import type { TraceSession } from "../../../types/traces";
 import { TRACE_SESSION_SEARCH_LIMIT } from "../../api";
 import Badge from "../Badge";
+import AdjudicationBadge from "./AdjudicationBadge";
 import Tooltip from "../Tooltip";
 import {
   outcomeClass,
@@ -209,6 +211,20 @@ function createColumns(
       },
     },
     {
+      id: "verdict",
+      header: "✓",
+      size: 32,
+      enableSorting: false,
+      cell: ({ row }) => (
+        <AdjudicationBadge
+          session={{
+            runId: row.original.runId,
+            sessionId: row.original.sessionId,
+          }}
+        />
+      ),
+    },
+    {
       id: "runId",
       header: "Run",
       size: 80,
@@ -259,6 +275,25 @@ export default function UnifiedSessionsTableView({
   const tracesLoading = useStore((s) => s.tracesLoading);
   const tableSort = useStore((s) => s.tableSort);
   const setTableSort = useStore((s) => s.setTableSort);
+  const adjudicationFilter = useStore((s) => s.filters.adjudication);
+  const annotations = useStore((s) => s.annotations);
+
+  // The adjudication filter is client-side (verdicts aren't server-searchable):
+  // narrow the rows to reviewed / unreviewed / disagreed before the table sees
+  // them.
+  const data = useMemo(() => {
+    if (!adjudicationFilter || adjudicationFilter === "all") return sessions;
+    return sessions.filter((sess) => {
+      const a =
+        annotations[
+          annotationKeyFor({ runId: sess.runId, sessionId: sess.sessionId })
+        ];
+      if (adjudicationFilter === "unreviewed") return !a;
+      if (adjudicationFilter === "reviewed") return !!a;
+      if (adjudicationFilter === "disagreed") return a?.verdict === "disagree";
+      return true;
+    });
+  }, [sessions, adjudicationFilter, annotations]);
   const [sorting, setSorting] = React.useState<SortingState>([
     { id: tableSort.column, desc: tableSort.direction === "desc" },
   ]);
@@ -278,7 +313,7 @@ export default function UnifiedSessionsTableView({
   );
 
   const table = useReactTable({
-    data: sessions,
+    data,
     columns,
     state: {
       sorting,

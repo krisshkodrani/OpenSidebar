@@ -4,6 +4,7 @@ import type { TraceSession } from "../../../types/traces";
 import { useStore } from "../../store";
 import { TRACE_SESSION_SEARCH_LIMIT } from "../../api";
 import Badge from "../Badge";
+import AdjudicationBadge from "./AdjudicationBadge";
 import {
   extractQueryTitle,
   formatCost,
@@ -118,6 +119,7 @@ export default function RunsTableView({ onSelectSession }: RunsTableViewProps) {
                 >
                   {group.overallOutcome}
                 </Badge>
+                <AdjudicationBadge session={{ runId: group.runId }} />
                 <span className="text-[11px] text-trace-muted shrink-0">
                   {formatCount(group.sessions.length)} traces
                 </span>

@@ -146,6 +146,22 @@ export default function FilterBar({ onFiltersChanged }: FilterBarProps) {
         </select>
       </Tooltip>
 
+      <Tooltip content="Filter by human adjudication (client-side)">
+        <select
+          aria-label="Filter by adjudication"
+          value={filters.adjudication}
+          // Client-side only — annotations aren't server-searchable, so this
+          // must not trigger a session refetch.
+          onChange={(e) => setFilter("adjudication", e.target.value)}
+          className={selectClass}
+        >
+          <option value="all">Adjudication</option>
+          <option value="unreviewed">Unreviewed</option>
+          <option value="reviewed">Reviewed</option>
+          <option value="disagreed">Disagreed</option>
+        </select>
+      </Tooltip>
+
       <Tooltip content="Filter by day">
         <select
           aria-label="Filter by day"

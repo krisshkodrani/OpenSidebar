@@ -23,15 +23,20 @@ import {
 import { appendFile, readFile, writeFile } from "fs/promises";
 import { join, dirname, extname, resolve } from "path";
 import { fileURLToPath } from "url";
+import { randomUUID } from "crypto";
 import {
+  dedupeAnnotationsLatestWins,
   getSessionModels,
   localDayKey,
   matchesTraceFilters,
   normalizeAgentSessionRecord,
   normalizeAgentTurnRecord,
+  normalizeAnnotationInput,
   normalizeRunEventRecord,
   normalizeRunManifestRecord,
+  parseAnnotationsJsonl,
   serializeTraceSearchSession,
+  type RunAnnotationRecord,
   type TraceEntryLike,
   type TraceSearchFiltersLike,
   type TraceSessionLike,
@@ -114,6 +119,10 @@ const TRACE_SQLITE_INDEX = join(
   "trace-index.sqlite",
 );
 const GOLDEN_DIR = join(PROJECT_ROOT, "evals", "golden");
+const EVALS_DIR = join(PROJECT_ROOT, "evals");
+// Append-only human-adjudication log (verdict per run). Committable, next to
+// evals/golden so exported cases and their source verdicts live together.
+const ANNOTATIONS_FILE = join(EVALS_DIR, "annotations.jsonl");
 const SCREENSHOT_DIR = join(TRACE_DIR, "screenshots");
 // The trace viewer is a dev-only page: production builds strip it from dist/
 // (vite.config.ts), so non-production builds emit it into dist-dev/. Prefer
@@ -1359,6 +1368,53 @@ const server = createServer(
         sendJson(res, contract);
       } catch (err) {
         sendText(res, `Error reading skill: ${err}`, 500);
+      }
+      return;
+    }
+
+    // GET /api/annotations — human adjudication verdicts (latest per run).
+    // Optional ?sessionId= / ?runId= filters; no params → the whole deduped set
+    // (the fleet uses that to badge every row).
+    if (url.pathname === "/api/annotations" && req.method === "GET") {
+      try {
+        const sessionId = url.searchParams.get("sessionId");
+        const runId = url.searchParams.get("runId");
+        let records: RunAnnotationRecord[] = [];
+        if (existsSync(ANNOTATIONS_FILE)) {
+          records = dedupeAnnotationsLatestWins(
+            parseAnnotationsJsonl(await readFile(ANNOTATIONS_FILE, "utf-8")),
+          );
+        }
+        if (runId) records = records.filter((r) => r.runId === runId);
+        else if (sessionId)
+          records = records.filter((r) => r.sessionId === sessionId);
+        sendJson(res, records);
+      } catch (err) {
+        sendText(res, `Annotation read error: ${err}`, 500);
+      }
+      return;
+    }
+
+    // POST /api/annotations — append one human verdict. The server stamps the
+    // id + annotatedAt (trusted clock); latest-per-run wins on read.
+    if (url.pathname === "/api/annotations" && req.method === "POST") {
+      try {
+        const body = await parseJsonBody(req);
+        const norm = normalizeAnnotationInput(body);
+        if (!norm.ok) {
+          sendText(res, norm.error, 400);
+          return;
+        }
+        const record: RunAnnotationRecord = {
+          ...norm.value,
+          id: randomUUID(),
+          annotatedAt: new Date().toISOString(),
+        };
+        if (!existsSync(EVALS_DIR)) mkdirSync(EVALS_DIR, { recursive: true });
+        await appendFile(ANNOTATIONS_FILE, JSON.stringify(record) + "\n");
+        sendJson(res, record);
+      } catch (err) {
+        sendText(res, `Annotation save error: ${err}`, 500);
       }
       return;
     }
