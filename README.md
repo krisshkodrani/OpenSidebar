@@ -47,7 +47,7 @@ OpenSidebar runs an autonomous agent loop inside a Chrome side panel: it perceiv
 ## Highlights
 
 - **Sees the page like you do.** The executor is a vision model that works from the live screenshot plus a DOM snapshot — it reads charts, zooms into fine print with `inspect_region`, and handles pages that defeat pure-DOM bots (canvas widgets, closed shadow DOM).
-- **51 browser tools.** Clicking, typing, and scrolling — but also file upload and download, tab and window management, structured table/chart/filter extraction, and prose composition delegated to a dedicated writer model. See the [Tools Reference](./docs/features/tools.md).
+- **52 browser tools.** Clicking, typing, and scrolling — but also file upload and download, tab and window management, structured table/chart/filter extraction, and prose composition delegated to a dedicated writer model. See the [Tools Reference](./docs/features/tools.md).
 - **Safe by default.** Four approval modes span ask-before-every-action to fully autonomous. Consequential actions pause for your approval, form submits are dry-run first so you approve the exact field values, and high-risk completions are re-checked by a judge model before the agent calls a task done.
 - **Plans, executes, verifies.** A planner decomposes hard tasks, an executor drives each step, and a verifier confirms completion — with automatic escalation to a stronger model when a run gets stuck instead of burning turns.
 - **Remembers what matters.** A local personal profile you review yourself (sensitive fields are consent-gated and encrypted at rest), per-site skills learned from successful runs, and checkpoints that let tasks survive service-worker restarts. See [Personal Profile](./docs/personal-profile.md).

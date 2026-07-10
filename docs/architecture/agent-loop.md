@@ -217,7 +217,7 @@ This is critical because Chrome terminates service workers after ~30 seconds of 
 
 The system prompt provides instructions and context to the LLM. The agent receives instructions about:
 
-- **Capabilities** - 51 available tools for DOM manipulation, tab management, etc.
+- **Capabilities** - 52 available tools for DOM manipulation, tab management, etc.
 - **Rules** - Always call read_page first, use exact numeric tags, call done when complete
 - **Vision** - Screenshot analysis via configurable vision LLM
 
@@ -287,7 +287,7 @@ async function parseSSEStream(
 
 ## Tool Execution
 
-The agent supports **51 tools** across four categories:
+The agent supports **52 tools** across four categories:
 
 ### Content Script Tools (DOM)
 
@@ -521,7 +521,7 @@ On escalation, `summarizeTrajectory()` compresses the full conversation history 
 | `src/background/agent/trace.ts`       | TraceRecorder - session recording    |
 | `src/background/llm/client.ts`        | LLM API client (multi-provider)      |
 | `src/background/streaming.ts`         | SSE parser                           |
-| `src/background/tools/index.ts`       | Tool definitions (51 tools)          |
+| `src/background/tools/index.ts`       | Tool definitions (52 tools)          |
 | `src/background/tools/metadata.ts`    | Tool metadata (risk, flags)          |
 | `src/background/perception/`          | Perception layer                     |
 | `src/background/security.ts`          | Risk classification                  |
