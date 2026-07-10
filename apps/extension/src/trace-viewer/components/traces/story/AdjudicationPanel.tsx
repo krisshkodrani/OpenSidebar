@@ -121,9 +121,15 @@ export default function AdjudicationPanel({
           <div className="text-[10px] uppercase tracking-[0.14em] text-trace-muted">
             Claim
           </div>
-          <div className="mt-1 text-[12px] text-trace-text">{session.query}</div>
+          {/* The query can be an entire composed node prompt — cap it so the
+              verdict controls stay in view; the full text scrolls in place. */}
+          <div className="mt-1 max-h-24 overflow-y-auto text-[12px] text-trace-text">
+            {session.query}
+          </div>
           {session.summary && (
-            <div className="mt-1 text-[11px] text-trace-subtle">{session.summary}</div>
+            <div className="mt-1 max-h-16 overflow-y-auto text-[11px] text-trace-subtle">
+              {session.summary}
+            </div>
           )}
           <div className="mt-1 text-[10px] text-trace-dim">
             outcome: {session.outcome}
