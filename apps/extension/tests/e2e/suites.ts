@@ -73,7 +73,10 @@ export const E2E_SUITES: Record<E2ESuiteName, readonly string[]> = {
     "local-mock-provider-video.test.ts",
     "watch-mode.test.ts",
   ],
-  showcase: ["showcase-ashby-application.test.ts"],
+  showcase: [
+    "showcase-ashby-application.test.ts",
+    "showcase-job-pipeline.test.ts",
+  ],
   "memory-regression": [
     "memory-current-vs-historical.test.ts",
     "memory-long-turn-dossier.test.ts",
