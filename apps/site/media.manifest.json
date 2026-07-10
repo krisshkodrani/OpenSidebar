@@ -1,5 +1,5 @@
 {
-  "version": "v3",
+  "version": "v4",
   "note": "Maps site video slots to finished cuts in .artifacts/publish/ (git-ignored). build-site-media.mjs stages these into apps/site/public/media/<version>/ as <key> + <key>.poster.jpg. Bump version on content change so /media/* stays cache-immutable.",
   "items": [
     {
@@ -42,7 +42,7 @@
       "slot": "traceviewer",
       "source": ".artifacts/publish/opensidebar-traceviewer-demo-collage.mp4",
       "key": "trace-viewer.mp4",
-      "posterAt": 5.0
+      "posterAt": 20.5
     }
   ]
 }
