@@ -85,12 +85,13 @@ const RUN_META: Record<string, RunMeta> = {
   c462ed87: {
     key: "checkout",
     tab: "Checkout order",
-    headline: "One prompt becomes seven verified steps.",
-    lede: `A single shopping request, recorded May 26, 2026 against the
-      <strong>Northstar Outfitters</strong> demo storefront. A similar checkout
-      run appears in the <a href="/#showcase">demo reel</a>.`,
-    planNote: `Because every one of them writes to the same cart, it serialized
-      them into a single dependency chain — no two run at once.`,
+    headline: "One prompt → a 7-node plan, executed and verified.",
+    lede: `A shopping request recorded May 26, 2026 against the
+      <strong>Northstar Outfitters</strong> demo storefront (a similar run is
+      in the <a href="/#showcase">demo reel</a>).`,
+    planNote: `All 7 nodes hold a write lock on the same cart resource, so the
+      parallel contract serializes them into one dependency chain — no two run
+      at once.`,
     finaleTitle: `Order confirmed — <span class="wt-orderid">NS-01001</span>`,
     finaleLede: `Both pairs of shoes ordered, coupon SAVE10 applied, express
       shipping selected, and a confirmation email sent to
@@ -108,12 +109,12 @@ const RUN_META: Record<string, RunMeta> = {
   a1dc0659: {
     key: "inventory",
     tab: "Inventory lookup",
-    headline: "One question becomes four checked steps.",
-    lede: `A read-and-compare request, recorded July 9, 2026 against a paginated
-      warehouse listing fixture: page forward to read one number, page back to
+    headline: "One question → a 4-node read-and-compare plan.",
+    lede: `A cross-page read request recorded July 9, 2026 against a paginated
+      warehouse listing fixture: page forward to read one value, page back to
       read another, then report both.`,
-    planNote: `Each step depends on what the previous one read, so the chain
-      runs strictly in order.`,
+    planNote: `Each node consumes state read by its predecessor, so the graph
+      degenerates to a strict chain.`,
     finaleTitle: `Answer delivered — <span class="wt-orderid">Gamma 6,412 · Alpha 4,827</span>`,
     finaleLede: `The agent read Warehouse Gamma's count on page 3, returned to
       Warehouse Alpha for its count, reported both numbers, and re-verified the
@@ -128,13 +129,12 @@ const RUN_META: Record<string, RunMeta> = {
   ab2eb7b1: {
     key: "settings",
     tab: "Settings cleanup",
-    headline: "One instruction becomes four careful steps.",
-    lede: `A cleanup-then-act request, recorded July 5, 2026 against a settings
-      fixture page: clear the popups first, change a setting, then walk a
-      guarded delete-and-confirm flow.`,
-    planNote: `Popups must be cleared before the form is touched, and the
-      deletion is split into act and confirm — so the chain runs strictly in
-      order.`,
+    headline: "One instruction → a 4-node guarded-mutation plan.",
+    lede: `A cleanup-then-act request recorded July 5, 2026 against a settings
+      fixture page: overlay teardown, a form write, then a destructive action
+      split into act → confirm.`,
+    planNote: `Overlay teardown must precede the form write, and the deletion is
+      split into act → confirm, so the contract serializes the chain.`,
     finaleTitle: `Done — <span class="wt-orderid">“Account deleted successfully.”</span>`,
     finaleLede: `Popups dismissed, notification email set to user@test.com, and
       the guarded deletion completed with the confirmation message visible
@@ -153,16 +153,15 @@ RUN_META.bde2ff19 = {
   tab: "ServiceNow incident",
   tabNote: "trusted workflow",
   mode: "workflow",
-  headline: "Some tasks don't decompose — they get recognized.",
-  lede: `An enterprise record request with nine explicit field values, recorded
-    July 7, 2026 against a public ServiceNow developer instance. Instead of
-    planning subtasks, the planner matched it to a trusted workflow with
-    guarded submits.`,
+  headline: "No decomposition — a recognized trusted workflow.",
+  lede: `A record-creation request with nine explicit field/value pairs,
+    recorded July 7, 2026 against a public ServiceNow developer instance.
+    Instead of emitting a plan graph, the planner bound the whole task to a
+    deterministic workflow with guarded submits.`,
   planNote: "",
   finaleTitle: `Incident created — <span class="wt-orderid">INC0000038</span>`,
-  finaleLede: `The trusted form helper configured all nine fields, caught a
-    rejected first submit, reconciled the field state, and resubmitted — this
-    time the record left the form.`,
+  finaleLede: `Nine fields configured, one rejected submit caught and
+    reconciled, then resubmitted — the record left the form.`,
   shortTitles: [
     "Fill the incident form",
     "First submit — rejected",
@@ -257,32 +256,31 @@ function roleBadge(cls: string, label: string): string {
 
 function renderIntro(data: RunData, meta: RunMeta): string {
   return `<div class="wt-step">
-    <p class="wt-eyebrow">Replay · real recorded run · unedited trace</p>
+    <p class="wt-eyebrow">task_started · run ${esc(data.runId.slice(0, 8))} · unedited trace stream</p>
     <h1>${meta.headline}</h1>
-    <p class="wt-lede">${meta.lede} Every subtask, tool call, model name, token
-      count, and verdict below comes straight from the trace files.</p>
+    <p class="wt-lede">${meta.lede} Every objective, tool call, model ID, token count, and verdict below
+      is read verbatim from the orchestrator's run trace. Click <strong>Next step</strong> to advance.</p>
     <div class="wt-bubble-row">
       <div class="wt-avatar">YOU</div>
       <div class="wt-bubble">${esc(data.prompt)}</div>
     </div>
-    <p class="wt-lede">Three roles cooperate to get it done. Click <strong>Next step</strong> to watch the run unfold.</p>
     <div class="wt-legend">
       <div class="wt-card">
         ${roleBadge("planner", "PLANNER")}
-        <h3>Breaks the prompt apart</h3>
-        <p>Reads the request once and turns it into an ordered graph of small, checkable subtasks.</p>
+        <h3>Plan decomposition</h3>
+        <p>One LLM call emits a dependency-ordered subtask graph — per-node objectives, success criteria, and a bound skill.</p>
         <span class="wt-model">${esc(shortModel(data.planner?.model))}</span>
       </div>
       <div class="wt-card">
         ${roleBadge("executor", "EXECUTOR")}
-        <h3>Works the page</h3>
-        <p>Sees the live page, then clicks, types, and scrolls — one subtask at a time.</p>
+        <h3>Tool-call loop</h3>
+        <p>Runs each node in its own session: perceives the page, then issues tool calls (click_element, type_text, …) turn by turn.</p>
         <span class="wt-model">${esc(shortModel(data.executorModels[0]))}</span>
       </div>
       <div class="wt-card">
         ${roleBadge("verifier", "VERIFIER")}
-        <h3>Checks the evidence</h3>
-        <p>Accepts a subtask only when on-page evidence matches its success criteria.</p>
+        <h3>Completion gate</h3>
+        <p>Closes a node only when the completion envelope matches on-page evidence against the success criteria; otherwise it rejects.</p>
         <span class="wt-model">deterministic contract check</span>
       </div>
     </div>
@@ -293,7 +291,7 @@ function renderRecognize(data: RunData): string {
   const p = data.planner!;
   const skill = data.nodes[0].skill;
   return `<div class="wt-step">
-    <p class="wt-eyebrow">Step 1 · workflow selection</p>
+    <p class="wt-eyebrow">plan_decomposed · nodeCount: 1 · skill binding</p>
     <h2>The planner recognizes a known workflow.</h2>
     <div class="wt-card edge-planner">
       <div class="wt-rolerow">
@@ -319,7 +317,7 @@ function renderAction(data: RunData, meta: RunMeta, step: Extract<Step, { kind: 
   const total = data.nodes[0].session?.sampleToolCalls.length ?? 0;
   const note = meta.actionNotes?.[step.i];
   return `<div class="wt-step">
-    <p class="wt-eyebrow">Step ${step.i + 2} · form operation ${step.i + 1} of ${total}</p>
+    <p class="wt-eyebrow">tool_execution ${step.i + 1} of ${total} · ${esc(c.tool)}</p>
     <h2>${esc(meta.shortTitles[step.i] ?? c.tool)}</h2>
     ${note ? `<p class="wt-criteria">${note}</p>` : ""}
     <div class="wt-card edge-executor">
@@ -352,18 +350,17 @@ function renderPlan(data: RunData, meta: RunMeta): string {
     })
     .join("");
   return `<div class="wt-step">
-    <p class="wt-eyebrow">Step 1 · decomposition</p>
-    <h2>The planner splits the prompt into a strict chain.</h2>
+    <p class="wt-eyebrow">plan_decomposed · difficulty: ${esc(data.plan.difficulty ?? "—")} · ${data.plan.nodeCount} nodes</p>
+    <h2>The planner emits a dependency graph.</h2>
     <div class="wt-card edge-planner">
       <div class="wt-rolerow">
         ${roleBadge("planner", "PLANNER")}
         <span class="wt-model">${esc(p.model)}</span>
         <span class="wt-meta">${secs(p.durationMs)} · ${num(p.usage.total_tokens)} tokens</span>
       </div>
-      <p class="wt-lede" style="margin:0">In ${secs(p.durationMs)} the planner rated the task
-      <strong>${esc(data.plan.difficulty ?? "—")}</strong> and produced ${data.plan.nodeCount} subtasks.
-      ${meta.planNote} It also picked a reusable <strong>skill</strong> (a proven procedure) for each
-      subtask, shown on the right.</p>
+      <p class="wt-lede" style="margin:0">One planning call, ${secs(p.durationMs)}: ${data.plan.nodeCount} nodes,
+      each with an objective, success criteria, and a bound <strong>skill</strong> (shown right).
+      ${meta.planNote}</p>
     </div>
     <div class="wt-chain">${chain}</div>
   </div>`;
@@ -394,7 +391,7 @@ function renderTools(n: RunNode): string {
       : `${total} page action${total === 1 ? "" : "s"}`;
   const tokens = (s?.usage?.promptTokens ?? 0) + (s?.usage?.completionTokens ?? 0);
   return `<div class="wt-tools">${rows}</div>
-    <div class="wt-facts"><span>${s?.turnCount} turns</span><span>${shown}</span><span>${num(tokens)} tokens</span></div>`;
+    <div class="wt-facts"><span>${shown}</span><span>${num(tokens)} tokens</span></div>`;
 }
 
 function renderNode(data: RunData, step: Extract<Step, { kind: "node" }>): string {
@@ -403,7 +400,7 @@ function renderNode(data: RunData, step: Extract<Step, { kind: "node" }>): strin
   const v = n.verifications[n.verifications.length - 1];
   const deterministic = /deterministic/i.test(v?.reason ?? "");
   return `<div class="wt-step">
-    <p class="wt-eyebrow">Step ${i + 2} · subtask ${i + 1} of ${data.nodes.length}</p>
+    <p class="wt-eyebrow">node ${i + 1} of ${data.nodes.length} · skill: ${esc(n.skill?.id ?? "—")}</p>
     <h2>${esc(clean(n.objective))}</h2>
     <p class="wt-criteria"><b>Success criteria:</b> ${esc(clean(n.successCriteria))}</p>
 
@@ -411,7 +408,7 @@ function renderNode(data: RunData, step: Extract<Step, { kind: "node" }>): strin
       <div class="wt-rolerow">
         ${roleBadge("executor", "EXECUTOR")}
         <span class="wt-model">${esc(n.session?.models?.[0] ?? data.executorModels[0] ?? "")}</span>
-        <span class="wt-meta">skill: ${esc(n.skill?.id ?? "—")}</span>
+        <span class="wt-meta">dedicated session · ${n.session?.turnCount ?? "?"} turns</span>
       </div>
       ${renderTools(n)}
     </div>
@@ -419,12 +416,11 @@ function renderNode(data: RunData, step: Extract<Step, { kind: "node" }>): strin
     <div class="wt-card edge-verifier">
       <div class="wt-rolerow">
         ${roleBadge("verifier", "VERIFIER")}
-        <span class="wt-model">${deterministic ? "deterministic contract check" : "completion check"}</span>
-      </div>
-      <div class="wt-verdict">
-        <span class="wt-chip">${esc(v?.decision ?? "accept")}</span>
-        <span class="wt-conf">confidence ${(v?.confidence ?? 0).toFixed(2)}</span>
-        <span class="wt-conf">· subtask closed in ${secs(n.durationMs ?? 0)}</span>
+        <span class="wt-model">${deterministic ? "node_verified · completion envelope" : "node_verified · completion check"}</span>
+        <span class="wt-verdict" style="margin-left:auto">
+          <span class="wt-chip">${esc(v?.decision ?? "accept")}</span>
+          <span class="wt-conf">conf ${(v?.confidence ?? 0).toFixed(2)} · ${secs(n.durationMs ?? 0)}</span>
+        </span>
       </div>
       ${v?.reason ? `<p class="wt-vreason">${esc(clean(v.reason))}</p>` : ""}
       <p class="wt-summary">${esc(clean(n.summary))}</p>
@@ -432,7 +428,7 @@ function renderNode(data: RunData, step: Extract<Step, { kind: "node" }>): strin
   </div>`;
 }
 
-function renderFinale(data: RunData, meta: RunMeta, stepCount: number): string {
+function renderFinale(data: RunData, meta: RunMeta): string {
   const t = data.taskCompleted!.data;
   const mins = Math.floor(t.totalDurationMs / 60000);
   const rem = Math.round((t.totalDurationMs % 60000) / 1000);
@@ -449,12 +445,10 @@ function renderFinale(data: RunData, meta: RunMeta, stepCount: number): string {
   if (t.totalTokens > 0) tiles.push([num(t.totalTokens), "tokens"]);
   if (t.totalCostUsd > 0) tiles.push([`$${t.totalCostUsd.toFixed(2)}`, "total model cost"]);
   return `<div class="wt-step">
-    <p class="wt-eyebrow">Step ${stepCount} · task complete</p>
+    <p class="wt-eyebrow">task_completed · ${t.completed}/${data.plan.nodeCount} nodes · ${t.failed} failed · ${t.skipped} skipped</p>
     <div class="wt-card edge-good">
       <h2>${meta.finaleTitle}</h2>
-      <p class="wt-lede" style="margin:0">${meta.finaleLede} ${
-        wf ? "" : `All ${t.completed} subtasks completed and verified; ${t.failed} failed, ${t.skipped} skipped.`
-      }</p>
+      <p class="wt-lede" style="margin:0">${meta.finaleLede}</p>
     </div>
     ${
       wf && v
@@ -474,9 +468,9 @@ function renderFinale(data: RunData, meta: RunMeta, stepCount: number): string {
     <div class="wt-tiles">
       ${tiles.map(([val, k]) => `<div class="wt-tile"><div class="v">${val}</div><div class="k">${k}</div></div>`).join("")}
     </div>
-    <div class="wt-card">
-      <div class="wt-rolerow" style="margin:0 0 6px">${roleBadge("planner", "PLANNER")} <span class="wt-model">${esc(data.planner?.model ?? "")}</span></div>
-      <div class="wt-rolerow" style="margin:0 0 6px">${roleBadge("executor", "EXECUTOR")} <span class="wt-model">${esc(data.executorModels[0] ?? "")}</span></div>
+    <div class="wt-card" style="padding-top:10px;padding-bottom:10px">
+      <div class="wt-rolerow" style="margin:0 0 4px">${roleBadge("planner", "PLANNER")} <span class="wt-model">${esc(data.planner?.model ?? "")}</span></div>
+      <div class="wt-rolerow" style="margin:0 0 4px">${roleBadge("executor", "EXECUTOR")} <span class="wt-model">${esc(data.executorModels[0] ?? "")}</span></div>
       <div class="wt-rolerow" style="margin:0">${roleBadge("verifier", "VERIFIER")} <span class="wt-model">deterministic completion-envelope check</span></div>
     </div>
     <p class="wt-foot">Model seats are configurable per role — the three runs on this page were recorded
@@ -554,7 +548,7 @@ function render(): void {
           ? renderNode(data, s)
           : s.kind === "action"
             ? renderAction(data, meta, s)
-            : renderFinale(data, meta, steps.length);
+            : renderFinale(data, meta);
   renderTabs();
   renderSpine();
   prevBtn.disabled = state.cur === 0;

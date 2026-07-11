@@ -24,8 +24,8 @@
   background: var(--wt-surface);
   color: var(--wt-ink);
   padding-block: 0;
-  padding-top: clamp(28px, 4vw, 48px);
-  padding-bottom: clamp(28px, 4vw, 48px);
+  padding-top: clamp(14px, 2vw, 24px);
+  padding-bottom: clamp(14px, 2vw, 24px);
 }
 .wt-page h1,
 .wt-page h2,
@@ -38,7 +38,7 @@
   display: flex;
   gap: 8px;
   flex-wrap: wrap;
-  margin-bottom: clamp(20px, 3vw, 32px);
+  margin-bottom: 16px;
 }
 .wt-runtab {
   font: inherit;
@@ -142,7 +142,7 @@
   display: none;
 }
 .wt-spine-label {
-  padding: 1px 0 16px;
+  padding: 1px 0 11px;
   min-width: 0;
 }
 .wt-kicker {
@@ -203,19 +203,20 @@
   margin: 4px 0 12px;
 }
 .wt-step h1 {
-  font-size: clamp(1.9rem, 4vw, 2.7rem);
-  margin: 0 0 18px;
+  font-size: clamp(1.4rem, 2.4vw, 1.85rem);
+  margin: 0 0 12px;
   text-wrap: balance;
 }
 .wt-step h2 {
-  font-size: clamp(1.35rem, 2.6vw, 1.7rem);
-  margin: 6px 0 8px;
+  font-size: clamp(1.1rem, 1.9vw, 1.35rem);
+  margin: 4px 0 6px;
   text-wrap: balance;
 }
 .wt-lede {
   color: var(--wt-muted);
-  max-width: 58ch;
-  margin: 0 0 22px;
+  max-width: 64ch;
+  margin: 0 0 14px;
+  font-size: 0.95rem;
 }
 .wt-lede strong,
 .wt-lede b {
@@ -227,7 +228,7 @@
   display: flex;
   gap: 12px;
   align-items: flex-start;
-  margin: 26px 0;
+  margin: 16px 0;
 }
 .wt-avatar {
   flex: none;
@@ -247,11 +248,13 @@
   background: var(--wt-card);
   border: 1px solid var(--wt-line);
   border-radius: 4px 16px 16px 16px;
-  padding: 16px 20px;
+  padding: 12px 16px;
   box-shadow: var(--wt-shadow);
-  font-size: 1.05rem;
-  line-height: 1.6;
-  max-width: 56ch;
+  font-size: 0.98rem;
+  line-height: 1.55;
+  max-width: 60ch;
+  max-height: 128px;
+  overflow-y: auto;
 }
 
 /* role badges */
@@ -304,7 +307,7 @@
   align-items: center;
   gap: 10px;
   flex-wrap: wrap;
-  margin: 0 0 12px;
+  margin: 0 0 10px;
 }
 .wt-rolerow .wt-meta {
   font-family: var(--mono);
@@ -316,10 +319,10 @@
 .wt-card {
   background: var(--wt-card);
   border: 1px solid var(--wt-line);
-  border-radius: 14px;
-  padding: 20px 22px;
+  border-radius: 12px;
+  padding: 14px 18px;
   box-shadow: var(--wt-shadow);
-  margin: 0 0 18px;
+  margin: 0 0 12px;
 }
 .wt-card.edge-planner {
   border-left: 3px solid var(--wt-planner);
@@ -338,25 +341,25 @@
 .wt-legend {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 12px;
-  margin-top: 26px;
+  gap: 10px;
+  margin-top: 16px;
 }
 .wt-legend .wt-card {
   margin: 0;
-  padding: 16px 18px;
+  padding: 12px 14px;
 }
 .wt-legend h3 {
-  margin: 10px 0 4px;
-  font-size: 15px;
+  margin: 8px 0 3px;
+  font-size: 14px;
 }
 .wt-legend p {
   margin: 0;
-  font-size: 13.5px;
+  font-size: 12.5px;
   color: var(--wt-muted);
   line-height: 1.5;
 }
 .wt-legend .wt-model {
-  margin-top: 10px;
+  margin-top: 8px;
   display: inline-block;
 }
 
@@ -364,23 +367,23 @@
 .wt-chain {
   display: flex;
   flex-direction: column;
-  margin-top: 20px;
+  margin-top: 12px;
 }
 .wt-chain-node {
   display: flex;
-  gap: 14px;
+  gap: 12px;
   align-items: center;
   background: var(--wt-card);
   border: 1px solid var(--wt-line);
-  border-radius: 12px;
-  padding: 12px 16px;
+  border-radius: 10px;
+  padding: 6px 14px;
   box-shadow: var(--wt-shadow);
   animation: wt-rise 0.5s cubic-bezier(0.2, 0.7, 0.2, 1) both;
 }
 .wt-chain-idx {
   flex: none;
-  width: 28px;
-  height: 28px;
+  width: 24px;
+  height: 24px;
   border-radius: 50%;
   display: grid;
   place-items: center;
@@ -393,7 +396,7 @@
 }
 .wt-chain-obj {
   font-weight: 600;
-  font-size: 14.5px;
+  font-size: 13.5px;
   min-width: 0;
 }
 .wt-chain-skill {
@@ -402,7 +405,7 @@
 }
 .wt-chain-link {
   width: 2px;
-  height: 14px;
+  height: 8px;
   background: var(--wt-line-strong);
   margin-left: 29px;
   animation: wt-rise 0.5s both;
@@ -422,19 +425,19 @@
 .wt-tools {
   display: flex;
   flex-direction: column;
-  gap: 8px;
-  margin-top: 14px;
+  gap: 5px;
+  margin-top: 8px;
 }
 .wt-tool {
   display: flex;
   gap: 12px;
   align-items: baseline;
   font-family: var(--mono);
-  font-size: 12.5px;
+  font-size: 12px;
   background: var(--wt-well);
   border: 1px solid var(--wt-line);
   border-radius: 8px;
-  padding: 9px 12px;
+  padding: 6px 10px;
   overflow-x: auto;
   animation: wt-rise 0.4s both;
   white-space: nowrap;
@@ -488,7 +491,7 @@
   color: var(--wt-ink);
   white-space: pre-wrap;
   word-break: break-word;
-  max-height: 320px;
+  max-height: 230px;
   overflow: auto;
 }
 
@@ -520,31 +523,39 @@
   font-variant-numeric: tabular-nums;
 }
 .wt-vreason {
-  margin: 10px 0 0;
-  font-size: 13.5px;
+  margin: 8px 0 0;
+  font-size: 12.5px;
   color: var(--wt-muted);
-  max-width: 62ch;
+  max-width: 72ch;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
 }
 .wt-facts {
   display: flex;
-  gap: 18px;
+  gap: 16px;
   flex-wrap: wrap;
   font-family: var(--mono);
-  font-size: 12px;
+  font-size: 11.5px;
   color: var(--wt-faint);
-  margin-top: 12px;
+  margin-top: 9px;
   font-variant-numeric: tabular-nums;
 }
 .wt-summary {
   color: var(--wt-muted);
-  font-size: 14.5px;
-  max-width: 62ch;
-  margin: 8px 0 0;
+  font-size: 13px;
+  max-width: 72ch;
+  margin: 6px 0 0;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
 }
 .wt-criteria {
-  font-size: 13.5px;
+  font-size: 13px;
   color: var(--wt-faint);
-  margin: 2px 0 20px;
+  margin: 2px 0 12px;
   max-width: 62ch;
 }
 .wt-criteria b {
@@ -559,19 +570,19 @@
 }
 .wt-tiles {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
-  gap: 12px;
-  margin: 22px 0;
+  grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
+  gap: 8px;
+  margin: 10px 0;
 }
 .wt-tile {
   background: var(--wt-card);
   border: 1px solid var(--wt-line);
-  border-radius: 12px;
-  padding: 14px 16px;
+  border-radius: 10px;
+  padding: 10px 14px;
   box-shadow: var(--wt-shadow);
 }
 .wt-tile .v {
-  font-size: 1.55rem;
+  font-size: 1.3rem;
   font-weight: 700;
   letter-spacing: -0.02em;
   font-variant-numeric: tabular-nums;
@@ -584,10 +595,10 @@
   margin-top: 3px;
 }
 .wt-foot {
-  font-size: 13px;
+  font-size: 12px;
   color: var(--wt-faint);
-  max-width: 68ch;
-  margin-top: 20px;
+  max-width: 84ch;
+  margin-top: 8px;
 }
 .wt-foot code {
   font-family: var(--mono);
@@ -603,7 +614,7 @@
   display: flex;
   align-items: center;
   gap: 18px;
-  padding: 14px 0 18px;
+  padding: 10px 0 14px;
   background: linear-gradient(180deg, transparent, var(--wt-surface) 26%);
 }
 .wt-controls .btn {
