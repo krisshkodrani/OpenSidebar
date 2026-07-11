@@ -14,6 +14,7 @@ import {
 import {
   EXECUTOR_PERSONA,
   LastActionOutcome,
+  OpenTabInfo,
   PLANNER_PERSONA,
   REFERENCE_VALUE_TOOLS,
   CompressionLevel,
@@ -126,6 +127,9 @@ export class ContextManager {
   private startTimeMs = 0;
   private workingNotes = "";
   private lastActionOutcome: LastActionOutcome | null = null;
+  private openTabs: OpenTabInfo[] = [];
+  private currentTabIdForPrompt: number | null = null;
+  private spawnedTabSeen = false;
 
   public setModelTier(tier: "executor" | "planner"): void {
     this.modelTier = tier;
@@ -231,6 +235,29 @@ export class ContextManager {
   /** Get the most recent action outcome. */
   public getLastActionOutcome(): LastActionOutcome | null {
     return this.lastActionOutcome;
+  }
+
+  /**
+   * Refresh the workspace tab inventory rendered as the "## Open Tabs"
+   * prompt section. Rendered only when the workspace holds 2+ tabs — a
+   * single-tab task pays no prompt cost.
+   */
+  public setOpenTabs(tabs: OpenTabInfo[], currentTabId: number | null): void {
+    this.openTabs = tabs;
+    this.currentTabIdForPrompt = currentTabId;
+  }
+
+  /**
+   * Record that a page action spawned a tab into the workspace. Latched for
+   * the rest of the session: once the environment itself has made the task
+   * multi-tab, the tab-management tool gate no longer applies.
+   */
+  public noteSpawnedTabs(): void {
+    this.spawnedTabSeen = true;
+  }
+
+  public hasSpawnedTabs(): boolean {
+    return this.spawnedTabSeen;
   }
 
   // ---------------------------------------------------------------------------
@@ -692,6 +719,26 @@ Do NOT call done() until every planned step is complete.
 
     // Remove demonstrations placeholder (demos removed)
     content = content.replace("{{demonstrations}}", "");
+
+    // Open-tab inventory: rendered only when the workspace is genuinely
+    // multi-tab, so the model can tell which tab the snapshot below belongs
+    // to and reach work it already did in other tabs instead of redoing it.
+    if (this.openTabs.length >= 2) {
+      const tabLines = this.openTabs.map((tab) => {
+        const marker =
+          tab.tabId === this.currentTabIdForPrompt
+            ? " ← CURRENT TAB (the snapshot below shows this tab)"
+            : "";
+        return `Tab ${tab.tabId}: "${sanitizeForPrompt(tab.title || "(untitled)")}" — ${tab.url}${marker}`;
+      });
+      content = content.replace(
+        "{{openTabs}}",
+        `## Open Tabs (workspace)\n${tabLines.join("\n")}\n` +
+          `Only the current tab is visible in the snapshot. Form values and page state in other tabs persist there — use switch_tab({"tabId": N}) to return to them; do not re-open or re-fill a tab that already has your work.\n`,
+      );
+    } else {
+      content = content.replace("{{openTabs}}", "");
+    }
 
     // Inject working notes (if any)
     if (this.workingNotes) {

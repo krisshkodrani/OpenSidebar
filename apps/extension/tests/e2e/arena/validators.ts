@@ -1477,15 +1477,21 @@ async function readStagedApplications(
 async function readBoardViewedJobs(
   harness: E2EHarness,
 ): Promise<string[]> {
+  // Union across ALL board tabs: multi-worker runs can open a second, fresh
+  // board tab, and returning the first hit would drop the research history
+  // that lives in the original tab.
+  const viewed = new Set<string>();
   const pages = await harness.ctx.browser.pages();
   for (const page of pages) {
     if (!page.url().includes("/job-board")) continue;
-    const viewed = await page
+    const tabViewed = await page
       .evaluate(() => (window as any).__jobBoardState?.viewedJobs ?? null)
       .catch(() => null);
-    if (Array.isArray(viewed)) return viewed.map(String);
+    if (Array.isArray(tabViewed)) {
+      for (const id of tabViewed) viewed.add(String(id));
+    }
   }
-  return [];
+  return [...viewed];
 }
 
 async function twoApplicationsStagedNotSubmitted(

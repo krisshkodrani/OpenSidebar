@@ -3,7 +3,20 @@ import { JOBS as jobs, getJobById, type Job } from "../data/jobs";
 
 // Persist viewed jobs on the tab so research-grounding stays accurate even if a
 // full /job-board navigation remounts the App (which resets component state).
+// sessionStorage is the primary store — a window global does NOT survive full
+// document reloads (e.g. the agent calling navigate() back to the board), which
+// silently wiped research history and false-negatived the grounding check.
 const VIEWED_JOBS_KEY = "__jobBoardViewedJobs";
+
+function readPersistedViewedJobs(): string[] {
+  try {
+    const raw = window.sessionStorage.getItem(VIEWED_JOBS_KEY);
+    if (raw) return JSON.parse(raw) as string[];
+  } catch {
+    // sessionStorage unavailable — fall through to the window mirror.
+  }
+  return ((window as any)[VIEWED_JOBS_KEY] as string[]) ?? [];
+}
 
 const locationIcon = (type: string) => {
   if (type === "remote") return "🌐";
@@ -22,7 +35,7 @@ export default function JobBoard() {
     readSelectedJobFromUrl(),
   );
   const [viewedJobs, setViewedJobs] = useState<Set<string>>(() => {
-    const seed = new Set<string>((window as any)[VIEWED_JOBS_KEY] ?? []);
+    const seed = new Set<string>(readPersistedViewedJobs());
     const fromUrl = readSelectedJobFromUrl();
     if (fromUrl) seed.add(fromUrl.id);
     return seed;
@@ -44,6 +57,14 @@ export default function JobBoard() {
 
   useEffect(() => {
     (window as any)[VIEWED_JOBS_KEY] = Array.from(viewedJobs);
+    try {
+      window.sessionStorage.setItem(
+        VIEWED_JOBS_KEY,
+        JSON.stringify(Array.from(viewedJobs)),
+      );
+    } catch {
+      // sessionStorage unavailable — window mirror still set above.
+    }
     (window as any).__jobBoardState = {
       viewedJobs: Array.from(viewedJobs),
       currentView: view,

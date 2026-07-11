@@ -132,6 +132,7 @@ URL: {{url}}
 {{scrollIndicator}}
 {{turnBudget}}
 
+{{openTabs}}
 ## Last Action Outcome
 
 {{lastActionOutcome}}

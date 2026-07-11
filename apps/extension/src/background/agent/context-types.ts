@@ -29,6 +29,13 @@ export interface LastActionOutcome {
   elementsRemoved: number;
 }
 
+/** One workspace tab rendered in the "## Open Tabs" prompt section. */
+export interface OpenTabInfo {
+  tabId: number;
+  title: string;
+  url: string;
+}
+
 export interface PlanStatusGate {
   trigger: string;
   action: "call_done" | "advance_step" | "retry_step";
