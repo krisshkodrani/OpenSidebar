@@ -27,8 +27,10 @@ const emptyDraft: AshbyDraft = {
   resumeName: "",
 };
 
-// Without a ?job= param (or with an unknown id) the route renders exactly the
-// historical hardcoded posting, so the existing Ashby tests are unaffected.
+// Without a ?job= param the route renders exactly the historical hardcoded
+// posting, so the existing standalone Ashby tests are unaffected. An unknown or
+// mistyped id, however, must NOT silently resolve to this form — that would let
+// a wrong-URL guess masquerade as a successful application (see jobNotFound).
 const FALLBACK_ROLE = {
   title: "Senior Product Engineer",
   company: "Langfuse",
@@ -37,9 +39,12 @@ const FALLBACK_ROLE = {
 export default function AshbyJobApplication() {
   const [draft, setDraft] = useState<AshbyDraft>(emptyDraft);
   const [submitted, setSubmitted] = useState(false);
-  const job = getJobById(
-    new URLSearchParams(window.location.search).get("job"),
-  );
+  const rawJobParam = new URLSearchParams(window.location.search).get("job");
+  const job = getJobById(rawJobParam);
+  // A mistyped/unknown job id must not silently fall back to another company's
+  // form. Only the *absence* of a param keeps the default role (the bare-route
+  // scenario the standalone Ashby tests rely on).
+  const jobNotFound = rawJobParam !== null && rawJobParam.trim() !== "" && !job;
   const role = job ?? FALLBACK_ROLE;
 
   useEffect(() => {
@@ -97,6 +102,27 @@ export default function AshbyJobApplication() {
             <p className="lede">Powered by Ashby</p>
             <h1>Application received</h1>
             <p>Thanks, {draft.name}. Your application was submitted.</p>
+          </div>
+        </div>
+      </main>
+    );
+  }
+
+  if (jobNotFound) {
+    return (
+      <main className="fixture-static" data-platform="ashby">
+        <div className="container">
+          <div className="card">
+            <p className="lede">Powered by Ashby</p>
+            <h1>Job not found</h1>
+            <p>
+              We couldn&rsquo;t find a posting for &ldquo;{rawJobParam}&rdquo;.
+              Return to the job board and use a listing&rsquo;s Apply button to
+              open the correct application.
+            </p>
+            <a className="btn btn-primary" href="/job-board">
+              Back to the job board
+            </a>
           </div>
         </div>
       </main>

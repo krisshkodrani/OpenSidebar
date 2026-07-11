@@ -24,6 +24,7 @@ import {
   navigateAndWait,
   resetExtensionState,
   sendUserChat,
+  startApprovalAutoResponder,
   updateUserSettings,
 } from "../apps/extension/tests/e2e/helpers/utils";
 
@@ -438,11 +439,23 @@ async function runTask(
       throw new Error(`Missing arena validator: ${task.validator}`);
     }
 
-    validatorResult = await validator({
-      task,
-      harness,
+    // Autonomous run (requireApprovals:false): auto-approve any forced
+    // consequential approval so a headless run never hangs waiting on a human.
+    // See startApprovalAutoResponder.
+    const approvals = startApprovalAutoResponder(
+      harness.ctx,
+      harness.ctx.serviceWorker,
       workspaceId,
-    });
+    );
+    try {
+      validatorResult = await validator({
+        task,
+        harness,
+        workspaceId,
+      });
+    } finally {
+      await approvals.stop();
+    }
 
     if (validatorResult.ok) {
       await assertNoGhostSession(harness.ctx.serviceWorker, 2_000, workspaceId);

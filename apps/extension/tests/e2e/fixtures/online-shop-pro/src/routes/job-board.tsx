@@ -1,6 +1,9 @@
 import { useState, useEffect } from "react";
-import { JOBS as jobs, type Job } from "../data/jobs";
+import { JOBS as jobs, getJobById, type Job } from "../data/jobs";
 
+// Persist viewed jobs on the tab so research-grounding stays accurate even if a
+// full /job-board navigation remounts the App (which resets component state).
+const VIEWED_JOBS_KEY = "__jobBoardViewedJobs";
 
 const locationIcon = (type: string) => {
   if (type === "remote") return "🌐";
@@ -8,12 +11,39 @@ const locationIcon = (type: string) => {
   return "📍";
 };
 
+function readSelectedJobFromUrl(): Job | null {
+  return (
+    getJobById(new URLSearchParams(window.location.search).get("job")) ?? null
+  );
+}
+
 export default function JobBoard() {
-  const [view, setView] = useState<"listings" | "detail">("listings");
-  const [selectedJob, setSelectedJob] = useState<Job | null>(null);
-  const [viewedJobs, setViewedJobs] = useState<Set<string>>(new Set());
+  const [selectedJob, setSelectedJob] = useState<Job | null>(() =>
+    readSelectedJobFromUrl(),
+  );
+  const [viewedJobs, setViewedJobs] = useState<Set<string>>(() => {
+    const seed = new Set<string>((window as any)[VIEWED_JOBS_KEY] ?? []);
+    const fromUrl = readSelectedJobFromUrl();
+    if (fromUrl) seed.add(fromUrl.id);
+    return seed;
+  });
+  const view: "listings" | "detail" = selectedJob ? "detail" : "listings";
+
+  // Keep the detail view URL-backed: clicking a listing puts ?job=<id> in the
+  // address bar (legible navigation feedback + the job id becomes discoverable),
+  // and browser back/forward and deep links resolve to the right posting.
+  useEffect(() => {
+    const sync = () => {
+      const job = readSelectedJobFromUrl();
+      setSelectedJob(job);
+      if (job) setViewedJobs((prev) => new Set([...prev, job.id]));
+    };
+    window.addEventListener("popstate", sync);
+    return () => window.removeEventListener("popstate", sync);
+  }, []);
 
   useEffect(() => {
+    (window as any)[VIEWED_JOBS_KEY] = Array.from(viewedJobs);
     (window as any).__jobBoardState = {
       viewedJobs: Array.from(viewedJobs),
       currentView: view,
@@ -23,9 +53,14 @@ export default function JobBoard() {
   }, [view, selectedJob, viewedJobs]);
 
   const openJob = (job: Job) => {
+    window.history.pushState({}, "", `/job-board?job=${job.id}`);
     setSelectedJob(job);
     setViewedJobs((prev) => new Set([...prev, job.id]));
-    setView("detail");
+  };
+
+  const backToListings = () => {
+    window.history.pushState({}, "", "/job-board");
+    setSelectedJob(null);
   };
 
   return (
@@ -94,7 +129,7 @@ export default function JobBoard() {
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16 }}>
               <button
                 className="btn btn-ghost"
-                onClick={() => setView("listings")}
+                onClick={backToListings}
               >
                 ← Back to Listings
               </button>
