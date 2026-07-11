@@ -14,6 +14,24 @@ type WorkspaceManagerDeps = {
   storageLocal?: Pick<chrome.storage.StorageArea, "get" | "set">;
 };
 
+/**
+ * A tab the PAGE opened (target=_blank link, window.open) from inside a
+ * workspace tab, auto-adopted into that workspace. Queued per workspace so the
+ * agent loop can tell the model its click actually opened a tab — without
+ * this, the effect tracker scores the click as a no-op and the model is left
+ * blind to tabs its own actions created.
+ */
+export type SpawnedTabRecord = {
+  tabId: number;
+  openerTabId: number;
+  workspaceId: string;
+  url: string;
+  createdAt: number;
+};
+
+/** Cap per-workspace spawned-tab queues so an untended queue can't grow unbounded. */
+const MAX_SPAWNED_QUEUE = 20;
+
 export class WorkspaceManager {
   private workspaces: Workspace[] = [];
   private nextWorkspaceNum = 1;
@@ -27,6 +45,9 @@ export class WorkspaceManager {
    * agent doesn't fight with the "locked workspace" behavior.
    */
   private _bypassRegroup = new Set<number>();
+
+  /** Page-opened tabs adopted per workspace, awaiting pickup by the agent loop. */
+  private spawnedTabQueues = new Map<string, SpawnedTabRecord[]>();
 
   constructor(deps: WorkspaceManagerDeps = {}) {
     const defaultStorageLocal: Pick<chrome.storage.StorageArea, "get" | "set"> =
@@ -105,6 +126,10 @@ export class WorkspaceManager {
     const boundGroupChanged = this.handleTabGroupChanged.bind(this);
 
     chrome.tabs.onRemoved.addListener(boundTabRemoved);
+
+    if (chrome.tabs?.onCreated) {
+      chrome.tabs.onCreated.addListener(this.handleTabCreated.bind(this));
+    }
 
     if (chrome.tabGroups?.onRemoved) {
       chrome.tabGroups.onRemoved.addListener(
@@ -205,6 +230,50 @@ export class WorkspaceManager {
 
   private getWorkspaceByTabId(tabId: number): Workspace | null {
     return this.workspaces.find((ws) => ws.tabIds.includes(tabId)) || null;
+  }
+
+  /**
+   * Adopt tabs the page opened from inside a workspace tab (target=_blank,
+   * window.open). Only tabs with an openerTabId that belongs to a workspace
+   * qualify — tabs created by the create_tab tool or orchestrator lane setup
+   * have no openerTabId and take their existing explicit-attach paths.
+   */
+  private async handleTabCreated(tab: chrome.tabs.Tab) {
+    if (tab.id === undefined || tab.openerTabId === undefined) return;
+    const workspace = this.getWorkspaceByTabId(tab.openerTabId);
+    if (!workspace || workspace.tabIds.includes(tab.id)) return;
+
+    const record: SpawnedTabRecord = {
+      tabId: tab.id,
+      openerTabId: tab.openerTabId,
+      workspaceId: workspace.id,
+      url: tab.pendingUrl || tab.url || "",
+      createdAt: Date.now(),
+    };
+    logger.info("workspace", "Adopting page-opened tab into workspace", {
+      tabId: tab.id,
+      openerTabId: tab.openerTabId,
+      workspace: workspace.name,
+      url: record.url,
+    });
+    await this.addTabToWorkspace(tab.id, workspace.id);
+
+    const queue = this.spawnedTabQueues.get(workspace.id) ?? [];
+    queue.push(record);
+    if (queue.length > MAX_SPAWNED_QUEUE) queue.shift();
+    this.spawnedTabQueues.set(workspace.id, queue);
+  }
+
+  /**
+   * Return and clear the page-opened tabs adopted into a workspace since the
+   * last drain. The agent loop calls this after each tool batch to surface
+   * "your click opened a new tab" to the model.
+   */
+  public drainSpawnedTabs(workspaceId: string): SpawnedTabRecord[] {
+    const queue = this.spawnedTabQueues.get(workspaceId);
+    if (!queue || queue.length === 0) return [];
+    this.spawnedTabQueues.set(workspaceId, []);
+    return queue;
   }
 
   private async handleTabRemoved(tabId: number) {
@@ -628,6 +697,57 @@ export class WorkspaceManager {
       ws.tabIds.push(tabId);
       await this.save();
     }
+  }
+
+  /**
+   * Ensure a workspace record exists for an agent run whose workspaceId was
+   * minted OUTSIDE the side-panel flow (e2e harness, headless integrations).
+   * Side-panel runs always have a real workspace; synthetic ids ("e2e-…")
+   * previously had none, which silently disabled every tab-ownership feature:
+   * page-opened-tab adoption, the Open Tabs prompt section, and
+   * workspace-scoped list_tabs. Tracking-only — no Chrome tab group is
+   * created; the record just anchors which tabs belong to the run.
+   */
+  public async ensureTrackingWorkspace(
+    workspaceId: string,
+    initialTabId: number,
+  ): Promise<void> {
+    await this.init();
+    if (!workspaceId || workspaceId === "default") return;
+
+    const existing = this.workspaces.find((w) => w.id === workspaceId);
+    if (existing) {
+      if (!existing.tabIds.includes(initialTabId)) {
+        existing.tabIds.push(initialTabId);
+        await this.save();
+      }
+      return;
+    }
+
+    // A tab already owned by a real (tab-group) workspace keeps its owner —
+    // runs against such tabs are addressed by that workspace's own id.
+    const owner = this.getWorkspaceByTabId(initialTabId);
+    if (owner) {
+      logger.warn("workspace", "Tracking workspace skipped — tab has owner", {
+        workspaceId,
+        initialTabId,
+        ownerWorkspaceId: owner.id,
+      });
+      return;
+    }
+
+    this.workspaces.push({
+      id: workspaceId,
+      name: workspaceId,
+      color: GROUP_COLOR,
+      tabGroupId: null,
+      tabIds: [initialTabId],
+    });
+    await this.save();
+    logger.info("workspace", "Created tracking workspace for agent run", {
+      workspaceId,
+      initialTabId,
+    });
   }
 
   public async getWorkspaceById(id: string): Promise<Workspace | null> {

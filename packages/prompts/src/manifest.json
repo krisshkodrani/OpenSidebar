@@ -86,7 +86,7 @@
   {
     "id": "agent.system",
     "version": "v5",
-    "hash": "63f5b19e",
+    "hash": "cb9e0ee4",
     "description": "Core executor system prompt for browser automation turns. v6: structured last-action outcome grounding.",
     "sourcePath": "prompts/runtime/agent/system.md"
   },

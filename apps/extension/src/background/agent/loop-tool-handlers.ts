@@ -166,6 +166,21 @@ export interface AgentLoopToolHandlerHost {
   workspaceId: string | null;
 }
 
+/**
+ * The tab-management gate ("stay on the current tab unless the user asked for
+ * tabs") assumes the task is single-tab. Once a PAGE action has spawned a tab
+ * into the workspace (target=_blank / window.open — see
+ * spawned-tab-surfacing.ts), that premise is gone: the environment made the
+ * task multi-tab, and blocking switch_tab would strand the agent's own work in
+ * unreachable tabs. The context latch flips permanently for the session.
+ */
+export function tabManagementBlocked(
+  loop: AgentLoopToolHandlerHost,
+): boolean {
+  if (loop.context?.hasSpawnedTabs?.()) return false;
+  return loop.shouldBlockTabManagementTools();
+}
+
 export type GenericSequentialToolState = {
   prevElementCount: number;
   domModified: boolean;
@@ -707,7 +722,7 @@ export async function handleSwitchTabToolCall(
   tabId: number,
   prevElementCount: number,
 ): Promise<{ tabId: number; prevElementCount: number }> {
-  if (loop.shouldBlockTabManagementTools()) {
+  if (tabManagementBlocked(loop)) {
     const blockedMessage =
       "Blocked: switch_tab requires explicit user instruction to manage tabs. " +
       "Stay on the current tab unless the user asks for tab switching.";
@@ -821,7 +836,7 @@ export async function handleCloseTabToolCall(
   if (loop.replayMutationSensitiveAction(toolCallId, toolName, args)) {
     return;
   }
-  if (loop.shouldBlockTabManagementTools()) {
+  if (tabManagementBlocked(loop)) {
     const blockedMessage =
       "Blocked: close_tab requires explicit user instruction to manage tabs.";
     loop.context.addMessage({
@@ -904,7 +919,7 @@ export async function handleCreateTabToolCall(
   if (loop.replayMutationSensitiveAction(toolCallId, toolName, args)) {
     return;
   }
-  if (loop.shouldBlockTabManagementTools()) {
+  if (tabManagementBlocked(loop)) {
     const blockedMessage =
       "Blocked: create_tab requires explicit user instruction to open additional tabs.";
     loop.context.addMessage({
