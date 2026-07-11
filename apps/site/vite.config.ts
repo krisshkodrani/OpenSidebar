@@ -20,6 +20,12 @@ export default defineConfig({
     target: "es2020",
     // No vendor chunking needed — the site ships one tiny hand-written module.
     assetsInlineLimit: 4096,
+    rollupOptions: {
+      input: {
+        main: resolve(root, "index.html"),
+        walkthrough: resolve(root, "walkthrough.html"),
+      },
+    },
   },
   server: {
     port: 4321,

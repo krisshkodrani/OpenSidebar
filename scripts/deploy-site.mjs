@@ -118,6 +118,22 @@ run("aws", [
   ...(DRY ? ["--dryrun"] : []),
 ]);
 
+// Extensionless copies for subpages. CloudFront maps 403 (missing key) to
+// /index.html, so /walkthrough would silently serve the landing page unless
+// an object exists at that exact key.
+const CLEAN_URL_PAGES = ["walkthrough"];
+for (const page of CLEAN_URL_PAGES) {
+  const src = path.join(DIST, `${page}.html`);
+  if (!fs.existsSync(src)) fail(`Expected ${page}.html in dist for clean-URL copy.`);
+  console.log(`\n== Clean URL: /${page} ==`);
+  run("aws", [
+    "s3", "cp", src, s3(`/${page}`),
+    "--cache-control", SHORT,
+    "--content-type", "text/html",
+    ...(DRY ? ["--dryrun"] : []),
+  ]);
+}
+
 // ---------- 4. invalidation ----------
 if (!args.has("--skip-invalidate")) {
   console.log("\n== CloudFront invalidation (short-cache paths) ==");
@@ -125,6 +141,7 @@ if (!args.has("--skip-invalidate")) {
     "cloudfront", "create-invalidation",
     "--distribution-id", DIST_ID,
     "--paths", "/", "/index.html", "/robots.txt", "/og.png", "/favicon.png", "/logo.png",
+    ...CLEAN_URL_PAGES.flatMap((p) => [`/${p}`, `/${p}.html`]),
   ]);
 }
 
