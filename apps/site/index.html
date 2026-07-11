@@ -349,6 +349,47 @@ Load unpacked <span class="c">→</span> select <span class="p">dist/</span></pr
         </div>
       </section>
 
+      <!-- DECOMPOSITION WALKTHROUGH -->
+      <section id="decomposition">
+        <div class="wrap">
+          <div class="decomp reveal">
+            <div class="decomp-copy">
+              <span class="eyebrow">Under the hood</span>
+              <h2>See the plan, not just the run.</h2>
+              <p class="muted" style="margin: 14px 0 0">
+                Every demo above is a recorded run — and every run starts with
+                a plan. The walkthrough page replays three real traces click by
+                click: the prompt, the planner's subtask chain, the executor's
+                actual page actions, and the verifier's verdict on each step,
+                with the model named at every stage.
+              </p>
+              <div class="hero-cta" style="margin-top: 26px">
+                <a class="btn btn-primary" href="/walkthrough"
+                  >Step through a real run</a
+                >
+              </div>
+              <p class="decomp-links">
+                Three recorded runs:
+                <a href="/walkthrough#checkout">a checkout order</a> ·
+                <a href="/walkthrough#inventory">a cross-page inventory lookup</a>
+                · <a href="/walkthrough#settings">a guarded settings cleanup</a>
+              </p>
+            </div>
+            <div class="decomp-chain" aria-hidden="true">
+              <div class="decomp-bubble">
+                “I'd like to order the Pegasus 41 shoes and the Novablast 4
+                shoes. Use coupon SAVE10…”
+              </div>
+              <div class="decomp-arrow"></div>
+              <div class="decomp-chip"><span>1</span> Add Pegasus 41 to cart <b>✓</b></div>
+              <div class="decomp-chip"><span>2</span> Add Novablast 4 to cart <b>✓</b></div>
+              <div class="decomp-chip"><span>3</span> Open cart, go to checkout <b>✓</b></div>
+              <div class="decomp-more">+ 4 more verified steps → order NS-01001</div>
+            </div>
+          </div>
+        </div>
+      </section>
+
       <!-- FEATURES -->
       <section id="features">
         <div class="wrap">

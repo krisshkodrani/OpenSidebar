@@ -6,7 +6,7 @@
     <title>How it works — OpenSidebar</title>
     <meta
       name="description"
-      content="Step through a real recorded OpenSidebar run: one prompt decomposed into seven verified subtasks, with the role and model shown at every step."
+      content="Step through three real recorded OpenSidebar runs: each prompt decomposed into verified subtasks, with the role and model shown at every step."
     />
     <meta name="theme-color" content="#F7F7F9" />
     <link rel="icon" type="image/png" href="/favicon.png" />
@@ -17,7 +17,7 @@
     <meta property="og:title" content="How it works — OpenSidebar" />
     <meta
       property="og:description"
-      content="A replay of a real agent run: one shopping prompt, seven planned subtasks, every click and verdict straight from the trace."
+      content="Replays of three real agent runs: each prompt planned into subtasks, every click and verdict straight from the trace."
     />
     <meta property="og:url" content="https://opensidebar.com/walkthrough" />
     <meta property="og:image" content="https://opensidebar.com/og.png" />
@@ -25,7 +25,7 @@
     <meta name="twitter:title" content="How it works — OpenSidebar" />
     <meta
       name="twitter:description"
-      content="A replay of a real agent run: one shopping prompt, seven planned subtasks, every click and verdict straight from the trace."
+      content="Replays of three real agent runs: each prompt planned into subtasks, every click and verdict straight from the trace."
     />
     <meta name="twitter:image" content="https://opensidebar.com/og.png" />
 
@@ -63,6 +63,7 @@
             This walkthrough is interactive and needs JavaScript to step
             through the run.
           </p>
+          <div class="wt-runs" id="runtabs" role="tablist" aria-label="Recorded runs"></div>
           <div class="wt-grid">
             <nav class="wt-spine" id="spine" aria-label="Walkthrough steps"></nav>
             <div class="wt-stagecol">
