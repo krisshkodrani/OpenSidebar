@@ -461,6 +461,37 @@
   color: var(--wt-faint);
 }
 
+/* workflow-mode tool block (multiline results, e.g. ServiceNow form echo) */
+.wt-toolblock {
+  margin-top: 14px;
+  background: var(--wt-well);
+  border: 1px solid var(--wt-line);
+  border-radius: 8px;
+  overflow: hidden;
+}
+.wt-toolblock .tb-args {
+  font-family: var(--mono);
+  font-size: 12px;
+  color: var(--wt-accent-deep);
+  font-weight: 700;
+  padding: 9px 12px;
+  border-bottom: 1px solid var(--wt-line);
+  white-space: nowrap;
+  overflow-x: auto;
+}
+.wt-toolblock .tb-result {
+  margin: 0;
+  padding: 10px 12px;
+  font-family: var(--mono);
+  font-size: 12px;
+  line-height: 1.6;
+  color: var(--wt-ink);
+  white-space: pre-wrap;
+  word-break: break-word;
+  max-height: 320px;
+  overflow: auto;
+}
+
 /* verdict */
 .wt-verdict {
   display: flex;
