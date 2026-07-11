@@ -1,0 +1,572 @@
+{
+ "runId": "c462ed87-d479-4f5e-a397-421e4d4e421a",
+ "recordedAt": "2026-05-26T16:20:18.836Z",
+ "prompt": "I'd like to order the Pegasus 41 shoes and the Novablast 4 shoes. Use coupon SAVE10 for the discount. Ship express please. Name: Alex Morgan, email: alex.morgan@example.com.",
+ "planner": {
+  "model": "accounts/fireworks/routers/kimi-k2p6-turbo",
+  "phase": "plan_decomposition",
+  "durationMs": 3178,
+  "usage": {
+   "prompt_tokens": 2342,
+   "completion_tokens": 502,
+   "total_tokens": 2844
+  }
+ },
+ "plan": {
+  "difficulty": "complex",
+  "nodeCount": 7,
+  "edges": [
+   {
+    "from": "6f135c03-ac65-4b45-8fd3-56533e88c1e1",
+    "to": "5bb148d2-ab08-4925-8876-a8db2d285c96",
+    "reason": "Planner or repair dependency requires predecessor completion."
+   },
+   {
+    "from": "5bb148d2-ab08-4925-8876-a8db2d285c96",
+    "to": "7b08df27-a404-465f-bc95-55a78445b746",
+    "reason": "Planner or repair dependency requires predecessor completion."
+   },
+   {
+    "from": "7b08df27-a404-465f-bc95-55a78445b746",
+    "to": "11344189-3743-4c2c-aeeb-95a5c8e798b7",
+    "reason": "Planner or repair dependency requires predecessor completion."
+   },
+   {
+    "from": "11344189-3743-4c2c-aeeb-95a5c8e798b7",
+    "to": "1c0c72b2-2180-4acd-af09-dea9dda90cae",
+    "reason": "Planner or repair dependency requires predecessor completion."
+   },
+   {
+    "from": "1c0c72b2-2180-4acd-af09-dea9dda90cae",
+    "to": "37102b73-d42e-4dc5-8c04-c83d977b2cd8",
+    "reason": "Planner or repair dependency requires predecessor completion."
+   },
+   {
+    "from": "37102b73-d42e-4dc5-8c04-c83d977b2cd8",
+    "to": "e0c22331-6206-4e0d-8b9b-520d643a99ac",
+    "reason": "Planner or repair dependency requires predecessor completion."
+   }
+  ]
+ },
+ "nodes": [
+  {
+   "nodeId": "6f135c03-ac65-4b45-8fd3-56533e88c1e1",
+   "shortId": "6f135c03",
+   "index": 0,
+   "dependencies": [],
+   "skill": {
+    "id": "cart-modify-checkout",
+    "reason": "Task modifies an in-progress shopping or checkout state before completion."
+   },
+   "objective": "Add Pegasus 41 shoes to cart from the Performance Running catalog",
+   "successCriteria": "Cart shows Pegasus 41, cart counter displays 1+",
+   "started": [
+    {
+     "ts": "2026-05-26T16:20:22.031Z",
+     "retries": 0
+    }
+   ],
+   "verifications": [
+    {
+     "ts": "2026-05-26T16:20:53.977Z",
+     "decision": "accept",
+     "confidence": 0.95,
+     "reason": "Accepted deterministic completion envelope (workflow_confirmation): Workflow confirmation contract is satisfied by matching create confirmation evidence."
+    }
+   ],
+   "outcome": "completed",
+   "durationMs": 31947,
+   "summary": "Successfully added Pegasus 41 shoes to cart from the Performance Running catalog. The cart now shows **Air Zoom Pegasus 41** (Size 10 | black, $149.00) with quantity 1, and the cart counter displays **Cart: 1**.",
+   "allOutcomes": [
+    "completed"
+   ],
+   "session": {
+    "sessionId": "c7eb3f62-d48e-4af7-9322-42cfe4b86621",
+    "outcome": "completed",
+    "turnCount": 4,
+    "totalToolCalls": 3,
+    "models": [
+     "accounts/fireworks/routers/kimi-k2p6-turbo"
+    ],
+    "usage": {
+     "promptTokens": 58379,
+     "completionTokens": 817,
+     "cachedTokens": 10752
+    },
+    "sampleToolCalls": [
+     {
+      "turn": 1,
+      "tool": "dismiss_overlays",
+      "args": {},
+      "success": true,
+      "result": "No overlays found. Warning: overlay [167] still covers 20% of viewport. Use hide_element to remove it.",
+      "durationMs": 20
+     },
+     {
+      "turn": 2,
+      "tool": "click_element",
+      "args": {
+       "id": 58
+      },
+      "success": true,
+      "result": "Clicked [58] button \"Add Air Zoom Pegasus 41 to cart\"",
+      "durationMs": 14
+     },
+     {
+      "turn": 3,
+      "tool": "read_page",
+      "args": {},
+      "success": true,
+      "result": "Page: Northstar Outfitters - Performance Running\nURL: http://127.0.0.1:54380/shop\nScroll: 279/414\n\nInteractive elements:\n  [168] <input name=\"shipping-method\" …",
+      "durationMs": 137
+     }
+    ]
+   }
+  },
+  {
+   "nodeId": "5bb148d2-ab08-4925-8876-a8db2d285c96",
+   "shortId": "5bb148d2",
+   "index": 1,
+   "dependencies": [
+    "6f135c03-ac65-4b45-8fd3-56533e88c1e1"
+   ],
+   "skill": {
+    "id": "cart-modify-checkout",
+    "reason": "Task modifies an in-progress shopping or checkout state before completion."
+   },
+   "objective": "Add Novablast 4 shoes to cart from the Performance Running catalog",
+   "successCriteria": "Cart shows Novablast 4, cart counter displays 2+",
+   "started": [
+    {
+     "ts": "2026-05-26T16:20:53.985Z",
+     "retries": 0
+    }
+   ],
+   "verifications": [
+    {
+     "ts": "2026-05-26T16:21:39.890Z",
+     "decision": "accept",
+     "confidence": 0.95,
+     "reason": "Accepted deterministic completion envelope (workflow_confirmation): Workflow confirmation contract is satisfied by matching create confirmation evidence."
+    }
+   ],
+   "outcome": "completed",
+   "durationMs": 45906,
+   "summary": "Successfully added Novablast 4 shoes to cart from the Performance Running catalog. The cart now shows **Novablast 4** (Size 10 | black, $140.00) alongside the previously added **Air Zoom Pegasus 41** (Size 10 | black, $149.00). The cart counter displays **Cart: 2**, and the subtotal is $289.00.",
+   "allOutcomes": [
+    "completed"
+   ],
+   "session": {
+    "sessionId": "7a412d16-708b-4b95-96f2-a8b9f9f1fa3c",
+    "outcome": "completed",
+    "turnCount": 6,
+    "totalToolCalls": 4,
+    "models": [
+     "accounts/fireworks/routers/kimi-k2p6-turbo"
+    ],
+    "usage": {
+     "promptTokens": 77244,
+     "completionTokens": 512,
+     "cachedTokens": 20992
+    },
+    "sampleToolCalls": [
+     {
+      "turn": 1,
+      "tool": "click_element",
+      "args": {
+       "id": 175
+      },
+      "success": true,
+      "result": "Clicked [175] button \"Open Cart\"",
+      "durationMs": 15
+     },
+     {
+      "turn": 3,
+      "tool": "scroll_page",
+      "args": {
+       "direction": "down",
+       "amount": 800
+      },
+      "success": true,
+      "result": "Scrolled down by 800px. New position: 644/644",
+      "durationMs": 8
+     },
+     {
+      "turn": 5,
+      "tool": "click_element",
+      "args": {
+       "id": 60
+      },
+      "success": true,
+      "result": "Clicked [60] button \"Add Novablast 4 to cart\"",
+      "durationMs": 12
+     }
+    ]
+   }
+  },
+  {
+   "nodeId": "7b08df27-a404-465f-bc95-55a78445b746",
+   "shortId": "7b08df27",
+   "index": 2,
+   "dependencies": [
+    "5bb148d2-ab08-4925-8876-a8db2d285c96"
+   ],
+   "skill": {
+    "id": "cart-modify-checkout",
+    "reason": "Task modifies an in-progress shopping or checkout state before completion."
+   },
+   "objective": "Open cart and proceed to checkout",
+   "successCriteria": "Checkout page loads with shipping and contact form visible",
+   "started": [
+    {
+     "ts": "2026-05-26T16:21:39.909Z",
+     "retries": 0
+    }
+   ],
+   "verifications": [
+    {
+     "ts": "2026-05-26T16:21:51.103Z",
+     "decision": "accept",
+     "confidence": 0.95,
+     "reason": "Accepted deterministic completion envelope (workflow_confirmation): Workflow confirmation contract is satisfied by matching submit confirmation evidence."
+    }
+   ],
+   "outcome": "completed",
+   "durationMs": 11196,
+   "summary": "Cart is open and checkout form is visible. The cart overlay shows both requested items (Air Zoom Pegasus 41 at $149.00 and Novablast 4 at $140.00), shipping method selection (Standard/Express), promo code input, and contact fields (Full name, Email address). The checkout page/state is ready for the ",
+   "allOutcomes": [
+    "completed"
+   ],
+   "session": {
+    "sessionId": "fe0a91ed-9927-454c-9758-254c32c56714",
+    "outcome": "completed",
+    "turnCount": 1,
+    "totalToolCalls": 0,
+    "models": [
+     "accounts/fireworks/routers/kimi-k2p6-turbo"
+    ],
+    "usage": {
+     "promptTokens": 11422,
+     "completionTokens": 967,
+     "cachedTokens": 4096
+    },
+    "sampleToolCalls": []
+   }
+  },
+  {
+   "nodeId": "11344189-3743-4c2c-aeeb-95a5c8e798b7",
+   "shortId": "11344189",
+   "index": 3,
+   "dependencies": [
+    "7b08df27-a404-465f-bc95-55a78445b746"
+   ],
+   "skill": {
+    "id": "cart-modify-checkout",
+    "reason": "Task modifies an in-progress shopping or checkout state before completion."
+   },
+   "objective": "Enter contact information: Alex Morgan, alex.morgan@example.com",
+   "successCriteria": "Name field shows Alex Morgan, email field shows alex.morgan@example.com",
+   "started": [
+    {
+     "ts": "2026-05-26T16:21:51.111Z",
+     "retries": 0
+    }
+   ],
+   "verifications": [
+    {
+     "ts": "2026-05-26T16:22:18.266Z",
+     "decision": "accept",
+     "confidence": 0.95,
+     "reason": "Accepted deterministic completion envelope (form_fill): Form-fill contract and confirmation evidence are satisfied."
+    }
+   ],
+   "outcome": "completed",
+   "durationMs": 27156,
+   "summary": "Contact information entered successfully. The Full name field shows **Alex Morgan** and the Email address field shows **alex.morgan@example.com**. The promo code field also contains **SAVE10** as required by the form-fill contract.",
+   "allOutcomes": [
+    "completed"
+   ],
+   "session": {
+    "sessionId": "695f4380-6d1f-4918-be55-93ddccd21242",
+    "outcome": "completed",
+    "turnCount": 5,
+    "totalToolCalls": 5,
+    "models": [
+     "accounts/fireworks/routers/kimi-k2p6-turbo"
+    ],
+    "usage": {
+     "promptTokens": 62707,
+     "completionTokens": 908,
+     "cachedTokens": 18432
+    },
+    "sampleToolCalls": [
+     {
+      "turn": 1,
+      "tool": "type_text",
+      "args": {
+       "id": 173,
+       "text": "Alex Morgan"
+      },
+      "success": true,
+      "result": "Typed \"Alex Morgan\" into [173] <input> \"Alex Morgan\"",
+      "durationMs": 28
+     },
+     {
+      "turn": 1,
+      "tool": "type_text",
+      "args": {
+       "id": 174,
+       "text": "alex.morgan@example.com"
+      },
+      "success": true,
+      "result": "Typed \"alex.morgan@example.com\" into [174] <input> \"alex.morgan@example.com\"",
+      "durationMs": 33
+     },
+     {
+      "turn": 2,
+      "tool": "read_element",
+      "args": {
+       "id": 174,
+       "attribute": "value"
+      },
+      "success": true,
+      "result": "[174] <input> \"alex.morgan@example.com\" value=\"alex.morgan@example.com\"",
+      "durationMs": 31
+     },
+     {
+      "turn": 4,
+      "tool": "type_text",
+      "args": {
+       "id": 172,
+       "text": "SAVE10"
+      },
+      "success": true,
+      "result": "Typed \"SAVE10\" into [172] <input> \"SAVE10\"",
+      "durationMs": 22
+     }
+    ]
+   }
+  },
+  {
+   "nodeId": "1c0c72b2-2180-4acd-af09-dea9dda90cae",
+   "shortId": "1c0c72b2",
+   "index": 4,
+   "dependencies": [
+    "11344189-3743-4c2c-aeeb-95a5c8e798b7"
+   ],
+   "skill": {
+    "id": "cart-modify-checkout",
+    "reason": "Task modifies an in-progress shopping or checkout state before completion."
+   },
+   "objective": "Apply coupon code SAVE10 in the promo/discount input",
+   "successCriteria": "Coupon SAVE10 applied, discount line visible in order summary",
+   "started": [
+    {
+     "ts": "2026-05-26T16:22:18.275Z",
+     "retries": 0
+    }
+   ],
+   "verifications": [
+    {
+     "ts": "2026-05-26T16:22:31.482Z",
+     "decision": "accept",
+     "confidence": 0.95,
+     "reason": "Accepted deterministic completion envelope (form_fill): Form-fill contract and confirmation evidence are satisfied."
+    }
+   ],
+   "outcome": "completed",
+   "durationMs": 13208,
+   "summary": "Coupon SAVE10 applied successfully. The promo code input contained SAVE10, and after clicking the Apply button, the order summary now shows: - Coupon status: SAVE10 applied successfully - Coupon applied: 10% off - Discount: -$28.90 - Total updated to $260.10 (down from $289.00 subtotal)",
+   "allOutcomes": [
+    "completed"
+   ],
+   "session": {
+    "sessionId": "5b11fb4f-cff9-4ef9-958a-471f853f2708",
+    "outcome": "completed",
+    "turnCount": 2,
+    "totalToolCalls": 1,
+    "models": [
+     "accounts/fireworks/routers/kimi-k2p6-turbo"
+    ],
+    "usage": {
+     "promptTokens": 23435,
+     "completionTokens": 461,
+     "cachedTokens": 9216
+    },
+    "sampleToolCalls": [
+     {
+      "turn": 1,
+      "tool": "click_element",
+      "args": {
+       "id": 179
+      },
+      "success": true,
+      "result": "Clicked [179] button \"Apply\"",
+      "durationMs": 12
+     }
+    ]
+   }
+  },
+  {
+   "nodeId": "37102b73-d42e-4dc5-8c04-c83d977b2cd8",
+   "shortId": "37102b73",
+   "index": 5,
+   "dependencies": [
+    "1c0c72b2-2180-4acd-af09-dea9dda90cae"
+   ],
+   "skill": {
+    "id": "structured-form-fill",
+    "reason": "Current step configures product options and must verify the derived total or summary before completion."
+   },
+   "objective": "Select express shipping option",
+   "successCriteria": "Express shipping selected, shipping method shows express",
+   "started": [
+    {
+     "ts": "2026-05-26T16:22:31.491Z",
+     "retries": 0
+    }
+   ],
+   "verifications": [
+    {
+     "ts": "2026-05-26T16:22:45.662Z",
+     "decision": "accept",
+     "confidence": 0.85,
+     "reason": "Output indicates success with structured evidence support."
+    }
+   ],
+   "outcome": "completed",
+   "durationMs": 14172,
+   "summary": "Express shipping option has been successfully selected. The radio button [169] \"Express ($15)\" is now checked, and the label [171] shows the selected state with a blue highlight. The page displays \"Shipping selected: Express ($15)\" and the order summary reflects the $15.00 shipping cost with a total",
+   "allOutcomes": [
+    "completed"
+   ],
+   "session": {
+    "sessionId": "fc4bd67f-2df1-44cd-8255-9486a17c8d45",
+    "outcome": "completed",
+    "turnCount": 4,
+    "totalToolCalls": 2,
+    "models": [
+     "accounts/fireworks/routers/kimi-k2p6-turbo"
+    ],
+    "usage": {
+     "promptTokens": 65707,
+     "completionTokens": 673,
+     "cachedTokens": 11008
+    },
+    "sampleToolCalls": [
+     {
+      "turn": 1,
+      "tool": "click_element",
+      "args": {
+       "id": 169
+      },
+      "success": true,
+      "result": "Clicked [169] input \"express\"",
+      "durationMs": 7
+     },
+     {
+      "turn": 2,
+      "tool": "read_page",
+      "args": {},
+      "success": true,
+      "result": "Page: Northstar Outfitters - Performance Running\nURL: http://127.0.0.1:54380/shop\nScroll: 456/545\n\nInteractive elements:\n  [168] <input name=\"shipping-method\" …",
+      "durationMs": 105
+     }
+    ]
+   }
+  },
+  {
+   "nodeId": "e0c22331-6206-4e0d-8b9b-520d643a99ac",
+   "shortId": "e0c22331",
+   "index": 6,
+   "dependencies": [
+    "37102b73-d42e-4dc5-8c04-c83d977b2cd8"
+   ],
+   "skill": {
+    "id": "transactional-act-check-act",
+    "reason": "Current step requires an action followed by explicit intermediate verification."
+   },
+   "objective": "Complete checkout and confirm order",
+   "successCriteria": "Order confirmation page with order ID visible",
+   "started": [
+    {
+     "ts": "2026-05-26T16:22:45.703Z",
+     "retries": 0
+    }
+   ],
+   "verifications": [
+    {
+     "ts": "2026-05-26T16:23:09.106Z",
+     "decision": "accept",
+     "confidence": 0.95,
+     "reason": "Accepted deterministic completion envelope (workflow_confirmation): Workflow confirmation contract is satisfied by matching submit confirmation evidence."
+    }
+   ],
+   "outcome": "completed",
+   "durationMs": 23403,
+   "summary": "Order successfully completed and confirmed! **Order Confirmation Details:** - **Order ID:** NS-01001 - **Confirmation email sent to:** alex.morgan@example.com **Items Ordered:** - Air Zoom Pegasus 41 (10/black) ×1 — $149.00 - Novablast 4 (10/black) ×1 — $140.00 **Order Summary:** - Subtotal: $289.00",
+   "allOutcomes": [
+    "completed"
+   ],
+   "session": {
+    "sessionId": "5b527b13-b0c8-4e94-a13e-6d35c07cf3c6",
+    "outcome": "completed",
+    "turnCount": 4,
+    "totalToolCalls": 2,
+    "models": [
+     "accounts/fireworks/routers/kimi-k2p6-turbo"
+    ],
+    "usage": {
+     "promptTokens": 47272,
+     "completionTokens": 980,
+     "cachedTokens": 4608
+    },
+    "sampleToolCalls": [
+     {
+      "turn": 1,
+      "tool": "click_element",
+      "args": {
+       "id": 180
+      },
+      "success": true,
+      "result": "Clicked [180] button \"Processing...\"",
+      "durationMs": 9
+     },
+     {
+      "turn": 3,
+      "tool": "read_page",
+      "args": {},
+      "success": true,
+      "result": "Page: Northstar Outfitters - Performance Running\nURL: http://127.0.0.1:54380/shop\nScroll: 0/0\n\nInteractive elements:\n  [5] <a href=\"/summarize\" text-color=\"rgb…",
+      "durationMs": 39
+     }
+    ]
+   }
+  }
+ ],
+ "executorModels": [
+  "accounts/fireworks/routers/kimi-k2p6-turbo"
+ ],
+ "taskCompleted": {
+  "ts": "2026-05-26T16:23:09.115Z",
+  "data": {
+   "taskId": "46fbc3ef-1f05-45dd-8577-4392221b5de4",
+   "completionStatus": "completed",
+   "completed": 7,
+   "failed": 0,
+   "skipped": 0,
+   "totalDurationMs": 167087,
+   "totalTokens": 454725,
+   "totalCostUsd": 0.44607361,
+   "terminationReason": null
+  }
+ },
+ "finalEventType": "task_completed",
+ "totals": {
+  "turns": 26,
+  "toolCalls": 17,
+  "promptTokens": 346166,
+  "completionTokens": 5318,
+  "wallClockMs": 170279
+ }
+}
