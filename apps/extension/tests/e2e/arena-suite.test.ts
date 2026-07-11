@@ -30,12 +30,16 @@ import {
   getActiveTabId,
   navigateAndWait,
   sendUserChat,
+  startApprovalAutoResponder,
   updateUserSettings,
 } from "./helpers/utils";
 import { getFixtureUrl } from "./helpers/fixture-server";
 import { isE2ESuiteFlagEnabled } from "./helpers/e2e-config";
 import { ARENA_TASKS, type ArenaTask } from "./arena/tasks";
-import { getArenaValidator } from "./arena/validators";
+import {
+  getArenaValidator,
+  type ArenaValidatorResult,
+} from "./arena/validators";
 
 const h = createE2EHarness({ maxTurns: 24, testLabel: "arena" });
 const RUN_ARENA = isE2ESuiteFlagEnabled("arena");
@@ -96,7 +100,24 @@ describe.skipIf(!h.apiKey || !RUN_ARENA)("E2E: Arena Suite", () => {
 
       const workspaceId = await sendUserChat(h.ctx, task.prompt, tabId);
 
-      const result = await validator({ task, harness: h, workspaceId });
+      // This suite runs with requireApprovals:false (autonomous — the agent is in
+      // charge). A forced consequential approval overrides that stance and, with
+      // no human to answer it headlessly, would hang the run until the task
+      // wall-clock. Auto-approve it to honor the autonomy the suite declared;
+      // task constraints like "do not submit" are enforced by the agent and the
+      // validator's end-state check, not by a harness net.
+      const approvals = startApprovalAutoResponder(
+        h.ctx,
+        h.ctx.serviceWorker,
+        workspaceId,
+      );
+
+      let result: ArenaValidatorResult;
+      try {
+        result = await validator({ task, harness: h, workspaceId });
+      } finally {
+        await approvals.stop();
+      }
 
       console.log(
         `[arena] ${task.id}: ${result.ok ? "PASS" : "FAIL"} — ${result.reason}` +

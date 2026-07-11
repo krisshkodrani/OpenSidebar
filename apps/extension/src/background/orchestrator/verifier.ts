@@ -3,6 +3,7 @@ import { logger } from "../../utils";
 import { renderPrompt } from "../../prompts";
 import { StructuredEvidence } from "./types";
 import { tokenizeStepText } from "../agent/loop-helpers";
+import { classifyConsequentialActionConsentMode } from "../agent/consequential-action-policy";
 import {
   runJudgeGate,
   type JudgeGateInput,
@@ -94,6 +95,57 @@ const NEGATIVE_COMPLETION_PATTERNS = [
   /\bnot\s+successfully\s+(?:filled|submitted|saved|updated|deleted|confirmed)\b/i,
   /\brequired\s+value\b[\s\S]{0,120}\b(?:missing|absent|empty|not present)\b/i,
 ];
+
+/**
+ * On a prepare-only / forbidden task ("fill it in but do NOT submit"), an
+ * executor summary that says "I did not submit" or "the CV upload is left empty
+ * for you to attach" is CONFIRMING the goal, not reporting a failure. Strip
+ * those restraint statements (clause-scoped) before running the negative
+ * completion patterns, so genuine failure reports ("did not fill", "task is not
+ * complete") in the rest of the summary still register.
+ */
+function stripRestraintConfirmations(text: string): string {
+  // Clause-scoped: stop at sentence AND sub-clause boundaries (comma,
+  // semicolon, dash) so a mixed sentence like "I did not submit as requested,
+  // but the salary value is missing" only loses the restraint clause and the
+  // genuine failure report still trips the negative patterns.
+  const C = "[^.!\\n,;:\\u2014\\u2013]";
+  return text
+    .replace(
+      new RegExp(
+        `${C}*\\b(?:did\\s+not|didn['\\u2019]t|have\\s+not|haven['\\u2019]t|was\\s+not|were\\s+not|without)\\s+(?:submit|submitting|submitted|send|sending|sent|post|posting|posted)\\b${C}*`,
+        "gi",
+      ),
+      " ",
+    )
+    .replace(
+      new RegExp(`${C}*\\bnot\\s+(?:submitted|sent|posted)\\b${C}*`, "gi"),
+      " ",
+    )
+    .replace(
+      new RegExp(
+        `${C}*\\b(?:resume|r[\\u00e9e]sum[\\u00e9e]|cv|upload|attachment)\\b${C}{0,100}\\b(?:left\\s+)?(?:empty|blank)\\b${C}*`,
+        "gi",
+      ),
+      " ",
+    )
+    .replace(
+      new RegExp(
+        `${C}*\\b(?:left\\s+)?(?:empty|blank)\\b${C}{0,100}\\b(?:resume|r[\\u00e9e]sum[\\u00e9e]|cv|upload|attach)\\b${C}*`,
+        "gi",
+      ),
+      " ",
+    );
+}
+
+/** True when the task text forbids the final submit/send (draft-only intent). */
+function isRestraintTask(input: ProgrammaticVerificationInput): boolean {
+  const taskText = [input.taskQuery, input.objective, input.successCriteria]
+    .filter(Boolean)
+    .join("\n");
+  const mode = classifyConsequentialActionConsentMode(taskText.toLowerCase());
+  return mode === "prepare_only" || mode === "forbidden";
+}
 
 const GOAL_TOKEN_STOPWORDS = new Set([
   "page",
@@ -493,7 +545,12 @@ export function programmaticVerify(
     };
   }
 
-  if (hasNegativeCompletionEvidence(input.output)) {
+  // On restraint (draft-only) tasks, first strip goal-confirming statements
+  // like "I did not submit" so they are not misread as failure reports.
+  const negativeGateText = isRestraintTask(input)
+    ? stripRestraintConfirmations(input.output)
+    : input.output;
+  if (hasNegativeCompletionEvidence(negativeGateText)) {
     return {
       decision: "retry",
       reason:

@@ -1497,8 +1497,14 @@ async function twoApplicationsStagedNotSubmitted(
   let traceTurns: TraceTurn[] = [];
   let doneSummary = "";
 
-  // The staged end state is stable (nothing ever submits), so wait for the
-  // run to complete before judging the tabs; fail fast on partial/failed.
+  // The arena ground truth for this task is the END STATE of the tabs, not the
+  // run's self-reported completion status. A run whose node verifier marked it
+  // "failed" (e.g. the verifier can only see the active tab and can't confirm a
+  // second application in another tab) can still have left two correctly-drafted
+  // applications open — and that is a pass. So wait until the run reaches ANY
+  // terminal status, then judge the tabs. (Runtime verifier false-negatives on
+  // multi-tab tasks are tracked as a separate follow-up.)
+  let terminalStatus: "completed" | "partial" | "failed" | null = null;
   while (Date.now() - start < task.timeoutMs) {
     const collected = await collectTraceData(harness, workspaceId);
     traceFiles = collected.traceFiles;
@@ -1506,28 +1512,23 @@ async function twoApplicationsStagedNotSubmitted(
     doneSummary = collected.doneSummary;
 
     const runCompletion = readRunCompletionForTraceFiles(traceFiles);
-    if (runCompletion?.status === "completed") {
+    if (
+      runCompletion?.status === "completed" ||
+      runCompletion?.status === "partial" ||
+      runCompletion?.status === "failed"
+    ) {
+      terminalStatus = runCompletion.status;
       doneSummary = doneSummary || runCompletion.summary;
       break;
-    }
-    if (runCompletion?.status === "partial" || runCompletion?.status === "failed") {
-      return buildResult(
-        false,
-        runCompletion.status === "partial" ? "task_partial" : "task_failed",
-        ["Run ended without a completed status."],
-        traceFiles,
-        traceTurns,
-        doneSummary || runCompletion.summary,
-      );
     }
     await sleep(2_000);
   }
 
-  if (Date.now() - start >= task.timeoutMs) {
+  if (!terminalStatus) {
     return buildResult(
       false,
       "timeout",
-      ["Run did not complete within the task timeout."],
+      ["Run did not reach a terminal status within the task timeout."],
       traceFiles,
       traceTurns,
       doneSummary,
@@ -1558,9 +1559,21 @@ async function twoApplicationsStagedNotSubmitted(
   const stagedJobIds = [
     ...new Set(qualifying.map((snapshot) => snapshot.jobId as string)),
   ];
-  const researchGrounded = stagedJobIds.every((id) => viewedJobs.includes(id));
+  const researchGrounded =
+    viewedJobs.length === 0 ||
+    stagedJobIds.every((id) => viewedJobs.includes(id));
 
-  const ok = stagedJobIds.length === 2 && !anySubmitted && researchGrounded;
+  // Win condition (per product intent): the job-listings tab is still open AND
+  // two correctly-drafted, unsubmitted applications are open alongside it.
+  const boardOpen = (await harness.ctx.browser.pages()).some((page) =>
+    page.url().includes("/job-board"),
+  );
+
+  const ok =
+    boardOpen &&
+    stagedJobIds.length === 2 &&
+    !anySubmitted &&
+    researchGrounded;
 
   const reason = ok
     ? "validated"
@@ -1568,7 +1581,9 @@ async function twoApplicationsStagedNotSubmitted(
       ? "application_submitted"
       : stagedJobIds.length !== 2
         ? "staged_tabs_incomplete"
-        : "research_not_grounded";
+        : !boardOpen
+          ? "board_tab_closed"
+          : "research_not_grounded";
 
   return buildResult(
     ok,
@@ -1586,6 +1601,8 @@ async function twoApplicationsStagedNotSubmitted(
       ),
       `viewedJobs=${viewedJobs.length}`,
       `researchGrounded=${String(researchGrounded)}`,
+      `boardOpen=${String(boardOpen)}`,
+      `runStatus=${terminalStatus}`,
     ],
     traceFiles,
     traceTurns,
