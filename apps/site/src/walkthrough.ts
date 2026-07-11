@@ -3,7 +3,7 @@ import "./walkthrough.css";
 import RAW from "./walkthrough-data.json";
 
 /**
- * Interactive replay of three real recorded orchestrator runs. Every
+ * Interactive replay of four real recorded orchestrator runs. Every
  * objective, tool call, model id, token count, and verdict is read verbatim
  * from the embedded trace extracts — the only curated strings are the tab
  * labels, headlines, and short step titles below.
@@ -67,12 +67,18 @@ type RunData = {
 type RunMeta = {
   key: string;
   tab: string;
+  tabNote?: string;
+  /** "chain" (default): one step per plan node. "workflow": the planner matched
+   *  a trusted workflow instead of decomposing — one step per recorded form
+   *  operation of the single node. */
+  mode?: "workflow";
   headline: string;
   lede: string;
   planNote: string;
   finaleTitle: string;
   finaleLede: string;
   shortTitles: string[];
+  actionNotes?: string[];
 };
 
 const RUN_META: Record<string, RunMeta> = {
@@ -142,6 +148,40 @@ const RUN_META: Record<string, RunMeta> = {
   },
 };
 
+RUN_META.bde2ff19 = {
+  key: "servicenow",
+  tab: "ServiceNow incident",
+  tabNote: "trusted workflow",
+  mode: "workflow",
+  headline: "Some tasks don't decompose — they get recognized.",
+  lede: `An enterprise record request with nine explicit field values, recorded
+    July 7, 2026 against a public ServiceNow developer instance. Instead of
+    planning subtasks, the planner matched it to a trusted workflow with
+    guarded submits.`,
+  planNote: "",
+  finaleTitle: `Incident created — <span class="wt-orderid">INC0000038</span>`,
+  finaleLede: `The trusted form helper configured all nine fields, caught a
+    rejected first submit, reconciled the field state, and resubmitted — this
+    time the record left the form.`,
+  shortTitles: [
+    "Fill the incident form",
+    "First submit — rejected",
+    "Reconcile the field state",
+    "Submit — record created",
+  ],
+  actionNotes: [
+    `One call sets all nine fields; the helper echoes back every field it
+      wrote, by label and by internal name.`,
+    `The instance rejected the update, and the guard caught it: a submit only
+      counts if the form actually leaves for a record. It reports the mismatch
+      instead of declaring success.`,
+    `The helper re-applies and re-verifies the same field state before trying
+      again.`,
+    `This time the record leaves the form: INC0000038 is created and opened as
+      evidence.`,
+  ],
+};
+
 const runs = (RAW as { runs: unknown[] }).runs.map((r) => {
   const data = r as RunData;
   return { data, meta: RUN_META[data.runId.slice(0, 8)] };
@@ -167,26 +207,46 @@ type Step =
   | { kind: "intro"; spine: { kicker: string; title: string } }
   | { kind: "plan"; spine: { kicker: string; title: string } }
   | { kind: "node"; node: RunNode; i: number; spine: { kicker: string; title: string } }
+  | { kind: "action"; call: ToolCall; i: number; spine: { kicker: string; title: string } }
   | { kind: "finale"; spine: { kicker: string; title: string } };
 
 function buildSteps(data: RunData, meta: RunMeta): Step[] {
+  const middle: Step[] =
+    meta.mode === "workflow"
+      ? [
+          {
+            kind: "plan",
+            spine: { kicker: "planner", title: "Recognize a trusted workflow" },
+          },
+          ...(data.nodes[0].session?.sampleToolCalls ?? []).map(
+            (c, i): Step => ({
+              kind: "action",
+              call: c,
+              i,
+              spine: { kicker: "operation " + (i + 1), title: meta.shortTitles[i] ?? c.tool },
+            }),
+          ),
+        ]
+      : [
+          {
+            kind: "plan",
+            spine: { kicker: "planner", title: `Decompose into ${data.plan.nodeCount} subtasks` },
+          },
+          ...data.nodes.map(
+            (n, i): Step => ({
+              kind: "node",
+              node: n,
+              i,
+              spine: {
+                kicker: "subtask " + (i + 1),
+                title: meta.shortTitles[i] ?? clean(n.objective),
+              },
+            }),
+          ),
+        ];
   return [
     { kind: "intro", spine: { kicker: "prompt", title: "One request" } },
-    {
-      kind: "plan",
-      spine: { kicker: "planner", title: `Decompose into ${data.plan.nodeCount} subtasks` },
-    },
-    ...data.nodes.map(
-      (n, i): Step => ({
-        kind: "node",
-        node: n,
-        i,
-        spine: {
-          kicker: "subtask " + (i + 1),
-          title: meta.shortTitles[i] ?? clean(n.objective),
-        },
-      }),
-    ),
+    ...middle,
     { kind: "finale", spine: { kicker: "done", title: "Task complete" } },
   ];
 }
@@ -224,6 +284,53 @@ function renderIntro(data: RunData, meta: RunMeta): string {
         <h3>Checks the evidence</h3>
         <p>Accepts a subtask only when on-page evidence matches its success criteria.</p>
         <span class="wt-model">deterministic contract check</span>
+      </div>
+    </div>
+  </div>`;
+}
+
+function renderRecognize(data: RunData): string {
+  const p = data.planner!;
+  const skill = data.nodes[0].skill;
+  return `<div class="wt-step">
+    <p class="wt-eyebrow">Step 1 · workflow selection</p>
+    <h2>The planner recognizes a known workflow.</h2>
+    <div class="wt-card edge-planner">
+      <div class="wt-rolerow">
+        ${roleBadge("planner", "PLANNER")}
+        <span class="wt-model">${esc(p.model)}</span>
+        <span class="wt-meta">${secs(p.durationMs)} · ${num(p.usage.total_tokens)} tokens</span>
+      </div>
+      <p class="wt-lede" style="margin:0">In ${secs(p.durationMs)} the planner read the request and —
+      instead of decomposing it — matched it to the <strong>${esc(skill?.id ?? "")}</strong> skill.
+      Its recorded reason: <em>“${esc(clean(skill?.reason))}”</em></p>
+    </div>
+    <div class="wt-card">
+      <p class="wt-lede" style="margin:0">Trusted workflows run as deterministic procedures: every field
+      write is echoed back for checking, and a submit only counts as done if the record actually leaves
+      the form. The next ${data.nodes[0].session?.totalToolCalls ?? 0} steps are the recorded form
+      operations, verbatim.</p>
+    </div>
+  </div>`;
+}
+
+function renderAction(data: RunData, meta: RunMeta, step: Extract<Step, { kind: "action" }>): string {
+  const c = step.call;
+  const total = data.nodes[0].session?.sampleToolCalls.length ?? 0;
+  const note = meta.actionNotes?.[step.i];
+  return `<div class="wt-step">
+    <p class="wt-eyebrow">Step ${step.i + 2} · form operation ${step.i + 1} of ${total}</p>
+    <h2>${esc(meta.shortTitles[step.i] ?? c.tool)}</h2>
+    ${note ? `<p class="wt-criteria">${note}</p>` : ""}
+    <div class="wt-card edge-executor">
+      <div class="wt-rolerow">
+        ${roleBadge("executor", "EXECUTOR")}
+        <span class="wt-model">${esc(data.nodes[0].session?.models?.[0] ?? "")}</span>
+        <span class="wt-meta">${esc(c.tool)}</span>
+      </div>
+      <div class="wt-toolblock">
+        <div class="tb-args">${esc(c.tool)} ${esc(JSON.stringify(c.args).slice(0, 220))}</div>
+        <pre class="tb-result">${esc(c.result ?? (c.success ? "ok" : "failed"))}</pre>
       </div>
     </div>
   </div>`;
@@ -329,20 +436,43 @@ function renderFinale(data: RunData, meta: RunMeta, stepCount: number): string {
   const t = data.taskCompleted!.data;
   const mins = Math.floor(t.totalDurationMs / 60000);
   const rem = Math.round((t.totalDurationMs % 60000) / 1000);
+  const wf = meta.mode === "workflow";
+  const v = wf ? data.nodes[0].verifications[data.nodes[0].verifications.length - 1] : null;
+  const tiles: Array<[string, string]> = [
+    [`${t.completed}/${data.plan.nodeCount}`, wf ? "workflow verified" : "subtasks verified"],
+    [mins > 0 ? `${mins} m ${rem} s` : `${(t.totalDurationMs / 1000).toFixed(1)} s`, "wall-clock time"],
+    [String(data.totals.turns), "executor turns"],
+    [String(data.totals.toolCalls), wf ? "form operations" : "page actions"],
+  ];
+  // The trusted-workflow path bypasses per-turn LLM accounting — hide
+  // token/cost tiles rather than show a false zero.
+  if (t.totalTokens > 0) tiles.push([num(t.totalTokens), "tokens"]);
+  if (t.totalCostUsd > 0) tiles.push([`$${t.totalCostUsd.toFixed(2)}`, "total model cost"]);
   return `<div class="wt-step">
     <p class="wt-eyebrow">Step ${stepCount} · task complete</p>
     <div class="wt-card edge-good">
       <h2>${meta.finaleTitle}</h2>
-      <p class="wt-lede" style="margin:0">${meta.finaleLede} All ${t.completed} subtasks completed and
-      verified; ${t.failed} failed, ${t.skipped} skipped.</p>
+      <p class="wt-lede" style="margin:0">${meta.finaleLede} ${
+        wf ? "" : `All ${t.completed} subtasks completed and verified; ${t.failed} failed, ${t.skipped} skipped.`
+      }</p>
     </div>
+    ${
+      wf && v
+        ? `<div class="wt-card edge-verifier">
+      <div class="wt-rolerow">
+        ${roleBadge("verifier", "VERIFIER")}
+        <span class="wt-model">deterministic contract check</span>
+      </div>
+      <div class="wt-verdict">
+        <span class="wt-chip">${esc(v.decision ?? "accept")}</span>
+        <span class="wt-conf">confidence ${(v.confidence ?? 0).toFixed(2)}</span>
+      </div>
+      ${v.reason ? `<p class="wt-vreason">${esc(clean(v.reason))}</p>` : ""}
+    </div>`
+        : ""
+    }
     <div class="wt-tiles">
-      <div class="wt-tile"><div class="v">${t.completed}/${data.plan.nodeCount}</div><div class="k">subtasks verified</div></div>
-      <div class="wt-tile"><div class="v">${mins} m ${rem} s</div><div class="k">wall-clock time</div></div>
-      <div class="wt-tile"><div class="v">${data.totals.turns}</div><div class="k">executor turns</div></div>
-      <div class="wt-tile"><div class="v">${data.totals.toolCalls}</div><div class="k">page actions</div></div>
-      <div class="wt-tile"><div class="v">${num(t.totalTokens)}</div><div class="k">tokens</div></div>
-      <div class="wt-tile"><div class="v">$${t.totalCostUsd.toFixed(2)}</div><div class="k">total model cost</div></div>
+      ${tiles.map(([val, k]) => `<div class="wt-tile"><div class="v">${val}</div><div class="k">${k}</div></div>`).join("")}
     </div>
     <div class="wt-card">
       <div class="wt-rolerow" style="margin:0 0 6px">${roleBadge("planner", "PLANNER")} <span class="wt-model">${esc(data.planner?.model ?? "")}</span></div>
@@ -383,7 +513,7 @@ function renderTabs(): void {
     .map(
       (r, i) => `<button class="wt-runtab ${i === runIdx ? "active" : ""}" data-r="${i}"
         role="tab" aria-selected="${i === runIdx}">
-        ${esc(r.meta.tab)} <span class="n">${r.data.plan.nodeCount} subtasks</span>
+        ${esc(r.meta.tab)} <span class="n">${esc(r.meta.tabNote ?? r.data.plan.nodeCount + " subtasks")}</span>
       </button>`,
     )
     .join("");
@@ -417,10 +547,14 @@ function render(): void {
     s.kind === "intro"
       ? renderIntro(data, meta)
       : s.kind === "plan"
-        ? renderPlan(data, meta)
+        ? meta.mode === "workflow"
+          ? renderRecognize(data)
+          : renderPlan(data, meta)
         : s.kind === "node"
           ? renderNode(data, s)
-          : renderFinale(data, meta, steps.length);
+          : s.kind === "action"
+            ? renderAction(data, meta, s)
+            : renderFinale(data, meta, steps.length);
   renderTabs();
   renderSpine();
   prevBtn.disabled = state.cur === 0;
