@@ -18,9 +18,21 @@ describe("RuntimeMessagingPort fake", () => {
     port.deliver({ type: "TASK_COMPLETION" }, { tabId: 7 });
     unsubscribe();
     port.deliver({ type: "AFTER_UNSUB" });
+    port.broadcast({ type: "AFTER_UNSUB_BROADCAST" });
 
-    expect(port.broadcasts).toEqual([{ type: "PING" }]);
-    expect(seen).toEqual([{ message: { type: "TASK_COMPLETION" }, tabId: 7 }]);
+    expect(port.broadcasts).toEqual([
+      { type: "PING" },
+      { type: "AFTER_UNSUB_BROADCAST" },
+    ]);
+    // A broadcast reaches this port's own subscribers (no sender tabId — it
+    // originated here), as well as being recorded. That is the
+    // RuntimeMessagingPort contract: chrome.runtime.sendMessage skips the
+    // sending context, so a port that only forwarded to chrome would strip
+    // every message from same-context subscribers.
+    expect(seen).toEqual([
+      { message: { type: "PING" }, tabId: undefined },
+      { message: { type: "TASK_COMPLETION" }, tabId: 7 },
+    ]);
   });
 
   test("request resolves through the responder", async () => {
