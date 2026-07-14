@@ -101,13 +101,22 @@ export interface PersistencePort {
 // --- Runtime messaging (RFC LP-15, Phase 4a) ---
 
 export interface RuntimeMessagingPort {
-  /** Fire-and-forget broadcast to all extension contexts. */
+  /**
+   * Fire-and-forget broadcast to all extension contexts.
+   *
+   * Contract: this MUST also deliver to listeners registered via this port's own
+   * `onMessage`. `chrome.runtime.sendMessage` skips the sending context, so a
+   * port that only forwards to chrome silently strips every message from
+   * same-context subscribers — which is precisely how the browser bridge's
+   * completion path was dead while its tests were green.
+   */
   broadcast(message: unknown): void;
   /** Send a message and await a response. */
   request<TResponse = unknown>(message: unknown): Promise<TResponse>;
   /**
-   * Subscribe to inbound messages. The listener may return a value (or a
-   * promise) to respond. Returns an unsubscribe function.
+   * Subscribe to messages — inbound from other contexts, and those this context
+   * broadcasts itself. The listener may return a value (or a promise) to respond
+   * (cross-context only). Returns an unsubscribe function.
    */
   onMessage(
     listener: (

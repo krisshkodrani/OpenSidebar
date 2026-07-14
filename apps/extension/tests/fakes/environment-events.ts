@@ -31,7 +31,7 @@ function emitter<T>() {
 export interface FakeRuntimeMessagingPort extends RuntimeMessagingPort {
   /** Messages passed to broadcast(), in order. */
   readonly broadcasts: unknown[];
-  /** Deliver an inbound message to onMessage subscribers. */
+  /** Deliver an inbound message (i.e. from another context) to subscribers. */
   deliver(message: unknown, sender?: { tabId?: number }): void;
 }
 
@@ -44,6 +44,10 @@ export function createFakeRuntimeMessagingPort(
     broadcasts,
     broadcast(message) {
       broadcasts.push(message);
+      // Honour the RuntimeMessagingPort contract: a broadcast reaches this
+      // port's own subscribers too. Keeping this in step with the chrome port
+      // is what stops a fake from certifying a path production can't run.
+      inbound.emit({ message, sender: {} });
     },
     async request(message) {
       return responder ? responder(message) : undefined;
