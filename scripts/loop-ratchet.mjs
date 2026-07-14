@@ -159,20 +159,31 @@ const METRIC_LABELS = {
   loopMethodLines: "loop() method length (lines)",
 };
 
+/**
+ * Line count of every swept file that is not metric-tracked, keyed by
+ * repo-relative path. The single measurement both `--report` and the check
+ * consume, so the numbers `--report` prints are always the numbers lint
+ * enforces.
+ */
+export function measureSweep(repo = repoRoot) {
+  const metricTracked = new Set(RATCHET_FILES.map(({ path }) => path));
+  const out = new Map();
+  for (const root of SWEEP_ROOTS) {
+    for (const rel of listSourceFiles(root)) {
+      if (metricTracked.has(rel)) continue;
+      out.set(rel, readFileSync(join(repo, rel), "utf8").split(/\r?\n/).length);
+    }
+  }
+  return out;
+}
+
 function main() {
   const report = process.argv.includes("--report");
 
   if (report) {
     const overCap = {};
-    const metricTracked = new Set(RATCHET_FILES.map(({ path }) => path));
-    for (const root of SWEEP_ROOTS) {
-      for (const rel of listSourceFiles(root)) {
-        if (metricTracked.has(rel)) continue;
-        const lines = readFileSync(join(repoRoot, rel), "utf8").split(
-          /\r?\n/,
-        ).length;
-        if (lines > FILE_LINES_CAP) overCap[rel] = lines;
-      }
+    for (const [rel, lines] of measureSweep()) {
+      if (lines > FILE_LINES_CAP) overCap[rel] = lines;
     }
     // eslint-disable-next-line no-console
     console.log(
@@ -187,33 +198,26 @@ function main() {
   const failures = [];
   const slack = [];
 
-  const metricTracked = new Set(RATCHET_FILES.map(({ path }) => path));
-  for (const root of SWEEP_ROOTS) {
-    for (const rel of listSourceFiles(root)) {
-      if (metricTracked.has(rel)) continue;
-      const lines = readFileSync(join(repoRoot, rel), "utf8").split(
-        /\r?\n/,
-      ).length;
-      const grandfathered = oversized[rel];
-      if (typeof grandfathered === "number") {
-        if (lines > grandfathered) {
-          failures.push(
-            `${rel} total lines grew: ${lines} > budget ${grandfathered}. ` +
-              `Extract code out; do not raise the budget.`,
-          );
-        } else if (lines < grandfathered) {
-          slack.push(
-            lines <= FILE_LINES_CAP
-              ? `${rel}: ${lines} — now under the ${FILE_LINES_CAP}-line cap; drop its "oversized" entry`
-              : `${rel} total lines: ${lines} (budget ${grandfathered} — tighten it)`,
-          );
-        }
-      } else if (lines > FILE_LINES_CAP) {
+  for (const [rel, lines] of measureSweep()) {
+    const grandfathered = oversized[rel];
+    if (typeof grandfathered === "number") {
+      if (lines > grandfathered) {
         failures.push(
-          `${rel} has ${lines} lines (> ${FILE_LINES_CAP}-line cap for new files). ` +
-            `Split it into cohesive modules instead of creating a new giant.`,
+          `${rel} total lines grew: ${lines} > budget ${grandfathered}. ` +
+            `Extract code out; do not raise the budget.`,
+        );
+      } else if (lines < grandfathered) {
+        slack.push(
+          lines <= FILE_LINES_CAP
+            ? `${rel}: ${lines} — now under the ${FILE_LINES_CAP}-line cap; drop its "oversized" entry`
+            : `${rel} total lines: ${lines} (budget ${grandfathered} — tighten it)`,
         );
       }
+    } else if (lines > FILE_LINES_CAP) {
+      failures.push(
+        `${rel} has ${lines} lines (> ${FILE_LINES_CAP}-line cap for new files). ` +
+          `Split it into cohesive modules instead of creating a new giant.`,
+      );
     }
   }
 
