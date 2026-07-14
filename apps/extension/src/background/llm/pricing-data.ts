@@ -13,6 +13,15 @@ export const DEFAULT_MODEL_PRICING: ModelPricing[] = [
   },
   {
     providerId: "groq",
+    model: "openai/gpt-oss-20b",
+    inputUsdPerMillion: 0.075,
+    outputUsdPerMillion: 0.3,
+    effectiveDate: "2026-04-19",
+    sourceUrl: "https://console.groq.com/docs/model/openai/gpt-oss-20b",
+    confidence: "official",
+  },
+  {
+    providerId: "groq",
     model: "meta-llama/llama-4-scout-17b-16e-instruct",
     inputUsdPerMillion: 0.11,
     outputUsdPerMillion: 0.34,
