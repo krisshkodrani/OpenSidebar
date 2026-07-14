@@ -2992,8 +2992,6 @@ export class Orchestrator {
           perceptionMode: input.settings.perceptionMode,
           maxImagePromptTokenEstimate:
             input.settings.maxImagePromptTokenEstimate,
-          completionDeterministicAcceptanceEnabled:
-            input.settings.completionDeterministicAcceptanceEnabled,
           // Durable turn checkpoint: injected by orchestrator on SW restart recovery
           turnCheckpoint: validatedTurnCheckpoint,
           // Resumable approval/clarification state: injected after user response.

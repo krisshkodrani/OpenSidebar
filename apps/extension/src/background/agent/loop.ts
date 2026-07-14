@@ -124,11 +124,6 @@ import {
   type TurnCheckpointHost,
 } from "./turn-checkpoint";
 import {
-  recordShadowCompletionDecision,
-  shadowCompareCompletionPipeline,
-  type ShadowCompletionHost,
-} from "./shadow-completion";
-import {
   getActiveCompletionContext,
   recordCompletionEvidence,
   refreshCompletionEvidenceFromSnapshot,
@@ -479,7 +474,6 @@ export class AgentLoop {
   private disableInternalPlanning: boolean;
   private bypassApprovals: boolean;
   private approvalTimeoutMs: number;
-  private completionDeterministicAcceptanceEnabled: boolean;
   private middleware: AgentMiddleware;
 
   /** Workspace ID for session isolation */
@@ -633,9 +627,9 @@ export class AgentLoop {
   private lastCompletionRejection: CompletionEvaluation | null = null;
   private lastCompletionRecoveryHint: string | null = null;
   /**
-   * The legacy planner-validation result for the current done() decision (null
-   * when no plan applied). Captured so the shadow pipeline / offline replay can
-   * stub the planner stage without a model call (RFC LP-15, Phase 7a).
+   * The planner-validation result for the current done() decision (null
+   * when no plan applied). Captured so the offline replay can stub the
+   * planner stage without a model call (RFC LP-15, Phase 7a).
    */
   private lastDonePlanValidation: PlannerValidationResult | null = null;
 
@@ -767,7 +761,6 @@ export class AgentLoop {
       temperature?: number;
       perceptionMode?: PerceptionRuntimeMode;
       maxImagePromptTokenEstimate?: number;
-      completionDeterministicAcceptanceEnabled?: boolean;
       /** Durable turn checkpoint from a prior SW lifetime — injected by orchestrator on restart. */
       turnCheckpoint?: TurnCheckpoint | null;
       /** Pending user interaction state injected by the orchestrator on resume. */
@@ -823,8 +816,6 @@ export class AgentLoop {
     this.disableInternalPlanning = options?.disableInternalPlanning ?? false;
     this.bypassApprovals = options?.bypassApprovals ?? false;
     this.approvalTimeoutMs = options?.approvalTimeoutMs ?? APPROVAL_TIMEOUT_MS;
-    this.completionDeterministicAcceptanceEnabled =
-      options?.completionDeterministicAcceptanceEnabled ?? true;
     this.middleware = new AgentMiddleware({
       disabledTools: this.disabledTools,
       bypassApprovals: this.bypassApprovals,
@@ -1787,22 +1778,8 @@ export class AgentLoop {
         error: err instanceof Error ? err.message : String(err),
       });
     }
-    await shadowCompareCompletionPipeline(
-      this as unknown as ShadowCompletionHost,
-      input,
-      verdict,
-    );
     return verdict;
   }
-
-  /**
-   * Shadow gate (RFC LP-15, Phase 7a). Runs the pure completion pipeline
-   * alongside the legacy decision and emits `completion_pipeline_divergence`
-   * when the verdicts disagree. The legacy decision is authoritative; this never
-   * affects the returned verdict and never throws into the done path. `input`
-   * carries the pre-inner guard context + the captured planner result, so the
-   * pipeline runs without a second model call.
-   */
 
   /**
    * Snapshot the completion decision input surface as the kernel will see it,
@@ -1847,8 +1824,6 @@ export class AgentLoop {
         completionContext,
         runningSubtaskIndex,
       ),
-      deterministicAcceptanceEnabled:
-        this.completionDeterministicAcceptanceEnabled,
       isDuplicateTerminal: Boolean(this.completedResult),
       // Filled post-inner in recordCompletionDecisionOutcome.
       plannerResult: null,
@@ -2024,17 +1999,8 @@ export class AgentLoop {
           "model_done",
           summary,
         );
-        if (!this.completionDeterministicAcceptanceEnabled) {
-          recordShadowCompletionDecision(
-            this as unknown as ShadowCompletionHost,
-            kernelDecision,
-            summary,
-          );
-        }
         return kernelDecision;
       },
-      deterministicAcceptanceEnabled:
-        this.completionDeterministicAcceptanceEnabled,
       isDuplicateTerminal: false, // handled inline above
       validatePlan: () => this.runDonePlanValidation(toolCallId, summary),
       buildKernelRejectionEffects: (decision) =>
