@@ -24,8 +24,12 @@ Run `easy` before `medium` before `hard` unless scoped to one failing test.
 - `apps/extension/src/content` — content script, DOM tagging, page actions.
 - `apps/extension/src/sidepanel` — React/Zustand UI (sidepanel + overlay harness).
 - `apps/extension/src/trace-viewer` — trace/analytics UI.
-- `packages/shared-types/src/messages.ts` — the cross-context contract: a ~64-variant
-  `RuntimeMessage` union, handled with an exhaustive `never` check in `sidepanel/bridge.ts`.
+- `packages/shared-types/src/messages.ts` — the cross-context contract:
+  `RuntimeMessage`, a ~62-variant union composed of per-domain sub-unions
+  (session / progress / interaction / content-protocol / skills / watch-mode /
+  e2e) defined in `packages/shared-types/src/messages/`. Add a new message to
+  its domain module, not the barrel. Domain-scoped consumers should type
+  against the sub-union (e.g. `ContentProtocolMessage`).
 - `docs/architecture/` — per-subsystem docs (agent-loop, orchestrator, perception-layer, runtime-boundaries, …).
 
 ### Landmines (read before editing)
