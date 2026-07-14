@@ -15,12 +15,28 @@
 import { orchestrator as defaultOrchestrator } from "./orchestrator";
 import type { OrchestratorStartInput } from "./orchestrator/types";
 import type { RuntimeEnvironment } from "./environment/types";
-import type { CompletionPayload } from "./browser-bridge/orchestrator-driver";
+import type { TaskCompletionMessage } from "../types";
 
-export interface TaskCompletionMessage {
+/**
+ * The completion payload exactly as broadcast on TASK_COMPLETION — including
+ * `partialHandoff`, `subtaskResults`, `metrics` and `terminationReason`.
+ *
+ * Sourced from the shared contract rather than a local narrowing: the previous
+ * `{status?, summary?}` shape lived in `browser-bridge/` and pointed this module
+ * at a consumer of its own API (deleting the bridge would have broken the
+ * runtime), and silently dropped everything a caller needs to continue a run.
+ */
+export type TaskCompletionPayload = TaskCompletionMessage["payload"];
+
+/**
+ * Envelope this module guards for on the messaging port. `Partial` on the
+ * payload is deliberate — the port yields `unknown`, so a well-formed payload is
+ * something we check for, not something we can assume.
+ */
+interface TaskCompletionEnvelope {
   type: "TASK_COMPLETION";
   workspaceId: string;
-  payload?: CompletionPayload;
+  payload?: Partial<TaskCompletionPayload>;
 }
 
 export interface AgentRuntime {
@@ -28,7 +44,10 @@ export interface AgentRuntime {
   startTask(input: OrchestratorStartInput): Promise<void>;
   /** Observe task completions, correlated by workspaceId. Returns unsubscribe. */
   onTaskCompletion(
-    listener: (workspaceId: string, payload: CompletionPayload) => void,
+    listener: (
+      workspaceId: string,
+      payload: Partial<TaskCompletionPayload>,
+    ) => void,
   ): () => void;
   /** Tear down all subscriptions this runtime created. */
   dispose(): void;
@@ -51,7 +70,7 @@ export function createAgentRuntime(
     },
     onTaskCompletion(listener) {
       const off = env.messaging.onMessage((message) => {
-        const m = message as Partial<TaskCompletionMessage>;
+        const m = message as Partial<TaskCompletionEnvelope>;
         if (m?.type === "TASK_COMPLETION" && typeof m.workspaceId === "string") {
           listener(m.workspaceId, m.payload ?? {});
         }
