@@ -6,6 +6,8 @@
  * source of truth instead of duplicating the shape.
  */
 
+import type { PartialProgressHandoff } from "./progress";
+
 /**
  * Terminal status of a thick browser tool call.
  * - `ok`          — intent finished; `result` holds the payload.
@@ -26,4 +28,11 @@ export interface BrowserToolResponse {
   result?: unknown;
   /** Why the agent paused (`needs_human`) or failed (`error`). */
   reason?: string;
+  /**
+   * Structured account of the run when it produced one: what got done, what
+   * remains, what the agent is unsure about, the evidence behind it, and a
+   * suggested prompt to continue from. Present on any status — an external
+   * orchestrator needs it most when the run did not simply succeed.
+   */
+  handoff?: PartialProgressHandoff;
 }

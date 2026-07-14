@@ -13,6 +13,7 @@ import type {
   BrowserToolRequest,
   BrowserToolResponse,
 } from "@shared-types/browser-bridge";
+import type { PartialProgressHandoff } from "@shared-types/progress";
 
 export interface AgentTask {
   instruction: string;
@@ -24,6 +25,8 @@ export interface AgentRunOutcome {
   summary?: string;
   data?: unknown;
   reason?: string;
+  /** What was done / what remains / what is uncertain, when the run produced it. */
+  handoff?: PartialProgressHandoff;
 }
 
 /** Runs one internal agent task. Implemented by the orchestrator in Stage 2b. */
@@ -63,13 +66,28 @@ export function toAgentTask(req: BrowserToolRequest): AgentTask {
 }
 
 function mapOutcome(outcome: AgentRunOutcome): BrowserToolResponse {
+  // The handoff rides along on every status: a caller deciding what to do next
+  // needs it most precisely when the run did not simply succeed.
+  const handoff = outcome.handoff ? { handoff: outcome.handoff } : {};
   switch (outcome.status) {
     case "completed":
-      return { status: "ok", result: outcome.data ?? outcome.summary ?? null };
+      return {
+        status: "ok",
+        result: outcome.data ?? outcome.summary ?? null,
+        ...handoff,
+      };
     case "needs_human":
-      return { status: "needs_human", reason: outcome.reason ?? "human input required" };
+      return {
+        status: "needs_human",
+        reason: outcome.reason ?? "human input required",
+        ...handoff,
+      };
     case "error":
-      return { status: "error", reason: outcome.reason ?? "agent run failed" };
+      return {
+        status: "error",
+        reason: outcome.reason ?? "agent run failed",
+        ...handoff,
+      };
   }
 }
 
