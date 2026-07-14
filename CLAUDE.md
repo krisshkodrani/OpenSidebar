@@ -34,7 +34,7 @@ Run `easy` before `medium` before `hard` unless scoped to one failing test.
 
 ### Landmines (read before editing)
 
-- `background/agent/loop.ts` (~6.8K lines; `AgentLoop` ≈ 165 methods; under the
+- `background/agent/loop.ts` (~5.6K lines; `AgentLoop` ≈ 148 methods; under the
   decomposition ratchet — see below) and
   `background/agent/completion-kernel.ts` (~5.9K lines) are the giants and the
   most-churned files in the repo. `background/orchestrator/index.ts` (~5.8K
@@ -69,14 +69,16 @@ Run `easy` before `medium` before `hard` unless scoped to one failing test.
   list-action, and catalog handlers, and the reference-resolution helpers.
   `tools/index.ts` talks to it only through the `servicenow/` register entry
   points and `tool-hooks.ts` façades — and adapter modules must never import
-  `tools/index.ts` or the tools barrel (one-way rule). What is NOT yet
-  extracted and still lives in generic files: the serialized main-world
-  SN/Glide page scripts in `tools/main-world-bridge.ts` (they are injected into
-  the page, so they can't import adapter code without a new injection
-  mechanism); the SN record-form/catalog controller methods in
-  `agent/loop.ts`; and smaller SN behavior in `orchestrator/skills.ts`,
-  `agent/verification.ts`, `agent/catalog-order-policy.ts`, and
-  `content/actions/interaction.ts`. Deleting the adapter dir would NOT remove
+  `tools/index.ts` or the tools barrel (one-way rule). The agent-side SN
+  behavior lives in `background/agent/servicenow/` (record-form-controller /
+  catalog-controller / trusted-workflow-adapter / catalog-order-policy /
+  submit-diagnostics-policy); `agent/loop.ts` keeps only thin dispatch-host
+  delegates into it. What is NOT yet extracted and still lives in generic
+  files: the serialized main-world SN/Glide page scripts in
+  `tools/main-world-bridge.ts` (they are injected into the page, so they can't
+  import adapter code without a new injection mechanism); and smaller SN
+  behavior in `orchestrator/skills.ts`, `agent/verification.ts`, and
+  `content/actions/interaction.ts`. Deleting the adapter dirs would NOT remove
   ServiceNow from the runtime — full detachment is deferred to the LP-15
   runtime-as-library work.
 - Completion/"is the task done?" has ONE authority: the pure pipeline in
