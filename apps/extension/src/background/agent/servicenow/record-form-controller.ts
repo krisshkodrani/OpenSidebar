@@ -160,7 +160,7 @@ export function hasTaskLevelServiceNowSubmitIntent(
   );
 }
 
-export function currentServiceNowPlanStepForbidsSubmit(
+function currentServiceNowPlanStepForbidsSubmit(
   host: ServiceNowRecordFormHost,
 ): boolean {
   const plan = host.context.getPlanStatusRaw();
@@ -224,7 +224,7 @@ export function isTaskLevelServiceNowRecordWorkflow(
   );
 }
 
-export function isLikelyServiceNowRecordFieldWorkflow(
+function isLikelyServiceNowRecordFieldWorkflow(
   host: ServiceNowRecordFormHost,
 ): boolean {
   const text = getServiceNowRecordWorkflowText(host);
@@ -257,7 +257,7 @@ export function isLikelyServiceNowRecordFieldWorkflow(
   return hasRecordIntent && hasServiceNowGrounding;
 }
 
-export function getServiceNowRecordWorkflowText(
+function getServiceNowRecordWorkflowText(
   host: ServiceNowRecordFormHost,
 ): string {
   return [
