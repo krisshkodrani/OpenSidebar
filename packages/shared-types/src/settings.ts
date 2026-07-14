@@ -101,11 +101,6 @@ export interface UserSettings {
    * back to structured DOM mode when this budget is exhausted.
    */
   maxImagePromptTokenEstimate?: number;
-  /**
-   * Backstop for deterministic done() acceptance while completion contract
-   * coverage is still expanding. Defaults to true.
-   */
-  completionDeterministicAcceptanceEnabled?: boolean;
 }
 
 // --- Workspace / Tab Group Types ---

@@ -235,7 +235,6 @@ function inputFor(scenario: SeedScenario): CompletionDecisionRecordInput {
       moneyTableIncompleteScanReason: null,
       moneyTableIncorrectAnswerReason: null,
     },
-    deterministicAcceptanceEnabled: true,
     isDuplicateTerminal: false,
     plannerResult: null,
   };

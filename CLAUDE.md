@@ -75,12 +75,13 @@ Run `easy` before `medium` before `hard` unless scoped to one failing test.
   `content/actions/interaction.ts`. Deleting the adapter dir would NOT remove
   ServiceNow from the runtime — full detachment is deferred to the LP-15
   runtime-as-library work.
-- Completion/"is the task done?" logic is **split** between the kernel and the
-  loop (a deterministic contract kernel + a legacy guard chain in the loop).
-  When `completionDeterministicAcceptanceEnabled` is off, the legacy guards are
-  authoritative and the kernel runs in shadow, logging
-  `completion_pipeline_divergence` on disagreement. Reason about both when you
-  touch completion behavior.
+- Completion/"is the task done?" has ONE authority: the pure pipeline in
+  `agent/completion/pipeline.ts` (kernel decides accept/reject first; the
+  absorbed pre-pipeline guard chain runs as ordered stages after it — their
+  `legacy_done_guards` basis strings are historical vocabulary, not a parallel
+  implementation). The golden corpus in `tests/fixtures/completion-corpus/`
+  must replay byte-identical — regenerate with `UPDATE_COMPLETION_CORPUS=1`
+  only when you intend a semantic change.
 - Prefer the existing small `background/agent/*-policy.ts` modules over adding more
   logic to `AgentLoop`.
 
