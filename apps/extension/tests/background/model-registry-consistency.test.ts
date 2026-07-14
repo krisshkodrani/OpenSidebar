@@ -94,14 +94,29 @@ describe("model registry consistency", () => {
     }
   });
 
-  test("Fireworks-served ids use the API form, not the catalog form", () => {
-    // "openai/..." ids 404 on the Fireworks endpoint — Fireworks needs the
-    // "accounts/..." form (judge-seat incident, proven live 2026-07-10).
+  /**
+   * Fireworks addresses models as `accounts/fireworks/models/...`; a
+   * catalog-style id 404s on that endpoint (proven live for
+   * `openai/gpt-oss-120b` — the judge-seat incident).
+   *
+   * `qwen/qwen3-vl-30b-a3b-instruct` predates that finding and is the one
+   * catalog-form id still in the Fireworks catalog. It is listed here rather
+   * than silently rewritten because nothing proves its correct Fireworks id:
+   * no recorded run has ever exercised it, so it cannot be corrected without
+   * a live check against the API. Verify it with a Fireworks key and either
+   * fix the id or drop the entry — then delete this exception.
+   */
+  const UNVERIFIED_FIREWORKS_CATALOG_IDS = new Set([
+    "qwen/qwen3-vl-30b-a3b-instruct",
+  ]);
+
+  test("Fireworks-served ids use the accounts/... API form", () => {
     for (const option of FIREWORKS_MODELS) {
+      if (UNVERIFIED_FIREWORKS_CATALOG_IDS.has(option.id)) continue;
       expect(
-        option.id.startsWith("openai/"),
+        option.id.startsWith("accounts/"),
         `${option.id} is a catalog-style id; Fireworks needs accounts/...`,
-      ).toBe(false);
+      ).toBe(true);
     }
     const fireworksSeatDefaults = [
       DEFAULT_LLM_MODEL_CONFIG.planner,
@@ -112,9 +127,9 @@ describe("model registry consistency", () => {
     ];
     for (const model of fireworksSeatDefaults) {
       expect(
-        model.startsWith("openai/"),
+        model.startsWith("accounts/"),
         `${model} is a catalog-style id; Fireworks needs accounts/...`,
-      ).toBe(false);
+      ).toBe(true);
     }
   });
 });
