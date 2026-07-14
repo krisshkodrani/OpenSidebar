@@ -95,7 +95,9 @@ export const FIREWORKS_MODELS: ProviderModelOption[] = [
     effectiveDate: "2026-04-19",
   },
   {
-    id: "openai/gpt-oss-120b",
+    // Fireworks API id form — the catalog-style "openai/gpt-oss-120b" 404s on
+    // the Fireworks endpoint (judge-seat incident, 2026-07-10).
+    id: "accounts/fireworks/models/gpt-oss-120b",
     name: "OpenAI GPT-OSS 120B",
     promptPrice: 0.15 / 1_000_000,
     completionPrice: 0.6 / 1_000_000,
