@@ -1,0 +1,118 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>How it works — OpenSidebar</title>
+    <meta
+      name="description"
+      content="Step through four real recorded OpenSidebar runs: each prompt planned into verified steps, with the role and model shown at every stage."
+    />
+    <meta name="theme-color" content="#F7F7F9" />
+    <link rel="icon" type="image/png" href="/favicon.png" />
+    <link rel="canonical" href="https://opensidebar.com/walkthrough" />
+
+    <meta property="og:type" content="website" />
+    <meta property="og:site_name" content="OpenSidebar" />
+    <meta property="og:title" content="How it works — OpenSidebar" />
+    <meta
+      property="og:description"
+      content="Replays of four real agent runs: each prompt planned into verified steps, every click and verdict straight from the trace."
+    />
+    <meta property="og:url" content="https://opensidebar.com/walkthrough" />
+    <meta property="og:image" content="https://opensidebar.com/og.png" />
+    <meta name="twitter:card" content="summary_large_image" />
+    <meta name="twitter:title" content="How it works — OpenSidebar" />
+    <meta
+      name="twitter:description"
+      content="Replays of four real agent runs: each prompt planned into verified steps, every click and verdict straight from the trace."
+    />
+    <meta name="twitter:image" content="https://opensidebar.com/og.png" />
+
+    <noscript>
+      <style>
+        .wt-noscript {
+          display: block !important;
+        }
+      </style>
+    </noscript>
+  </head>
+  <body>
+    <!-- NAV -->
+    <header class="nav">
+      <div class="wrap nav-inner">
+        <a class="brand" href="/" aria-label="OpenSidebar home">
+          <img src="/logo.png" alt="" width="28" height="28" />
+          <span>OpenSidebar</span>
+        </a>
+        <nav class="nav-links" aria-label="Primary">
+          <a href="/walkthrough" aria-current="page">How it works</a>
+          <a href="/#showcase">Demos</a>
+          <a href="/#features">Features</a>
+          <a href="/#developers">Developers</a>
+          <a href="https://github.com/krisshkodrani/OpenSidebar">GitHub</a>
+          <a class="btn btn-primary nav-cta" href="/#quickstart">Install</a>
+        </nav>
+      </div>
+    </header>
+
+    <main>
+      <section class="wt-page">
+        <div class="wrap">
+          <p class="wt-noscript" style="display: none">
+            This walkthrough is interactive and needs JavaScript to step
+            through the run.
+          </p>
+          <div class="wt-runs" id="runtabs" role="tablist" aria-label="Recorded runs"></div>
+          <div class="wt-grid">
+            <nav class="wt-spine" id="spine" aria-label="Walkthrough steps"></nav>
+            <div class="wt-stagecol">
+              <div class="wt-stage" id="stage" aria-live="polite"></div>
+              <div class="wt-controls">
+                <button class="btn btn-ghost" id="prev">← Back</button>
+                <div class="wt-progress">
+                  <span class="wt-count" id="count"></span>
+                  <div class="wt-bar"><div class="wt-fill" id="fill"></div></div>
+                </div>
+                <span class="wt-kbd-hint"><kbd>←</kbd> <kbd>→</kbd> to navigate</span>
+                <button class="btn btn-primary" id="next">Next step →</button>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+    </main>
+
+    <!-- FOOTER -->
+    <footer class="footer">
+      <div class="wrap">
+        <div class="footer-top">
+          <a class="brand" href="/">
+            <img src="/logo.png" alt="" width="28" height="28" />
+            <span>OpenSidebar</span>
+          </a>
+          <nav class="footer-links" aria-label="Footer">
+            <a href="https://github.com/krisshkodrani/OpenSidebar">GitHub</a>
+            <a href="https://github.com/krisshkodrani/OpenSidebar/issues">Issues</a>
+            <a href="https://github.com/krisshkodrani/OpenSidebar/tree/main/docs">Docs</a>
+            <a href="https://github.com/krisshkodrani/OpenSidebar/blob/main/PRIVACY_POLICY.md">Privacy</a>
+            <a href="https://github.com/krisshkodrani/OpenSidebar/blob/main/LICENSE">MIT License</a>
+          </nav>
+        </div>
+        <div class="footer-note">
+          <span
+            >© <span id="year">2026</span> OpenSidebar · Executor: Kimi K2.7
+            Code · Planner: GLM 5.2 · Judge: GPT-OSS 120B · Fireworks
+            AI</span
+          >
+          <span
+            >This site sets no cookies and loads no trackers — the same
+            no-telemetry promise as the extension.</span
+          >
+        </div>
+      </div>
+    </footer>
+
+    <script type="module" src="/src/walkthrough.ts"></script>
+  </body>
+</html>
