@@ -11,15 +11,57 @@
  * and may ONLY go down. Run `node scripts/loop-ratchet.mjs --report` to print the
  * current metrics for every guarded file (used to tighten a budget after an
  * extraction). Mirrors the rfc-decision baseline pattern already wired into lint.
+ *
+ * In addition to the per-landmine metrics, every source file under
+ * `SWEEP_ROOTS` is held to `FILE_LINES_CAP` total lines. Files that already
+ * exceeded the cap when the sweep was introduced are grandfathered in the
+ * budget JSON's `oversized` map with a shrink-only line budget of their own.
  */
 
-import { readFileSync } from "node:fs";
+import { readFileSync, readdirSync } from "node:fs";
 import { join } from "node:path";
 
 const repoRoot = process.cwd();
 const budgetPath = join(repoRoot, "scripts", "loop-ratchet-budget.json");
 
 const LOOP_PATH = "apps/extension/src/background/agent/loop.ts";
+
+/**
+ * Repo-wide oversize sweep: no source file may exceed this many lines unless
+ * it is one of the metric-tracked landmines above or is grandfathered (with a
+ * shrink-only budget) in `oversized` in the budget JSON. This closes the
+ * ratchet's blind spot — without it, extracting code out of a guarded file
+ * into a fresh 3,000-line "helper" module passes the ratchet while the repo
+ * gets no smaller.
+ */
+const FILE_LINES_CAP = 1500;
+
+/** Directories swept by the oversize check (repo-relative). */
+const SWEEP_ROOTS = ["apps/extension/src", "packages"];
+
+/** Repo-relative paths excluded from the sweep (generated output). */
+const SWEEP_EXCLUDE = new Set(["apps/extension/src/prompts/generated.ts"]);
+
+/** Recursively list .ts/.tsx files under a repo-relative root. */
+function listSourceFiles(root) {
+  const out = [];
+  const entries = readdirSync(join(repoRoot, root), {
+    withFileTypes: true,
+    recursive: true,
+  });
+  for (const entry of entries) {
+    if (!entry.isFile()) continue;
+    if (!/\.(ts|tsx)$/.test(entry.name) || entry.name.endsWith(".d.ts")) {
+      continue;
+    }
+    const rel = join(entry.parentPath, entry.name)
+      .slice(repoRoot.length + 1)
+      .replaceAll("\\", "/");
+    if (rel.includes("/node_modules/") || SWEEP_EXCLUDE.has(rel)) continue;
+    out.push(rel);
+  }
+  return out;
+}
 
 /**
  * The guarded files and which metrics apply to each. `fileLines` is universal;
@@ -121,15 +163,59 @@ function main() {
   const report = process.argv.includes("--report");
 
   if (report) {
+    const overCap = {};
+    const metricTracked = new Set(RATCHET_FILES.map(({ path }) => path));
+    for (const root of SWEEP_ROOTS) {
+      for (const rel of listSourceFiles(root)) {
+        if (metricTracked.has(rel)) continue;
+        const lines = readFileSync(join(repoRoot, rel), "utf8").split(
+          /\r?\n/,
+        ).length;
+        if (lines > FILE_LINES_CAP) overCap[rel] = lines;
+      }
+    }
     // eslint-disable-next-line no-console
-    console.log(JSON.stringify(measureAll(), null, 2));
+    console.log(
+      JSON.stringify({ landmines: measureAll(), overCap }, null, 2),
+    );
     return;
   }
 
   const budget = JSON.parse(readFileSync(budgetPath, "utf8"));
   const budgets = budget.budgets ?? {};
+  const oversized = budget.oversized ?? {};
   const failures = [];
   const slack = [];
+
+  const metricTracked = new Set(RATCHET_FILES.map(({ path }) => path));
+  for (const root of SWEEP_ROOTS) {
+    for (const rel of listSourceFiles(root)) {
+      if (metricTracked.has(rel)) continue;
+      const lines = readFileSync(join(repoRoot, rel), "utf8").split(
+        /\r?\n/,
+      ).length;
+      const grandfathered = oversized[rel];
+      if (typeof grandfathered === "number") {
+        if (lines > grandfathered) {
+          failures.push(
+            `${rel} total lines grew: ${lines} > budget ${grandfathered}. ` +
+              `Extract code out; do not raise the budget.`,
+          );
+        } else if (lines < grandfathered) {
+          slack.push(
+            lines <= FILE_LINES_CAP
+              ? `${rel}: ${lines} — now under the ${FILE_LINES_CAP}-line cap; drop its "oversized" entry`
+              : `${rel} total lines: ${lines} (budget ${grandfathered} — tighten it)`,
+          );
+        }
+      } else if (lines > FILE_LINES_CAP) {
+        failures.push(
+          `${rel} has ${lines} lines (> ${FILE_LINES_CAP}-line cap for new files). ` +
+            `Split it into cohesive modules instead of creating a new giant.`,
+        );
+      }
+    }
+  }
 
   for (const { path, metrics } of RATCHET_FILES) {
     const measured = measureFile(repoRoot, path, metrics);

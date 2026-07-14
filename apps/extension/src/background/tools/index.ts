@@ -20,10 +20,6 @@ import {
 } from "./tab-navigation-helpers";
 import { sanitizeUrl } from "../security";
 import {
-} from "../../utils/personal-profile";
-import {  } from "../infrastructure/tab-resolution";
-import {  } from "../workspaces/manager";
-import {
   clearTabReady,
   waitForContentScriptReady,
 } from "../tab-ready";
@@ -133,14 +129,3 @@ export function registerTools() {
   // Page Assist Tools (xray_page)
   registerMiscAgentTools(toolRegistry);
 }
-
-
-
-
-
-
-
-
-
-
-
