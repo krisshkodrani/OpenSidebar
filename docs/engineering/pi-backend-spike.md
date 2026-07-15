@@ -13,7 +13,7 @@ WIP — that is why this work lives in its own worktree. Don't merge the two.
 | --- | --- |
 | 0 — contain seed PII | **not started** |
 | 1 — completion seam + bridge repairs | **DONE, committed, verify green** |
-| 2 — pi extension | spike ~90%, **blocked on one unanswered question** (below) |
+| 2 — pi extension | **spike DONE** (2026-07-15, question answered below) — ready to write the extension |
 | 3 — mission/report handover | not started (has deferred work queued into it) |
 | 4 — grounded submit | not started |
 | 5 — JobAgent workspace | not started |
@@ -93,47 +93,57 @@ not from the docs. All of this is confirmed from `.d.ts`:
 - `defineTool()` exists for the SDK path and exists purely to preserve param
   inference when tools are passed through arrays like `customTools`.
 
-### THE ONE OPEN QUESTION (resume here)
+### THE OPEN QUESTION — ANSWERED 2026-07-15: plain JSON Schema works
 
-**Does `parameters` accept a plain JSON Schema object, or must it be a real
-TypeBox schema?**
+**Q: does `parameters` accept a plain JSON Schema object, or must it be real TypeBox?**
+**A: plain JSON Schema is a first-class, deliberately supported input. No converter.**
 
-It matters because `scripts/browser-mcp/tools.ts` defines `BROWSER_TOOLS[].inputSchema`
-as plain JSON Schema, and that file is the single source of truth we want to keep.
+It mattered because `scripts/browser-mcp/tools.ts` defines `BROWSER_TOOLS[].inputSchema`
+as plain JSON Schema and we want that file to stay the single source of truth.
 
-- Evidence it will work: `typebox` v1 is the rewrite built around **standard JSON
-  Schema**, and the coding-agent passes `parameters` straight through.
-- Evidence to check: validation lives in **pi-ai**, and a plain object lacks
-  TypeBox's `Symbol(Kind)`. If pi-ai runs `Value.Check`/`Compile` on tool args,
-  a plain object may fail.
+Validation lives in pi-ai (`dist/utils/validation.js`, `validateToolArguments`), and it
+contains an **explicit non-TypeBox branch** — this is the whole answer:
 
-**Blocked on:** every `npm pack @earendil-works/pi-ai@0.80.7` attempt returned
-*"claude-opus-4-8[1m] is temporarily unavailable, so auto mode cannot determine
-the safety of Bash"* — a transient classifier failure, not a permission denial
-(plain `ls`/`echo` succeeded throughout). Retry should just work.
-
-**Next command:**
-
-```bash
-cd <scratchpad>/pi-spike        # already holds package/ = pi-coding-agent 0.80.7
-npm pack @earendil-works/pi-ai@0.80.7 && tar -xzf earendil-works-pi-ai-0.80.7.tgz
-# then: does it Value.Check / Compile tool params, or only serialize them?
-grep -rn "Value\.\|Compile(\|parameters" package/dist/**/*.js | grep -i "tool\|check\|valid"
+```js
+const TYPEBOX_KIND = Symbol.for("TypeBox.Kind");
+Value.Convert(tool.parameters, args);
+const validator = getValidator(tool.parameters);          // Compile(schema)
+if (!Object.getOwnPropertySymbols(tool.parameters).includes(TYPEBOX_KIND)) {
+  const coerced = coerceWithJsonSchema(args, tool.parameters);   // hand-written
+  ...                                                            // JSON-Schema walker
+}
+if (validator.Check(args)) return args;
 ```
 
-Better still, settle it empirically: register one tool with a plain JSON Schema
-and one with `Type.Object`, and see whether pi accepts both.
+`coerceWithJsonSchema` (walks `allOf`/`anyOf`/`oneOf`/`type`) exists **solely** to serve
+schemas that lack TypeBox's Kind symbol. Plain JSON Schema isn't tolerated by luck — it's
+a supported path with code written for it. `Compile` is typebox v1's, which is built on
+standard JSON Schema.
 
-**Decision tree:**
+**Verified empirically, not just by reading** (`<scratchpad>/pi-spike/probe.mjs`,
+pi-ai 0.80.7 + typebox 1.1.38, real `BROWSER_TOOLS` schemas):
 
-- Plain JSON Schema accepted → pass `inputSchema` straight to `parameters`. No
-  converter. Preferred: least mechanism, `tools.ts` stays the single source.
-- Rejected → write **one** JSON-Schema→TypeBox converter (~15 lines, `Type.Object`
-  over `inputSchema.properties` + `required`). Do **not** hand-port 7 schemas into
-  TypeBox — that duplicates `BROWSER_TOOLS` and they will drift.
+| case | plain JSON Schema | `Type.Object` |
+| --- | --- | --- |
+| valid args | pass | pass |
+| missing required | **throws** | **throws** |
+| nested object (`browser_extract_structured`) | pass | — |
+| `url: 42` → wrong type | coerced to `"42"` | coerced to `"42"` |
+| `url: {a:1}` → uncoercible | **throws** | **throws** |
 
-Do not ship the converter defensively "just in case" — that is exactly the
-unnecessary mechanism the review pushed back on. Answer the question first.
+**The two paths are behaviourally identical, coercion included.** `Value.Convert` runs
+before the Kind check, so lenient primitive coercion is pi's deliberate design for LLM
+output, not an artifact of the plain path. So: **pass `inputSchema` straight through to
+`parameters`. Do not write a converter, do not hand-port the 7 schemas.**
+
+Two things to expect when writing the extension:
+
+- **Types, not runtime.** `registerTool<TParams extends TSchema>` means a plain object
+  may not typecheck. Runtime is proven fine; if tsc complains, cast at the single
+  registration site — do not reshape `tools.ts` to please the type.
+- **Coercion is not a safety boundary.** `42` becomes `"42"` silently. Irrelevant for the
+  bridge, but it means Phase 4's byte-match verification must stay pi-side as designed —
+  schema validation is not the gate and never was.
 
 ### Other Phase 2 notes
 
