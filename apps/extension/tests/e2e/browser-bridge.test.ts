@@ -33,7 +33,6 @@ import type { CDPSession, WebWorker } from "puppeteer";
 import { describe, expect, test } from "vitest";
 
 import { WebSocketBridge } from "../../../../scripts/browser-mcp/ws-bridge";
-import { reloadExtension } from "./helpers/browser";
 import { getFixtureUrl } from "./helpers/fixture-server";
 import { createE2EHarness } from "./helpers/harness";
 import {
@@ -99,19 +98,17 @@ describe.skipIf(!enabled)("E2E: browser bridge", () => {
       await h.beforeAllHook();
       await h.beforeEachHook();
 
-      // Port 0 → the OS picks one, so concurrent e2e runs cannot collide on 8787.
-      bridge = await WebSocketBridge.create({ port: 0, timeoutMs: 120_000 });
-      await armBridgePort(h.ctx.serviceWorker, bridge.port);
-
-      // Storage survives the restart; `startBrowserBridge()` runs on the way back
-      // up and connects. Nothing else re-reads that key, so the reload is required.
-      await reloadExtension(h.ctx);
-
-      // AFTER the reload, not before: the old service worker target — and any CDP
-      // session attached to it — dies with it, taking the interceptor along.
       cdp = await h.ctx.serviceWorkerTarget.createCDPSession();
       await installLocalMockProviderInterceptor(cdp, "partial-handoff-max-turns");
 
+      // Port 0 → the OS picks one, so concurrent e2e runs cannot collide on 8787.
+      bridge = await WebSocketBridge.create({ port: 0, timeoutMs: 120_000 });
+
+      // Setting the key is all it takes: initBrowserBridge() watches
+      // chrome.storage.onChanged and connects live — no extension reload.
+      // (That listener exists because of this test: the startup-only read
+      // made the bridge unstartable without a reload, for users too.)
+      await armBridgePort(h.ctx.serviceWorker, bridge.port);
       await waitForBridgeConnection(bridge, 15_000);
 
       // The task opens its own background tab at this url, so the test drives no

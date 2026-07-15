@@ -12,7 +12,8 @@
  * first tool call); the OpenSidebar service worker connects as the client.
  * Setup, once: load the extension and set the port in chrome.storage.local —
  *   chrome.storage.local.set({ "opensidebar:browserMcpWsPort": 8787 })
- * then reload the extension (the port is read at startup only).
+ * The bridge reacts to the setting live (initBrowserBridge watches
+ * chrome.storage.onChanged) — no extension reload needed.
  *
  * Mission protocol (LP-8 / pi-backend plan): tool calls are bounded missions.
  * The response carries `handoff` (PartialProgressHandoff) — completed[],
