@@ -5,11 +5,11 @@
 # can route the published loopback ports while keeping nothing exposed to the LAN.
 #
 # Services:
-#   openclaw     the brain — real OpenClaw gateway (memory, planning, WebChat).
-#                Chat in/out at http://127.0.0.1:18789  (no Telegram needed).
-#   browser-mcp  the bridge — exposes thick browser tools to OpenClaw over MCP
-#                (streamable-http :8788, compose-internal) and bridges to your
-#                Chrome over a loopback WebSocket (:8787).
+#   browser-mcp  the bridge — exposes thick browser tools to an external MCP
+#                client (streamable-http :8788) and bridges to your Chrome over
+#                a loopback WebSocket (:8787). A pi (pi.dev) session on the host
+#                drives the WebSocket bridge directly via .pi/extensions/ — it
+#                needs no container at all.
 #   viewer       trace/analytics UI + backend API on :7589.
 #
 # The OpenSidebar extension runs in your real Chrome (it can't be containerized —
@@ -17,43 +17,14 @@
 # its chrome.storage.local:
 #   opensidebar:browserMcpWsPort = 8787
 # Trace viewer: http://127.0.0.1:7589/viewer
-#
-# Set ANTHROPIC_API_KEY in a local .env file (next to this compose) before `up`.
-#
-# Offline / no real OpenClaw? Use the stub adapter instead of the real brain:
-#   docker compose --profile dev up browser-mcp viewer openclaw-adapter
 name: opensidebar
 
 services:
-  # The brain. Real OpenClaw gateway. Config + workspace are mounted from this
-  # repo's openclaw/ scaffold; the MCP url points at the browser-mcp service.
-  # NOTE: image entrypoint/onboarding behaviour should be validated against the
-  # pinned OpenClaw version — see openclaw/README.md.
-  openclaw:
-    image: ghcr.io/openclaw/openclaw:latest
-    environment:
-      ANTHROPIC_API_KEY: "${ANTHROPIC_API_KEY:-}"
-      OPENCLAW_SKIP_ONBOARDING: "1"
-    volumes:
-      - ./openclaw/openclaw.docker.json:/home/node/.openclaw/openclaw.json:ro
-      - ./openclaw/workspace:/home/node/.openclaw/workspace:ro
-      - openclaw-data:/home/node/.openclaw/data
-    ports:
-      - "127.0.0.1:18789:18789"
-    depends_on:
-      - browser-mcp
-    healthcheck:
-      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:18789/healthz').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
-      interval: 15s
-      timeout: 5s
-      retries: 5
-    restart: unless-stopped
-
   browser-mcp:
     build: .
     command: ["pnpm", "exec", "tsx", "scripts/browser-mcp/server.ts"]
     environment:
-      # MCP transport to OpenClaw (compose-internal network).
+      # MCP transport for external clients (compose-internal network).
       BROWSER_MCP_HTTP_PORT: "8788"
       BROWSER_MCP_HTTP_HOST: "0.0.0.0"
       # WebSocket bridge to the extension in your host Chrome.
@@ -84,22 +55,7 @@ services:
       - artifacts:/app/.artifacts
     restart: unless-stopped
 
-  # Offline stub gateway (in-memory). Only with `--profile dev`. Implements the
-  # legacy LP-8 client contract so the extension's hybrid/knowledge paths can be
-  # exercised without a real OpenClaw. Not started by default.
-  openclaw-adapter:
-    profiles: ["dev"]
-    build: .
-    command: ["pnpm", "exec", "tsx", "openclaw/adapter/server.ts"]
-    environment:
-      OPENCLAW_ADAPTER_PORT: "18789"
-      OPENCLAW_ADAPTER_HOST: "0.0.0.0"
-    ports:
-      - "127.0.0.1:18789:18789"
-    restart: unless-stopped
-
 volumes:
   dist:
   traces:
   artifacts:
-  openclaw-data:

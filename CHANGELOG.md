@@ -7,6 +7,33 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **Pi as an optional brain (pi-backend Phases 1–3).** A local
+  [pi](https://pi.dev) session can drive the browser through the existing
+  loopback WebSocket bridge: `.pi/extensions/opensidebar.ts` registers the
+  seven thick browser tools with their JSON schemas passed through verbatim.
+  The bridge now actually delivers completions in a real browser (the
+  service-worker broadcast never reached in-process subscribers before —
+  proven fixed by a new offline e2e), reacts live to the
+  `opensidebar:browserMcpWsPort` setting (no extension reload), carries the
+  run's `PartialProgressHandoff` on every status, supports session-scoped tab
+  reuse (missions sharing a session continue in one tab and workspace, with
+  serialized starts), and honors mid-run cancellation via a new
+  `{ id, cancel: true }` wire frame wired to pi's `AbortSignal`.
+
+### Removed
+
+- **OpenClaw integration (RFC LP-8 M3–M5).** The `openclaw/` scaffold and stub
+  gateway, the planner-gateway routing (`llm-routing.ts`, `openclaw-client.ts`),
+  the knowledge-sync layer (`knowledge-sync*.ts`, sync paths in website-skills
+  and personal-profile), the dormant bridge `agent-runner.ts`, and the Docker
+  services/scripts that ran them. The generic pieces OpenClaw drove — the
+  browser MCP host, the WebSocket bridge, the thick tools, and the M1 at-rest
+  profile encryption — all remain; pi (or any MCP client) is the brain now.
+  The "OpenClaw RL Guidelines" trajectory-grading rubric in the observability
+  engine is unrelated and unchanged.
+
 ## [0.5.0] - 2026-07-09
 
 Agent-loop decomposition (RFC LP-16, Phase 3 "driver-flip"): the ~2,300-line

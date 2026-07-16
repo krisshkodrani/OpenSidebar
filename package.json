@@ -61,8 +61,6 @@
     "mcp:smoke": "tsx scripts/obs/smoke.ts",
     "mcp:browser": "tsx scripts/browser-mcp/server.ts",
     "mcp:browser:test": "vitest run --config scripts/browser-mcp/vitest.config.ts",
-    "openclaw:adapter": "tsx openclaw/adapter/server.ts",
-    "openclaw:adapter:test": "vitest run --config openclaw/adapter/vitest.config.ts",
     "docker:build": "docker compose build",
     "docker:up": "docker compose up",
     "docker:down": "docker compose down",

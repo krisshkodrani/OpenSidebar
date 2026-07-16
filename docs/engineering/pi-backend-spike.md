@@ -17,7 +17,7 @@ WIP — that is why this work lives in its own worktree. Don't merge the two.
 | 3 — mission/report handover | **DONE 2026-07-16** (sessions + cancellation; design below) |
 | 4 — grounded submit | not started |
 | 5 — JobAgent workspace | not started |
-| 6 — remove OpenClaw | not started |
+| 6 — remove OpenClaw | **DONE 2026-07-16** (see CHANGELOG [Unreleased]; RL-rubric "OpenClaw" in obs engine deliberately untouched) |
 
 ## Phase 1 — done (2 commits)
 
@@ -212,5 +212,5 @@ Both deferred items landed together as the mission-protocol change:
   cannot exist.
 - **`.artifacts/seed/` holds real PII** (name, email, phone, address, 11 CVs)
   behind only the blanket `.artifacts/` rule at `.gitignore:69`. Phase 0.
-- `tests/background/agent-runner.test.ts` imports `browser-bridge/agent-runner.ts`
-  — both go together in Phase 6.
+- ~~`tests/background/agent-runner.test.ts` imports `browser-bridge/agent-runner.ts`
+  — both go together in Phase 6.~~ Done: both deleted with the Phase 6 removal.
