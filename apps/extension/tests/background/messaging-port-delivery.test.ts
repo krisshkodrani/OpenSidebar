@@ -131,7 +131,7 @@ describe("agent runtime over the real chrome port", () => {
     // orchestrator (SW) broadcasts -> createAgentRuntime (SW) must observe it.
     const runtime = createAgentRuntime(
       { messaging: chromeRuntimeMessagingPort } as unknown as RuntimeEnvironment,
-      { orchestrator: { startTask: async () => {}, stopTask: async () => {} } },
+      { orchestrator: { startTask: async () => {}, stopTask: async () => {}, resolveApprovalResponse: () => true } },
     );
 
     const seen: Array<{ workspaceId: string; payload: unknown }> = [];
@@ -157,7 +157,7 @@ describe("agent runtime over the real chrome port", () => {
   test("dispose stops local delivery", () => {
     const runtime = createAgentRuntime(
       { messaging: chromeRuntimeMessagingPort } as unknown as RuntimeEnvironment,
-      { orchestrator: { startTask: async () => {}, stopTask: async () => {} } },
+      { orchestrator: { startTask: async () => {}, stopTask: async () => {}, resolveApprovalResponse: () => true } },
     );
     const seen: string[] = [];
     runtime.onTaskCompletion((workspaceId) => seen.push(workspaceId));

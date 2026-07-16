@@ -12,6 +12,7 @@
 import type {
   BrowserToolRequest,
   BrowserToolResponse,
+  ForwardedApprovalRequest,
 } from "@shared-types/browser-bridge";
 import type { PartialProgressHandoff } from "@shared-types/progress";
 
@@ -29,6 +30,8 @@ export interface AgentRunOutcome {
   reason?: string;
   /** What was done / what remains / what is uncertain, when the run produced it. */
   handoff?: PartialProgressHandoff;
+  /** Present when `needs_human` because a consequential action awaits approval. */
+  approval?: ForwardedApprovalRequest;
 }
 
 export interface AgentRunOptions {
@@ -39,6 +42,14 @@ export interface AgentRunOptions {
 /** Runs one internal agent task. Implemented by the orchestrator in Stage 2b. */
 export interface AgentRunner {
   run(task: AgentTask, opts?: AgentRunOptions): Promise<AgentRunOutcome>;
+  /**
+   * Answer a forwarded approval (pi-backend Phase 4), resuming the paused
+   * mission. Optional so a runner without the capability can decline cleanly.
+   */
+  respondApproval?(
+    req: BrowserToolRequest,
+    opts?: AgentRunOptions,
+  ): Promise<AgentRunOutcome>;
 }
 
 /** Map a thick browser tool request to an internal natural-language agent task. */
@@ -94,6 +105,7 @@ function mapOutcome(outcome: AgentRunOutcome): BrowserToolResponse {
         status: "needs_human",
         reason: outcome.reason ?? "human input required",
         ...handoff,
+        ...(outcome.approval ? { approval: outcome.approval } : {}),
       };
     case "error":
       return {
@@ -104,6 +116,15 @@ function mapOutcome(outcome: AgentRunOutcome): BrowserToolResponse {
   }
 }
 
+/** Validate the args of a `browser_respond_approval` call. */
+function parseApprovalResponse(
+  args: Record<string, unknown>,
+): { approvalId: string; approved: boolean } | null {
+  if (typeof args.approvalId !== "string" || !args.approvalId) return null;
+  if (typeof args.approved !== "boolean") return null;
+  return { approvalId: args.approvalId, approved: args.approved };
+}
+
 /** Translate → run → translate back. Errors become a structured `error` response. */
 export async function handleBrowserToolRequest(
   req: BrowserToolRequest,
@@ -112,6 +133,26 @@ export async function handleBrowserToolRequest(
 ): Promise<BrowserToolResponse> {
   // Liveness check never runs a task.
   if (req.tool === "browser_ping") return { status: "ok", result: "pong" };
+  // Approval answer: routes to the runner's resume capability, not a new run.
+  if (req.tool === "browser_respond_approval") {
+    if (!parseApprovalResponse(req.args)) {
+      return {
+        status: "error",
+        reason: "browser_respond_approval needs { approvalId: string, approved: boolean }",
+      };
+    }
+    if (!runner.respondApproval) {
+      return {
+        status: "error",
+        reason: "this runner cannot answer approvals",
+      };
+    }
+    try {
+      return mapOutcome(await runner.respondApproval(req, opts));
+    } catch (error) {
+      return { status: "error", reason: (error as Error).message };
+    }
+  }
   try {
     const outcome = await runner.run(toAgentTask(req), opts);
     return mapOutcome(outcome);

@@ -24,6 +24,8 @@ export type {
   BrowserToolCancelFrame,
   BrowserBridgeHostFrame,
   BrowserToolResponseFrame,
+  ForwardedApprovalRequest,
+  ForwardedApprovalDryRun,
 } from "@shared-types/browser-bridge";
 import type {
   BrowserToolRequest,

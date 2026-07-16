@@ -70,7 +70,10 @@ import {
   shouldEscalateForDecision,
 } from "./escalation-decisions";
 import {
+  buildTaskPausedMessage,
+  emitPendingInteractionMessage,
   getPendingInteractionRemainingMs,
+  HANDOFF_APPROVAL_TIMEOUT_MS,
   isPendingInteractionResolved,
 } from "./pending-interaction";
 import {
@@ -1136,57 +1139,16 @@ export class Orchestrator {
   }
 
   private emitPendingInteraction(task: OrchestratorTask): void {
-    const interaction = task.pendingInteraction;
-    if (!interaction || isPendingInteractionResolved(interaction)) return;
-    const remainingMs = getPendingInteractionRemainingMs(interaction);
-    if (remainingMs <= 0) return;
-
-    if (interaction.kind === "clarification") {
-      this.recordOutstandingQuestion(task, interaction.question);
+    if (task.pendingInteraction?.kind === "clarification") {
+      this.recordOutstandingQuestion(task, task.pendingInteraction.question);
     }
-
-    if (interaction.kind === "approval") {
-      sendMessage({
-        type: "APPROVAL_REQUEST",
-        workspaceId: task.workspaceId,
-        payload: {
-          approvalId: interaction.approvalId,
-          toolName: interaction.toolName,
-          args: interaction.args,
-          risk: "high",
-          context: interaction.context,
-          timeoutMs: remainingMs,
-        },
-      });
-      void agentNotifications.notifyAttention({
-        workspaceId: task.workspaceId,
-        taskId: task.id,
-        eventId: interaction.approvalId,
-        tabId: task.rootTabId,
-        reason: "Approval required",
-        detail: interaction.context,
-      });
-      return;
-    }
-
-    sendMessage({
-      type: "CLARIFICATION_REQUEST",
-      workspaceId: task.workspaceId,
-      payload: {
-        clarificationId: interaction.clarificationId,
-        question: interaction.question,
-        suggestions: interaction.suggestions,
-        timeoutMs: remainingMs,
-      },
-    });
-    void agentNotifications.notifyAttention({
-      workspaceId: task.workspaceId,
-      taskId: task.id,
-      eventId: interaction.clarificationId,
-      tabId: task.rootTabId,
-      reason: "Clarification required",
-      detail: interaction.question,
-    });
+    const emission = emitPendingInteractionMessage(task);
+    if (!emission) return;
+    sendMessage(emission.message);
+    void agentNotifications.notifyAttention(emission.attention);
+    // Re-forward the pause over the bridge on recovery/re-emit (Phase 4).
+    const paused = buildTaskPausedMessage(task);
+    if (paused) sendMessage(paused);
   }
 
   private isSyntheticPendingInteractionTask(task: OrchestratorTask): boolean {
@@ -2033,6 +1995,7 @@ export class Orchestrator {
       enabledSkillPackIds: input.settings.enabledSkillPackIds
         ? [...input.settings.enabledSkillPackIds]
         : undefined,
+      interactionDelivery: input.interactionDelivery,
     };
     try {
       const rootTab = await chrome.tabs.get(input.tabId);
@@ -2976,6 +2939,13 @@ export class Orchestrator {
           verificationTurnMode,
           disableInternalPlanning: executorContract.disableInternalPlanning,
           bypassApprovals: !(input.settings.requireApprovals ?? true),
+          // Bridge-forwarded approvals round-trip through pi + a human, so the
+          // 30s default is far too short (pi-backend Phase 4). Non-bridge
+          // tasks keep the loop's own default.
+          approvalTimeoutMs:
+            task.interactionDelivery === "handoff"
+              ? HANDOFF_APPROVAL_TIMEOUT_MS
+              : undefined,
           executorModel: input.settings.executorModel,
           plannerModel: input.settings.plannerModel,
           writerModel: input.settings.writerModel,
@@ -3232,6 +3202,13 @@ export class Orchestrator {
             );
           }
           this.armPendingInteractionTimeout(task);
+          void this.persistTaskCheckpoint(task);
+          // Forward the pause over the wire (pi-backend Phase 4). Emitted after
+          // pendingInteraction is set + timeout armed, so a bridge caller that
+          // answers immediately finds resolvable state. Approval-only for now;
+          // the sidepanel ignores TASK_PAUSED (it gets APPROVAL_REQUEST).
+          const pausedMessage = buildTaskPausedMessage(task);
+          if (pausedMessage) sendMessage(pausedMessage);
           sendStatus(
             task.workspaceId,
             AgentStatus.PAUSED,
@@ -5635,6 +5612,12 @@ export class Orchestrator {
       task.pendingInteraction?.kind !== "approval" ||
       task.pendingInteraction.approvalId !== payload.approvalId
     ) {
+      return false;
+    }
+    // Reject a second answer for an already-resolved interaction: without this
+    // a double answer (sidepanel + bridge, or bridge twice) double-resumes the
+    // task. Latent before forwarding made concurrent answerers possible.
+    if (isPendingInteractionResolved(task.pendingInteraction)) {
       return false;
     }
     void this.resolvePendingInteraction(task, {

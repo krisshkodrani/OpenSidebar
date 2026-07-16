@@ -35,16 +35,16 @@ import { toolRegistry } from "../tools";
 import type { ToolProfile } from "../tools/metadata";
 import { waitForDomReady } from "../tab-ready";
 import {
-  executeContentTool,
   isBridgeDisconnect,
   recoverContentScriptBridge,
   type BridgeRecoveryTraceHook,
 } from "../tools/bridge";
+import { type DryRunClassification } from "./mutation-dry-run-policy";
 import {
-  buildFormStateCapturedEvidence,
-  classifyFormSubmitDryRun,
-  type DryRunClassification,
-} from "./mutation-dry-run-policy";
+  runFormSubmitDryRun,
+  type FormSubmitDryRunHost,
+} from "./form-submit-dry-run";
+import type { ForwardedApprovalDryRun } from "@shared-types/browser-bridge";
 import { workspaceManager } from "../workspaces/manager";
 import { ContextManager } from "./context";
 import { StagnationMonitor } from "./stagnation";
@@ -52,7 +52,6 @@ import { PerceptionScreenshotState } from "../perception/perception-screenshot-s
 import { transformScreenshot } from "../perception/screenshot-transform";
 import type { PerceptionTaskContext } from "../perception/types";
 import { DomSnapshot } from "../../types";
-import type { FormStateCapture } from "../../types";
 import {
   CompletionResponse,
   LLMMessage,
@@ -167,7 +166,6 @@ import {
   buildTrustedCompletionCandidate,
   CompletionEvidenceLedger,
   deriveCompletionEvidenceFromSnapshot,
-  generateCompletionContract,
   type CompletionCandidateSource,
   type CompletionEnvelope,
   type CompletionEvaluation,
@@ -2267,6 +2265,7 @@ export class AgentLoop {
     toolName: ToolName,
     args: Record<string, unknown>,
     context: string,
+    dryRun?: ForwardedApprovalDryRun,
   ): Promise<boolean> {
     const interaction = getMatchingApprovalInteraction(
       this as unknown as LoopQueriesHost,
@@ -2282,6 +2281,7 @@ export class AgentLoop {
       args,
       context,
       timeoutMs: this.approvalTimeoutMs,
+      ...(dryRun ? { dryRun } : {}),
     };
     const remainingTimeoutMs = Math.max(
       0,
@@ -2488,69 +2488,13 @@ export class AgentLoop {
     args: Record<string, unknown>,
     tabId: number,
   ): Promise<DryRunClassification> {
-    const generated = generateCompletionContract({
-      userRequest: this.originalQuery,
-      snapshot: this.context.getSnapshot(),
-    });
-    const draft =
-      generated?.contract.kind === "form_fill"
-        ? generated.contract.requiredFields
-        : null;
-    if (!draft || draft.length === 0) return { kind: "no_draft" };
-
-    const submitId =
-      typeof (args as { id?: unknown }).id === "number"
-        ? (args as { id: number }).id
-        : undefined;
-    let capture: FormStateCapture | null = null;
-    try {
-      const result = await executeContentTool(
-        ToolName.EXTRACT_FORM_STATE,
-        submitId != null ? { id: submitId } : {},
-        tabId,
-      );
-      capture = JSON.parse(result) as FormStateCapture;
-    } catch (err) {
-      this.log.warn("agent", "form dry-run capture failed", {
-        turn: this.turnCount,
-        error: err instanceof Error ? err.message : String(err),
-      });
-    }
-
-    const classification = classifyFormSubmitDryRun(capture, draft);
-    if (capture) {
-      this.completionEvidence.add(
-        buildFormStateCapturedEvidence(capture, this.turnCount),
-      );
-    }
-    this.traceRecorder?.recordEvent("form_submit_dry_run", {
-      turn: this.turnCount,
-      tool: toolName,
-      kind: classification.kind,
-      formKey: capture?.formKey,
-      diffHash:
-        classification.kind === "no_draft"
-          ? undefined
-          : classification.diff.diffHash,
-    });
-
-    // Seal the dry-run (RFC LP-15 Phase 8: commit → seal): record the form +
-    // approved-diff digest so a replay recognizes this submit was dry-run
-    // verified and does not re-run it blindly.
-    if (capture && classification.kind !== "no_draft") {
-      this.checkpoints.recordMutation({
-        toolName,
-        args,
-        result: `form_dry_run:${classification.kind}`,
-        planIndex: this.lastPlanIndex,
-        turn: this.turnCount,
-        formSubmitSeal: {
-          formKey: capture.formKey,
-          diffHash: classification.diff.diffHash,
-        },
-      });
-    }
-    return classification;
+    // Relocated to form-submit-dry-run.ts (loop ratchet, pi-backend Phase 4).
+    return runFormSubmitDryRun(
+      this as unknown as FormSubmitDryRunHost,
+      toolName,
+      args,
+      tabId,
+    );
   }
 
   private async ensureToolApproval(
@@ -2558,6 +2502,7 @@ export class AgentLoop {
     args: Record<string, unknown>,
     riskLevel: RiskLevel,
     forceApproval = false,
+    dryRun?: ForwardedApprovalDryRun,
   ): Promise<boolean> {
     if (riskLevel !== RiskLevel.HIGH && !forceApproval) return true;
     if (this.bypassApprovals && !forceApproval) {
@@ -2590,7 +2535,7 @@ export class AgentLoop {
       return true;
     }
     const context = formatStepLabel(toolName, args, this.elementResolver);
-    const approved = await this.requestApproval(toolName, args, context);
+    const approved = await this.requestApproval(toolName, args, context, dryRun);
     if (!approved) {
       this.log.warn("policy", "High-risk tool denied or timed out", {
         turn: this.turnCount,

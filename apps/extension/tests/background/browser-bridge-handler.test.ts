@@ -112,3 +112,86 @@ describe("handleBrowserToolRequest", () => {
     expect(res.reason).toBe("runner exploded");
   });
 });
+
+describe("browser_respond_approval routing", () => {
+  const approval = { approvalId: "a1", approved: true };
+
+  test("routes to runner.respondApproval and maps its outcome", async () => {
+    let seen: unknown = null;
+    const r: AgentRunner = {
+      async run() {
+        return { status: "error", reason: "run should not be called" };
+      },
+      async respondApproval(req) {
+        seen = req.args;
+        return { status: "completed", summary: "submitted" };
+      },
+    };
+    const res = await handleBrowserToolRequest(
+      { tool: "browser_respond_approval", args: approval },
+      r,
+    );
+    expect(seen).toEqual(approval);
+    expect(res).toEqual({ status: "ok", result: "submitted" });
+  });
+
+  test("missing capability → structured error", async () => {
+    const r = runner({ status: "completed" });
+    const res = await handleBrowserToolRequest(
+      { tool: "browser_respond_approval", args: approval },
+      r,
+    );
+    expect(res.status).toBe("error");
+    expect(res.reason).toContain("cannot answer approvals");
+    expect(r.calls).toBe(0);
+  });
+
+  test("invalid args → structured error before the runner", async () => {
+    let called = false;
+    const r: AgentRunner = {
+      async run() {
+        return { status: "completed" };
+      },
+      async respondApproval() {
+        called = true;
+        return { status: "completed" };
+      },
+    };
+    for (const bad of [{}, { approvalId: "a1" }, { approved: true }, { approvalId: "", approved: true }]) {
+      const res = await handleBrowserToolRequest(
+        { tool: "browser_respond_approval", args: bad },
+        r,
+      );
+      expect(res.status).toBe("error");
+    }
+    expect(called).toBe(false);
+  });
+});
+
+describe("mapOutcome approval attachment", () => {
+  test("needs_human carries the approval block", async () => {
+    const r: AgentRunner = {
+      async run() {
+        return {
+          status: "needs_human",
+          reason: "approval required: Submit",
+          approval: {
+            approvalId: "a1",
+            toolName: "click_element",
+            args: { id: 7 },
+            context: "Submit",
+            requestedAt: 1,
+            timeoutMs: 600000,
+            expiresAt: 600001,
+          },
+        };
+      },
+    };
+    const res = await handleBrowserToolRequest(
+      { tool: "browser_run_task", args: { instruction: "x" } },
+      r,
+    );
+    expect(res.status).toBe("needs_human");
+    expect(res.approval?.approvalId).toBe("a1");
+  });
+});

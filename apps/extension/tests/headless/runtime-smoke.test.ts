@@ -40,6 +40,7 @@ describe("headless agent runtime", () => {
           started.push(input);
         },
         stopTask: async () => {},
+        resolveApprovalResponse: () => true,
       },
     });
 
@@ -75,10 +76,64 @@ describe("headless agent runtime", () => {
     runtime.dispose();
   });
 
+  test("resolveApproval delegates to orchestrator.resolveApprovalResponse", () => {
+    const { env } = createFakeEnvironment();
+    const calls: Array<{ payload: unknown; workspaceId?: string }> = [];
+    const runtime = createAgentRuntime(env, {
+      orchestrator: {
+        startTask: async () => {},
+        stopTask: async () => {},
+        resolveApprovalResponse: (payload, workspaceId) => {
+          calls.push({ payload, workspaceId });
+          return true;
+        },
+      },
+    });
+
+    const ok = runtime.resolveApproval("ws-1", { approvalId: "a1", approved: true });
+
+    expect(ok).toBe(true);
+    expect(calls).toEqual([
+      { payload: { approvalId: "a1", approved: true }, workspaceId: "ws-1" },
+    ]);
+    runtime.dispose();
+  });
+
+  test("onTaskPaused fires from a TASK_PAUSED on the messaging port, filtered by type", () => {
+    const { env, messaging } = createFakeEnvironment();
+    const runtime = createAgentRuntime(env, {
+      orchestrator: {
+        startTask: async () => {},
+        stopTask: async () => {},
+        resolveApprovalResponse: () => true,
+      },
+    });
+
+    const pauses: Array<{ workspaceId: string; payload: unknown }> = [];
+    runtime.onTaskPaused((workspaceId, payload) =>
+      pauses.push({ workspaceId, payload }),
+    );
+
+    messaging.deliver({ type: "TASK_COMPLETION", workspaceId: "ws-1", payload: {} });
+    messaging.deliver({
+      type: "TASK_PAUSED",
+      workspaceId: "ws-1",
+      payload: { taskId: "t1", interaction: { kind: "approval", approvalId: "a1" } },
+    });
+
+    expect(pauses).toEqual([
+      {
+        workspaceId: "ws-1",
+        payload: { taskId: "t1", interaction: { kind: "approval", approvalId: "a1" } },
+      },
+    ]);
+    runtime.dispose();
+  });
+
   test("onTaskCompletion fires from a TASK_COMPLETION on the messaging port", () => {
     const { env, messaging } = createFakeEnvironment();
     const runtime = createAgentRuntime(env, {
-      orchestrator: { startTask: async () => {}, stopTask: async () => {} },
+      orchestrator: { startTask: async () => {}, stopTask: async () => {}, resolveApprovalResponse: () => true },
     });
 
     const completions: Array<{ workspaceId: string; payload: unknown }> = [];
@@ -102,7 +157,7 @@ describe("headless agent runtime", () => {
   test("dispose unsubscribes completion listeners", () => {
     const { env, messaging } = createFakeEnvironment();
     const runtime = createAgentRuntime(env, {
-      orchestrator: { startTask: async () => {}, stopTask: async () => {} },
+      orchestrator: { startTask: async () => {}, stopTask: async () => {}, resolveApprovalResponse: () => true },
     });
     const listener = vi.fn();
     runtime.onTaskCompletion(listener);

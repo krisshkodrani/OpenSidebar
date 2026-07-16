@@ -14,6 +14,7 @@ import type {
   UserWebsiteSkillDraft,
 } from "./agent";
 import type { PartialProgressHandoff } from "./progress";
+import type { ForwardedApprovalDryRun } from "./browser-bridge";
 
 export type UiMessageSource = MessageSource.SIDEPANEL | MessageSource.UI;
 export type PassiveInputSource = "page" | "screenshot" | "tabAudio";
@@ -78,6 +79,7 @@ export type RuntimeMessage =
   | AgentTurnMessage
   | TaskProgressMessage
   | TaskCompletionMessage
+  | TaskPausedMessage
   | DurableRunStatusMessage
   | SkipSubtaskMessage
   | PauseAgentMessage
@@ -744,6 +746,34 @@ export interface TaskCompletionMessage extends BaseMessage {
     terminationReason?: string;
     /** Structured continuation artifact for incomplete-but-useful runs. */
     partialHandoff?: PartialProgressHandoff;
+  };
+}
+
+/**
+ * Background announces a task paused for a user interaction (pi-backend
+ * Phase 4 approval forwarding). Emitted AFTER `task.pendingInteraction` is
+ * set, so any consumer that answers immediately finds resolvable state. The
+ * task is alive and checkpointed; it resumes via an approval response, or
+ * auto-denies at `expiresAt`. The sidepanel ignores this (it already gets
+ * APPROVAL_REQUEST); the browser-bridge driver forwards it over the wire.
+ */
+export interface TaskPausedMessage extends BaseMessage {
+  type: "TASK_PAUSED";
+  source: MessageSource.BACKGROUND;
+  workspaceId: string;
+  payload: {
+    taskId: string;
+    interaction: {
+      kind: "approval";
+      approvalId: string;
+      toolName: string;
+      args: Record<string, unknown>;
+      context: string;
+      requestedAt: number;
+      timeoutMs: number;
+      expiresAt: number;
+      dryRun?: ForwardedApprovalDryRun;
+    };
   };
 }
 

@@ -68,29 +68,50 @@ describe("mapCompletion", () => {
   });
 });
 
+type PausePayload = Parameters<
+  Parameters<BrowserTaskDeps["addPauseListener"]>[0]
+>[1];
+
 function deps(): BrowserTaskDeps & {
   fire: (ws: string, p: CompletionPayload) => void;
+  firePause: (ws: string, p: PausePayload) => void;
+  resolveApprovalReturns: (value: boolean) => void;
   started: Array<{ workspaceId: string; tabId: number }>;
   created: string[];
   navigated: Array<{ tabId: number; url: string }>;
   stopped: string[];
+  resolved: Array<{ workspaceId: string; approvalId: string; approved: boolean }>;
   liveTabs: Set<number>;
 } {
   const listeners = new Set<(ws: string, p: CompletionPayload) => void>();
+  const pauseListeners = new Set<(ws: string, p: PausePayload) => void>();
   const started: Array<{ workspaceId: string; tabId: number }> = [];
   const created: string[] = [];
   const navigated: Array<{ tabId: number; url: string }> = [];
   const stopped: string[] = [];
+  const resolved: Array<{
+    workspaceId: string;
+    approvalId: string;
+    approved: boolean;
+  }> = [];
   const liveTabs = new Set<number>();
   let nextTabId = 42;
+  let resolveApprovalResult = true;
   return {
     started,
     created,
     navigated,
     stopped,
+    resolved,
     liveTabs,
     fire(ws, p) {
       for (const fn of [...listeners]) fn(ws, p);
+    },
+    firePause(ws, p) {
+      for (const fn of [...pauseListeners]) fn(ws, p);
+    },
+    resolveApprovalReturns(value) {
+      resolveApprovalResult = value;
     },
     async createTab(url) {
       created.push(url);
@@ -107,6 +128,10 @@ function deps(): BrowserTaskDeps & {
     async stopTask(workspaceId) {
       stopped.push(workspaceId);
     },
+    resolveApproval(workspaceId, payload) {
+      resolved.push({ workspaceId, ...payload });
+      return resolveApprovalResult;
+    },
     async startTask(input) {
       started.push({ workspaceId: input.workspaceId, tabId: input.tabId });
     },
@@ -115,6 +140,29 @@ function deps(): BrowserTaskDeps & {
       return () => {
         listeners.delete(fn);
       };
+    },
+    addPauseListener(fn) {
+      pauseListeners.add(fn);
+      return () => {
+        pauseListeners.delete(fn);
+      };
+    },
+  };
+}
+
+/** A TASK_PAUSED payload for an approval on workspace `ws`. */
+function pausePayload(approvalId: string): PausePayload {
+  return {
+    taskId: "task-1",
+    interaction: {
+      kind: "approval",
+      approvalId,
+      toolName: "click_element",
+      args: { id: 7 },
+      context: "Submit the application",
+      requestedAt: 1_700_000_000_000,
+      timeoutMs: 600_000,
+      expiresAt: 1_700_000_600_000,
     },
   };
 }
@@ -399,5 +447,158 @@ describe("createBrowserAgentRunner cancellation", () => {
     await tick();
 
     expect(d.stopped).toHaveLength(0);
+  });
+});
+
+describe("createBrowserAgentRunner approval forwarding", () => {
+  test("a pause on the run's workspace resolves needs_human with the approval", async () => {
+    const d = deps();
+    const runner = createBrowserAgentRunner(d);
+    const promise = runner.run({ instruction: "apply", session: "s1" });
+    await tick();
+    const ws = d.started[0].workspaceId;
+
+    d.firePause(ws, pausePayload("appr-1"));
+    const outcome = await promise;
+
+    expect(outcome.status).toBe("needs_human");
+    expect(outcome.approval?.approvalId).toBe("appr-1");
+    expect(outcome.approval?.context).toBe("Submit the application");
+    expect(outcome.approval?.expiresAt).toBe(1_700_000_600_000);
+  });
+
+  test("respondApproval resolves the approval and returns the follow-up completion", async () => {
+    const d = deps();
+    const runner = createBrowserAgentRunner(d);
+    const first = runner.run({ instruction: "apply", session: "s1" });
+    await tick();
+    const ws = d.started[0].workspaceId;
+    d.firePause(ws, pausePayload("appr-1"));
+    await first;
+
+    const answer = runner.respondApproval!({
+      tool: "browser_respond_approval",
+      args: { approvalId: "appr-1", approved: true },
+      session: "s1",
+    });
+    await tick();
+    expect(d.resolved).toEqual([
+      { workspaceId: ws, approvalId: "appr-1", approved: true },
+    ]);
+
+    // The resumed task completes.
+    d.fire(ws, { status: "completed", summary: "submitted" });
+    expect(await answer).toMatchObject({ status: "completed", summary: "submitted" });
+  });
+
+  test("respondApproval on an unknown approvalId errors immediately", async () => {
+    const d = deps();
+    const runner = createBrowserAgentRunner(d);
+    const outcome = await runner.respondApproval!({
+      tool: "browser_respond_approval",
+      args: { approvalId: "nope", approved: true },
+      session: "s1",
+    });
+    expect(outcome).toEqual({
+      status: "error",
+      reason: "no pending approval for that id",
+    });
+    expect(d.resolved).toHaveLength(0);
+  });
+
+  test("respondApproval errors fast (queue not blocked) when resolveApproval returns false", async () => {
+    const d = deps();
+    const runner = createBrowserAgentRunner(d);
+    const first = runner.run({ instruction: "apply", session: "s1" });
+    await tick();
+    const ws = d.started[0].workspaceId;
+    d.firePause(ws, pausePayload("appr-1"));
+    await first;
+
+    d.resolveApprovalReturns(false); // already answered / expired
+    const outcome = await runner.respondApproval!({
+      tool: "browser_respond_approval",
+      args: { approvalId: "appr-1", approved: true },
+      session: "s1",
+    });
+    expect(outcome.status).toBe("error");
+    expect(outcome.reason).toContain("no pending approval");
+
+    // Queue is free: a follow-up mission still starts.
+    const next = runner.run({ instruction: "again", session: "s1" });
+    await tick();
+    expect(d.started).toHaveLength(2);
+    d.fire(d.started[1].workspaceId, { status: "completed" });
+    await next;
+  });
+
+  test("respondApproval joins the session queue — a queued mission waits for the resume", async () => {
+    const d = deps();
+    const runner = createBrowserAgentRunner(d);
+    const first = runner.run({ instruction: "apply", session: "s1" });
+    await tick();
+    const ws = d.started[0].workspaceId;
+    d.firePause(ws, pausePayload("appr-1"));
+    await first;
+
+    // Answer, then immediately queue a follow-up mission.
+    const answer = runner.respondApproval!({
+      tool: "browser_respond_approval",
+      args: { approvalId: "appr-1", approved: true },
+      session: "s1",
+    });
+    const queued = runner.run({ instruction: "next", session: "s1" });
+    await tick();
+
+    // The follow-up must NOT have started while the resume is in flight.
+    expect(d.started).toHaveLength(1);
+
+    d.fire(ws, { status: "completed", summary: "submitted" });
+    await answer;
+    await tick();
+    expect(d.started).toHaveLength(2);
+    d.fire(d.started[1].workspaceId, { status: "completed" });
+    await queued;
+  });
+
+  test("a resumed task that pauses again yields a second needs_human + approval", async () => {
+    const d = deps();
+    const runner = createBrowserAgentRunner(d);
+    const first = runner.run({ instruction: "apply", session: "s1" });
+    await tick();
+    const ws = d.started[0].workspaceId;
+    d.firePause(ws, pausePayload("appr-1"));
+    await first;
+
+    const answer = runner.respondApproval!({
+      tool: "browser_respond_approval",
+      args: { approvalId: "appr-1", approved: true },
+      session: "s1",
+    });
+    await tick();
+    d.firePause(ws, pausePayload("appr-2"));
+    const outcome = await answer;
+    expect(outcome.approval?.approvalId).toBe("appr-2");
+  });
+
+  test("a sessionless respond resolves via the approvalId→workspace map", async () => {
+    const d = deps();
+    const runner = createBrowserAgentRunner(d);
+    const first = runner.run({ instruction: "apply" }); // no session
+    await tick();
+    const ws = d.started[0].workspaceId;
+    d.firePause(ws, pausePayload("appr-9"));
+    await first;
+
+    const answer = runner.respondApproval!({
+      tool: "browser_respond_approval",
+      args: { approvalId: "appr-9", approved: false },
+    });
+    await tick();
+    expect(d.resolved).toEqual([
+      { workspaceId: ws, approvalId: "appr-9", approved: false },
+    ]);
+    d.fire(ws, { status: "completed", summary: "refused and continued" });
+    await answer;
   });
 });

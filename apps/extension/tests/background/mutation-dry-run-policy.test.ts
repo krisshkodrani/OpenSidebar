@@ -176,3 +176,40 @@ describe("diffFormStateAgainstDraft", () => {
     expect(rendered).toContain("Note");
   });
 });
+
+describe("toForwardedApprovalDryRun", () => {
+  test("projects a classification into the wire shape; no_draft → undefined", async () => {
+    const { classifyFormSubmitDryRun, toForwardedApprovalDryRun } = await import(
+      "../../src/background/agent/mutation-dry-run-policy"
+    );
+    expect(toForwardedApprovalDryRun({ kind: "no_draft" })).toBeUndefined();
+
+    const cls = classifyFormSubmitDryRun(
+      capture([{ name: "email", value: "x@y.com" }]),
+      expect_([{ label: "email", value: "a@b.com" }]),
+    );
+    const forwarded = toForwardedApprovalDryRun(cls);
+    expect(forwarded).toMatchObject({
+      kind: "unexpected",
+      formKey: "/apply",
+      entries: [
+        { label: "email", expected: "a@b.com", actual: "x@y.com", status: "mismatch" },
+      ],
+    });
+    expect(typeof forwarded!.diffHash).toBe("string");
+    expect(forwarded!.rendered).toContain("email");
+  });
+
+  test("a clean classification forwards without a rendered diff", async () => {
+    const { classifyFormSubmitDryRun, toForwardedApprovalDryRun } = await import(
+      "../../src/background/agent/mutation-dry-run-policy"
+    );
+    const cls = classifyFormSubmitDryRun(
+      capture([{ name: "email", value: "a@b.com" }]),
+      expect_([{ label: "email", value: "a@b.com" }]),
+    );
+    const forwarded = toForwardedApprovalDryRun(cls);
+    expect(forwarded).toMatchObject({ kind: "clean", formKey: "/apply" });
+    expect(forwarded!.rendered).toBeUndefined();
+  });
+});

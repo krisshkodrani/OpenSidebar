@@ -15,7 +15,7 @@ WIP — that is why this work lives in its own worktree. Don't merge the two.
 | 1 — completion seam + bridge repairs | **DONE, committed, verify green; PROVEN in a real browser 2026-07-15** (e2e `tests/e2e/browser-bridge.test.ts`, 26s) |
 | 2 — pi extension | **DONE, committed** (`.pi/extensions/opensidebar.ts`; spike answer below) |
 | 3 — mission/report handover | **DONE 2026-07-16** (sessions + cancellation; design below) |
-| 4 — grounded submit | not started |
+| 4 — grounded submit | **DONE 2026-07-16** (approval forwarding; design below) |
 | 5 — JobAgent workspace | not started |
 | 6 — remove OpenClaw | **DONE 2026-07-16** (see CHANGELOG [Unreleased]; RL-rubric "OpenClaw" in obs engine deliberately untouched) |
 
@@ -199,6 +199,61 @@ Both deferred items landed together as the mission-protocol change:
   continuity across SW restarts (registry is in-memory; next call gets a fresh
   workspace + tab).
 
+## Phase 4 — grounded submit via approval forwarding (DONE 2026-07-16)
+
+A consequential action (a job-application form submit) is hard-gated: the run
+pauses for approval, and `forceApproval` defeats even `bypassApprovals`. Bridge
+missions have no sidepanel to answer that pause — the live session proved it
+fails at tab-rebind. Phase 4 forwards the approval over the wire instead of
+adding an unattended/auto-submit mode.
+
+- **Transport = a NEW `TASK_PAUSED` runtime message**, not a flagged
+  TASK_COMPLETION (completion is terminal semantics for ≥4 consumers). Emitted
+  from the orchestrator pause branch AFTER `pendingInteraction` is set + the
+  timeout armed + the checkpoint persisted — so a caller that answers instantly
+  finds resolvable state (kills the answer-before-state race the loop's raw
+  `chrome.runtime.sendMessage` APPROVAL_REQUEST would have had). The sidepanel
+  ignores TASK_PAUSED (it gets APPROVAL_REQUEST); the bridge driver forwards it.
+- **Wire**: `BrowserToolResponse.approval?: ForwardedApprovalRequest`
+  (approvalId, toolName, args, context, requestedAt, timeoutMs, expiresAt,
+  dryRun?) rides on `needs_human`. The Phase 8 dry-run diff is forwarded
+  structured (`ForwardedApprovalDryRun` — entries of expected/actual/status) so
+  pi byte-checks the live form against the values it put in the instruction
+  before approving. That IS the grounded-submit gate — pi-side, as designed.
+- **Answering**: new mechanical tool `browser_respond_approval
+  {approvalId, approved}` → `AgentRunner.respondApproval` → the driver joins
+  the SAME session queue (a queued mission cannot start mid-resume and stop the
+  paused task) → `AgentRuntime.resolveApproval` → `orchestrator.resolveApprovalResponse`,
+  which replays the exact gated tool call. On approve the driver awaits the
+  workspace's next outcome (completion OR another pause); on a failed resolve
+  (unknown/expired/double) it errors fast so the queue never blocks.
+- **Timeout**: the loop's default approval window is 30s (loop-metrics.ts) —
+  hopeless for a pi→human round trip. `interactionDelivery: "handoff"` on the
+  start-input (set by the bridge, copied onto the task, sanitizer-preserved)
+  selects `HANDOFF_APPROVAL_TIMEOUT_MS = 600_000` via the existing loop option;
+  non-bridge tasks are byte-identical. On expiry the orchestrator auto-denies +
+  resumes (existing behavior); the tab fix below makes that resume actually work.
+- **The live blocker, fixed generally**: `selectResumeOwnedTab` now rebinds to
+  the task's OWN live primary tab by identity even when its URL is non-durable
+  (about:blank) — no ambiguity exists for the task's own tab. Not bridge-gated:
+  sidepanel tasks paused on about:blank failed identically before.
+- **Latent bug fixed en route**: `resolveApprovalResponse` didn't guard against
+  a second answer (`isPendingInteractionResolved`) — forwarding made concurrent
+  answerers (sidepanel + bridge) real, which would have double-resumed.
+- **Ratchet**: net-negative on both guarded files — extracted
+  `runFormSubmitDryRun` → `agent/form-submit-dry-run.ts` and
+  `emitPendingInteraction`'s body → `orchestrator/pending-interaction.ts`;
+  budgets tightened (loop 6821→6766, orchestrator 5775→5758).
+- **Deferred (unchanged intent)**: unattended/auto-submit mode +
+  `groundedSubmitAuthorization` token; a structured answers-map channel;
+  clarification forwarding (approval only this phase). PII note: forwarded
+  args/dryRun entries are values pi itself supplied — no new exposure.
+- **Landmine correction**: the spike-doc warning about a verifier
+  `isRestraintTask` consumer of `classifyConsequentialActionConsentMode` is
+  STALE — that consumer does not exist on this branch (grep-verified). The
+  classifier's semantics are still left byte-identical (Phase 4 reads only
+  `.requiresApproval` and never branches on task text).
+
 ## Live pi session findings (2026-07-16, first real pi ↔ extension contact)
 
 Ran real `pi -p` (Fireworks minimax-m3 brain) against the branch extension in
@@ -229,15 +284,15 @@ Phase-4-relevant:
 
 ## Landmines for whoever resumes
 
-- **Don't touch `classifyConsequentialActionConsentMode`'s semantics** in Phase 4.
-  It has a live second consumer at `orchestrator/verifier.ts:146` (`isRestraintTask`),
-  fixed as recently as `2bc95f70`. Add a new typed `consentMode` on
-  `OrchestratorStartInput` that overrides at the gate only; absent it, classify
-  from text exactly as today. Note `isRestraintTask` has no test of its own.
-- **Job-application submits are hard-gated today** and cannot be automated:
-  `assessConsequentialActionApproval` forces approval and defeats even
-  `bypassApprovals` (`loop.ts:2563`). Phase 4 must resolve this or auto-submit
-  cannot exist.
+- **Don't touch `classifyConsequentialActionConsentMode`'s semantics.**
+  (Phase 4 note: the claimed `orchestrator/verifier.ts` `isRestraintTask`
+  consumer does NOT exist on this branch — grep-verified. The rule still holds
+  as prudence, and Phase 4 obeyed it: it reads only `.requiresApproval` and
+  never branches on task text.)
+- **Job-application submits are hard-gated** — `assessConsequentialActionApproval`
+  forces approval and defeats `bypassApprovals` (`loop.ts:2562-2563`). Phase 4
+  did NOT relax the gate; it forwards the approval to pi's human instead (see the
+  Phase 4 section above). A grounded auto-submit token remains deferred.
 - **`.artifacts/seed/` holds real PII** (name, email, phone, address, 11 CVs)
   behind only the blanket `.artifacts/` rule at `.gitignore:69`. Phase 0.
 - ~~`tests/background/agent-runner.test.ts` imports `browser-bridge/agent-runner.ts`
