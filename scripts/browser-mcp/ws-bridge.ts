@@ -56,7 +56,15 @@ export class WebSocketBridge implements BrowserBridge {
       host: opts.host ?? "127.0.0.1",
     });
     this.listening = new Promise((resolve) =>
-      this.wss.once("listening", () => resolve()),
+      this.wss.once("listening", () => {
+        // Do not let the bridge server keep its host process alive: inside a
+        // pi extension, a referenced server means `pi -p` NEVER exits after
+        // answering (found live 2026-07-16). The MCP host and tests stay
+        // alive via their own transports/handles. `_server` is ws's internal
+        // http server — no public accessor exists.
+        (this.wss as unknown as { _server?: { unref?: () => void } })._server?.unref?.();
+        resolve();
+      }),
     );
     this.wss.on("connection", (socket: WebSocket) => {
       // Single extension client; a new connection supersedes the old.
