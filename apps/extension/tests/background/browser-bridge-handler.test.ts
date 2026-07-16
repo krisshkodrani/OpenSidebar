@@ -30,6 +30,19 @@ describe("toAgentTask", () => {
     });
     expect(task.instruction).toBe("book a table for two");
   });
+
+  test("carries the request session through on every tool", () => {
+    const tools: Array<{ tool: string; args: Record<string, unknown> }> = [
+      { tool: "browser_navigate", args: { url: "https://x.test" } },
+      { tool: "browser_screenshot", args: {} },
+      { tool: "browser_run_task", args: { instruction: "x" } },
+      { tool: "browser_apply_to_job", args: { url: "https://jobs.test/1" } },
+    ];
+    for (const req of tools) {
+      expect(toAgentTask({ ...req, session: "pi-abc" }).session).toBe("pi-abc");
+      expect(toAgentTask(req).session).toBeUndefined();
+    }
+  });
 });
 
 describe("handleBrowserToolRequest", () => {
@@ -66,6 +79,23 @@ describe("handleBrowserToolRequest", () => {
       r,
     );
     expect(res).toEqual({ status: "error", reason: "form not found" });
+  });
+
+  test("passes the abort signal through to the runner", async () => {
+    let seen: AbortSignal | undefined;
+    const capturing: AgentRunner = {
+      async run(_task, opts) {
+        seen = opts?.signal;
+        return { status: "completed" };
+      },
+    };
+    const controller = new AbortController();
+    await handleBrowserToolRequest(
+      { tool: "browser_run_task", args: { instruction: "x" } },
+      capturing,
+      { signal: controller.signal },
+    );
+    expect(seen).toBe(controller.signal);
   });
 
   test("a thrown runner becomes a structured error, not a crash", async () => {

@@ -13,19 +13,41 @@
  */
 
 // The wire contract is shared with the extension via shared-types (one source of
-// truth). The transport interface + default bridge stay host-local.
+// truth). The transport interface + default bridge stay host-local. All
+// shared-types imports here MUST stay type-only: the pi loader resolves this
+// file at runtime and cannot resolve the `@shared-types` alias (typecheck-only).
 export type {
   BrowserToolStatus,
   BrowserToolRequest,
   BrowserToolResponse,
+  BrowserToolCallFrame,
+  BrowserToolCancelFrame,
+  BrowserBridgeHostFrame,
+  BrowserToolResponseFrame,
 } from "@shared-types/browser-bridge";
 import type {
   BrowserToolRequest,
   BrowserToolResponse,
 } from "@shared-types/browser-bridge";
 
+/**
+ * Reason string a canceled call resolves with. Host-local value (see the
+ * type-only note above); the extension mirrors the same string in
+ * `browser-bridge/orchestrator-driver.ts`. Nothing matches on it — it is for
+ * the caller's (pi's) eyes.
+ */
+export const BROWSER_TOOL_CANCELED_REASON = "canceled by caller";
+
+export interface BrowserToolCallOptions {
+  /** Aborting resolves the call as canceled and tells the extension to stop the run. */
+  signal?: AbortSignal;
+}
+
 export interface BrowserBridge {
-  call(request: BrowserToolRequest): Promise<BrowserToolResponse>;
+  call(
+    request: BrowserToolRequest,
+    opts?: BrowserToolCallOptions,
+  ): Promise<BrowserToolResponse>;
 }
 
 /**

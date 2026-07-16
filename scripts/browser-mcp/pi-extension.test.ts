@@ -10,9 +10,11 @@
  *      connected" response instead of hanging or throwing.
  */
 
-import { afterAll, beforeAll, describe, expect, test } from "vitest";
+import { afterAll, beforeAll, describe, expect, test, vi } from "vitest";
 
+import type { BrowserToolRequest, BrowserToolResponse } from "./bridge";
 import { BROWSER_TOOLS } from "./tools";
+import { WebSocketBridge } from "./ws-bridge";
 
 // Ephemeral port so this never collides with a real bridge on 8787.
 process.env.OPENSIDEBAR_WS_PORT = "0";
@@ -80,5 +82,55 @@ describe("pi extension registration", () => {
     await expect(
       ping.execute("call-2", {}, controller.signal),
     ).rejects.toThrow(/aborted before dispatch/);
+  });
+
+  test("every call carries the same process-level session id", async () => {
+    const requests: BrowserToolRequest[] = [];
+    const spy = vi
+      .spyOn(WebSocketBridge.prototype, "call")
+      .mockImplementation(async (request) => {
+        requests.push(request);
+        return { status: "ok", result: null };
+      });
+    try {
+      const ping = registered.find((t) => t.name === "browser_ping")!;
+      const run = registered.find((t) => t.name === "browser_run_task")!;
+      await ping.execute("call-3", {});
+      await run.execute("call-4", { instruction: "x" });
+
+      expect(requests).toHaveLength(2);
+      expect(requests[0].session).toMatch(/^pi-/);
+      expect(requests[1].session).toBe(requests[0].session);
+      // The session is transport metadata — it must never leak into a schema.
+      for (const tool of BROWSER_TOOLS) {
+        expect(JSON.stringify(tool.inputSchema)).not.toContain("session");
+      }
+    } finally {
+      spy.mockRestore();
+    }
+  });
+
+  test("aborting mid-call rejects with '<tool> aborted'", async () => {
+    const spy = vi
+      .spyOn(WebSocketBridge.prototype, "call")
+      .mockImplementation(
+        (_request, opts?: { signal?: AbortSignal }) =>
+          new Promise<BrowserToolResponse>((resolve) => {
+            // Resolve only on abort — mirrors the host's local resolution.
+            const canceled = () =>
+              resolve({ status: "error", reason: "canceled by caller" });
+            if (opts?.signal?.aborted) canceled();
+            else opts?.signal?.addEventListener("abort", canceled);
+          }),
+      );
+    try {
+      const run = registered.find((t) => t.name === "browser_run_task")!;
+      const controller = new AbortController();
+      const pending = run.execute("call-5", { instruction: "x" }, controller.signal);
+      controller.abort();
+      await expect(pending).rejects.toThrow(/browser_run_task aborted/);
+    } finally {
+      spy.mockRestore();
+    }
   });
 });

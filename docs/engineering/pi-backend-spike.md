@@ -12,9 +12,9 @@ WIP — that is why this work lives in its own worktree. Don't merge the two.
 | Phase | State |
 | --- | --- |
 | 0 — contain seed PII | **not started** |
-| 1 — completion seam + bridge repairs | **DONE, committed, verify green** |
-| 2 — pi extension | **spike DONE** (2026-07-15, question answered below) — ready to write the extension |
-| 3 — mission/report handover | not started (has deferred work queued into it) |
+| 1 — completion seam + bridge repairs | **DONE, committed, verify green; PROVEN in a real browser 2026-07-15** (e2e `tests/e2e/browser-bridge.test.ts`, 26s) |
+| 2 — pi extension | **DONE, committed** (`.pi/extensions/opensidebar.ts`; spike answer below) |
+| 3 — mission/report handover | **DONE 2026-07-16** (sessions + cancellation; design below) |
 | 4 — grounded submit | not started |
 | 5 — JobAgent workspace | not started |
 | 6 — remove OpenClaw | not started |
@@ -158,17 +158,46 @@ Two things to expect when writing the extension:
 - Extension flag `opensidebar:browserMcpWsPort` must be set to `8787` in
   `chrome.storage.local`; default-off, no settings UI.
 
-## Deferred into Phase 3 (was Phase 1 in the plan)
+## Phase 3 — DONE 2026-07-16 (sessions + cancellation)
 
-Both moved deliberately — read before "fixing" them:
+Both deferred items landed together as the mission-protocol change:
 
-- **Tab lifecycle.** `createBrowserAgentRunner` opens a background tab per run and
-  never closes it (a real leak). **Do not close it eagerly**: Mission B (submit)
-  must land on the page Mission A (fill) left behind, so eager close destroys the
-  continuity the whole submit gate depends on. Correct fix is session-scoped tab
-  reuse keyed by workspace — Phase 3 protocol work.
-- **Cancellation.** pi's `AbortSignal` → `STOP_AGENT` needs a cancel frame on the
-  wire plus `AgentRuntime.stopTask`. Belongs with the mission protocol.
+- **Session-scoped tab reuse.** `BrowserToolRequest` gained `session?: string` —
+  out-of-band transport metadata, minted once per pi process
+  (`.pi/extensions/opensidebar.ts` `SESSION`), never in any LLM-facing tool
+  schema (`tools.ts` untouched). The driver keeps an in-memory
+  `Map<session, {workspaceId, tabId, queue}>`: same session ⇒ same workspace +
+  same tab (a `task.url` on a reused session navigates the tab; a dead tab
+  falls back to a fresh one, keeping the workspace, so the orchestrator's
+  `recentCompletionTracker` context folding still applies). Session tabs are
+  deliberately never closed. Sessionless calls behave exactly as before.
+- **Runs on one session are SERIALIZED (mandatory, not a nicety).** The
+  orchestrator's same-workspace replacement (`startTask` → `stopTask`) does not
+  await the graceful stop drain; a follow-up started mid-drain gets its
+  `tasksByWorkspace` entry deleted by the old task's finalize and its completion
+  listener fed the old "stopped" broadcast. The per-session promise queue in
+  `orchestrator-driver.ts` prevents both.
+- **Cancellation.** New wire frame host → ext `{ id, cancel: true }` (types in
+  `shared-types/browser-bridge.ts`). On abort the host sends the frame and
+  resolves the call locally with `BROWSER_TOOL_CANCELED_REASON` ("canceled by
+  caller" — the VALUE lives in `scripts/browser-mcp/bridge.ts`, because
+  shared-types must stay type-only: the pi loader resolves `ws-bridge.ts` at
+  runtime and cannot resolve the `@shared-types` alias; the extension mirrors
+  the string in `orchestrator-driver.ts`). Extension side: `ws-client` keeps an
+  id → `AbortController` map; the signal threads through
+  `handleBrowserToolRequest` → `AgentRunner.run(task, {signal})` → new
+  `deps.stopTask(workspaceId)` → new `AgentRuntime.stopTask` →
+  `orchestrator.stopTask`. On abort the run does NOT settle early — it waits
+  for the stopped completion (bounded by the 600s run timeout), which is what
+  keeps the session queue safe. The driver re-checks `signal.aborted` after
+  `startTask` resolves to cover an abort that lands mid-start. Pi extension
+  forwards its `AbortSignal` into `ws.call` and throws `"<tool> aborted"` after
+  a canceled resolution (pi's throw-on-failure convention).
+- **Non-goals, deliberate:** closing session tabs on disconnect (the user may be
+  reading them); aborting runs on transient socket close (2s reconnects);
+  sessions for the MCP-server path (`session` is optional on the wire); mission
+  continuity across SW restarts (registry is in-memory; next call gets a fresh
+  workspace + tab).
 
 ## Landmines for whoever resumes
 

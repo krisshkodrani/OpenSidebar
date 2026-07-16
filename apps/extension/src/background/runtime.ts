@@ -42,6 +42,8 @@ interface TaskCompletionEnvelope {
 export interface AgentRuntime {
   /** Start an agent task. */
   startTask(input: OrchestratorStartInput): Promise<void>;
+  /** Stop a running task by workspace; stops every task when omitted. */
+  stopTask(workspaceId?: string): Promise<void>;
   /** Observe task completions, correlated by workspaceId. Returns unsubscribe. */
   onTaskCompletion(
     listener: (
@@ -54,7 +56,7 @@ export interface AgentRuntime {
 }
 
 export interface AgentRuntimeDeps {
-  orchestrator?: Pick<typeof defaultOrchestrator, "startTask">;
+  orchestrator?: Pick<typeof defaultOrchestrator, "startTask" | "stopTask">;
 }
 
 export function createAgentRuntime(
@@ -67,6 +69,9 @@ export function createAgentRuntime(
   return {
     startTask(input) {
       return orchestrator.startTask(input);
+    },
+    stopTask(workspaceId) {
+      return orchestrator.stopTask(workspaceId);
     },
     onTaskCompletion(listener) {
       const off = env.messaging.onMessage((message) => {
