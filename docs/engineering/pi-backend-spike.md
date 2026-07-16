@@ -199,6 +199,34 @@ Both deferred items landed together as the mission-protocol change:
   continuity across SW restarts (registry is in-memory; next call gets a fresh
   workspace + tab).
 
+## Live pi session findings (2026-07-16, first real pi ↔ extension contact)
+
+Ran real `pi -p` (Fireworks minimax-m3 brain) against the branch extension in
+a seeded throwaway Chrome. Result: **loop proven end-to-end except unattended
+completion** — pi loaded all 7 tools (project-local extensions need `-a`
+trust!), called `browser_run_task` with clean instructions, the extension
+connected and ran a real 2.5-minute agent mission, structured errors
+propagated back, and pi reported honestly (no fabrication). Findings, all
+Phase-4-relevant:
+
+1. **Bridge missions are incompatible with interactive safety gates today.**
+   With approvals/plan-confirmation at defaults, the mission paused for a
+   user interaction that has no surface (bridge tasks bind no sidepanel),
+   then `resumeTaskAfterInteraction` failed rebinding ("No usable live
+   workspace tab"). Phase 4 needs either approval forwarding over the wire
+   (pi asks the human) or an explicit unattended mode on the request.
+2. **Cold-start race:** the extension reconnects every 2s, so pi's FIRST tool
+   call within ~2s of server start gets "not connected". Options: brief
+   connect-grace in `WebSocketBridge.call`, or a retry hint in the tool
+   description. (Pi recovered by pinging and retrying on its own.)
+3. **MV3 idle suspension kills the reconnect loop** — an idle extension never
+   connects to a late-starting server without a wake. The e2e harness never
+   sees this (fresh SW per launch); real usage needs the keepalive alarm
+   paired with the bridge (ws-client doc already says so) — verify it exists.
+4. **`pi -p` never exited** while the extension hosted the WS server — fixed:
+   the bridge server is now `unref()`ed (ws-bridge.ts) so it cannot hold the
+   host process open.
+
 ## Landmines for whoever resumes
 
 - **Don't touch `classifyConsequentialActionConsentMode`'s semantics** in Phase 4.
