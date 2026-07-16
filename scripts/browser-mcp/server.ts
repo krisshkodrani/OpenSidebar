@@ -2,17 +2,20 @@
  * Browser MCP host (RFC LP-8, M2 "The Bridge").
  *
  * A Model Context Protocol server that exposes thick, intent-level browser tools
- * to an external orchestrator (OpenClaw). It mirrors the proven LP-7 pattern
+ * to an external MCP client. It mirrors the proven LP-7 pattern
  * (`scripts/obs/mcp-server.ts`): the server holds no browser logic — every call
  * is validated and forwarded over a `BrowserBridge` to the OpenSidebar
- * extension, which runs the actual `AgentLoop`.
+ * extension, which runs the actual `AgentLoop`. (A local pi session skips this
+ * server entirely and drives the WebSocket bridge directly via
+ * `.pi/extensions/opensidebar.ts`.)
  *
- * Two transports to the orchestrator (OpenClaw):
- *   - stdio (default)              — OpenClaw spawns this process as a child.
+ * Two transports to the MCP client:
+ *   - stdio (default)              — the client spawns this process as a child.
  *                                    Best for a native, single-machine install.
- *   - streamable-http (network)    — set BROWSER_MCP_HTTP_PORT. OpenClaw connects
- *                                    over the network. Required when OpenClaw runs
- *                                    in its own container (it can't spawn our repo).
+ *   - streamable-http (network)    — set BROWSER_MCP_HTTP_PORT. The client
+ *                                    connects over the network. Required when it
+ *                                    runs in its own container (it can't spawn
+ *                                    our repo).
  *
  * Transport to the *extension* is independent: a loopback WebSocket on
  * BROWSER_MCP_WS_PORT (the extension connects as a client). Until that is set the
@@ -110,7 +113,7 @@ export type BrowserMcpTransport =
   | { kind: "stdio" }
   | { kind: "http"; port: number; host?: string };
 
-/** Connect the server over stdio (OpenClaw spawns us as a child process). */
+/** Connect the server over stdio (the MCP client spawns us as a child process). */
 async function startStdio(bridge: BrowserBridge): Promise<void> {
   const server = buildBrowserMcpServer(bridge);
   await server.connect(new StdioServerTransport());
@@ -133,10 +136,10 @@ function readBody(req: import("node:http").IncomingMessage): Promise<unknown> {
 }
 
 /**
- * Serve MCP over streamable-http (stateless) so a networked orchestrator — e.g.
- * OpenClaw running in its own container — can reach us. One server+transport per
- * request keeps it stateless (no cross-request session state; the bridge holds
- * all the real state).
+ * Serve MCP over streamable-http (stateless) so a networked orchestrator —
+ * e.g. one running in its own container — can reach us. One server+transport
+ * per request keeps it stateless (no cross-request session state; the bridge
+ * holds all the real state).
  */
 async function startHttp(
   bridge: BrowserBridge,
@@ -188,8 +191,8 @@ export async function startBrowserMcpServer(
 // Auto-start only when run directly (not when imported by tests).
 //   - Extension transport: loopback WebSocket when BROWSER_MCP_WS_PORT is set;
 //     otherwise NotConnectedBridge (extension transport not configured).
-//   - OpenClaw transport: streamable-http when BROWSER_MCP_HTTP_PORT is set
-//     (Docker / networked); otherwise stdio (native, OpenClaw spawns us).
+//   - MCP-client transport: streamable-http when BROWSER_MCP_HTTP_PORT is set
+//     (Docker / networked); otherwise stdio (native, the client spawns us).
 const entryPath = process.argv[1] ? resolve(process.argv[1]) : "";
 if (entryPath && entryPath === fileURLToPath(import.meta.url)) {
   const wsPort = process.env.BROWSER_MCP_WS_PORT;

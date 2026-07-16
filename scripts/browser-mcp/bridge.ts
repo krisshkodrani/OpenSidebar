@@ -2,7 +2,7 @@
  * Browser bridge contract (RFC LP-8, M2 "The Bridge").
  *
  * The browser MCP host (this package) exposes thick, intent-level browser tools
- * to an external orchestrator (OpenClaw). It does NOT run the browser itself —
+ * to an external orchestrator (a pi session, or any MCP client). It does NOT run the browser itself —
  * each tool call is forwarded over a `BrowserBridge` to the OpenSidebar
  * extension, which runs a full internal `AgentLoop` and returns one result.
  *
@@ -53,7 +53,7 @@ export interface BrowserBridge {
 /**
  * Default bridge used until the extension transport is wired (M2 Stage 2).
  * Always reports that the browser is unreachable, so the MCP contract is live
- * and OpenClaw gets a clean, structured response instead of a hang.
+ * and the caller gets a clean, structured response instead of a hang.
  */
 export class NotConnectedBridge implements BrowserBridge {
   async call(): Promise<BrowserToolResponse> {

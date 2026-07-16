@@ -141,13 +141,13 @@ describe("agent runtime over the real chrome port", () => {
 
     chromeRuntimeMessagingPort.broadcast({
       type: "TASK_COMPLETION",
-      workspaceId: "openclaw-abc",
+      workspaceId: "bridge-abc",
       payload: { status: "completed", summary: "done" },
     });
 
     expect(seen).toEqual([
       {
-        workspaceId: "openclaw-abc",
+        workspaceId: "bridge-abc",
         payload: { status: "completed", summary: "done" },
       },
     ]);

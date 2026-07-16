@@ -2,7 +2,7 @@
  * Agent runtime composition root (RFC LP-15, Phase 5).
  *
  * `createAgentRuntime(env)` is the single library API both clients drive:
- * the sidepanel (via background.ts) and OpenClaw (via the browser bridge)
+ * the sidepanel (via background.ts) and external brains like pi (via the browser bridge)
  * become literal peers instead of each re-solving how to start a task and
  * observe its completion.
  *
