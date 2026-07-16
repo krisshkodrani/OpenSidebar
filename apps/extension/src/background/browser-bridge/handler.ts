@@ -18,6 +18,8 @@ import type { PartialProgressHandoff } from "@shared-types/progress";
 export interface AgentTask {
   instruction: string;
   url?: string;
+  /** Session key: calls sharing it reuse one workspace + tab (see wire contract). */
+  session?: string;
 }
 
 export interface AgentRunOutcome {
@@ -29,13 +31,24 @@ export interface AgentRunOutcome {
   handoff?: PartialProgressHandoff;
 }
 
+export interface AgentRunOptions {
+  /** Aborting requests a stop of the running task; the run settles normally. */
+  signal?: AbortSignal;
+}
+
 /** Runs one internal agent task. Implemented by the orchestrator in Stage 2b. */
 export interface AgentRunner {
-  run(task: AgentTask): Promise<AgentRunOutcome>;
+  run(task: AgentTask, opts?: AgentRunOptions): Promise<AgentRunOutcome>;
 }
 
 /** Map a thick browser tool request to an internal natural-language agent task. */
 export function toAgentTask(req: BrowserToolRequest): AgentTask {
+  const task = mapTool(req);
+  if (req.session !== undefined) task.session = req.session;
+  return task;
+}
+
+function mapTool(req: BrowserToolRequest): AgentTask {
   const a = req.args;
   const url = typeof a.url === "string" ? a.url : undefined;
   switch (req.tool) {
@@ -95,11 +108,12 @@ function mapOutcome(outcome: AgentRunOutcome): BrowserToolResponse {
 export async function handleBrowserToolRequest(
   req: BrowserToolRequest,
   runner: AgentRunner,
+  opts?: AgentRunOptions,
 ): Promise<BrowserToolResponse> {
   // Liveness check never runs a task.
   if (req.tool === "browser_ping") return { status: "ok", result: "pong" };
   try {
-    const outcome = await runner.run(toAgentTask(req));
+    const outcome = await runner.run(toAgentTask(req), opts);
     return mapOutcome(outcome);
   } catch (error) {
     return { status: "error", reason: (error as Error).message };

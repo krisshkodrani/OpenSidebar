@@ -39,6 +39,7 @@ describe("headless agent runtime", () => {
         startTask: async (input) => {
           started.push(input);
         },
+        stopTask: async () => {},
       },
     });
 
@@ -55,10 +56,29 @@ describe("headless agent runtime", () => {
     runtime.dispose();
   });
 
+  test("stopTask delegates to the injected orchestrator with the workspaceId", async () => {
+    const { env } = createFakeEnvironment();
+    const stopped: Array<string | undefined> = [];
+    const runtime = createAgentRuntime(env, {
+      orchestrator: {
+        startTask: async () => {},
+        stopTask: async (workspaceId) => {
+          stopped.push(workspaceId);
+        },
+      },
+    });
+
+    await runtime.stopTask("ws-9");
+    await runtime.stopTask();
+
+    expect(stopped).toEqual(["ws-9", undefined]);
+    runtime.dispose();
+  });
+
   test("onTaskCompletion fires from a TASK_COMPLETION on the messaging port", () => {
     const { env, messaging } = createFakeEnvironment();
     const runtime = createAgentRuntime(env, {
-      orchestrator: { startTask: async () => {} },
+      orchestrator: { startTask: async () => {}, stopTask: async () => {} },
     });
 
     const completions: Array<{ workspaceId: string; payload: unknown }> = [];
@@ -82,7 +102,7 @@ describe("headless agent runtime", () => {
   test("dispose unsubscribes completion listeners", () => {
     const { env, messaging } = createFakeEnvironment();
     const runtime = createAgentRuntime(env, {
-      orchestrator: { startTask: async () => {} },
+      orchestrator: { startTask: async () => {}, stopTask: async () => {} },
     });
     const listener = vi.fn();
     runtime.onTaskCompletion(listener);

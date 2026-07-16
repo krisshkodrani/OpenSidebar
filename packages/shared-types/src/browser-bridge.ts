@@ -20,6 +20,13 @@ export type BrowserToolStatus = "ok" | "needs_human" | "error";
 export interface BrowserToolRequest {
   tool: string;
   args: Record<string, unknown>;
+  /**
+   * Out-of-band session key, minted once per caller process (e.g. one pi run).
+   * Transport metadata only — it never appears in any LLM-facing tool schema.
+   * Calls sharing a session reuse one workspace and one browser tab, so a
+   * follow-up mission lands on the page the previous mission left open.
+   */
+  session?: string;
 }
 
 export interface BrowserToolResponse {
@@ -35,4 +42,33 @@ export interface BrowserToolResponse {
    * orchestrator needs it most when the run did not simply succeed.
    */
   handoff?: PartialProgressHandoff;
+}
+
+/**
+ * WebSocket wire frames between the browser MCP host and the extension.
+ * This module is type-only (both sides bundle/erase it), so the canonical
+ * canceled-reason VALUE lives host-side: `BROWSER_TOOL_CANCELED_REASON` in
+ * `scripts/browser-mcp/bridge.ts` = "canceled by caller". The extension mirrors
+ * the same string; nothing compares the two programmatically.
+ */
+export interface BrowserToolCallFrame {
+  id: string;
+  request: BrowserToolRequest;
+}
+
+/**
+ * Host → extension: the caller aborted call `id`. Fire-and-forget — the host
+ * resolves the call locally the moment it sends this; the extension stops the
+ * run and its eventual response frame is dropped as an unknown id.
+ */
+export interface BrowserToolCancelFrame {
+  id: string;
+  cancel: true;
+}
+
+export type BrowserBridgeHostFrame = BrowserToolCallFrame | BrowserToolCancelFrame;
+
+export interface BrowserToolResponseFrame {
+  id: string;
+  response: BrowserToolResponse;
 }

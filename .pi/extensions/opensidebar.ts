@@ -20,6 +20,14 @@
  * remaining[], uncertainty[], suggestedContinuationPrompt — whenever the run
  * ended with work outstanding. `needs_human` is a report, not an error.
  *
+ * Session continuity: every call carries one process-level session id, so all
+ * missions from this pi run share a single workspace and browser tab in the
+ * extension — a follow-up mission lands on the page the previous one left open.
+ *
+ * Cancellation: pi's AbortSignal is forwarded into the bridge call. Aborting
+ * sends a cancel frame that stops the agent run in the extension, the call
+ * resolves canceled, and execute() throws (pi's throw-on-failure convention).
+ *
  * Removability: delete this file (or the whole `.pi/` dir) and pi knows
  * nothing about OpenSidebar. Nothing here is imported by extension code.
  */
@@ -34,6 +42,8 @@ import { WebSocketBridge } from "../../scripts/browser-mcp/ws-bridge";
 const WS_PORT = Number(process.env.OPENSIDEBAR_WS_PORT ?? 8787);
 /** Long ceiling: intent tools wrap a full multi-turn agent run. */
 const CALL_TIMEOUT_MS = 600_000;
+/** One session per pi process: all missions share a workspace + tab. */
+const SESSION = `pi-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
 
 let bridge: WebSocketBridge | null = null;
 
@@ -74,7 +84,8 @@ export default function opensidebarExtension(pi: ExtensionAPI): void {
                 "response.handoff (completed / remaining / uncertainty / " +
                 "suggestedContinuationPrompt), resolve the uncertainty from your own " +
                 "context or by asking the user, then issue a follow-up call. It is a " +
-                "progress report, not an error.",
+                "progress report, not an error. Follow-up calls continue in the same " +
+                "browser tab, on the page the previous mission left open.",
             ]
           : undefined,
       async execute(_toolCallId, params, signal) {
@@ -82,13 +93,17 @@ export default function opensidebarExtension(pi: ExtensionAPI): void {
           throw new Error(`${tool.name} aborted before dispatch`);
         }
         const ws = await getBridge();
-        // Cancellation mid-run needs a cancel frame on the wire + a STOP_AGENT
-        // path in the extension — Phase 3 of the pi-backend plan. Until then
-        // the signal is only honored up front.
-        const response = await ws.call({
-          tool: tool.name,
-          args: (params ?? {}) as Record<string, unknown>,
-        });
+        const response = await ws.call(
+          {
+            tool: tool.name,
+            args: (params ?? {}) as Record<string, unknown>,
+            session: SESSION,
+          },
+          { signal },
+        );
+        if (signal?.aborted) {
+          throw new Error(`${tool.name} aborted`);
+        }
         return {
           content: [{ type: "text", text: describe(response) }],
           details: response,

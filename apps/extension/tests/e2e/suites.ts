@@ -74,7 +74,12 @@ export const E2E_SUITES: Record<E2ESuiteName, readonly string[]> = {
     "local-mock-provider-video.test.ts",
     "watch-mode.test.ts",
   ],
-  showcase: ["showcase-ashby-application.test.ts"],
+  showcase: [
+    "showcase-ashby-application.test.ts",
+    // Skips itself unless E2E_LIVE_APP_KIT points at a local kit directory, so
+    // it can never fire in CI or an unconfigured run.
+    "showcase-live-application.test.ts",
+  ],
   "memory-regression": [
     "memory-current-vs-historical.test.ts",
     "memory-long-turn-dossier.test.ts",
