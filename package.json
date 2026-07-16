@@ -66,6 +66,7 @@
     "docker:down": "docker compose down",
     "obs:test": "vitest run --config scripts/obs/vitest.config.ts",
     "obs:export-trajectories": "tsx scripts/obs/export-trajectories.ts",
+    "obs:export-otel": "tsx scripts/obs/export-otel.ts",
     "obs:backfill-spans": "tsx scripts/obs/backfill-spans.ts",
     "obs:verify-parity": "tsx scripts/obs/verify-parity.ts",
     "ci:lint": "tsx scripts/validate-rfc-decisions.ts && nx run-many -t lint",
