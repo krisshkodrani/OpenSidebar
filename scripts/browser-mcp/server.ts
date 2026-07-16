@@ -35,6 +35,8 @@ import {
   CallToolRequestSchema,
   ListToolsRequestSchema,
 } from "@modelcontextprotocol/sdk/types.js";
+import { SpanStatusCode, metrics, trace } from "@opentelemetry/api";
+import { SeverityNumber, logs } from "@opentelemetry/api-logs";
 
 import {
   NotConnectedBridge,
@@ -45,6 +47,16 @@ import { BROWSER_TOOLS } from "./tools.js";
 import { WebSocketBridge } from "./ws-bridge.js";
 
 type Args = Record<string, unknown>;
+
+// Telemetry handles (Bluebox, see scripts/otel/sdk.ts). Pure no-ops until
+// startOtel() runs in the auto-start block — unit tests never export anything.
+const otelTracer = trace.getTracer("opensidebar-browser-mcp");
+const otelLogger = logs.getLogger("opensidebar-browser-mcp");
+const toolCallCounter = metrics
+  .getMeter("opensidebar-browser-mcp")
+  .createCounter("opensidebar.browser_tool.calls", {
+    description: "Thick browser tool calls dispatched over the bridge, by outcome",
+  });
 
 /** Validate required args against a tool's schema before forwarding. */
 function validateArgs(name: string, args: Args): void {
@@ -69,7 +81,36 @@ export async function dispatch(
   args: Args,
 ): Promise<BrowserToolResponse> {
   validateArgs(name, args);
-  return bridge.call({ tool: name, args });
+  return otelTracer.startActiveSpan(
+    `browser_tool ${name}`,
+    { attributes: { "opensidebar.tool.name": name } },
+    async (span) => {
+      try {
+        const response = await bridge.call({ tool: name, args });
+        span.setAttribute("opensidebar.tool.status", response.status);
+        toolCallCounter.add(1, { tool: name, status: response.status });
+        if (response.status === "error") {
+          span.setStatus({ code: SpanStatusCode.ERROR, message: response.reason });
+          otelLogger.emit({
+            severityNumber: SeverityNumber.ERROR,
+            severityText: "ERROR",
+            body: `browser_tool ${name} failed: ${response.reason ?? "unknown"}`,
+            attributes: { "opensidebar.tool.name": name },
+          });
+        }
+        return response;
+      } catch (error) {
+        span.setStatus({
+          code: SpanStatusCode.ERROR,
+          message: (error as Error).message,
+        });
+        toolCallCounter.add(1, { tool: name, status: "thrown" });
+        throw error;
+      } finally {
+        span.end();
+      }
+    },
+  );
 }
 
 /** Build a configured MCP server bound to the given bridge (no transport yet). */
@@ -195,6 +236,10 @@ export async function startBrowserMcpServer(
 //     (Docker / networked); otherwise stdio (native, the client spawns us).
 const entryPath = process.argv[1] ? resolve(process.argv[1]) : "";
 if (entryPath && entryPath === fileURLToPath(import.meta.url)) {
+  // Bluebox telemetry (default-off; no-op without OTEL_EXPORTER_OTLP_ENDPOINT
+  // / .env.otel). Dynamic import keeps the SDK out of unit-test module graphs.
+  const { startOtel } = await import("../otel/sdk.js");
+  await startOtel("opensidebar-browser-mcp");
   const wsPort = process.env.BROWSER_MCP_WS_PORT;
   const bridge: BrowserBridge = wsPort
     ? new WebSocketBridge({
