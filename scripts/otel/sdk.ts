@@ -40,8 +40,12 @@ type OtelSdkLike = { shutdown(): Promise<void> };
 let sdk: OtelSdkLike | null = null;
 let started = false;
 
-/** Parse repo-root `.env.otel` (KEY=VALUE, # comments, optional quotes). */
-function loadEnvOtelFile(): void {
+/**
+ * Parse repo-root `.env.otel` (KEY=VALUE, # comments, optional quotes) into
+ * process.env, never overriding variables that are already set. Public so the
+ * spine emitter (scripts/obs/otel-emit.ts) shares the same config contract.
+ */
+export function loadOtelEnv(): void {
   let raw: string;
   try {
     raw = readFileSync(resolve(REPO_ROOT, ".env.otel"), "utf8");
@@ -92,6 +96,27 @@ function normalizeRepoUrl(remote: string): string | null {
 }
 
 /**
+ * The repo's standard resource identity: namespace/environment plus guarded
+ * VCS attributes (local runs have .git; a tarball build just omits them).
+ * Shared by `startOtel` (merged into OTEL_RESOURCE_ATTRIBUTES) and the spine
+ * emitter's direct-exporter path (as an explicit Resource).
+ */
+export function defaultResourceAttributes(
+  serviceName?: string,
+): Record<string, string> {
+  const attrs: Record<string, string> = {};
+  if (serviceName) attrs["service.name"] = serviceName;
+  attrs["service.namespace"] = "opensidebar";
+  attrs["deployment.environment"] = "local-dev";
+  const remote = gitValue("git remote get-url origin");
+  const url = remote ? normalizeRepoUrl(remote) : null;
+  if (url) attrs["vcs.repository.url.full"] = url;
+  const sha = gitValue("git rev-parse HEAD");
+  if (sha) attrs["vcs.ref.head.revision"] = sha;
+  return attrs;
+}
+
+/**
  * Merge our defaults into OTEL_RESOURCE_ATTRIBUTES without overriding any
  * key the caller already set.
  */
@@ -100,19 +125,9 @@ function buildResourceAttributes(): void {
   const has = (key: string) => existing.includes(`${key}=`);
   const parts: string[] = existing ? [existing] : [];
 
-  if (!has("service.namespace")) parts.push("service.namespace=opensidebar");
-  if (!has("deployment.environment")) {
-    parts.push("deployment.environment=local-dev");
-  }
-  // VCS identity: local runs have .git; guarded so a tarball build just omits.
-  if (!has("vcs.repository.url.full")) {
-    const remote = gitValue("git remote get-url origin");
-    const url = remote ? normalizeRepoUrl(remote) : null;
-    if (url) parts.push(`vcs.repository.url.full=${url}`);
-  }
-  if (!has("vcs.ref.head.revision")) {
-    const sha = gitValue("git rev-parse HEAD");
-    if (sha) parts.push(`vcs.ref.head.revision=${sha}`);
+  // service.name is owned by OTEL_SERVICE_NAME on this path.
+  for (const [key, value] of Object.entries(defaultResourceAttributes())) {
+    if (!has(key)) parts.push(`${key}=${value}`);
   }
 
   const merged = parts.filter(Boolean).join(",");
@@ -125,7 +140,7 @@ function buildResourceAttributes(): void {
  */
 export async function startOtel(serviceName: string): Promise<boolean> {
   if (started) return true;
-  loadEnvOtelFile();
+  loadOtelEnv();
   if (!process.env.OTEL_EXPORTER_OTLP_ENDPOINT) return false;
 
   if (!process.env.OTEL_SERVICE_NAME) {

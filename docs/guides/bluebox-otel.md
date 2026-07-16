@@ -51,10 +51,40 @@ real environment variables win over the file). Metrics use delta temporality
 and http/protobuf transport — both required by Bluebox ingest; don't change
 them.
 
+## Agent-run traces (`opensidebar-agent-runtime`)
+
+The in-house span spine (`traces/spans/`, RFC LP-7) is already OTel-shaped —
+`ObsSpan` carries `gen_ai.*` conventions — so agent runs are unified into
+Bluebox by an emitter, not a second pipeline:
+
+- **Live**: the log-server drain streams every spine write out as OTLP when
+  configured (`scripts/obs/otel-emit.ts`, hooked at the three spine dual-write
+  sites). Runs appear as `orchestrator.run → agent.session → agent.turn →
+  gen_ai.chat / execute_tool / gen_ai.perception` traces. Root spans arrive
+  when the session record lands (end of run).
+- **Backfill**: `pnpm run obs:export-otel -- [--session <id>] [--run <id>]
+  [--from/--to] [--outcome completed] [--limit 20] [--dry-run]` replays
+  historical spine sessions. Ids are deterministic (sha256-remapped trace id,
+  spine span ids verbatim), so a re-export re-sends the same spans instead of
+  minting duplicates. **Ingest-window caveat (verified):** Dynatrace accepts
+  the request but silently drops spans whose timestamps are too old — a
+  day-old session never appears while a current-time span does. Backfill soon
+  after a run, or rely on the live hook; the CLI warns for sessions >1h old.
+
+Export-boundary rules: every string attribute/event/status is passed through
+`redactPii` and capped at 4000 chars; screenshots/DOM/prompts NEVER leave the
+machine (only `os.blob.<kind>` CAS refs ride along). The trace viewer and obs
+MCP are unchanged and remain the forensic source of truth.
+
+**Query split**: ask Bluebox for history and correlation; use the trace
+viewer / obs MCP for depth (screenshots, full prompts, adjudication).
+
 ## Asking Bluebox about runs
 
 ```bash
 bluebox ask --service opensidebar-e2e-harness "which tests failed in the last staged run, and why?"
 bluebox ask --service opensidebar-e2e-harness "which e2e tests have the highest flaky-pass rate this week?"
 bluebox ask --service opensidebar-browser-mcp "show failed browser tool calls today with their error text"
+bluebox ask --service opensidebar-agent-runtime "which agent runs failed yesterday, and which tools were erroring in them?"
+bluebox ask --service opensidebar-agent-runtime "how has gen_ai.chat latency trended across runs this week?"
 ```
