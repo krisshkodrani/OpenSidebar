@@ -232,8 +232,86 @@ describe("tab coordination", () => {
     });
   });
 
-  test("selectResumeOwnedTab rejects unusable live tabs even when owned", () => {
+  test("rebinds to the task's own live primary tab when its URL is non-durable (about:blank)", () => {
+    // The live-repro pin: a bridge mission pausing for approval before first
+    // navigation leaves its primary tab on about:blank. Its own tab is
+    // unambiguous by identity and must be rebindable (pi-backend Phase 4).
     const task = makeTask();
+
+    const selected = selectResumeOwnedTab(
+      task,
+      [{ id: 100, url: "about:blank" }],
+      100,
+    );
+
+    expect(selected).toEqual({
+      status: "safe",
+      tabId: 100,
+      reason:
+        "Recovered onto the task's own live primary tab by identity (its URL is not yet durable).",
+    });
+  });
+
+  test("prefers a durable-URL owned tab over the about:blank primary", () => {
+    const task = makeTask();
+    // Task owns an auxiliary tab sitting on the durable root URL.
+    bindNodeToTaskTab(task, "node-1", {
+      tabId: 201,
+      role: "auxiliary",
+      createdByTask: true,
+      url: "https://example.com/list",
+    });
+
+    const selected = selectResumeOwnedTab(
+      task,
+      [
+        { id: 100, url: "about:blank" },
+        { id: 201, url: "https://example.com/list" },
+      ],
+      100,
+    );
+
+    expect(selected.status).toBe("safe");
+    expect(selected).toMatchObject({ tabId: 201 });
+  });
+
+  test("stays unsafe when the only live about:blank tab is NOT the task's primary", () => {
+    const task = makeTask(); // primary is 100
+    const selected = selectResumeOwnedTab(
+      task,
+      [{ id: 555, url: "about:blank" }],
+      555,
+    );
+
+    expect(selected).toEqual({
+      status: "unsafe",
+      reason: "No usable live workspace tab available for rebinding.",
+    });
+  });
+
+  test("own-primary fallback fires as last resort when unrelated usable tabs exist", () => {
+    // Primary tab is live but on about:blank; an unrelated usable tab exists.
+    // No owned/URL rule matches the unrelated tab → fall back to the own tab.
+    const task = makeTask();
+    const selected = selectResumeOwnedTab(
+      task,
+      [
+        { id: 100, url: "about:blank" },
+        { id: 999, url: "https://unrelated.example/x" },
+      ],
+      999,
+    );
+
+    expect(selected).toMatchObject({ status: "safe", tabId: 100 });
+  });
+
+  test("a released primary tab does not qualify for the own-primary fallback", () => {
+    const task = makeTask();
+    // Mark the primary owned entry as released.
+    const primary = task.tabCoordination?.ownedTabs.find(
+      (entry) => entry.tabId === 100,
+    );
+    if (primary) primary.releasedAt = Date.now();
 
     const selected = selectResumeOwnedTab(
       task,

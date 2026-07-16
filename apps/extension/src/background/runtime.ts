@@ -15,7 +15,7 @@
 import { orchestrator as defaultOrchestrator } from "./orchestrator";
 import type { OrchestratorStartInput } from "./orchestrator/types";
 import type { RuntimeEnvironment } from "./environment/types";
-import type { TaskCompletionMessage } from "../types";
+import type { TaskCompletionMessage, TaskPausedMessage } from "../types";
 
 /**
  * The completion payload exactly as broadcast on TASK_COMPLETION — including
@@ -39,11 +39,33 @@ interface TaskCompletionEnvelope {
   payload?: Partial<TaskCompletionPayload>;
 }
 
+interface TaskPausedEnvelope {
+  type: "TASK_PAUSED";
+  workspaceId: string;
+  payload?: TaskPausedPayload;
+}
+
+/** A task paused for a user interaction (approval), for bridge forwarding. */
+export type TaskPausedPayload = TaskPausedMessage["payload"];
+
 export interface AgentRuntime {
   /** Start an agent task. */
   startTask(input: OrchestratorStartInput): Promise<void>;
   /** Stop a running task by workspace; stops every task when omitted. */
   stopTask(workspaceId?: string): Promise<void>;
+  /**
+   * Answer a forwarded approval, resuming the paused task (or refusing the
+   * action when `approved` is false). Returns false if no matching pending
+   * approval exists (unknown/expired/already-answered).
+   */
+  resolveApproval(
+    workspaceId: string,
+    payload: { approvalId: string; approved: boolean },
+  ): boolean;
+  /** Observe task pauses (approvals), correlated by workspaceId. Returns unsubscribe. */
+  onTaskPaused(
+    listener: (workspaceId: string, payload: TaskPausedPayload) => void,
+  ): () => void;
   /** Observe task completions, correlated by workspaceId. Returns unsubscribe. */
   onTaskCompletion(
     listener: (
@@ -56,7 +78,10 @@ export interface AgentRuntime {
 }
 
 export interface AgentRuntimeDeps {
-  orchestrator?: Pick<typeof defaultOrchestrator, "startTask" | "stopTask">;
+  orchestrator?: Pick<
+    typeof defaultOrchestrator,
+    "startTask" | "stopTask" | "resolveApprovalResponse"
+  >;
 }
 
 export function createAgentRuntime(
@@ -72,6 +97,23 @@ export function createAgentRuntime(
     },
     stopTask(workspaceId) {
       return orchestrator.stopTask(workspaceId);
+    },
+    resolveApproval(workspaceId, payload) {
+      return orchestrator.resolveApprovalResponse(payload, workspaceId);
+    },
+    onTaskPaused(listener) {
+      const off = env.messaging.onMessage((message) => {
+        const m = message as Partial<TaskPausedEnvelope>;
+        if (m?.type === "TASK_PAUSED" && typeof m.workspaceId === "string" && m.payload) {
+          listener(m.workspaceId, m.payload);
+        }
+      });
+      const wrapped = () => {
+        off();
+        unsubscribers.delete(wrapped);
+      };
+      unsubscribers.add(wrapped);
+      return wrapped;
     },
     onTaskCompletion(listener) {
       const off = env.messaging.onMessage((message) => {

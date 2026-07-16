@@ -29,12 +29,57 @@ export interface BrowserToolRequest {
   session?: string;
 }
 
+/**
+ * Phase 8 form-submit dry-run evidence forwarded with an approval request:
+ * the live form state diffed against the values the caller put in the
+ * mission instruction. `entries` lets the caller byte-check what would be
+ * submitted before approving.
+ */
+export interface ForwardedApprovalDryRun {
+  kind: "clean" | "unexpected";
+  formKey: string;
+  diffHash: string;
+  entries: Array<{
+    label: string;
+    expected: string;
+    actual: string | null;
+    status: "match" | "mismatch" | "missing";
+  }>;
+  /** Human-readable rendering of the non-matching rows, when any. */
+  rendered?: string;
+}
+
+/**
+ * A consequential-action approval, forwarded over the wire because the
+ * mission has no sidepanel to answer it (pi-backend Phase 4). Answer with
+ * the `browser_respond_approval` tool before `expiresAt` — an expired
+ * approval auto-denies and the task resumes with the action refused.
+ */
+export interface ForwardedApprovalRequest {
+  approvalId: string;
+  toolName: string;
+  args: Record<string, unknown>;
+  /** Human-readable description of the action awaiting approval. */
+  context: string;
+  requestedAt: number;
+  timeoutMs: number;
+  expiresAt: number;
+  dryRun?: ForwardedApprovalDryRun;
+}
+
 export interface BrowserToolResponse {
   status: BrowserToolStatus;
   /** Tool-specific payload when `status === "ok"`. */
   result?: unknown;
   /** Why the agent paused (`needs_human`) or failed (`error`). */
   reason?: string;
+  /**
+   * Present with `needs_human` when the run paused for a consequential-action
+   * approval: the mission is ALIVE and waiting; answer via
+   * `browser_respond_approval` instead of starting a new mission (a new
+   * mission on the same session stops the paused task).
+   */
+  approval?: ForwardedApprovalRequest;
   /**
    * Structured account of the run when it produced one: what got done, what
    * remains, what the agent is unsure about, the evidence behind it, and a

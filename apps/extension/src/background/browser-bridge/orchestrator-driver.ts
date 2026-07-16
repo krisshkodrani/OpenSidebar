@@ -21,15 +21,30 @@
  * the run still settles via its completion (bounded by the run timeout), which
  * is what keeps the session queue safe.
  *
+ * Approvals (pi-backend Phase 4): a consequential action (e.g. a form submit)
+ * pauses the run for approval. Bridge missions have no sidepanel, so the pause
+ * arrives as a TASK_PAUSED and the run settles `needs_human` carrying the
+ * approval question + Phase 8 dry-run evidence. The mission stays ALIVE and
+ * checkpointed; the caller answers with `browser_respond_approval`
+ * (→ `respondApproval`), which resumes the paused task and awaits its next
+ * outcome. The answer joins the session queue so a queued mission cannot start
+ * mid-resume (starting one would stop the paused task).
+ *
  * The orchestrator/chrome coupling is injected via `BrowserTaskDeps` so the
  * logic is unit-tested; `createDefaultBrowserTaskDeps` wires the real
  * singletons.
  */
 
+import type { BrowserToolRequest } from "@shared-types/browser-bridge";
+
 import type { UserSettings } from "../../types";
 import { chromeRuntimeEnvironment } from "../environment/chrome";
 import { loadApiKey, loadSettings } from "../../utils/settings-storage";
-import { createAgentRuntime, type TaskCompletionPayload } from "../runtime";
+import {
+  createAgentRuntime,
+  type TaskCompletionPayload,
+  type TaskPausedPayload,
+} from "../runtime";
 import type { AgentRunOptions, AgentRunOutcome, AgentRunner, AgentTask } from "./handler";
 
 // The bridge drives the shared agent runtime — the same library API the
@@ -54,6 +69,9 @@ const DEFAULT_RUN_TIMEOUT_MS = 600_000;
  */
 const CANCELED_REASON = "canceled by caller";
 
+/** A TASK_PAUSED payload (approval awaiting an answer) off the messaging port. */
+export type PausePayload = TaskPausedPayload;
+
 export interface BrowserTaskDeps {
   /** Open a background tab and return its id. */
   createTab(url: string): Promise<number>;
@@ -65,9 +83,18 @@ export interface BrowserTaskDeps {
   startTask(input: { query: string; tabId: number; workspaceId: string }): Promise<void>;
   /** Ask the orchestrator to stop the workspace's running task. */
   stopTask(workspaceId: string): Promise<void>;
+  /** Answer a forwarded approval; false if no matching pending approval exists. */
+  resolveApproval(
+    workspaceId: string,
+    payload: { approvalId: string; approved: boolean },
+  ): boolean;
   /** Subscribe to task completions; returns an unsubscribe fn. */
   addCompletionListener(
     fn: (workspaceId: string, payload: CompletionPayload) => void,
+  ): () => void;
+  /** Subscribe to task pauses (approvals awaiting an answer); returns unsubscribe. */
+  addPauseListener(
+    fn: (workspaceId: string, payload: PausePayload) => void,
   ): () => void;
   /** Overridable for tests. */
   timeoutMs?: number;
@@ -129,11 +156,34 @@ interface SessionEntry {
   queue: Promise<unknown>;
 }
 
+/** Project a forwarded pause into a `needs_human` outcome carrying the approval. */
+function pauseToOutcome(payload: PausePayload): AgentRunOutcome {
+  const i = payload.interaction;
+  return {
+    status: "needs_human",
+    reason: `approval required: ${i.context}`,
+    approval: {
+      approvalId: i.approvalId,
+      toolName: i.toolName,
+      args: i.args,
+      context: i.context,
+      requestedAt: i.requestedAt,
+      timeoutMs: i.timeoutMs,
+      expiresAt: i.expiresAt,
+      ...(i.dryRun ? { dryRun: i.dryRun } : {}),
+    },
+  };
+}
+
 /** AgentRunner that drives the orchestrator. Deps injected for testability. */
 export function createBrowserAgentRunner(deps: BrowserTaskDeps): AgentRunner {
   // One caller process = one session id, so this map is effectively a
   // singleton per external client; no eviction needed.
   const sessions = new Map<string, SessionEntry>();
+  // Remember which workspace a forwarded approval belongs to, so a sessionless
+  // (or SW-restart) respond call can still target it. Never cleared — bounded
+  // by the number of approvals a single caller process produces.
+  const approvalWorkspaces = new Map<string, string>();
 
   async function resolveTab(task: AgentTask, entry: SessionEntry | null): Promise<number> {
     if (entry?.tabId != null && (await deps.tabExists(entry.tabId))) {
@@ -143,6 +193,61 @@ export function createBrowserAgentRunner(deps: BrowserTaskDeps): AgentRunner {
     const tabId = await deps.createTab(task.url ?? "about:blank");
     if (entry) entry.tabId = tabId;
     return tabId;
+  }
+
+  /**
+   * Arm the completion + pause listeners for a workspace, run `start`, and
+   * resolve with the first of: a completion (mapped), a pause (needs_human +
+   * approval), an abort (asks the orchestrator to stop, settles via the
+   * stopped completion), a start error, or the run timeout. Shared by a fresh
+   * run and an approval resume — both await "the workspace's next outcome".
+   */
+  function waitForOutcome(
+    workspaceId: string,
+    signal: AbortSignal | undefined,
+    start: () => Promise<void>,
+  ): Promise<AgentRunOutcome> {
+    return new Promise<AgentRunOutcome>((resolve) => {
+      let settled = false;
+      const finish = (outcome: AgentRunOutcome) => {
+        if (settled) return;
+        settled = true;
+        clearTimeout(timer);
+        offCompletion();
+        offPause();
+        signal?.removeEventListener("abort", onAbort);
+        resolve(outcome);
+      };
+      const onAbort = () => {
+        // Settle via the stopped completion (not early), which keeps the
+        // session queue blocked until the drain lands.
+        void deps.stopTask(workspaceId).catch(() => {});
+      };
+      // Without this the promise hangs forever whenever a completion is lost,
+      // and the caller only ever learns via its own transport timeout.
+      const timer = setTimeout(() => {
+        finish({
+          status: "error",
+          reason: `no task completion within ${deps.timeoutMs ?? DEFAULT_RUN_TIMEOUT_MS}ms`,
+        });
+      }, deps.timeoutMs ?? DEFAULT_RUN_TIMEOUT_MS);
+      const offCompletion = deps.addCompletionListener((ws, payload) => {
+        if (ws === workspaceId) finish(mapCompletion(payload));
+      });
+      const offPause = deps.addPauseListener((ws, payload) => {
+        if (ws !== workspaceId) return;
+        approvalWorkspaces.set(payload.interaction.approvalId, workspaceId);
+        finish(pauseToOutcome(payload));
+      });
+      signal?.addEventListener("abort", onAbort);
+      start()
+        .then(() => {
+          // An abort that landed while start was in flight found nothing to
+          // stop — re-issue now that the task is registered.
+          if (signal?.aborted) onAbort();
+        })
+        .catch((error) => finish({ status: "error", reason: (error as Error).message }));
+    });
   }
 
   function executeRun(
@@ -155,42 +260,9 @@ export function createBrowserAgentRunner(deps: BrowserTaskDeps): AgentRunner {
       return Promise.resolve({ status: "error", reason: CANCELED_REASON });
     }
     const workspaceId = entry?.workspaceId ?? newWorkspaceId();
-    return new Promise<AgentRunOutcome>((resolve) => {
-      let settled = false;
-      const finish = (outcome: AgentRunOutcome) => {
-        if (settled) return;
-        settled = true;
-        clearTimeout(timer);
-        unsubscribe();
-        signal?.removeEventListener("abort", onAbort);
-        resolve(outcome);
-      };
-      const onAbort = () => {
-        // Ask the orchestrator to stop; the run settles via the stopped
-        // completion (not early), which keeps the session queue blocked until
-        // the drain lands.
-        void deps.stopTask(workspaceId).catch(() => {});
-      };
-      // Without this the promise hangs forever whenever a completion is lost,
-      // and the caller only ever learns via its own transport timeout.
-      const timer = setTimeout(() => {
-        finish({
-          status: "error",
-          reason: `no task completion within ${deps.timeoutMs ?? DEFAULT_RUN_TIMEOUT_MS}ms`,
-        });
-      }, deps.timeoutMs ?? DEFAULT_RUN_TIMEOUT_MS);
-      const unsubscribe = deps.addCompletionListener((ws, payload) => {
-        if (ws === workspaceId) finish(mapCompletion(payload));
-      });
-      signal?.addEventListener("abort", onAbort);
-      resolveTab(task, entry)
-        .then(async (tabId) => {
-          await deps.startTask({ query: task.instruction, tabId, workspaceId });
-          // An abort that landed while startTask was in flight found nothing
-          // to stop — re-issue now that the task is registered.
-          if (signal?.aborted) onAbort();
-        })
-        .catch((error) => finish({ status: "error", reason: (error as Error).message }));
+    return waitForOutcome(workspaceId, signal, async () => {
+      const tabId = await resolveTab(task, entry);
+      await deps.startTask({ query: task.instruction, tabId, workspaceId });
     });
   }
 
@@ -208,6 +280,37 @@ export function createBrowserAgentRunner(deps: BrowserTaskDeps): AgentRunner {
       // executeRun never rejects by design, but guard the queue anyway so one
       // bad run can never wedge the session forever.
       sessionEntry.queue = run.catch(() => {});
+      return run;
+    },
+
+    respondApproval(
+      req: BrowserToolRequest,
+      opts?: AgentRunOptions,
+    ): Promise<AgentRunOutcome> {
+      const approvalId = String(req.args.approvalId);
+      const approved = req.args.approved === true;
+      const entry = req.session ? sessions.get(req.session) : undefined;
+      const workspaceId = entry?.workspaceId ?? approvalWorkspaces.get(approvalId);
+      if (!workspaceId) {
+        return Promise.resolve({
+          status: "error",
+          reason: "no pending approval for that id",
+        });
+      }
+      const resume = () =>
+        waitForOutcome(workspaceId, opts?.signal, async () => {
+          if (!deps.resolveApproval(workspaceId, { approvalId, approved })) {
+            // Unknown / expired / already answered — error fast so the session
+            // queue is never blocked on an outcome that will never arrive.
+            throw new Error(
+              "no pending approval (unknown, expired, or already answered)",
+            );
+          }
+        });
+      if (!entry) return resume();
+      // Join the session queue so a queued mission cannot start mid-resume.
+      const run = entry.queue.then(resume);
+      entry.queue = run.catch(() => {});
       return run;
     },
   };
@@ -235,6 +338,9 @@ export function createDefaultBrowserTaskDeps(): BrowserTaskDeps {
     async stopTask(workspaceId) {
       await browserRuntime.stopTask(workspaceId);
     },
+    resolveApproval(workspaceId, payload) {
+      return browserRuntime.resolveApproval(workspaceId, payload);
+    },
     async startTask({ query, tabId, workspaceId }) {
       const settings = (await loadSettings()) ?? ({} as UserSettings);
       const apiKey = await loadApiKey();
@@ -244,12 +350,18 @@ export function createDefaultBrowserTaskDeps(): BrowserTaskDeps {
         workspaceId,
         settings,
         openRouterApiKey: apiKey || settings.openRouterApiKey || "",
+        // Approvals forward over the bridge — there is no sidepanel to answer
+        // them; selects the longer approval timeout (pi-backend Phase 4).
+        interactionDelivery: "handoff",
       });
     },
     addCompletionListener(fn) {
       // Completions correlate by workspaceId over the runtime's messaging seam
       // (RFC LP-15, Phase 5).
       return browserRuntime.onTaskCompletion(fn);
+    },
+    addPauseListener(fn) {
+      return browserRuntime.onTaskPaused(fn);
     },
   };
 }

@@ -10,6 +10,8 @@
  * rendered diff. Pure and environment-free so it is exhaustively unit-testable.
  */
 
+import type { ForwardedApprovalDryRun } from "@shared-types/browser-bridge";
+
 import type { FormStateCapture } from "../../types";
 import type {
   CompletionEvidence,
@@ -131,8 +133,8 @@ export function buildFormStateCapturedEvidence(
  */
 export type DryRunClassification =
   | { kind: "no_draft" }
-  | { kind: "clean"; diff: FormStateDiff }
-  | { kind: "unexpected"; diff: FormStateDiff; rendered: string };
+  | { kind: "clean"; formKey: string; diff: FormStateDiff }
+  | { kind: "unexpected"; formKey: string; diff: FormStateDiff; rendered: string };
 
 export function classifyFormSubmitDryRun(
   capture: FormStateCapture | null,
@@ -141,8 +143,33 @@ export function classifyFormSubmitDryRun(
   if (!capture || !draft || draft.length === 0) return { kind: "no_draft" };
   const diff = diffFormStateAgainstDraft(capture, draft);
   return diff.clean
-    ? { kind: "clean", diff }
-    : { kind: "unexpected", diff, rendered: renderFormStateDiff(diff) };
+    ? { kind: "clean", formKey: capture.formKey, diff }
+    : {
+        kind: "unexpected",
+        formKey: capture.formKey,
+        diff,
+        rendered: renderFormStateDiff(diff),
+      };
+}
+
+/**
+ * Project a classification into the wire shape forwarded with an approval
+ * request (pi-backend Phase 4), so an external caller can byte-check the live
+ * form against the values it supplied before approving the submit.
+ */
+export function toForwardedApprovalDryRun(
+  classification: DryRunClassification,
+): ForwardedApprovalDryRun | undefined {
+  if (classification.kind === "no_draft") return undefined;
+  return {
+    kind: classification.kind,
+    formKey: classification.formKey,
+    diffHash: classification.diff.diffHash,
+    entries: classification.diff.entries,
+    ...(classification.kind === "unexpected"
+      ? { rendered: classification.rendered }
+      : {}),
+  };
 }
 
 /** Human-readable diff for the approval prompt (only the non-matching rows). */

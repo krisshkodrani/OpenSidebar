@@ -383,6 +383,74 @@ describe("sanitizeTask", () => {
     expect(task!.nodes).toHaveLength(1);
   });
 
+  test("round-trips interactionDelivery=handoff", () => {
+    expect(sanitizeTask(validTask())!.interactionDelivery).toBeUndefined();
+    const task = sanitizeTask(validTask({ interactionDelivery: "handoff" }));
+    expect(task!.interactionDelivery).toBe("handoff");
+    // Any other value is dropped.
+    expect(
+      sanitizeTask(validTask({ interactionDelivery: "sidepanel" }))!
+        .interactionDelivery,
+    ).toBeUndefined();
+  });
+
+  test("round-trips an approval interaction's dryRun evidence", () => {
+    const dryRun = {
+      kind: "unexpected",
+      formKey: "form:apply",
+      diffHash: "abcd1234",
+      entries: [
+        { label: "Email", expected: "a@b.com", actual: "x@y.com", status: "mismatch" },
+        { label: "Name", expected: "Kris", actual: null, status: "missing" },
+      ],
+      rendered: "Email: expected a@b.com",
+    };
+    const task = sanitizeTask(
+      validTask({
+        pendingInteraction: {
+          kind: "approval",
+          nodeId: "node-1",
+          requestedAt: 1,
+          approvalId: "a1",
+          toolName: ToolName.CLICK_ELEMENT,
+          args: { id: 7 },
+          context: "Submit",
+          timeoutMs: 600000,
+          dryRun,
+        },
+      }),
+    );
+    expect(task!.pendingInteraction?.kind).toBe("approval");
+    expect(
+      task!.pendingInteraction?.kind === "approval" &&
+        task!.pendingInteraction.dryRun,
+    ).toEqual(dryRun);
+  });
+
+  test("drops a malformed dryRun without dropping the approval", () => {
+    const task = sanitizeTask(
+      validTask({
+        pendingInteraction: {
+          kind: "approval",
+          nodeId: "node-1",
+          requestedAt: 1,
+          approvalId: "a1",
+          toolName: ToolName.CLICK_ELEMENT,
+          args: { id: 7 },
+          context: "Submit",
+          timeoutMs: 600000,
+          dryRun: { kind: "bogus", entries: "nope" },
+        },
+      }),
+    );
+    expect(task).not.toBeNull();
+    expect(task!.pendingInteraction?.kind).toBe("approval");
+    expect(
+      task!.pendingInteraction?.kind === "approval" &&
+        task!.pendingInteraction.dryRun,
+    ).toBeUndefined();
+  });
+
   test("rejects non-object", () => {
     expect(sanitizeTask(null)).toBeNull();
   });

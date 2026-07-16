@@ -74,20 +74,36 @@ export default function opensidebarExtension(pi: ExtensionAPI): void {
       parameters: tool.inputSchema as unknown as TSchema,
       promptSnippet: tool.description,
       promptGuidelines:
-        tool.kind === "intent"
+        tool.name === "browser_respond_approval"
           ? [
-              `${tool.name}: a bounded mission in the user's real, authenticated browser. ` +
-                "Put every concrete value the task needs (names, exact answer text, URLs) " +
-                "in the request — the browser agent fills forms verbatim from what you " +
-                "send and must never invent personal data.",
-              `${tool.name}: if the response status is "needs_human", read ` +
-                "response.handoff (completed / remaining / uncertainty / " +
-                "suggestedContinuationPrompt), resolve the uncertainty from your own " +
-                "context or by asking the user, then issue a follow-up call. It is a " +
-                "progress report, not an error. Follow-up calls continue in the same " +
-                "browser tab, on the page the previous mission left open.",
+              "browser_respond_approval: answer a mission paused for a " +
+                "consequential action (a response with status \"needs_human\" and an " +
+                "`approval` block). The action has NOT happened yet. Read " +
+                "approval.context and approval.dryRun.entries, byte-check the " +
+                "expected values against exactly what you sent in the mission " +
+                "instruction, and only then approve. Answer before approval.expiresAt " +
+                "— after that it auto-denies. NEVER start a new mission on the session " +
+                "while an approval is pending: that stops the paused mission. This is " +
+                "how a grounded submit happens — you verify, then approve.",
             ]
-          : undefined,
+          : tool.kind === "intent"
+            ? [
+                `${tool.name}: a bounded mission in the user's real, authenticated browser. ` +
+                  "Put every concrete value the task needs (names, exact answer text, URLs) " +
+                  "in the request — the browser agent fills forms verbatim from what you " +
+                  "send and must never invent personal data.",
+                `${tool.name}: if the response status is "needs_human" WITHOUT an ` +
+                  "`approval` block, read response.handoff (completed / remaining / " +
+                  "uncertainty / suggestedContinuationPrompt), resolve the uncertainty " +
+                  "from your own context or by asking the user, then issue a follow-up " +
+                  "call. It is a progress report, not an error. Follow-up calls continue " +
+                  "in the same browser tab, on the page the previous mission left open.",
+                `${tool.name}: if the response has an \`approval\` block, the mission is ` +
+                  "PAUSED and alive — do not re-run it. Verify the approval.dryRun " +
+                  "evidence, then answer with browser_respond_approval; the mission " +
+                  "resumes and returns its real result.",
+              ]
+            : undefined,
       async execute(_toolCallId, params, signal) {
         if (signal?.aborted) {
           throw new Error(`${tool.name} aborted before dispatch`);
