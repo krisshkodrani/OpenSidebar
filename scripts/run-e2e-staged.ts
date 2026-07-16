@@ -32,9 +32,14 @@ const STAGED_RESULTS_DIR = path.resolve(
 /** Reporters for spawned vitest runs. CLI reporters override the config's,
  * so the flaky-retry reporter must be re-listed here alongside json. */
 function reporterArgs(jsonOutputPath: string): string[] {
+  // CLI --reporter flags REPLACE the config's reporters list, so every
+  // config reporter must be repeated here or it silently never runs under
+  // staged runs (the otel-reporter was missing at first — per-test spans
+  // vanished while the runner's suite spans arrived).
   return [
     "--reporter=default",
     "--reporter=./tests/e2e/helpers/flaky-reporter.ts",
+    "--reporter=./tests/e2e/helpers/otel-reporter.ts",
     "--reporter=json",
     `--outputFile.json=${jsonOutputPath}`,
   ];
