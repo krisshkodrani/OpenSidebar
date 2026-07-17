@@ -31,6 +31,30 @@ describe("toAgentTask", () => {
     expect(task.instruction).toBe("book a table for two");
   });
 
+  test("threads browser_apply_to_job resume + cover letter into the instruction", () => {
+    const task = toAgentTask({
+      tool: "browser_apply_to_job",
+      args: {
+        url: "https://jobs.test/1",
+        resume: "cv",
+        cover_letter: "I am a strong fit because …",
+      },
+    });
+    expect(task.url).toBe("https://jobs.test/1");
+    expect(task.instruction).toContain("https://jobs.test/1");
+    // The values ride in the instruction — the only channel to the inner agent.
+    expect(task.instruction).toContain("cv");
+    expect(task.instruction).toContain("I am a strong fit because …");
+  });
+
+  test("omits absent apply_to_job resume/cover letter cleanly", () => {
+    const task = toAgentTask({
+      tool: "browser_apply_to_job",
+      args: { url: "https://jobs.test/1" },
+    });
+    expect(task.instruction).toBe("Apply to the job at https://jobs.test/1.");
+  });
+
   test("carries the request session through on every tool", () => {
     const tools: Array<{ tool: string; args: Record<string, unknown> }> = [
       { tool: "browser_navigate", args: { url: "https://x.test" } },

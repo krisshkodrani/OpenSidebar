@@ -77,11 +77,18 @@ function mapTool(req: BrowserToolRequest): AgentTask {
         instruction: `Research the company ${a.name ?? a.url} and return a structured profile (summary, products, size, links).`,
         url,
       };
-    case "browser_apply_to_job":
-      return {
-        instruction: `Apply to the job at ${a.url}.${a.cover_letter ? " Use the provided cover letter." : ""}`,
-        url,
-      };
+    case "browser_apply_to_job": {
+      // The instruction is the only channel to the inner agent, so the caller's
+      // resume/cover-letter VALUES must ride in it — dropping them (as this did)
+      // means a caller who passes them gets neither used.
+      const resume = typeof a.resume === "string" ? a.resume.trim() : "";
+      const coverLetter =
+        typeof a.cover_letter === "string" ? a.cover_letter.trim() : "";
+      const parts = [`Apply to the job at ${a.url}.`];
+      if (resume) parts.push(`Resume to use: ${resume}`);
+      if (coverLetter) parts.push(`Cover letter to use: ${coverLetter}`);
+      return { instruction: parts.join(" "), url };
+    }
     case "browser_run_task":
       return { instruction: String(a.instruction ?? ""), url };
     default:
