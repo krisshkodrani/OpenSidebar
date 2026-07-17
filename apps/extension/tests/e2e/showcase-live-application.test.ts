@@ -19,9 +19,7 @@
  * until submit, so failed takes are repeatable.
  */
 
-import { createServer, type Server } from "http";
-import { createReadStream, existsSync, readFileSync, statSync } from "fs";
-import { join, normalize } from "path";
+import { type Server } from "http";
 import {
   afterAll,
   afterEach,
@@ -33,6 +31,11 @@ import {
 } from "vitest";
 import { createE2EHarness } from "./helpers/harness";
 import {
+  loadKitConfig,
+  resolveLiveAppKitDir,
+  serveKitFiles,
+} from "./helpers/seed";
+import {
   assertNoGhostSession,
   getActiveTabId,
   navigateAndWait,
@@ -40,59 +43,14 @@ import {
   waitForOutcome,
 } from "./helpers/utils";
 
-interface LiveAppRunConfig {
-  formUrl: string;
-  maxTurns: number;
-  cvServe?: { dir: string; port: number; file: string };
-  promptLines: string[];
-  /** Must appear byte-exact among input/textarea values. */
-  expectedFieldValues: string[];
-  /** Must appear whitespace-normalized among field values or selected options. */
-  expectedLongTexts: string[];
-  /** Must appear in the page's visible text (e.g. the attached CV filename). */
-  expectedPageText: string[];
-  /** Must NOT appear anywhere — the not-submitted guard. */
-  forbiddenPageText: string[];
-}
-
-function loadKitConfig(): LiveAppRunConfig | null {
-  const kitDir = process.env.E2E_LIVE_APP_KIT;
-  if (!kitDir) return null;
-  const configPath = join(kitDir, "run-config.json");
-  if (!existsSync(configPath)) return null;
-  return JSON.parse(readFileSync(configPath, "utf8")) as LiveAppRunConfig;
-}
-
-const config = loadKitConfig();
+// The kit dir is resolved from E2E_LIVE_APP_KIT, else the default seed location
+// (~/.opensidebar/seed/... via OPENSIDEBAR_SEED_DIR). Real PII lives there,
+// outside the repo tree (pi-backend Phase 0).
+const config = loadKitConfig(resolveLiveAppKitDir());
 const h = createE2EHarness({
   maxTurns: config?.maxTurns ?? 30,
   testLabel: "showcase-live-application",
 });
-
-/** Loopback-only static server so upload_file can fetch the CV by URL. */
-function serveKitFiles(dir: string, port: number): Promise<Server> {
-  const server = createServer((req, res) => {
-    const name = normalize(decodeURIComponent(req.url ?? "/")).replace(
-      /^[/\\]+/,
-      "",
-    );
-    const filePath = join(dir, name);
-    // No traversal, no listing — exactly the files in the kit dir.
-    if (!filePath.startsWith(normalize(dir)) || !existsSync(filePath)) {
-      res.writeHead(404).end();
-      return;
-    }
-    res.writeHead(200, {
-      "content-type": "application/pdf",
-      "content-length": statSync(filePath).size,
-    });
-    createReadStream(filePath).pipe(res);
-  });
-  return new Promise((resolve, reject) => {
-    server.once("error", reject);
-    server.listen(port, "127.0.0.1", () => resolve(server));
-  });
-}
 
 describe.skipIf(!config || !h.apiKey)("E2E Showcase: live job application", () => {
   let passed = false;
