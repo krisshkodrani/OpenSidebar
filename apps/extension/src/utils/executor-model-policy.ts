@@ -38,6 +38,10 @@ const FIREWORKS_EXECUTOR_MODELS = new Set([
   // VL, ~3x cheaper; smoke-tier A/B matched K2.7-Code). Kept listed so the
   // eligibility policy admits it explicitly.
   "accounts/fireworks/models/minimax-m3",
+  // qwen3p7-plus executor candidate (eval, 2026-07-17): multimodal (text/image/
+  // video), priced between minimax-m3 and K2.7-Code (0.40/1.60). Seated for a
+  // three-way form-motion comparison; not the default for any provider.
+  "accounts/fireworks/models/qwen3p7-plus",
 ]);
 
 const MOONSHOT_EXECUTOR_MODELS = new Set(["kimi-k2.6", "kimi-k2.5"]);
