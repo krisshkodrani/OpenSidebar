@@ -12,6 +12,7 @@ import {
 } from "../../types";
 import {
   getVisibleText,
+  getControlLabel,
   addDynamicTag,
   truncateText,
   querySelectorAllDeep,
@@ -725,6 +726,10 @@ function captureFormField(el: Element): FormStateField {
     el.id ||
     el.getAttribute("aria-label") ||
     "";
+  // The visible label is what a draft's field expectation is keyed on; a
+  // checkbox/radio's `name` is an internal token, so without this the dry-run
+  // can't match it and reports a spurious "missing".
+  const label = getControlLabel(el);
   const kind =
     isInputElement(el) ? el.type : el.tagName.toLowerCase();
   const disabled =
@@ -737,7 +742,14 @@ function captureFormField(el: Element): FormStateField {
   } else {
     value = readFormControlValue(el) ?? "";
   }
-  return { name, selector: buildControlSelector(el), kind, value, disabled };
+  return {
+    name,
+    ...(label ? { label } : {}),
+    selector: buildControlSelector(el),
+    kind,
+    value,
+    disabled,
+  };
 }
 
 /**

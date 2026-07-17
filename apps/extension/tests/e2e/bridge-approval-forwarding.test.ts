@@ -130,15 +130,17 @@ describe.skipIf(!enabled)("E2E: browser bridge — approval forwarding", () => {
       // The Phase 8 dry-run diff rides along so the caller can byte-check the
       // live form against the values it asked for before it approves. Phase 4's
       // contract is that the STRUCTURED diff is forwarded intact (kind + per-row
-      // label/expected/actual/status); the exact match/mismatch verdict is Phase
-      // 8 field-alignment territory and is asserted there, not here.
+      // label/expected/actual/status). Since the pi-backend Phase 8 checkbox fix
+      // (form dry-run captures the control label + treats checked == true), a
+      // correctly-filled form — including the terms checkbox — should now read
+      // fully "clean"; the assertion stays tolerant of a stray field so a
+      // fixture tweak can't turn a green Phase-4 proof red on a Phase-8 detail.
       const dryRun = approval?.dryRun;
       expect(dryRun).toBeDefined();
       expect(["clean", "unexpected"]).toContain(dryRun?.kind);
       expect(dryRun?.entries?.length ?? 0).toBeGreaterThan(0);
-      // The text fields the caller supplied round-trip byte-for-byte (this run
-      // observed Email/Phone/Role all "match"); at least one entry must confirm
-      // the live form was captured and compared, not merely echoed.
+      // The values the caller supplied round-trip byte-for-byte; at least one
+      // entry must confirm the live form was captured and compared, not echoed.
       expect(
         (dryRun?.entries ?? []).some(
           (entry) => entry.actual !== null && entry.status === "match",
