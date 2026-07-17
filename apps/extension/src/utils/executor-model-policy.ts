@@ -4,12 +4,16 @@ export type ProviderMode = NonNullable<UserSettings["providerMode"]>;
 
 // Default executor per provider (owner decision 2026-07-17): minimax-m3 for the
 // Fireworks-family modes. It is unified-VL and ~3x cheaper than kimi-k2p7-code
-// end-to-end; on the smoke e2e tier it matched Kimi's 9/9 pass rate, ran ~9%
-// faster with fewer turns, and cost ~1/3 as much (traces confirmed the seat).
-// The cost cut matters most for the compulsory e2e gates run during
-// development. kimi-k2p7-code stays ELIGIBLE (selectable via settings/E2E_MODEL)
-// as the reference executor. Deeper eval (medium/hard tiers) is still pending —
-// revisit the default if a harder tier exposes a reliability-floor gap.
+// end-to-end; smoke e2e matched Kimi's 9/9 pass rate ~9% faster and ~1/3 the
+// cost, and medium e2e (interaction-regression) passed 14/15. The cost cut
+// matters most for the compulsory e2e gates run during development.
+// KNOWN LIMIT (medium eval, 2026-07-17): minimax-m3 sits JUST BELOW Kimi on
+// fine-grained vision — it misread 8px canvas-only fine print
+// (perception-region-zoom: read 4.2% vs the correct 4.7%, consistently), a case
+// Kimi reads correctly from the first high-detail screenshot. Real forms use DOM
+// text (read fine); the gap is pixels-only OCR of tiny text. Accepted for the
+// dev-cost win. kimi-k2p7-code stays ELIGIBLE — select it via
+// settings.executorModel / E2E_MODEL for precision-critical vision runs.
 export const DEFAULT_MULTIMODAL_EXECUTOR_BY_PROVIDER: Record<
   ProviderMode,
   string
