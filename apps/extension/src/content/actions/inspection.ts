@@ -18,6 +18,8 @@ import {
   querySelectorAllDeep,
   INTERACTIVE_SELECTORS,
   isElementVisible,
+  isComboboxLikeElement,
+  readComboboxCommittedValue,
 } from "../tagging";
 import { buildSnapshot } from "../snapshot";
 import {
@@ -35,7 +37,18 @@ import {
 
 function readFormControlValue(el: Element): string | null {
   if (isInputElement(el) || isTextAreaElement(el) || isSelectElement(el)) {
+    // Custom-select comboboxes (react-select-style) clear their inner input on
+    // commit; the committed value lives in a sibling display node. Without this
+    // fallback, read_element / extract_form_state report a successfully
+    // selected combobox as empty — which sent the agent into retry loops.
+    if (!el.value && isInputElement(el) && isComboboxLikeElement(el)) {
+      const committed = readComboboxCommittedValue(el);
+      if (committed) return committed;
+    }
     return el.value;
+  }
+  if (isComboboxLikeElement(el)) {
+    return readComboboxCommittedValue(el);
   }
   return null;
 }

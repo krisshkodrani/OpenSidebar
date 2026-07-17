@@ -159,6 +159,68 @@ export function getControlLabel(el: Element): string {
   return "";
 }
 
+/**
+ * Custom-select (combobox) detection for VALUE READING. ARIA combobox pattern
+ * plus the ubiquitous react-select-style class conventions. Deliberately
+ * generic — no site-specific selectors.
+ */
+export function isComboboxLikeElement(el: Element): boolean {
+  const role = el.getAttribute("role")?.toLowerCase() ?? "";
+  if (role === "combobox") return true;
+  if (el.hasAttribute("aria-autocomplete") || el.hasAttribute("list")) {
+    return true;
+  }
+  if (el.getAttribute("aria-haspopup")?.toLowerCase() === "listbox") {
+    return true;
+  }
+  if (el.closest?.('[role="combobox"]')) return true;
+  const blob = [
+    el.getAttribute("class"),
+    el.getAttribute("id"),
+    el.getAttribute("name"),
+  ]
+    .filter(Boolean)
+    .join(" ")
+    .toLowerCase();
+  return /\b(combobox|autocomplete|typeahead)\b|select__/.test(blob);
+}
+
+/**
+ * Resolve the COMMITTED value of a custom-select widget (react-select-style
+ * combobox). These widgets clear their inner <input> when a selection commits
+ * and render the chosen value in a sibling display node instead — so
+ * `input.value` reads empty right after a successful selection, which (before
+ * this helper) made the agent conclude the selection failed and retry in a
+ * loop. Resolution: the live input value wins; else walk up a few ancestors
+ * looking for an unambiguous single-value display node; a non-empty hidden
+ * input is a last-resort fallback. Returns null when nothing is committed.
+ */
+export function readComboboxCommittedValue(el: Element): string | null {
+  const collapse = (s: string) => s.trim().replace(/\s+/g, " ");
+  if (isInputElement(el) && el.value.trim()) return collapse(el.value);
+
+  const DISPLAY_SELECTOR =
+    '[class*="single-value"], [class*="singleValue"], [class*="selected-value"], [class*="selectedValue"]';
+  let hiddenFallback: string | null = null;
+  let node: Element | null = el;
+  for (let depth = 0; node && depth < 5; node = node.parentElement, depth++) {
+    const displays = node.querySelectorAll<HTMLElement>(DISPLAY_SELECTOR);
+    if (displays.length === 1) {
+      const text = displays[0].textContent && collapse(displays[0].textContent);
+      if (text) return text;
+    }
+    if (displays.length > 1) break; // ambiguous region (multiple widgets) — stop
+    if (!hiddenFallback) {
+      const hidden = node.querySelector<HTMLInputElement>(
+        'input[type="hidden"]',
+      );
+      const hv = hidden?.value && collapse(hidden.value);
+      if (hv) hiddenFallback = hv;
+    }
+  }
+  return hiddenFallback;
+}
+
 export function extractAttributes(el: Element): Record<string, string> {
   const attrs: Record<string, string> = {};
 
@@ -196,6 +258,19 @@ export function extractAttributes(el: Element): Record<string, string> {
       if (selected) {
         attrs["selected"] = selected.textContent?.trim() || selected.value;
       }
+    }
+  }
+
+  // Custom-select combobox (react-select-style): the committed value lives in a
+  // sibling display node, not in input.value — surface it as selected/value so
+  // snapshots (and the guards reading attributes.value) see the true state
+  // instead of a deceptively empty input.
+  if (!attrs["value"] && !isSelectElement(el) && isComboboxLikeElement(el)) {
+    const committed = readComboboxCommittedValue(el);
+    if (committed) {
+      const clipped = committed.slice(0, ATTR_TRUNCATION);
+      attrs["selected"] = clipped;
+      attrs["value"] = clipped;
     }
   }
 

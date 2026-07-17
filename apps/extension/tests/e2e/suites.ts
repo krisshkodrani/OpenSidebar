@@ -27,6 +27,7 @@ export const E2E_SUITES: Record<E2ESuiteName, readonly string[]> = {
   ],
   "interaction-regression": [
     "autocomplete.test.ts",
+    "custom-combobox.test.ts",
     "edge-cases.test.ts",
     "execute-js.test.ts",
     "file-transfer.test.ts",
