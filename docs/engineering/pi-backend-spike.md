@@ -16,7 +16,7 @@ WIP — that is why this work lives in its own worktree. Don't merge the two.
 | 2 — pi extension | **DONE, committed** (`.pi/extensions/opensidebar.ts`; spike answer below) |
 | 3 — mission/report handover | **DONE 2026-07-16** (sessions + cancellation; design below) |
 | 4 — grounded submit | **DONE 2026-07-16** (approval forwarding; design below) |
-| 5 — JobAgent workspace | not started |
+| 5 — JobAgent workspace | **DONE 2026-07-17** (single-package apply loop, pi-side; design below) |
 | 6 — remove OpenClaw | **DONE 2026-07-16** (see CHANGELOG [Unreleased]; RL-rubric "OpenClaw" in obs engine deliberately untouched) |
 
 ## Phase 1 — done (2 commits)
@@ -253,6 +253,45 @@ adding an unattended/auto-submit mode.
   STALE — that consumer does not exist on this branch (grep-verified). The
   classifier's semantics are still left byte-identical (Phase 4 reads only
   `.requiresApproval` and never branches on task text).
+
+## Phase 5 — JobAgent workspace (DONE 2026-07-17)
+
+**Single-package apply loop, pi-side.** The old design was the inverse — a
+separate JobAgent project ran an MCP server and the extension was the client
+that pulled packages/answers (7 `*_application*` tools, now fully removed; only
+`settings-storage.ts` migration shims remain). The pi model inverts control, so
+the JobAgent data/orchestration layer lives host-side and drives the *existing*
+browser tools; nothing in the extension changes.
+
+- **Host-side `scripts/jobagent/`** (pure, no bridge/extension imports):
+  `paths.ts` resolves the applications dir (`JOBAGENT_APPLICATIONS_DIR` else
+  `<OPENSIDEBAR_SEED_DIR>/applications`); `package.ts` parses + validates
+  `application-package.json` against the seed schema and enforces the status
+  lifecycle (`recordStatus` rejects illegal jumps — a loop can never skip the
+  human submit gate); `manifest.ts` loads the `run-config.json` fill manifest
+  (form URL + pre-approved answers + CV); `brief.ts` assembles the fill-only
+  mission instruction ENTIRELY from the approved manifest (honesty is
+  structural — never asks pi to invent personal data); `cv-server.ts` serves the
+  CV over loopback.
+- **`.pi/extensions/jobagent.ts`** registers `jobagent_list_applications`,
+  `jobagent_load_application` (returns the brief + metadata + a CV loopback URL),
+  `jobagent_record_status`. Its promptGuidelines encode the loop: load →
+  `browser_run_task(brief)` → on a paused consequential submit, byte-check
+  `approval.dryRun.entries` and `browser_respond_approval` (human-gated, Phase 4)
+  → `jobagent_record_status`. **No auto-submit** — the submit stays the human's
+  step (`filled-awaiting-submit → submitted-by-user`).
+- **Reuse, not reinvent:** Phase 3 session = one application → one workspace/tab;
+  Phase 4 gated submit IS the human submit transition; `browser_run_task` is the
+  driver (the workspace assembles the rich instruction — `browser_apply_to_job`
+  is left as-is, it still drops its `resume` arg).
+- **Tests:** `apps/extension/tests/background/jobagent.test.ts` (10, offline,
+  synthetic fixture `tests/e2e/fixtures/live-app-kit/application-package.json`,
+  no PII) — schema validation, status-transition legality, brief assembly
+  (approved answers + fill-only guard + CV url), loopback CV serve. Gated by
+  `verify` via the same cross-import pattern as `seed-kit.test.ts`.
+- **Not in scope (stays in the separate JobAgent project):** job discovery,
+  package assembly / answer drafting, batching, auto-submit. The live pi loop
+  over a real bridge is authorization-gated and deferred.
 
 ## Live pi session findings (2026-07-16, first real pi ↔ extension contact)
 
