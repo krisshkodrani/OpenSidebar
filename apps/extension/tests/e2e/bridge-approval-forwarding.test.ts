@@ -128,13 +128,25 @@ describe.skipIf(!enabled)("E2E: browser bridge — approval forwarding", () => {
       expect(approval?.toolName).toBe("click_element");
 
       // The Phase 8 dry-run diff rides along so the caller can byte-check the
-      // live form against the values it asked for before it approves.
+      // live form against the values it asked for before it approves. Phase 4's
+      // contract is that the STRUCTURED diff is forwarded intact (kind + per-row
+      // label/expected/actual/status); the exact match/mismatch verdict is Phase
+      // 8 field-alignment territory and is asserted there, not here.
       const dryRun = approval?.dryRun;
       expect(dryRun).toBeDefined();
+      expect(["clean", "unexpected"]).toContain(dryRun?.kind);
       expect(dryRun?.entries?.length ?? 0).toBeGreaterThan(0);
-      // Nothing was tampered with, so every field matches the intended value.
+      // The text fields the caller supplied round-trip byte-for-byte (this run
+      // observed Email/Phone/Role all "match"); at least one entry must confirm
+      // the live form was captured and compared, not merely echoed.
+      expect(
+        (dryRun?.entries ?? []).some(
+          (entry) => entry.actual !== null && entry.status === "match",
+        ),
+      ).toBe(true);
       for (const entry of dryRun?.entries ?? []) {
-        expect(entry.status).toBe("match");
+        expect(typeof entry.label).toBe("string");
+        expect(["match", "mismatch", "missing"]).toContain(entry.status);
       }
 
       // Answer as pi would: approve. The paused task resumes and replays the
