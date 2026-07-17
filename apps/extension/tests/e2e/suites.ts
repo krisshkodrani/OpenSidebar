@@ -70,6 +70,7 @@ export const E2E_SUITES: Record<E2ESuiteName, readonly string[]> = {
   "parallel-workers": ["parallel-work.test.ts"],
   "local-mock-provider": [
     "browser-bridge.test.ts",
+    "bridge-approval-forwarding.test.ts",
     "completion-done.test.ts",
     "local-mock-provider-video.test.ts",
     "watch-mode.test.ts",
