@@ -122,6 +122,43 @@ export function getVisibleText(el: Element): string {
   return "";
 }
 
+/**
+ * Resolve a form control's associated label — the accessible name a human reads
+ * next to it — for matching against a drafted field expectation. A control's
+ * own text/value (what `getVisibleText` returns) is NOT its label: a checkbox
+ * has no text and its `name`/`id` is an internal token like `partner-terms`, so
+ * only the associated `<label>` carries "I accept the partner portal terms".
+ * Resolution order: aria-label/title, `label[for]`, wrapping `<label>`,
+ * `aria-labelledby`. Returns "" when none resolves.
+ */
+export function getControlLabel(el: Element): string {
+  const aria =
+    el.getAttribute("aria-label")?.trim() || el.getAttribute("title")?.trim();
+  if (aria) return aria;
+
+  const collapse = (s: string) => s.trim().replace(/\s+/g, " ");
+  const doc = el.ownerDocument;
+  const id = (el as HTMLElement).id;
+  if (id && doc) {
+    const forLabel = doc.querySelector(`label[for="${CSS.escape(id)}"]`);
+    const t = forLabel?.textContent?.trim();
+    if (t) return collapse(t);
+  }
+  const wrapping = el.closest("label");
+  if (wrapping?.textContent?.trim()) return collapse(wrapping.textContent);
+
+  const labelledBy = el.getAttribute("aria-labelledby");
+  if (labelledBy && doc) {
+    const t = labelledBy
+      .split(/\s+/)
+      .map((refId) => doc.getElementById(refId)?.textContent?.trim())
+      .filter(Boolean)
+      .join(" ");
+    if (t) return collapse(t);
+  }
+  return "";
+}
+
 export function extractAttributes(el: Element): Record<string, string> {
   const attrs: Record<string, string> = {};
 

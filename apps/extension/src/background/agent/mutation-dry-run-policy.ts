@@ -46,20 +46,57 @@ function valueNorm(text: string): string {
   return text.trim().replace(/\s+/g, " ").toLowerCase();
 }
 
+const TRUTHY = new Set(["true", "checked", "on", "yes", "1"]);
+const FALSY = new Set(["false", "unchecked", "off", "no", "0", ""]);
+
+/**
+ * Boolean-aware value comparison. A checkbox/radio captures as
+ * "checked"/"unchecked" but a draft expects "true"/"false" (or "yes"/"on"), so
+ * a plain string compare would flag a correctly-ticked box as a mismatch.
+ * Non-boolean values fall back to exact normalized-string equality.
+ */
+function valuesMatch(
+  captured: string,
+  expected: string,
+  kind: string | undefined,
+): boolean {
+  const isToggle = kind === "checkbox" || kind === "radio";
+  const a = valueNorm(captured);
+  const b = valueNorm(expected);
+  if (isToggle || (isBool(a) && isBool(b))) {
+    return boolNorm(a) === boolNorm(b);
+  }
+  return a === b;
+}
+
+function isBool(v: string): boolean {
+  return TRUTHY.has(v) || FALSY.has(v);
+}
+
+function boolNorm(v: string): string {
+  if (TRUTHY.has(v)) return "true";
+  if (FALSY.has(v)) return "false";
+  return v;
+}
+
 function findCapturedField(
   expected: FormFillFieldExpectation,
   fields: FormStateCapture["fields"],
 ): FormStateCapture["fields"][number] | null {
   const target = keyNorm(expected.label);
   if (!target) return null;
-  // Exact normalized-key match first, then bidirectional containment
+  // Match the draft label against the field's `name` AND its resolved `label`
+  // (a checkbox's `name` is an internal token like `partner-terms`, so only the
+  // label carries the drafted "I accept the …" text). Exact normalized-key
+  // match first, then bidirectional containment
   // ("Full name" ↔ "fullName", "email" ↔ "emailAddress").
+  const keysOf = (f: FormStateCapture["fields"][number]): string[] =>
+    [keyNorm(f.name), keyNorm(f.label ?? "")].filter((k) => k.length > 0);
   return (
-    fields.find((f) => keyNorm(f.name) === target) ??
-    fields.find((f) => {
-      const k = keyNorm(f.name);
-      return k.length > 0 && (k.includes(target) || target.includes(k));
-    }) ??
+    fields.find((f) => keysOf(f).some((k) => k === target)) ??
+    fields.find((f) =>
+      keysOf(f).some((k) => k.includes(target) || target.includes(k)),
+    ) ??
     null
   );
 }
@@ -88,7 +125,7 @@ export function diffFormStateAgainstDraft(
       return { label: exp.label, expected: exp.value, actual: null, status: "missing" };
     }
     const status: FormStateDiffStatus =
-      valueNorm(field.value) === valueNorm(exp.value) ? "match" : "mismatch";
+      valuesMatch(field.value, exp.value, field.kind) ? "match" : "mismatch";
     return { label: exp.label, expected: exp.value, actual: field.value, status };
   });
   const clean = entries.every((e) => e.status === "match");
