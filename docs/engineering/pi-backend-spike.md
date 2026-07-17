@@ -11,7 +11,7 @@ WIP — that is why this work lives in its own worktree. Don't merge the two.
 
 | Phase | State |
 | --- | --- |
-| 0 — contain seed PII | **not started** |
+| 0 — contain seed PII | **DONE 2026-07-17** (seed lives outside the repo at `~/.opensidebar/seed/` via `OPENSIDEBAR_SEED_DIR`; synthetic in-repo fixture for offline coverage; design below) |
 | 1 — completion seam + bridge repairs | **DONE, committed, verify green; PROVEN in a real browser 2026-07-15** (e2e `tests/e2e/browser-bridge.test.ts`, 26s) |
 | 2 — pi extension | **DONE, committed** (`.pi/extensions/opensidebar.ts`; spike answer below) |
 | 3 — mission/report handover | **DONE 2026-07-16** (sessions + cancellation; design below) |
@@ -293,7 +293,17 @@ Phase-4-relevant:
   forces approval and defeats `bypassApprovals` (`loop.ts:2562-2563`). Phase 4
   did NOT relax the gate; it forwards the approval to pi's human instead (see the
   Phase 4 section above). A grounded auto-submit token remains deferred.
-- **`.artifacts/seed/` holds real PII** (name, email, phone, address, 11 CVs)
-  behind only the blanket `.artifacts/` rule at `.gitignore:69`. Phase 0.
+- ~~**`.artifacts/seed/` holds real PII** (name, email, phone, address, 11 CVs)
+  behind only the blanket `.artifacts/` rule.~~ **Done (Phase 0, 2026-07-17):**
+  the seed moved OUT of the repo tree to `~/.opensidebar/seed/` (resolved via
+  `OPENSIDEBAR_SEED_DIR`, default that home path — mirrors the
+  `OPENSIDEBAR_PROFILE_PATH` profile store). The seed was already decoupled from
+  code (only the `E2E_LIVE_APP_KIT` env var located it); `tests/e2e/helpers/seed.ts`
+  now centralizes resolution/loading, `showcase-live-application.test.ts` finds
+  the kit via the default with no env var, a committed SYNTHETIC kit
+  (`tests/e2e/fixtures/live-app-kit/`, fabricated identity) gives offline
+  PII-free coverage (`tests/background/seed-kit.test.ts`), and `.gitignore` gained
+  an explicit `.artifacts/seed/` belt-and-braces rule. Real PII is no longer one
+  ignore line from a leak.
 - ~~`tests/background/agent-runner.test.ts` imports `browser-bridge/agent-runner.ts`
   — both go together in Phase 6.~~ Done: both deleted with the Phase 6 removal.

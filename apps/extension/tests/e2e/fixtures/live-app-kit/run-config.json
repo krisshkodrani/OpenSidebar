@@ -1,0 +1,25 @@
+{
+  "_note": "SYNTHETIC kit — fabricated identity only, safe to commit. Real seed PII lives outside the repo at ~/.opensidebar/seed (OPENSIDEBAR_SEED_DIR). This fixture gives the kit-loading + CV-serve harness offline, PII-free coverage; it is NOT a runnable live application.",
+  "formUrl": "http://127.0.0.1:0/apply",
+  "maxTurns": 20,
+  "cvServe": { "dir": ".", "port": 0, "file": "sample-cv.pdf" },
+  "promptLines": [
+    "Apply for the Sample Engineer role using the details below. Do NOT submit — fill only, leave it for review.",
+    "Name: Jordan Sample",
+    "Email: jordan.sample@example.com",
+    "Phone: +1 555 010 0000",
+    "Location: Anytown, Exampleland",
+    "Attach the CV file sample-cv.pdf."
+  ],
+  "expectedFieldValues": [
+    "Jordan Sample",
+    "jordan.sample@example.com",
+    "+1 555 010 0000",
+    "Anytown, Exampleland"
+  ],
+  "expectedLongTexts": [
+    "I am excited to apply for the Sample Engineer role and believe my sample experience is a strong fit."
+  ],
+  "expectedPageText": ["sample-cv.pdf"],
+  "forbiddenPageText": ["Application submitted", "Thank you for applying"]
+}
