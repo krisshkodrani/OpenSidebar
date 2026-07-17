@@ -79,7 +79,7 @@ describe("provider-scoped model catalogs", () => {
     ).toBe(true);
     expect(isVLCapable("accounts/fireworks/models/kimi-k2p7-code")).toBe(true);
     expect(getDefaultExecutorModel("fireworks")).toBe(
-      "accounts/fireworks/models/kimi-k2p7-code",
+      "accounts/fireworks/models/minimax-m3",
     );
   });
 

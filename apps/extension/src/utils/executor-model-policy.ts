@@ -2,15 +2,23 @@ import type { UserSettings } from "../types";
 
 export type ProviderMode = NonNullable<UserSettings["providerMode"]>;
 
+// Default executor per provider (owner decision 2026-07-17): minimax-m3 for the
+// Fireworks-family modes. It is unified-VL and ~3x cheaper than kimi-k2p7-code
+// end-to-end; on the smoke e2e tier it matched Kimi's 9/9 pass rate, ran ~9%
+// faster with fewer turns, and cost ~1/3 as much (traces confirmed the seat).
+// The cost cut matters most for the compulsory e2e gates run during
+// development. kimi-k2p7-code stays ELIGIBLE (selectable via settings/E2E_MODEL)
+// as the reference executor. Deeper eval (medium/hard tiers) is still pending —
+// revisit the default if a harder tier exposes a reliability-floor gap.
 export const DEFAULT_MULTIMODAL_EXECUTOR_BY_PROVIDER: Record<
   ProviderMode,
   string
 > = {
-  openrouter: "accounts/fireworks/models/kimi-k2p7-code",
-  "openrouter-groq": "accounts/fireworks/models/kimi-k2p7-code",
-  "openai-groq": "accounts/fireworks/models/kimi-k2p7-code",
-  fireworks: "accounts/fireworks/models/kimi-k2p7-code",
-  "fireworks-deepseek": "accounts/fireworks/models/kimi-k2p7-code",
+  openrouter: "accounts/fireworks/models/minimax-m3",
+  "openrouter-groq": "accounts/fireworks/models/minimax-m3",
+  "openai-groq": "accounts/fireworks/models/minimax-m3",
+  fireworks: "accounts/fireworks/models/minimax-m3",
+  "fireworks-deepseek": "accounts/fireworks/models/minimax-m3",
   "cerebras-fireworks": "gemma-4-31b",
   moonshot: "kimi-k2.6",
   xiaomi: "mimo-v2-omni",
@@ -22,9 +30,9 @@ const FIREWORKS_EXECUTOR_MODELS = new Set([
   "accounts/fireworks/routers/kimi-k2p5-turbo",
   "qwen/qwen3-vl-30b-a3b-instruct",
   "qwen/qwen3-vl-30b-a3b-thinking",
-  // minimax-m3 executor candidate (eval, 2026-07-17): unified-VL and ~3x
-  // cheaper than K2.7-Code; listed here so it can be seated for an A/B against
-  // the K2.7-Code reliability floor. Not yet the default for any provider.
+  // minimax-m3: the DEFAULT Fireworks-family executor since 2026-07-17 (unified
+  // VL, ~3x cheaper; smoke-tier A/B matched K2.7-Code). Kept listed so the
+  // eligibility policy admits it explicitly.
   "accounts/fireworks/models/minimax-m3",
 ]);
 
