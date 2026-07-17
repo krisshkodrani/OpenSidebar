@@ -30,6 +30,7 @@ import {
 import { collapseNearIdentical, scoreElement } from "./scoring";
 import {
   isElementVisible,
+  isUploadFileInput,
   inferRole,
   getVisibleText,
   extractAttributes,
@@ -162,9 +163,15 @@ export function tagElements(): TaggedElement[] {
     }
   }
 
-  // 5b. Filter visible candidates first for accurate total count
+  // 5b. Filter visible candidates first for accurate total count. File inputs
+  // are the exception: they are the only upload target, are almost always
+  // hidden behind a styled button, and must be tagged so upload_file can reach
+  // them (otherwise the agent clicks the button and opens an uncontrollable OS
+  // file dialog).
   const visibleCandidates = rawCandidates.filter(
-    (el) => isElementVisible(el) && !el.closest('[aria-hidden="true"]'),
+    (el) =>
+      isUploadFileInput(el) ||
+      (isElementVisible(el) && !el.closest('[aria-hidden="true"]')),
   );
   const totalCandidates = visibleCandidates.length;
 

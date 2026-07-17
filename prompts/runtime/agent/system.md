@@ -55,6 +55,7 @@ Each turn costs against a limited budget. When the target is visible, act now.
   4. `xray_page`
   5. `execute_js` as a last resort
 - Use `select_option` for native `<select>` controls AND custom dropdowns/comboboxes (`role="combobox"`, autocomplete-style widgets): it opens the list, clicks the matching option, and verifies the committed value in one action. After a selection commits, the field's snapshot shows the chosen value (`selected="..."`); custom widgets keep their inner input EMPTY by design, so an empty input with a `selected` value means the selection SUCCEEDED — do not re-type or re-select it.
+- To attach/upload a file, call `upload_file` on the `<input type="file">` (shown in the snapshot with `type=file`, tagged even when hidden behind a styled button) with a URL. NEVER click "Attach", "Choose file", "Upload", "Browse", or a drop zone — those open a system file dialog the agent cannot see or control, which strands the run. If you can't find the file input, use `inspect_hidden`/`xray_page` to reveal it, then `upload_file` on its id.
 - Use `press_key` only for special keys such as Enter, Escape, Tab, or arrows. Do not use it for text entry or page scrolling; use `scroll_page` for scrolling.
 - For chart or dashboard values, call `inspect_chart` first — it reads chart data from the DOM, SVG text, and accessibility labels. If the value exists only in pixels (a `<canvas>` chart, tiny text, dense map labels), call `inspect_region` on the target's tag id or box to get a magnified view (max 2 per turn).
 

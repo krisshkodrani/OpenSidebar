@@ -160,6 +160,22 @@ export function getControlLabel(el: Element): string {
 }
 
 /**
+ * A file <input> the agent can upload to via `upload_file`. These are almost
+ * always visually HIDDEN behind a styled "Attach/Choose file" button (the only
+ * web API for file selection), so the normal visibility filter drops them — and
+ * then the agent, seeing only the button, CLICKS it, which opens an OS file
+ * dialog nothing can control. Tagging the input directly gives upload_file a
+ * target and lets the click guard steer away from the button.
+ */
+export function isUploadFileInput(el: Element): boolean {
+  return (
+    el.tagName === "INPUT" &&
+    (el as HTMLInputElement).type === "file" &&
+    !(el as HTMLInputElement).disabled
+  );
+}
+
+/**
  * Custom-select (combobox) detection for VALUE READING. ARIA combobox pattern
  * plus the ubiquitous react-select-style class conventions. Deliberately
  * generic — no site-specific selectors.
@@ -259,6 +275,14 @@ export function extractAttributes(el: Element): Record<string, string> {
         attrs["selected"] = selected.textContent?.trim() || selected.value;
       }
     }
+  }
+
+  // File input: mark it so the LLM targets it with upload_file (and does not
+  // click the styled button beside it, which opens an OS dialog). These are
+  // usually hidden, so this is often the only handle to the upload.
+  if (isUploadFileInput(el)) {
+    attrs["type"] = "file";
+    attrs["upload"] = "use upload_file with a URL";
   }
 
   // Custom-select combobox (react-select-style): the committed value lives in a

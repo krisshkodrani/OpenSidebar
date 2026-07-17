@@ -20,6 +20,7 @@ import {
   isOwnElement,
   isComboboxLikeElement,
   readComboboxCommittedValue,
+  isUploadFileInput,
   querySelectorAllDeep,
   isElementVisible,
 } from "../tagging";
@@ -387,6 +388,30 @@ async function buildOptionCommitEcho(option: Element): Promise<string> {
   return " — option clicked; no committed value visible on the field yet, read the field to confirm before retrying";
 }
 
+/**
+ * If clicking this element would open a native OS file-picker dialog (a file
+ * input, or a <label> that targets/wraps one), resolve that file input. The OS
+ * dialog cannot be observed, clicked, or dismissed by any script, so a click
+ * here strands the agent — it must use upload_file on the input instead.
+ */
+function resolveFileDialogTrigger(el: Element): HTMLInputElement | null {
+  if (isUploadFileInput(el)) return el as HTMLInputElement;
+  if (el.tagName === "LABEL") {
+    const forId = (el as HTMLLabelElement).htmlFor;
+    if (forId) {
+      const target = el.ownerDocument?.getElementById(forId);
+      if (target && isUploadFileInput(target)) {
+        return target as HTMLInputElement;
+      }
+    }
+    const wrapped = el.querySelector('input[type="file"]');
+    if (wrapped && isUploadFileInput(wrapped)) {
+      return wrapped as HTMLInputElement;
+    }
+  }
+  return null;
+}
+
 export async function executeClick(args: ClickElementArgs): Promise<{
   success: boolean;
   result: string;
@@ -397,6 +422,22 @@ export async function executeClick(args: ClickElementArgs): Promise<{
   const el = getTaggedElement(args.id);
   if (!el) {
     return staleIdError(args.id);
+  }
+
+  // Refuse clicks that would open an uncontrollable OS file dialog — redirect to
+  // upload_file on the actual file input.
+  const fileTrigger = resolveFileDialogTrigger(el);
+  if (fileTrigger) {
+    const fileTag = addDynamicTag(fileTrigger);
+    return {
+      success: false,
+      result:
+        `Clicking [${tagId}] would open a system file-picker dialog that cannot ` +
+        `be controlled by the agent. To attach a file, call upload_file with the ` +
+        `file input id [${fileTag}] and a URL — never click Attach/Choose file/` +
+        `Upload/Browse controls.`,
+      navigated: false,
+    };
   }
 
   // Scroll into view if needed
