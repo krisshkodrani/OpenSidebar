@@ -22,6 +22,10 @@ const FIREWORKS_EXECUTOR_MODELS = new Set([
   "accounts/fireworks/routers/kimi-k2p5-turbo",
   "qwen/qwen3-vl-30b-a3b-instruct",
   "qwen/qwen3-vl-30b-a3b-thinking",
+  // minimax-m3 executor candidate (eval, 2026-07-17): unified-VL and ~3x
+  // cheaper than K2.7-Code; listed here so it can be seated for an A/B against
+  // the K2.7-Code reliability floor. Not yet the default for any provider.
+  "accounts/fireworks/models/minimax-m3",
 ]);
 
 const MOONSHOT_EXECUTOR_MODELS = new Set(["kimi-k2.6", "kimi-k2.5"]);
