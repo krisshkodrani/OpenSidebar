@@ -364,9 +364,17 @@ export class RunManager {
             `submit outcome is visible and report it.`;
       const session = `console-${run.id}`;
 
-      this.logLine(run, `[console] starting ${mode} mission for ${name}`);
+      this.logLine(run, `[console] starting ${mode} mission at ${app.manifest.formUrl}`);
       let outcome = await this.bridge.call(
-        { tool: "browser_run_task", args: { instruction }, session },
+        // `url` is what opens the tab on the form (orchestrator-driver uses
+        // task.url for createTab/navigateTab). Without it the agent lands on
+        // about:blank and has to navigate itself — which fails outright when
+        // the extension is configured with navigation disallowed.
+        {
+          tool: "browser_run_task",
+          args: { instruction, url: app.manifest.formUrl },
+          session,
+        },
         { signal },
       );
 
