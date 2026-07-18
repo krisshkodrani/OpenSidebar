@@ -7,10 +7,16 @@
  * the application's status. It never touches the browser bridge itself and never
  * invents personal data — answers come only from the approved manifest.
  *
- * The loop: jobagent_load_application → browser_run_task(brief) → on a paused
- * consequential submit, verify the dry-run and browser_respond_approval →
- * jobagent_record_status. The submit stays a human-gated step (Phase 4); this
- * extension adds no auto-submit.
+ * The apply loop: jobagent_load_application → browser_run_task(brief) → on a
+ * paused consequential submit, verify the dry-run and browser_respond_approval
+ * → jobagent_record_status. The submit stays a human-gated step (Phase 4);
+ * this extension adds no auto-submit.
+ *
+ * The discovery loop (Phase 7): jobagent_search_criteria → sweep each board
+ * with browser_navigate + browser_extract_structured → jobagent_record_discovery
+ * per listing. Match/dedupe/package-creation judgments are deterministic on
+ * the host (scripts/jobagent/discovery.ts); created packages enter the review
+ * queue as `reviewing` and are never applied to without a human promotion.
  *
  * Removability: delete this file (or `.pi/`) and pi knows nothing about it.
  * Nothing here is imported by extension or scripts code.
@@ -24,10 +30,13 @@ import {
   assembleFillBrief,
   listApplications,
   loadApplication,
+  loadSearchCriteria,
+  recordDiscovery,
   recordStatus,
   startCvServer,
   type ApplicationStatus,
   type CvServer,
+  type DiscoveredListing,
 } from "../../scripts/jobagent/index";
 
 /** CV servers stay alive for the pi process; one per application, replaced on reload. */
@@ -62,6 +71,75 @@ const APPLY_STATUSES: ApplicationStatus[] = [
 ];
 
 export default function jobagentExtension(pi: ExtensionAPI): void {
+  pi.registerTool({
+    name: "jobagent_search_criteria",
+    label: "JobAgent: search criteria",
+    description:
+      "Load the human-authored job search criteria: target roles, keywords, " +
+      "exclusions, locations, and the boards to sweep (name + searchUrl). " +
+      "This is the FIRST call of a discovery run — the criteria file is the " +
+      "single source of truth for what counts as a match.",
+    promptGuidelines: [
+      "JobAgent discovery loop (finds candidates; NEVER applies): (1) " +
+        "jobagent_search_criteria for roles + boards; (2) for each board, " +
+        "browser_navigate its searchUrl, then browser_extract_structured with " +
+        "a listings schema {title, company, url, location, snippet} — use the " +
+        "board's name as `source`; (3) pass EVERY plausible listing to " +
+        "jobagent_record_discovery verbatim — matching, dedupe, and package " +
+        "creation are deterministic on the host, so do not pre-filter beyond " +
+        "the obvious; (4) report created/duplicate/rejected counts with the " +
+        "reasons, and STOP — created packages are status `reviewing` and a " +
+        "human reviews them before any apply. Respect maxPackagesPerRun by " +
+        "stopping board sweeps once reached. Never invent listing data; if a " +
+        "field is not shown, omit it.",
+    ],
+    parameters: {
+      type: "object",
+      additionalProperties: false,
+      properties: {},
+    } as unknown as TSchema,
+    async execute() {
+      return text(loadSearchCriteria());
+    },
+  });
+
+  pi.registerTool({
+    name: "jobagent_record_discovery",
+    label: "JobAgent: record discovery",
+    description:
+      "Record ONE extracted job listing. The host deterministically assesses " +
+      "it against the search criteria (role match, exclusions, location), " +
+      "dedupes against existing packages by URL and name, and on a match " +
+      "creates a review-queue package (status `reviewing`) plus a " +
+      "discovery.json audit record. Returns created/duplicate/rejected with " +
+      "auditable reasons. This never applies, never fills, never navigates.",
+    parameters: {
+      type: "object",
+      additionalProperties: false,
+      required: ["title", "company", "url", "source"],
+      properties: {
+        title: { type: "string", description: "Role title exactly as listed." },
+        company: { type: "string", description: "Company name as listed." },
+        url: { type: "string", description: "Canonical listing URL." },
+        location: { type: "string", description: "Location text, if shown." },
+        snippet: { type: "string", description: "Listing snippet, if shown." },
+        source: { type: "string", description: "Board name it came from." },
+      },
+    } as unknown as TSchema,
+    async execute(_id, params) {
+      const p = (params ?? {}) as Partial<DiscoveredListing>;
+      const listing: DiscoveredListing = {
+        title: String(p.title ?? ""),
+        company: String(p.company ?? ""),
+        url: String(p.url ?? ""),
+        source: String(p.source ?? ""),
+        ...(p.location ? { location: String(p.location) } : {}),
+        ...(p.snippet ? { snippet: String(p.snippet) } : {}),
+      };
+      return text(recordDiscovery(listing, loadSearchCriteria()));
+    },
+  });
+
   pi.registerTool({
     name: "jobagent_list_applications",
     label: "JobAgent: list applications",
