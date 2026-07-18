@@ -30,12 +30,18 @@ import { fileURLToPath } from "node:url";
 
 import { EventHub } from "./events";
 import {
+  getAnswers,
   getApplication,
   getCriteria,
   getHealth,
+  getKitDraft,
   getQueue,
+  postKitApprove,
+  postKitDraft,
   postStatus,
+  putAnswers,
   putCriteria,
+  putKitDraft,
   type ApiResult,
 } from "./api";
 
@@ -176,6 +182,31 @@ export function startConsoleServer(
       if (path === "/api/criteria" && method === "PUT") {
         const body = await parseJsonBody(req).catch(() => null);
         return send(res, putCriteria(body), origin);
+      }
+      if (path === "/api/answers" && method === "GET") {
+        return send(res, getAnswers(), origin);
+      }
+      if (path === "/api/answers" && method === "PUT") {
+        const body = await parseJsonBody(req).catch(() => null);
+        return send(res, putAnswers(body), origin);
+      }
+
+      const draftMatch = path.match(/^\/api\/applications\/([^/]+)\/kit-draft$/);
+      if (draftMatch) {
+        const name = decodeURIComponent(draftMatch[1]);
+        if (method === "GET") return send(res, getKitDraft(name), origin);
+        const body = await parseJsonBody(req).catch(() => null);
+        if (method === "POST") return send(res, postKitDraft(name, body), origin);
+        if (method === "PUT") return send(res, putKitDraft(name, body), origin);
+      }
+      const approveMatch = path.match(/^\/api\/applications\/([^/]+)\/kit-approve$/);
+      if (method === "POST" && approveMatch) {
+        const body = await parseJsonBody(req).catch(() => null);
+        const result = postKitApprove(decodeURIComponent(approveMatch[1]), body);
+        if (result.status === 200) {
+          events.broadcast({ type: "queue-changed", data: result.body });
+        }
+        return send(res, result, origin);
       }
 
       return send(res, { status: 404, body: { error: `no route ${method} ${path}` } }, origin);

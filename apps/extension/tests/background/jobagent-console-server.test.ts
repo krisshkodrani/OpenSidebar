@@ -267,3 +267,76 @@ describe("ui + events", () => {
     expect(stream).toContain('"x":1');
   });
 });
+
+describe("kit routes (v1)", () => {
+  const library = {
+    schemaVersion: 1,
+    identity: { fullName: "Sam Example", email: "sam@example.test" },
+    answers: [
+      { tag: "how_heard", question: "How did you hear about us?", keywords: ["hear"], text: "Job board." },
+    ],
+    cvVariants: [{ name: "default", file: "applications/sample/cv.pdf" }],
+  };
+
+  test("answers 404s with hint, PUT validates, GET round-trips", async () => {
+    const empty = await call(server!.port, "GET", "/api/answers");
+    expect(empty.status).toBe(404);
+    expect(empty.body.error).toContain("answer-library.json");
+
+    const bad = await call(server!.port, "PUT", "/api/answers", { schemaVersion: 1 });
+    expect(bad.status).toBe(400);
+
+    expect((await call(server!.port, "PUT", "/api/answers", library)).status).toBe(200);
+    expect((await call(server!.port, "GET", "/api/answers")).body.identity.fullName).toBe("Sam Example");
+  });
+
+  test("full kit flow: generate → edit → approve+promote → run-config + ready", async () => {
+    writePackage(process.env.JOBAGENT_APPLICATIONS_DIR!, "acme-ai-engineer");
+    await call(server!.port, "PUT", "/api/answers", library);
+
+    // No library → 409 is covered by ordering; with library, generate:
+    const generated = await call(server!.port, "POST", "/api/applications/acme-ai-engineer/kit-draft", {
+      questions: [
+        { label: "Email", kind: "text" },
+        { label: "How did you hear about us?", kind: "text" },
+        { label: "Favourite dinosaur", kind: "text" },
+      ],
+    });
+    expect(generated.status).toBe(200);
+    expect(generated.body.unresolved).toEqual(["Favourite dinosaur"]);
+
+    // Approve blocked while unresolved.
+    const blocked = await call(server!.port, "POST", "/api/applications/acme-ai-engineer/kit-approve", {});
+    expect(blocked.status).toBe(409);
+    expect(blocked.body.error).toContain("unresolved");
+
+    // Human resolves via PUT.
+    const edited = {
+      ...generated.body,
+      perField: generated.body.perField.map((f) =>
+        f.source.kind === "todo" ? { ...f, answer: "Stegosaurus" } : f,
+      ),
+    };
+    const saved = await call(server!.port, "PUT", "/api/applications/acme-ai-engineer/kit-draft", edited);
+    expect(saved.status).toBe(200);
+    expect(saved.body.unresolved).toEqual([]);
+
+    // Approve + promote.
+    const approved = await call(server!.port, "POST", "/api/applications/acme-ai-engineer/kit-approve", { promote: true });
+    expect(approved.status).toBe(200);
+    expect(approved.body.status).toBe("ready");
+
+    const detail = await call(server!.port, "GET", "/api/applications/acme-ai-engineer");
+    expect(detail.body.runConfig.expectedFieldValues).toContain("Stegosaurus");
+    expect(detail.body.package.status).toBe("ready");
+  });
+
+  test("generate without a library is a 409 pointing at the Answers tab", async () => {
+    writePackage(process.env.JOBAGENT_APPLICATIONS_DIR!, "acme-ai-engineer");
+    const reply = await call(server!.port, "POST", "/api/applications/acme-ai-engineer/kit-draft", {
+      questions: [{ label: "Email" }],
+    });
+    expect(reply.status).toBe(409);
+    expect(reply.body.error).toContain("answer library");
+  });
+});

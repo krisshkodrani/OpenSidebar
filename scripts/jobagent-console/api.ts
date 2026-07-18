@@ -24,6 +24,18 @@ import {
   parseSearchCriteria,
   resolveSearchCriteriaPath,
 } from "../jobagent/discovery";
+import {
+  loadAnswerLibrary,
+  resolveAnswerLibraryPath,
+  saveAnswerLibrary,
+} from "../jobagent/answers";
+import {
+  approveKitDraft,
+  buildKitDraft,
+  loadKitDraft,
+  saveKitDraft,
+  type FormQuestion,
+} from "../jobagent/drafting";
 
 export interface ApiResult {
   status: number;
@@ -135,5 +147,91 @@ export function putCriteria(body: unknown): ApiResult {
     return ok(criteria);
   } catch (e) {
     return err(400, e instanceof Error ? e.message : String(e));
+  }
+}
+
+/* ── v1 routes: answer library + kit drafting ─────────────── */
+
+export function getAnswers(): ApiResult {
+  const library = loadAnswerLibrary();
+  if (!library) {
+    return err(
+      404,
+      `no answer library at ${resolveAnswerLibraryPath()} — create it in the ` +
+        `Answers tab (schemaVersion 1, identity{fullName,email}, answers[], cvVariants[])`,
+    );
+  }
+  return ok(library);
+}
+
+export function putAnswers(body: unknown): ApiResult {
+  try {
+    return ok(saveAnswerLibrary(body));
+  } catch (e) {
+    return err(400, e instanceof Error ? e.message : String(e));
+  }
+}
+
+export function getKitDraft(name: string): ApiResult {
+  if (!isSafeName(name)) return err(400, "invalid application name");
+  const draft = loadKitDraft(resolveApplicationDir(name));
+  if (!draft) return err(404, `no kit draft for "${name}"`);
+  return ok(draft);
+}
+
+export function postKitDraft(name: string, body: unknown): ApiResult {
+  if (!isSafeName(name)) return err(400, "invalid application name");
+  const dir = resolveApplicationDir(name);
+  const pkg = loadApplicationPackage(dir);
+  if (!pkg) return err(404, `no application package for "${name}"`);
+  const library = loadAnswerLibrary();
+  if (!library) {
+    return err(409, "no answer library — author it in the Answers tab first");
+  }
+  const questions = (body as { questions?: unknown })?.questions;
+  try {
+    const draft = buildKitDraft(pkg, questions as FormQuestion[], library);
+    writeFileSync(
+      join(dir, "kit-draft.json"),
+      JSON.stringify(draft, null, 2) + "\n",
+      "utf8",
+    );
+    return ok(draft);
+  } catch (e) {
+    return err(400, e instanceof Error ? e.message : String(e));
+  }
+}
+
+export function putKitDraft(name: string, body: unknown): ApiResult {
+  if (!isSafeName(name)) return err(400, "invalid application name");
+  const dir = resolveApplicationDir(name);
+  const pkg = loadApplicationPackage(dir);
+  if (!pkg) return err(404, `no application package for "${name}"`);
+  try {
+    return ok(saveKitDraft(dir, pkg, body));
+  } catch (e) {
+    return err(400, e instanceof Error ? e.message : String(e));
+  }
+}
+
+export function postKitApprove(name: string, body: unknown): ApiResult {
+  if (!isSafeName(name)) return err(400, "invalid application name");
+  const dir = resolveApplicationDir(name);
+  const pkg = loadApplicationPackage(dir);
+  if (!pkg) return err(404, `no application package for "${name}"`);
+  const opts = (body ?? {}) as { promote?: boolean; force?: boolean };
+  try {
+    const manifest = approveKitDraft(dir, { force: opts.force === true });
+    let status = pkg.status ?? "reviewing";
+    if (opts.promote === true) {
+      try {
+        status = recordStatus(dir, "ready").status ?? status;
+      } catch (e) {
+        return err(409, e instanceof Error ? e.message : String(e));
+      }
+    }
+    return ok({ name, manifest, status });
+  } catch (e) {
+    return err(409, e instanceof Error ? e.message : String(e));
   }
 }

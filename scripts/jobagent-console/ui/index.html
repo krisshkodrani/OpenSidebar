@@ -211,6 +211,8 @@ async function renderApplication(main) {
   );
   main.append(card);
 
+  renderKitEditor(main, app);
+
   if (app.discovery) {
     main.append(el("div", { class: "card" },
       el("h2", {}, "Discovery record"),
@@ -224,6 +226,144 @@ async function renderApplication(main) {
       el("h2", {}, "Approved kit (run-config.json)"),
       el("pre", {}, JSON.stringify(app.runConfig, null, 2))));
   }
+}
+
+/* ── Kit editor (Application tab, v1) ─────────────────────── */
+function sourceChip(source) {
+  if (!source) return "";
+  if (source.kind === "todo") return el("span", { class: "badge", style: "color:var(--todo);border-color:var(--todo)" }, "TODO");
+  const label = source.kind === "identity" ? `identity:${source.key}`
+    : source.kind === "answer" ? `answer:${source.tag}`
+    : `default:${source.key}`;
+  return el("span", { class: "badge" }, label);
+}
+
+function renderKitEditor(main, app) {
+  const name = state.appName;
+  const card = el("div", { class: "card" }, el("h2", {}, "Kit draft"));
+  main.append(card);
+
+  if (!app.kitDraft) {
+    const area = el("textarea", { style: "min-height:120px" },
+      JSON.stringify([
+        { label: "First Name", kind: "text" },
+        { label: "Email", kind: "text" },
+        { label: "Why do you want to work here?", kind: "longtext" },
+        { label: "Resume/CV", kind: "file" },
+      ], null, 2));
+    card.append(
+      el("p", { class: "muted" },
+        "No draft yet. List the form's questions (extract them from the posting) and generate:"),
+      area,
+      el("p", {}, el("button", {
+        class: "action primary",
+        onclick: async () => {
+          try {
+            await api(`/api/applications/${encodeURIComponent(name)}/kit-draft`, {
+              method: "POST", body: JSON.stringify({ questions: JSON.parse(area.value) }),
+            });
+            render();
+          } catch (e) { flash(card, "err", e.message); }
+        },
+      }, "Generate draft from answer library")));
+    return;
+  }
+
+  const draft = app.kitDraft;
+  const rows = draft.perField.map((field) => {
+    const input = field.question.kind === "longtext"
+      ? el("textarea", { style: "min-height:70px" }, field.answer)
+      : el("input", {
+          value: field.answer,
+          style: "width:100%;background:var(--bg);color:var(--text);border:1px solid var(--border);border-radius:4px;padding:5px 8px;font-size:12px",
+        });
+    return { field, input };
+  });
+
+  card.append(
+    draft.unresolved.length
+      ? el("p", { class: "risk" }, `⚠ ${draft.unresolved.length} unresolved: ${draft.unresolved.join(", ")}`)
+      : el("p", { style: "color:var(--ok)" }, "All fields resolved."),
+    el("table", {},
+      el("tr", {}, ...["Question", "Answer", "Source"].map((h) => el("th", {}, h))),
+      ...rows.map(({ field, input }) =>
+        el("tr", {},
+          el("td", { style: "width:30%" }, field.question.label,
+            field.question.kind ? el("div", { class: "muted", style: "font-size:11px" }, field.question.kind) : ""),
+          el("td", {}, input),
+          el("td", { style: "width:18%" }, sourceChip(field.source))))),
+    el("p", {},
+      el("button", {
+        class: "action", style: "margin-right:8px",
+        onclick: async () => {
+          try {
+            const edited = {
+              ...draft,
+              perField: rows.map(({ field, input }) => ({ ...field, answer: input.value })),
+            };
+            await api(`/api/applications/${encodeURIComponent(name)}/kit-draft`, {
+              method: "PUT", body: JSON.stringify(edited),
+            });
+            render();
+          } catch (e) { flash(card, "err", e.message); }
+        },
+      }, "Save draft"),
+      el("button", {
+        class: "action primary", style: "margin-right:8px",
+        onclick: () => approveKit(card, name, false),
+      }, "Approve kit"),
+      el("button", {
+        class: "action primary",
+        onclick: () => approveKit(card, name, true),
+      }, "Approve + promote to ready")),
+    el("details", {},
+      el("summary", { class: "muted" }, "Derived run-config preview"),
+      el("pre", {}, JSON.stringify(draft.manifest, null, 2))));
+}
+
+async function approveKit(card, name, promote) {
+  try {
+    await api(`/api/applications/${encodeURIComponent(name)}/kit-approve`, {
+      method: "POST", body: JSON.stringify({ promote }),
+    });
+    render();
+  } catch (e) { flash(card, "err", e.message); }
+}
+
+/* ── Answers tab (v1) ─────────────────────────────────────── */
+async function renderAnswers(main) {
+  let text = "";
+  try {
+    const library = await api("/api/answers");
+    text = JSON.stringify(library, null, 2);
+  } catch (e) {
+    text = JSON.stringify({
+      schemaVersion: 1,
+      identity: { fullName: "", email: "" },
+      links: {}, salary: { currency: "EUR" },
+      answers: [{ tag: "how_heard", question: "How did you hear about us?", keywords: ["hear", "found"], text: "" }],
+      cvVariants: [{ name: "default", file: "applications/example/cv.pdf" }],
+      defaults: { remoteOk: true },
+    }, null, 2);
+    main.append(el("div", { class: "flash err" }, e.message));
+  }
+  const area = el("textarea", {}, text);
+  const card = el("div", { class: "card" },
+    el("h2", {}, "Answer library (canonical answers — validated on save)"),
+    el("p", { class: "muted" },
+      "Kit drafting maps form questions onto this library deterministically. Nothing is ever invented."),
+    area,
+    el("p", {},
+      el("button", {
+        class: "action primary",
+        onclick: async () => {
+          try {
+            await api("/api/answers", { method: "PUT", body: area.value });
+            flash(card, "ok", "Saved.");
+          } catch (e) { flash(card, "err", e.message); }
+        },
+      }, "Validate + Save")));
+  main.append(card);
 }
 
 /* ── Criteria ─────────────────────────────────────────────── */
@@ -272,7 +412,7 @@ async function render() {
     if (state.tab === "queue") await renderQueue(main);
     else if (state.tab === "application") await renderApplication(main);
     else if (state.tab === "criteria") await renderCriteria(main);
-    else if (state.tab === "answers") renderPlaceholder(main, "Answer library");
+    else if (state.tab === "answers") await renderAnswers(main);
     else if (state.tab === "runs") renderPlaceholder(main, "Runs");
     else if (state.tab === "approvals") renderPlaceholder(main, "Approvals inbox");
   } catch (e) {
