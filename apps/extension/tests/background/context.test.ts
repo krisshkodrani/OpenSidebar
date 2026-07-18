@@ -1157,3 +1157,80 @@ describe("formatElementCompact new-element marking (LP-10)", () => {
     expect(result.startsWith("[42] ")).toBe(true);
   });
 });
+
+describe("Fill checklist (LP-17)", () => {
+  const formField = (tag: number, label: string, value = "") => {
+    const key = label.toLowerCase().replace(/[^a-z0-9]+/g, "-");
+    return {
+      tag,
+      tagName: "input",
+      role: "textbox",
+      text: value,
+      attributes: { id: key, name: key, type: "text", value, label },
+      rect: { x: 0, y: tag * 20, width: 180, height: 24 },
+      isVisible: true,
+      isDisabled: false,
+    };
+  };
+  const formSnapshot = () => ({
+    title: "Apply",
+    url: "https://example.com/apply",
+    elements: [
+      formField(1, "First name", "Kris"),
+      formField(2, "Email", "k@example.com"),
+      formField(3, "Phone"),
+    ],
+    visibleContent: "Application",
+    viewport: { width: 1280, height: 800 },
+    scroll: { x: 0, y: 0, maxY: 0 },
+  });
+
+  test("system prompt carries the Form status line for a form snapshot", () => {
+    const ctx = new ContextManager();
+    ctx.setSnapshot(formSnapshot() as any);
+    const systemContent = ctx.getPrompt()[0].content as string;
+    expect(systemContent).toContain("Form status: 2/3 fields hold confirmed values");
+    expect(systemContent).toContain("Still empty: Phone");
+    // Placed above the elements list.
+    expect(systemContent.indexOf("Form status:")).toBeLessThan(
+      systemContent.indexOf("## Visible Elements"),
+    );
+  });
+
+  test("no Form status line on a non-form snapshot", () => {
+    const ctx = new ContextManager();
+    ctx.setSnapshot({
+      title: "Article",
+      url: "https://example.com/post",
+      elements: [],
+      visibleContent: "Text",
+      viewport: { width: 1280, height: 800 },
+      scroll: { x: 0, y: 0, maxY: 0 },
+    } as any);
+    expect(ctx.getPrompt()[0].content as string).not.toContain("Form status:");
+  });
+
+  test("consumeChecklistFeedbackLine fires once per filled-set change", () => {
+    const ctx = new ContextManager();
+    ctx.setSnapshot(formSnapshot() as any);
+    const first = ctx.consumeChecklistFeedbackLine();
+    expect(first).toContain("2/3 fields hold confirmed values");
+    // Same state → no second injection.
+    expect(ctx.consumeChecklistFeedbackLine()).toBeNull();
+    // Fill the remaining field → new signature → fires again.
+    const snapshot = formSnapshot();
+    snapshot.elements[2] = formField(3, "Phone", "+43 1 234");
+    ctx.setSnapshot(snapshot as any);
+    expect(ctx.consumeChecklistFeedbackLine()).toContain("3/3 fields");
+  });
+
+  test("clear() resets the checklist state", () => {
+    const ctx = new ContextManager();
+    ctx.setSnapshot(formSnapshot() as any);
+    expect(ctx.consumeChecklistFeedbackLine()).not.toBeNull();
+    ctx.clear();
+    ctx.setSnapshot(formSnapshot() as any);
+    // Same signature as before clear, but state was reset → fires again.
+    expect(ctx.consumeChecklistFeedbackLine()).not.toBeNull();
+  });
+});
