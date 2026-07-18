@@ -127,9 +127,9 @@
   },
   {
     "id": "planner.decompose.system",
-    "version": "v5",
-    "hash": "38276068",
-    "description": "Planner decomposition system prompt for the task planner. v5: verification lives in verifyAfter gates, never as a trailing verify step (LP-17 P5).",
+    "version": "v6",
+    "hash": "14990b41",
+    "description": "Planner decomposition system prompt for the task planner. v6: no literal-value restatement, at most 5 one-line assumptions (LP-17b CM-4).",
     "sourcePath": "prompts/runtime/planner/decompose_system.md"
   },
   {
