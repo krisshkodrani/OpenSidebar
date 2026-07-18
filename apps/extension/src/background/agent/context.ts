@@ -24,6 +24,10 @@ import type {
   PlanStatusGate,
 } from "./context-types";
 import type { CompressedHistory } from "./checkpoint-types";
+import {
+  computeFillChecklistStatus,
+  type FieldReadLedger,
+} from "./fill-checklist-policy";
 
 // Re-export submodules for barrel compatibility
 export * from "./context-types";
@@ -126,6 +130,10 @@ export class ContextManager {
   private startTimeMs = 0;
   private workingNotes = "";
   private lastActionOutcome: LastActionOutcome | null = null;
+  /** LP-17: per-field read ledger backing the fill-checklist feedback. */
+  private fieldReadLedger: FieldReadLedger = new Map();
+  /** Signature of the last checklist line injected as feedback (dedupe). */
+  private lastChecklistSignature: string | null = null;
 
   public setModelTier(tier: "executor" | "planner"): void {
     this.modelTier = tier;
@@ -202,6 +210,26 @@ export class ContextManager {
   /** Store the normalized outcome of the most recent DOM-affecting action. */
   public setLastActionOutcome(outcome: LastActionOutcome | null): void {
     this.lastActionOutcome = outcome;
+  }
+
+  /** LP-17: ledger of form-field reads backing the fill-checklist feedback. */
+  public getFieldReadLedger(): FieldReadLedger {
+    return this.fieldReadLedger;
+  }
+
+  /**
+   * LP-17: one-shot checklist feedback. Returns the "Form status" line when
+   * the set of confirmed-filled fields changed since the last injection,
+   * else null — so the feedback phase adds at most one history message per
+   * actual state change (the always-current copy lives in the system prompt).
+   */
+  public consumeChecklistFeedbackLine(): string | null {
+    const status = computeFillChecklistStatus(this.snapshot);
+    if (!status.line || status.signature === this.lastChecklistSignature) {
+      return null;
+    }
+    this.lastChecklistSignature = status.signature;
+    return status.line;
   }
 
   /** Append a working note (ring-buffer, max 500 chars). */
@@ -861,6 +889,16 @@ Do NOT call done() until every planned step is complete.
         content = content.replace(
           "## Page Content",
           warnings + "\n\n## Page Content",
+        );
+      }
+
+      // LP-17 fill checklist: truthful per-snapshot form status, so the model
+      // never has to re-read fields to learn what is already filled.
+      const checklist = computeFillChecklistStatus(this.snapshot);
+      if (checklist.line) {
+        content = content.replace(
+          "## Visible Elements",
+          `${checklist.line}\n\n## Visible Elements`,
         );
       }
 
@@ -1588,6 +1626,8 @@ Do NOT call done() until every planned step is complete.
     this.isFirstTurn = true;
     this.contradictionDetails = null;
     this.lastActionOutcome = null;
+    this.fieldReadLedger.clear();
+    this.lastChecklistSignature = null;
     this.saveState().catch(() => {});
   }
 

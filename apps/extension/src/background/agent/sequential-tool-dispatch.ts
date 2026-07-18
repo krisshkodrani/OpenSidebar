@@ -41,6 +41,7 @@ import {
   type BlockedAction,
   type RecentAction,
 } from "./loop-helpers";
+import { applyFieldReReadTracking } from "./fill-checklist-policy";
 import {
   handleCloseTabToolCall,
   handleComposeTextToolCall,
@@ -588,7 +589,16 @@ export async function executeSequentialToolCalls(
       this.context.addMessage({
         role: "tool",
         tool_call_id: toolCall.id,
-        content: cacheLookup.cachedResult,
+        // LP-17: a redundant re-read usually lands here (cache hit) — the
+        // fill-checklist note must ride along or the model never sees it.
+        content: applyFieldReReadTracking({
+          toolName,
+          args,
+          result: cacheLookup.cachedResult,
+          snapshot: this.context.getSnapshot(),
+          ledger: this.context.getFieldReadLedger(),
+          turn: this.turnCount,
+        }),
       });
       continue;
     }
