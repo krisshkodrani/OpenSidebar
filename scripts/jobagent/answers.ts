@@ -33,9 +33,14 @@ export interface AnswerLibrary {
   schemaVersion: 1;
   identity: {
     fullName: string;
+    /** Overrides the split of `fullName` when a form asks for name parts. */
+    firstName?: string;
+    lastName?: string;
     email: string;
     phone?: string;
     location?: string;
+    /** Overrides the country derived from `location`. */
+    country?: string;
     linkedin?: string;
     github?: string;
     website?: string;

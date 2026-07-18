@@ -27,6 +27,8 @@ export type FieldSource =
   | { kind: "identity"; key: string }
   | { kind: "answer"; tag: string }
   | { kind: "default"; key: string }
+  /** Deliberately left blank by the human (optional field, no approved answer). */
+  | { kind: "skip"; note?: string }
   | { kind: "todo" };
 
 export interface KitDraftField {
@@ -52,14 +54,21 @@ const norm = (s: string) => s.toLowerCase().replace(/\s+/g, " ").trim();
 const tokens = (s: string) =>
   new Set(norm(s).split(/[^a-z0-9+#]+/).filter((t) => t.length >= 3));
 
-/** Ordered identity keyword table — first hit wins. */
+/**
+ * Ordered identity keyword table — first hit wins. Name rules are split and
+ * ordered before `fullName` so a form with separate First/Last inputs does not
+ * receive the whole name in both.
+ */
 const IDENTITY_RULES: Array<{ key: string; pattern: RegExp }> = [
   { key: "email", pattern: /\be-?mail\b/i },
   { key: "phone", pattern: /\b(phone|mobile|telephone)\b/i },
   { key: "linkedin", pattern: /\blinked\s?in\b/i },
   { key: "github", pattern: /\bgithub\b/i },
   { key: "website", pattern: /\b(website|portfolio|personal site)\b/i },
-  { key: "fullName", pattern: /\b(full |first |last )?name\b/i },
+  { key: "firstName", pattern: /\b(first|given|fore)\s?name\b/i },
+  { key: "lastName", pattern: /\b(last|family|sur)\s?name\b/i },
+  { key: "fullName", pattern: /\b(full |whole )?name\b/i },
+  { key: "country", pattern: /\bcountry\b/i },
   { key: "location", pattern: /\b(location|city|where.*based|address)\b/i },
 ];
 
@@ -71,15 +80,44 @@ const DEFAULT_RULES: Array<{ key: string; pattern: RegExp }> = [
   },
 ];
 
+/** Labels that mean "attach the CV". Other file inputs are not CV slots. */
+const CV_FILE_PATTERN = /\b(resume|cv|curriculum vitae|lebenslauf)\b/i;
+
+/**
+ * Identity values, including the ones derived from `fullName` / `location`
+ * when not stated explicitly. Derivation is deliberately conservative: a
+ * country is only read off a location that actually names one after a comma,
+ * so "Vienna" alone yields no country rather than a wrong one.
+ */
+function identityValue(
+  key: string,
+  identity: AnswerLibrary["identity"],
+): string | undefined {
+  const stated = identity[key as keyof AnswerLibrary["identity"]];
+  if (typeof stated === "string" && stated.length > 0) return stated;
+
+  const nameParts = identity.fullName.trim().split(/\s+/);
+  if (key === "firstName") return nameParts[0];
+  if (key === "lastName") {
+    return nameParts.length > 1 ? nameParts.slice(1).join(" ") : undefined;
+  }
+  if (key === "country" && identity.location?.includes(",")) {
+    return identity.location.split(",").pop()?.trim() || undefined;
+  }
+  return undefined;
+}
+
 function resolveField(
   question: FormQuestion,
   library: AnswerLibrary,
 ): { answer: string; source: FieldSource } {
   const label = question.label;
 
-  // (5) file kind is CV territory — handled by the manifest cv line; the
-  // field itself records the variant used.
+  // (5) file kind: only actual CV slots get the CV. A cover-letter (or any
+  // other) upload is left for the human — attaching the résumé there would be
+  // a confidently wrong answer.
   if (question.kind === "file") {
+    if (!CV_FILE_PATTERN.test(label)) return { answer: "", source: { kind: "todo" } };
     const variant = library.cvVariants[0];
     return variant
       ? { answer: variant.file, source: { kind: "default", key: "cvVariant" } }
@@ -89,8 +127,8 @@ function resolveField(
   // (1) identity keyword table.
   for (const rule of IDENTITY_RULES) {
     if (rule.pattern.test(label)) {
-      const value = library.identity[rule.key as keyof AnswerLibrary["identity"]];
-      if (value) return { answer: value, source: { kind: "identity", key: rule.key } };
+      const value = identityValue(rule.key, library.identity);
+      if (value) return finishTextAnswer(question, value, { kind: "identity", key: rule.key });
     }
   }
 
@@ -117,9 +155,14 @@ function resolveField(
   // distinct keyword hit against the label tokens.
   const labelTokens = tokens(label);
   for (const entry of library.answers) {
-    const hit = entry.keywords.some((keyword) =>
-      [...tokens(keyword)].every((t) => labelTokens.has(t)),
-    );
+    const hit = entry.keywords.some((keyword) => {
+      const keywordTokens = [...tokens(keyword)];
+      // A keyword whose tokens are all below the token-length floor (e.g.
+      // "go", "AI") carries no signal — without this guard `every` would be
+      // vacuously true and the entry would match every unmatched label.
+      if (keywordTokens.length === 0) return false;
+      return keywordTokens.every((t) => labelTokens.has(t));
+    });
     if (hit) {
       return finishTextAnswer(question, entry.text, { kind: "answer", tag: entry.tag });
     }
@@ -128,13 +171,18 @@ function resolveField(
   return { answer: "", source: { kind: "todo" } };
 }
 
-/** (4) select answers must be one of the offered options, else TODO. */
+/**
+ * (4) select answers must be one of the offered options, else TODO — and a
+ * select whose options were never captured is a TODO too: free text cannot be
+ * verified against a list we do not have.
+ */
 function finishTextAnswer(
   question: FormQuestion,
   text: string,
   source: FieldSource,
 ): { answer: string; source: FieldSource } {
-  if (question.kind === "select" && question.options?.length) {
+  if (question.kind === "select") {
+    if (!question.options?.length) return { answer: "", source: { kind: "todo" } };
     const match = question.options.find((o) => norm(o) === norm(text));
     if (!match) return { answer: "", source: { kind: "todo" } };
     return { answer: match, source };
@@ -253,8 +301,9 @@ export function loadKitDraft(dir: string): KitDraft | null {
 
 /**
  * Save an edited draft: recompute unresolved (an edited field with a
- * non-empty answer counts as human-resolved) and re-derive the manifest so
- * it can never drift from the fields.
+ * non-empty answer counts as human-resolved; a field the human marked "skip"
+ * is a decision, not a gap) and re-derive the manifest so it can never drift
+ * from the fields.
  */
 export function saveKitDraft(
   dir: string,

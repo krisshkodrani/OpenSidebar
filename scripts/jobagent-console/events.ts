@@ -30,7 +30,7 @@ export class EventHub {
   /** Attach an HTTP response as an SSE stream (headers written here). */
   addClient(res: ServerResponse): void {
     res.writeHead(200, {
-      "Content-Type": "text/event-stream",
+      "Content-Type": "text/event-stream; charset=utf-8",
       "Cache-Control": "no-cache",
       Connection: "keep-alive",
     });
