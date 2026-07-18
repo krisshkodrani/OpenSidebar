@@ -100,7 +100,12 @@ function parseJsonBody(req: IncomingMessage): Promise<unknown> {
 
 function send(res: ServerResponse, result: ApiResult, origin?: string): void {
   setCorsHeaders(res, origin);
-  res.writeHead(result.status, { "Content-Type": "application/json" });
+  // charset is explicit: answers carry non-ASCII (em dashes, umlauts, accented
+  // names), and clients that see a bare application/json fall back to
+  // ISO-8859-1 and mangle them.
+  res.writeHead(result.status, {
+    "Content-Type": "application/json; charset=utf-8",
+  });
   res.end(JSON.stringify(result.body));
 }
 

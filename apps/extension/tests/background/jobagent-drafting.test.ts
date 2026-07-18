@@ -197,3 +197,138 @@ describe("save/approve flow", () => {
     expect(() => buildKitDraft(pkg, [{ label: "" }], library)).toThrow(/non-empty label/);
   });
 });
+
+/**
+ * Regressions from the first live console smoke (2026-07-18), where a real
+ * Greenhouse form produced four confidently-wrong answers and reported ZERO
+ * unresolved fields — the dangerous combination, since the approve gate only
+ * blocks on unresolved.
+ */
+describe("live-smoke regressions", () => {
+  test("a keyword with no scoring tokens does not match every label", () => {
+    // "go" is below the token-length floor, so its token set is empty and
+    // `every` was vacuously true — this entry matched anything unmatched.
+    const withShortKeyword: AnswerLibrary = {
+      ...library,
+      answers: [{ tag: "backend", keywords: ["go", "django"], text: "Yes" }],
+    };
+    const draft = buildKitDraft(
+      pkg,
+      [{ label: "Favourite dinosaur", kind: "text" }],
+      withShortKeyword,
+    );
+    expect(draft.perField[0].source).toEqual({ kind: "todo" });
+    expect(draft.unresolved).toEqual(["Favourite dinosaur"]);
+  });
+
+  test("split name fields get their own parts, not the whole name", () => {
+    const draft = buildKitDraft(
+      pkg,
+      [
+        { label: "First Name", kind: "text" },
+        { label: "Last Name", kind: "text" },
+        { label: "Preferred First Name", kind: "text" },
+      ],
+      library,
+    );
+    expect(draft.perField[0]).toMatchObject({
+      answer: "Sam",
+      source: { kind: "identity", key: "firstName" },
+    });
+    expect(draft.perField[1]).toMatchObject({
+      answer: "Example",
+      source: { kind: "identity", key: "lastName" },
+    });
+    // "Preferred First Name" is still a first-name slot.
+    expect(draft.perField[2].answer).toBe("Sam");
+  });
+
+  test("explicit identity name parts override the fullName split", () => {
+    const draft = buildKitDraft(
+      pkg,
+      [{ label: "Last Name", kind: "text" }],
+      { ...library, identity: { ...library.identity, lastName: "Beispiel" } },
+    );
+    expect(draft.perField[0].answer).toBe("Beispiel");
+  });
+
+  test("a non-CV file input is not silently given the resume", () => {
+    const draft = buildKitDraft(
+      pkg,
+      [
+        { label: "Resume/CV", kind: "file" },
+        { label: "Cover Letter", kind: "file" },
+      ],
+      library,
+    );
+    expect(draft.perField[0].source).toEqual({ kind: "default", key: "cvVariant" });
+    expect(draft.perField[1].source).toEqual({ kind: "todo" });
+    expect(draft.unresolved).toEqual(["Cover Letter"]);
+  });
+
+  test("a select with no captured options is a TODO, not free text", () => {
+    const draft = buildKitDraft(pkg, [{ label: "Country", kind: "select" }], library);
+    expect(draft.perField[0].source).toEqual({ kind: "todo" });
+  });
+
+  test("country derives from a location that names one, and only then", () => {
+    const withLocation: AnswerLibrary = {
+      ...library,
+      identity: { ...library.identity, location: "Linz, Austria" },
+    };
+    const resolved = buildKitDraft(
+      pkg,
+      [{ label: "Country", kind: "select", options: ["Austria", "Germany"] }],
+      withLocation,
+    );
+    expect(resolved.perField[0]).toMatchObject({
+      answer: "Austria",
+      source: { kind: "identity", key: "country" },
+    });
+
+    const cityOnly: AnswerLibrary = {
+      ...library,
+      identity: { ...library.identity, location: "Vienna" },
+    };
+    const unresolved = buildKitDraft(
+      pkg,
+      [{ label: "Country", kind: "select", options: ["Austria"] }],
+      cityOnly,
+    );
+    expect(unresolved.perField[0].source).toEqual({ kind: "todo" });
+  });
+
+  test("unresolved fields still block approval", () => {
+    const dir = tempDir();
+    const draft = buildKitDraft(pkg, [{ label: "Cover Letter", kind: "file" }], library);
+    saveKitDraft(dir, pkg, draft);
+    expect(() => approveKitDraft(dir)).toThrow(/unresolved field/);
+  });
+
+  test("a field marked skip is a decision, not an unresolved gap", () => {
+    const dir = tempDir();
+    const draft = buildKitDraft(
+      pkg,
+      [
+        { label: "Email", kind: "text" },
+        { label: "Cover Letter", kind: "file" },
+      ],
+      library,
+    );
+    expect(draft.unresolved).toEqual(["Cover Letter"]);
+
+    const edited = {
+      ...draft,
+      perField: draft.perField.map((f) =>
+        f.question.label === "Cover Letter"
+          ? { ...f, source: { kind: "skip", note: "no approved cover letter" } }
+          : f,
+      ),
+    };
+    const saved = saveKitDraft(dir, pkg, edited);
+    expect(saved.unresolved).toEqual([]);
+    // A skipped field contributes nothing to the fill manifest.
+    expect(saved.manifest.promptLines.join(" ")).not.toMatch(/Cover Letter/);
+    expect(() => approveKitDraft(dir)).not.toThrow();
+  });
+});
