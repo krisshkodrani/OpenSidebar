@@ -1,0 +1,298 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>JobAgent Console</title>
+<style>
+  :root {
+    --bg: #0e1116; --panel: #161b23; --border: #262d38; --text: #d7dde6;
+    --muted: #8b96a5; --accent: #4f8cff; --ok: #3fb27f; --warn: #d9a13c;
+    --err: #e0635c; --todo: #b06ad4; --mono: ui-monospace, Consolas, monospace;
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--text);
+         font: 14px/1.5 system-ui, sans-serif; }
+  header { display: flex; align-items: center; gap: 16px; padding: 10px 18px;
+           border-bottom: 1px solid var(--border); background: var(--panel); }
+  header h1 { font-size: 15px; margin: 0; letter-spacing: .3px; }
+  header .hint { color: var(--muted); font-size: 12px; margin-left: auto; }
+  nav { display: flex; gap: 4px; }
+  nav button { background: none; border: 1px solid transparent; color: var(--muted);
+               padding: 5px 12px; border-radius: 6px; cursor: pointer; font-size: 13px; }
+  nav button.active { color: var(--text); border-color: var(--border); background: var(--bg); }
+  main { padding: 18px; max-width: 1100px; margin: 0 auto; }
+  .card { background: var(--panel); border: 1px solid var(--border);
+          border-radius: 8px; padding: 14px 16px; margin-bottom: 14px; }
+  .card h2 { margin: 0 0 10px; font-size: 13px; text-transform: uppercase;
+             letter-spacing: .6px; color: var(--muted); }
+  table { width: 100%; border-collapse: collapse; font-size: 13px; }
+  th { text-align: left; color: var(--muted); font-weight: 500; padding: 6px 8px;
+       border-bottom: 1px solid var(--border); }
+  td { padding: 7px 8px; border-bottom: 1px solid var(--border); vertical-align: top; }
+  tr.rowlink { cursor: pointer; }
+  tr.rowlink:hover td { background: rgba(79,140,255,.06); }
+  .badge { display: inline-block; padding: 1px 8px; border-radius: 10px;
+           font-size: 11px; border: 1px solid var(--border); color: var(--muted); }
+  .badge.reviewing { color: var(--warn); border-color: var(--warn); }
+  .badge.ready { color: var(--accent); border-color: var(--accent); }
+  .badge.filled-awaiting-submit { color: var(--todo); border-color: var(--todo); }
+  .badge.submitted-by-user, .badge.applied { color: var(--ok); border-color: var(--ok); }
+  .badge.archived, .badge.duplicate-risk { opacity: .55; }
+  .risk { color: var(--warn); font-size: 12px; }
+  button.action { background: var(--bg); color: var(--text); border: 1px solid var(--border);
+                  border-radius: 6px; padding: 5px 12px; cursor: pointer; font-size: 12px; }
+  button.action:hover { border-color: var(--accent); }
+  button.action.primary { border-color: var(--accent); color: var(--accent); }
+  button.action.danger { border-color: var(--err); color: var(--err); }
+  pre { background: var(--bg); border: 1px solid var(--border); border-radius: 6px;
+        padding: 10px; overflow: auto; font-family: var(--mono); font-size: 12px; }
+  textarea { width: 100%; min-height: 320px; background: var(--bg); color: var(--text);
+             border: 1px solid var(--border); border-radius: 6px; padding: 10px;
+             font-family: var(--mono); font-size: 12px; }
+  .flash { padding: 8px 12px; border-radius: 6px; margin: 10px 0; font-size: 13px; }
+  .flash.ok { background: rgba(63,178,127,.12); color: var(--ok); }
+  .flash.err { background: rgba(224,99,92,.12); color: var(--err); white-space: pre-wrap; }
+  .muted { color: var(--muted); }
+  .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(160px,1fr)); gap: 10px; }
+  .stat { background: var(--bg); border: 1px solid var(--border); border-radius: 8px;
+          padding: 10px 12px; }
+  .stat .v { font-size: 20px; font-weight: 600; }
+  .stat .l { color: var(--muted); font-size: 11px; text-transform: uppercase; letter-spacing: .5px; }
+  a { color: var(--accent); }
+</style>
+</head>
+<body>
+<header>
+  <h1>JobAgent Console</h1>
+  <nav id="tabs"></nav>
+  <span class="hint" id="conn">…</span>
+</header>
+<main id="main"></main>
+
+<script>
+"use strict";
+/* JobAgent console UI — vanilla JS, no build step. Data lives in the seed
+   dir; this page is a pure client of the loopback API. */
+
+const TABS = ["queue", "application", "criteria", "answers", "runs", "approvals"];
+const state = { tab: "queue", appName: null, queue: [], app: null, criteriaText: "" };
+
+const $ = (sel) => document.querySelector(sel);
+const el = (tag, attrs = {}, ...children) => {
+  const node = document.createElement(tag);
+  for (const [k, v] of Object.entries(attrs)) {
+    if (k === "class") node.className = v;
+    else if (k.startsWith("on")) node.addEventListener(k.slice(2), v);
+    else node.setAttribute(k, v);
+  }
+  for (const child of children) {
+    node.append(child instanceof Node ? child : document.createTextNode(String(child)));
+  }
+  return node;
+};
+
+async function api(path, opts = {}) {
+  const res = await fetch(path, {
+    ...opts,
+    headers: {
+      "Content-Type": "application/json",
+      "X-JobAgent-Console": "1",
+      ...(opts.headers || {}),
+    },
+  });
+  const body = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(body.error || res.statusText);
+  return body;
+}
+
+function setHash() {
+  location.hash = state.tab + (state.appName ? `=${state.appName}` : "");
+}
+function readHash() {
+  const [tab, appName] = (location.hash.slice(1) || "queue").split("=");
+  state.tab = TABS.includes(tab) ? tab : "queue";
+  state.appName = appName || null;
+}
+
+/* ── Tabs ─────────────────────────────────────────────────── */
+function renderTabs() {
+  const nav = $("#tabs");
+  nav.replaceChildren(
+    ...TABS.map((tab) =>
+      el("button", {
+        class: state.tab === tab ? "active" : "",
+        onclick: () => { state.tab = tab; setHash(); render(); },
+      }, tab[0].toUpperCase() + tab.slice(1)),
+    ),
+  );
+}
+
+function flash(container, kind, text) {
+  container.prepend(el("div", { class: `flash ${kind}` }, text));
+}
+
+/* ── Queue ────────────────────────────────────────────────── */
+async function renderQueue(main) {
+  const { applications } = await api("/api/queue");
+  state.queue = applications;
+  const counts = {};
+  for (const a of applications) counts[a.status] = (counts[a.status] || 0) + 1;
+
+  main.append(
+    el("div", { class: "card" },
+      el("h2", {}, "Pipeline"),
+      el("div", { class: "grid" },
+        ...Object.entries(counts).map(([status, count]) =>
+          el("div", { class: "stat" },
+            el("div", { class: "v" }, count),
+            el("div", { class: "l" }, status))),
+        el("div", { class: "stat" },
+          el("div", { class: "v" }, applications.length),
+          el("div", { class: "l" }, "total")))),
+    el("div", { class: "card" },
+      el("h2", {}, "Applications"),
+      applications.length === 0
+        ? el("p", { class: "muted" }, "Queue is empty — run a discovery sweep.")
+        : el("table", {},
+            el("tr", {}, ...["Company", "Role", "Status", "Found", "Kit", "Risks"].map((h) => el("th", {}, h))),
+            ...applications.map((a) =>
+              el("tr", {
+                class: "rowlink",
+                onclick: () => { state.tab = "application"; state.appName = a.name; setHash(); render(); },
+              },
+                el("td", {}, a.company),
+                el("td", {}, a.roleTitle),
+                el("td", {}, el("span", { class: `badge ${a.status}` }, a.status)),
+                el("td", {}, a.dateFound || "—"),
+                el("td", {}, a.hasRunConfig ? "✓ kit" : a.hasKitDraft ? "draft" : "—"),
+                el("td", { class: "risk" }, (a.risks || []).length ? `⚠ ${a.risks.length}` : ""))))),
+  );
+}
+
+/* ── Application detail ───────────────────────────────────── */
+const NEXT_STATUS = {
+  reviewing: ["ready", "archived", "duplicate-risk"],
+  ready: ["filled-awaiting-submit", "archived", "duplicate-risk"],
+  "filled-awaiting-submit": ["submitted-by-user", "archived"],
+  "submitted-by-user": ["applied", "archived"],
+  applied: ["archived"],
+};
+
+async function renderApplication(main) {
+  if (!state.appName) {
+    main.append(el("p", { class: "muted" }, "Pick an application from the queue."));
+    return;
+  }
+  const app = await api(`/api/applications/${encodeURIComponent(state.appName)}`);
+  state.app = app;
+  const pkg = app.package;
+  const card = el("div", { class: "card" },
+    el("h2", {}, `${pkg.company} — ${pkg.roleTitle}`),
+    el("p", {},
+      el("span", { class: `badge ${pkg.status || "reviewing"}` }, pkg.status || "reviewing"),
+      " ",
+      pkg.sourceUrl ? el("a", { href: pkg.sourceUrl, target: "_blank" }, pkg.sourceUrl) : ""),
+    ...(pkg.risks || []).map((r) => el("p", { class: "risk" }, `⚠ ${r}`)),
+    el("div", {},
+      ...(NEXT_STATUS[pkg.status || "reviewing"] || []).map((next) =>
+        el("button", {
+          class: `action${next === "archived" || next === "duplicate-risk" ? " danger" : " primary"}`,
+          style: "margin-right:8px",
+          onclick: async () => {
+            try {
+              await api(`/api/applications/${encodeURIComponent(state.appName)}/status`, {
+                method: "POST", body: JSON.stringify({ status: next }),
+              });
+              render();
+            } catch (e) { flash(card, "err", e.message); }
+          },
+        }, `→ ${next}`))),
+  );
+  main.append(card);
+
+  if (app.discovery) {
+    main.append(el("div", { class: "card" },
+      el("h2", {}, "Discovery record"),
+      el("pre", {}, JSON.stringify(app.discovery, null, 2))));
+  }
+  main.append(el("div", { class: "card" },
+    el("h2", {}, "Package"),
+    el("pre", {}, JSON.stringify(pkg, null, 2))));
+  if (app.runConfig) {
+    main.append(el("div", { class: "card" },
+      el("h2", {}, "Approved kit (run-config.json)"),
+      el("pre", {}, JSON.stringify(app.runConfig, null, 2))));
+  }
+}
+
+/* ── Criteria ─────────────────────────────────────────────── */
+async function renderCriteria(main) {
+  let text = "";
+  try {
+    const criteria = await api("/api/criteria");
+    text = JSON.stringify(criteria, null, 2);
+  } catch (e) {
+    text = JSON.stringify({
+      schemaVersion: 1, roles: [], keywords: [], excludeKeywords: [],
+      locations: [], remoteOk: true, boards: [], maxPackagesPerRun: 10,
+    }, null, 2);
+    main.append(el("div", { class: "flash err" }, e.message));
+  }
+  const area = el("textarea", {}, text);
+  const card = el("div", { class: "card" },
+    el("h2", {}, "Search criteria (validated on save)"),
+    area,
+    el("p", {},
+      el("button", {
+        class: "action primary",
+        onclick: async () => {
+          try {
+            await api("/api/criteria", { method: "PUT", body: area.value });
+            flash(card, "ok", "Saved.");
+          } catch (e) { flash(card, "err", e.message); }
+        },
+      }, "Validate + Save")));
+  main.append(card);
+}
+
+/* ── Placeholders (v1/v2) ─────────────────────────────────── */
+function renderPlaceholder(main, what) {
+  main.append(el("div", { class: "card" },
+    el("h2", {}, what),
+    el("p", { class: "muted" }, `${what} lands in the next console version.`)));
+}
+
+/* ── Render loop + SSE ────────────────────────────────────── */
+async function render() {
+  renderTabs();
+  const main = $("#main");
+  main.replaceChildren();
+  try {
+    if (state.tab === "queue") await renderQueue(main);
+    else if (state.tab === "application") await renderApplication(main);
+    else if (state.tab === "criteria") await renderCriteria(main);
+    else if (state.tab === "answers") renderPlaceholder(main, "Answer library");
+    else if (state.tab === "runs") renderPlaceholder(main, "Runs");
+    else if (state.tab === "approvals") renderPlaceholder(main, "Approvals inbox");
+  } catch (e) {
+    main.append(el("div", { class: "flash err" }, e.message));
+  }
+}
+
+function connectEvents() {
+  const source = new EventSource("/api/events");
+  source.onopen = () => { $("#conn").textContent = "live"; };
+  source.onerror = () => { $("#conn").textContent = "reconnecting…"; };
+  source.addEventListener("queue-changed", () => {
+    if (state.tab === "queue" || state.tab === "application") render();
+  });
+}
+
+window.addEventListener("hashchange", () => { readHash(); render(); });
+readHash();
+render();
+connectEvents();
+</script>
+</body>
+</html>
