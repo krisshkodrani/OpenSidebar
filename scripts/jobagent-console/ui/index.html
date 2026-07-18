@@ -396,11 +396,133 @@ async function renderCriteria(main) {
   main.append(card);
 }
 
-/* ── Placeholders (v1/v2) ─────────────────────────────────── */
-function renderPlaceholder(main, what) {
-  main.append(el("div", { class: "card" },
-    el("h2", {}, what),
-    el("p", { class: "muted" }, `${what} lands in the next console version.`)));
+/* ── Runs tab (v2) ────────────────────────────────────────── */
+async function renderRuns(main) {
+  const bridge = await api("/api/bridge");
+  const { runs } = await api("/api/runs");
+  const readyApps = state.queue.filter((a) => a.status === "ready" && a.hasRunConfig);
+  const submitApps = state.queue.filter((a) => a.status === "filled-awaiting-submit");
+
+  const startCard = el("div", { class: "card" },
+    el("h2", {}, "Start a run"),
+    el("p", { class: "muted" },
+      `Bridge: ${bridge.owner} · extension ${bridge.extensionConnected ? "connected" : "NOT connected"} · ws port ${bridge.wsPort}`),
+    el("p", {},
+      el("button", {
+        class: "action primary", style: "margin-right:8px",
+        onclick: async () => {
+          try { await api("/api/runs/discovery", { method: "POST", body: "{}" }); render(); }
+          catch (e) { flash(startCard, "err", e.message); }
+        },
+      }, "Discovery sweep (pi)"),
+      ...readyApps.map((a) => el("button", {
+        class: "action", style: "margin-right:8px",
+        onclick: async () => {
+          try { await api("/api/runs/fill", { method: "POST", body: JSON.stringify({ name: a.name, mode: "fill" }) }); render(); }
+          catch (e) { flash(startCard, "err", e.message); }
+        },
+      }, `Fill: ${a.company}`)),
+      ...submitApps.map((a) => el("button", {
+        class: "action danger", style: "margin-right:8px",
+        onclick: async () => {
+          try { await api("/api/runs/fill", { method: "POST", body: JSON.stringify({ name: a.name, mode: "submit" }) }); render(); }
+          catch (e) { flash(startCard, "err", e.message); }
+        },
+      }, `Submit: ${a.company}`))));
+  main.append(startCard);
+
+  for (const run of runs) {
+    const card = el("div", { class: "card" },
+      el("h2", {}, `${run.kind}${run.name ? " · " + run.name : ""} — ${run.state}`),
+      el("p", { class: "muted" },
+        `${new Date(run.startedAt).toLocaleTimeString()}` +
+        (run.endedAt ? ` → ${new Date(run.endedAt).toLocaleTimeString()}` : " · running") +
+        (run.outcomeSummary ? ` · ${run.outcomeSummary}` : "")),
+    );
+    if (run.state === "running" || run.state === "awaiting-approval") {
+      card.append(el("button", {
+        class: "action danger",
+        onclick: async () => {
+          try { await api(`/api/runs/${run.id}/cancel`, { method: "POST", body: "{}" }); render(); }
+          catch (e) { flash(card, "err", e.message); }
+        },
+      }, "Cancel"));
+    }
+    const logPre = el("pre", { id: `log-${run.id}` }, "loading log…");
+    card.append(logPre);
+    main.append(card);
+    api(`/api/runs/${run.id}`).then(({ log }) => {
+      logPre.textContent = log.length ? log.join("\n") : "(no output yet)";
+      logPre.scrollTop = logPre.scrollHeight;
+    }).catch(() => {});
+    if (run.handoff) {
+      card.append(el("details", {},
+        el("summary", { class: "muted" }, "Handoff (continuation context)"),
+        el("pre", {}, JSON.stringify(run.handoff, null, 2))));
+    }
+  }
+  if (!runs.length) main.append(el("p", { class: "muted" }, "No runs yet."));
+}
+
+/* ── Approvals tab (v2) ───────────────────────────────────── */
+function diffRow(entry) {
+  const color = entry.status === "match" ? "var(--ok)" : entry.status === "mismatch" ? "var(--err)" : "var(--warn)";
+  return el("tr", {},
+    el("td", {}, entry.label),
+    el("td", {}, entry.expected),
+    el("td", {}, entry.actual ?? "—"),
+    el("td", { style: `color:${color}` }, entry.status));
+}
+
+async function renderApprovals(main) {
+  const { pending, resolved } = await api("/api/approvals");
+  if (!pending.length && !resolved.length) {
+    main.append(el("p", { class: "muted" }, "No approvals yet — they appear when a submit run pauses at the consequential-action gate."));
+    return;
+  }
+  for (const item of pending) {
+    const remaining = Math.max(0, Math.round((item.expiresAt - Date.now()) / 1000));
+    const card = el("div", { class: "card" },
+      el("h2", {}, `⏳ ${item.name} — awaiting your decision (${remaining}s left)`),
+      el("p", {}, item.context),
+      item.dryRun
+        ? el("div", {},
+            el("p", { class: item.dryRun.kind === "clean" ? "muted" : "risk" },
+              `Dry-run: ${item.dryRun.kind}`),
+            el("table", {},
+              el("tr", {}, ...["Field", "Expected", "Actual", "Status"].map((h) => el("th", {}, h))),
+              ...item.dryRun.entries.map(diffRow)))
+        : el("p", { class: "risk" }, "No dry-run evidence attached."),
+      el("p", {},
+        el("button", {
+          class: "action primary", style: "margin-right:8px",
+          onclick: () => decide(card, item.approvalId, true),
+        }, "Approve — submit it"),
+        el("button", {
+          class: "action danger",
+          onclick: () => decide(card, item.approvalId, false),
+        }, "Deny")));
+    main.append(card);
+  }
+  if (resolved.length) {
+    main.append(el("div", { class: "card" },
+      el("h2", {}, "Resolved"),
+      el("table", {},
+        el("tr", {}, ...["Application", "Action", "Outcome"].map((h) => el("th", {}, h))),
+        ...resolved.map((item) => el("tr", {},
+          el("td", {}, item.name),
+          el("td", {}, item.context),
+          el("td", {}, el("span", { class: "badge" }, item.state)))))));
+  }
+}
+
+async function decide(card, approvalId, approved) {
+  try {
+    await api(`/api/approvals/${encodeURIComponent(approvalId)}`, {
+      method: "POST", body: JSON.stringify({ approved }),
+    });
+    render();
+  } catch (e) { flash(card, "err", e.message); }
 }
 
 /* ── Render loop + SSE ────────────────────────────────────── */
@@ -413,8 +535,13 @@ async function render() {
     else if (state.tab === "application") await renderApplication(main);
     else if (state.tab === "criteria") await renderCriteria(main);
     else if (state.tab === "answers") await renderAnswers(main);
-    else if (state.tab === "runs") renderPlaceholder(main, "Runs");
-    else if (state.tab === "approvals") renderPlaceholder(main, "Approvals inbox");
+    else if (state.tab === "runs") {
+      if (!state.queue.length) {
+        try { state.queue = (await api("/api/queue")).applications; } catch { /* keep empty */ }
+      }
+      await renderRuns(main);
+    }
+    else if (state.tab === "approvals") await renderApprovals(main);
   } catch (e) {
     main.append(el("div", { class: "flash err" }, e.message));
   }
@@ -426,6 +553,27 @@ function connectEvents() {
   source.onerror = () => { $("#conn").textContent = "reconnecting…"; };
   source.addEventListener("queue-changed", () => {
     if (state.tab === "queue" || state.tab === "application") render();
+  });
+  source.addEventListener("run-status", () => {
+    if (state.tab === "runs") render();
+  });
+  source.addEventListener("run-log", (event) => {
+    try {
+      const { runId, line } = JSON.parse(event.data);
+      const pre = document.getElementById(`log-${runId}`);
+      if (pre) {
+        pre.textContent = (pre.textContent === "loading log…" || pre.textContent === "(no output yet)")
+          ? line : pre.textContent + "\n" + line;
+        pre.scrollTop = pre.scrollHeight;
+      }
+    } catch { /* ignore malformed */ }
+  });
+  source.addEventListener("approval-pending", () => {
+    if (state.tab !== "approvals") { state.tab = "approvals"; setHash(); }
+    render();
+  });
+  source.addEventListener("approval-resolved", () => {
+    if (state.tab === "approvals") render();
   });
 }
 
