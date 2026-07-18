@@ -6,6 +6,14 @@ import { renderPrompt } from "../../prompts";
 import type { Difficulty, RuntimeLimits } from "./constants";
 import type { ToolProfile } from "../tools/metadata";
 import { tokenizeStepText } from "./loop-helpers";
+
+/**
+ * LP-17b CM-2: hard cap on planner assumptions per step/node. The list is
+ * advisory context, not a contract; anything beyond a handful is speculation
+ * that inflates every executor turn's Current Task block (take 6 measured
+ * ~48 items / 11.4K chars from one decompose call).
+ */
+export const MAX_PLANNER_ASSUMPTIONS = 6;
 import {
   buildTaskContract,
   repairPlanCoverage,
@@ -1105,6 +1113,8 @@ export class TaskPlanner {
               if (trimmed.length > 0 && !assumptions.includes(trimmed)) {
                 assumptions.push(trimmed);
               }
+              // LP-17b CM-2: cap speculation — see MAX_PLANNER_ASSUMPTIONS.
+              if (assumptions.length >= MAX_PLANNER_ASSUMPTIONS) break;
             }
           }
           // Parse optional verification gate
@@ -1895,6 +1905,7 @@ Current perception:\n${perception.slice(0, 800)}`,
             ? (obj.assumptions as unknown[])
                 .filter((a): a is string => typeof a === "string")
                 .map((a) => a.trim())
+                .slice(0, MAX_PLANNER_ASSUMPTIONS)
             : [],
           ...(toolProfile ? { toolProfile } : {}),
           ...(expectedState ? { expectedState } : {}),

@@ -4178,3 +4178,88 @@ describe("collapseSameContextSequentialNodes (LP-17 P7)", () => {
         expect(result.nodes[0].successCriteria.toLowerCase()).toContain("confirmation");
     });
 });
+
+describe("planner echo caps (LP-17b CM-2/CM-3)", () => {
+    test("assumptions are capped at parse time (steps path)", async () => {
+        const manyAssumptions = Array.from({ length: 20 }, (_, i) => `Assumption number ${i + 1}`);
+        completeImpl = () => Promise.resolve({
+            role: "assistant",
+            content: JSON.stringify({
+                isMultiStep: true,
+                difficulty: "moderate",
+                steps: [
+                    {
+                        objective: "Fill the form with the requested values",
+                        successCriteria: "Form shows the values",
+                        assumptions: manyAssumptions,
+                    },
+                    {
+                        objective: "Submit the request form",
+                        successCriteria: "Confirmation visible",
+                        assumptions: manyAssumptions,
+                        dependencies: [0],
+                    },
+                ],
+            }),
+            tool_calls: undefined,
+            finish_reason: "stop",
+        });
+        const planner = new OrchestratorPlanner("test-key");
+        const result = await planner.buildNodes(
+            "Fill the form and submit the request",
+            "Portal",
+            "https://portal.example/form",
+        );
+        for (const node of result.nodes) {
+            expect(node.assumptions.length).toBeLessThanOrEqual(6);
+        }
+    });
+
+    test("a query-embedding objective with a huge planner tail is trimmed to the request", async () => {
+        const query = "Reply to the latest recruiter email using my saved profile details";
+        const tail = " Then carefully review the compose window state. ".repeat(30);
+        completeImpl = () => Promise.resolve({
+            role: "assistant",
+            content: JSON.stringify({
+                isMultiStep: false,
+                difficulty: "simple",
+                subtasks: [query + tail],
+            }),
+            tool_calls: undefined,
+            finish_reason: "stop",
+        });
+        const planner = new OrchestratorPlanner("test-key");
+        const result = await planner.buildNodes(query, "Inbox", "https://mail.example/inbox");
+        expect(result.nodes).toHaveLength(1);
+        const description = result.nodes[0].description;
+        expect(description).toContain(query);
+        // The 1.5K-char tail is gone; only the framing prefix remains.
+        expect(description.length).toBeLessThan(query.length + 200);
+    });
+
+    test("multi-node collapse caps the appended planner prose after the verbatim request", async () => {
+        const query = "Fill in the order form and place the order";
+        const longDescription = "Carefully fill the order form field by field with great attention. ".repeat(15);
+        completeImpl = () => Promise.resolve({
+            role: "assistant",
+            content: JSON.stringify({
+                isMultiStep: true,
+                difficulty: "moderate",
+                subtasks: [
+                    longDescription,
+                    "Press the submit control on the order form",
+                ],
+            }),
+            tool_calls: undefined,
+            finish_reason: "stop",
+        });
+        const planner = new OrchestratorPlanner("test-key");
+        const result = await planner.buildNodes(query, "Shop", "https://shop.example/order");
+        expect(result.nodes).toHaveLength(1);
+        const description = result.nodes[0].description;
+        expect(description).toContain(query);
+        expect(description.length).toBeLessThanOrEqual(
+            "Complete the workflow for the original request: ".length + query.length + 450,
+        );
+    });
+});
