@@ -1,4 +1,4 @@
-import { TaskPlanner } from "../agent/planner";
+import { MAX_PLANNER_ASSUMPTIONS, TaskPlanner } from "../agent/planner";
 import type { LLMClientOptions } from "../llm";
 import type { TokenUsage } from "../llm/types";
 import type { Difficulty } from "../agent/constants";
@@ -108,6 +108,10 @@ function sanitizePlannerAssignment(raw: unknown): PlannerAssignment | null {
       const normalized = assumption.trim();
       if (normalized.length === 0) continue;
       if (!assumptions.includes(normalized)) assumptions.push(normalized);
+      // LP-17b CM-2: reasoning planners emit sprawling assumption lists
+      // (take 6: ~48 items / 11.4K chars, re-billed every executor turn).
+      // The first few carry the signal.
+      if (assumptions.length >= MAX_PLANNER_ASSUMPTIONS) break;
     }
   }
 
@@ -474,6 +478,20 @@ function collapsePaginatedTableScanNodes(
     : nodes;
 }
 
+/**
+ * LP-17b CM-3: cap for planner prose appended AFTER the verbatim original
+ * request in a merged/rescoped node description. The request is the
+ * contract; anything beyond this is restatement billed every turn.
+ */
+const MAX_APPENDED_PLANNER_PROSE = 400;
+
+function truncateAppendedPlannerProse(text: string): string {
+  const compacted = compactText(text);
+  return compacted.length > MAX_APPENDED_PLANNER_PROSE
+    ? compacted.slice(0, MAX_APPENDED_PLANNER_PROSE) + " […]"
+    : compacted;
+}
+
 function shouldPreserveSeparateFormUpdateNodes(
   nodes: TaskNode[],
   query: string,
@@ -594,10 +612,14 @@ function collapseSkillOwnedWorkflowNodes(
         .join(" "),
     );
   } else {
+    // LP-17b CM-3: the appended per-node descriptions are planner
+    // restatement — the full request is already present verbatim above.
     description = compactText(
       [
         `Complete the workflow for the original request: ${taskLabelQuery}`,
-        ...nodes.map((node) => node.description),
+        truncateAppendedPlannerProse(
+          nodes.map((node) => node.description).join(" "),
+        ),
       ].join(" "),
     );
     successCriteria = compactText(
@@ -864,7 +886,25 @@ function preserveOriginalScopeForSingleSkillOwnedNode(
   const node = nodes[0];
   const compactQuery = displayQueryOrFallback(query, displayQuery);
   const compactDescription = compactText(node.description);
-  if (!compactQuery || compactDescription.includes(compactQuery)) {
+  if (!compactQuery) return nodes;
+  if (compactDescription.includes(compactQuery)) {
+    // LP-17b CM-3: reasoning planners often embed the query verbatim in the
+    // objective and then append a large restatement tail (take 6: +4.8K
+    // chars re-billed every turn). The query IS the contract — keep it,
+    // trim the tail when it is disproportionate.
+    if (
+      compactDescription.length >
+      compactQuery.length + MAX_APPENDED_PLANNER_PROSE
+    ) {
+      return [
+        {
+          ...node,
+          description: compactText(
+            `Complete the workflow for the original request: ${compactQuery}`,
+          ),
+        },
+      ];
+    }
     return nodes;
   }
 
