@@ -1292,3 +1292,90 @@ describe("Page-content unchanged marker (LP-17)", () => {
     expect(afterClear).not.toContain("«Page Content unchanged");
   });
 });
+
+describe("System prompt block order (LP-17 P3, template v6)", () => {
+  const fullSnapshot = () => ({
+    title: "Order page",
+    url: "https://example.com/order",
+    elements: [
+      {
+        tag: 1,
+        tagName: "button",
+        role: "button",
+        text: "Buy",
+        attributes: {},
+        rect: { x: 0, y: 0, width: 100, height: 30 },
+        isVisible: true,
+        isDisabled: false,
+      },
+    ],
+    visibleContent: "Order things",
+    pageContent: "Order page body text",
+    viewport: { width: 1280, height: 800 },
+    scroll: { x: 0, y: 500, maxY: 3000 },
+  });
+
+  function builtSystem(): string {
+    const ctx = new ContextManager();
+    ctx.setOriginalQuery("Buy the blue widget");
+    ctx.setSnapshot(fullSnapshot() as any);
+    ctx.setTimeContext(3, 30, Date.now() - 10_000);
+    ctx.setLastActionOutcome({
+      tool: "click_element",
+      target: "[1]",
+      observedEffect: "navigation",
+      detail: "clicked Buy",
+    } as any);
+    return ctx.getPrompt()[0].content as string;
+  }
+
+  test("stable-per-run content precedes page state; volatile turn status is last", () => {
+    const content = builtSystem();
+    // lastIndexOf: the rules body also contains an instructional
+    // "## Page Interpretation" section — we assert on the data sections.
+    const order = [
+      "## Current Task",
+      "## Page Context",
+      "## Visible Elements",
+      "## Page Content",
+      "## Page Interpretation",
+      "## Turn Status",
+      "## Last Action Outcome",
+    ].map((h) => ({ h, i: content.lastIndexOf(h) }));
+    for (const { h, i } of order) {
+      expect(i, `${h} missing from system prompt`).toBeGreaterThanOrEqual(0);
+    }
+    for (let k = 1; k < order.length; k++) {
+      expect(
+        order[k].i,
+        `${order[k].h} should come after ${order[k - 1].h}`,
+      ).toBeGreaterThan(order[k - 1].i);
+    }
+    // The every-turn counter lives under Turn Status at the tail.
+    expect(content.indexOf("Turn 3/30")).toBeGreaterThan(
+      content.indexOf("## Turn Status"),
+    );
+  });
+
+  test("no unsubstituted {{placeholders}} remain — snapshot branch", () => {
+    expect(builtSystem()).not.toMatch(/\{\{[a-zA-Z]+\}\}/);
+  });
+
+  test("no unsubstituted {{placeholders}} remain — no-snapshot branch", () => {
+    const ctx = new ContextManager();
+    ctx.setOriginalQuery("Buy the blue widget");
+    const content = ctx.getPrompt()[0].content as string;
+    expect(content).not.toMatch(/\{\{[a-zA-Z]+\}\}/);
+  });
+
+  test("first-turn grounding block points below and precedes the element sections", () => {
+    const ctx = new ContextManager();
+    ctx.setSnapshot(fullSnapshot() as any);
+    const content = ctx.getPrompt()[0].content as string;
+    expect(content).toContain("Grounding Check — First-Turn Protocol");
+    expect(content).toContain("provided below");
+    expect(content.indexOf("Grounding Check")).toBeLessThan(
+      content.indexOf("## Visible Elements"),
+    );
+  });
+});

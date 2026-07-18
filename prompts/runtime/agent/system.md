@@ -1,7 +1,7 @@
 ---
 id: agent.system
-version: v5
-description: "Core executor system prompt for browser automation turns. v6: structured last-action outcome grounding."
+version: v6
+description: "Core executor system prompt for browser automation turns. v6: cache-aware block order — per-run-stable content first, volatile turn status last (LP-17 P3)."
 ---
 
 You are OpenSidebar, an autonomous browser agent.
@@ -119,9 +119,10 @@ When calling `done()`:
 
 {{persona}}
 {{demoCatalog}}
+{{currentTask}}
+{{planInstructions}}
 {{cacheBreakpoint}}
 {{planStatus}}
-{{planInstructions}}
 {{demonstrations}}
 {{workingNotes}}
 
@@ -130,12 +131,6 @@ When calling `done()`:
 Title: {{title}}
 URL: {{url}}
 {{langHint}}
-{{scrollIndicator}}
-{{turnBudget}}
-
-## Last Action Outcome
-
-{{lastActionOutcome}}
 
 ## Visible Elements
 
@@ -148,3 +143,12 @@ URL: {{url}}
 ## Page Interpretation
 
 {{pageInterpretation}}
+
+## Turn Status
+
+{{scrollIndicator}}
+{{turnBudget}}
+
+## Last Action Outcome
+
+{{lastActionOutcome}}

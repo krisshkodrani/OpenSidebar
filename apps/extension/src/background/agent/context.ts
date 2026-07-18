@@ -742,13 +742,15 @@ Do NOT call done() until every planned step is complete.
       content = content.replace("{{workingNotes}}", "");
     }
 
-    // Pinned goal: keeps original query visible in every system prompt
-    if (this.originalQuery) {
-      content = content.replace(
-        "## Page Context",
-        `## Current Task\n${this.originalQuery}\nStay focused on this goal.\n\n## Page Context`,
-      );
-    }
+    // Pinned goal: keeps original query visible in every system prompt.
+    // Placeholder-based (LP-17 P3) and per-run stable, so it sits in the
+    // cacheable prefix ahead of the volatile page state.
+    content = content.replace(
+      "{{currentTask}}",
+      this.originalQuery
+        ? `## Current Task\n${this.originalQuery}\nStay focused on this goal.\n`
+        : "",
+    );
 
     // Grounding check: first-turn only prompt injection
     if (this.isFirstTurn) {
@@ -759,8 +761,8 @@ Do NOT call done() until every planned step is complete.
           "You MUST call clarify() to resolve this mismatch before taking any other action. Do NOT proceed with the instruction as given.\n\n";
       }
       groundingBlock +=
-        "The current page snapshot (elements, content, scroll position) is already provided above — do NOT call read_page redundantly.\n" +
-        "Observe the page state from the Visible Elements, Page Content, and Page Interpretation sections above.\n" +
+        "The current page snapshot (elements, content, scroll position) is already provided below — do NOT call read_page redundantly.\n" +
+        "Observe the page state from the Visible Elements, Page Content, and Page Interpretation sections below.\n" +
         "Check Page Interpretation BLOCKERS for MISMATCH entries — if present, the page does not match your task.\n" +
         "Verify the page state matches your task before acting. Then proceed directly with the appropriate action tool.\n";
       content = content.replace(
@@ -988,6 +990,7 @@ Do NOT call done() until every planned step is complete.
     } else {
       content = content.replace("{{title}}", "No page loaded");
       content = content.replace("{{url}}", "about:blank");
+      content = content.replace("{{langHint}}", "");
       content = content.replace("{{scrollIndicator}}", "");
       content = content.replace("{{elements}}", "");
       content = content.replace("{{pageContent}}", "");

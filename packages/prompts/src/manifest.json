@@ -85,9 +85,9 @@
   },
   {
     "id": "agent.system",
-    "version": "v5",
-    "hash": "23a6c625",
-    "description": "Core executor system prompt for browser automation turns. v6: structured last-action outcome grounding.",
+    "version": "v6",
+    "hash": "d6bb9a48",
+    "description": "Core executor system prompt for browser automation turns. v6: cache-aware block order — per-run-stable content first, volatile turn status last (LP-17 P3).",
     "sourcePath": "prompts/runtime/agent/system.md"
   },
   {
