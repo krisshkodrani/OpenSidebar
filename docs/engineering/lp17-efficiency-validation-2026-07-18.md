@@ -63,6 +63,41 @@ are the 2026-07-17 runs of the same fixtures on the same seats. Companion to
    sections; the true LLM echo was ~7K chars/turn. The CM fixes removed
    exactly that component (22.3K → 15.3K with the boilerplate constant).
 
+## Addendum: minimax-m3 trajectory (503 fallback seat)
+
+After qwen's pool 503'd take 7, the same run set was repeated on minimax-m3
+(the default executor). Easy tier: **9/9 green** (fixture tokens ≈ baseline;
+one 10-turn login flail was a model slip — clicked Log In before filling —
+not fix-related).
+
+Apply-run trajectory for minimax on the same form:
+
+| | 07-17 att.1 (no fixes) | 07-17 att.2 | 07-18 take 8 att.1 | take 8 att.2 |
+|---|---|---|---|---|
+| Outcome | ✗ budget death | ✗ stopped | ✗ verifier-rejected | ✗ verifier-rejected |
+| Turns | 30 (ceiling) | 17 | 17 | 26 |
+| Tokens | 847K | 523K | 405K | 614K |
+| Failure mode | silent ceiling | manual stop | **honest state_mismatch (0.90)** | same |
+
+The efficiency stack is model-agnostic — plannerSkipped:true and the same
+15,297-char node prompt on all take-8 attempts — and the completion stack
+now REFUSES minimax's premature completion claims instead of letting the
+run die at the turn ceiling (CV not attached / Phone empty → verifier
+state_mismatch). But minimax's executor discipline remains the blocker for
+apply work: take-8 attempt 2 never called upload_file in 26 turns (attempt 1
+did, at T1, then lost the thread). qwen completed the identical task in 22
+turns (take 6). **Seat verdict for apply-shaped work: qwen when its pool is
+healthy; minimax fails safely but still fails.**
+
+## Correction
+
+An earlier claim that "6/8 turns saw transient 503s" in take-7 attempt 1 was
+an artifact: the kit's phone number contains the substring "503", poisoning
+a substring count. Authoritative 503 evidence is session `failureDetail`
+(take-7 attempt 2, take-5 attempt 2, and the twelve 07-17/18 error
+sessions) — the qwen-pool reliability finding stands; the per-turn count
+does not.
+
 ## Bottom line
 
 All 11 fixes hold up live with zero functional regressions (9/9 easy). For
