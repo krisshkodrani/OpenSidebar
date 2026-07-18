@@ -30,6 +30,11 @@ import { fileURLToPath } from "node:url";
 
 import { EventHub } from "./events";
 import {
+  createProductionDeps,
+  RunManager,
+  type RunManagerDeps,
+} from "./runs";
+import {
   getAnswers,
   getApplication,
   getCriteria,
@@ -111,14 +116,28 @@ export interface ConsoleServer {
   port: number;
   url: string;
   events: EventHub;
+  runs: RunManager;
   close(): Promise<void>;
 }
 
+export interface ConsoleServerOptions {
+  /** Inject fake run-manager deps in tests; omit to use production deps. */
+  runDeps?: (emit: RunManagerDeps["emit"]) => RunManagerDeps;
+  /** Start the WS bridge on boot (default false — enable in the CLI entry). */
+  ownBridge?: boolean;
+}
+
 /** Start the console server. `port: 0` picks an ephemeral port (tests). */
-export function startConsoleServer(
+export async function startConsoleServer(
   port: number = CONSOLE_PORT,
+  options: ConsoleServerOptions = {},
 ): Promise<ConsoleServer> {
   const events = new EventHub();
+  const emit = events.broadcast.bind(events);
+  const runs = new RunManager(
+    options.runDeps ? options.runDeps(emit) : createProductionDeps(emit),
+  );
+  if (options.ownBridge) await runs.start();
 
   const server = createServer(async (req, res) => {
     const origin = req.headers.origin as string | undefined;
@@ -209,6 +228,84 @@ export function startConsoleServer(
         return send(res, result, origin);
       }
 
+      /* — v2: runs + approvals — */
+      if (path === "/api/bridge" && method === "GET") {
+        return send(
+          res,
+          {
+            status: 200,
+            body: {
+              ...runs.bridgeStatus(),
+              wsPort: Number(process.env.OPENSIDEBAR_WS_PORT ?? 8917),
+            },
+          },
+          origin,
+        );
+      }
+      if (path === "/api/runs" && method === "GET") {
+        return send(
+          res,
+          { status: 200, body: { runs: runs.listRuns().map(({ log, ...r }) => ({ ...r, logLength: log.length })) } },
+          origin,
+        );
+      }
+      if (path === "/api/runs/discovery" && method === "POST") {
+        return send(res, { ...runs.startDiscovery() } as ApiResult, origin);
+      }
+      if (path === "/api/runs/fill" && method === "POST") {
+        const body = (await parseJsonBody(req).catch(() => null)) as {
+          name?: string;
+          mode?: "fill" | "submit";
+        } | null;
+        if (!body?.name || (body.mode !== "fill" && body.mode !== "submit")) {
+          return send(res, { status: 400, body: { error: "body must be { name, mode: fill|submit }" } }, origin);
+        }
+        return send(res, { ...runs.startFill(body.name, body.mode) } as ApiResult, origin);
+      }
+      const runMatch = path.match(/^\/api\/runs\/([^/]+)$/);
+      if (method === "GET" && runMatch) {
+        const run = runs.getRun(decodeURIComponent(runMatch[1]));
+        if (!run) return send(res, { status: 404, body: { error: "unknown run" } }, origin);
+        const offset = Number(url.searchParams.get("offset") ?? 0);
+        const { log, ...rest } = run;
+        return send(
+          res,
+          {
+            status: 200,
+            body: { run: rest, log: log.slice(offset), nextOffset: log.length },
+          },
+          origin,
+        );
+      }
+      const cancelMatch = path.match(/^\/api\/runs\/([^/]+)\/cancel$/);
+      if (method === "POST" && cancelMatch) {
+        const canceled = runs.cancelRun(decodeURIComponent(cancelMatch[1]));
+        return send(
+          res,
+          canceled
+            ? { status: 200, body: { canceled: true } }
+            : { status: 409, body: { error: "run is not active" } },
+          origin,
+        );
+      }
+      if (path === "/api/approvals" && method === "GET") {
+        return send(res, { status: 200, body: runs.listApprovals() }, origin);
+      }
+      const approvalMatch = path.match(/^\/api\/approvals\/([^/]+)$/);
+      if (method === "POST" && approvalMatch) {
+        const body = (await parseJsonBody(req).catch(() => null)) as {
+          approved?: boolean;
+        } | null;
+        if (typeof body?.approved !== "boolean") {
+          return send(res, { status: 400, body: { error: "body must be { approved: boolean }" } }, origin);
+        }
+        const result = runs.resolveApproval(
+          decodeURIComponent(approvalMatch[1]),
+          body.approved,
+        );
+        return send(res, result as ApiResult, origin);
+      }
+
       return send(res, { status: 404, body: { error: `no route ${method} ${path}` } }, origin);
     } catch (e) {
       return send(
@@ -231,12 +328,15 @@ export function startConsoleServer(
         port: actualPort(),
         url: `http://${HOST}:${actualPort()}`,
         events,
-        close: () =>
-          new Promise<void>((done) => {
+        runs,
+        close: async () => {
+          await runs.stop();
+          await new Promise<void>((done) => {
             events.close();
             server.closeAllConnections?.();
             server.close(() => done());
-          }),
+          });
+        },
       });
     });
   });
@@ -249,11 +349,11 @@ const isMain =
   resolve(process.argv[1]) === fileURLToPath(import.meta.url);
 
 if (process.env.VITEST === undefined && isMain) {
-  startConsoleServer().then((s) => {
+  startConsoleServer(CONSOLE_PORT, { ownBridge: true }).then((s) => {
     console.log(`[jobagent-console] listening on ${s.url}`);
     console.log(
-      `[jobagent-console] browser side: node .artifacts/pi-live/launch-chrome.mjs ` +
-        `(extension WS port must match OPENSIDEBAR_WS_PORT, default 8917)`,
+      `[jobagent-console] WS bridge owned on port ${process.env.OPENSIDEBAR_WS_PORT ?? 8917} — ` +
+        `launch the browser side with: node .artifacts/pi-live/launch-chrome.mjs`,
     );
   });
 }

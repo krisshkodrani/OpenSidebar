@@ -346,3 +346,55 @@ Phase-4-relevant:
   ignore line from a leak.
 - ~~`tests/background/agent-runner.test.ts` imports `browser-bridge/agent-runner.ts`
   — both go together in Phase 6.~~ Done: both deleted with the Phase 6 removal.
+
+## Phase 9 — JobAgent console (2026-07-18)
+
+A standalone local backend + single-file UI for the whole pipeline:
+`scripts/jobagent-console/` (server.ts / api.ts / runs.ts / events.ts /
+ui/index.html). Start with `pnpm run jobagent` → http://127.0.0.1:7591.
+Zero npm dependencies (bare node:http, log-server idioms), loopback-only,
+seed-dir-canonical (no DB; JSONL audits in `<seed>/jobagent/`), removable.
+
+**Architecture decisions:**
+- **Fills don't need pi.** The console imports the browser-mcp bridge
+  directly (`WebSocketBridge.create` + `bridge.call` — exactly what the pi
+  extension does) and runs `browser_run_task` itself with the deterministic
+  kit brief. When the Phase-4 gate pauses the mission, the
+  `ForwardedApprovalRequest` (incl. Phase-8 dryRun diff) lands in the
+  APPROVAL INBOX; the human's click answers via `browser_respond_approval`
+  on the same session, and the respond call returns the resumed mission's
+  next outcome (chained pauses looped). pi is reserved for reasoning work
+  (discovery sweeps), spawned as a child with the port handed over.
+- **Bridge ownership invariant:** one WS-port owner, one active run
+  (single mutex). Discovery: close console bridge → spawn pi
+  (OPENSIDEBAR_WS_PORT env) → stream log → reacquire with retry on exit.
+- **Status writes only via recordStatus** — the lifecycle ratchet stays the
+  single authority; API surfaces its errors verbatim as 409s. fill+ok →
+  filled-awaiting-submit; submit+human-approved+ok → submitted-by-user.
+- **Answer library + kit drafting** (scripts/jobagent/answers.ts,
+  drafting.ts): canonical answers at `<seed>/jobagent/answer-library.json`;
+  deterministic question→answer mapping with per-field provenance
+  (identity/answer-tag/default/TODO); select answers must match an offered
+  option; approve blocks on TODOs; approved drafts write run-config.json
+  byte-compatible with the Phase-5 loader.
+- **Security for a loopback server that can approve submits:** hard-bound
+  127.0.0.1, loopback-Host check, loopback/extension origin allowlist, and
+  the `X-JobAgent-Console: 1` header on all mutations (forces preflight →
+  CSRF/DNS-rebinding proof without dependencies).
+
+**pi CLI v0.80.7 launch recipe (supersedes the -a notes above):**
+- Extensions load via explicit `-e <path>` (the `-a` trust flag is gone).
+- `-p` blocks reading stdin in non-TTY shells — close it:
+  `Write-Output "" | pi …` interactively, `stdio: ["ignore", …]` when
+  spawning.
+- No fireworks provider in this build; the configured default is
+  deepseek/deepseek-v4-pro (key in pi's own auth.json).
+- Bridge port via OPENSIDEBAR_WS_PORT (live: 8917 — **8787 collides with
+  Docker Desktop** on this machine); the extension side reads
+  chrome.storage `opensidebar:browserMcpWsPort` (seeded by
+  `.artifacts/pi-live/launch-chrome.mjs`).
+
+First live discovery sweep (same date, pre-console): 9 created / 0 dup /
+23 rejected across HN + ai-jobs.net + WWR; criteria refinements queued
+(remote-region qualifiers, EU-country awareness, dead ai-jobs.net reg
+filter, marketplace excludes).
