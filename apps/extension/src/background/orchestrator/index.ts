@@ -37,6 +37,7 @@ import {
   buildDirectExecutionNodes,
   buildFallbackNodes,
   OrchestratorPlanner,
+  qualifiesForDirectSingleNode,
 } from "./planner";
 
 import type { TokenUsage } from "../llm/types";
@@ -2035,7 +2036,9 @@ export class Orchestrator {
     });
 
     let nodes: TaskNode[] = [];
-    const usePlannerDecomposition = shouldUsePlannerDecomposition(laneTopology);
+    const usePlannerDecomposition =
+      shouldUsePlannerDecomposition(laneTopology) &&
+      !qualifiesForDirectSingleNode(input.query); // LP-17 P6 short-circuit
     if (!usePlannerDecomposition) {
       const tab = await chrome.tabs.get(input.tabId).catch(() => null);
       nodes = buildDirectExecutionNodes(
@@ -2043,6 +2046,7 @@ export class Orchestrator {
         "planned",
         tab?.title || "Untitled",
         tab?.url || "",
+        { enabledSkillPackIds: task.enabledSkillPackIds },
       );
       task.planClassification = {
         isSingleNode: nodes.length === 1,
@@ -2106,15 +2110,11 @@ export class Orchestrator {
           executorModel: input.settings.executorModel,
           plannerModel: input.settings.plannerModel,
           writerModel: input.settings.writerModel,
-          useNitro: input.settings.useNitro,
-          providerMode: input.settings.providerMode,
+          useNitro: input.settings.useNitro, providerMode: input.settings.providerMode,
           provider: input.settings.provider,
-          openaiApiKey: input.settings.openaiApiKey,
-          groqApiKey: input.settings.groqApiKey,
-          temperature: input.settings.temperature,
-          perceptionMode: input.settings.perceptionMode,
-          fireworksApiKey: input.settings.fireworksApiKey,
-          deepseekApiKey: input.settings.deepseekApiKey,
+          openaiApiKey: input.settings.openaiApiKey, groqApiKey: input.settings.groqApiKey,
+          temperature: input.settings.temperature, perceptionMode: input.settings.perceptionMode,
+          fireworksApiKey: input.settings.fireworksApiKey, deepseekApiKey: input.settings.deepseekApiKey,
           kimiApiKey: input.settings.kimiApiKey,
           xiaomiApiKey: input.settings.xiaomiApiKey, cerebrasApiKey: input.settings.cerebrasApiKey,
         };

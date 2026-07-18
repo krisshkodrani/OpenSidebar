@@ -14,6 +14,9 @@ import {
 } from "../agent/task-contract";
 import { BuildNodesResult, PlannerAssignment, TaskNode } from "./types";
 import { annotateParallelContracts } from "./parallel-contract";
+// Re-exported so the ratcheted orchestrator/index.ts can import it from its
+// existing "./planner" group (LP-17 P6).
+export { qualifiesForDirectSingleNode } from "./planner-gate-policy";
 import {
   getSkillDescriptor,
   selectPrimarySkill,
