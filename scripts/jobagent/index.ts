@@ -19,6 +19,25 @@ import { resolveApplicationDir, resolveApplicationsDir } from "./paths";
 export { assembleFillBrief } from "./brief";
 export { startCvServer, type CvServer } from "./cv-server";
 export {
+  loadAnswerLibrary,
+  parseAnswerLibrary,
+  resolveAnswerLibraryPath,
+  saveAnswerLibrary,
+  type AnswerEntry,
+  type AnswerLibrary,
+  type CvVariant,
+} from "./answers";
+export {
+  approveKitDraft,
+  buildKitDraft,
+  loadKitDraft,
+  parseKitDraft,
+  saveKitDraft,
+  type FormQuestion,
+  type KitDraft,
+  type KitDraftField,
+} from "./drafting";
+export {
   assessListing,
   findDuplicate,
   listingSlug,
