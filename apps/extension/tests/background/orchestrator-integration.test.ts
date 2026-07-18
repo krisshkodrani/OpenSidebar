@@ -454,7 +454,7 @@ describe("Orchestrator integration join tests", () => {
 
     const orchestrator = new Orchestrator(orchestratorDeps);
     activeOrchestrator = orchestrator;
-    await orchestrator.startTask(makeInput("collect the figures from each section, then summarize"));
+    await orchestrator.startTask(makeInput("collect the figures from each page, then summarize"));
 
     expect(createdLoopNodeIds).toEqual(["n1", "n2"]);
     expect(capturedInstructions[0].instruction).toContain("Objective: collect data");

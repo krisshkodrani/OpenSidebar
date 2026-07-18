@@ -15,6 +15,17 @@
  */
 
 const MAX_DIRECT_QUERY_CHARS = 240;
+/**
+ * LP-17b CM-1: value-laden form-fill prompts are long ONLY because they carry
+ * literal field values ("First Name: Kris\nEmail: …"). Take 6 measured the
+ * cost of routing one to the planner anyway: 54s of glm-5p2 deciding
+ * nodeCount:1 while restating the input ~3x into a 22K-char node prompt that
+ * was then re-billed every turn. This tier gets its own generous cap.
+ */
+const MAX_FORM_FILL_QUERY_CHARS = 8000;
+/** "Label: value" lines — the field-list shape (URLs in values are expected). */
+const FIELD_VALUE_LINE = /^\s*[A-Z][^:\n]{0,48}:\s*\S/gm;
+const MIN_FIELD_VALUE_LINES = 3;
 
 // ── Negative guards: any hit → run the planner ──────────────────────────────
 
@@ -25,8 +36,13 @@ const SEQUENCING_CONNECTIVE =
 const ROUND_TRIP = /\b(?:return to|go(?:ing)? back|back to|come back|and back)\b/i;
 const MULTI_TAB_OR_COMPARE =
   /\b(?:new tab|each tab|separate tabs?|both tabs|across tabs|side by side|compare)\b/i;
+// Cross-ITEM iteration only (LP-17b CM-1): "update every record" is a real
+// multi-step signal; "fill each field once" / "select BOTH options" is
+// same-page phrasing that lives inside single-form-fill prompts (the take-6
+// kit literally contains both). Iteration words only count when aimed at a
+// cross-item noun.
 const EXHAUSTIVE_ITERATION =
-  /\b(?:each|every|one by one|for all|all \d+|both\b(?! tabs))\b/i;
+  /\b(?:each|every|both|one by one|for all)\b[\w\s]{0,16}\b(?:page|tab|item|record|entry|row|listing|application|product|result|link)s?\b|\ball \d+\b/i;
 const URL_PATTERN = /https?:\/\/[^\s"'<>]+/gi;
 // Mirrors shouldPreserveSeparateFormUpdateNodes (orchestrator/planner.ts) —
 // a user asking for "separate" updates is explicitly asking for structure.
@@ -52,29 +68,45 @@ function countMatches(text: string, pattern: RegExp): number {
 
 export function qualifiesForDirectSingleNode(query: string): boolean {
   const compacted = query.replace(/\s+/g, " ").trim();
-  if (!compacted || compacted.length > MAX_DIRECT_QUERY_CHARS) return false;
+  if (!compacted) return false;
 
   // Negative guards — any multi-step signal defers to the LLM planner.
+  // (The >1-URL guard is tier-specific: see below.)
   if (ENUMERATED_LIST.test(query)) return false; // pre-compaction: needs \n
   if (STEPS_LABEL.test(compacted)) return false;
   if (countMatches(compacted, SEQUENCING_CONNECTIVE) >= 2) return false;
   if (ROUND_TRIP.test(compacted)) return false;
   if (MULTI_TAB_OR_COMPARE.test(compacted)) return false;
   if (EXHAUSTIVE_ITERATION.test(compacted)) return false;
-  const urls = new Set(
-    [...compacted.matchAll(URL_PATTERN)].map((m) => m[0].toLowerCase()),
-  );
-  if (urls.size > 1) return false;
   if (SEPARATE_UPDATES_A.test(compacted) || SEPARATE_UPDATES_B.test(compacted)) {
     return false;
   }
 
-  // Positive shapes.
-  const isCurrentPageRead =
-    CURRENT_PAGE_READ.test(compacted) && !NAVIGATION_VERB.test(compacted);
   const isSingleFormFill =
     SINGLE_FORM_FILL_VERB.test(compacted) &&
     SINGLE_FORM_FILL_TARGET.test(compacted);
+
+  // Tier 2 (LP-17b CM-1): value-laden form fill. Long is fine when the length
+  // comes from "Label: value" lines, and URLs are expected AS VALUES (a
+  // LinkedIn profile, a CV file URL) — so the multi-URL guard is waived here.
+  // FIELD_VALUE_LINE runs on the RAW query: compaction destroys line starts.
+  if (
+    isSingleFormFill &&
+    compacted.length <= MAX_FORM_FILL_QUERY_CHARS &&
+    countMatches(query, FIELD_VALUE_LINE) >= MIN_FIELD_VALUE_LINES
+  ) {
+    return true;
+  }
+
+  // Tier 1: short single-node shapes.
+  if (compacted.length > MAX_DIRECT_QUERY_CHARS) return false;
+  const urls = new Set(
+    [...compacted.matchAll(URL_PATTERN)].map((m) => m[0].toLowerCase()),
+  );
+  if (urls.size > 1) return false;
+
+  const isCurrentPageRead =
+    CURRENT_PAGE_READ.test(compacted) && !NAVIGATION_VERB.test(compacted);
   const isSingleInteraction =
     SINGLE_INTERACTION_HEAD.test(compacted) &&
     countMatches(compacted, /\band\b/gi) <= 1;
