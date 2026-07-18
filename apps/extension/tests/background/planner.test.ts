@@ -3903,3 +3903,26 @@ describe("TaskPlanner.validateDone", () => {
 // Due to bun's process-global mock.module behavior, these tests only pass
 // reliably when run in isolation: `pnpm exec vitest run apps/extension/tests/background/planner.test.ts`
 // The TaskPlanner unit tests above cover all planner logic paths.
+
+describe("decompose request shape (LP-17 P4)", () => {
+    test("decompose runs with the raised 8192 output cap", async () => {
+        let captured: any = null;
+        completeImpl = (request: any) => {
+            captured = request;
+            return Promise.resolve({
+                role: "assistant",
+                content: JSON.stringify({
+                    isMultiStep: false,
+                    difficulty: "simple",
+                    subtasks: [],
+                }),
+                finish_reason: "stop",
+            });
+        };
+        const planner = new TaskPlanner("test-key");
+        await planner.decompose("Read the page title", "Title", "https://a.test");
+        expect(captured).not.toBeNull();
+        expect(captured.max_tokens).toBe(8192);
+        expect(captured.response_format).toEqual({ type: "json_object" });
+    });
+});

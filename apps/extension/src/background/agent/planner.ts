@@ -851,7 +851,11 @@ export class TaskPlanner {
           { role: "system", content: DECOMPOSE_SYSTEM },
           { role: "user", content: userContent },
         ],
-        max_tokens: 4096,
+        // 8192, not 4096: live traces (2026-07-18) caught 2/93 decompose
+        // calls truncating at the old cap — truncated JSON is GUARANTEED to
+        // fall back to context-blind nodes, while a longer call merely risks
+        // the (raised) lane timeout. Short plans are unaffected.
+        max_tokens: 8192,
         temperature: 0,
         signal,
         response_format: { type: "json_object" },
@@ -863,6 +867,14 @@ export class TaskPlanner {
           llmMs,
           response.actualModel ?? this.llm.getCurrentModel(),
         );
+      if (response.finish_reason === "length") {
+        // Truncated decompose JSON silently degrades to fallback nodes —
+        // make it visible when it happens despite the raised cap.
+        logger.warn("agent", "Planner decompose output hit the token cap", {
+          llmMs,
+          completionTokens: response.usage?.completion_tokens,
+        });
+      }
 
       const text = (response.content || "").trim();
       const cleaned = text
