@@ -650,6 +650,55 @@ function collapseSkillOwnedWorkflowNodes(
   ];
 }
 
+const VERIFY_ONLY_HEAD =
+  /^\s*(?:verify|confirm|check|ensure|validate|double-check)\b/i;
+const VERIFY_NODE_NAVIGATION =
+  /\b(?:return\w*|go(?:ing)? back|back to|navigat\w*|open\w*|visit\w*)\b/i;
+const VERIFY_NODE_DELIVERABLE =
+  /\b(?:report\w*|read\w*|extract\w*|record\w*|note\w*|tell\w*|answer\w*|summari[sz]\w*)\b/i;
+
+/**
+ * LP-17 P5: drop a trailing verify-only node. Live plans appended steps like
+ * "Verify the page is visible" AFTER the goal was delivered — a whole extra
+ * executor session (~12K+ tokens) doing no new work; the executor's done()
+ * gate already verifies. Deliberately narrow: never drops return legs
+ * (navigation verbs), deliverable steps (report/read/extract), URL-bearing
+ * steps, write-capable steps, or anything not depending solely on its
+ * predecessor. The dropped node's criteria and gate fold into the
+ * predecessor so nothing observable is lost.
+ */
+export function dropTrailingVerifyOnlyNode(nodes: TaskNode[]): TaskNode[] {
+  if (nodes.length < 2) return nodes;
+  const last = nodes[nodes.length - 1];
+  const prev = nodes[nodes.length - 2];
+  if (!VERIFY_ONLY_HEAD.test(last.description)) return nodes;
+  if (VERIFY_NODE_NAVIGATION.test(last.description)) return nodes;
+  if (VERIFY_NODE_DELIVERABLE.test(last.description)) return nodes;
+  if (last.toolProfile && last.toolProfile !== "read_only") return nodes;
+  if (/https?:\/\//i.test(last.description)) return nodes;
+  const dependsOnlyOnPrev =
+    last.dependencies.length === 0 ||
+    (last.dependencies.length === 1 && last.dependencies[0] === prev.id);
+  if (!dependsOnlyOnPrev) return nodes;
+
+  const merged: TaskNode = {
+    ...prev,
+    successCriteria: compactText(
+      dedupeStrings(
+        [prev.successCriteria, last.successCriteria].filter(Boolean),
+      ).join(" "),
+    ),
+    verificationGate: last.verificationGate
+      ? { ...last.verificationGate, action: "call_done" }
+      : prev.verificationGate,
+    status: "pending",
+    retries: 0,
+    result: undefined,
+    error: undefined,
+  };
+  return [...nodes.slice(0, -2), merged];
+}
+
 function preserveOriginalScopeForSingleSkillOwnedNode(
   nodes: TaskNode[],
   query: string,
@@ -1005,6 +1054,7 @@ function applyWorkflowNodeCollapse(
     skillCatalogOptions,
     displayQuery,
   );
+  result = dropTrailingVerifyOnlyNode(result);
   result = preserveOriginalScopeForSingleSkillOwnedNode(
     result,
     query,
@@ -1216,6 +1266,16 @@ export class OrchestratorPlanner {
           count: nodes.length,
           selectedSkillId: nodes[0]?.selectedSkillId,
         },
+      );
+    }
+
+    const verifyTailDropped = dropTrailingVerifyOnlyNode(nodes);
+    if (verifyTailDropped !== nodes) {
+      nodes = verifyTailDropped;
+      logger.info(
+        "orchestrator",
+        "Dropped trailing verify-only node; criteria folded into predecessor",
+        { count: nodes.length },
       );
     }
 

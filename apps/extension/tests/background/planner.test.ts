@@ -3926,3 +3926,65 @@ describe("decompose request shape (LP-17 P4)", () => {
         expect(captured.response_format).toEqual({ type: "json_object" });
     });
 });
+
+describe("dropTrailingVerifyOnlyNode (LP-17 P5)", () => {
+    function buildFromSubtasks(subtasks: string[], difficulty = "moderate") {
+        completeImpl = () => Promise.resolve({
+            role: "assistant",
+            content: JSON.stringify({ isMultiStep: true, difficulty, subtasks }),
+            tool_calls: undefined,
+            finish_reason: "stop",
+        });
+        const planner = new OrchestratorPlanner("test-key");
+        return planner.buildNodes(
+            "Generate the report and submit it",
+            "Reports",
+            "https://reports.example/new",
+        );
+    }
+
+    test("drops a trailing verify-only node and folds its criteria forward", async () => {
+        const result = await buildFromSubtasks([
+            "Fill the report form with the quarterly numbers",
+            "Submit the report form",
+            "Verify the submission was successful",
+        ]);
+        expect(result.nodes.length).toBe(2);
+        const lastNode = result.nodes[result.nodes.length - 1];
+        expect(lastNode.description).toContain("Submit the report form");
+        // The dropped node's success criteria live on in the predecessor.
+        expect(lastNode.successCriteria.toLowerCase()).toContain("verify");
+    });
+
+    test("keeps a trailing return-leg even when it starts with 'verify'", async () => {
+        const result = await buildFromSubtasks([
+            "Read the inventory count on page 3",
+            "Verify by returning to page 1 and reading Warehouse Alpha",
+        ]);
+        expect(result.nodes.length).toBe(2);
+    });
+
+    test("keeps a trailing deliverable step ('check … and report')", async () => {
+        const result = await buildFromSubtasks([
+            "Open the totals view",
+            "Check the total and report it to the user",
+        ]);
+        expect(result.nodes.length).toBe(2);
+    });
+
+    test("keeps a verify step that carries its own URL", async () => {
+        const result = await buildFromSubtasks([
+            "Submit the request",
+            "Verify the record at https://reports.example/records",
+        ]);
+        expect(result.nodes.length).toBe(2);
+    });
+
+    test("single-node plans pass through untouched", async () => {
+        const { dropTrailingVerifyOnlyNode } = await import(
+            "../../src/background/orchestrator/planner"
+        );
+        const single = buildFallbackNodes("Read the page");
+        expect(dropTrailingVerifyOnlyNode(single)).toBe(single);
+    });
+});
