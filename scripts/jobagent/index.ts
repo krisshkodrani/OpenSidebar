@@ -18,6 +18,20 @@ import { resolveApplicationDir, resolveApplicationsDir } from "./paths";
 
 export { assembleFillBrief } from "./brief";
 export { startCvServer, type CvServer } from "./cv-server";
+export {
+  assessListing,
+  findDuplicate,
+  listingSlug,
+  loadSearchCriteria,
+  parseSearchCriteria,
+  recordDiscovery,
+  resolveSearchCriteriaPath,
+  type DiscoveredListing,
+  type DiscoveryOutcome,
+  type JobBoard,
+  type ListingAssessment,
+  type SearchCriteria,
+} from "./discovery";
 export { recordStatus, isLegalStatusTransition } from "./package";
 export type { ApplicationPackage, ApplicationStatus } from "./package";
 export type { FillManifest } from "./manifest";
