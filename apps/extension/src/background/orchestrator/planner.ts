@@ -702,6 +702,135 @@ export function dropTrailingVerifyOnlyNode(nodes: TaskNode[]): TaskNode[] {
   return [...nodes.slice(0, -2), merged];
 }
 
+const SAME_PAGE_COLLAPSE_MAX_NODES = 5;
+const SAME_PAGE_COLLAPSE_MAX_DESCRIPTION_CHARS = 700;
+const NODE_NAVIGATION_VERB =
+  /\b(?:navigate to|go(?:ing)? to|open(?:ing)? (?:a )?new tab|visit\w*|return\w* to|back to)\b/i;
+// "Buy the FIRST item" / "buy the SECOND item" — an itemwise iteration whose
+// per-item navigation is implied, never spelled out. Two or more ordinal-
+// target steps mean the chain spans item pages, not one page.
+const ITEMWISE_ORDINAL_TARGET =
+  /\b(?:first|second|third|fourth|fifth|next|another)\b[\w\s-]{0,24}\b(?:item|record|entry|row|product|listing|application|ticket|task)s?\b/i;
+
+function nodeUrlOrigins(nodes: TaskNode[]): Set<string> {
+  const origins = new Set<string>();
+  for (const node of nodes) {
+    for (const match of node.description.matchAll(
+      /https?:\/\/[^\s"'<>]+/gi,
+    )) {
+      try {
+        origins.add(new URL(match[0]).origin.toLowerCase());
+      } catch {
+        origins.add(match[0].toLowerCase());
+      }
+    }
+  }
+  return origins;
+}
+
+/**
+ * LP-17 P7: merge a serialized chain of same-page, same-skill nodes into one.
+ * Live plans split sequential single-page work (add-to-cart → coupon →
+ * checkout) into 4-5 serialized nodes, each spawning a fresh executor
+ * session (~12-35K tokens of context) and each a link in a dependency chain
+ * whose failure kills everything downstream. Serialized + same page + same
+ * skill = no parallelism gained, pure overhead.
+ *
+ * Load-bearing guard: cross-view plans always contain a navigation step (the
+ * prompt's VIEW-STATE rule), so refusing to merge across navigation verbs or
+ * distinct origins keeps genuinely multi-page plans intact. The user's
+ * explicit "separate updates" phrasing also opts out.
+ */
+export function collapseSameContextSequentialNodes(
+  nodes: TaskNode[],
+  query: string,
+  pageTitle?: string,
+  pageUrl?: string,
+  skillCatalogOptions?: SkillCatalogOptions,
+  displayQuery?: string,
+): TaskNode[] {
+  if (nodes.length < 2 || nodes.length > SAME_PAGE_COLLAPSE_MAX_NODES) {
+    return nodes;
+  }
+  const taskLabelQuery = displayQueryOrFallback(query, displayQuery);
+  if (shouldPreserveSeparateFormUpdateNodes(nodes, taskLabelQuery)) {
+    return nodes;
+  }
+  // Pure chain: each node depends exactly on its predecessor.
+  for (let i = 0; i < nodes.length; i++) {
+    const deps = nodes[i].dependencies;
+    if (i === 0 ? deps.length !== 0 : !(deps.length === 1 && deps[0] === nodes[i - 1].id)) {
+      return nodes;
+    }
+  }
+  if (
+    nodes.some(
+      (node) =>
+        node.toolProfile === "navigate" ||
+        NODE_NAVIGATION_VERB.test(node.description),
+    )
+  ) {
+    return nodes;
+  }
+  if (nodeUrlOrigins(nodes).size > 1) return nodes;
+  if (
+    nodes.filter((node) => ITEMWISE_ORDINAL_TARGET.test(node.description))
+      .length >= 2
+  ) {
+    return nodes;
+  }
+
+  const description = compactText(
+    `Complete these steps in order on the current page: ${nodes
+      .map((node) => node.description)
+      .join("; ")}`,
+  );
+  if (description.length > SAME_PAGE_COLLAPSE_MAX_DESCRIPTION_CHARS) {
+    return nodes;
+  }
+
+  const firstNode = nodes[0];
+  const lastGate = [...nodes]
+    .reverse()
+    .find((node) => node.verificationGate)?.verificationGate;
+  // Per-step skill picks fragment naturally (fill steps → form skill, cart
+  // step → cart skill), so re-select for the WHOLE merged workflow instead
+  // of requiring homogeneity or inheriting step 1's pick.
+  const mergedSkill = selectPrimarySkill({
+    query,
+    objective: description,
+    successCriteria: description,
+    pageTitle,
+    pageUrl,
+    ...skillCatalogOptions,
+  });
+  return [
+    {
+      ...firstNode,
+      selectedSkillId: mergedSkill?.id,
+      selectedSkillReason: mergedSkill?.reason,
+      description,
+      successCriteria: compactText(
+        dedupeStrings(nodes.map((node) => node.successCriteria)).join(" "),
+      ),
+      allowedTools: unionTools(nodes),
+      assumptions: dedupeStrings(nodes.flatMap((node) => node.assumptions)),
+      handoffArtifacts: nodes.flatMap((node) => node.handoffArtifacts),
+      // The merged node IS the final node: a carried gate must finish the
+      // task, and no single step's toolProfile may restrict the union.
+      verificationGate: lastGate
+        ? { ...lastGate, action: "call_done" }
+        : undefined,
+      toolProfile: undefined,
+      dependencies: [],
+      status: "pending",
+      retries: 0,
+      result: undefined,
+      error: undefined,
+    },
+  ];
+}
+
 function preserveOriginalScopeForSingleSkillOwnedNode(
   nodes: TaskNode[],
   query: string,
@@ -1058,6 +1187,14 @@ function applyWorkflowNodeCollapse(
     displayQuery,
   );
   result = dropTrailingVerifyOnlyNode(result);
+  result = collapseSameContextSequentialNodes(
+    result,
+    query,
+    pageTitle,
+    pageUrl,
+    skillCatalogOptions,
+    displayQuery,
+  );
   result = preserveOriginalScopeForSingleSkillOwnedNode(
     result,
     query,
@@ -1278,6 +1415,23 @@ export class OrchestratorPlanner {
       logger.info(
         "orchestrator",
         "Dropped trailing verify-only node; criteria folded into predecessor",
+        { count: nodes.length },
+      );
+    }
+
+    const sameContextCollapsed = collapseSameContextSequentialNodes(
+      nodes,
+      query,
+      pageTitle,
+      pageUrl,
+      skillCatalogOptions,
+      displayQuery,
+    );
+    if (sameContextCollapsed !== nodes) {
+      nodes = sameContextCollapsed;
+      logger.info(
+        "orchestrator",
+        "Collapsed serialized same-page chain into a single node",
         { count: nodes.length },
       );
     }
