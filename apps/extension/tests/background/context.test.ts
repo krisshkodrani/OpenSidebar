@@ -1234,3 +1234,61 @@ describe("Fill checklist (LP-17)", () => {
     expect(ctx.consumeChecklistFeedbackLine()).not.toBeNull();
   });
 });
+
+describe("Page-content unchanged marker (LP-17)", () => {
+  const pageSnapshot = (pageContent: string, url = "https://example.com/doc") => ({
+    title: "Doc",
+    url,
+    elements: [],
+    visibleContent: "Body",
+    pageContent,
+    viewport: { width: 1280, height: 800 },
+    scroll: { x: 0, y: 0, maxY: 0 },
+  });
+
+  test("second turn with identical content gets the marker; first gets full text", () => {
+    const ctx = new ContextManager();
+    const body = "UNIQUE-PAGE-BODY " + "filler ".repeat(100);
+    ctx.setSnapshot(pageSnapshot(body) as any);
+    ctx.setTimeContext(1, 30, Date.now());
+    const first = ctx.getPrompt()[0].content as string;
+    expect(first).toContain("UNIQUE-PAGE-BODY");
+    expect(first).not.toContain("«Page Content unchanged");
+
+    ctx.setFirstTurnDone();
+    ctx.setSnapshot(pageSnapshot(body) as any);
+    ctx.setTimeContext(2, 30, Date.now());
+    const second = ctx.getPrompt()[0].content as string;
+    expect(second).toContain("«Page Content unchanged since turn 1");
+    // The excerpt still grounds the marker.
+    expect(second).toContain("Excerpt: UNIQUE-PAGE-BODY");
+  });
+
+  test("changed content re-emits in full", () => {
+    const ctx = new ContextManager();
+    ctx.setSnapshot(pageSnapshot("BODY-ONE " + "x ".repeat(400)) as any);
+    ctx.setTimeContext(1, 30, Date.now());
+    ctx.getPrompt();
+    ctx.setFirstTurnDone();
+    ctx.setSnapshot(pageSnapshot("BODY-TWO " + "y ".repeat(400)) as any);
+    ctx.setTimeContext(2, 30, Date.now());
+    const second = ctx.getPrompt()[0].content as string;
+    expect(second).toContain("BODY-TWO");
+    expect(second).not.toContain("«Page Content unchanged");
+  });
+
+  test("clearHistory forces a full re-emit (fresh subtask never saw the block)", () => {
+    const ctx = new ContextManager();
+    const body = "SUBTASK-BODY " + "z ".repeat(400);
+    ctx.setSnapshot(pageSnapshot(body) as any);
+    ctx.setTimeContext(1, 30, Date.now());
+    ctx.getPrompt();
+    ctx.setFirstTurnDone();
+    ctx.clearHistory();
+    ctx.setSnapshot(pageSnapshot(body) as any);
+    ctx.setTimeContext(2, 30, Date.now());
+    const afterClear = ctx.getPrompt()[0].content as string;
+    expect(afterClear).toContain("SUBTASK-BODY");
+    expect(afterClear).not.toContain("«Page Content unchanged");
+  });
+});

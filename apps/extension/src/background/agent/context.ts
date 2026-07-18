@@ -28,6 +28,11 @@ import {
   computeFillChecklistStatus,
   type FieldReadLedger,
 } from "./fill-checklist-policy";
+import {
+  createPageContentEmissionState,
+  decidePageContentEmission,
+  type PageContentEmissionState,
+} from "./page-content-policy";
 
 // Re-export submodules for barrel compatibility
 export * from "./context-types";
@@ -134,6 +139,9 @@ export class ContextManager {
   private fieldReadLedger: FieldReadLedger = new Map();
   /** Signature of the last checklist line injected as feedback (dedupe). */
   private lastChecklistSignature: string | null = null;
+  /** LP-17: page-content dedupe — replaces an unchanged block with a marker. */
+  private pageContentEmission: PageContentEmissionState =
+    createPageContentEmissionState();
 
   public setModelTier(tier: "executor" | "planner"): void {
     this.modelTier = tier;
@@ -300,6 +308,9 @@ export class ContextManager {
     }
     this.history.push(...cp.recentMessages);
     this.isFirstTurn = isFirstTurn;
+    // Restored history may no longer contain the full page-content block —
+    // force the next system prompt to emit it in full again.
+    this.pageContentEmission = createPageContentEmissionState();
   }
 
   /** Dynamically adjust the context window size (e.g. expand on escalation). */
@@ -867,7 +878,17 @@ Do NOT call done() until every planned step is complete.
         if (!this.isFirstTurn) {
           truncated = compressRepetitiveContent(truncated);
         }
-        content = content.replace("{{pageContent}}", truncated);
+        // LP-17: replace a byte-identical block with a truthful marker —
+        // unchanged page text was measured at ~7% of a long run's input.
+        const emission = decidePageContentEmission({
+          fullBlock: truncated,
+          state: this.pageContentEmission,
+          turn: this.turnCount,
+          url: this.snapshot.url || "",
+          isFirstTurn: this.isFirstTurn,
+        });
+        this.pageContentEmission = emission.nextState;
+        content = content.replace("{{pageContent}}", emission.block);
       } else {
         content = content.replace(
           "{{pageContent}}",
@@ -1628,6 +1649,7 @@ Do NOT call done() until every planned step is complete.
     this.lastActionOutcome = null;
     this.fieldReadLedger.clear();
     this.lastChecklistSignature = null;
+    this.pageContentEmission = createPageContentEmissionState();
     this.saveState().catch(() => {});
   }
 
@@ -1635,6 +1657,9 @@ Do NOT call done() until every planned step is complete.
    *  Used between subtasks so page state carries over. */
   public clearHistory() {
     this.history = [];
+    // A fresh subtask context has never seen the page content — the
+    // "unchanged" marker would be untruthful, so re-emit in full.
+    this.pageContentEmission = createPageContentEmissionState();
     this.saveState().catch(() => {});
   }
 
