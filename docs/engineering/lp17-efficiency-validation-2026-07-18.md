@@ -114,6 +114,34 @@ stack should have caught pre-done (same family as take 8's, but shallower).
 The steady cache climb (41→47→54%) and the planner-skip are the clean,
 uncontaminated gains.
 
+
+## Addendum 3: decomposition-path reliability (planner MUST run)
+
+Three genuinely multi-step fixtures (minimax executor, glm-5p2 planner) to
+prove the gate didn't lobotomize real planning — **3/3 PASSED**:
+
+| Task | Planner | Plan | Baseline (07-17) |
+|---|---|---|---|
+| Add-to-cart + coupon + express + checkout | 14.0s / 826 tok | 4 nodes, moderate | 4 nodes, then node errors |
+| Two-item order + coupon + express | 8.6s / 659 tok | 4 nodes, complex | 5 nodes, chain died |
+| Warehouse round-trip (then go back…) | 5.6s / 424 tok | 3 nodes | 3 nodes incl. verify-tail |
+
+- Gate correctness: all three correctly routed to the planner
+  (plannerSkipped:false, structured:true); the apply prompt on the same day
+  skipped it. No misroutes in either direction across the whole day.
+- CM-4 output economy is visible live: 424–826 completion tokens and
+  5.6–14s (fleet baseline: 793 avg / 4,148 max, p90 39s).
+- CM-2 confirmed at render: one crisp page-state assumption per node
+  ("Cart page has a coupon/promo input field and apply button") vs the old
+  multi-item sprawl. Planner-routed node prompts now 4.0–7.7K chars.
+- **Residual found:** the warehouse plan still carries the repair-synthesized
+  duplicate return leg ("Return to warehouse alpha and verify that page is
+  visible", ~4.8K-char node, one extra session). It survives P5 BY DESIGN —
+  it head-matches "Return", and return legs are protected. The redundancy is
+  in repairPlanCoverage appending a return leg when the previous node
+  already navigates back and reports. Candidate follow-up: dedupe the
+  repair leg against the final planner step's destination.
+
 ## Correction
 
 An earlier claim that "6/8 turns saw transient 503s" in take-7 attempt 1 was
