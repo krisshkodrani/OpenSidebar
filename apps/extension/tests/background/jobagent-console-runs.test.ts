@@ -156,6 +156,10 @@ describe("fill runs", () => {
 
     expect(world.bridgeCalls[0].tool).toBe("browser_run_task");
     expect(String(world.bridgeCalls[0].args.instruction)).toContain("sam@example.test");
+    // The form url must ride along: it is what opens the tab on the form.
+    // Omitting it stranded a live run on about:blank until the bridge timed
+    // out 10 minutes later.
+    expect(world.bridgeCalls[0].args.url).toBe("https://board.example/apply/1");
     expect(world.bridgeCalls[0].session).toContain("console-");
     expect(readStatus("acme-ai-engineer")).toBe("filled-awaiting-submit");
     expect(world.manager.listRuns()[0].state).toBe("ok");
