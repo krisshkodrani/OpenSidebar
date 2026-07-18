@@ -89,6 +89,31 @@ did, at T1, then lost the thread). qwen completed the identical task in 22
 turns (take 6). **Seat verdict for apply-shaped work: qwen when its pool is
 healthy; minimax fails safely but still fails.**
 
+
+## Addendum 2: take 9 — qwen retry after pool recovery
+
+Take 9 (qwen, all fixes) **PASSED**, via one in-place retry: attempt 1 filled
+nearly everything in 16 turns (8 type_text, 7 select_option, 1 upload, 2
+checkboxes) but called done() one step early — the test's field assertions
+caught it and the retry finished the leftovers (form state carried over in
+the browser) in a read-heavy 31-turn pass. plannerSkipped:true on both.
+
+Clean trajectory metrics across the qwen series (same form):
+
+| | take 5 (before) | take 6 (LP-17) | take 9 (LP-17+17b) |
+|---|---|---|---|
+| Outcome | ✗ budget death | ✓ | ✓ (retry-assisted) |
+| Cache hit | 41% | 47% | **54%** |
+| Input/turn at depth | 23.6K @53t | 24.5K @22t | **22.0–22.9K @16–31t (−8%)** |
+| Planner | 53s | 54s | **0s (skipped)** |
+
+Caveats stated plainly: the retry carryover makes take 9's total (47 turns /
+1.06M across both attempts) incomparable to take 6's single clean attempt;
+attempt 1's premature done() is an executor-judgment miss the completion
+stack should have caught pre-done (same family as take 8's, but shallower).
+The steady cache climb (41→47→54%) and the planner-skip are the clean,
+uncontaminated gains.
+
 ## Correction
 
 An earlier claim that "6/8 turns saw transient 503s" in take-7 attempt 1 was
