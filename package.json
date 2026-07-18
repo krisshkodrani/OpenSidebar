@@ -83,6 +83,7 @@
     "fixtures": "nx run tools:fixtures",
     "fixtures:build": "nx run fixture-online-shop-pro:build",
     "logs": "nx run tools:local-server",
+    "jobagent": "nx run tools:jobagent-console",
     "logs:tail": "nx run tools:logs-tail",
     "logs:errors": "nx run tools:logs-errors",
     "test:e2e": "nx run extension:test-e2e-staged",
