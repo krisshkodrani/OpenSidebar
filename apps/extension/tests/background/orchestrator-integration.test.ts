@@ -454,7 +454,7 @@ describe("Orchestrator integration join tests", () => {
 
     const orchestrator = new Orchestrator(orchestratorDeps);
     activeOrchestrator = orchestrator;
-    await orchestrator.startTask(makeInput("collect then summarize"));
+    await orchestrator.startTask(makeInput("collect the figures from each section, then summarize"));
 
     expect(createdLoopNodeIds).toEqual(["n1", "n2"]);
     expect(capturedInstructions[0].instruction).toContain("Objective: collect data");
@@ -493,7 +493,7 @@ describe("Orchestrator integration join tests", () => {
     const orchestrator = new Orchestrator(orchestratorDeps);
     activeOrchestrator = orchestrator;
     await orchestrator.startTask({
-      ...makeInput("select answers"),
+      ...makeInput("select the answers on each quiz page"),
       settings: {
         ...baseSettings,
         completionDeterministicAcceptanceEnabled: false,
@@ -2423,7 +2423,7 @@ describe("Orchestrator integration join tests", () => {
 
     const orchestrator = new Orchestrator(orchestratorDeps);
     activeOrchestrator = orchestrator;
-    await orchestrator.startTask(makeInput("Select the correct option/s"));
+    await orchestrator.startTask(makeInput("Select the correct option on each quiz page"));
 
     expect(verifierDecisionCalls).toBe(0);
     const messages = (globalThis as any).__runtimeMessages as Array<{
@@ -2519,7 +2519,7 @@ describe("Orchestrator integration join tests", () => {
 
     const orchestrator = new Orchestrator(orchestratorDeps);
     activeOrchestrator = orchestrator;
-    await orchestrator.startTask(makeInput("Select the correct option/s"));
+    await orchestrator.startTask(makeInput("Select the correct option on each quiz page"));
 
     expect(verifierDecisionCalls).toBe(0);
     expect(createdLoopNodeIds).toHaveLength(2);

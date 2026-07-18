@@ -3988,3 +3988,23 @@ describe("dropTrailingVerifyOnlyNode (LP-17 P5)", () => {
         expect(dropTrailingVerifyOnlyNode(single)).toBe(single);
     });
 });
+
+describe("direct-execution skill threading (LP-17 P6)", () => {
+    test("buildDirectExecutionNodes selects a skill when the catalog matches", async () => {
+        const { buildDirectExecutionNodes } = await import(
+            "../../src/background/orchestrator/planner"
+        );
+        const nodes = buildDirectExecutionNodes(
+            "Reply to the latest email from the recruiter",
+            "planned",
+            "Inbox",
+            "https://mail.example/inbox",
+            { enabledSkillPackIds: [] },
+        );
+        expect(nodes).toHaveLength(1);
+        // Which skill wins is the catalog's call — what LP-17 P6 fixed is that
+        // the direct path threads skillCatalogOptions at all (it used to drop
+        // them, leaving direct nodes skill-less).
+        expect(nodes[0].selectedSkillId).toBeTruthy();
+    });
+});
