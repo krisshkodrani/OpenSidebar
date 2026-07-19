@@ -72,6 +72,37 @@ describe("parseAnswerLibrary", () => {
   ])("rejects invalid shapes precisely", (raw, pattern) => {
     expect(() => parseAnswerLibrary(raw)).toThrow(pattern);
   });
+
+  // The cvVariant path guard must rule the same way on every OS. It used to
+  // lean on node:path.isAbsolute, which is platform-dependent — "C:/abs/cv.pdf"
+  // is absolute on Windows and relative on Linux — so CI (Linux) accepted a
+  // path the developer's Windows box rejected, and a Windows-only local run
+  // could not see it.
+  test.each([
+    "/etc/passwd",
+    "\\windows\\system32\\cv.pdf",
+    "\\\\server\\share\\cv.pdf",
+    "C:/abs/cv.pdf",
+    "c:cv.pdf",
+    "../escape.pdf",
+    "cv/../../escape.pdf",
+  ])("rejects escaping cvVariant path regardless of platform: %s", (file) => {
+    expect(() =>
+      parseAnswerLibrary({ ...library, cvVariants: [{ name: "cv", file }] }),
+    ).toThrow(/relative path/);
+  });
+
+  test.each(["cv/master.pdf", "cv-master.pdf", "cv..old.pdf", "a/b/c.pdf"])(
+    "accepts ordinary relative cvVariant path: %s",
+    (file) => {
+      // "cv..old.pdf" must stay legal — the guard checks `..` as a path
+      // SEGMENT, not as a substring.
+      expect(
+        parseAnswerLibrary({ ...library, cvVariants: [{ name: "cv", file }] })
+          .cvVariants[0].file,
+      ).toBe(file);
+    },
+  );
 });
 
 describe("load/save", () => {

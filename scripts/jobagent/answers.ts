@@ -63,6 +63,26 @@ export function resolveAnswerLibraryPath(): string {
   return join(resolveSeedDir(), "jobagent", LIBRARY_FILE);
 }
 
+/**
+ * Would this path escape the seed dir? Judged the SAME on every platform.
+ *
+ * `node:path.isAbsolute` is platform-dependent — "C:/x" is absolute on Windows
+ * and merely relative on Linux, and "/x" vice versa — so relying on it alone
+ * meant this guard enforced different rules depending on where it ran (CI on
+ * Linux accepted a path Windows rejected). Answer libraries are seed files that
+ * move between machines, so the verdict must not.
+ *
+ * Rejects: POSIX roots ("/x"), Windows roots and UNC ("\x", "\\host\share"),
+ * drive-qualified paths ("C:/x", "c:x"), and any `..` SEGMENT. Segment-wise so
+ * an innocent name like "cv..old.pdf" stays legal.
+ */
+function isEscapingPath(file: string): boolean {
+  if (/^[\\/]/.test(file)) return true;
+  if (/^[a-zA-Z]:/.test(file)) return true;
+  if (isAbsolute(file)) return true;
+  return file.split(/[\\/]/).includes("..");
+}
+
 function nonEmptyString(v: unknown): v is string {
   return typeof v === "string" && v.length > 0;
 }
@@ -119,7 +139,7 @@ export function parseAnswerLibrary(raw: unknown): AnswerLibrary {
     if (!v || !nonEmptyString(v.name) || !nonEmptyString(v.file)) {
       throw new Error("answer library: every cvVariant needs name and file");
     }
-    if (isAbsolute(v.file) || v.file.includes("..")) {
+    if (isEscapingPath(v.file)) {
       throw new Error(
         `answer library: cvVariant "${v.name}" file must be a relative path inside the seed dir`,
       );
