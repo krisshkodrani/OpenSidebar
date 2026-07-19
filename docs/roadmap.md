@@ -61,7 +61,8 @@ PDF handling (LP-14, parked).
 
 ## Experimental
 
-- **OpenClaw integration M6/M7** — deeper brain/hands integration beyond the
-  current default-off MCP surface, pending real-world validation of M1–M5.
+- **Deeper brain/hands integration** — beyond the current default-off browser
+  bridge (pi extension + MCP surface): richer mission protocols, grounded
+  submits, cross-mission memory.
 - **Warmup migration** — move the panel-open perception warmup off the
   deprecated `perceive()` path onto `PerceptionAgent.observe()`.

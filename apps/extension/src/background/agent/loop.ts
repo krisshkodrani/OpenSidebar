@@ -35,24 +35,27 @@ import { toolRegistry } from "../tools";
 import type { ToolProfile } from "../tools/metadata";
 import { waitForDomReady } from "../tab-ready";
 import {
-  executeContentTool,
   isBridgeDisconnect,
   recoverContentScriptBridge,
   type BridgeRecoveryTraceHook,
 } from "../tools/bridge";
+import { type DryRunClassification } from "./mutation-dry-run-policy";
 import {
-  buildFormStateCapturedEvidence,
-  classifyFormSubmitDryRun,
-  type DryRunClassification,
-} from "./mutation-dry-run-policy";
+  runFormSubmitDryRun,
+  type FormSubmitDryRunHost,
+} from "./form-submit-dry-run";
+import type { ForwardedApprovalDryRun } from "@shared-types/browser-bridge";
 import { workspaceManager } from "../workspaces/manager";
 import { ContextManager } from "./context";
 import { StagnationMonitor } from "./stagnation";
 import { PerceptionScreenshotState } from "../perception/perception-screenshot-state";
-import { transformScreenshot } from "../perception/screenshot-transform";
+import {
+  captureVLExecutorScreenshot,
+  createVLScreenshotState,
+  type VLScreenshotHost,
+} from "./vl-screenshot";
 import type { PerceptionTaskContext } from "../perception/types";
 import { DomSnapshot } from "../../types";
-import type { FormStateCapture } from "../../types";
 import {
   CompletionResponse,
   LLMMessage,
@@ -172,7 +175,6 @@ import {
   buildTrustedCompletionCandidate,
   CompletionEvidenceLedger,
   deriveCompletionEvidenceFromSnapshot,
-  generateCompletionContract,
   type CompletionCandidateSource,
   type CompletionEnvelope,
   type CompletionEvaluation,
@@ -250,7 +252,6 @@ export {
   requiresBroadListDetailReview,
 } from "./list-detail-policy";
 import { isPaginationNavigationClick } from "./action-exemption-policy";
-import { setCachedScreenshot } from "./screenshot-cache";
 import { imagePromptUsageForCount } from "./agent-telemetry";
 import {
   approvalRequestMessage,
@@ -520,6 +521,8 @@ export class AgentLoop {
   private pendingFeedback: string | null = null;
   /** Stateful perception agent — accumulates observations across turns */
   private perception = new PerceptionScreenshotState();
+  /** LP-17b CM-5: reuse state for the VL executor screenshot (vl-screenshot.ts). */
+  private vlScreenshotState = createVLScreenshotState();
   /** Whether the resolved executor model accepts images (gates unified_vl). */
   private executorVLCapable = true;
   /** inspect_region per-turn cap state (LP-13). */
@@ -2235,6 +2238,7 @@ export class AgentLoop {
     toolName: ToolName,
     args: Record<string, unknown>,
     context: string,
+    dryRun?: ForwardedApprovalDryRun,
   ): Promise<boolean> {
     const interaction = getMatchingApprovalInteraction(
       this as unknown as LoopQueriesHost,
@@ -2250,6 +2254,7 @@ export class AgentLoop {
       args,
       context,
       timeoutMs: this.approvalTimeoutMs,
+      ...(dryRun ? { dryRun } : {}),
     };
     const remainingTimeoutMs = Math.max(
       0,
@@ -2456,69 +2461,13 @@ export class AgentLoop {
     args: Record<string, unknown>,
     tabId: number,
   ): Promise<DryRunClassification> {
-    const generated = generateCompletionContract({
-      userRequest: this.originalQuery,
-      snapshot: this.context.getSnapshot(),
-    });
-    const draft =
-      generated?.contract.kind === "form_fill"
-        ? generated.contract.requiredFields
-        : null;
-    if (!draft || draft.length === 0) return { kind: "no_draft" };
-
-    const submitId =
-      typeof (args as { id?: unknown }).id === "number"
-        ? (args as { id: number }).id
-        : undefined;
-    let capture: FormStateCapture | null = null;
-    try {
-      const result = await executeContentTool(
-        ToolName.EXTRACT_FORM_STATE,
-        submitId != null ? { id: submitId } : {},
-        tabId,
-      );
-      capture = JSON.parse(result) as FormStateCapture;
-    } catch (err) {
-      this.log.warn("agent", "form dry-run capture failed", {
-        turn: this.turnCount,
-        error: err instanceof Error ? err.message : String(err),
-      });
-    }
-
-    const classification = classifyFormSubmitDryRun(capture, draft);
-    if (capture) {
-      this.completionEvidence.add(
-        buildFormStateCapturedEvidence(capture, this.turnCount),
-      );
-    }
-    this.traceRecorder?.recordEvent("form_submit_dry_run", {
-      turn: this.turnCount,
-      tool: toolName,
-      kind: classification.kind,
-      formKey: capture?.formKey,
-      diffHash:
-        classification.kind === "no_draft"
-          ? undefined
-          : classification.diff.diffHash,
-    });
-
-    // Seal the dry-run (RFC LP-15 Phase 8: commit → seal): record the form +
-    // approved-diff digest so a replay recognizes this submit was dry-run
-    // verified and does not re-run it blindly.
-    if (capture && classification.kind !== "no_draft") {
-      this.checkpoints.recordMutation({
-        toolName,
-        args,
-        result: `form_dry_run:${classification.kind}`,
-        planIndex: this.lastPlanIndex,
-        turn: this.turnCount,
-        formSubmitSeal: {
-          formKey: capture.formKey,
-          diffHash: classification.diff.diffHash,
-        },
-      });
-    }
-    return classification;
+    // Relocated to form-submit-dry-run.ts (loop ratchet, pi-backend Phase 4).
+    return runFormSubmitDryRun(
+      this as unknown as FormSubmitDryRunHost,
+      toolName,
+      args,
+      tabId,
+    );
   }
 
   private async ensureToolApproval(
@@ -2526,6 +2475,7 @@ export class AgentLoop {
     args: Record<string, unknown>,
     riskLevel: RiskLevel,
     forceApproval = false,
+    dryRun?: ForwardedApprovalDryRun,
   ): Promise<boolean> {
     if (riskLevel !== RiskLevel.HIGH && !forceApproval) return true;
     if (this.bypassApprovals && !forceApproval) {
@@ -2558,7 +2508,7 @@ export class AgentLoop {
       return true;
     }
     const context = formatStepLabel(toolName, args, this.elementResolver);
-    const approved = await this.requestApproval(toolName, args, context);
+    const approved = await this.requestApproval(toolName, args, context, dryRun);
     if (!approved) {
       this.log.warn("policy", "High-risk tool denied or timed out", {
         turn: this.turnCount,
@@ -3476,95 +3426,15 @@ export class AgentLoop {
     this.context.setPageInterpretation(null);
   }
 
-  /** Capture screenshot and store for VL executor injection (no perception VLM call). */
+  /** Capture screenshot and store for VL executor injection (no perception VLM call).
+   *  Body extracted to agent/vl-screenshot.ts (LP-17b CM-5), which also reuses
+   *  the previous screenshot when the page fingerprint is unchanged. */
   private async captureScreenshotForVLExecutor(tabId: number): Promise<void> {
-    const snapshot = this.context.getSnapshot();
-    if (!snapshot) {
-      this.context.setScreenshotForExecutor(null);
-      this.context.setPageInterpretation(null);
-      return;
-    }
-    if (!this.imagePromptBudgetAllows(1)) {
-      this.recordImagePromptBudgetExhausted(1, "vl_executor_screenshot");
-      this.context.setScreenshotForExecutor(null);
-      this.context.setPageInterpretation(null);
-      this.perception.setScreenshotUrl(null);
-      this.traceRecorder?.recordPerception(
-        {
-          interpretation:
-            "[VL mode] Screenshot omitted because the image prompt budget is exhausted.",
-          model: "none (image budget)",
-          durationMs: 0,
-          cached: false,
-          mode: "element_only",
-          source: "fallback",
-          freshnessReason: "dom_fallback",
-          fallbackReason: "image_budget_exhausted",
-          screenshotStatus: "not_requested",
-        },
-        undefined,
-      );
-      return;
-    }
-    try {
-      const tab = await chrome.tabs.get(tabId);
-      if (!tab.active) {
-        try {
-          await chrome.tabs.update(tabId, { active: true });
-        } catch {
-          /* tab may be closed */
-        }
-      }
-      // q90: the LP-9 transform re-encodes at q85 — see refreshPerception.
-      const captured = await this.captureVisibleTabWithRetry(tab.windowId, {
-        format: "jpeg",
-        quality: 90,
-      });
-      // LP-9: own resolution/format/scale before anything downstream sees it.
-      const transformed = await transformScreenshot(captured);
-      const dataUrl = transformed.dataUrl;
-      this.traceRecorder?.recordEvent("screenshot_transform", {
-        scaleFactor: transformed.scaleFactor,
-        width: transformed.width,
-        height: transformed.height,
-        path: "vl_executor",
-      });
-      setCachedScreenshot(tabId, dataUrl, {
-        scaleFactor: transformed.scaleFactor,
-        width: transformed.width,
-        height: transformed.height,
-      });
-      this.context.setScreenshotForExecutor(dataUrl);
-      this.context.setPageInterpretation(null); // VL instructions generated by context
-      this.perception.setScreenshotUrl(dataUrl); // keep for trace recording
-      // Record synthetic perception entry so trace viewer shows the screenshot
-      this.traceRecorder?.recordPerception(
-        {
-          interpretation:
-            "[VL mode] Screenshot sent directly to executor — no separate perception call.",
-          model: "none (unified VL)",
-          durationMs: 0,
-          cached: false,
-          mode: "vl_screenshot_only",
-          source: "fresh",
-          freshnessReason: "vl_screenshot",
-          screenshotStatus: "captured",
-        },
-        dataUrl,
-      );
-    } catch (e: any) {
-      // Capture failed — fall back to 2-call pipeline for this turn
-      this.log.warn(
-        "agent",
-        "VL screenshot capture failed, falling back to perception",
-        {
-          error: e?.message,
-          tabId,
-        },
-      );
-      this.context.setScreenshotForExecutor(null);
-      this.context.setPageInterpretation(null);
-    }
+    return captureVLExecutorScreenshot(
+      this as unknown as VLScreenshotHost,
+      tabId,
+      this.vlScreenshotState,
+    );
   }
 
   /**

@@ -279,7 +279,32 @@ export function selectResumeOwnedTab(
       reason: "No live workspace tab available for rebinding.",
     };
   }
+
+  // The task's OWN primary tab is unambiguous by identity: it is the tab the
+  // task was driving, regardless of its current URL. The durable-URL gate
+  // below exists to disambiguate among candidates, not to disown this tab —
+  // without this, a task paused while its tab still sits on about:blank
+  // (e.g. a bridge mission pausing for approval before first navigation) can
+  // never resume ("No usable live workspace tab available for rebinding").
+  const ownPrimaryLive = (() => {
+    const primaryId = task.tabCoordination?.primaryTabId ?? task.rootTabId;
+    if (typeof primaryId !== "number" || !liveIds.has(primaryId)) return null;
+    const owned = task.tabCoordination?.ownedTabs.find(
+      (entry) => entry.tabId === primaryId,
+    );
+    if (owned && owned.releasedAt != null) return null;
+    return primaryId;
+  })();
+
   if (usableLiveIds.size === 0) {
+    if (ownPrimaryLive != null) {
+      return {
+        status: "safe",
+        tabId: ownPrimaryLive,
+        reason:
+          "Recovered onto the task's own live primary tab by identity (its URL is not yet durable).",
+      };
+    }
     return {
       status: "unsafe",
       reason: "No usable live workspace tab available for rebinding.",
@@ -389,6 +414,17 @@ export function selectResumeOwnedTab(
       status: "safe",
       tabId: preferredLive,
       reason: "Recovered onto the previously preferred task tab.",
+    };
+  }
+
+  // Last resort: unrelated usable tabs exist but none matched any owned-tab
+  // rule — the task's own primary tab by identity still beats failing.
+  if (ownPrimaryLive != null) {
+    return {
+      status: "safe",
+      tabId: ownPrimaryLive,
+      reason:
+        "Recovered onto the task's own live primary tab by identity (no stronger match existed).",
     };
   }
 

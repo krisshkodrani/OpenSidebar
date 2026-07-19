@@ -47,9 +47,9 @@ const X264 = [
 
 // Persistent brand + model credit, pinned to the bottom band of every scene.
 const MODEL_BAR =
-  "OpenSidebar   ·   Executor: Kimi K2.7 Code (vision)   ·   Planner: GLM 5.2   ·   Fireworks AI";
+  "OpenSidebar   ·   Executor: Kimi K2.7 Code (vision)   ·   Planner: GLM 5.2   ·   Judge: GPT-OSS 120B   ·   Fireworks AI";
 const MODEL_LINE =
-  "Executor: Kimi K2.7 Code (vision)   ·   Planner: GLM 5.2   ·   served on Fireworks AI";
+  "Executor: Kimi K2.7 Code (vision)   ·   Planner: GLM 5.2   ·   Judge: GPT-OSS 120B   ·   served on Fireworks AI";
 
 // ---- the shows ------------------------------------------------------------
 // Two collages from one script: pick with `--show servicenow|fixtures`.
@@ -84,11 +84,13 @@ const FIXTURES = {
     { task: "settings-provider", title: "Bring your own provider", subtitle: "Pick your provider stack and models — your key, your choice", caption: "Choosing the provider stack: Fireworks · Moonshot · OpenRouter · Xiaomi" },
     { task: "online-shop", title: "Shop and check out", subtitle: "Adds to cart, applies a coupon, and completes the order", caption: "Add Air Zoom Pegasus 41 to cart · apply coupon SAVE10 · express shipping · checkout" },
     { task: "showcase-ashby-application", title: "Apply for a job", subtitle: "Fills a real recruiting application, field by field", caption: "Filling an Ashby job application from the candidate's details (stops before submit)" },
-    { task: "vendor-onboarding-wizard", title: "Complete a multi-step wizard", subtitle: "Works a conditional form across steps, then reviews before submit", caption: "Completing a multi-step vendor-onboarding wizard, then submitting after review" },
+    { task: "job-board", title: "Take on a long research task", subtitle: "Reviews a whole job board and recommends grounded matches — no hand-holding", caption: "Reviewing 11 listings and recommending the best matches for a senior React profile" },
+    { task: "release-coordination", title: "Checks its own work", subtitle: "A GPT-OSS 120B judge re-verifies high-risk results before they're accepted", caption: "Posts a release update — then a GPT-OSS 120B judge re-checks the reply before it's marked done" },
     { task: "cross-page-compose", title: "Read here, act there", subtitle: "Carries data across pages to finish the job", caption: "Reading the dashboard's Total Users, then drafting an email that reports it" },
+    { task: "fine-print-margin", title: "Reads the fine print", subtitle: "Zooms into 8-pixel canvas text no text-only bot can reach", caption: "Magnifying the chart's fine print on a canvas to read the Q3 net margin — 4.7%" },
     { task: "information-extraction", title: "Find and extract", subtitle: "Pages through a directory and pulls the requested fields", caption: "Finding Diana Chen in the directory and reporting her department and salary" },
   ],
-  outro: { title: "Any website today. Your enterprise apps next.", subtitle: "OpenSidebar", note: "Kimi K2.7 Code + GLM 5.2   ·   Fireworks AI" },
+  outro: { title: "Any website today. Your enterprise apps next.", subtitle: "OpenSidebar", note: "Kimi K2.7 Code + GLM 5.2 + GPT-OSS 120B judge   ·   Fireworks AI" },
 };
 
 const TRACEVIEWER = {
@@ -149,9 +151,11 @@ const PITCH = {
     { task: "cross-page-compose", title: "Read here, act there", subtitle: "Carries data across pages to finish the job", caption: "Reading the dashboard's Total Users, then drafting an email that reports it" },
     { task: "vendor-onboarding-wizard", title: "Complete a multi-step wizard", subtitle: "Works a conditional form across steps, then reviews before submit", caption: "Completing a multi-step vendor-onboarding wizard, then submitting after review" },
     { task: "showcase-ashby-application", title: "Apply for a job", subtitle: "Fills a real recruiting application — and pauses before the final submit", caption: "Filling an Ashby job application from the candidate's details (stops before submit)" },
+    { task: "fine-print-margin", title: "Reads the fine print", subtitle: "Zooms into 8-pixel canvas text no text-only bot can reach", caption: "Magnifying the chart's fine print on a canvas to read the Q3 net margin — 4.7%" },
     { task: "information-extraction", title: "Find and extract", subtitle: "Pages through a directory and pulls the requested fields", caption: "Finding Diana Chen in the directory and reporting her department and salary" },
     { section: "You stay in control", task: "settings-provider", title: "Bring your own provider", subtitle: "Swap providers and per-seat models — your key, nothing hardcoded", caption: "Provider stack: Fireworks · Moonshot · OpenRouter · Xiaomi, with per-seat model overrides" },
-    { task: "watch-restock", title: "Watch Mode", subtitle: "Leave it watching; it speaks up the moment the page changes", caption: 'Watching a product page — flagged "back in stock" the instant it flipped' },
+    { task: "watch-restock", title: "Watch Mode", subtitle: "Leave it watching; it speaks up the moment the page changes", caption: 'Watching a product page — flagged "back in stock" within seconds of the flip' },
+    { task: "release-coordination", title: "Checks its own work", subtitle: "A GPT-OSS 120B judge re-verifies high-risk results before they're accepted", caption: "Posts a release update — then a GPT-OSS 120B judge re-checks the reply before it's marked done" },
     { task: "traceviewer-session", title: "Built-in observability", subtitle: "An observability workspace records every run — decisions, screenshots, exact cost", caption: 'Inspecting a run in the observability workspace: 6 turns, 5/5 score, $0.062 total' },
     { task: "traceviewer-fleet", title: "Your fleet at a glance", subtitle: "Success rates, failure clusters, and spend across hundreds of runs", caption: "Reviewing 260 runs · 82% success · all stored locally, nothing leaves your machine" },
     { section: "Extendable — ServiceNow", task: "order-developer-laptop", title: "Built to be extended", subtitle: "ServiceNow support is an adapter — the same pattern fits your own enterprise apps", caption: 'Ordering 8× "Developer Laptop (Mac)" from the service catalog, end to end', sceneSec: 18 },
@@ -163,10 +167,17 @@ const PITCH = {
 // Store-accurate tour: the PITCH minus the observability scenes. The trace
 // viewer is dev-only (stripped from the production dist), so store assets must
 // never show it — a Chrome Web Store installer does not get that surface.
+// The fine-print and release-coordination scenes are pitch-only for now: they
+// were added to the site's full tour but the store tour's voiceover
+// (SPECS.store in add-voiceover.mjs) is timed to the prior scene set, so we
+// hold them out until the store cut is retimed (follow-up).
+const STORE_ONLY_EXCLUDED = new Set(["fine-print-margin", "release-coordination"]);
 const STORE = {
   out: "opensidebar-store-tour.mp4",
   intro: PITCH.intro,
-  scenes: PITCH.scenes.filter((s) => !s.task.startsWith("traceviewer-")).map((s) => ({ ...s })),
+  scenes: PITCH.scenes
+    .filter((s) => !s.task.startsWith("traceviewer-") && !STORE_ONLY_EXCLUDED.has(s.task))
+    .map((s) => ({ ...s })),
   outro: { title: "Any website today. Your enterprise apps next.", subtitle: "OpenSidebar", note: "Install free · Bring your own key · Source on GitHub (MIT)" },
 };
 // (Section markers survive the filter: they live on online-shop, settings-provider,

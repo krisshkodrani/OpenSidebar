@@ -3,18 +3,9 @@ import type {
   UserWebsiteSkill,
   UserWebsiteSkillDraft,
 } from "../types";
-import {
-  liveValues,
-  reconcile,
-  type KnowledgeStore,
-  type SyncMap,
-} from "./knowledge-sync";
-import { HttpKnowledgeStore } from "./openclaw-client";
 import { chromePersistencePort } from "../background/environment/chrome";
 
 export const WEBSITE_SKILLS_STORAGE_KEY = "opensidebar:userWebsiteSkills";
-const WEBSITE_SKILLS_NAMESPACE = "website-skills";
-const OPENCLAW_GATEWAY_URL_KEY = "opensidebar:openClawGatewayUrl";
 export const RECORD_SKILL_INTRO_DISMISSED_KEY =
   "opensidebar:recordSkillIntroDismissed";
 
@@ -96,63 +87,6 @@ export async function loadUserWebsiteSkills(
   const raw = result[WEBSITE_SKILLS_STORAGE_KEY];
   if (!Array.isArray(raw)) return [];
   return raw.filter(isUserWebsiteSkill).map(normalizeUserWebsiteSkill);
-}
-
-/** Resolve the OpenClaw knowledge store from the configured gateway URL, or null. */
-async function resolveKnowledgeStore(): Promise<KnowledgeStore | null> {
-  try {
-    if (typeof chrome !== "undefined" && chrome.storage?.local) {
-      const stored = await chromePersistencePort.local.get(
-        OPENCLAW_GATEWAY_URL_KEY,
-      );
-      const url = stored[OPENCLAW_GATEWAY_URL_KEY];
-      if (typeof url === "string" && url.trim()) {
-        return new HttpKnowledgeStore({ baseUrl: url.trim() });
-      }
-    }
-  } catch {
-    // No storage / gateway → local-only.
-  }
-  return null;
-}
-
-/**
- * Reconcile the local website-skills with OpenClaw's canonical store (RFC LP-8,
- * M3). Additive + default-off: with no gateway configured it returns the local
- * skills unchanged (no network), preserving standalone operation. When a gateway
- * is set, last-writer-wins merges local ↔ remote (the local array stays the
- * single local source of truth — no separate cache key).
- */
-export async function syncUserWebsiteSkills(
-  storage: WebsiteSkillsStorageArea = chromeWebsiteSkillsStorage(),
-  store?: KnowledgeStore | null,
-): Promise<UserWebsiteSkill[]> {
-  const local = await loadUserWebsiteSkills(storage);
-  const knowledgeStore =
-    store !== undefined ? store : await resolveKnowledgeStore();
-  if (!knowledgeStore) return local;
-
-  const localMap: SyncMap = {};
-  for (const skill of local) {
-    localMap[skill.id] = { value: skill, updatedAt: skill.updatedAt ?? 0 };
-  }
-
-  const remoteMap = await knowledgeStore.getAll(WEBSITE_SKILLS_NAMESPACE);
-  const { merged, push, pull } = reconcile(localMap, remoteMap);
-
-  if (push.length > 0) {
-    const toPush: SyncMap = {};
-    for (const key of push) toPush[key] = merged[key];
-    await knowledgeStore.putItems(WEBSITE_SKILLS_NAMESPACE, toPush);
-  }
-
-  if (pull.length === 0) return local;
-
-  const mergedSkills = (Object.values(liveValues(merged)) as UserWebsiteSkill[])
-    .filter(isUserWebsiteSkill)
-    .map(normalizeUserWebsiteSkill);
-  await storage.set({ [WEBSITE_SKILLS_STORAGE_KEY]: mergedSkills });
-  return mergedSkills;
 }
 
 export async function saveUserWebsiteSkill(

@@ -2,9 +2,9 @@
  * Thick, intent-level browser tools (RFC LP-8, M2 "The Bridge").
  *
  * These are deliberately NOT DOM primitives (`click`, `type`). Each tool maps to
- * a full internal `AgentLoop` run inside the OpenSidebar extension — OpenClaw
+ * a full internal `AgentLoop` run inside the OpenSidebar extension — the caller
  * issues one intent and gets one result. This keeps the strategic/tactical
- * boundary clean: OpenClaw decides *what*, OpenSidebar owns *how*.
+ * boundary clean: the external brain decides *what*, OpenSidebar owns *how*.
  *
  * `mechanical` tools are direct page operations; `intent` tools wrap a multi-turn
  * agent run that may return `needs_human` (CAPTCHA/auth/ambiguity).
@@ -111,6 +111,26 @@ export const BROWSER_TOOLS: BrowserToolDef[] = [
         instruction: { type: "string", description: "What to accomplish in the browser." },
       },
       required: ["instruction"],
+    },
+  },
+  {
+    name: "browser_respond_approval",
+    kind: "mechanical",
+    description:
+      "Answer a consequential-action approval that a mission is paused on (a response with status 'needs_human' and an 'approval' block). Review the approval's context and dry-run evidence, then approve or deny. Approving resumes the mission and performs the action; denying refuses it and the mission continues without it. Answer before the approval's expiresAt, and do not start a new mission on the same session while one is pending — that stops the paused mission.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        approvalId: {
+          type: "string",
+          description: "The approvalId from the response's approval block.",
+        },
+        approved: {
+          type: "boolean",
+          description: "true to approve and perform the action, false to refuse it.",
+        },
+      },
+      required: ["approvalId", "approved"],
     },
   },
 ];

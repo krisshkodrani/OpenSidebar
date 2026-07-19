@@ -28,6 +28,7 @@ import {
   type BlockedAction,
   type RecentAction,
 } from "./loop-helpers";
+import { applyFieldReReadTracking } from "./fill-checklist-policy";
 import {
   recordFailedToolExecution,
   recordSuccessfulToolExecution,
@@ -280,7 +281,16 @@ export async function executeParallelToolCalls(
         });
         return {
           toolCall,
-          result: cacheLookup.cachedResult,
+          // LP-17: a redundant re-read usually lands here (cache hit) — the
+          // fill-checklist note must ride along or the model never sees it.
+          result: applyFieldReReadTracking({
+            toolName,
+            args,
+            result: cacheLookup.cachedResult,
+            snapshot: host.context.getSnapshot(),
+            ledger: host.context.getFieldReadLedger(),
+            turn: host.turnCount,
+          }),
           error: null,
         };
       }
@@ -741,6 +751,15 @@ export async function executeParallelToolCalls(
         if (autocompleteRewriteReason) {
           result = `${result}\n${autocompleteRewriteReason}`;
         }
+        // LP-17 fill checklist: ledger the read + append a truthful re-read note.
+        result = applyFieldReReadTracking({
+          toolName,
+          args,
+          result,
+          snapshot: preActionSnapshot,
+          ledger: host.context.getFieldReadLedger(),
+          turn: host.turnCount,
+        });
         host.trackListDetailToolSuccess(toolName, args, preActionSnapshot);
         host.recordCompletionToolEvidence?.(
           toolName,

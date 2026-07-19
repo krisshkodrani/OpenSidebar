@@ -140,6 +140,32 @@ export const DEFAULT_MODEL_PRICING: ModelPricing[] = [
   },
   {
     providerId: "fireworks",
+    // minimax-m3: unified-VL executor candidate under A/B vs kimi-k2p7-code
+    // (2026-07-17). Fireworks serverless rate, confirmed against the M3 launch
+    // and pricing pages; prompt caching cuts effective input ~90%.
+    model: "accounts/fireworks/models/minimax-m3",
+    inputUsdPerMillion: 0.3,
+    outputUsdPerMillion: 1.2,
+    cachedInputUsdPerMillion: 0.03,
+    effectiveDate: "2026-07-17",
+    sourceUrl: "https://fireworks.ai/blog/minimax-m3-launch",
+    confidence: "official",
+  },
+  {
+    providerId: "fireworks",
+    // qwen3p7-plus: multimodal executor candidate (eval 2026-07-17), priced
+    // between minimax-m3 and kimi-k2p7-code. Fireworks serverless rate per the
+    // Qwen 3.7 Plus launch + pricing pages.
+    model: "accounts/fireworks/models/qwen3p7-plus",
+    inputUsdPerMillion: 0.4,
+    outputUsdPerMillion: 1.6,
+    cachedInputUsdPerMillion: 0.08,
+    effectiveDate: "2026-07-17",
+    sourceUrl: "https://fireworks.ai/blog/qwen-3p7-plus",
+    confidence: "official",
+  },
+  {
+    providerId: "fireworks",
     // GLM 5.2 as planner/orchestrator candidate. Pricing is a placeholder
     // estimate — verify against Fireworks' published rate before trusting cost.
     model: "accounts/fireworks/models/glm-5p2",

@@ -20,6 +20,12 @@ const MAX_NOTE_LEN = 240;
 const MAX_TASK_CONTEXT_NODES = 5;
 export const MAX_HANDOFF_DEPTH = 2;
 const MIN_ASSUMPTION_TOKEN_LEN = 4;
+// LP-17b CM-2 render belts (parse-side caps live in the planners): the
+// instruction is re-billed in EVERY executor turn, so runaway planner output
+// must be bounded here too. Objective is deliberately NEVER capped — it can
+// carry the byte-exact original request.
+const MAX_RENDERED_ASSUMPTIONS = 6;
+const MAX_SUCCESS_CRITERIA_LEN = 2000;
 const MAX_ORIGINAL_QUERY_EXCERPT = 420;
 const MAX_LITERAL_FORM_QUERY_EXCERPT = 6000;
 const LIST_DETAIL_REVIEW_SKILL_ID = "list-detail-review-loop";
@@ -586,11 +592,18 @@ export function buildExecutorInstruction(
   const reflexionContext = formatReflexionContext(node.reflexionLog);
   const assumptions =
     node.assumptions.length > 0
-      ? node.assumptions.map((item) => `- ${normalizeNote(item)}`).join("\n")
+      ? node.assumptions
+          .slice(0, MAX_RENDERED_ASSUMPTIONS)
+          .map((item) => `- ${normalizeNote(item)}`)
+          .join("\n")
       : "- No explicit assumptions from planner.";
+  const successCriteria =
+    node.successCriteria.length > MAX_SUCCESS_CRITERIA_LEN
+      ? node.successCriteria.slice(0, MAX_SUCCESS_CRITERIA_LEN) + " […]"
+      : node.successCriteria;
   const sections = [
     `Objective: ${objectiveOverride || node.description}`,
-    `Success criteria: ${node.successCriteria}`,
+    `Success criteria: ${successCriteria}`,
     "",
   ];
   if (reflexionContext) {
