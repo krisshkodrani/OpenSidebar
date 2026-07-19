@@ -81,11 +81,12 @@ async function complete(
         model,
         max_tokens: maxTokens,
         temperature: 0,
-        // Without JSON mode, a reasoning model deliberates in prose and burns
-        // the whole budget without ever emitting the object — proven live on a
-        // 31K-char diff: 15K characters of thinking, truncated mid-sentence,
-        // zero JSON. "STRICT JSON only" in the prompt does not prevent this.
-        response_format: { type: "json_object" },
+        // NO json_object mode on purpose. It gets parseable output by
+        // suppressing deliberation — the same diff returns `{"findings":[]}`
+        // instantly, an answer with no analysis behind it. These are reasoning
+        // models: let them think and give them room. Fireworks returns the
+        // chain of thought in a separate `reasoning_content` field and leaves
+        // `content` as clean JSON, so thinking costs nothing at parse time.
         messages: [
           { role: "system", content: system },
           { role: "user", content: user },
@@ -94,9 +95,28 @@ async function complete(
     });
     if (res.ok) {
       const json = (await res.json()) as {
-        choices?: Array<{ message?: { content?: string } }>;
+        choices?: Array<{
+          finish_reason?: string;
+          message?: { content?: string; reasoning_content?: string };
+        }>;
+        usage?: { completion_tokens?: number };
       };
-      return json.choices?.[0]?.message?.content ?? "";
+      const choice = json.choices?.[0];
+      // Truncation is the failure that looks like success: the model is cut off
+      // mid-thought, `content` holds prose or nothing, and a naive parse yields
+      // "no findings". Detect it here rather than inferring it downstream.
+      if (choice?.finish_reason === "length") {
+        throw new Error(
+          `${model} hit the ${maxTokens}-token budget while thinking ` +
+            `(reasoning ${choice.message?.reasoning_content?.length ?? 0} chars) — ` +
+            "raise max_tokens; it never reached its answer",
+        );
+      }
+      console.log(
+        `${model}: ${json.usage?.completion_tokens ?? "?"} completion tokens, ` +
+          `${choice?.message?.reasoning_content?.length ?? 0} chars reasoning`,
+      );
+      return choice?.message?.content ?? "";
     }
     lastError = `${res.status} ${await res.text()}`;
     if (res.status !== 429 && res.status < 500) break;
@@ -126,7 +146,7 @@ const reviewRaw = await complete(
   REVIEWER_MODEL,
   REVIEW_SYSTEM_PROMPT,
   buildReviewPrompt(pr.title, pr.body ?? "", selected),
-  8192,
+  32_000,
 );
 const reviewJson = extractJson(reviewRaw);
 // Never post a clean bill of health we did not earn. An unanswered review must
@@ -149,7 +169,7 @@ const verdicts = await Promise.all(
       JUDGE_MODEL,
       JUDGE_SYSTEM_PROMPT,
       buildJudgePrompt(finding, selected),
-      512,
+      2_048,
     );
     const verdict = parseVerdict(extractJson(raw));
     console.log(
