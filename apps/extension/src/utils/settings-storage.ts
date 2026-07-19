@@ -68,6 +68,51 @@ export function normalizeMaxImagePromptTokenEstimate(value: unknown): number {
     : DEFAULT_MAX_IMAGE_PROMPT_TOKEN_ESTIMATE;
 }
 
+/**
+ * Provider modes whose planner/writer seats are served by Fireworks
+ * (llm/client.ts builds the Fireworks planner pool for exactly these). Other
+ * modes route those seats to Groq/OpenRouter, where the catalog-style ids are
+ * the correct ones — so the rewrite below must not touch them.
+ */
+const FIREWORKS_SEAT_PROVIDER_MODES = new Set(["fireworks", "cerebras-fireworks"]);
+
+/**
+ * Fireworks addresses models as `accounts/fireworks/models/...`; the
+ * catalog-style `openai/...` id 404s on that endpoint (proven live — the
+ * judge-seat incident). The curated Fireworks catalog offered the catalog-form
+ * GPT-OSS id until it was corrected, so a seat chosen before then is persisted
+ * broken. Unlike `executorModel` — which self-heals because an ineligible id is
+ * dropped below — `plannerModel`/`writerModel` have no normalizer, so without
+ * this rewrite the stored id keeps 404ing after the fix ships.
+ */
+const FIREWORKS_SEAT_MODEL_ID_REWRITES: Readonly<Record<string, string>> = {
+  "openai/gpt-oss-120b": "accounts/fireworks/models/gpt-oss-120b",
+};
+
+const FIREWORKS_MIGRATED_SEATS = ["plannerModel", "writerModel"] as const;
+
+/**
+ * Repair persisted Fireworks seat ids in place. Returns true when something
+ * changed (the caller writes the settings back).
+ */
+export function migrateFireworksSeatModelIds(
+  raw: Record<string, unknown>,
+): boolean {
+  if (!FIREWORKS_SEAT_PROVIDER_MODES.has(String(raw.providerMode))) {
+    return false;
+  }
+  let changed = false;
+  for (const seat of FIREWORKS_MIGRATED_SEATS) {
+    const current = raw[seat];
+    if (typeof current !== "string") continue;
+    const replacement = FIREWORKS_SEAT_MODEL_ID_REWRITES[current];
+    if (!replacement) continue;
+    raw[seat] = replacement;
+    changed = true;
+  }
+  return changed;
+}
+
 export function normalizeEnabledSkillPackIds(value: unknown): string[] {
   if (!Array.isArray(value)) return [...DEFAULT_ENABLED_SKILL_PACK_IDS];
   const normalized: string[] = [];
@@ -264,6 +309,10 @@ export async function loadSettings(
     !isExecutorEligible(raw.executorModel, raw.providerMode as ProviderMode)
   ) {
     delete raw.executorModel;
+    shouldCleanRemovedSettings = true;
+  }
+
+  if (migrateFireworksSeatModelIds(raw)) {
     shouldCleanRemovedSettings = true;
   }
 

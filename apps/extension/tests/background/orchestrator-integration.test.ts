@@ -24,7 +24,6 @@ type MockLoopConfig = {
     approved?: boolean;
     answer?: string;
   } | null;
-  completionDeterministicAcceptanceEnabled?: boolean;
 };
 
 type MockCompletedResult = {
@@ -485,25 +484,6 @@ describe("Orchestrator integration join tests", () => {
     expect(capturedInstructions[0].instruction).toContain(
       "Objective: Tell me what page I am on.",
     );
-  });
-
-  test("passes deterministic completion rollback flag to executor loops", async () => {
-    plannerBuildNodesImpl = async () => [makeNode("n1", "select answers")];
-
-    const orchestrator = new Orchestrator(orchestratorDeps);
-    activeOrchestrator = orchestrator;
-    await orchestrator.startTask({
-      ...makeInput("select the answers on each quiz page"),
-      settings: {
-        ...baseSettings,
-        completionDeterministicAcceptanceEnabled: false,
-      },
-    });
-
-    expect(createdLoopConfigs[0]).toMatchObject({
-      nodeId: "n1",
-      completionDeterministicAcceptanceEnabled: false,
-    });
   });
 
   test("passes Fireworks provider settings to verifier and replanner", async () => {
