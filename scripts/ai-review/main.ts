@@ -25,6 +25,7 @@ import {
   splitDiff,
   JUDGE_SYSTEM_PROMPT,
   REVIEW_SYSTEM_PROMPT,
+  TS_REVIEW_SYSTEM_PROMPT,
   type Finding,
 } from "./review";
 
@@ -181,29 +182,45 @@ console.log(
 // Every reviewable file gets looked at. Batching (rather than truncating) is
 // the whole point: a review that silently skips half a PR still prints a
 // verdict, which is worse than no review at all.
+// Two lenses per batch. Correctness asks "does this do the wrong thing?";
+// TypeScript asks "do the types claim a guarantee the runtime does not?".
+// They miss different things, so one pass leaves half the ground unread.
+const LENSES = [
+  { name: "correctness", prompt: REVIEW_SYSTEM_PROMPT },
+  { name: "typescript", prompt: TS_REVIEW_SYSTEM_PROMPT },
+];
+
 const proposed: Finding[] = [];
 for (const [index, batch] of batches.entries()) {
   console.log(
     `batch ${index + 1}/${batches.length}: ${batch.map((f) => f.path).join(", ")}`,
   );
-  const raw = await complete(
-    REVIEWER_MODEL,
-    REVIEW_SYSTEM_PROMPT,
-    buildReviewPrompt(pr.title, pr.body ?? "", batch),
-    32_000,
+  const perLens = await Promise.all(
+    LENSES.map(async (lens) => {
+      const raw = await complete(
+        REVIEWER_MODEL,
+        lens.prompt,
+        buildReviewPrompt(pr.title, pr.body ?? "", batch),
+        32_000,
+      );
+      const json = extractJson(raw);
+      // Never post a clean bill of health we did not earn. An unanswered pass
+      // must fail the run loudly — a silent [] reads as "reviewed, found none".
+      if (!isWellFormedReview(json)) {
+        console.error(`${lens.name} raw response (${raw.length} chars):`);
+        console.error(raw.slice(0, 2000));
+        throw new Error(
+          `batch ${index + 1} ${lens.name} lens did not return a findings object — refusing to report a clean review`,
+        );
+      }
+      const found = parseFindings(json);
+      console.log(`  ${lens.name}: ${found.length} finding(s)`);
+      return found;
+    }),
   );
-  const json = extractJson(raw);
-  // Never post a clean bill of health we did not earn. An unanswered batch
-  // must fail the run loudly — a silent [] reads as "reviewed, nothing found".
-  if (!isWellFormedReview(json)) {
-    console.error(`reviewer raw response (${raw.length} chars):`);
-    console.error(raw.slice(0, 2000));
-    throw new Error(
-      `batch ${index + 1} did not return a findings object — refusing to report a clean review`,
-    );
-  }
-  proposed.push(...parseFindings(json));
+  proposed.push(...perLens.flat());
 }
+
 console.log(`reviewer proposed ${proposed.length} finding(s)`);
 
 // Adjudicate independently and concurrently — one finding's verdict must not
