@@ -65,7 +65,7 @@ OpenSidebar runs an autonomous agent loop inside a Chrome side panel: it perceiv
 - **Remembers what matters.** A local personal profile you review yourself (sensitive fields are consent-gated and encrypted at rest), per-site skills you record once and reuse, and checkpoints that let tasks survive service-worker restarts. See [Personal Profile](./docs/personal-profile.md).
 - **Yours to inspect.** Every session produces a full-fidelity trace you can replay in the built-in [trace viewer](#trace-viewer). API keys live in Chrome storage; traffic goes from your browser to the providers you configure — your LLM provider, plus Groq if you enable voice — and nothing else.
 - **Speak or type.** Add a Groq API key and voice input transcribes straight into the composer (Whisper large-v3-turbo).
-- **Extendable.** Optional OpenClaw "brain" integration (default-off) exposes the browser as thick MCP tools to an external agent. See the [CHANGELOG](CHANGELOG.md) and `docs/engineering/` RFCs.
+- **Extendable.** An optional, default-off bridge exposes the browser as thick tools to an external agent — a local [pi](https://pi.dev) session can drive it directly (`.pi/extensions/`), and any MCP client can connect via `pnpm run mcp:browser`. See the [CHANGELOG](CHANGELOG.md) and `docs/engineering/` RFCs.
 
 ## Quick Start
 

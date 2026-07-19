@@ -21,6 +21,14 @@
         "command": "tsx scripts/log-server.ts"
       }
     },
+    "jobagent-console": {
+      "executor": "nx:run-commands",
+      "cache": false,
+      "options": {
+        "cwd": "{workspaceRoot}",
+        "command": "tsx scripts/jobagent-console/server.ts"
+      }
+    },
     "logs-tail": {
       "executor": "nx:run-commands",
       "cache": false,

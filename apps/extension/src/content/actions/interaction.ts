@@ -18,6 +18,11 @@ import {
   addDynamicTag,
   getCheckboxOrRadioControl,
   isOwnElement,
+  isComboboxLikeElement,
+  readComboboxCommittedValue,
+  isUploadFileInput,
+  querySelectorAllDeep,
+  isElementVisible,
 } from "../tagging";
 import {
   staleIdError,
@@ -319,6 +324,94 @@ function isAutocompleteLikeTextInput(el: HTMLInputElement): boolean {
   );
 }
 
+/** True when the element is a listbox option (or lives inside one). */
+function isListboxOptionTarget(el: Element): boolean {
+  const role = el.getAttribute("role")?.toLowerCase();
+  if (role === "option") return true;
+  return Boolean(el.closest?.('[role="option"], [role="listbox"]'));
+}
+
+/**
+ * Find the combobox that owns a clicked option. Custom selects (react-select)
+ * portal their menus to document.body, so structural containment is useless —
+ * resolve via the ARIA back-reference (aria-controls/aria-owns on the listbox
+ * id), falling back to the focused combobox (these widgets refocus their input
+ * after a selection commits).
+ */
+function findOwningCombobox(option: Element): Element | null {
+  const doc = option.ownerDocument;
+  const listbox = option.closest('[role="listbox"]');
+  const listboxId = listbox?.getAttribute("id");
+  if (listboxId) {
+    const owner = doc.querySelector(
+      `[aria-controls~="${CSS.escape(listboxId)}"], [aria-owns~="${CSS.escape(listboxId)}"]`,
+    );
+    if (owner) return owner;
+  }
+  const active = doc.activeElement;
+  if (active && active !== doc.body && isComboboxLikeElement(active)) {
+    return active;
+  }
+  return null;
+}
+
+/**
+ * Wait (bounded) for a custom-select commit to land: the framework updates the
+ * value-display node asynchronously after the option click, so poll briefly.
+ */
+async function waitForComboboxCommit(
+  target: Element | null,
+  timeoutMs = 450,
+): Promise<string | null> {
+  if (!target) return null;
+  const deadline = Date.now() + timeoutMs;
+  for (;;) {
+    const committed = readComboboxCommittedValue(target);
+    if (committed) return committed;
+    if (Date.now() >= deadline) return null;
+    await new Promise((r) => setTimeout(r, 75));
+  }
+}
+
+/**
+ * After clicking a listbox option, report whether the owning combobox now
+ * shows a committed value. Without this echo the agent gets "Clicked [N]" with
+ * no state signal, re-reads an (empty-looking) input, and loops on retries —
+ * the exact failure seen on real react-select forms.
+ */
+async function buildOptionCommitEcho(option: Element): Promise<string> {
+  const owner = findOwningCombobox(option);
+  const committed = await waitForComboboxCommit(owner);
+  if (committed) {
+    return ` — selection committed: field now shows "${committed.slice(0, 80)}"`;
+  }
+  return " — option clicked; no committed value visible on the field yet, read the field to confirm before retrying";
+}
+
+/**
+ * If clicking this element would open a native OS file-picker dialog (a file
+ * input, or a <label> that targets/wraps one), resolve that file input. The OS
+ * dialog cannot be observed, clicked, or dismissed by any script, so a click
+ * here strands the agent — it must use upload_file on the input instead.
+ */
+function resolveFileDialogTrigger(el: Element): HTMLInputElement | null {
+  if (isUploadFileInput(el)) return el as HTMLInputElement;
+  if (el.tagName === "LABEL") {
+    const forId = (el as HTMLLabelElement).htmlFor;
+    if (forId) {
+      const target = el.ownerDocument?.getElementById(forId);
+      if (target && isUploadFileInput(target)) {
+        return target as HTMLInputElement;
+      }
+    }
+    const wrapped = el.querySelector('input[type="file"]');
+    if (wrapped && isUploadFileInput(wrapped)) {
+      return wrapped as HTMLInputElement;
+    }
+  }
+  return null;
+}
+
 export async function executeClick(args: ClickElementArgs): Promise<{
   success: boolean;
   result: string;
@@ -329,6 +422,22 @@ export async function executeClick(args: ClickElementArgs): Promise<{
   const el = getTaggedElement(args.id);
   if (!el) {
     return staleIdError(args.id);
+  }
+
+  // Refuse clicks that would open an uncontrollable OS file dialog — redirect to
+  // upload_file on the actual file input.
+  const fileTrigger = resolveFileDialogTrigger(el);
+  if (fileTrigger) {
+    const fileTag = addDynamicTag(fileTrigger);
+    return {
+      success: false,
+      result:
+        `Clicking [${tagId}] would open a system file-picker dialog that cannot ` +
+        `be controlled by the agent. To attach a file, call upload_file with the ` +
+        `file input id [${fileTag}] and a URL — never click Attach/Choose file/` +
+        `Upload/Browse controls.`,
+      navigated: false,
+    };
   }
 
   // Scroll into view if needed
@@ -452,6 +561,10 @@ export async function executeClick(args: ClickElementArgs): Promise<{
     const targetInShadowOfBlocker =
       (finalTop as HTMLElement).shadowRoot?.contains(el) ?? false;
     if (blockerIsChild || targetInsideBlocker || targetInShadowOfBlocker) {
+      // Capture label + option-ness BEFORE clicking: committing a custom-select
+      // option unmounts its portaled menu.
+      const passLabel = getVisibleText(el).slice(0, 40);
+      const passIsOption = isListboxOptionTarget(el);
       for (let i = 0; i < count; i++) {
         rememberKeyboardTarget(el);
         await dispatchClickActivation(el, centerMouseOptions(el), {
@@ -466,9 +579,10 @@ export async function executeClick(args: ClickElementArgs): Promise<{
         el.closest("a") !== null ||
         isFormElement(el) ||
         (isButtonElement(el) && el.type === "submit");
+      const passEcho = passIsOption ? await buildOptionCommitEcho(el) : "";
       return {
         success: true,
-        result: `Clicked [${tagId}] ${el.tagName.toLowerCase()} "${getVisibleText(el).slice(0, 40)}" (overlay pass-through)`,
+        result: `Clicked [${tagId}] ${el.tagName.toLowerCase()} "${passLabel}" (overlay pass-through)${passEcho}`,
         navigated: mayNavigate,
       };
     }
@@ -489,6 +603,11 @@ export async function executeClick(args: ClickElementArgs): Promise<{
       !(el as HTMLAnchorElement).target) ||
     el.closest("form")?.querySelector("[type='submit']") === el;
 
+  // Capture label + option-ness BEFORE clicking: committing a custom-select
+  // option unmounts its portaled menu, so post-click reads can be stale.
+  const clickLabel = getVisibleText(el).slice(0, 40);
+  const clickedOption = isListboxOptionTarget(el);
+
   // Dispatch click events (possibly multiple times).
   // Use el.click() as the single click source (native, trusted) — the Playwright
   // approach. Do NOT also dispatch synthetic MouseEvent("click") as that causes
@@ -507,9 +626,10 @@ export async function executeClick(args: ClickElementArgs): Promise<{
   }
 
   const countSuffix = count > 1 ? ` (${count} times)` : "";
+  const commitEcho = clickedOption ? await buildOptionCommitEcho(el) : "";
   return {
     success: true,
-    result: `Clicked [${tagId}] ${el.tagName.toLowerCase()} "${getVisibleText(el).slice(0, 40)}"${countSuffix}`,
+    result: `Clicked [${tagId}] ${el.tagName.toLowerCase()} "${clickLabel}"${countSuffix}${commitEcho}`,
     navigated: willNavigate,
   };
 }
@@ -712,11 +832,114 @@ export function executeHover(args: { id: number }): {
   };
 }
 
-export function executeSelectOption(args: SelectOptionArgs): {
+/**
+ * Resolve the interactive input of a custom-select widget from whichever node
+ * got tagged — the inner <input>, or a wrapping combobox container.
+ */
+function resolveComboboxTarget(el: Element): Element | null {
+  if (isInputElement(el) && isAutocompleteLikeTextInput(el)) return el;
+  if (!isComboboxLikeElement(el)) return null;
+  if (isInputElement(el)) return el;
+  const inner = el.querySelector<HTMLInputElement>("input:not([type='hidden'])");
+  return inner ?? el;
+}
+
+const COMBOBOX_MENU_TIMEOUT_MS = 900;
+
+/**
+ * One-shot custom-select commit: open the menu, click the matching
+ * [role=option] (portal-aware — menus often render into document.body), then
+ * VERIFY the committed value on the field. Selectors are the ARIA combobox
+ * pattern only — no site-specific handling.
+ */
+async function executeComboboxSelect(
+  target: Element,
+  tagId: number,
+  requestedValue: string,
+): Promise<{ success: boolean; result: string; navigated: boolean }> {
+  const norm = (s: string) => s.trim().replace(/\s+/g, " ").toLowerCase();
+  const wanted = norm(requestedValue);
+  const doc = target.ownerDocument ?? document;
+
+  target.scrollIntoView({ behavior: "instant", block: "center" });
+  rememberKeyboardTarget(target);
+  if (isHtmlElement(target)) target.focus();
+  await dispatchClickActivation(target, centerMouseOptions(target), {
+    stabilizeGridClick: true,
+  });
+
+  // Wait for the option list (portals render into document.body).
+  const visibleOptions = async (): Promise<HTMLElement[]> => {
+    return querySelectorAllDeep(doc, '[role="option"]')
+      .filter((node): node is HTMLElement => isHtmlElement(node))
+      .filter((node) => isElementVisible(node));
+  };
+  let options: HTMLElement[] = [];
+  const deadline = Date.now() + COMBOBOX_MENU_TIMEOUT_MS;
+  for (;;) {
+    options = await visibleOptions();
+    if (options.length > 0 || Date.now() >= deadline) break;
+    await new Promise((r) => setTimeout(r, 75));
+  }
+  if (options.length === 0) {
+    return {
+      success: false,
+      result:
+        `Dropdown list did not open for [${tagId}]. ` +
+        `Click [${tagId}] to open it, then click the desired option.`,
+      navigated: false,
+    };
+  }
+
+  const texts = options.map((o) => norm(o.textContent ?? ""));
+  let matchIdx = texts.findIndex((t) => t === wanted);
+  if (matchIdx < 0) {
+    // Unique prefix/containment fallback ("Austria" vs "Austria (Österreich)").
+    const candidates = texts
+      .map((t, i) => ({ t, i }))
+      .filter(({ t }) => t.includes(wanted) || wanted.includes(t));
+    if (candidates.length === 1) matchIdx = candidates[0].i;
+  }
+  if (matchIdx < 0) {
+    const available = options
+      .slice(0, 8)
+      .map((o) => `"${(o.textContent ?? "").trim().slice(0, 40)}"`)
+      .join(", ");
+    return {
+      success: false,
+      result: `No option matching "${requestedValue}" in the open list for [${tagId}]. Visible options: ${available}`,
+      navigated: false,
+    };
+  }
+
+  const option = options[matchIdx];
+  const optionLabel = (option.textContent ?? "").trim().slice(0, 60);
+  await dispatchClickActivation(option, centerMouseOptions(option), {
+    stabilizeGridClick: true,
+  });
+
+  const committed = await waitForComboboxCommit(target);
+  if (committed) {
+    return {
+      success: true,
+      result: `Selected "${optionLabel}" in [${tagId}] (custom dropdown) — field now shows "${committed.slice(0, 80)}"`,
+      navigated: false,
+    };
+  }
+  return {
+    success: true,
+    result:
+      `Clicked option "${optionLabel}" for [${tagId}], but no committed value is ` +
+      `visible on the field yet — read the field to confirm before retrying.`,
+    navigated: false,
+  };
+}
+
+export async function executeSelectOption(args: SelectOptionArgs): Promise<{
   success: boolean;
   result: string;
   navigated: boolean;
-} {
+}> {
   const tagId = normalizeTagId(args.id);
   const el = getTaggedElement(args.id);
   if (!el) {
@@ -724,9 +947,16 @@ export function executeSelectOption(args: SelectOptionArgs): {
   }
 
   if (!isSelectElement(el)) {
+    // Custom-select combobox (react-select-style): no native <select> exists.
+    // Do the full open → pick → verify sequence in ONE action, because leaving
+    // the agent to click the option itself gives it no commit signal.
+    const comboboxTarget = resolveComboboxTarget(el);
+    if (comboboxTarget) {
+      return executeComboboxSelect(comboboxTarget, tagId, args.value);
+    }
     return {
       success: false,
-      result: `Element [${tagId}] is not a <select> element`,
+      result: `Element [${tagId}] is not a <select> element or a custom dropdown (combobox)`,
       navigated: false,
     };
   }

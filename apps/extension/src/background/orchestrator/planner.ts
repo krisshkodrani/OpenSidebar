@@ -1,4 +1,4 @@
-import { TaskPlanner } from "../agent/planner";
+import { MAX_PLANNER_ASSUMPTIONS, TaskPlanner } from "../agent/planner";
 import type { LLMClientOptions } from "../llm";
 import type { TokenUsage } from "../llm/types";
 import type { Difficulty } from "../agent/constants";
@@ -14,6 +14,9 @@ import {
 } from "../agent/task-contract";
 import { BuildNodesResult, PlannerAssignment, TaskNode } from "./types";
 import { annotateParallelContracts } from "./parallel-contract";
+// Re-exported so the ratcheted orchestrator/index.ts can import it from its
+// existing "./planner" group (LP-17 P6).
+export { qualifiesForDirectSingleNode } from "./planner-gate-policy";
 import {
   getSkillDescriptor,
   selectPrimarySkill,
@@ -105,6 +108,10 @@ function sanitizePlannerAssignment(raw: unknown): PlannerAssignment | null {
       const normalized = assumption.trim();
       if (normalized.length === 0) continue;
       if (!assumptions.includes(normalized)) assumptions.push(normalized);
+      // LP-17b CM-2: reasoning planners emit sprawling assumption lists
+      // (take 6: ~48 items / 11.4K chars, re-billed every executor turn).
+      // The first few carry the signal.
+      if (assumptions.length >= MAX_PLANNER_ASSUMPTIONS) break;
     }
   }
 
@@ -471,6 +478,20 @@ function collapsePaginatedTableScanNodes(
     : nodes;
 }
 
+/**
+ * LP-17b CM-3: cap for planner prose appended AFTER the verbatim original
+ * request in a merged/rescoped node description. The request is the
+ * contract; anything beyond this is restatement billed every turn.
+ */
+const MAX_APPENDED_PLANNER_PROSE = 400;
+
+function truncateAppendedPlannerProse(text: string): string {
+  const compacted = compactText(text);
+  return compacted.length > MAX_APPENDED_PLANNER_PROSE
+    ? compacted.slice(0, MAX_APPENDED_PLANNER_PROSE) + " […]"
+    : compacted;
+}
+
 function shouldPreserveSeparateFormUpdateNodes(
   nodes: TaskNode[],
   query: string,
@@ -591,10 +612,14 @@ function collapseSkillOwnedWorkflowNodes(
         .join(" "),
     );
   } else {
+    // LP-17b CM-3: the appended per-node descriptions are planner
+    // restatement — the full request is already present verbatim above.
     description = compactText(
       [
         `Complete the workflow for the original request: ${taskLabelQuery}`,
-        ...nodes.map((node) => node.description),
+        truncateAppendedPlannerProse(
+          nodes.map((node) => node.description).join(" "),
+        ),
       ].join(" "),
     );
     successCriteria = compactText(
@@ -650,6 +675,184 @@ function collapseSkillOwnedWorkflowNodes(
   ];
 }
 
+const VERIFY_ONLY_HEAD =
+  /^\s*(?:verify|confirm|check|ensure|validate|double-check)\b/i;
+const VERIFY_NODE_NAVIGATION =
+  /\b(?:return\w*|go(?:ing)? back|back to|navigat\w*|open\w*|visit\w*)\b/i;
+const VERIFY_NODE_DELIVERABLE =
+  /\b(?:report\w*|read\w*|extract\w*|record\w*|note\w*|tell\w*|answer\w*|summari[sz]\w*)\b/i;
+
+/**
+ * LP-17 P5: drop a trailing verify-only node. Live plans appended steps like
+ * "Verify the page is visible" AFTER the goal was delivered — a whole extra
+ * executor session (~12K+ tokens) doing no new work; the executor's done()
+ * gate already verifies. Deliberately narrow: never drops return legs
+ * (navigation verbs), deliverable steps (report/read/extract), URL-bearing
+ * steps, write-capable steps, or anything not depending solely on its
+ * predecessor. The dropped node's criteria and gate fold into the
+ * predecessor so nothing observable is lost.
+ */
+export function dropTrailingVerifyOnlyNode(nodes: TaskNode[]): TaskNode[] {
+  if (nodes.length < 2) return nodes;
+  const last = nodes[nodes.length - 1];
+  const prev = nodes[nodes.length - 2];
+  if (!VERIFY_ONLY_HEAD.test(last.description)) return nodes;
+  if (VERIFY_NODE_NAVIGATION.test(last.description)) return nodes;
+  if (VERIFY_NODE_DELIVERABLE.test(last.description)) return nodes;
+  if (last.toolProfile && last.toolProfile !== "read_only") return nodes;
+  if (/https?:\/\//i.test(last.description)) return nodes;
+  const dependsOnlyOnPrev =
+    last.dependencies.length === 0 ||
+    (last.dependencies.length === 1 && last.dependencies[0] === prev.id);
+  if (!dependsOnlyOnPrev) return nodes;
+
+  const merged: TaskNode = {
+    ...prev,
+    successCriteria: compactText(
+      dedupeStrings(
+        [prev.successCriteria, last.successCriteria].filter(Boolean),
+      ).join(" "),
+    ),
+    verificationGate: last.verificationGate
+      ? { ...last.verificationGate, action: "call_done" }
+      : prev.verificationGate,
+    status: "pending",
+    retries: 0,
+    result: undefined,
+    error: undefined,
+  };
+  return [...nodes.slice(0, -2), merged];
+}
+
+const SAME_PAGE_COLLAPSE_MAX_NODES = 5;
+const SAME_PAGE_COLLAPSE_MAX_DESCRIPTION_CHARS = 700;
+const NODE_NAVIGATION_VERB =
+  /\b(?:navigate to|go(?:ing)? to|open(?:ing)? (?:a )?new tab|visit\w*|return\w* to|back to)\b/i;
+// "Buy the FIRST item" / "buy the SECOND item" — an itemwise iteration whose
+// per-item navigation is implied, never spelled out. Two or more ordinal-
+// target steps mean the chain spans item pages, not one page.
+const ITEMWISE_ORDINAL_TARGET =
+  /\b(?:first|second|third|fourth|fifth|next|another)\b[\w\s-]{0,24}\b(?:item|record|entry|row|product|listing|application|ticket|task)s?\b/i;
+
+function nodeUrlOrigins(nodes: TaskNode[]): Set<string> {
+  const origins = new Set<string>();
+  for (const node of nodes) {
+    for (const match of node.description.matchAll(
+      /https?:\/\/[^\s"'<>]+/gi,
+    )) {
+      try {
+        origins.add(new URL(match[0]).origin.toLowerCase());
+      } catch {
+        origins.add(match[0].toLowerCase());
+      }
+    }
+  }
+  return origins;
+}
+
+/**
+ * LP-17 P7: merge a serialized chain of same-page, same-skill nodes into one.
+ * Live plans split sequential single-page work (add-to-cart → coupon →
+ * checkout) into 4-5 serialized nodes, each spawning a fresh executor
+ * session (~12-35K tokens of context) and each a link in a dependency chain
+ * whose failure kills everything downstream. Serialized + same page + same
+ * skill = no parallelism gained, pure overhead.
+ *
+ * Load-bearing guard: cross-view plans always contain a navigation step (the
+ * prompt's VIEW-STATE rule), so refusing to merge across navigation verbs or
+ * distinct origins keeps genuinely multi-page plans intact. The user's
+ * explicit "separate updates" phrasing also opts out.
+ */
+export function collapseSameContextSequentialNodes(
+  nodes: TaskNode[],
+  query: string,
+  pageTitle?: string,
+  pageUrl?: string,
+  skillCatalogOptions?: SkillCatalogOptions,
+  displayQuery?: string,
+): TaskNode[] {
+  if (nodes.length < 2 || nodes.length > SAME_PAGE_COLLAPSE_MAX_NODES) {
+    return nodes;
+  }
+  const taskLabelQuery = displayQueryOrFallback(query, displayQuery);
+  if (shouldPreserveSeparateFormUpdateNodes(nodes, taskLabelQuery)) {
+    return nodes;
+  }
+  // Pure chain: each node depends exactly on its predecessor.
+  for (let i = 0; i < nodes.length; i++) {
+    const deps = nodes[i].dependencies;
+    if (i === 0 ? deps.length !== 0 : !(deps.length === 1 && deps[0] === nodes[i - 1].id)) {
+      return nodes;
+    }
+  }
+  if (
+    nodes.some(
+      (node) =>
+        node.toolProfile === "navigate" ||
+        NODE_NAVIGATION_VERB.test(node.description),
+    )
+  ) {
+    return nodes;
+  }
+  if (nodeUrlOrigins(nodes).size > 1) return nodes;
+  if (
+    nodes.filter((node) => ITEMWISE_ORDINAL_TARGET.test(node.description))
+      .length >= 2
+  ) {
+    return nodes;
+  }
+
+  const description = compactText(
+    `Complete these steps in order on the current page: ${nodes
+      .map((node) => node.description)
+      .join("; ")}`,
+  );
+  if (description.length > SAME_PAGE_COLLAPSE_MAX_DESCRIPTION_CHARS) {
+    return nodes;
+  }
+
+  const firstNode = nodes[0];
+  const lastGate = [...nodes]
+    .reverse()
+    .find((node) => node.verificationGate)?.verificationGate;
+  // Per-step skill picks fragment naturally (fill steps → form skill, cart
+  // step → cart skill), so re-select for the WHOLE merged workflow instead
+  // of requiring homogeneity or inheriting step 1's pick.
+  const mergedSkill = selectPrimarySkill({
+    query,
+    objective: description,
+    successCriteria: description,
+    pageTitle,
+    pageUrl,
+    ...skillCatalogOptions,
+  });
+  return [
+    {
+      ...firstNode,
+      selectedSkillId: mergedSkill?.id,
+      selectedSkillReason: mergedSkill?.reason,
+      description,
+      successCriteria: compactText(
+        dedupeStrings(nodes.map((node) => node.successCriteria)).join(" "),
+      ),
+      allowedTools: unionTools(nodes),
+      assumptions: dedupeStrings(nodes.flatMap((node) => node.assumptions)),
+      handoffArtifacts: nodes.flatMap((node) => node.handoffArtifacts),
+      // The merged node IS the final node: a carried gate must finish the
+      // task, and no single step's toolProfile may restrict the union.
+      verificationGate: lastGate
+        ? { ...lastGate, action: "call_done" }
+        : undefined,
+      toolProfile: undefined,
+      dependencies: [],
+      status: "pending",
+      retries: 0,
+      result: undefined,
+      error: undefined,
+    },
+  ];
+}
+
 function preserveOriginalScopeForSingleSkillOwnedNode(
   nodes: TaskNode[],
   query: string,
@@ -683,7 +886,25 @@ function preserveOriginalScopeForSingleSkillOwnedNode(
   const node = nodes[0];
   const compactQuery = displayQueryOrFallback(query, displayQuery);
   const compactDescription = compactText(node.description);
-  if (!compactQuery || compactDescription.includes(compactQuery)) {
+  if (!compactQuery) return nodes;
+  if (compactDescription.includes(compactQuery)) {
+    // LP-17b CM-3: reasoning planners often embed the query verbatim in the
+    // objective and then append a large restatement tail (take 6: +4.8K
+    // chars re-billed every turn). The query IS the contract — keep it,
+    // trim the tail when it is disproportionate.
+    if (
+      compactDescription.length >
+      compactQuery.length + MAX_APPENDED_PLANNER_PROSE
+    ) {
+      return [
+        {
+          ...node,
+          description: compactText(
+            `Complete the workflow for the original request: ${compactQuery}`,
+          ),
+        },
+      ];
+    }
     return nodes;
   }
 
@@ -1005,6 +1226,15 @@ function applyWorkflowNodeCollapse(
     skillCatalogOptions,
     displayQuery,
   );
+  result = dropTrailingVerifyOnlyNode(result);
+  result = collapseSameContextSequentialNodes(
+    result,
+    query,
+    pageTitle,
+    pageUrl,
+    skillCatalogOptions,
+    displayQuery,
+  );
   result = preserveOriginalScopeForSingleSkillOwnedNode(
     result,
     query,
@@ -1216,6 +1446,33 @@ export class OrchestratorPlanner {
           count: nodes.length,
           selectedSkillId: nodes[0]?.selectedSkillId,
         },
+      );
+    }
+
+    const verifyTailDropped = dropTrailingVerifyOnlyNode(nodes);
+    if (verifyTailDropped !== nodes) {
+      nodes = verifyTailDropped;
+      logger.info(
+        "orchestrator",
+        "Dropped trailing verify-only node; criteria folded into predecessor",
+        { count: nodes.length },
+      );
+    }
+
+    const sameContextCollapsed = collapseSameContextSequentialNodes(
+      nodes,
+      query,
+      pageTitle,
+      pageUrl,
+      skillCatalogOptions,
+      displayQuery,
+    );
+    if (sameContextCollapsed !== nodes) {
+      nodes = sameContextCollapsed;
+      logger.info(
+        "orchestrator",
+        "Collapsed serialized same-page chain into a single node",
+        { count: nodes.length },
       );
     }
 
