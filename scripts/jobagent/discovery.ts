@@ -136,12 +136,128 @@ export interface ListingAssessment {
 const norm = (s: string) => s.toLowerCase().replace(/\s+/g, " ").trim();
 
 /**
+ * Location vocabulary. Boards write "remote" and then qualify it — "Remote
+ * (US)", "REMOTE (US ONLY, LA/SF preferred)", "Bengaluru, India (REMOTE)".
+ * A bare `location.includes("remote")` test treats all of those as reachable,
+ * which is how the first live sweep queued six jobs the operator cannot take.
+ * These lists let the qualifier be judged on the same deterministic terms as
+ * any other location.
+ */
+const EUROPE_ALIASES = ["europe", "european union", "eu", "eea", "emea", "cet", "cest"];
+const EUROPE_COUNTRIES = [
+  "austria", "belgium", "bulgaria", "croatia", "cyprus", "czechia",
+  "czech republic", "denmark", "estonia", "finland", "france", "germany",
+  "greece", "hungary", "iceland", "ireland", "italy", "latvia",
+  "liechtenstein", "lithuania", "luxembourg", "malta", "netherlands",
+  "norway", "poland", "portugal", "romania", "slovakia", "slovenia", "spain",
+  "sweden", "switzerland", "united kingdom", "uk", "great britain",
+];
+const EUROPE_TERMS = [...EUROPE_ALIASES, ...EUROPE_COUNTRIES];
+
+/**
+ * Geographies we can positively recognise as NOT Europe. Only a term on this
+ * list turns an unmatched qualifier into a reject — anything unrecognised
+ * ("UTC+3", "hybrid") is accepted with a risk, so a vocabulary gap can never
+ * silently drop a reachable job.
+ */
+const NON_EUROPE_TERMS = [
+  "us", "u.s.", "usa", "u.s.a.", "united states", "america", "americas",
+  "north america", "latam", "latin america", "south america", "canada",
+  "mexico", "brazil", "argentina", "colombia", "india", "apac", "asia",
+  "china", "japan", "singapore", "philippines", "indonesia", "vietnam",
+  "australia", "new zealand", "africa", "middle east", "uae", "israel",
+];
+
+const wordRe = (term: string) =>
+  new RegExp(`(^|[^a-z0-9])${term.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}([^a-z0-9]|$)`, "i");
+
+const mentions = (text: string, terms: string[]) => terms.some((t) => wordRe(t).test(text));
+
+/**
+ * Terms that satisfy one criteria entry. "Europe"/"EU" expands to the European
+ * countries so a listing that names only "Sweden" still matches an operator
+ * who wrote "Europe" — the first sweep rejected exactly that.
+ */
+function criteriaTerms(entry: string): string[] {
+  const e = norm(entry);
+  return EUROPE_ALIASES.includes(e) ? EUROPE_TERMS : [e];
+}
+
+const acceptedBy = (text: string, criteria: SearchCriteria) =>
+  (criteria.locations ?? []).some((l) => mentions(text, criteriaTerms(l)));
+
+/** Pull parenthesised qualifiers ("Remote (EU, Norway)") off the base text. */
+function splitQualifiers(raw: string): { base: string; qualifiers: string[] } {
+  const qualifiers: string[] = [];
+  let base = raw.replace(/\(([^)]*)\)/g, (_m, inner: string) => {
+    qualifiers.push(inner);
+    return " ";
+  });
+  // "Remote — EU only" / "Remote - EU"
+  const trailing = base.match(/\bremote\b\s*[—–-]\s*(.+)$/i);
+  if (trailing) {
+    qualifiers.push(trailing[1]);
+    base = base.replace(/\bremote\b\s*[—–-]\s*.+$/i, "remote");
+  }
+  if (!/[a-z0-9]/i.test(base)) return { base: norm(qualifiers.join(", ")), qualifiers: [] };
+  return { base: norm(base), qualifiers };
+}
+
+const splitPieces = (text: string) =>
+  text
+    .split(/\bor\b|[,/;|]/i)
+    .map(norm)
+    .filter((p) => p.length > 0);
+
+type LocationVerdict = { ok: boolean; reason: string; risk?: string };
+
+/**
+ * Is a "remote" listing remote *for this operator*? Accept when a qualifier
+ * names an acceptable place or there is no qualifier at all; reject only when
+ * every qualifier names a recognisably out-of-scope geography.
+ */
+function assessRemote(qualifiers: string[], criteria: SearchCriteria): LocationVerdict {
+  if (!criteria.remoteOk) return { ok: false, reason: "remote not acceptable per criteria" };
+  const pieces = qualifiers.flatMap(splitPieces).filter((p) => !/^remote$/.test(p));
+  if (pieces.length === 0) return { ok: true, reason: "remote, unqualified" };
+
+  const accepted = pieces.find((p) => acceptedBy(p, criteria));
+  if (accepted) return { ok: true, reason: `remote qualifier in scope: "${accepted}"` };
+
+  const blocked = pieces.find((p) => mentions(p, NON_EUROPE_TERMS));
+  if (blocked) return { ok: false, reason: `remote is restricted to "${blocked}"` };
+
+  return {
+    ok: true,
+    reason: `remote, qualifier "${pieces.join(", ")}" unrecognised`,
+    risk: `remote qualified as "${qualifiers.join("; ")}" — confirm eligibility before applying`,
+  };
+}
+
+/** Whole-string location verdict: alternatives ("SF or Remote") match on any. */
+function assessLocationText(raw: string, criteria: SearchCriteria): LocationVerdict {
+  const { base, qualifiers } = splitQualifiers(raw);
+  const alternatives = splitPieces(base);
+  const verdicts = alternatives.map((alt) =>
+    /\bremote\b/.test(alt)
+      ? assessRemote(qualifiers, criteria)
+      : acceptedBy(alt, criteria)
+        ? { ok: true, reason: `location in scope: "${alt}"` }
+        : { ok: false, reason: `location "${alt}" outside criteria` },
+  );
+  const hit = verdicts.find((v) => v.ok);
+  return hit ?? verdicts[0] ?? { ok: false, reason: "location not understood" };
+}
+
+/**
  * Deterministic match verdict. Rules, in order:
  *  1. any excludeKeyword in title/snippet → reject;
  *  2. at least one role phrase must appear in the title → else reject;
- *  3. locations: acceptable when the listing location matches the list, or
- *     says remote with remoteOk, or is ABSENT (flagged as a risk, not a
- *     reject — boards often omit it in list views);
+ *  3. locations: acceptable when the listing location matches the list (with
+ *     "Europe"/"EU" expanded to its countries), or says remote with remoteOk
+ *     AND its remote qualifier is not a recognisably out-of-scope geography,
+ *     or is ABSENT (flagged as a risk, not a reject — boards often omit it in
+ *     list views);
  *  4. keywords add reasons, never decide.
  */
 export function assessListing(
@@ -179,17 +295,16 @@ export function assessListing(
     if (!location) {
       risks.push("location not shown in listing — verify on the posting");
     } else {
-      const locationOk =
-        (criteria.remoteOk && location.includes("remote")) ||
-        (criteria.locations ?? []).some((l) => location.includes(norm(l)));
-      if (!locationOk) {
+      const verdict = assessLocationText(location, criteria);
+      if (!verdict.ok) {
         return {
           match: false,
-          reasons: [...reasons, `location "${listing.location}" outside criteria`],
+          reasons: [...reasons, `location "${listing.location}": ${verdict.reason}`],
           risks,
         };
       }
-      reasons.push(`location ok: "${listing.location}"`);
+      reasons.push(`location ok: "${listing.location}" (${verdict.reason})`);
+      if (verdict.risk) risks.push(verdict.risk);
     }
   }
 

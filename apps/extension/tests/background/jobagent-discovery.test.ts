@@ -57,7 +57,7 @@ const criteria: SearchCriteria = {
   roles: ["AI Product Engineer", "Agent Engineer"],
   keywords: ["typescript", "llm"],
   excludeKeywords: ["staffing agency", "unpaid"],
-  locations: ["Austria", "Vienna"],
+  locations: ["Austria", "Vienna", "Europe"],
   remoteOk: true,
   boards: [
     { name: "Example Board", searchUrl: "https://board.example/search?q=ai+engineer" },
@@ -126,6 +126,52 @@ describe("assessListing", () => {
     const absent = assessListing(listing({ location: undefined }), criteria);
     expect(absent.match).toBe(true);
     expect(absent.risks[0]).toContain("location not shown");
+  });
+});
+
+// The first live sweep queued nine listings; six were in geographies the
+// operator cannot work from, because "remote" was tested as a bare substring.
+// These are the exact location strings those listings carried.
+describe("assessListing — remote qualifiers (live-sweep regressions)", () => {
+  const verdict = (location: string) => assessListing(listing({ location }), criteria);
+
+  test.each([
+    "Remote (US)",
+    "REMOTE (US ONLY, LA/SF preferred)",
+    "Bengaluru, India (REMOTE)",
+    "Remote (North America)",
+  ])("out-of-scope remote qualifier rejects: %s", (location) => {
+    expect(verdict(location).match).toBe(false);
+  });
+
+  test.each([
+    "REMOTE (EU, Switzerland, Norway)",
+    "Remote",
+    "SF or Remote",
+    "NYC or Remote",
+    "Remote — Europe only",
+    "Vienna (Remote)",
+  ])("in-scope or unqualified remote matches: %s", (location) => {
+    expect(verdict(location).match).toBe(true);
+  });
+
+  test("an unrecognised qualifier is a risk, never a silent reject", () => {
+    const a = verdict("Remote (UTC+3)");
+    expect(a.match).toBe(true);
+    expect(a.risks.join(" ")).toContain("confirm eligibility");
+  });
+
+  test('"Europe" expands to its countries, so a country-only listing matches', () => {
+    // The sweep rejected a Stockholm posting because "Sweden" is not the
+    // literal string "Europe".
+    expect(verdict("Stockholm, Sweden").match).toBe(true);
+    expect(verdict("Remote (Sweden)").match).toBe(true);
+  });
+
+  test("remoteOk:false rejects remote regardless of qualifier", () => {
+    const strict: SearchCriteria = { ...criteria, remoteOk: false };
+    expect(assessListing(listing({ location: "Remote (EU)" }), strict).match).toBe(false);
+    expect(assessListing(listing({ location: "Vienna" }), strict).match).toBe(true);
   });
 });
 
