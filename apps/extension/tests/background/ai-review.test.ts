@@ -7,7 +7,7 @@ import {
   parseFindings,
   parseVerdict,
   renderComment,
-  selectForReview,
+  planReviewBatches,
   splitDiff,
   sortFindings,
   type Finding,
@@ -55,20 +55,67 @@ describe("isReviewablePath", () => {
   });
 });
 
-describe("selectForReview", () => {
+describe("planReviewBatches", () => {
   test("reports what it skipped instead of dropping it silently", () => {
     const files = splitDiff(fileDiff("src/a.ts") + fileDiff("pnpm-lock.yaml"));
-    const { selected, skipped } = selectForReview(files);
-    expect(selected.map((f) => f.path)).toEqual(["src/a.ts"]);
+    const { batches, skipped } = planReviewBatches(files);
+    expect(batches.flat().map((f) => f.path)).toEqual(["src/a.ts"]);
     expect(skipped).toEqual(["pnpm-lock.yaml"]);
   });
 
-  test("over-budget files are named as unreviewed, not silently cut", () => {
-    const big = fileDiff("src/huge.ts", "+x\n".repeat(500));
+  test("covers EVERY reviewable file by batching, never truncating", () => {
+    // The bug this replaces: one request, and the 20 files that did not fit
+    // were never looked at — including the whole message-union split, the
+    // riskiest change in that PR.
+    const big = () => "+x\n".repeat(40);
+    const files = splitDiff(
+      fileDiff("src/a.ts", big()) + fileDiff("src/b.ts", big()) + fileDiff("src/c.ts", big()),
+    );
+    const { batches, oversized } = planReviewBatches(files, 200);
+    expect(batches.length).toBeGreaterThan(1);
+    expect(batches.flat().map((f) => f.path).sort()).toEqual([
+      "src/a.ts",
+      "src/b.ts",
+      "src/c.ts",
+    ]);
+    expect(oversized).toEqual([]);
+  });
+
+  test("a file too big for any batch is reviewed alone, not dropped", () => {
+    const huge = fileDiff("src/huge.ts", "+x\n".repeat(500));
     const small = fileDiff("src/small.ts");
-    const { selected, truncated } = selectForReview(splitDiff(big + small), 200);
-    expect(selected.map((f) => f.path)).toEqual(["src/small.ts"]);
-    expect(truncated).toEqual(["src/huge.ts"]);
+    const { batches, oversized } = planReviewBatches(splitDiff(huge + small), 200);
+    expect(oversized).toEqual(["src/huge.ts"]);
+    expect(batches.flat().map((f) => f.path).sort()).toEqual([
+      "src/huge.ts",
+      "src/small.ts",
+    ]);
+    expect(batches.some((b) => b.length === 1 && b[0].path === "src/huge.ts")).toBe(true);
+  });
+
+  test("source code is reviewed before prose when a budget binds", () => {
+    // Diff order is alphabetical and meaningless; docs must never crowd out
+    // source. On the design-debt PR that ordering dropped shared-types.
+    const files = splitDiff(
+      fileDiff("docs/roadmap.md") + fileDiff("z.json") + fileDiff("src/z.ts"),
+    );
+    const { batches } = planReviewBatches(files);
+    expect(batches.flat().map((f) => f.path)).toEqual([
+      "src/z.ts",
+      "z.json",
+      "docs/roadmap.md",
+    ]);
+  });
+
+  test("regenerated corpora never consume budget", () => {
+    const files = splitDiff(
+      fileDiff("apps/extension/tests/fixtures/completion-corpus/x.json") + fileDiff("src/a.ts"),
+    );
+    const { batches, skipped } = planReviewBatches(files);
+    expect(batches.flat().map((f) => f.path)).toEqual(["src/a.ts"]);
+    expect(skipped).toEqual([
+      "apps/extension/tests/fixtures/completion-corpus/x.json",
+    ]);
   });
 });
 
@@ -168,7 +215,9 @@ describe("renderComment", () => {
       judgeModel: "oss",
       rejectedCount: 3,
       skipped: [],
-      truncated: [],
+      oversized: [],
+      batchCount: 1,
+      reviewedCount: 2,
     });
     expect(body.indexOf("off-by-one")).toBeLessThan(body.indexOf("minor"));
     expect(body).toContain("`src/a.ts:12`");
@@ -183,22 +232,26 @@ describe("renderComment", () => {
       judgeModel: "oss",
       rejectedCount: 0,
       skipped: [],
-      truncated: [],
+      oversized: [],
+      batchCount: 1,
+      reviewedCount: 1,
     });
     expect(body).toContain("No defects survived adjudication");
   });
 
-  test("unreviewed files are stated plainly, never implied clean", () => {
+  test("the comment states its own coverage: skips, lone-file batches, request count", () => {
     const body = renderComment({
       findings: [],
       reviewerModel: "glm",
       judgeModel: "oss",
       rejectedCount: 0,
       skipped: ["pnpm-lock.yaml"],
-      truncated: ["src/huge.ts"],
+      oversized: ["src/huge.ts"],
+      batchCount: 3,
+      reviewedCount: 9,
     });
-    expect(body).toContain("Not reviewed — diff too large:** src/huge.ts");
-    expect(body).toContain("These files were NOT looked at");
+    expect(body).toContain("Reviewed alone (large diffs): src/huge.ts");
+    expect(body).toContain("9 file(s) across 3 request(s)");
     expect(body).toContain("pnpm-lock.yaml");
   });
 });
