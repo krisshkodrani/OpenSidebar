@@ -264,19 +264,6 @@ export interface StopAgentMessage extends BaseMessage {
 }
 ```
 
-### `SettingsUpdateMessage`
-
-```typescript
-/** Settings changed — broadcast to all contexts */
-export interface SettingsUpdateMessage extends BaseMessage {
-  type: "SETTINGS_UPDATE";
-  source: MessageSource.SIDEPANEL;
-  payload: {
-    settings: Partial<UserSettings>;
-  };
-}
-```
-
 ### `SidePanelOpenedMessage`
 
 ```typescript

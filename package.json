@@ -50,7 +50,6 @@
     "ci": "tsx scripts/validate-rfc-decisions.ts && nx affected -t lint,typecheck,test,build",
     "e2e": "nx run extension:test-e2e-staged",
     "bench": "tsx scripts/run-bench.ts",
-    "bench:smoke:kimi-k2p7": "tsx scripts/bench/smoke-kimi-k2p7.ts",
     "bench:fetch": "tsx scripts/bench/fetch-tasks.ts",
     "traces": "nx run tools:traces",
     "traces:archive": "tsx scripts/trace-archive.ts",

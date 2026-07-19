@@ -16,18 +16,23 @@ to pick one of these up, open an issue first — see
 
 ## Code health (ongoing decomposition series)
 
-The repo has four large files that are being decomposed incrementally with
-behavior-preserving moves (the ServiceNow adapter extraction from
-`tools/index.ts` was the first):
+The repo's large files are being decomposed incrementally with
+behavior-preserving moves, each guarded by a shrink-only size budget
+(`scripts/loop-ratchet.mjs`; run `--report` for current numbers — the figures
+below drift).
 
-- `completion-kernel.ts` (~14K lines) — split per contract kind into
-  `completion/contracts/`.
-- `loop.ts` (~11K lines) — continue extracting stateful collaborators and
-  `*-policy.ts` modules.
-- `tools/index.ts` (~7K lines) — split `registerTools()` per tool family;
-  extract ServiceNow knowledge-base helpers into the adapter.
-- `orchestrator/index.ts` (~6.5K lines) — extract lane/verification
+- `completion-kernel.ts` (~5.9K lines) — split per contract kind into
+  `completion/contracts/`. The oversized `completion/*-analysis.ts` modules it
+  already spun out are the other half of this work.
+- `loop.ts` (~5.6K lines, down from ~10.3K) — continue extracting stateful
+  collaborators and `*-policy.ts` modules. End-state target: 3.5K lines / 80
+  methods.
+- `orchestrator/index.ts` (~5.8K lines) — extract lane/verification
   collaborators.
+
+Done: `tools/index.ts` is now a ~130-line barrel (`registerTools()` split per
+tool family, ServiceNow handlers in the adapter), and the agent-side ServiceNow
+controllers have left `loop.ts` for `agent/servicenow/`.
 - **`any` burndown** — `no-explicit-any` is now a lint warning; burn down the
   ~240 occurrences starting with typed shims for chrome-API gaps.
 
