@@ -65,5 +65,16 @@ export function runFeedbackPhase(host: FeedbackPhaseHost): FeedbackPhaseResult {
     });
   }
 
+  // LP-17 fill checklist: when the set of confirmed-filled form fields
+  // changed, tell the model once. The always-current copy lives in the system
+  // prompt; this ping just draws attention to the change.
+  const checklistLine = host.context.consumeChecklistFeedbackLine();
+  if (checklistLine) {
+    host.traceRecorder?.recordEvent("fill_checklist_feedback", {
+      turn: host.turnCount,
+    });
+    host.context.addMessage({ role: "user", content: checklistLine });
+  }
+
   return { kind: "continue" };
 }

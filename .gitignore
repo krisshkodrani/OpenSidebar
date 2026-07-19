@@ -6,6 +6,9 @@ __pycache__/
 .DS_Store
 .env
 .env.local
+# Bluebox OTel config — holds the ingest token header; never commit.
+.env.otel
+.env.otel.bluebox-template
 npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
@@ -67,6 +70,11 @@ OpenSidebar-deck.md
 
 # Local artifacts
 .artifacts/
+# Real seed PII lives OUTSIDE the repo (~/.opensidebar/seed via OPENSIDEBAR_SEED_DIR).
+# Belt-and-braces against a stray local recreation under the old in-tree path —
+# the committed synthetic kit at tests/e2e/fixtures/live-app-kit/ is fake and safe.
+.artifacts/seed/
+**/seed/applications/
 
 # Local data
 data/

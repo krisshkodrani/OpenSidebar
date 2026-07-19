@@ -12,11 +12,15 @@
 import type {
   BrowserToolRequest,
   BrowserToolResponse,
+  ForwardedApprovalRequest,
 } from "@shared-types/browser-bridge";
+import type { PartialProgressHandoff } from "@shared-types/progress";
 
 export interface AgentTask {
   instruction: string;
   url?: string;
+  /** Session key: calls sharing it reuse one workspace + tab (see wire contract). */
+  session?: string;
 }
 
 export interface AgentRunOutcome {
@@ -24,15 +28,38 @@ export interface AgentRunOutcome {
   summary?: string;
   data?: unknown;
   reason?: string;
+  /** What was done / what remains / what is uncertain, when the run produced it. */
+  handoff?: PartialProgressHandoff;
+  /** Present when `needs_human` because a consequential action awaits approval. */
+  approval?: ForwardedApprovalRequest;
+}
+
+export interface AgentRunOptions {
+  /** Aborting requests a stop of the running task; the run settles normally. */
+  signal?: AbortSignal;
 }
 
 /** Runs one internal agent task. Implemented by the orchestrator in Stage 2b. */
 export interface AgentRunner {
-  run(task: AgentTask): Promise<AgentRunOutcome>;
+  run(task: AgentTask, opts?: AgentRunOptions): Promise<AgentRunOutcome>;
+  /**
+   * Answer a forwarded approval (pi-backend Phase 4), resuming the paused
+   * mission. Optional so a runner without the capability can decline cleanly.
+   */
+  respondApproval?(
+    req: BrowserToolRequest,
+    opts?: AgentRunOptions,
+  ): Promise<AgentRunOutcome>;
 }
 
 /** Map a thick browser tool request to an internal natural-language agent task. */
 export function toAgentTask(req: BrowserToolRequest): AgentTask {
+  const task = mapTool(req);
+  if (req.session !== undefined) task.session = req.session;
+  return task;
+}
+
+function mapTool(req: BrowserToolRequest): AgentTask {
   const a = req.args;
   const url = typeof a.url === "string" ? a.url : undefined;
   switch (req.tool) {
@@ -50,11 +77,18 @@ export function toAgentTask(req: BrowserToolRequest): AgentTask {
         instruction: `Research the company ${a.name ?? a.url} and return a structured profile (summary, products, size, links).`,
         url,
       };
-    case "browser_apply_to_job":
-      return {
-        instruction: `Apply to the job at ${a.url}.${a.cover_letter ? " Use the provided cover letter." : ""}`,
-        url,
-      };
+    case "browser_apply_to_job": {
+      // The instruction is the only channel to the inner agent, so the caller's
+      // resume/cover-letter VALUES must ride in it — dropping them (as this did)
+      // means a caller who passes them gets neither used.
+      const resume = typeof a.resume === "string" ? a.resume.trim() : "";
+      const coverLetter =
+        typeof a.cover_letter === "string" ? a.cover_letter.trim() : "";
+      const parts = [`Apply to the job at ${a.url}.`];
+      if (resume) parts.push(`Resume to use: ${resume}`);
+      if (coverLetter) parts.push(`Cover letter to use: ${coverLetter}`);
+      return { instruction: parts.join(" "), url };
+    }
     case "browser_run_task":
       return { instruction: String(a.instruction ?? ""), url };
     default:
@@ -63,25 +97,71 @@ export function toAgentTask(req: BrowserToolRequest): AgentTask {
 }
 
 function mapOutcome(outcome: AgentRunOutcome): BrowserToolResponse {
+  // The handoff rides along on every status: a caller deciding what to do next
+  // needs it most precisely when the run did not simply succeed.
+  const handoff = outcome.handoff ? { handoff: outcome.handoff } : {};
   switch (outcome.status) {
     case "completed":
-      return { status: "ok", result: outcome.data ?? outcome.summary ?? null };
+      return {
+        status: "ok",
+        result: outcome.data ?? outcome.summary ?? null,
+        ...handoff,
+      };
     case "needs_human":
-      return { status: "needs_human", reason: outcome.reason ?? "human input required" };
+      return {
+        status: "needs_human",
+        reason: outcome.reason ?? "human input required",
+        ...handoff,
+        ...(outcome.approval ? { approval: outcome.approval } : {}),
+      };
     case "error":
-      return { status: "error", reason: outcome.reason ?? "agent run failed" };
+      return {
+        status: "error",
+        reason: outcome.reason ?? "agent run failed",
+        ...handoff,
+      };
   }
+}
+
+/** Validate the args of a `browser_respond_approval` call. */
+function parseApprovalResponse(
+  args: Record<string, unknown>,
+): { approvalId: string; approved: boolean } | null {
+  if (typeof args.approvalId !== "string" || !args.approvalId) return null;
+  if (typeof args.approved !== "boolean") return null;
+  return { approvalId: args.approvalId, approved: args.approved };
 }
 
 /** Translate → run → translate back. Errors become a structured `error` response. */
 export async function handleBrowserToolRequest(
   req: BrowserToolRequest,
   runner: AgentRunner,
+  opts?: AgentRunOptions,
 ): Promise<BrowserToolResponse> {
   // Liveness check never runs a task.
   if (req.tool === "browser_ping") return { status: "ok", result: "pong" };
+  // Approval answer: routes to the runner's resume capability, not a new run.
+  if (req.tool === "browser_respond_approval") {
+    if (!parseApprovalResponse(req.args)) {
+      return {
+        status: "error",
+        reason: "browser_respond_approval needs { approvalId: string, approved: boolean }",
+      };
+    }
+    if (!runner.respondApproval) {
+      return {
+        status: "error",
+        reason: "this runner cannot answer approvals",
+      };
+    }
+    try {
+      return mapOutcome(await runner.respondApproval(req, opts));
+    } catch (error) {
+      return { status: "error", reason: (error as Error).message };
+    }
+  }
   try {
-    const outcome = await runner.run(toAgentTask(req));
+    const outcome = await runner.run(toAgentTask(req), opts);
     return mapOutcome(outcome);
   } catch (error) {
     return { status: "error", reason: (error as Error).message };

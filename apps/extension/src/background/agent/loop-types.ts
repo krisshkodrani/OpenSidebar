@@ -9,6 +9,7 @@ import {
   ToolName,
   TraceFailureInfo,
 } from "../../types";
+import type { ForwardedApprovalDryRun } from "@shared-types/browser-bridge";
 import type { SideEffectEntry } from "./checkpoint-types";
 import type { CompletionEnvelope } from "./completion-kernel";
 
@@ -22,6 +23,12 @@ export interface PendingApprovalInteraction {
   context: string;
   timeoutMs: number;
   approved?: boolean;
+  /**
+   * Phase 8 dry-run evidence for a consequential form submit, forwarded with
+   * the approval so an external caller (pi-backend Phase 4) can byte-check
+   * the live form against the values it supplied before approving.
+   */
+  dryRun?: ForwardedApprovalDryRun;
 }
 
 export interface PendingClarificationInteraction {

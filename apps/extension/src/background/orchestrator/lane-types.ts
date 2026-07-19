@@ -147,7 +147,10 @@ export const DEFAULT_LANE_POLICIES: Record<RuntimeLane, LaneBudgetPolicy> = {
     // budget, and blowing it silently swaps in the context-blind fallback node
     // builder — the create-incident "filled but never submitted" root cause.
     // 45s costs nothing on the fast path and prevents that downgrade.
-    maxCallMs: 45_000,
+    // 60s (LP-17): the decompose output cap rose 4096→8192; an emission that
+    // long at glm-5p2 throughput can exceed 45s (observed p90 39s, max 62s),
+    // and timing out is the same silent downgrade. Fast path still unaffected.
+    maxCallMs: 60_000,
   },
   executor: {
     maxConcurrent: 8,

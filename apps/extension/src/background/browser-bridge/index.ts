@@ -40,3 +40,21 @@ export function stopBrowserBridge(): void {
   client?.stop();
   client = null;
 }
+
+/**
+ * Start the bridge if configured, and react to the setting from then on:
+ * setting or changing `opensidebar:browserMcpWsPort` (re)connects, clearing it
+ * disconnects — no extension reload required. This is what background.ts calls.
+ */
+export function initBrowserBridge(): void {
+  try {
+    chrome.storage.onChanged.addListener((changes, area) => {
+      if (area !== "local" || !(BROWSER_MCP_WS_PORT_KEY in changes)) return;
+      stopBrowserBridge();
+      void startBrowserBridge();
+    });
+  } catch {
+    // No chrome.storage events (tests without a chrome mock): startup-only.
+  }
+  void startBrowserBridge();
+}

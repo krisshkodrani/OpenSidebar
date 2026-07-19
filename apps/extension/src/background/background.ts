@@ -9,7 +9,7 @@ import {
   SkillRecordingEvent,
 } from "../types";
 import { loadSettings } from "../utils/settings-storage";
-import { startBrowserBridge } from "./browser-bridge";
+import { initBrowserBridge } from "./browser-bridge";
 import {
   formatMissingProviderKeys,
   getProviderKeyStatus,
@@ -321,7 +321,8 @@ void (async () => {
     await startKeepalive();
   }
   // RFC LP-8 M2: connect to the browser MCP host when configured (default-off).
-  await startBrowserBridge();
+  // Reacts to the port setting from here on — no extension reload needed.
+  initBrowserBridge();
   // RFC LP-15 Phase 9: shadow-populate the trusted corpus from the legacy
   // stores (best-effort, non-blocking) and keep it in sync with sidepanel edits.
   void ensureLegacyStoresMigrated();

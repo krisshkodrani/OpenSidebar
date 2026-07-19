@@ -61,6 +61,7 @@ function createHost(): SequentialToolDispatchHost {
       getMessages: () => [],
       getPlanStatusRaw: () => null,
       getSnapshot: () => null,
+      getFieldReadLedger: () => new Map(),
     },
     disabledTools: new Set<ToolName>(),
     elementResolver: undefined,
@@ -497,5 +498,67 @@ describe("executeSequentialToolCalls", () => {
     });
     expect(output.doneSignaled).toBe(true);
     expect(output.doneSummary).toBe("Catalog order submitted.");
+  });
+});
+
+describe("fill-checklist re-read note (LP-17)", () => {
+  const emailField = {
+    tag: 3,
+    tagName: "input",
+    role: "textbox",
+    text: "kris@example.test",
+    attributes: {
+      id: "email",
+      name: "email",
+      type: "text",
+      value: "kris@example.test",
+      label: "Email",
+    },
+    rect: { x: 0, y: 60, width: 180, height: 24 },
+    isVisible: true,
+    isDisabled: false,
+  };
+  const formSnapshot = {
+    title: "Apply",
+    url: "https://example.test/apply",
+    visibleContent: "Application",
+    pageContent: "Application",
+    elements: [
+      emailField,
+      { ...emailField, tag: 1, text: "Kris", attributes: { ...emailField.attributes, id: "first-name", name: "first-name", value: "Kris", label: "First name" } },
+      { ...emailField, tag: 2, text: "", attributes: { ...emailField.attributes, id: "phone", name: "phone", value: "", label: "Phone" } },
+    ],
+    viewport: { width: 1280, height: 720 },
+    scroll: { x: 0, y: 0, maxY: 0, viewportHeight: 720 },
+  };
+
+  test("second unchanged read_element gets the note appended; the real result survives", async () => {
+    const host = createHost();
+    const ledger = new Map();
+    (host.context as any).getSnapshot = () => formSnapshot;
+    (host.context as any).getFieldReadLedger = () => ledger;
+    (host.executeToolCall as any).mockResolvedValue(
+      '[3] <input> "Email" value="kris@example.test"',
+    );
+
+    await handleGenericSequentialToolCall(
+      host,
+      genericParams(ToolName.READ_ELEMENT, { id: 3 }),
+    );
+    await handleGenericSequentialToolCall(
+      host,
+      genericParams(ToolName.READ_ELEMENT, { id: 3 }),
+    );
+
+    const toolMessages = (host.context.addMessage as any).mock.calls
+      .map((c: any[]) => c[0])
+      .filter((m: any) => m.role === "tool");
+    expect(toolMessages[0].content).toBe(
+      '[3] <input> "Email" value="kris@example.test"',
+    );
+    expect(toolMessages[1].content).toContain(
+      '[3] <input> "Email" value="kris@example.test"',
+    );
+    expect(toolMessages[1].content).toContain('[note] You already read "Email" on turn 4');
   });
 });
