@@ -70,7 +70,7 @@
     "obs:backfill-spans": "tsx scripts/obs/backfill-spans.ts",
     "obs:verify-parity": "tsx scripts/obs/verify-parity.ts",
     "ci:lint": "tsx scripts/validate-rfc-decisions.ts && nx run-many -t lint",
-    "ci:test": "nx run-many -t test --projects=extension",
+    "ci:test": "nx run-many -t test --projects=extension --output-style=stream",
     "ci:build": "nx run extension:build",
     "ci:dist": "node scripts/check-dist.js",
     "ci:audit": "corepack pnpm audit --prod",

@@ -16,5 +16,11 @@ allowBuilds:
   better-sqlite3: true
   esbuild: true
   nx: true
-  protobufjs: set this to true or false
+  # false: protobufjs' postinstall only prints version-scheme warnings about
+  # dependents' package.json (it builds and generates nothing), and protobufjs
+  # reaches us only via @grpc/grpc-js under the OTel exporters — devDependencies
+  # for scripts/otel, never the shipped extension. Skipping it loses a warning.
+  # NOTE: pnpm 11 FAILS `install --frozen-lockfile` on an unanswered entry, so
+  # this must stay a real boolean — a placeholder here turns CI red on install.
+  protobufjs: false
   puppeteer: true
