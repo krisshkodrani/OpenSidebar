@@ -124,6 +124,15 @@ const reviewRaw = await complete(
 );
 const proposed = parseFindings(extractJson(reviewRaw));
 console.log(`reviewer proposed ${proposed.length} finding(s)`);
+// A clean review and an unparseable one both count zero. Log the raw response
+// when nothing parsed, so "the model found nothing" is distinguishable from
+// "the model answered in prose and we silently dropped it" — without this the
+// tool can report a confident all-clear it never actually earned.
+if (proposed.length === 0) {
+  console.log(
+    `reviewer raw response (${reviewRaw.length} chars):\n${reviewRaw.slice(0, 1500)}`,
+  );
+}
 
 // Adjudicate independently and concurrently — one finding's verdict must not
 // be able to influence another's.
