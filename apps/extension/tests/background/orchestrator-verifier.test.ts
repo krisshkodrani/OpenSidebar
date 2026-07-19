@@ -565,3 +565,73 @@ describe("programmaticVerify", () => {
     expect(result).toBeNull();
   });
 });
+
+describe("programmaticVerify — restraint (draft-only) tasks", () => {
+  const restraintTask = {
+    taskQuery:
+      "Prepare an application for each of the two best roles. Fill in my details on every field. Leave the résumé/CV upload for me to attach, and don't submit anything — I'll review each application and send it myself.",
+    objective: "Stage two job applications without submitting",
+    successCriteria:
+      "Two applications drafted with all requested fields; nothing submitted",
+  };
+
+  test("does not misread 'did not submit' as failure on a draft-only task", () => {
+    // Regression: the job-pipeline done summary honestly reports restraint
+    // ("did not submit", "CV left empty") and was pattern-matched into a
+    // state_mismatch retry, hard-failing a genuinely complete run.
+    const result = programmaticVerify({
+      ...restraintTask,
+      output:
+        "Both applications are filled, verified, and ready for your review. " +
+        "The résumé/CV upload is left empty for you to attach. " +
+        "I did not submit either one, as requested.",
+      executorOutcome: "completed",
+    });
+    expect(result?.failureType).not.toBe("state_mismatch");
+  });
+
+  test("the JobAgent console's own fill instruction is covered", () => {
+    // The console assembles this prompt for every fill mission (see
+    // scripts/jobagent/manifest.ts promptLines). A live fixture run on
+    // 2026-07-19 filled all four fields byte-exact, did not submit — and was
+    // still marked `failed`, so the package never left `ready`. "Fill but do
+    // not submit" is the pipeline's ONLY shape, so this must never regress.
+    const result = programmaticVerify({
+      taskQuery:
+        "Fill out this job application form. Use EXACTLY the values below — " +
+        "byte for byte, no paraphrasing. Any field not listed here: leave it " +
+        "blank. Do NOT submit the form — when every listed field is filled, " +
+        "stop and report.",
+      objective: "Fill the application form without submitting",
+      successCriteria: "Every listed field filled; form not submitted",
+      output:
+        "All four listed fields are filled exactly as given. The CV/resume " +
+        "upload was not listed, so I left it blank. I did not submit the form.",
+      executorOutcome: "completed",
+    });
+    expect(result?.failureType).not.toBe("state_mismatch");
+  });
+
+  test("still flags a genuine failure report on a draft-only task", () => {
+    const result = programmaticVerify({
+      ...restraintTask,
+      output:
+        "I did not submit anything as requested, but the salary field value is missing — the task is not complete.",
+      executorOutcome: "completed",
+    });
+    expect(result?.decision).toBe("retry");
+    expect(result?.failureType).toBe("state_mismatch");
+  });
+
+  test("keeps treating 'did not submit' as failure on a submit task", () => {
+    const result = programmaticVerify({
+      taskQuery: "Submit the vendor onboarding form",
+      objective: "Submit the vendor form",
+      successCriteria: "Form submitted and confirmation shown",
+      output: "I filled the form but did not submit it because the button stayed disabled.",
+      executorOutcome: "completed",
+    });
+    expect(result?.decision).toBe("retry");
+    expect(result?.failureType).toBe("state_mismatch");
+  });
+});
