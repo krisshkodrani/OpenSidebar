@@ -189,6 +189,22 @@ export function extractJson(text: string): unknown {
   }
 }
 
+/**
+ * Did the model actually answer the question? A reasoning model asked for JSON
+ * will happily deliberate in prose until it runs out of tokens and never emit
+ * the object — and `parseFindings` cannot tell that apart from an honest empty
+ * result, so the tool posts a clean bill of health it never earned. It did
+ * exactly that on its first two live runs. Callers MUST check this and fail
+ * loudly rather than reporting "no defects".
+ */
+export function isWellFormedReview(raw: unknown): boolean {
+  return (
+    !!raw &&
+    typeof raw === "object" &&
+    Array.isArray((raw as { findings?: unknown }).findings)
+  );
+}
+
 const SEVERITIES = new Set(["high", "medium", "low"]);
 
 /** Hand-validated parse (package.ts convention): drop malformed entries. */
