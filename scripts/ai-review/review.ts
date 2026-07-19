@@ -48,9 +48,24 @@ const SKIP_PATTERNS: RegExp[] = [
   // Built by `pnpm run prompts:build` — CLAUDE.md forbids editing it directly.
   /^apps\/extension\/src\/prompts\/generated\.ts$/,
   /^apps\/extension\/tests\/e2e\/bench\//,
+  // Recorded corpora, regenerated with UPDATE_COMPLETION_CORPUS=1 — nobody
+  // hand-edits these, and on a big PR they crowd out real source files.
+  /^apps\/extension\/tests\/fixtures\//,
   /\.(png|jpe?g|gif|webp|ico|woff2?|ttf|mp4|pdf|zip)$/i,
   /\.min\.(js|css)$/,
 ];
+
+/**
+ * Review order when a budget has to bind. Diff order is alphabetical, which is
+ * meaningless — on the design-debt PR it spent the budget on early files and
+ * dropped the entire `packages/shared-types/src/messages/` split, the riskiest
+ * change in the PR. Source code earns attention first, prose last.
+ */
+function reviewPriority(path: string): number {
+  if (/\.(ts|tsx|js|jsx|mjs|cjs)$/.test(path)) return 0;
+  if (/\.(json|ya?ml|toml)$/.test(path)) return 1;
+  return 2; // markdown and everything else
+}
 
 /** Total patch characters sent to the reviewer. Beyond this we truncate. */
 export const MAX_REVIEW_CHARS = 180_000;
@@ -79,33 +94,53 @@ export function splitDiff(diff: string): FileDiff[] {
 }
 
 /**
- * The files worth reviewing, largest-context-first truncation. Returns what
- * was dropped so the posted comment can say so — a silent cap reads as
- * "reviewed everything" when it did not.
+ * Plan the review as BATCHES that together cover every reviewable file.
+ *
+ * The first version truncated instead: one request, and whatever did not fit
+ * was simply never looked at. On a 47-file PR that silently dropped 20 files
+ * — including the entire message-union split it most needed to check. A review
+ * that skips the risky half of a change is worse than no review, because it
+ * still prints a verdict.
+ *
+ * Files are ordered by `reviewPriority` so that if anything must be dropped it
+ * is prose, never source. `oversized` holds files whose single patch exceeds a
+ * whole batch budget; they are reviewed alone, and the caller reports them so
+ * the reader knows they got a batch to themselves.
  */
-export function selectForReview(
+export function planReviewBatches(
   files: FileDiff[],
   maxChars: number = MAX_REVIEW_CHARS,
-): { selected: FileDiff[]; skipped: string[]; truncated: string[] } {
+): { batches: FileDiff[][]; skipped: string[]; oversized: string[] } {
   const skipped: string[] = [];
   const candidates: FileDiff[] = [];
   for (const file of files) {
     if (isReviewablePath(file.path)) candidates.push(file);
     else skipped.push(file.path);
   }
+  candidates.sort((a, b) => reviewPriority(a.path) - reviewPriority(b.path));
 
-  const selected: FileDiff[] = [];
-  const truncated: string[] = [];
-  let budget = maxChars;
+  const batches: FileDiff[][] = [];
+  const oversized: string[] = [];
+  let current: FileDiff[] = [];
+  let used = 0;
   for (const file of candidates) {
-    if (file.patch.length <= budget) {
-      selected.push(file);
-      budget -= file.patch.length;
-    } else {
-      truncated.push(file.path);
+    if (file.patch.length > maxChars) {
+      // Too big to share a batch with anything: give it its own request rather
+      // than dropping it. Better a lone huge file than an unreviewed one.
+      oversized.push(file.path);
+      batches.push([file]);
+      continue;
     }
+    if (used + file.patch.length > maxChars && current.length > 0) {
+      batches.push(current);
+      current = [];
+      used = 0;
+    }
+    current.push(file);
+    used += file.patch.length;
   }
-  return { selected, skipped, truncated };
+  if (current.length > 0) batches.push(current);
+  return { batches, skipped, oversized };
 }
 
 export const REVIEW_SYSTEM_PROMPT = [
@@ -266,7 +301,12 @@ export interface CommentInput {
   /** Findings the judge rejected — reported as a count, for calibration. */
   rejectedCount: number;
   skipped: string[];
-  truncated: string[];
+  /** Files large enough to need a review request to themselves. */
+  oversized: string[];
+  /** How many requests the diff was split across. */
+  batchCount: number;
+  /** Reviewable files actually sent. */
+  reviewedCount: number;
 }
 
 /** The PR comment. States its own limits — a silent cap is a lie by omission. */
@@ -288,6 +328,7 @@ export function renderComment(input: CommentInput): string {
   lines.push("---", "");
   lines.push(
     `Reviewer \`${input.reviewerModel}\` → judge \`${input.judgeModel}\`; ` +
+      `${input.reviewedCount} file(s) across ${input.batchCount} request(s); ` +
       `${input.rejectedCount} finding(s) rejected as unproven.`,
   );
   if (input.skipped.length > 0) {
@@ -296,11 +337,10 @@ export function renderComment(input: CommentInput): string {
       `Not reviewed (generated/vendored/binary): ${input.skipped.join(", ")}.`,
     );
   }
-  if (input.truncated.length > 0) {
+  if (input.oversized.length > 0) {
     lines.push(
       "",
-      `**Not reviewed — diff too large:** ${input.truncated.join(", ")}. ` +
-        "These files were NOT looked at.",
+      `Reviewed alone (large diffs): ${input.oversized.join(", ")}.`,
     );
   }
   lines.push("", "_Machine review. It is wrong sometimes — judge it, don't trust it._");
