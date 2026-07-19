@@ -119,12 +119,17 @@ export function readSessionEntries(
   return readSessionRecords(sessionId, spanDir).map((record) => record.entry);
 }
 
-/** Guarded dual-write for the ingest path — must never throw into the caller. */
-export function recordEntrySpansSafe(entry: unknown): void {
+/**
+ * Guarded dual-write for the ingest path — must never throw into the caller.
+ * Returns the written record so the caller can forward the derived spans
+ * (e.g. to the Bluebox OTLP emitter) without re-projecting; null on failure.
+ */
+export function recordEntrySpansSafe(entry: unknown): SpineRecord | null {
   try {
-    writeEntryRecord(entry as TraceEntry);
+    return writeEntryRecord(entry as TraceEntry);
   } catch (error) {
     console.error("[obs] span dual-write failed:", (error as Error).message);
+    return null;
   }
 }
 

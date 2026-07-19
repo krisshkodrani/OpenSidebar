@@ -9,6 +9,7 @@ export type LocalMockProviderScenarioName =
   | "done-form-submit-gating"
   | "done-summary-incomplete-recovery"
   | "partial-handoff-max-turns"
+  | "bridge-approval-forwarding"
   | "watch-restock";
 
 export interface LocalMockProviderScenario {
@@ -103,6 +104,24 @@ export const localMockProviderScenarios: Record<
     prompt:
       "Read this page, gather the main facts, and prepare a final summary with any remaining open questions.",
     maxTurns: 2,
+    timeoutMs: 180_000,
+  },
+  // pi-backend Phase 4: a job-application-worded prompt makes the final submit a
+  // consequential action, so the click gates for approval. Bridge missions have
+  // no sidepanel, so the pause is FORWARDED over the wire; the test acts as pi,
+  // byte-checks the dry-run diff, and answers via browser_respond_approval.
+  // Reuses the partner-registration fixture (its "Submit registration" button
+  // matches the job-application submit label) — the fill/dry-run path is the same
+  // one done-form-submit-gating exercises; only the gating (job wording) is new.
+  "bridge-approval-forwarding": {
+    fixture: "partner-registration",
+    label: "bridge-approval-forwarding",
+    prompt:
+      "Apply for the Partnerships Lead position at Northstar Analytics: complete " +
+      "the job application form for Sam Rivera with email sam.rivera@example.com, " +
+      "phone +1 415 555 0134, role Partnerships Lead, team Alliances, and invite " +
+      "code PN-4821, accept the partner terms, then submit the application.",
+    maxTurns: 14,
     timeoutMs: 180_000,
   },
   // Watch Mode (passive monitor) — the monitor evaluates the page, not the agent
@@ -284,6 +303,28 @@ function plannerJson(
       ],
     });
   }
+
+  if (scenarioName === "bridge-approval-forwarding") {
+    return JSON.stringify({
+      isMultiStep: false,
+      difficulty: "moderate",
+      steps: [
+        {
+          objective:
+            "Fill and submit the job application form for Sam Rivera at Northstar Analytics.",
+          successCriteria:
+            "Registration received page shows Sam Rivera, Northstar Analytics, sam.rivera@example.com, and PN-4821.",
+          dependencies: [],
+          assumptions: [],
+          verifyAfter: {
+            trigger: "Registration received",
+            action: "call_done",
+          },
+          toolProfile: "form_fill",
+        },
+      ],
+    });
+  }
   if (scenarioName === "done-summary-incomplete-recovery") {
     return JSON.stringify({
       isMultiStep: false,
@@ -417,6 +458,70 @@ function formSubmitId(text: string): number {
   return parseTaggedId(text, /Submit registration/i) ?? 240;
 }
 
+// The eight field writes that fill the partner-registration form. Shared by the
+// completion-gating scenario and the Phase 4 approval-forwarding scenario, which
+// fill identically and differ only in whether the submit click gates.
+function partnerRegistrationFillCalls(text: string): ToolCallSpec[] {
+  return [
+    {
+      name: "type_text",
+      args: {
+        id: partnerFieldId(text, /Full name|partner-full-name/i, 201),
+        text: "Sam Rivera",
+      },
+    },
+    {
+      name: "type_text",
+      args: {
+        id: partnerFieldId(text, /Email|partner-email/i, 202),
+        text: "sam.rivera@example.com",
+      },
+    },
+    {
+      name: "type_text",
+      args: {
+        id: partnerFieldId(text, /Phone|partner-phone/i, 203),
+        text: "+1 415 555 0134",
+      },
+    },
+    {
+      name: "type_text",
+      args: {
+        id: partnerFieldId(text, /Company|partner-company/i, 204),
+        text: "Northstar Analytics",
+      },
+    },
+    {
+      name: "type_text",
+      args: {
+        id: partnerFieldId(text, /Role|partner-role/i, 205),
+        text: "Partnerships Lead",
+      },
+    },
+    {
+      name: "type_text",
+      args: {
+        id: partnerFieldId(text, /Team|partner-team/i, 206),
+        text: "Alliances",
+      },
+    },
+    {
+      name: "type_text",
+      args: {
+        id: partnerFieldId(text, /Invite code|partner-invite-code/i, 207),
+        text: "PN-4821",
+      },
+    },
+    {
+      name: "set_checkbox",
+      args: {
+        id: partnerFieldId(text, /partner terms|partner-terms/i, 208),
+        checked: true,
+      },
+    },
+  ];
+}
+
 function executorToolCalls(
   text: string,
   scenarioName: LocalMockProviderScenarioName,
@@ -482,64 +587,48 @@ function executorToolCalls(
       ];
     }
     state.formFilledReturned = true;
-    return [
-      {
-        name: "type_text",
-        args: {
-          id: partnerFieldId(text, /Full name|partner-full-name/i, 201),
-          text: "Sam Rivera",
+    return partnerRegistrationFillCalls(text);
+  }
+
+  if (scenarioName === "bridge-approval-forwarding") {
+    // Denied at the approval gate: stop honestly — the form stays filled but
+    // unsent. Never claim a submission that the human declined.
+    if (/Action denied by user approval policy/i.test(text)) {
+      return [
+        {
+          name: "done",
+          args: {
+            summary:
+              "The application was NOT submitted — the submit was declined at " +
+              "the approval gate. The form remains filled and unsent for review.",
+          },
         },
-      },
-      {
-        name: "type_text",
-        args: {
-          id: partnerFieldId(text, /Email|partner-email/i, 202),
-          text: "sam.rivera@example.com",
+      ];
+    }
+    // Approved and replayed: the confirmation is on screen, so finish.
+    if (
+      /Registration received|partnerRegistrationResult|submitted":true/i.test(
+        text,
+      )
+    ) {
+      return [
+        {
+          name: "done",
+          args: {
+            summary:
+              "Submitted the job application for Sam Rivera at Northstar " +
+              "Analytics; the registration received confirmation is shown.",
+          },
         },
-      },
-      {
-        name: "type_text",
-        args: {
-          id: partnerFieldId(text, /Phone|partner-phone/i, 203),
-          text: "+1 415 555 0134",
-        },
-      },
-      {
-        name: "type_text",
-        args: {
-          id: partnerFieldId(text, /Company|partner-company/i, 204),
-          text: "Northstar Analytics",
-        },
-      },
-      {
-        name: "type_text",
-        args: {
-          id: partnerFieldId(text, /Role|partner-role/i, 205),
-          text: "Partnerships Lead",
-        },
-      },
-      {
-        name: "type_text",
-        args: {
-          id: partnerFieldId(text, /Team|partner-team/i, 206),
-          text: "Alliances",
-        },
-      },
-      {
-        name: "type_text",
-        args: {
-          id: partnerFieldId(text, /Invite code|partner-invite-code/i, 207),
-          text: "PN-4821",
-        },
-      },
-      {
-        name: "set_checkbox",
-        args: {
-          id: partnerFieldId(text, /partner terms|partner-terms/i, 208),
-          checked: true,
-        },
-      },
-    ];
+      ];
+    }
+    // Fields are in — click submit. Because the task is job-application-worded,
+    // this click is a consequential action and pauses for approval.
+    if (state.formFilledReturned) {
+      return [{ name: "click_element", args: { id: formSubmitId(text) } }];
+    }
+    state.formFilledReturned = true;
+    return partnerRegistrationFillCalls(text);
   }
 
   if (isDoneDraftScenario(scenarioName)) {

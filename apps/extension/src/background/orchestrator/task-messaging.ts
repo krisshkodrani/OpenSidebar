@@ -5,6 +5,7 @@
  */
 import { logger } from "../../utils";
 import { agentNotifications } from "../notifications";
+import { chromeRuntimeMessagingPort } from "../environment/chrome";
 import { MessageSource } from "../../types";
 import type { TaskCompletionMessage } from "../../types";
 import type { NodeHandoffArtifact, TaskNode } from "./types";
@@ -39,20 +40,26 @@ export function notifyTaskCompletion(
   });
 }
 
+/**
+ * Broadcast an orchestrator message.
+ *
+ * Goes through the messaging port rather than `chrome.runtime.sendMessage`
+ * directly: chrome skips the sending context, so anything observing agent
+ * messages in-process (`createAgentRuntime`, and through it the browser bridge)
+ * would never see these. The port delivers to both.
+ */
 export function sendMessage(message: {
   type: string;
-  payload: any;
+  payload: unknown;
   workspaceId?: string | null;
 }): void {
-  chrome.runtime
-    .sendMessage({
+  try {
+    chromeRuntimeMessagingPort.broadcast({
       ...message,
       requestId: crypto.randomUUID(),
       source: MessageSource.BACKGROUND,
-    } as any)
-    .catch((error) => {
-      logger.debug("orchestrator", "Failed to send runtime message", {
-        error,
-      });
     });
+  } catch (error) {
+    logger.debug("orchestrator", "Failed to send runtime message", { error });
+  }
 }

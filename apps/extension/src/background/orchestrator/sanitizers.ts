@@ -388,6 +388,46 @@ export function sanitizeTaskNode(raw: unknown): TaskNode | null {
   return node;
 }
 
+function sanitizeForwardedDryRun(
+  raw: unknown,
+): PendingApprovalInteraction["dryRun"] | null {
+  if (!isRecord(raw)) return null;
+  if (raw.kind !== "clean" && raw.kind !== "unexpected") return null;
+  if (typeof raw.formKey !== "string" || typeof raw.diffHash !== "string") {
+    return null;
+  }
+  if (!Array.isArray(raw.entries)) return null;
+  const entries = raw.entries.map((entry) => {
+    if (!isRecord(entry)) return null;
+    if (
+      typeof entry.label !== "string" ||
+      typeof entry.expected !== "string" ||
+      (entry.actual !== null && typeof entry.actual !== "string") ||
+      (entry.status !== "match" &&
+        entry.status !== "mismatch" &&
+        entry.status !== "missing")
+    ) {
+      return null;
+    }
+    return {
+      label: entry.label,
+      expected: entry.expected,
+      actual: entry.actual as string | null,
+      status: entry.status as "match" | "mismatch" | "missing",
+    };
+  });
+  if (entries.some((entry) => entry === null)) return null;
+  return {
+    kind: raw.kind,
+    formKey: raw.formKey,
+    diffHash: raw.diffHash,
+    entries: entries as NonNullable<
+      PendingApprovalInteraction["dryRun"]
+    >["entries"],
+    ...(typeof raw.rendered === "string" ? { rendered: raw.rendered } : {}),
+  };
+}
+
 function sanitizePendingInteraction(
   raw: unknown,
 ): PendingUserInteraction | null {
@@ -406,6 +446,9 @@ function sanitizePendingInteraction(
     if (raw.approved !== undefined && typeof raw.approved !== "boolean") {
       return null;
     }
+    // Phase 4 dry-run evidence: drop the field on any shape mismatch, never
+    // the whole interaction (approval must survive a malformed diff).
+    const dryRun = sanitizeForwardedDryRun(raw.dryRun);
     return {
       kind: "approval",
       nodeId: typeof raw.nodeId === "string" ? raw.nodeId : null,
@@ -418,6 +461,7 @@ function sanitizePendingInteraction(
       ...(typeof raw.approved === "boolean"
         ? { approved: raw.approved }
         : {}),
+      ...(dryRun ? { dryRun } : {}),
     };
   }
 
@@ -616,6 +660,10 @@ export function sanitizeTask(raw: unknown): OrchestratorTask | null {
     const coordination = sanitizeTaskTabCoordination(raw.tabCoordination);
     if (!coordination) return null;
     task.tabCoordination = coordination;
+  }
+
+  if (raw.interactionDelivery === "handoff") {
+    task.interactionDelivery = "handoff";
   }
 
   return task;

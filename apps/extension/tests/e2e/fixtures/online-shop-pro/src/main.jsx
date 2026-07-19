@@ -20,6 +20,7 @@ import DelayedContent from "./routes/delayed-content";
 import ModalOverlays from "./routes/modal-overlays";
 import HoverMenus from "./routes/hover-menus";
 import AutocompleteSearch from "./routes/autocomplete";
+import CustomCombobox from "./routes/custom-combobox";
 import DataTable from "./routes/data-table";
 import Login from "./routes/login";
 import Kanban from "./routes/kanban";
@@ -69,6 +70,7 @@ const routes = [
   { path: "/modal-overlays", label: "Modals", title: "Modal & Overlay Test", component: ModalOverlays },
   { path: "/hover-menus", label: "Hover", title: "Hover Menus & Tooltips", component: HoverMenus },
   { path: "/autocomplete", label: "Autocomplete", title: "Autocomplete & Typeahead", component: AutocompleteSearch },
+  { path: "/custom-combobox", label: "Combobox", title: "Profile Preferences", component: CustomCombobox },
   { path: "/data-table", label: "Table", title: "Employee Directory", component: DataTable },
   { path: "/login", label: "Login", title: "Sign In", component: Login },
   { path: "/kanban", label: "Kanban", title: "Kanban Board", component: Kanban },

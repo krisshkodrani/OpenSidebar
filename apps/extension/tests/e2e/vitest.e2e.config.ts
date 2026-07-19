@@ -16,8 +16,14 @@ export default defineConfig({
     },
     retry: 1,
     // Surface pass-on-retry rescues (see helpers/flaky-reporter.ts) — with
-    // retry:1 a flaky test otherwise reports as a plain pass.
-    reporters: ["default", "./tests/e2e/helpers/flaky-reporter.ts"],
+    // retry:1 a flaky test otherwise reports as a plain pass. The OTel
+    // reporter exports results to Bluebox and is a no-op unless
+    // OTEL_EXPORTER_OTLP_ENDPOINT / .env.otel is configured.
+    reporters: [
+      "default",
+      "./tests/e2e/helpers/flaky-reporter.ts",
+      "./tests/e2e/helpers/otel-reporter.ts",
+    ],
     include: ["tests/e2e/**/*.test.ts"],
     globalSetup: ["tests/e2e/global-setup.ts"],
   },

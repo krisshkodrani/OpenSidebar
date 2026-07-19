@@ -1,0 +1,48 @@
+{
+  "version": "v6",
+  "note": "Maps site video slots to finished cuts in .artifacts/publish/ (git-ignored). build-site-media.mjs stages these into apps/site/public/media/<version>/ as <key> + <key>.poster.jpg. Bump version on content change so /media/* stays cache-immutable.",
+  "items": [
+    {
+      "slot": "hero",
+      "source": ".artifacts/publish/opensidebar-promo-60s-voiced.mp4",
+      "key": "promo-60s.mp4",
+      "posterAt": 2.0
+    },
+    {
+      "slot": "openweb",
+      "source": ".artifacts/publish/opensidebar-openweb-demo-collage.mp4",
+      "key": "openweb-tour.mp4",
+      "posterAt": 5.0
+    },
+    {
+      "slot": "servicenow",
+      "source": ".artifacts/publish/opensidebar-servicenow-demo-collage.mp4",
+      "key": "servicenow-tour.mp4",
+      "posterAt": 5.0
+    },
+    {
+      "slot": "watch",
+      "source": ".artifacts/publish/opensidebar-watch-demo-collage.mp4",
+      "key": "watch-mode.mp4",
+      "posterAt": 3.5
+    },
+    {
+      "slot": "settings",
+      "source": ".artifacts/publish/opensidebar-settings-demo-collage.mp4",
+      "key": "byok-settings.mp4",
+      "posterAt": 3.5
+    },
+    {
+      "slot": "fulltour",
+      "source": ".artifacts/publish/opensidebar-pitch-demo-collage-voiced.mp4",
+      "key": "full-tour.mp4",
+      "posterAt": 5.0
+    },
+    {
+      "slot": "traceviewer",
+      "source": ".artifacts/publish/opensidebar-traceviewer-demo-collage.mp4",
+      "key": "trace-viewer.mp4",
+      "posterAt": 20.5
+    }
+  ]
+}

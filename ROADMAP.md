@@ -28,8 +28,9 @@ and the RFCs under [`docs/engineering/`](docs/engineering/).
 ## Exploring
 
 - **PDF and document understanding** inside the agent loop (currently parked).
-- **Deeper external-agent integration** via the optional OpenClaw MCP surface
-  (default-off today).
+- **Deeper external-agent integration** via the optional browser bridge
+  (default-off today): pi drives it directly; MCP clients connect via the
+  browser MCP host.
 
 ## Contributing
 

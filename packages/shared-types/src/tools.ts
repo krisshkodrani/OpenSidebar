@@ -264,6 +264,14 @@ export interface ExtractFormStateArgs {
 export interface FormStateField {
   /** name / id / aria-label of the control. */
   name: string;
+  /**
+   * The control's visible/accessible label (`<label for>`, wrapping `<label>`,
+   * `aria-labelledby`, or `aria-label`), when resolvable. The dry-run matches a
+   * draft's expected label against this AND `name` — a checkbox's `name` is
+   * usually an id like `partner-terms`, so without the label it never matches
+   * the drafted "I accept the …" expectation and reads as a spurious `missing`.
+   */
+  label?: string;
   /** A CSS selector that locates the control (id > [name] > tag). */
   selector: string;
   /** Control kind: the input `type`, or the tag name for select/textarea. */

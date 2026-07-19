@@ -2,15 +2,27 @@ import type { UserSettings } from "../types";
 
 export type ProviderMode = NonNullable<UserSettings["providerMode"]>;
 
+// Default executor per provider (owner decision 2026-07-17): minimax-m3 for the
+// Fireworks-family modes. It is unified-VL and ~3x cheaper than kimi-k2p7-code
+// end-to-end; smoke e2e matched Kimi's 9/9 pass rate ~9% faster and ~1/3 the
+// cost, and medium e2e (interaction-regression) passed 14/15. The cost cut
+// matters most for the compulsory e2e gates run during development.
+// KNOWN LIMIT (medium eval, 2026-07-17): minimax-m3 sits JUST BELOW Kimi on
+// fine-grained vision — it misread 8px canvas-only fine print
+// (perception-region-zoom: read 4.2% vs the correct 4.7%, consistently), a case
+// Kimi reads correctly from the first high-detail screenshot. Real forms use DOM
+// text (read fine); the gap is pixels-only OCR of tiny text. Accepted for the
+// dev-cost win. kimi-k2p7-code stays ELIGIBLE — select it via
+// settings.executorModel / E2E_MODEL for precision-critical vision runs.
 export const DEFAULT_MULTIMODAL_EXECUTOR_BY_PROVIDER: Record<
   ProviderMode,
   string
 > = {
-  openrouter: "accounts/fireworks/models/kimi-k2p7-code",
-  "openrouter-groq": "accounts/fireworks/models/kimi-k2p7-code",
-  "openai-groq": "accounts/fireworks/models/kimi-k2p7-code",
-  fireworks: "accounts/fireworks/models/kimi-k2p7-code",
-  "fireworks-deepseek": "accounts/fireworks/models/kimi-k2p7-code",
+  openrouter: "accounts/fireworks/models/minimax-m3",
+  "openrouter-groq": "accounts/fireworks/models/minimax-m3",
+  "openai-groq": "accounts/fireworks/models/minimax-m3",
+  fireworks: "accounts/fireworks/models/minimax-m3",
+  "fireworks-deepseek": "accounts/fireworks/models/minimax-m3",
   "cerebras-fireworks": "gemma-4-31b",
   moonshot: "kimi-k2.6",
   xiaomi: "mimo-v2-omni",
@@ -22,6 +34,14 @@ const FIREWORKS_EXECUTOR_MODELS = new Set([
   "accounts/fireworks/routers/kimi-k2p5-turbo",
   "qwen/qwen3-vl-30b-a3b-instruct",
   "qwen/qwen3-vl-30b-a3b-thinking",
+  // minimax-m3: the DEFAULT Fireworks-family executor since 2026-07-17 (unified
+  // VL, ~3x cheaper; smoke-tier A/B matched K2.7-Code). Kept listed so the
+  // eligibility policy admits it explicitly.
+  "accounts/fireworks/models/minimax-m3",
+  // qwen3p7-plus executor candidate (eval, 2026-07-17): multimodal (text/image/
+  // video), priced between minimax-m3 and K2.7-Code (0.40/1.60). Seated for a
+  // three-way form-motion comparison; not the default for any provider.
+  "accounts/fireworks/models/qwen3p7-plus",
 ]);
 
 const MOONSHOT_EXECUTOR_MODELS = new Set(["kimi-k2.6", "kimi-k2.5"]);

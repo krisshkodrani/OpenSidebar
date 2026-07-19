@@ -1,23 +1,19 @@
-import { chromePersistencePort } from "../environment/chrome";
 import { LLMClient, LLMClientOptions } from "../llm";
 import { TokenUsage } from "../llm/types";
-import type { CompletionResponse } from "../llm/types";
-import { routePlannerCompletion } from "../../utils/llm-routing";
-import { HttpPlannerGateway } from "../../utils/openclaw-client";
-
-/**
- * Optional OpenClaw planner-gateway URL (RFC LP-8, M4). When set in
- * chrome.storage.local, planner decomposition routes through the gateway for
- * memory/skill injection, falling back to the direct provider call when the
- * gateway is absent or errors. Default: unset → direct (unchanged behaviour).
- */
-const OPENCLAW_GATEWAY_URL_KEY = "opensidebar:openClawGatewayUrl";
 import { SubtaskSummary } from "../../types";
 import { logger } from "../../utils";
 import { renderPrompt } from "../../prompts";
 import type { Difficulty, RuntimeLimits } from "./constants";
 import type { ToolProfile } from "../tools/metadata";
 import { tokenizeStepText } from "./loop-helpers";
+
+/**
+ * LP-17b CM-2: hard cap on planner assumptions per step/node. The list is
+ * advisory context, not a contract; anything beyond a handful is speculation
+ * that inflates every executor turn's Current Task block (take 6 measured
+ * ~48 items / 11.4K chars from one decompose call).
+ */
+export const MAX_PLANNER_ASSUMPTIONS = 6;
 import {
   buildTaskContract,
   repairPlanCoverage,
@@ -798,35 +794,6 @@ export class TaskPlanner {
     this.llm.switchToPlanner();
   }
 
-  /**
-   * Resolved once: an OpenClaw planner gateway, or null when none is configured.
-   * `undefined` = not yet resolved.
-   */
-  private plannerGateway: HttpPlannerGateway | null | undefined;
-
-  /** Lazily resolve the optional OpenClaw planner gateway from storage. */
-  private async resolvePlannerGateway(): Promise<HttpPlannerGateway | null> {
-    if (this.plannerGateway !== undefined) return this.plannerGateway;
-    let url: string | undefined;
-    try {
-      if (typeof chrome !== "undefined" && chrome.storage?.local) {
-        const stored = await chromePersistencePort.local.get(OPENCLAW_GATEWAY_URL_KEY);
-        const value = stored[OPENCLAW_GATEWAY_URL_KEY];
-        if (typeof value === "string" && value.trim()) url = value.trim();
-      }
-    } catch {
-      // No storage access → no gateway.
-    }
-    if (!url) {
-      this.plannerGateway = null;
-      return null;
-    }
-    const gateway = new HttpPlannerGateway({ baseUrl: url });
-    await gateway.probe();
-    this.plannerGateway = gateway;
-    return gateway;
-  }
-
   /** Lazy-initialized executor-tier LLM client for lightweight monitoring calls */
   private getExecutorLlm(): LLMClient {
     if (!this.executorLlm) {
@@ -887,35 +854,20 @@ export class TaskPlanner {
         userContent += `\nPage state:\n${perception}`;
       }
       userContent += `\n\nTask: ${query}`;
-      // M4 hybrid routing: prefer the OpenClaw gateway (memory/skill injection)
-      // when configured + healthy; otherwise the direct planner-tier call. The
-      // fallback makes this a no-op when no gateway is set.
-      const gateway = await this.resolvePlannerGateway();
-      const { route, result: response } =
-        await routePlannerCompletion<CompletionResponse>(
-          gateway,
-          async (gw) => {
-            const plan = await (gw as HttpPlannerGateway).completePlan({
-              query: userContent,
-              context: DECOMPOSE_SYSTEM,
-            });
-            return { content: plan.content } as CompletionResponse;
-          },
-          () =>
-            this.llm.complete({
-              messages: [
-                { role: "system", content: DECOMPOSE_SYSTEM },
-                { role: "user", content: userContent },
-              ],
-              max_tokens: 4096,
-              temperature: 0,
-              signal,
-              response_format: { type: "json_object" },
-            }),
-        );
-      if (route === "openclaw-gateway") {
-        logger.info("orchestrator", "Planner routed through OpenClaw gateway");
-      }
+      const response = await this.llm.complete({
+        messages: [
+          { role: "system", content: DECOMPOSE_SYSTEM },
+          { role: "user", content: userContent },
+        ],
+        // 8192, not 4096: live traces (2026-07-18) caught 2/93 decompose
+        // calls truncating at the old cap — truncated JSON is GUARANTEED to
+        // fall back to context-blind nodes, while a longer call merely risks
+        // the (raised) lane timeout. Short plans are unaffected.
+        max_tokens: 8192,
+        temperature: 0,
+        signal,
+        response_format: { type: "json_object" },
+      });
       const llmMs = Date.now() - start;
       if (response.usage)
         this.usageCallback?.(
@@ -923,6 +875,14 @@ export class TaskPlanner {
           llmMs,
           response.actualModel ?? this.llm.getCurrentModel(),
         );
+      if (response.finish_reason === "length") {
+        // Truncated decompose JSON silently degrades to fallback nodes —
+        // make it visible when it happens despite the raised cap.
+        logger.warn("agent", "Planner decompose output hit the token cap", {
+          llmMs,
+          completionTokens: response.usage?.completion_tokens,
+        });
+      }
 
       const text = (response.content || "").trim();
       const cleaned = text
@@ -1153,6 +1113,8 @@ export class TaskPlanner {
               if (trimmed.length > 0 && !assumptions.includes(trimmed)) {
                 assumptions.push(trimmed);
               }
+              // LP-17b CM-2: cap speculation — see MAX_PLANNER_ASSUMPTIONS.
+              if (assumptions.length >= MAX_PLANNER_ASSUMPTIONS) break;
             }
           }
           // Parse optional verification gate
@@ -1943,6 +1905,7 @@ Current perception:\n${perception.slice(0, 800)}`,
             ? (obj.assumptions as unknown[])
                 .filter((a): a is string => typeof a === "string")
                 .map((a) => a.trim())
+                .slice(0, MAX_PLANNER_ASSUMPTIONS)
             : [],
           ...(toolProfile ? { toolProfile } : {}),
           ...(expectedState ? { expectedState } : {}),

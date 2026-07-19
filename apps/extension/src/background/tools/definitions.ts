@@ -338,7 +338,7 @@ export const SELECT_OPTION_DEF: ToolDefinition = {
   function: {
     name: ToolName.SELECT_OPTION,
     description:
-      "Select an option from a native HTML <select> dropdown ONLY. For div-based custom dropdowns, click the menu to open it then click_element the option.",
+      "Select an option from a dropdown: native HTML <select> AND custom combobox/autocomplete widgets (role=combobox, react-select-style). For custom widgets it opens the list, clicks the option matching `value`, and verifies the committed selection — prefer this over manual click sequences.",
     parameters: {
       type: "object",
       properties: {
