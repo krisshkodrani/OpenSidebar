@@ -12,6 +12,7 @@
  */
 
 import {
+  isWellFormedReview,
   buildJudgePrompt,
   buildReviewPrompt,
   extractJson,
@@ -80,6 +81,11 @@ async function complete(
         model,
         max_tokens: maxTokens,
         temperature: 0,
+        // Without JSON mode, a reasoning model deliberates in prose and burns
+        // the whole budget without ever emitting the object — proven live on a
+        // 31K-char diff: 15K characters of thinking, truncated mid-sentence,
+        // zero JSON. "STRICT JSON only" in the prompt does not prevent this.
+        response_format: { type: "json_object" },
         messages: [
           { role: "system", content: system },
           { role: "user", content: user },
@@ -120,19 +126,20 @@ const reviewRaw = await complete(
   REVIEWER_MODEL,
   REVIEW_SYSTEM_PROMPT,
   buildReviewPrompt(pr.title, pr.body ?? "", selected),
-  4096,
+  8192,
 );
-const proposed = parseFindings(extractJson(reviewRaw));
-console.log(`reviewer proposed ${proposed.length} finding(s)`);
-// A clean review and an unparseable one both count zero. Log the raw response
-// when nothing parsed, so "the model found nothing" is distinguishable from
-// "the model answered in prose and we silently dropped it" — without this the
-// tool can report a confident all-clear it never actually earned.
-if (proposed.length === 0) {
-  console.log(
-    `reviewer raw response (${reviewRaw.length} chars):\n${reviewRaw.slice(0, 1500)}`,
+const reviewJson = extractJson(reviewRaw);
+// Never post a clean bill of health we did not earn. An unanswered review must
+// fail the run loudly — a silent [] here reads as "reviewed, nothing found".
+if (!isWellFormedReview(reviewJson)) {
+  console.error(`reviewer raw response (${reviewRaw.length} chars):`);
+  console.error(reviewRaw.slice(0, 2000));
+  throw new Error(
+    "reviewer did not return a findings object — refusing to report a clean review",
   );
 }
+const proposed = parseFindings(reviewJson);
+console.log(`reviewer proposed ${proposed.length} finding(s)`);
 
 // Adjudicate independently and concurrently — one finding's verdict must not
 // be able to influence another's.

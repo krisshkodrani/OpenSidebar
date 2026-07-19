@@ -3,6 +3,7 @@ import { describe, expect, test } from "vitest";
 import {
   extractJson,
   isReviewablePath,
+  isWellFormedReview,
   parseFindings,
   parseVerdict,
   renderComment,
@@ -102,6 +103,32 @@ describe("parseFindings", () => {
     );
     expect(parseFindings(null)).toEqual([]);
     expect(parseFindings({ findings: "not an array" })).toEqual([]);
+  });
+});
+
+describe("isWellFormedReview", () => {
+  test("accepts an answered review, including an honest empty one", () => {
+    expect(isWellFormedReview({ findings: [] })).toBe(true);
+    expect(isWellFormedReview({ findings: [{ file: "a.ts", title: "t" }] })).toBe(true);
+  });
+
+  test("rejects prose deliberation that never answers", () => {
+    // The real first-run failure: glm-5p2 reasoned in prose for 15K chars on a
+    // 31K-char diff, hit max_tokens mid-sentence, and never emitted the object.
+    // extractJson returns null, parseFindings returns [], and the tool posted
+    // "No defects survived adjudication" — an all-clear it never earned.
+    const prose =
+      "But wait - what about a path like `C:subdir/cv.pdf`? This starts with " +
+      "`C:`, caught by the second check. Good. I think the function is correct";
+    expect(isWellFormedReview(extractJson(prose))).toBe(false);
+    expect(parseFindings(extractJson(prose))).toEqual([]);
+  });
+
+  test("rejects JSON that is not a findings object", () => {
+    expect(isWellFormedReview(null)).toBe(false);
+    expect(isWellFormedReview({})).toBe(false);
+    expect(isWellFormedReview({ findings: "nope" })).toBe(false);
+    expect(isWellFormedReview({ result: [] })).toBe(false);
   });
 });
 
