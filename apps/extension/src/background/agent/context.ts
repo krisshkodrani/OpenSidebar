@@ -1,6 +1,6 @@
 import { chromePersistencePort } from "../environment/chrome";
 import { LLMMessage } from "../llm/types";
-import { DomSnapshot, PageSkeletonNode, TaggedElement } from "../../types";
+import { DomSnapshot, TaggedElement } from "../../types";
 import { logger } from "../../utils";
 import { AGENT_LIMITS, COMPRESSION_TRIGGERS } from "./constants";
 import { sanitizeForPrompt } from "../security";
@@ -10,6 +10,10 @@ import {
   summarizeHistory,
   deduplicateInvisibleElements,
   compressRepetitiveContent,
+  formatPageSkeleton,
+  buildFormBatchHint,
+  formatLastActionOutcome,
+  buildOpenTabsBlock,
 } from "./context-formatting";
 import {
   EXECUTOR_PERSONA,
@@ -72,45 +76,6 @@ const ACTION_RELEVANT_ATTRS = new Set([
   "label",
   "description",
 ]);
-
-/** Format skeleton nodes into indented hierarchy for the agent system prompt. */
-function formatPageSkeleton(skeleton: PageSkeletonNode[]): string {
-  return skeleton
-    .map((n) => {
-      const indent = "  ".repeat(Math.min(n.depth, 4));
-      return `${indent}${n.tagName}: "${n.text}"`;
-    })
-    .join("\n");
-}
-
-/**
- * If 3+ form controls are visible, return a hint telling the LLM
- * to batch independent field actions in a single response.
- */
-function buildFormBatchHint(elements: TaggedElement[]): string | null {
-  const formControlCount = elements.filter((el) => {
-    const tagName = el.tagName.toLowerCase();
-    const role = el.role?.toLowerCase();
-    return (
-      ["input", "textarea", "select"].includes(tagName) ||
-      role === "textbox" ||
-      role === "combobox" ||
-      role === "searchbox" ||
-      role === "checkbox" ||
-      role === "radio"
-    );
-  }).length;
-
-  if (formControlCount < 3) return null;
-
-  return (
-    "\n\n> **Batch hint:** This page has " +
-    formControlCount +
-    " form controls. " +
-    "When independent fields are already mapped, call multiple type_text, select_option, and set_checkbox actions in the same response; they will execute within one turn. " +
-    "Fill all visible requested fields at once. Do not click Next or Submit unless the user or the current plan step explicitly asks for it."
-  );
-}
 
 export class ContextManager {
   private history: LLMMessage[] = [];
@@ -759,25 +724,10 @@ Do NOT call done() until every planned step is complete.
     // Remove demonstrations placeholder (demos removed)
     content = content.replace("{{demonstrations}}", "");
 
-    // Open-tab inventory: rendered only when the workspace is genuinely
-    // multi-tab, so the model can tell which tab the snapshot below belongs
-    // to and reach work it already did in other tabs instead of redoing it.
-    if (this.openTabs.length >= 2) {
-      const tabLines = this.openTabs.map((tab) => {
-        const marker =
-          tab.tabId === this.currentTabIdForPrompt
-            ? " ← CURRENT TAB (the snapshot below shows this tab)"
-            : "";
-        return `Tab ${tab.tabId}: "${sanitizeForPrompt(tab.title || "(untitled)")}" — ${tab.url}${marker}`;
-      });
-      content = content.replace(
-        "{{openTabs}}",
-        `## Open Tabs (workspace)\n${tabLines.join("\n")}\n` +
-          `Only the current tab is visible in the snapshot. Form values and page state in other tabs persist there — use switch_tab({"tabId": N}) to return to them; do not re-open or re-fill a tab that already has your work.\n`,
-      );
-    } else {
-      content = content.replace("{{openTabs}}", "");
-    }
+    content = content.replace(
+      "{{openTabs}}",
+      buildOpenTabsBlock(this.openTabs, this.currentTabIdForPrompt),
+    );
 
     // Inject working notes (if any)
     if (this.workingNotes) {
@@ -1072,33 +1022,13 @@ Do NOT call done() until every planned step is complete.
 
     content = content.replace(
       "{{lastActionOutcome}}",
-      this.formatLastActionOutcome(),
+      formatLastActionOutcome(this.lastActionOutcome),
     );
 
     return {
       role: "system",
       content: content,
     };
-  }
-
-  private formatLastActionOutcome(): string {
-    if (!this.lastActionOutcome) return "No recent DOM-affecting action recorded.";
-
-    const outcome = this.lastActionOutcome;
-    const roundedDelta = Math.round(outcome.deltaPercent * 100);
-    const effectSummary =
-      roundedDelta === 0 && !outcome.urlChanged
-        ? "No observable page change."
-        : "Observable page change detected.";
-
-    const signals = [
-      `${roundedDelta}% DOM delta`,
-      outcome.urlChanged ? "URL changed" : "same URL",
-      `+${outcome.elementsAdded}`,
-      `-${outcome.elementsRemoved}`,
-    ].join(" | ");
-
-    return `Tool: ${outcome.toolName}\nResult: ${effectSummary}\nSignals: ${signals}`;
   }
 
   /**
