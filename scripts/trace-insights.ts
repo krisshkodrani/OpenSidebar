@@ -102,6 +102,17 @@ export interface TraceInsightsSummary {
   partialHandoffCount: number;
   maxTurnsWithHandoffCount: number;
   maxTurnsWithoutUsefulProgressCount: number;
+  /** Sessions with at least one escalation fire (RFC LP-2 events). */
+  escalatedSessions: number;
+  /** Total escalation fires (escalation events + stuck_signal escalate). */
+  escalations: number;
+  escalationRescued: number;
+  escalationFailedFast: number;
+  escalationBudgetExhausted: number;
+  /** escalatedSessions / totalSessions. */
+  escalationFireRate: number;
+  /** rescued / recorded escalation outcomes. */
+  escalationRescueRate: number;
 }
 
 export interface TraceInsightsFacets {
@@ -335,6 +346,54 @@ function getSessionEventTypes(session: TraceSessionLike): string[] {
     if (type) eventTypes.add(type);
   }
   return Array.from(eventTypes);
+}
+
+interface EscalationStats {
+  fires: number;
+  rescued: number;
+  failedFast: number;
+  budgetExhausted: number;
+}
+
+/**
+ * Count escalation fires and outcomes from turn-entry and session events,
+ * mirroring the per-trace logic in trace-viewer/diagnostics.ts: a fire is an
+ * `escalation` event or a `stuck_signal` with data.type === "escalate"; the
+ * outcome comes from `escalation_outcome` data.outcome.
+ */
+function collectEscalationStats(
+  entries: TraceEntryLike[],
+  session: TraceSessionLike,
+): EscalationStats {
+  const stats: EscalationStats = {
+    fires: 0,
+    rescued: 0,
+    failedFast: 0,
+    budgetExhausted: 0,
+  };
+  const eventLists: unknown[][] = [
+    ...entries.map((entry) => (Array.isArray(entry.events) ? entry.events : [])),
+    Array.isArray(session.events) ? session.events : [],
+  ];
+  for (const events of eventLists) {
+    for (const event of events) {
+      if (!event || typeof event !== "object") continue;
+      const record = event as Record<string, unknown>;
+      const type = asString(record.type);
+      const data = (record.data ?? {}) as Record<string, unknown>;
+      if (type === "escalation") {
+        stats.fires += 1;
+      } else if (type === "stuck_signal" && asString(data.type) === "escalate") {
+        stats.fires += 1;
+      } else if (type === "escalation_outcome") {
+        const outcome = asString(data.outcome);
+        if (outcome === "rescued") stats.rescued += 1;
+        else if (outcome === "failed_fast") stats.failedFast += 1;
+        else if (outcome === "budget_exhausted") stats.budgetExhausted += 1;
+      }
+    }
+  }
+  return stats;
 }
 
 function getPartialHandoff(
@@ -600,6 +659,11 @@ export function buildTraceInsights({
   let partialHandoffCount = 0;
   let maxTurnsWithHandoffCount = 0;
   let maxTurnsWithoutUsefulProgressCount = 0;
+  let escalatedSessions = 0;
+  let escalations = 0;
+  let escalationRescued = 0;
+  let escalationFailedFast = 0;
+  let escalationBudgetExhausted = 0;
   const processedRunEvents = new Set<string>();
 
   for (const session of selected) {
@@ -630,6 +694,13 @@ export function buildTraceInsights({
     ) {
       maxTurnsWithoutUsefulProgressCount += 1;
     }
+    const escalationStats = collectEscalationStats(entries, session);
+    if (escalationStats.fires > 0) escalatedSessions += 1;
+    escalations += escalationStats.fires;
+    escalationRescued += escalationStats.rescued;
+    escalationFailedFast += escalationStats.failedFast;
+    escalationBudgetExhausted += escalationStats.budgetExhausted;
+
     totalTurns += asNumber(session.turnCount);
     totalCost += asNumber(
       (session.metrics as { totalCost?: unknown } | null | undefined)?.totalCost,
@@ -924,6 +995,18 @@ export function buildTraceInsights({
       partialHandoffCount,
       maxTurnsWithHandoffCount,
       maxTurnsWithoutUsefulProgressCount,
+      escalatedSessions,
+      escalations,
+      escalationRescued,
+      escalationFailedFast,
+      escalationBudgetExhausted,
+      escalationFireRate:
+        totalSessions === 0 ? 0 : escalatedSessions / totalSessions,
+      escalationRescueRate:
+        escalationRescued + escalationFailedFast + escalationBudgetExhausted === 0
+          ? 0
+          : escalationRescued /
+            (escalationRescued + escalationFailedFast + escalationBudgetExhausted),
     },
     facets,
     tools: finalizeMetricRows(tools),
