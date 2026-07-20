@@ -1,22 +1,36 @@
 {
-  "reason": "RFC LP-15 Phase 11 + RFC LP-16 Phase 0: decomposition ratchet. Each entry is the current size of a landmine file; budgets may ONLY be lowered as code is extracted, never raised. Tighten after every extraction (run `node scripts/loop-ratchet.mjs --report`). loop.ts end-state targets: fileLines 3500, methodCount 80, loopMethodLines 200. The other files' end-state targets are their per-phase exit criteria in RFC LP-16 (kernel facade ~1.5K, tools/index.ts ~1K, orchestrator/index.ts ~3K).",
+  "reason": "RFC LP-15 Phase 11 + RFC LP-16 Phase 0: decomposition ratchet. Each entry is the current size of a landmine file; budgets may ONLY be lowered as code is extracted, never raised. Tighten after every extraction (run `node scripts/loop-ratchet.mjs --report`). loop.ts end-state targets: fileLines 3500, methodCount 80, loopMethodLines 200. The other files' end-state targets are their per-phase exit criteria in RFC LP-16 (kernel facade ~1.5K, tools/index.ts ~1K, orchestrator/index.ts ~3K). The `oversized` map grandfathers every other source file that exceeded the repo-wide 1500-line cap when the sweep was introduced (2026-07-14); those budgets are shrink-only too, and an entry is deleted once its file drops under the cap. Extracting landmine code into a NEW giant file no longer passes the ratchet. Re-baselined 2026-07-19 when this sweep was merged forward onto main: context.ts (1709 -> 1777) and orchestrator/planner.ts (new entry, 1684) grew on main during LP-17 while this branch was stale and the cap did not yet exist there. They are grandfathered at their current size for the same reason as the original entries — the cap is meeting them for the first time — NOT because a budget was raised to make a build pass. Both remain shrink-only from here.",
   "budgets": {
     "apps/extension/src/background/agent/loop.ts": {
-      "fileLines": 6691,
-      "methodCount": 165,
+      "fileLines": 5511,
+      "methodCount": 148,
       "loopMethodLines": 261
     },
     "apps/extension/src/background/agent/completion-kernel.ts": {
       "fileLines": 5892
     },
     "apps/extension/src/background/tools/index.ts": {
-      "fileLines": 147
+      "fileLines": 132
     },
     "apps/extension/src/background/orchestrator/index.ts": {
-      "fileLines": 5758
+      "fileLines": 5756
     },
     "apps/extension/src/background/orchestrator/skills.ts": {
       "fileLines": 1351
     }
+  },
+  "oversized": {
+    "apps/extension/src/background/agent/completion/workflow-confirmation-analysis.ts": 3561,
+    "apps/extension/src/background/agent/completion/read-answer-analysis.ts": 3293,
+    "apps/extension/src/background/agent/loop-helpers.ts": 2659,
+    "apps/extension/src/background/tools/servicenow/register.ts": 2405,
+    "apps/extension/src/background/agent/planner.ts": 1972,
+    "apps/extension/src/background/tools/servicenow/register-list-actions.ts": 1902,
+    "apps/extension/src/content/content.ts": 1798,
+    "apps/extension/src/background/agent/context.ts": 1777,
+    "apps/extension/src/background/llm/client.ts": 1717,
+    "apps/extension/src/background/orchestrator/planner.ts": 1684,
+    "apps/extension/src/background/tools/servicenow/navigation.ts": 1596,
+    "apps/extension/src/background/orchestrator/skill-bodies.ts": 1569
   }
 }

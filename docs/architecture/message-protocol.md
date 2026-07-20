@@ -117,7 +117,6 @@ Every message carries a `requestId: string` (UUID v4). This enables:
 | ----------------- | --------------------------- | --------------------------------------- | --------------------------------------------------------------------------------------------- |
 | `USER_CHAT`       | User sends a chat message   | `{ text, tabId, workspaceId, isFeedback? }` | `AGENT_RESPONSE` (streamed via multiple `STREAM_CHUNK` messages, then final `AGENT_RESPONSE`) |
 | `STOP_AGENT`      | User clicks stop button     | `{ workspaceId? }`                      | `AGENT_STATUS` with `status: IDLE`                                                            |
-| `SETTINGS_UPDATE` | User changes settings       | `{ settings: Partial<UserSettings> }`   | `{ ok: true }` (sync response)                                                                |
 | `PAUSE_AGENT`     | User pauses agent execution | `{ workspaceId? }`                      | `AGENT_STATUS` with `status: PAUSED`                                                          |
 | `RESUME_AGENT`    | User resumes paused agent   | `{ workspaceId? }`                      | `AGENT_STATUS` with `status: THINKING`                                                        |
 | `SKIP_SUBTASK`    | User skips current subtask  | `{ taskId }`                            | —                                                                                             |

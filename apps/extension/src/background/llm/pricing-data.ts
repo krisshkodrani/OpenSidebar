@@ -13,6 +13,15 @@ export const DEFAULT_MODEL_PRICING: ModelPricing[] = [
   },
   {
     providerId: "groq",
+    model: "openai/gpt-oss-20b",
+    inputUsdPerMillion: 0.075,
+    outputUsdPerMillion: 0.3,
+    effectiveDate: "2026-04-19",
+    sourceUrl: "https://console.groq.com/docs/model/openai/gpt-oss-20b",
+    confidence: "official",
+  },
+  {
+    providerId: "groq",
     model: "meta-llama/llama-4-scout-17b-16e-instruct",
     inputUsdPerMillion: 0.11,
     outputUsdPerMillion: 0.34,
@@ -59,17 +68,10 @@ export const DEFAULT_MODEL_PRICING: ModelPricing[] = [
   },
   {
     providerId: "fireworks",
-    model: "openai/gpt-oss-120b",
-    inputUsdPerMillion: 0.15,
-    outputUsdPerMillion: 0.6,
-    effectiveDate: "2026-04-19",
-    sourceUrl: "https://fireworks.ai/pricing",
-    confidence: "official",
-  },
-  {
-    providerId: "fireworks",
-    // The Fireworks API id form (the judge seat bills under this id; the
-    // catalog-style openai/... row above is kept for UI/catalog lookups).
+    // Fireworks bills under the accounts/... API id. There is deliberately no
+    // fireworks + "openai/gpt-oss-120b" row: that catalog-style id 404s on the
+    // Fireworks endpoint, so no run can ever bill under it. (The groq and
+    // openrouter rows for that id above are real — it is served there.)
     model: "accounts/fireworks/models/gpt-oss-120b",
     inputUsdPerMillion: 0.15,
     outputUsdPerMillion: 0.6,
