@@ -1,9 +1,11 @@
 # RFC LP-20 — JobAgent Free-Text Answer Drafting (Honesty-Gated)
 
-Lifecycle status: Draft (not stamped)
+Lifecycle status: Draft (not stamped) — revision 2, incorporating the
+[glm-5p2 second-opinion review](../rfc-review-jobagent-autonomy-glm-2026-07-20.md)
+(F7, F12, F13, F15)
 Date: 2026-07-20
-Scope: `scripts/jobagent/` drafting extensions (`freetext-drafting.ts`), answer-library schema extension, console kit-review UI (draft display, edit-then-approve, promote-to-library), optional CV-variant selection rule. Uses the existing writer/planner LLM seat via the console's own API client — no extension changes, no new model seats.
-Related: [JobAgent automation gap analysis](../jobagent-automation-gap-analysis.md) §G4; risk-notes honesty lifecycle (`approved`/`needs_review`) in the seed schema; RFC LP-19 (drafted content is always-park until promoted); RFC LP-18 (drafting stage hosts this)
+Scope: `scripts/jobagent/` drafting extensions (`freetext-drafting.ts`), answer-library schema extension (including the `context-free`/`context-bound` marking), console kit-review UI (draft display against sources, edit-then-approve, promote-to-library), and the shared blocking-reason vocabulary LP-18's notifications consume. Uses the existing writer/planner LLM seat via the console's own API client — no extension changes, no new model seats. CV-variant selection is **not** in scope (see Non-goals).
+Related: [JobAgent automation gap analysis](../jobagent-automation-gap-analysis.md) §G4; risk-notes honesty lifecycle (`approved`/`needs_review`) in the seed schema; RFC LP-19 (drafted content is always-park until promoted; consumes `context-bound`); RFC LP-18 (drafting stage hosts this; consumes the blocking-reason vocabulary)
 
 ## Problem
 
@@ -32,6 +34,14 @@ unresolved, generate a draft with the writer-seat LLM and attach provenance
 human either edits-and-approves or rejects it. The difference from a TODO is
 purely that the textarea starts full instead of empty.
 
+**Shared blocking-reason vocabulary.** Because a kit can now be blocked for
+two different reasons that demand different human work, this RFC owns the
+vocabulary that LP-18's notifications and the console UI both consume:
+`todo` (no answer exists — write one) and `drafted` (a draft is waiting —
+review or edit it). Defined in one module, imported by both, so the two RFCs
+cannot drift into telling the owner "TODO" when the real task is a two-second
+read-and-approve.
+
 ### 2. Grounded drafting inputs, honesty rules enforced structurally
 
 The drafting prompt receives only: the job listing's recorded description
@@ -51,6 +61,22 @@ explicitly instructed (and the output is post-checked) to:
 The post-check is deterministic and lives beside the drafter with offline
 tests; the LLM is never trusted to grade itself.
 
+**What the post-check does not catch, stated plainly.** It is a string-level
+fabrication detector: it finds invented employers, projects, technologies, and
+credentials. It does **not** catch paraphrase inflation ("I led the team" from
+a CV that says "member of the team"), misleading omission, or claims that are
+true but irrelevant. The human gate remains the actual safety boundary for
+drafted prose — the post-check narrows what the human must hunt for, it does
+not replace the hunt.
+
+That is why the review UI matters as much as the check: the draft is shown
+**beside its source corpus with matched phrases highlighted**, so the human
+reads the draft *against* the evidence rather than in isolation. Sentences
+containing any proper noun or credential not matched in the corpus are
+flagged for attention. The goal is to make review faster without making it
+shallower; a UI that merely presents prose invites skimming, which is exactly
+how a paraphrased fabrication would get through.
+
 ### 3. Approve-once: promotion into the answer library
 
 When the owner approves a drafted answer, the console offers promotion to the
@@ -61,18 +87,33 @@ answer library in one of two forms:
 - **template** (the owner generalizes it once, with `{{company}}`-style
   slots filled from the listing record at draft time).
 
-Promoted entries carry `approvedAt` + original provenance. On future kits the
-deterministic drafter resolves these as ordinary `answer` provenance — which
-is what makes LP-19 L1 autonomy reachable for repeat question shapes while
-first-encounter questions always stay human-gated.
+**Verbatim promotion is blocked for listing-specific answers.** "Why do you
+want to work here?" has the same question fingerprint at every company, so a
+verbatim answer containing "I'm excited about AcmeCorp's mission…" would
+resolve as ordinary `answer` provenance on BetaCorp's form — putting one
+company's name on another's application, and at LP-19 L1 doing so with no
+human in the loop. It is an honesty failure with real consequences for the
+candidate.
 
-### 4. CV-variant selection (small, optional, same surface)
+So promotion runs the same proper-noun detector the post-check uses (§2): if
+the approved text contains any proper noun drawn from the listing (company,
+product, location-specific phrasing), verbatim promotion is refused and only
+template promotion is offered, with the offending tokens shown as the reason.
 
-The seed holds 11 CV variants but kits always attach the default. Add a
-deterministic selection rule (keyword map from listing → variant, owner-
-editable, falls back to default + risk flag on ambiguity) in the same
-drafting stage. Explicitly severable if the owner prefers to keep this
-manual.
+Every library entry is marked accordingly:
+
+- `context-free` — safe to replay verbatim anywhere (e.g. "How did you hear
+  about us?", a standing accessibility note). **Only these are eligible for
+  LP-19 autonomy.**
+- `context-bound` — a template whose slots must be filled from the current
+  listing, or an answer the owner explicitly marked as situational. Always
+  parks under LP-19 §2, at every level.
+
+Promoted entries carry `approvedAt`, original provenance, and this marking.
+On future kits the deterministic drafter resolves them as ordinary `answer`
+provenance — which is what makes LP-19 L1 autonomy reachable for repeat
+*context-free* question shapes, while first-encounter and situational
+questions always stay human-gated.
 
 ## Non-goals
 
@@ -84,16 +125,27 @@ manual.
   never overrides the library.
 - No scraping beyond the already-recorded listing data (drafting adds no new
   network surface).
+- **CV-variant selection is out of scope.** The gap analysis lists it as a
+  standalone item and it stays one: it is a deterministic listing→variant
+  rule with nothing to do with free-text drafting, and folding it in here
+  invites an implementer to couple variant choice to the drafting prompt when
+  the two should be independent.
 
 ## Risks
 
 - **Plausible fabrication** that slips the string post-check (paraphrased
-  claims). Mitigation: the human gate is retained unconditionally; the
-  post-check narrows the review burden rather than replacing it. The draft UI
-  highlights every sentence containing a non-matched proper noun.
+  claims, inflation, omission). Mitigation: the human gate is retained
+  unconditionally, and §2's source-beside-draft review UI is what keeps that
+  gate meaningful as volume grows. The RFC does not claim the post-check makes
+  drafts trustworthy — it claims it makes review tractable.
 - **Voice homogenization** — every application sounds the same. Template
   promotion (owner-authored generalization) rather than silent verbatim reuse
   is the guard; the digest can report reuse counts per entry.
+- **Promotion-time misclassification** — an answer marked `context-free` that
+  is actually situational (no proper noun, but "I'm drawn to early-stage
+  hardware teams" on a fintech application). The detector cannot catch this;
+  the owner's marking is the control, and LP-19's flag-as-wrong action (§3.1)
+  is the recovery path.
 - **Cost/latency in the drafting stage**: one writer-seat call per free-text
   field, only on first encounter; repeat questions hit the library. Bounded
   and cheap relative to the fill itself.
@@ -113,10 +165,17 @@ manual.
 ## Recommended Decision
 
 Approve the `drafted` provenance kind, the grounded-input rule, the
-deterministic fabrication post-check, and approve-once promotion. Treat CV-
-variant selection as a severable amendment for the owner to keep or drop.
+deterministic fabrication post-check with its stated limits, the
+source-beside-draft review UI, and approve-once promotion with the
+verbatim block and `context-free`/`context-bound` marking. CV-variant
+selection is dropped from this RFC and stays a standalone item.
+
 Implement offline-testable (fake LLM seam, real post-check), gated behind the
 drafting stage so LP-18-scheduled kits get drafts automatically but nothing
-changes for manual kit building until then. Independent of LP-19; must land
-its always-park exclusion string (`kind: "drafted"`) in shared vocabulary so
-the two RFCs cannot drift.
+changes for manual kit building until then. Independent of LP-19, but two
+pieces of shared vocabulary must land in single modules imported by both, so
+the RFCs cannot drift: the always-park provenance string (`kind: "drafted"`)
+plus the `context-free`/`context-bound` marking consumed by LP-19 §2, and the
+`todo`/`drafted` blocking reasons consumed by LP-18 §3. Regression fixtures
+must include a company-specific draft that promotion refuses to store
+verbatim.
