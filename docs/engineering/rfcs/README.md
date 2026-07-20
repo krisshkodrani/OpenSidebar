@@ -75,6 +75,25 @@ Phase A anytime, Phase B behind a flag until CWS clears; LP-14 parked.
 | LP-13 | [Region zoom tool](lp-0013-region-zoom-tool.md) | Small text/canvas targets unreadable; no zoom action | LP-9 (scale factor) |
 | LP-14 | [In-browser PDF handling](lp-0014-pdf-handling.md) | PDF tabs are opaque; no text extraction | None (recommend parked) |
 
+## JobAgent autonomy series (2026-07-20)
+
+Draft RFCs from the [JobAgent automation gap analysis](../jobagent-automation-gap-analysis.md)
+(2026-07-20), written after the full fill + approval loop was live-proven on
+2026-07-19. The LP-17 label belongs to the efficiency-fixes implementation
+workstream (no RFC file), so this series starts at LP-18. Same status rules:
+**not stamped**, each ends with a "Recommended Decision". No implementation
+until the owner records a Decision Stamp.
+
+| # | RFC | Gap it closes | Depends on |
+| --- | --- | --- | --- |
+| LP-18 | [JobAgent queue scheduler & notification channel](lp-0018-jobagent-scheduler-notifications.md) | Every pipeline stage is hand-cranked; approvals invisible without the console open | None |
+| LP-19 | [JobAgent graduated autonomy (auto-approve policy)](lp-0019-jobagent-graduated-autonomy.md) | Both human gates unconditionally manual; no path to earned selective autonomy | LP-18 (audit log for threshold calibration) |
+| LP-20 | [JobAgent free-text answer drafting](lp-0020-jobagent-freetext-drafting.md) | Bespoke questions/cover letters dead-end as hand-written TODOs | None (composes with LP-18/LP-19) |
+
+Suggested sequencing: LP-18 first (compounds everything and generates the
+track record), LP-20 in parallel (independent surface), LP-19 last — activate
+only after LP-18 history calibrates its thresholds.
+
 ## Post-launch consolidation series
 
 LP-15 was decision-stamped and executed 2026-07-05→07 (all twelve phases'
