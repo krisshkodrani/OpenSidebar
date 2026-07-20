@@ -233,6 +233,14 @@ export interface HideElementArgs {
 export interface EscalateArgs {
   /** Why the executor model can't handle this (e.g. "riddle requires multi-step reasoning") */
   reason: string;
+  /** Structured escalation reason; missing_tool only when the capability catalog lacks it */
+  reasonCode?: "stuck" | "complex_reasoning" | "missing_tool" | "blocked" | "other";
+  /** For reasonCode=missing_tool, the absent capability needed to proceed */
+  requiredCapability?: string;
+  /** Capabilities the executor believes are available from the current catalog */
+  availableCapabilitiesSeenByExecutor?: string[];
+  /** The concrete next action that cannot be performed without escalation */
+  blockingAction?: string;
 }
 
 /** Arguments for clarify — ask the user a question mid-execution */
@@ -481,6 +489,14 @@ export interface ConfigureCatalogTextField {
   value: string;
 }
 
+/** One dropdown/select/radio option to choose on a catalog item page */
+export interface ConfigureCatalogOptionField {
+  /** Visible label, aria label, name, id, or nearby catalog variable label of the option field */
+  field: string;
+  /** Option label or value to select */
+  value: string;
+}
+
 /** One checkbox to configure on a catalog item page */
 export interface ConfigureCatalogCheckbox {
   /** Visible label, aria label, name, or id of the checkbox */
@@ -497,6 +513,8 @@ export interface ConfigureCatalogItemArgs {
   quantity?: number | string;
   /** Text inputs or textareas to fill by label */
   textFields?: ConfigureCatalogTextField[];
+  /** Dropdown/select/radio-like options to choose by label */
+  optionFields?: ConfigureCatalogOptionField[];
   /** Checkboxes to set by label */
   checkboxes?: ConfigureCatalogCheckbox[];
   /** Click an order/request/add-to-cart control after verifying requested values */
