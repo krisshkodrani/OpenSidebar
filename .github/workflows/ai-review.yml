@@ -27,7 +27,38 @@ permissions:
   contents: read
   pull-requests: write
 
+# One review per PR at a time. Without this, five comments in a row start five
+# concurrent runs that each pay full inference cost to review the same diff.
+concurrency:
+  group: ai-review-${{ github.event.issue.number || github.event.inputs.pr_number }}
+  cancel-in-progress: true
+
 jobs:
+  # A request that fails the permission gate would otherwise do NOTHING: no
+  # run, no reaction, no message. To an outside contributor that is
+  # indistinguishable from the feature being broken. This job holds no secrets
+  # and only writes a comment, so it is safe to run for anyone.
+  reject:
+    if: >
+      github.event_name == 'issue_comment' &&
+      github.event.issue.pull_request != null &&
+      contains(github.event.comment.body, '/ai-review') &&
+      !contains(fromJSON('["OWNER","MEMBER","COLLABORATOR"]'), github.event.comment.author_association)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Explain why nothing ran
+        # Values arrive via env, never interpolated into the script body:
+        # `${{ }}` inside `run:` is the standard Actions script-injection hole,
+        # and comment-triggered workflows are exactly where it gets exploited.
+        run: gh api "repos/$GITHUB_REPOSITORY/issues/$ISSUE_NUMBER/comments" -f body="$BODY"
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          ISSUE_NUMBER: ${{ github.event.issue.number }}
+          BODY: >-
+            `/ai-review` is limited to maintainers — it spends inference
+            budget, so it is gated on repository write access. A maintainer
+            can run it on this PR for you.
+
   review:
     # Comment path: must be ON a PR, must say /ai-review, and must come from
     # someone with write access to this repo.
