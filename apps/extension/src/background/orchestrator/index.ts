@@ -146,6 +146,10 @@ import {
   appendRecentSideEffects,
 } from "./node-heuristics";
 import {
+  buildTaskCompletedEventPayload,
+  deriveCompletionStatus,
+} from "./task-outcome-policy";
+import {
   getSnapshotFingerprint,
   matchSuccessCriteria,
 } from "../agent/loop-helpers";
@@ -4669,19 +4673,12 @@ export class Orchestrator {
         node.status === "skipped" && !isUnpenalizedGoalShortcutSkip(node),
     ).length;
 
-    const hasUsefulHandoff = hasUsefulPartialProgressHandoff(
-      task.partialHandoff,
-    );
-    let completionStatus: "completed" | "partial" | "failed" =
-      hasUsefulHandoff
-        ? "partial"
-        : failed > 0
-        ? completed > 0 || penalizedSkipped > 0
-          ? "partial"
-          : "failed"
-        : penalizedSkipped > 0
-          ? "partial"
-          : "completed";
+    let completionStatus = deriveCompletionStatus({
+      completed,
+      failed,
+      penalizedSkipped,
+      hasUsefulHandoff: hasUsefulPartialProgressHandoff(task.partialHandoff),
+    });
 
     const contract = buildTaskContract(task.query);
     // Entity/number coverage uses all node descriptions + results
@@ -4782,7 +4779,7 @@ export class Orchestrator {
     this.emitTraceEvent(
       task,
       "task_completed",
-      {
+      buildTaskCompletedEventPayload({
         taskId: task.id,
         completionStatus,
         completed,
@@ -4792,7 +4789,7 @@ export class Orchestrator {
         totalTokens: task.sessionMetrics.totalTokens,
         totalCostUsd: task.sessionMetrics.totalCost,
         terminationReason: task.terminationReason ?? null,
-      },
+      }),
       "system",
     );
 
