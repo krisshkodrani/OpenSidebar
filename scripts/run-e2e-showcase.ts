@@ -29,13 +29,15 @@ const REVIEW_RUNS_ROOT = resolve(
   ".artifacts/e2e/video-review-runs",
 );
 const SHOWCASE_RUNS_ROOT = resolve(PROJECT_ROOT, ".artifacts/e2e/showcase-runs");
-const SHOWCASE_TEST =
+const DEFAULT_SHOWCASE_TEST =
   "apps/extension/tests/e2e/showcase-ashby-application.test.ts";
-const SHOWCASE_LABEL = "showcase-ashby-application";
+const DEFAULT_SHOWCASE_LABEL = "showcase-ashby-application";
 
 type ShowcaseArgs = {
   timeoutMs: number;
   retry: number;
+  test: string;
+  label: string;
 };
 
 function artifactDate(): string {
@@ -60,6 +62,8 @@ function parseArgs(): ShowcaseArgs {
   return {
     timeoutMs: Number(parseArg("timeoutMs") ?? "720000"),
     retry: Number(parseArg("retry") ?? "0"),
+    test: parseArg("test") ?? DEFAULT_SHOWCASE_TEST,
+    label: parseArg("label") ?? DEFAULT_SHOWCASE_LABEL,
   };
 }
 
@@ -122,8 +126,8 @@ function runVideoReview(args: ShowcaseArgs): Promise<number> {
   const childArgs = [
     TSX_CLI,
     VIDEO_REVIEW_SCRIPT,
-    `--test=${SHOWCASE_TEST}`,
-    `--label=${SHOWCASE_LABEL}`,
+    `--test=${args.test}`,
+    `--label=${args.label}`,
     `--timeoutMs=${args.timeoutMs}`,
     `--retry=${args.retry}`,
   ];
@@ -166,7 +170,7 @@ async function main(): Promise<void> {
   const runDir = resolve(
     SHOWCASE_RUNS_ROOT,
     today,
-    `${artifactTimestamp()}-${SHOWCASE_LABEL}`,
+    `${artifactTimestamp()}-${args.label}`,
   );
   mkdirSync(runDir, { recursive: true });
   const summaryPath = resolve(runDir, "summary.json");
@@ -180,15 +184,15 @@ async function main(): Promise<void> {
   const summary = {
     schemaVersion: "2026-05-14",
     createdAt: finishedAt,
-    scenario: "ashby-job-application",
-    label: SHOWCASE_LABEL,
+    scenario: args.label.replace(/^showcase-/, ""),
+    label: args.label,
     result,
     exitCode,
     startedAt,
     finishedAt,
     provider: "fireworks",
     profile: "video",
-    testFile: SHOWCASE_TEST,
+    testFile: args.test,
     reviewSummary: latestReviewSummaryPath
       ? relativePath(latestReviewSummaryPath)
       : null,

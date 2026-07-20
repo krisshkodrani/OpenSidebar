@@ -76,7 +76,10 @@ OpenSidebar can write traces and logs for local debugging.
 pnpm run dev
 ```
 
-The trace viewer is available at `http://127.0.0.1:7589/viewer`.
+The trace viewer is available at `http://127.0.0.1:7589/viewer`. `pnpm run dev`
+runs a Vite watch build (`--mode e2e`) that keeps a complete `dist-dev/` — the
+extension and the viewer — on disk, so the viewer works from the first run (no
+HMR; use `pnpm run dev:hmr` for the CRXJS dev server with sidepanel hot-swap).
 
 ## Configuration Notes
 

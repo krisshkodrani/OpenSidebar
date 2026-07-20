@@ -1420,6 +1420,208 @@ async function singleOrderPlaced(
   );
 }
 
+// --- job-pipeline.stage-two-applications ---
+
+/** Job ids that genuinely match the staged-applications candidate profile
+ * (remote + React/TS + salary overlap) — the same four postings the
+ * jobRecommendationsGrounded relevant-signal list points at. */
+const STAGEABLE_JOB_IDS = new Set([
+  "sr-fe-1",
+  "fe-lead-2",
+  "fullstack-3",
+  "sr-ui-4",
+]);
+
+const STAGE_APPLICANT = {
+  name: "Jordan Reyes",
+  email: "jordan.reyes@example.com",
+};
+
+type StagedApplicationSnapshot = {
+  jobId: string | null;
+  draft: Record<string, any> | null;
+  hasResult: boolean;
+};
+
+/** Read every open /ashby-job-application tab's draft state. Tabs can close
+ * mid-read, so every page.evaluate failure degrades to a null snapshot. */
+async function readStagedApplications(
+  harness: E2EHarness,
+): Promise<StagedApplicationSnapshot[]> {
+  const pages = await harness.ctx.browser.pages();
+  const snapshots: StagedApplicationSnapshot[] = [];
+  for (const page of pages) {
+    const url = page.url();
+    if (!url.includes("/ashby-job-application")) continue;
+    let jobId: string | null = null;
+    try {
+      jobId = new URL(url).searchParams.get("job");
+    } catch {
+      jobId = null;
+    }
+    const state = await page
+      .evaluate(() => ({
+        draft: (window as any).ashbyApplicationDraft ?? null,
+        hasResult: Boolean((window as any).ashbyApplicationResult),
+      }))
+      .catch(() => null);
+    snapshots.push({
+      jobId,
+      draft: state?.draft ?? null,
+      hasResult: state?.hasResult ?? false,
+    });
+  }
+  return snapshots;
+}
+
+async function readBoardViewedJobs(
+  harness: E2EHarness,
+): Promise<string[]> {
+  // Union across ALL board tabs: multi-worker runs can open a second, fresh
+  // board tab, and returning the first hit would drop the research history
+  // that lives in the original tab.
+  const viewed = new Set<string>();
+  const pages = await harness.ctx.browser.pages();
+  for (const page of pages) {
+    if (!page.url().includes("/job-board")) continue;
+    const tabViewed = await page
+      .evaluate(() => (window as any).__jobBoardState?.viewedJobs ?? null)
+      .catch(() => null);
+    if (Array.isArray(tabViewed)) {
+      for (const id of tabViewed) viewed.add(String(id));
+    }
+  }
+  return [...viewed];
+}
+
+async function twoApplicationsStagedNotSubmitted(
+  context: ArenaRunContext,
+): Promise<ArenaValidatorResult> {
+  const { harness, workspaceId, task } = context;
+  const start = Date.now();
+  let traceFiles: string[] = [];
+  let traceTurns: TraceTurn[] = [];
+  let doneSummary = "";
+
+  // The arena ground truth for this task is the END STATE of the tabs, not the
+  // run's self-reported completion status. A run whose node verifier marked it
+  // "failed" (e.g. the verifier can only see the active tab and can't confirm a
+  // second application in another tab) can still have left two correctly-drafted
+  // applications open — and that is a pass. So wait until the run reaches ANY
+  // terminal status, then judge the tabs. (Runtime verifier false-negatives on
+  // multi-tab tasks are tracked as a separate follow-up.)
+  let terminalStatus: "completed" | "partial" | "failed" | null = null;
+  while (Date.now() - start < task.timeoutMs) {
+    const collected = await collectTraceData(harness, workspaceId);
+    traceFiles = collected.traceFiles;
+    traceTurns = collected.traceTurns;
+    doneSummary = collected.doneSummary;
+
+    const runCompletion = readRunCompletionForTraceFiles(traceFiles);
+    if (
+      runCompletion?.status === "completed" ||
+      runCompletion?.status === "partial" ||
+      runCompletion?.status === "failed"
+    ) {
+      terminalStatus = runCompletion.status;
+      doneSummary = doneSummary || runCompletion.summary;
+      break;
+    }
+    await sleep(2_000);
+  }
+
+  if (!terminalStatus) {
+    return buildResult(
+      false,
+      "timeout",
+      ["Run did not reach a terminal status within the task timeout."],
+      traceFiles,
+      traceTurns,
+      doneSummary,
+    );
+  }
+
+  const snapshots = await readStagedApplications(harness);
+  const viewedJobs = await readBoardViewedJobs(harness);
+
+  const anySubmitted = snapshots.some(
+    (snapshot) => snapshot.hasResult || snapshot.draft?.submitted === true,
+  );
+
+  const qualifying = snapshots.filter((snapshot) => {
+    const draft = snapshot.draft;
+    if (!draft) return false;
+    return (
+      snapshot.jobId !== null &&
+      STAGEABLE_JOB_IDS.has(snapshot.jobId) &&
+      draft.completeRequestedFields === 7 &&
+      draft.submitted === false &&
+      !snapshot.hasResult &&
+      String(draft.resumeName ?? "") === "" &&
+      String(draft.name ?? "").trim() === STAGE_APPLICANT.name &&
+      String(draft.email ?? "").trim().toLowerCase() === STAGE_APPLICANT.email
+    );
+  });
+  const stagedJobIds = [
+    ...new Set(qualifying.map((snapshot) => snapshot.jobId as string)),
+  ];
+  const researchGrounded =
+    viewedJobs.length === 0 ||
+    stagedJobIds.every((id) => viewedJobs.includes(id));
+
+  // Win condition (per product intent): the job-listings tab is still open AND
+  // two correctly-drafted, unsubmitted applications are open alongside it.
+  const boardOpen = (await harness.ctx.browser.pages()).some((page) =>
+    page.url().includes("/job-board"),
+  );
+
+  const ok =
+    boardOpen &&
+    stagedJobIds.length === 2 &&
+    !anySubmitted &&
+    researchGrounded;
+
+  const reason = ok
+    ? "validated"
+    : anySubmitted
+      ? "application_submitted"
+      : stagedJobIds.length !== 2
+        ? "staged_tabs_incomplete"
+        : !boardOpen
+          ? "board_tab_closed"
+          : "research_not_grounded";
+
+  return buildResult(
+    ok,
+    reason,
+    [
+      `appTabs=${snapshots.length}`,
+      `stagedJobs=${stagedJobIds.join(",") || "none"}`,
+      ...snapshots.map(
+        (snapshot) =>
+          `tab job=${snapshot.jobId ?? "?"} fields=${String(
+            snapshot.draft?.completeRequestedFields ?? "?",
+          )}/7 submitted=${String(
+            snapshot.hasResult || snapshot.draft?.submitted === true,
+          )} resumeEmpty=${String(!snapshot.draft?.resumeName)}`,
+      ),
+      `viewedJobs=${viewedJobs.length}`,
+      `researchGrounded=${String(researchGrounded)}`,
+      `boardOpen=${String(boardOpen)}`,
+      `runStatus=${terminalStatus}`,
+    ],
+    traceFiles,
+    traceTurns,
+    doneSummary,
+    {
+      stagedJobIds,
+      appTabCount: snapshots.length,
+      viewedJobs: viewedJobs.length,
+      anySubmitted,
+    },
+  );
+}
+
 export const ARENA_VALIDATORS: Record<string, ArenaValidator> = {
   supportTicketTriaged,
   ticketEscalatedWithAccountContext,
@@ -1439,6 +1641,7 @@ export const ARENA_VALIDATORS: Record<string, ArenaValidator> = {
   firstTwoProcurementItemsComplete,
   jobRecommendationsGrounded,
   singleOrderPlaced,
+  twoApplicationsStagedNotSubmitted,
 };
 
 export function getArenaValidator(name: string): ArenaValidator | undefined {

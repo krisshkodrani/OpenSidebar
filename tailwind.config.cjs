@@ -66,26 +66,36 @@ module.exports = {
                     subtle: "#334155",
                     accent: "#2563EB",
                     "accent-strong": "#1D4ED8",
-                    live: "#14B8A6",
+                    live: "rgb(var(--brand-live, 20 184 166) / <alpha-value>)",
                     "live-soft": "#99F6E4",
                 },
+                // `success`/`warning`/`error` resolve to CSS variables so the
+                // trace viewer can flip them per theme; the fallback triplet is
+                // the light value, so surfaces that don't define the vars
+                // (sidepanel/overlay) render exactly as before. `info`/`live`
+                // have no themed variant and stay fixed.
                 state: {
-                    success: "#15803D",
-                    warning: "#D97706",
-                    error: "#DC2626",
+                    success: "rgb(var(--state-success, 21 128 61) / <alpha-value>)",
+                    warning: "rgb(var(--state-warning, 217 119 6) / <alpha-value>)",
+                    error: "rgb(var(--state-error, 220 38 38) / <alpha-value>)",
                     info: "#2563EB",
                     live: "#14B8A6",
                 },
+                // Trace-viewer semantic tokens: back the Tailwind color by the
+                // `--trace-*` CSS variable (RGB triplet) so `.dark` on <html>
+                // re-themes every `bg-trace-*` / `text-trace-*` / `border-trace-*`
+                // utility, including opacity modifiers. Fallback = light value.
                 trace: {
-                    bg: "#F8FAFC",
-                    panel: "#FFFFFF",
-                    border: "#E2E8F0",
-                    accent: "#2563EB",
-                    "accent-light": "#1D4ED8",
-                    text: "#0F172A",
-                    muted: "#475569",
-                    dim: "#64748B",
-                    subtle: "#334155",
+                    bg: "rgb(var(--trace-bg, 248 250 252) / <alpha-value>)",
+                    panel: "rgb(var(--trace-panel, 255 255 255) / <alpha-value>)",
+                    border: "rgb(var(--trace-border, 226 232 240) / <alpha-value>)",
+                    surface: "rgb(var(--trace-surface, 241 245 249) / <alpha-value>)",
+                    accent: "rgb(var(--trace-accent, 37 99 235) / <alpha-value>)",
+                    "accent-light": "rgb(var(--trace-accent-light, 29 78 216) / <alpha-value>)",
+                    text: "rgb(var(--trace-text, 15 23 42) / <alpha-value>)",
+                    muted: "rgb(var(--trace-muted, 71 85 105) / <alpha-value>)",
+                    dim: "rgb(var(--trace-dim, 100 116 139) / <alpha-value>)",
+                    subtle: "rgb(var(--trace-subtle, 51 65 85) / <alpha-value>)",
                 },
             },
             boxShadow: {

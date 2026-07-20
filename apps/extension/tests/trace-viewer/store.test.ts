@@ -191,22 +191,14 @@ describe("trace-viewer store", () => {
     expect(useStore.getState().scrollPositions["s-104:turns"]).toBe(104);
   });
 
-  test("trace list mode defaults to sessions and can be toggled", () => {
-    expect(useStore.getState().traceListMode).toBe("sessions");
+  test("top-level viewer mode defaults to runs and can switch to analytics", () => {
+    expect(useStore.getState().activeTopLevelView).toBe("runs");
 
-    useStore.getState().setTraceListMode("runs");
-    expect(useStore.getState().traceListMode).toBe("runs");
+    useStore.getState().setActiveTopLevelView("analytics");
+    expect(useStore.getState().activeTopLevelView).toBe("analytics");
   });
 
-  test("top-level viewer mode defaults to sessions and can switch to insights", () => {
-    expect(useStore.getState().activeTopLevelView).toBe("sessions");
-
-    useStore.getState().setActiveTopLevelView("insights");
-    expect(useStore.getState().activeTopLevelView).toBe("insights");
-  });
-
-  test("setSessions falls back to sessions when selected run view has no groups", () => {
-    useStore.getState().setTraceListMode("runs");
+  test("setSessions keeps standalone sessions out of run groups", () => {
     useStore.getState().setSessions([
       {
         sessionId: "s1",
@@ -222,6 +214,6 @@ describe("trace-viewer store", () => {
     ] as any);
 
     expect(useStore.getState().runGroups).toHaveLength(0);
-    expect(useStore.getState().traceListMode).toBe("sessions");
+    expect(useStore.getState().sessions).toHaveLength(1);
   });
 });

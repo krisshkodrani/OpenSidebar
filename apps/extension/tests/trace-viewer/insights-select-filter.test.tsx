@@ -2,9 +2,9 @@ import React, { act } from "react";
 import { beforeEach, describe, expect, test, vi } from "vitest";
 import { createRoot, type Root } from "react-dom/client";
 import "../setup";
-import { SelectFilter } from "../../src/trace-viewer/components/traces/InsightsTab";
+import SelectFilter from "../../src/trace-viewer/components/traces/SelectFilter";
 
-describe("InsightsTab SelectFilter", () => {
+describe("Analytics SelectFilter", () => {
   let container: HTMLDivElement;
   let root: Root;
 

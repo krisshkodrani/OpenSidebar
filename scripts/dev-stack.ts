@@ -21,6 +21,13 @@ const LOCAL_SERVER_PORT = Number(process.env.LOG_SERVER_PORT) || 7589;
 const VITE_PORT = 5173;
 const LOCAL_SERVER_HEALTH_URL = `http://127.0.0.1:${LOCAL_SERVER_PORT}/health`;
 
+// Default: a `vite build --mode e2e --watch` that keeps a COMPLETE dist-dev on
+// disk (extension + overlay-harness + trace-viewer), so the log-server's
+// /viewer route works from the first run and tracks edits. Opt into `--hmr` for
+// the legacy CRXJS dev server (fast sidepanel HMR, but the trace viewer is not
+// written to disk and stays stale until the next `build:e2e`).
+const USE_HMR = process.argv.includes("--hmr");
+
 const VITE_CONFIG_ARTIFACT = /^vite\.config\.ts\.timestamp-.*\.mjs$/;
 
 /** Remove stale vite.config.ts.timestamp-*.mjs files */
@@ -115,18 +122,23 @@ async function main(): Promise<void> {
     }
   }
 
-  console.log("[dev:stack] Starting Vite dev server...");
-  const dev = IS_WINDOWS
-    ? spawnWithExited(
-        process.execPath,
-        [path.resolve("node_modules/vite/bin/vite.js")],
-        { stdio: "inherit" },
-      )
-    : spawnWithExited(
-        process.execPath,
-        [path.resolve("node_modules/vite/bin/vite.js")],
-        { stdio: "inherit" },
-      );
+  // Spawn Node directly (not through cmd.exe) so Windows doesn't prompt
+  // "Terminate batch job?" on Ctrl+C; killTree handles the process tree.
+  const viteArgs = USE_HMR
+    ? [path.resolve("node_modules/vite/bin/vite.js")]
+    : [
+        path.resolve("node_modules/vite/bin/vite.js"),
+        "build",
+        "--mode",
+        "e2e",
+        "--watch",
+      ];
+  console.log(
+    USE_HMR
+      ? "[dev:stack] Starting Vite dev server (HMR; trace viewer not rebuilt — run `pnpm run build:e2e` for it)..."
+      : "[dev:stack] Starting Vite watch build (e2e)... initial build takes a few seconds before /viewer is live.",
+  );
+  const dev = spawnWithExited(process.execPath, viteArgs, { stdio: "inherit" });
 
   console.log(
     `[dev:stack] Trace viewer: http://127.0.0.1:${LOCAL_SERVER_PORT}/viewer`,

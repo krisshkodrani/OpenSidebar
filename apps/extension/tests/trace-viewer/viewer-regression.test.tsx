@@ -229,7 +229,7 @@ describe("trace-viewer App regression flows", () => {
     mockFetchRunTraceEvents.mockResolvedValue([]);
     mockFetchSessionLogs.mockResolvedValue([]);
 
-    useStore.setState({ traceListMode: "sessions" } as any);
+    // These flows exercise the Runs list — the viewer's default landing.
     container = document.createElement("div");
     document.body.appendChild(container);
     root = createRoot(container);
@@ -253,8 +253,9 @@ describe("trace-viewer App regression flows", () => {
       expect(container.textContent).toContain("Compare");
     });
 
+    // Single-session run groups render pre-expanded; open the session row.
     const row = Array.from(
-      container.querySelectorAll("div.cursor-pointer"),
+      container.querySelectorAll('div[role="button"]'),
     ).find((candidate) =>
       candidate.textContent?.includes("Audit viewer trace navigation"),
     );
@@ -264,15 +265,19 @@ describe("trace-viewer App regression flows", () => {
       row!.dispatchEvent(new MouseEvent("click", { bubbles: true }));
     });
 
+    // A trace opens on the Story subview with the simplified 4-tab strip.
     await waitFor(() => {
-      expect(container.textContent).toContain("Investigation");
-      expect(container.textContent).toContain("Related Traces");
-      expect(container.textContent).toContain("Turn Diff");
-      expect(container.textContent).toContain("First divergence at T1");
+      const tabLabels = Array.from(container.querySelectorAll("button")).map(
+        (button) => button.textContent ?? "",
+      );
+      expect(tabLabels).toContain("Story");
+      expect(tabLabels).toContain("Plan");
+      expect(tabLabels.some((label) => label.startsWith("Turns"))).toBe(true);
+      expect(tabLabels).toContain("Debug");
     });
 
     const turnsTab = Array.from(container.querySelectorAll("button")).find(
-      (button) => button.textContent?.startsWith("Trajectory"),
+      (button) => button.textContent?.startsWith("Turns"),
     );
     expect(turnsTab).toBeTruthy();
 
@@ -302,7 +307,7 @@ describe("trace-viewer App regression flows", () => {
     });
   });
 
-  test("defaults to the sessions table and can open a second trace", async () => {
+  test("defaults to the runs list and can open a second trace", async () => {
     await act(async () => {
       root.render(<App />);
     });
@@ -312,10 +317,10 @@ describe("trace-viewer App regression flows", () => {
       expect(container.textContent).toContain("Compare viewer trace output");
     });
 
-    expect(useStore.getState().traceListMode).toBe("sessions");
+    expect(useStore.getState().activeTopLevelView).toBe("runs");
 
     const row = Array.from(
-      container.querySelectorAll("div.cursor-pointer"),
+      container.querySelectorAll('div[role="button"]'),
     ).find((candidate) =>
       candidate.textContent?.includes("Compare viewer trace output"),
     );
@@ -325,11 +330,14 @@ describe("trace-viewer App regression flows", () => {
       row!.dispatchEvent(new MouseEvent("click", { bubbles: true }));
     });
 
+    // Opens on the Story subview with the simplified 4-tab strip.
     await waitFor(() => {
       expect(container.textContent).toContain("Compare viewer trace output");
-      expect(container.textContent).toContain("Evidence Trail");
-      expect(container.textContent).toContain("Turn Diff");
-      expect(container.textContent).toContain("First divergence at T1");
+      const tabLabels = Array.from(container.querySelectorAll("button")).map(
+        (button) => button.textContent ?? "",
+      );
+      expect(tabLabels).toContain("Story");
+      expect(tabLabels).toContain("Debug");
     });
   });
 });

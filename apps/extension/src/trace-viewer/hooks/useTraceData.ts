@@ -117,6 +117,9 @@ export function useTraceData() {
     if (!didInitialRefresh.current) {
       didInitialRefresh.current = true;
       refreshSessions();
+      // Load the fleet-wide adjudication verdicts once so table rows can badge
+      // reviewed/unreviewed and the Attention inbox knows what's outstanding.
+      void useStore.getState().loadAnnotations();
       return;
     }
     if (debounceRef.current) clearTimeout(debounceRef.current);

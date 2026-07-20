@@ -492,6 +492,7 @@ export async function setupEventMonitor(worker: WebWorker): Promise<void> {
     const g = self;
     if (g.__e2eEventMonitorInstalled) {
       g.__agentEvents = [];
+      g.__agentControlEvents = [];
       g.__e2eEventBufferLimit = bufferLimit;
       return;
     }
@@ -510,7 +511,20 @@ export async function setupEventMonitor(worker: WebWorker): Promise<void> {
     }
 
     g.__agentEvents = [];
+    g.__agentControlEvents = [];
+    g.__e2eEventSeq = 0;
     g.__e2eEventBufferLimit = bufferLimit;
+    // One-shot control events must survive STREAM_CHUNK floods: an active LLM
+    // stream can push hundreds of chunk events between two harness polls,
+    // evicting e.g. USER_CHAT_ACCEPTED from the rolling buffer before the
+    // waiter ever sees it. Keep them in a second, flood-proof lane too.
+    const CONTROL_EVENT_TYPES = [
+      "USER_CHAT_ACCEPTED",
+      "APPROVAL_REQUEST",
+      "CLARIFICATION_REQUEST",
+      "TASK_COMPLETION",
+      "TASK_RECOVERY",
+    ];
     const captureMessage = (message, channel) => {
       if (message && typeof message === "object" && typeof message.type === "string") {
         const t = message.type;
@@ -528,7 +542,8 @@ export async function setupEventMonitor(worker: WebWorker): Promise<void> {
           t === "TASK_RECOVERY" ||
           lowerType.includes("memory")
         ) {
-          g.__agentEvents.push({
+          const entry = {
+            seq: ++g.__e2eEventSeq,
             type: t,
             channel,
             status: message?.payload?.status,
@@ -552,8 +567,13 @@ export async function setupEventMonitor(worker: WebWorker): Promise<void> {
             context: message?.payload?.context ?? null,
             timeoutMs: message?.payload?.timeoutMs ?? null,
             payload: message?.payload ?? null,
-          });
+          };
+          g.__agentEvents.push(entry);
           if (g.__agentEvents.length > g.__e2eEventBufferLimit) g.__agentEvents.shift();
+          if (CONTROL_EVENT_TYPES.includes(t)) {
+            g.__agentControlEvents.push(entry);
+            if (g.__agentControlEvents.length > 200) g.__agentControlEvents.shift();
+          }
         }
       }
     };
@@ -628,6 +648,39 @@ export async function getMemoryEvents(
   });
 }
 
+/**
+ * Read the last N buffered events merged with the flood-proof control-event
+ * lane (see setupEventMonitor). Waiters must use this instead of
+ * getMonitoredEvents so that one-shot events (USER_CHAT_ACCEPTED,
+ * APPROVAL_REQUEST, …) are still visible after a STREAM_CHUNK flood has
+ * rolled them out of the main buffer.
+ */
+async function getMonitoredEventsWithControlLane(
+  worker: WebWorker,
+  last: number,
+): Promise<any[]> {
+  return withE2ETimeout(
+    worker.evaluate((n: number) => {
+      const main = ((self as any).__agentEvents ?? []) as any[];
+      const control = ((self as any).__agentControlEvents ?? []) as any[];
+      const seen = new Set<number>();
+      const merged: any[] = [];
+      for (const event of [...main.slice(-n), ...control]) {
+        const seq = event?.seq;
+        if (typeof seq === "number") {
+          if (seen.has(seq)) continue;
+          seen.add(seq);
+        }
+        merged.push(event);
+      }
+      merged.sort((a: any, b: any) => (a?.seq ?? 0) - (b?.seq ?? 0));
+      return merged;
+    }, last),
+    SERVICE_WORKER_EVALUATE_TIMEOUT_MS,
+    "Monitored event read",
+  );
+}
+
 export async function waitForMonitoredEvent(
   worker: WebWorker,
   predicate: (event: any) => boolean,
@@ -636,7 +689,7 @@ export async function waitForMonitoredEvent(
 ): Promise<any> {
   const start = Date.now();
   while (Date.now() - start < timeoutMs) {
-    const rawEvents = await getMonitoredEvents(worker, 120);
+    const rawEvents = await getMonitoredEventsWithControlLane(worker, 120);
     const events =
       workspaceId == null
         ? rawEvents
@@ -1055,6 +1108,73 @@ export async function sendApprovalResponse(
   );
 }
 
+/**
+ * Start a background responder that auto-approves APPROVAL_REQUEST events for the
+ * given workspace as they arrive.
+ *
+ * The arena suite runs with `requireApprovals: false` — it has already opted into
+ * an autonomous run where the agent is in charge. A forced consequential approval
+ * (e.g. a tab-open gate) overrides that stance and, with no human to answer it
+ * headlessly, would otherwise wedge the run until the task wall-clock. Approving
+ * every such prompt keeps the harness consistent with the autonomy it declared;
+ * task constraints like "do not submit" are enforced where they belong — by the
+ * agent's own judgment and the validator's end-state check — not by a harness net.
+ *
+ * Each approvalId is answered exactly once. Call `stop()` in a finally block once
+ * the run's validator resolves.
+ */
+export function startApprovalAutoResponder(
+  ctx: ExtensionContext,
+  worker: WebWorker,
+  workspaceId: string,
+  options?: { pollMs?: number },
+): { stop: () => Promise<void> } {
+  const pollMs = options?.pollMs ?? 250;
+  const answered = new Set<string>();
+  let running = true;
+
+  const loop = (async () => {
+    while (running) {
+      try {
+        const events = await getMonitoredEventsWithControlLane(worker, 120);
+        for (const event of events) {
+          if (event?.type !== "APPROVAL_REQUEST") continue;
+          if (
+            workspaceId != null &&
+            event.workspaceId != null &&
+            event.workspaceId !== workspaceId
+          ) {
+            continue;
+          }
+          const approvalId = event.approvalId ?? event.payload?.approvalId;
+          if (!approvalId || answered.has(approvalId)) continue;
+          answered.add(approvalId);
+          try {
+            await sendApprovalResponse(ctx, approvalId, true, workspaceId);
+            console.log(
+              `[arena] auto-approved approval ${approvalId} ` +
+                `(tool=${event.payload?.toolName ?? "?"})`,
+            );
+          } catch {
+            // Worker may be mid-restart; allow a later poll to retry.
+            answered.delete(approvalId);
+          }
+        }
+      } catch {
+        // Transient service-worker read failure; retry on the next tick.
+      }
+      await new Promise((resolve) => setTimeout(resolve, pollMs));
+    }
+  })();
+
+  return {
+    stop: async () => {
+      running = false;
+      await loop.catch(() => {});
+    },
+  };
+}
+
 export async function seedPendingInteraction(
   ctx: ExtensionContext,
   input: {
@@ -1302,6 +1422,7 @@ export async function clearMonitoredEvents(worker: WebWorker): Promise<void> {
   await withE2ETimeout(
     worker.evaluate(() => {
       (self as any).__agentEvents = [];
+      (self as any).__agentControlEvents = [];
     }),
     SERVICE_WORKER_EVALUATE_TIMEOUT_MS,
     "Monitored event clear",

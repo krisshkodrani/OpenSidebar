@@ -1,4 +1,5 @@
 import { useEffect, useState, type ChangeEvent } from "react";
+import { getJobById } from "../data/jobs";
 
 type AshbyDraft = {
   name: string;
@@ -26,14 +27,33 @@ const emptyDraft: AshbyDraft = {
   resumeName: "",
 };
 
+// Without a ?job= param the route renders exactly the historical hardcoded
+// posting, so the existing standalone Ashby tests are unaffected. An unknown or
+// mistyped id, however, must NOT silently resolve to this form — that would let
+// a wrong-URL guess masquerade as a successful application (see jobNotFound).
+const FALLBACK_ROLE = {
+  title: "Senior Product Engineer",
+  company: "Langfuse",
+};
+
 export default function AshbyJobApplication() {
   const [draft, setDraft] = useState<AshbyDraft>(emptyDraft);
   const [submitted, setSubmitted] = useState(false);
+  const rawJobParam = new URLSearchParams(window.location.search).get("job");
+  const job = getJobById(rawJobParam);
+  // A mistyped/unknown job id must not silently fall back to another company's
+  // form. Only the *absence* of a param keeps the default role (the bare-route
+  // scenario the standalone Ashby tests rely on).
+  const jobNotFound = rawJobParam !== null && rawJobParam.trim() !== "" && !job;
+  const role = job ?? FALLBACK_ROLE;
 
   useEffect(() => {
     (window as any).ashbyApplicationDraft = {
       ...draft,
       submitted,
+      jobId: job?.id ?? null,
+      jobTitle: role.title,
+      company: role.company,
       completeRequestedFields: [
         draft.name,
         draft.email,
@@ -44,7 +64,10 @@ export default function AshbyJobApplication() {
         draft.whyLangfuse,
       ].filter((value) => value.trim()).length,
     };
-  }, [draft, submitted]);
+    if (job) {
+      document.title = `${job.title} @ ${job.company} | Ashby`;
+    }
+  }, [draft, submitted, job, role.title, role.company]);
 
   const updateField =
     (field: keyof AshbyDraft) =>
@@ -85,12 +108,33 @@ export default function AshbyJobApplication() {
     );
   }
 
+  if (jobNotFound) {
+    return (
+      <main className="fixture-static" data-platform="ashby">
+        <div className="container">
+          <div className="card">
+            <p className="lede">Powered by Ashby</p>
+            <h1>Job not found</h1>
+            <p>
+              We couldn&rsquo;t find a posting for &ldquo;{rawJobParam}&rdquo;.
+              Return to the job board and use a listing&rsquo;s Apply button to
+              open the correct application.
+            </p>
+            <a className="btn btn-primary" href="/job-board">
+              Back to the job board
+            </a>
+          </div>
+        </div>
+      </main>
+    );
+  }
+
   return (
     <main className="fixture-static" data-platform="ashby">
       <div className="container">
         <div className="card">
           <p className="lede">Powered by Ashby</p>
-          <h1>Senior Product Engineer @ Langfuse</h1>
+          <h1>{role.title} @ {role.company}</h1>
           <p>
             Complete the application below. Required fields are marked with an
             asterisk.
@@ -218,7 +262,7 @@ export default function AshbyJobApplication() {
 
             <div className="field">
               <label htmlFor="ashby-why-langfuse">
-                Why Do You Care About Langfuse? *
+                Why Do You Care About {role.company}? *
               </label>
               <textarea
                 id="ashby-why-langfuse"

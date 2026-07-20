@@ -23,6 +23,7 @@ This index lists stable repo documentation. Active RFCs live in [docs/engineerin
 - [Navigation Bridge](./architecture/navigation-bridge.md)
 - [Side Panel UI](./architecture/sidepanel-ui.md)
 - [Tools](./architecture/tools.md)
+- [Trace Viewer](./architecture/trace-viewer.md)
 - [Types Reference](./architecture/types-reference.md)
 - [Project Setup](./architecture/project-setup.md)
 
@@ -35,6 +36,19 @@ This index lists stable repo documentation. Active RFCs live in [docs/engineerin
 - [Security](./features/security.md)
 - [Streaming UI](./features/streaming-ui.md)
 
+## Observability & Trace Viewer
+
+Every run leaves evidence: full-fidelity local traces you can replay, judge, and
+adjudicate. Read in this order to learn the harness:
+
+1. [Trace Viewer AI Concepts](./guides/trace-viewer-ai-concepts.md) — the agent concepts the viewer makes observable
+2. [Trace Viewer Architecture](./architecture/trace-viewer.md) — how the harness is structured: pipeline, log-server API, app layout, adjudication flow
+3. [Trace Viewer Developer Workflow](./guides/trace-viewer-developer-workflow.md) — debugging a failing run, from the Attention inbox to a verdict
+4. [Metric Semantics](./architecture/trace-viewer-metric-semantics.md) — pinned definitions behind the investigation metrics
+5. [Observability & Retention](./architecture/trace-viewer-observability.md) — storage tiers, SQLite index, retention commands
+
+One-pagers: [Investigation Loop](./guides/trace-viewer-investigation-loop.html) · [Observability for Harness Engineering](./guides/trace-viewer-observability.html)
+
 ## Guides
 
 - [Developer Guide](./developer-guide.md)
@@ -46,7 +60,6 @@ This index lists stable repo documentation. Active RFCs live in [docs/engineerin
 - [Browser Navigation Challenge](./guides/browser-navigation-challenge.md)
 - [The Right Level Of Abstraction](./guides/right-level-of-abstraction.md)
 - [WorkArena Generalized Harness Philosophy](./guides/workarena-generalized-harness-philosophy.md)
-- [Trace Viewer Developer Workflow](./guides/trace-viewer-developer-workflow.md)
 
 ## Evaluations
 

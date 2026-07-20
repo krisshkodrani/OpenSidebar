@@ -78,6 +78,7 @@ export const E2E_SUITES: Record<E2ESuiteName, readonly string[]> = {
   ],
   showcase: [
     "showcase-ashby-application.test.ts",
+    "showcase-job-pipeline.test.ts",
     // Skips itself unless E2E_LIVE_APP_KIT points at a local kit directory, so
     // it can never fire in CI or an unconfigured run.
     "showcase-live-application.test.ts",

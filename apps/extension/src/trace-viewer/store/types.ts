@@ -34,6 +34,49 @@ export interface TraceFilters {
   model: string; // "all" | specific model name
   skill: string; // "all" | specific skill ID
   runId: string; // "" means no filter, otherwise prefix match
+  /** Client-side human-adjudication filter: all | unreviewed | reviewed | disagreed */
+  adjudication: string;
+  /** Client-side adjudication-queue chip (the former Attention inbox): off | on */
+  needsReview: string;
+}
+
+// ── Human adjudication ─────────────────────────────────────────
+
+export type AnnotationVerdict = "agree" | "disagree" | "unsure";
+
+/** A human's verdict on a run's outcome (mirrors the server record). */
+export interface RunAnnotation {
+  id: string;
+  sessionId: string;
+  runId?: string;
+  annotatedAt: string;
+  annotator?: string;
+  verdict: AnnotationVerdict;
+  correctedOutcome?: string;
+  note?: string;
+  criteriaOverrides?: Array<{
+    nodeId: string;
+    criterionId: string;
+    pass: boolean;
+    note?: string;
+  }>;
+  computed?: {
+    outcome?: string;
+    trajectoryVerdict?: string;
+    judgeDecision?: string;
+    judgeConfidence?: number;
+  };
+  exported?: { goldenFile?: string; fixtureDownloaded?: boolean };
+}
+
+/** The dedup key for an annotation: its run when present, else its session. */
+export function annotationKeyFor(a: {
+  runId?: string;
+  sessionId?: string;
+}): string {
+  return a.runId && a.runId.length > 0
+    ? `run:${a.runId}`
+    : `session:${a.sessionId ?? ""}`;
 }
 
 /** Aggregate stats for a group of sessions sharing the same runId */
@@ -61,7 +104,6 @@ export interface TracesSlice {
   sessions: TraceSession[];
   runGroups: RunGroup[];
   activeTopLevelView: TopLevelView;
-  traceListMode: "sessions" | "runs";
   availableDays: DayBucket[];
   availableModels: ModelBucket[];
   filters: TraceFilters;
@@ -92,7 +134,6 @@ export interface TracesSlice {
   setLogsWarning: (warning: string | null) => void;
   setSearchQuery: (query: string) => void;
   setActiveTopLevelView: (view: TopLevelView) => void;
-  setTraceListMode: (mode: "sessions" | "runs") => void;
   /** Turn number to scroll to after a tab switch (cleared after scroll completes) */
   focusTurnNumber: number | null;
   focusTurnRequest: FocusTurnRequest | null;
@@ -102,8 +143,6 @@ export interface TracesSlice {
   navigateToTurn: (turnNumber: number) => void;
   /** Switch to Perception tab and scroll to a specific turn's perception */
   navigateToPerception: (turnNumber: number) => void;
-  tableSort: { column: string; direction: "asc" | "desc" };
-  setTableSort: (column: string, direction: "asc" | "desc") => void;
   setTracesLoading: (loading: boolean) => void;
   setTracesError: (error: string | null) => void;
   toggleRunGroup: (runId: string) => void;
@@ -115,24 +154,49 @@ export interface TracesSlice {
 }
 
 export type Subview =
-  | "overview"
+  | "story"
   | "plan"
   | "turns"
-  | "trajectory"
   | "perception"
   | "prompts"
   | "skills"
   | "logs";
 
-export type TopLevelView = "sessions" | "runs" | "insights" | "metrics";
+export type TopLevelView = "runs" | "analytics";
 
 export interface ScrollPositions {
   [key: string]: number;
 }
 
+export interface NewAnnotationInput {
+  sessionId: string;
+  runId?: string;
+  annotator?: string;
+  verdict: AnnotationVerdict;
+  correctedOutcome?: string;
+  note?: string;
+  criteriaOverrides?: RunAnnotation["criteriaOverrides"];
+  computed?: RunAnnotation["computed"];
+}
+
+export interface AnnotationsSlice {
+  /** Latest annotation per run/session, keyed by annotationKeyFor(). */
+  annotations: Record<string, RunAnnotation>;
+  annotationsLoading: boolean;
+  annotationsError: string | null;
+  loadAnnotations: () => Promise<void>;
+  /** Persist a verdict; on success updates the map and returns the record. */
+  submitAnnotation: (input: NewAnnotationInput) => Promise<RunAnnotation | null>;
+  /** Mark an annotation exported (after a golden/fixture export succeeds). */
+  markAnnotationExported: (
+    key: string,
+    exported: RunAnnotation["exported"],
+  ) => void;
+}
+
 // ── Combined Store ─────────────────────────────────────────────
 
-export type Store = TracesSlice;
+export type Store = TracesSlice & AnnotationsSlice;
 
 export type SliceCreator<T> = StateCreator<
   Store,

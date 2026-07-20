@@ -394,6 +394,35 @@ describe("LLMClient construction & tier switching", () => {
     expect(sentModel).toBe(MOONSHOT_MODEL_PLANNER);
   });
 
+  test("runJudge returns normalized token usage with an estimated cost", async () => {
+    // Fireworks forces streaming, so the judge usage arrives in the SSE tail.
+    const client = new LLMClient("test-api-key", {
+      providerMode: "fireworks",
+      fireworksApiKey: "fw-key",
+    });
+    mockFetch(() =>
+      sseResponse(['{"pass": true}'], {
+        usage: { prompt_tokens: 1_000_000, completion_tokens: 1_000_000, total_tokens: 2_000_000 },
+      }),
+    );
+    const result = await client.runJudge({ systemPrompt: "s", userPrompt: "u" });
+    expect(result.usage?.promptTokens).toBe(1_000_000);
+    expect(result.usage?.completionTokens).toBe(1_000_000);
+    expect(result.usage?.totalTokens).toBe(2_000_000);
+    // gpt-oss-120b on Fireworks has a pricing row → cost is computed (> 0).
+    expect(result.usage?.costUsd).toBeGreaterThan(0);
+  });
+
+  test("runJudge omits usage when the provider reports none", async () => {
+    const client = new LLMClient("test-api-key", {
+      providerMode: "fireworks",
+      fireworksApiKey: "fw-key",
+    });
+    mockFetch(() => sseResponse(['{"pass": true}']));
+    const result = await client.runJudge({ systemPrompt: "s", userPrompt: "u" });
+    expect(result.usage).toBeUndefined();
+  });
+
   test("an explicit judgeModel override wins over the default", async () => {
     const client = new LLMClient("test-api-key", {
       providerMode: "fireworks",

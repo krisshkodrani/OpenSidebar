@@ -58,14 +58,14 @@ export default function TrendChart({ points }: { points: TrendPoint[] }) {
         <span className="flex items-center gap-1.5">
           <span
             className="inline-block h-[2px] w-4"
-            style={{ background: "var(--state-success)" }}
+            style={{ background: "rgb(var(--state-success))" }}
           />
           Success rate
         </span>
         <span className="flex items-center gap-1.5">
           <span
             className="inline-block h-3 w-3 rounded-sm"
-            style={{ background: "var(--trace-accent)", opacity: 0.55 }}
+            style={{ background: "rgb(var(--trace-accent))", opacity: 0.55 }}
           />
           Est. cost / day
         </span>
@@ -88,7 +88,7 @@ export default function TrendChart({ points }: { points: TrendPoint[] }) {
                 y1={y}
                 x2={M_LEFT + PLOT_W}
                 y2={y}
-                stroke="var(--trace-border)"
+                stroke="rgb(var(--trace-border))"
                 strokeWidth={1}
               />
               <text
@@ -96,7 +96,7 @@ export default function TrendChart({ points }: { points: TrendPoint[] }) {
                 y={y + 3}
                 textAnchor="end"
                 fontSize={9}
-                fill="var(--trace-muted)"
+                fill="rgb(var(--trace-muted))"
               >
                 {formatPercent(frac)}
               </text>
@@ -110,7 +110,7 @@ export default function TrendChart({ points }: { points: TrendPoint[] }) {
           y={M_TOP + PLOT_H + 3}
           textAnchor="start"
           fontSize={9}
-          fill="var(--trace-muted)"
+          fill="rgb(var(--trace-muted))"
         >
           $0
         </text>
@@ -119,7 +119,7 @@ export default function TrendChart({ points }: { points: TrendPoint[] }) {
           y={M_TOP + 3}
           textAnchor="start"
           fontSize={9}
-          fill="var(--trace-muted)"
+          fill="rgb(var(--trace-muted))"
         >
           {formatCost(maxCost) || "$0"}
         </text>
@@ -136,7 +136,7 @@ export default function TrendChart({ points }: { points: TrendPoint[] }) {
               width={barW}
               height={Math.max(0, h)}
               rx={2}
-              fill="var(--trace-accent)"
+              fill="rgb(var(--trace-accent))"
               opacity={0.5}
             >
               <title>
@@ -151,7 +151,7 @@ export default function TrendChart({ points }: { points: TrendPoint[] }) {
         <path
           d={linePath}
           fill="none"
-          stroke="var(--state-success)"
+          stroke="rgb(var(--state-success))"
           strokeWidth={2}
           strokeLinejoin="round"
           strokeLinecap="round"
@@ -163,7 +163,7 @@ export default function TrendChart({ points }: { points: TrendPoint[] }) {
             cx={xCenter(i)}
             cy={yRate(p.successRate)}
             r={2.5}
-            fill="var(--state-success)"
+            fill="rgb(var(--state-success))"
           >
             <title>
               {p.day}: {formatPercent(p.successRate)} success (
@@ -181,7 +181,7 @@ export default function TrendChart({ points }: { points: TrendPoint[] }) {
               y={VIEW_H - 10}
               textAnchor="middle"
               fontSize={9}
-              fill="var(--trace-muted)"
+              fill="rgb(var(--trace-muted))"
             >
               {shortDay(p.day)}
             </text>

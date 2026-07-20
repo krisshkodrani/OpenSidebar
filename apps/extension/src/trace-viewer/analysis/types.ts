@@ -113,40 +113,6 @@ export interface TraceEvidenceTurn {
   signals: TraceEvidenceSignal[];
 }
 
-export type FleetClusterKind = "failure" | "domain" | "model" | "skill";
-
-export interface TraceFleetCluster {
-  id: string;
-  kind: FleetClusterKind;
-  label: string;
-  count: number;
-  failedCount: number;
-  failureRate: number;
-  failureRateCI?: { low: number; high: number };
-  successRateCI?: { low: number; high: number };
-  totalCost: number;
-  averageTurns: number;
-  turnsStdDev?: number;
-  sampleSessionId: string;
-  sessionIds: string[];
-  recommendation: string;
-}
-
-export interface TraceFleetAnalysis {
-  totalSessions: number;
-  failedSessions: number;
-  successRate: number;
-  failureRate: number;
-  successRateCI?: { low: number; high: number };
-  failureRateCI?: { low: number; high: number };
-  totalCost: number;
-  averageTurns: number;
-  turnsStdDev?: number;
-  topFailureClusters: TraceFleetCluster[];
-  topDomainClusters: TraceFleetCluster[];
-  topModelClusters: TraceFleetCluster[];
-  topSkillClusters: TraceFleetCluster[];
-}
 
 export type TraceSessionRelation =
   | "same_run"

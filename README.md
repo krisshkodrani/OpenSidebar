@@ -127,7 +127,7 @@ pnpm run release:smoke:native-panel # Assisted native Chrome side-panel smoke
 pnpm run doctor               # Local setup diagnosis
 ```
 
-Use `pnpm run dev` while working. When it prints the CRXJS instruction, load `dist-dev/` as the unpacked extension and keep the dev shell running. It includes the local log server and trace viewer at `http://127.0.0.1:7589/viewer`, plus the Vite/CRXJS dev process. Use `pnpm run dist` when you want a standalone extension build in `dist/`.
+Use `pnpm run dev` while working. It runs a Vite watch build (`--mode e2e`) alongside the local log server, keeping a complete `dist-dev/` on disk — the loadable extension **and** the trace viewer — so the viewer at `http://127.0.0.1:7589/viewer` works from the first run and both track your edits. Load `dist-dev/` as the unpacked extension once the first build finishes and keep the shell running. There is no HMR: after a change, reload the unpacked extension and refresh the viewer. For fast sidepanel React hot-swap use `pnpm run dev:hmr` (the CRXJS dev server; the trace viewer then stays at the last `pnpm run build:e2e` until you rebuild it). Use `pnpm run dist` when you want a standalone extension build in `dist/`.
 
 Advanced commands:
 

@@ -19,6 +19,8 @@ describe("trace filter helpers", () => {
       model: "all",
       skill: "all",
       runId: "",
+      adjudication: "all",
+      needsReview: "off",
     });
     expect(hasActiveTraceFilters(def)).toBe(false);
     expect(isDefaultTraceWindow(def)).toBe(true);
@@ -48,6 +50,7 @@ describe("trace filter helpers", () => {
       { model: "openai/gpt-5.4-mini" },
       { skill: "search-flow" },
       { runId: "run-123" },
+      { needsReview: "on" },
     ]) {
       expect(
         hasActiveTraceFilters({ ...defaultTraceFilters(), ...override }),

@@ -1284,6 +1284,12 @@ async function handleUserChat(
         return;
       }
 
+      // Anchor tab ownership for runs whose workspaceId was minted outside
+      // the side-panel flow (e2e harness, integrations) — without a workspace
+      // record, page-opened-tab adoption and the Open Tabs inventory
+      // (spawned-tab-surfacing.ts) are silently inert.
+      await workspaceManager.ensureTrackingWorkspace(workspaceId, tabId);
+
       logger.debug("agent", "User message", { text, tabId, workspaceId });
       const conversationContextBrief = await buildWorkspaceConversationContext(
         workspaceId,

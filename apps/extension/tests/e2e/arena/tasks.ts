@@ -368,6 +368,35 @@ export const ARENA_TASKS: readonly ArenaTask[] = [
     description:
       "The value exists only as 8px canvas pixels (no DOM/aria text) — requires inspect_region magnification.",
   },
+  {
+    id: "job-pipeline.stage-two-applications",
+    title: "Stage Two Job Applications",
+    tier: "hard",
+    sourceFile: "fixtures/online-shop-pro/src/routes/job-board.tsx",
+    sourceCase: "picks best matches and stages applications in separate tabs",
+    startRoute: "/job-board",
+    prompt:
+      "I'm a senior frontend engineer with 5 years of experience in React and TypeScript, plus solid Node.js and GraphQL, looking for a fully remote role in the $120K–$160K range. Go through this job board, pick the two roles that best fit me, and prepare an application for each. Fill in my details on every field — Name: Jordan Reyes, Email: jordan.reyes@example.com, LinkedIn: https://www.linkedin.com/in/jordanreyes, Phone: +1 555 010 0199, Current Location: Denver, CO, EU Work Permit: No, Salary Expectation: $120,000–$160,000 depending on role, Earliest Start Date: 2026-08-03 — and for the 'why do you care' question write 2–3 sentences grounded in that role's posting. Leave the résumé/CV upload for me to attach, and don't submit anything — I'll review each application and send it myself. When you're done, tell me which two roles you picked and why.",
+    // Long-horizon: read ~10 postings, judge the best two, then draft a full
+    // 7-field application for each (naturally one browser tab per application).
+    // Clean runs spend ~8 turns on research and the rest drafting; 100 gives
+    // headroom for two full drafts without rewarding thrash.
+    maxTurns: 100,
+    timeoutMs: 1_080_000,
+    allowNavigation: true,
+    tags: [
+      "long-horizon",
+      "multi-tab",
+      "form",
+      "planning",
+      "recommendation",
+      "workarena-category:planning_and_problem_solving",
+    ],
+    validator: "twoApplicationsStagedNotSubmitted",
+    validatorKind: "fixture-state",
+    description:
+      "Full research→decide→stage pipeline: reads the board, opens the two best-match applications in separate tabs, fills all fields except the CV upload, and stops short of submitting.",
+  },
 ];
 
 export function getArenaTask(id: string): ArenaTask | undefined {

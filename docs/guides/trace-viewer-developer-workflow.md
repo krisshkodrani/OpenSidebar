@@ -23,9 +23,13 @@ The developer should start in the viewer and stay in the viewer until there is a
 
 ### 1. Start In The Viewer
 
-Open the Trace Viewer and begin with the recent sessions or runs list.
+Open the Trace Viewer. It lands on the **Attention** inbox: unreviewed
+failures, stops, and harness-ratchet flags, ordered so the most suspicious
+runs surface first. If the inbox has entries, start there — each one is a run
+that either failed or completed in a way that deserves a human look.
 
-Use the top-level viewer surface to answer:
+For broader questions, switch to the sessions or runs list and use the
+top-level surface to answer:
 
 - what failed recently
 - what regressed
@@ -33,10 +37,17 @@ Use the top-level viewer surface to answer:
 
 Useful first moves:
 
-- filter by outcome
+- filter by outcome or adjudication state
 - filter by website / domain
 - filter by day or recent window
 - switch between `runs` and `sessions`
+
+Opening a trace lands on the **Story** subview — the run replayed as plan →
+node segments → verification and judge verdicts → completion. Read the story
+first to locate *where* the run went wrong, then drop into the raw evidence.
+When you have formed a view on whether the outcome was actually right, record
+it in the adjudication panel — verdicts persist to `evals/annotations.jsonl`
+and drain the Attention inbox.
 
 ## 2. Triage The Failure
 

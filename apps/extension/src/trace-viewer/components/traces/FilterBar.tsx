@@ -7,7 +7,14 @@ import React, {
 } from "react";
 import { useStore } from "../../store";
 import { useDebounce } from "../../hooks/useDebounce";
-import { hasActiveTraceFilters, isoDayOffset, shortModel } from "../../utils";
+import { TRACE_SESSION_SEARCH_LIMIT } from "../../api";
+import {
+  formatCount,
+  hasActiveTraceFilters,
+  isoDayOffset,
+  sessionNeedsReview,
+  shortModel,
+} from "../../utils";
 import Tooltip from "../Tooltip";
 
 interface FilterBarProps {
@@ -27,6 +34,14 @@ export default function FilterBar({ onFiltersChanged }: FilterBarProps) {
   const availableDays = useStore((s) => s.availableDays);
   const availableModels = useStore((s) => s.availableModels);
   const sessions = useStore((s) => s.sessions);
+  const annotations = useStore((s) => s.annotations);
+
+  // The adjudication queue (the former Attention inbox): unreviewed failed or
+  // partial sessions in view. Client-side, like the adjudication select.
+  const needsReviewCount = useMemo(
+    () => sessions.filter((s) => sessionNeedsReview(s, annotations)).length,
+    [sessions, annotations],
+  );
 
   // Snapshot dropdown options when no outcome filter is active so counts
   // reflect the full dataset rather than the already-filtered result set.
@@ -127,8 +142,39 @@ export default function FilterBar({ onFiltersChanged }: FilterBarProps) {
   const selectClass =
     "bg-trace-surface text-trace-text border border-trace-border rounded px-2 py-1.5 text-[11px] outline-none transition-colors focus:border-trace-accent shadow-sm";
 
+  const needsReviewOn = filters.needsReview === "on";
+  const sessionsLimitReached = sessions.length >= TRACE_SESSION_SEARCH_LIMIT;
+
   return (
-    <div className="flex items-center gap-2 px-5 py-2 border-b border-trace-border/40 shrink-0 flex-wrap">
+    <div className="shrink-0 border-b border-trace-border/40">
+      {sessionsLimitReached && (
+        <div className="px-5 py-1.5 bg-state-warning/5 border-b border-state-warning/20 text-[11px] text-state-warning flex items-center gap-2">
+          <span className="font-semibold">⚠ Trace list capped at 1,000.</span>
+          <span className="text-trace-muted">
+            Use the Analytics tab for aggregate totals. Apply filters to narrow
+            results.
+          </span>
+        </div>
+      )}
+      <div className="flex items-center gap-2 px-5 py-2 flex-wrap">
+      {/* The adjudication-queue chip — the former Attention inbox as a filter. */}
+      <Tooltip content="Show only unreviewed failed/partial runs (the adjudication queue)">
+        <button
+          type="button"
+          aria-pressed={needsReviewOn}
+          // Client-side only — annotations aren't server-searchable, so this
+          // must not trigger a session refetch.
+          onClick={() => setFilter("needsReview", needsReviewOn ? "off" : "on")}
+          className={`rounded border px-2 py-1.5 text-[11px] font-semibold transition-colors shadow-sm ${
+            needsReviewOn
+              ? "border-trace-accent/40 bg-trace-accent/15 text-trace-accent-light"
+              : "border-trace-border bg-trace-surface text-trace-subtle hover:border-trace-accent hover:text-trace-text"
+          }`}
+        >
+          Needs review ({formatCount(needsReviewCount)})
+        </button>
+      </Tooltip>
+
       {/* Filters */}
       <Tooltip content="Filter by trace outcome (completed, error, etc.)">
         <select
@@ -143,6 +189,22 @@ export default function FilterBar({ onFiltersChanged }: FilterBarProps) {
               {o.label} ({o.count})
             </option>
           ))}
+        </select>
+      </Tooltip>
+
+      <Tooltip content="Filter by human adjudication (client-side)">
+        <select
+          aria-label="Filter by adjudication"
+          value={filters.adjudication}
+          // Client-side only — annotations aren't server-searchable, so this
+          // must not trigger a session refetch.
+          onChange={(e) => setFilter("adjudication", e.target.value)}
+          className={selectClass}
+        >
+          <option value="all">Adjudication</option>
+          <option value="unreviewed">Unreviewed</option>
+          <option value="reviewed">Reviewed</option>
+          <option value="disagreed">Disagreed</option>
         </select>
       </Tooltip>
 
@@ -242,7 +304,7 @@ export default function FilterBar({ onFiltersChanged }: FilterBarProps) {
           Clear filters
         </button>
       )}
-
+      </div>
     </div>
   );
 }

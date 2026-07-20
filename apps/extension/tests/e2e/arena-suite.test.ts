@@ -10,9 +10,9 @@
  * from the default e2e sweep. Enable with the `arena` suite flag, and optionally
  * narrow the set:
  *
- *   E2E_SUITES=arena pnpm exec vitest run --config tests/e2e/vitest.e2e.config.ts tests/e2e/arena-suite.test.ts
- *   ARENA_TIER=easy,medium E2E_SUITES=arena <…>      # filter by tier
- *   ARENA_TASK=procurement.complete-first-two E2E_SUITES=arena <…>  # one task by id
+ *   E2E_SUITE_FLAGS=arena pnpm exec vitest run --config tests/e2e/vitest.e2e.config.ts tests/e2e/arena-suite.test.ts
+ *   ARENA_TIER=easy,medium E2E_SUITE_FLAGS=arena <…>      # filter by tier
+ *   ARENA_TASK=procurement.complete-first-two E2E_SUITE_FLAGS=arena <…>  # one task by id
  */
 
 import {
@@ -30,12 +30,16 @@ import {
   getActiveTabId,
   navigateAndWait,
   sendUserChat,
+  startApprovalAutoResponder,
   updateUserSettings,
 } from "./helpers/utils";
 import { getFixtureUrl } from "./helpers/fixture-server";
 import { isE2ESuiteFlagEnabled } from "./helpers/e2e-config";
 import { ARENA_TASKS, type ArenaTask } from "./arena/tasks";
-import { getArenaValidator } from "./arena/validators";
+import {
+  getArenaValidator,
+  type ArenaValidatorResult,
+} from "./arena/validators";
 
 const h = createE2EHarness({ maxTurns: 24, testLabel: "arena" });
 const RUN_ARENA = isE2ESuiteFlagEnabled("arena");
@@ -96,7 +100,24 @@ describe.skipIf(!h.apiKey || !RUN_ARENA)("E2E: Arena Suite", () => {
 
       const workspaceId = await sendUserChat(h.ctx, task.prompt, tabId);
 
-      const result = await validator({ task, harness: h, workspaceId });
+      // This suite runs with requireApprovals:false (autonomous — the agent is in
+      // charge). A forced consequential approval overrides that stance and, with
+      // no human to answer it headlessly, would hang the run until the task
+      // wall-clock. Auto-approve it to honor the autonomy the suite declared;
+      // task constraints like "do not submit" are enforced by the agent and the
+      // validator's end-state check, not by a harness net.
+      const approvals = startApprovalAutoResponder(
+        h.ctx,
+        h.ctx.serviceWorker,
+        workspaceId,
+      );
+
+      let result: ArenaValidatorResult;
+      try {
+        result = await validator({ task, harness: h, workspaceId });
+      } finally {
+        await approvals.stop();
+      }
 
       console.log(
         `[arena] ${task.id}: ${result.ok ? "PASS" : "FAIL"} — ${result.reason}` +

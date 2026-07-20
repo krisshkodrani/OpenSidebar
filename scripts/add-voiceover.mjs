@@ -1,20 +1,26 @@
 #!/usr/bin/env node
 /**
- * Mix an ElevenLabs voiceover onto an already-rendered publish video.
+ * Mix a TTS voiceover onto an already-rendered publish video.
  * The narration specs below are timed to the exact segment structure of each
  * cut (see build-promo-cut.mjs / build-demo-montage.mjs), so every line has a
  * hard start offset and a max window it must fit.
  *
- *   node scripts/add-voiceover.mjs --video promo|pitch
- *     [--voice <elevenlabs voice id>]   default: Rachel (21m00Tcm4TlvDq8ikWAM)
+ *   node scripts/add-voiceover.mjs --video promo|pitch|store|jobs
+ *     [--provider gemini|elevenlabs]    default: gemini
+ *     [--voice <voice id/name>]         default: Sulafat (Gemini) / Matilda (EL)
  *     [--music <file>]                  optional bed, ducked under narration
  *
- * Key: ELEVENLABS_API_KEY or ELEVENLAB_API_KEY, from the env or the repo .env.
+ * Keys: GEMINI_API_KEY or ELEVENLABS_API_KEY / ELEVENLAB_API_KEY, from the env
+ * or the repo .env. The gemini provider (gemini-3.1-flash-tts-preview) is
+ * steered per line: a director-style prompt plus optional per-line `gnote`
+ * delivery notes and `gtext` inline audio tags; it writes the canonical
+ * output names. The elevenlabs alternate gets an "-elevenlabs" suffix so both
+ * providers' cuts can sit side by side for comparison.
  * Generated lines are cached in .artifacts/vo/ by content hash — tweaking one
  * line only re-bills that line. Video frames are never re-encoded (-c:v copy).
  */
 
-import { execFileSync } from "node:child_process";
+import { execFileSync, spawnSync } from "node:child_process";
 import crypto from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
@@ -28,8 +34,16 @@ const argVal = (n, d) => {
   return i >= 0 && process.argv[i + 1] ? process.argv[i + 1] : d;
 };
 const WHICH = argVal("--video", "promo");
-const VOICE = argVal("--voice", "XrExE9yKIg1WjnnlVkGX"); // "Matilda" — warm narrative female (bake-off winner)
+const PROVIDER = argVal("--provider", "gemini");
+if (!["elevenlabs", "gemini"].includes(PROVIDER)) {
+  console.error(`Unknown --provider "${PROVIDER}" (use: elevenlabs|gemini)`);
+  process.exit(1);
+}
+// EL default "Matilda" — warm narrative female (bake-off winner).
+// Gemini default "Sulafat" — the catalog's warm female, closest to that brief.
+const VOICE = argVal("--voice", PROVIDER === "gemini" ? "Sulafat" : "XrExE9yKIg1WjnnlVkGX");
 const MUSIC = argVal("--music", "");
+const GEMINI_MODEL = "gemini-3.1-flash-tts-preview";
 
 // ---- narration specs --------------------------------------------------------
 // at: line start (s) · maxSec: hard window the audio must fit (atempo ≤1.1 helps)
@@ -38,52 +52,66 @@ const SPECS = {
     in: "opensidebar-promo-60s.mp4",
     out: "opensidebar-promo-60s-voiced.mp4",
     lines: [
-      { at: 0.6, maxSec: 12.0, text: "This is OpenSidebar — an AI agent in your browser. Give it a task, and it does the clicking: cart, coupon, checkout. Done." },
-      { at: 13.6, maxSec: 13.0, text: "It reads data on one page and writes it into another — here, turning dashboard numbers into an email reply." },
-      { at: 27.4, maxSec: 8.5, text: "And it can simply watch. The moment this product is back in stock — it speaks up." },
-      { at: 36.5, maxSec: 14.0, text: "It's not just the open web. It drives enterprise apps like ServiceNow, too — and because it's open source, you can fork it and add your own." },
-      { at: 51.5, maxSec: 6.3, text: "OpenSidebar. Free, open source, bring your own key." },
+      {
+        at: 0.6, maxSec: 12.0,
+        text: "This is OpenSidebar — an AI agent in your browser. Give it a task, and it does the clicking: cart, coupon, checkout. Done.",
+        gnote: "Open bright and welcoming; build momentum through the three-item list; land the final word as a satisfied, punchy button.",
+        gtext: "This is OpenSidebar — an AI agent in your browser. Give it a task, and it does the clicking: cart, coupon, checkout. [satisfied] Done.",
+      },
+      {
+        at: 13.6, maxSec: 13.0,
+        text: "It reads data on one page and writes it into another — here, turning dashboard numbers into an email reply.",
+        gnote: "Matter-of-fact, effortless competence — like showing a friend a neat trick, with light emphasis on 'reads' and 'writes'.",
+      },
+      {
+        at: 27.4, maxSec: 8.5,
+        text: "And it can simply watch. The moment this product is back in stock — it speaks up.",
+        gnote: "Start hushed and intriguing, almost confiding; then brighten with delight on the payoff after the dash.",
+        gtext: "[intrigued] And it can simply watch. The moment this product is back in stock — [bright] it speaks up.",
+      },
+      {
+        at: 36.5, maxSec: 14.0,
+        text: "It's not just the open web. The same agent drives enterprise apps like ServiceNow, end to end.",
+        gnote: "Grounded and authoritative — the serious enterprise beat; steady pace, firm landing on 'end to end'.",
+      },
+      {
+        at: 51.5, maxSec: 6.3,
+        text: "OpenSidebar. Free, open source, bring your own key.",
+        gnote: "The sign-off: slow slightly, warm and definitive, with a small pause between each of the three phrases.",
+        gtext: "OpenSidebar. [warmly] Free, open source, bring your own key.",
+      },
     ],
   },
   pitch: {
     in: "opensidebar-pitch-demo-collage.mp4",
     out: "opensidebar-pitch-demo-collage-voiced.mp4",
     // Structure (extended tour, --scene-sec 15): intro 3.0 · section 2.6 ·
-    // [card 3.0 + scene 15.0]×6 · section 2.6 · [card 3.0 + scene 15.0]×5 ·
+    // [card 3.0 + scene 15.0]×5 · section 2.6 · [card 3.0 + scene 15.0]×4 ·
     // section 2.6 · [card 3.0 + scene 18.0] · [card 3.0 + scene 15.0] · outro 3.0
-    // = 250.8s. Scene starts: 8.6/26.6/44.6/62.6/80.6/98.6 ·
-    // 119.2/137.2/155.2/173.2/191.2 · 211.8(18s)/232.8.
-    // (vs the 11-scene cut: +fine-print in act one and +release-coordination in
-    // act two, each a 3.0 card + 15.0 scene = +18.0; every line after an
-    // insertion shifts by that amount.)
+    // = 214.8s. Scene starts: 8.6/26.6/44.6/62.6/80.6 · 101.2/119.2/137.2/155.2 ·
+    // 175.8(18s)/196.8.
     lines: [
       { at: 0.5, maxSec: 7.9, text: "This is OpenSidebar — an open-source AI agent doing real work in your browser. Part one: the open web." },
       { at: 8.9, maxSec: 17.4, text: "Give it a task in plain English. A planner breaks it into steps, an executor drives the page, and a verifier checks the result. Watch it find the product, apply the coupon, pick express shipping, and place the order." },
       { at: 26.9, maxSec: 17.4, text: "It carries context across pages — no copy-paste, no tab juggling. Here it reads the key numbers from a dashboard, then opens the mail client and drafts a reply that reports them." },
       { at: 44.9, maxSec: 17.4, text: "Long, conditional forms are where automation usually breaks. OpenSidebar works the wizard step by step, keeps track of what it has already filled, and reviews everything before submitting." },
       { at: 62.9, maxSec: 17.4, text: "It can complete a real job application — filling the candidate's details field by field. And for consequential actions like the final submit, it pauses and leaves the last word to you." },
-      // NEW (act one): the canvas fine-print vision zoom.
-      { at: 80.9, maxSec: 17.4, text: "Some numbers never make it into a page's text — here they're baked into a chart's pixels. OpenSidebar zooms into the eight-pixel fine print on the canvas and reads the Q3 net margin a text-only agent would miss." },
-      { at: 98.9, maxSec: 17.4, text: "Need something buried in a paginated directory? It searches, pages through the results, and reports back exactly the fields you asked for." },
-      { at: 113.9, maxSec: 20.0, text: "Part two: you stay in control. There's no subscription and no middleman — you bring your own API key and pick your provider and models: Fireworks, Moonshot, OpenRouter, or Xiaomi, with a separate choice for every seat." },
-      { at: 137.5, maxSec: 17.4, text: "Watch Mode makes the agent a quiet observer: leave the tab open with a standing instruction, and it re-checks every few seconds — speaking up within seconds of the page changing, like this product coming back in stock." },
-      // NEW (act two): the judge second opinion on high-risk results.
-      { at: 155.5, maxSec: 17.4, text: "On high-risk results, a second model checks the work. Here the agent posts a release-coordination reply in a team channel, and a separate GPT-OSS 120B judge re-verifies it against the goal before the run is marked done." },
-      { at: 173.5, maxSec: 17.4, text: "Everything is observable. The built-in observability workspace records every run — each decision the model made, what it saw on screen, and the exact cost. This entire task ran for about six cents." },
-      { at: 191.5, maxSec: 17.4, text: "Zoom out, and the same workspace shows the whole fleet: success rates, failure clusters, and spend across hundreds of runs — stored locally; nothing leaves your machine." },
-      { at: 206.5, maxSec: 22.0, text: "Part three: it's built to be extended. ServiceNow support ships as an adapter in the open-source repo — watch it navigate the service catalog, configure a laptop with the requested software, and submit the order end to end." },
-      { at: 233.1, maxSec: 17.4, text: "The same adapter searches the knowledge base, filters lists, and sorts natively. And the pattern is yours to copy — a custom adapter and skills can teach the agent your own enterprise apps." },
+      { at: 80.9, maxSec: 17.4, text: "Need something buried in a paginated directory? It searches, pages through the results, and reports back exactly the fields you asked for." },
+      { at: 95.9, maxSec: 20.0, text: "Part two: you stay in control. There's no subscription and no middleman — you bring your own API key and pick your provider and models: Fireworks, Moonshot, OpenRouter, or Xiaomi, with a separate choice for every seat." },
+      { at: 119.5, maxSec: 17.4, text: "Watch Mode turns the agent into a quiet observer: give it a standing instruction and leave the tab open. The moment the page changes, it speaks up — here, the instant this product is back in stock." },
+      { at: 137.5, maxSec: 17.4, text: "Everything is observable. The built-in observability workspace records every run — each decision the model made, what it saw on screen, and the exact cost. This entire task ran for about six cents." },
+      { at: 155.5, maxSec: 17.4, text: "Zoom out, and the same workspace shows the whole fleet: success rates, failure clusters, and spend across hundreds of runs — stored locally; nothing leaves your machine." },
+      { at: 170.5, maxSec: 22.0, text: "Part three: it's built to be extended. ServiceNow support ships as an adapter in the open-source repo — watch it navigate the service catalog, configure a laptop with the requested software, and submit the order end to end." },
+      { at: 197.1, maxSec: 17.4, text: "The same adapter searches the knowledge base, filters lists, and sorts natively. And the pattern is yours to copy — a custom adapter and skills can teach the agent your own enterprise apps." },
       // Starts on the finale's fade-out so the sign-off lands on the outro card.
-      { at: 247.9, maxSec: 3.5, text: "OpenSidebar. Open source — make it yours." },
+      { at: 211.9, maxSec: 3.5, text: "OpenSidebar. Open source — make it yours." },
     ],
   },
 };
 
 // Store-accurate tour (--show store): the pitch minus the two observability
-// scenes AND the two pitch-only additions (fine-print, release-coordination),
-// which the store montage holds out until it is retimed. So the store tour keeps
-// its prior 9-scene shape and offsets; only the pitch.lines indices moved when
-// those two lines were inserted, so we re-point the spreads and force each `at`.
+// scenes (the trace viewer is dev-only and does not ship in the store package).
+// Same line texts as the pitch (cache hits) at recomputed offsets.
 // Structure: intro 3 · sec 2.6 · 5×(3+15) · sec 2.6 · 2×(3+15) · sec 2.6 ·
 // (3+18) · (3+15) · outro 3 = 178.8s. Scene starts: 8.6/26.6/44.6/62.6/80.6 ·
 // 101.2/119.2 · 139.8(18s)/160.8.
@@ -96,12 +124,29 @@ SPECS.store = {
     { ...SPECS.pitch.lines[2] },                                // compose @26.9
     { ...SPECS.pitch.lines[3] },                                // wizard @44.9
     { ...SPECS.pitch.lines[4] },                                // ashby @62.9
-    { ...SPECS.pitch.lines[6], at: 80.9 },                      // extract (pitch idx 6 now @98.9)
-    { ...SPECS.pitch.lines[7], at: 95.9 },                      // part two + settings (pitch idx 7)
-    { ...SPECS.pitch.lines[8], at: 119.5 },                     // watch (pitch idx 8)
-    { ...SPECS.pitch.lines[12], at: 134.8 },                    // part three + SN order (pitch idx 12)
-    { ...SPECS.pitch.lines[13], at: 161.1 },                    // SN KB / adapter pattern (pitch idx 13)
+    { ...SPECS.pitch.lines[5] },                                // extract @80.9
+    { ...SPECS.pitch.lines[6] },                                // part two + settings @95.9
+    { ...SPECS.pitch.lines[7] },                                // watch @119.5
+    { ...SPECS.pitch.lines[10], at: 134.8 },                    // part three + SN order
+    { ...SPECS.pitch.lines[11], at: 161.1 },                    // SN KB / adapter pattern
     { at: 175.9, maxSec: 3.5, text: "OpenSidebar. Free — bring your own key." },
+  ],
+};
+
+// The job-pipeline voiced story (--show jobs): one filmed run cut into four
+// beats. Structure: intro 3.0 · [card 3.0 + scene 14] · [card 3.0 + scene 12] ·
+// [card 3.0 + scene 16] · [card 3.0 + scene 12] · outro 3.0 = 72.0s.
+// Scene starts: 6.0 / 23.0 / 38.0 / 57.0 · outro 69.0.
+SPECS.jobs = {
+  in: "opensidebar-jobpipeline-demo.mp4",
+  out: "opensidebar-jobpipeline-demo-voiced.mp4",
+  lines: [
+    { at: 0.5, maxSec: 5.0, text: "One prompt. Two job applications, ready to send. This is OpenSidebar." },
+    { at: 6.3, maxSec: 13.4, text: "The candidate wants senior frontend work — React and TypeScript, fully remote, one twenty to one sixty. The agent reads all ten listings and screens them against that profile, like a recruiter would." },
+    { at: 23.3, maxSec: 11.4, text: "It picks the two best matches and opens each application in its own tab — no copy-paste, no tab juggling." },
+    { at: 38.3, maxSec: 15.4, text: "Then it fills every field on both forms — contact details, salary, start date — and writes a short 'why this company' answer grounded in each posting. The one thing it leaves untouched: the CV upload." },
+    { at: 57.3, maxSec: 11.4, text: "And here's the point — it stops before send. You review, attach your CV, and click submit yourself." },
+    { at: 69.2, maxSec: 2.6, text: "OpenSidebar. The click stays yours." },
   ],
 };
 
@@ -113,13 +158,17 @@ if (!spec) {
 
 // ---- key loading (env, then repo .env; never logged) ------------------------
 function loadKey() {
-  for (const name of ["ELEVENLABS_API_KEY", "ELEVENLAB_API_KEY"]) {
+  const names = PROVIDER === "gemini"
+    ? ["GEMINI_API_KEY"]
+    : ["ELEVENLABS_API_KEY", "ELEVENLAB_API_KEY"];
+  for (const name of names) {
     if (process.env[name]) return process.env[name];
   }
   const envPath = path.join(ROOT, ".env");
   if (fs.existsSync(envPath)) {
+    const pat = PROVIDER === "gemini" ? /^GEMINI_API_KEY=(.+)$/ : /^ELEVENLABS?_API_KEY=(.+)$/;
     for (const line of fs.readFileSync(envPath, "utf8").split(/\r?\n/)) {
-      const m = line.match(/^ELEVENLABS?_API_KEY=(.+)$/);
+      const m = line.match(pat);
       if (m) return m[1].trim().replace(/^["']|["']$/g, "");
     }
   }
@@ -132,11 +181,26 @@ function sh(bin, a) {
 const dur = (f) =>
   parseFloat(sh("ffprobe", ["-v", "error", "-show_entries", "format=duration", "-of", "csv=p=0", f]));
 
+// Length of the leading silence in seconds (0 if the file opens on sound).
+// inputArgs lets raw-PCM callers pass their format flags before -i.
+function leadingSilence(inputArgs, noiseDb, minDur) {
+  const r = spawnSync(
+    "ffmpeg",
+    ["-hide_banner", ...inputArgs, "-af", `silencedetect=noise=${noiseDb}dB:d=${minDur}`, "-f", "null", "-"],
+    { encoding: "utf8" },
+  );
+  const err = r.stderr || "";
+  const start = err.match(/silence_start:\s*(-?[\d.]+)/);
+  if (!start || parseFloat(start[1]) > 0.05) return 0; // first silence isn't at the head
+  const end = err.match(/silence_end:\s*([\d.]+)/);
+  return end ? parseFloat(end[1]) : 0;
+}
+
 // ---- TTS with cache ---------------------------------------------------------
 async function tts(key, text) {
   fs.mkdirSync(VO_CACHE, { recursive: true });
-  // v4: livelier voice settings (stability .4, style .35) (bump on pipeline change)
-  const hash = crypto.createHash("sha1").update(`v4|${VOICE}|${text}`).digest("hex").slice(0, 16);
+  // v5: measured-onset trim replaces fixed trim + silenceremove (bump on pipeline change)
+  const hash = crypto.createHash("sha1").update(`v5|${VOICE}|${text}`).digest("hex").slice(0, 16);
   const cached = path.join(VO_CACHE, `${hash}.mp3`);
   if (fs.existsSync(cached) && fs.statSync(cached).size > 0) return { file: cached, cached: true };
 
@@ -148,8 +212,8 @@ async function tts(key, text) {
       body: JSON.stringify({
         // Leading break: ElevenLabs cold-starts clip the first phoneme's attack
         // when speech begins at sample zero; the break makes it render fully.
-        // Breaks also often render a small breath/murmur artifact, so the whole
-        // break region is hard-trimmed by TIME below (not silence detection).
+        // The rendered break (breath artifacts included) is trimmed back off
+        // below by measuring where speech actually starts.
         text: `<break time="0.5s" /> ${text}`,
         model_id: "eleven_multilingual_v2",
         // Livelier delivery than the flat defaults: lower stability + some style.
@@ -168,18 +232,98 @@ async function tts(key, text) {
   }
   const rawFile = cached.replace(/\.mp3$/, "-raw.mp3");
   fs.writeFileSync(rawFile, Buffer.from(await res.arrayBuffer()));
-  // Onset normalization, artifact-proof:
-  //   1. hard-trim 0.35s by TIME — removes the break region including any breath
-  //      artifact it rendered (which sits above silence-detect thresholds);
-  //   2. silence-strip whatever quiet lead remains (~0.15s margin to speech);
-  //   3. re-pad a fixed 60ms and fade in over 50ms.
-  // Result: full first phoneme, no breath blip, predictable 60ms lead.
+  // Onset normalization, measured instead of assumed. The old recipe (fixed
+  // 0.35s trim + silenceremove at -45dB) clipped first phonemes whenever EL
+  // rendered the break short or the word opened with a quiet attack. Now:
+  //   1. measure where speech actually starts (-30dB keeps the break's
+  //      breath/murmur artifact classified as silence);
+  //   2. trim 150ms BEFORE that point so the full quiet attack survives;
+  //   3. fade the first 80ms of the retained lead (kills breath residue,
+  //      never touches speech), then re-pad a fixed 60ms.
+  const onset = leadingSilence(["-i", rawFile], -30, 0.05);
+  const trim = Math.max(0, onset - 0.15);
   sh("ffmpeg", [
     "-y", "-i", rawFile,
     "-af",
-    "atrim=start=0.35,asetpts=PTS-STARTPTS," +
-      "silenceremove=start_periods=1:start_threshold=-45dB," +
-      "adelay=60|60,afade=t=in:d=0.05",
+    `atrim=start=${trim.toFixed(3)},asetpts=PTS-STARTPTS,` +
+      "afade=t=in:d=0.08,adelay=60|60",
+    cached,
+  ]);
+  fs.unlinkSync(rawFile);
+  return { file: cached, cached: false };
+}
+
+// ---- Gemini TTS (gemini-3.1-flash-tts-preview) ------------------------------
+// Steering happens in the prompt: a global director brief, an optional per-line
+// delivery note (`gnote`), and inline audio tags in `gtext` ([intrigued], …).
+// The transcript is quoted and fenced with "read only" so the direction itself
+// is never spoken.
+const GEMINI_DIRECTION =
+  "Voice direction: a warm, confident female narrator for a polished 60-second " +
+  "product film about a developer tool. Modern tech-keynote energy — intimate " +
+  "and self-assured, never salesy or announcer-like. Crisp consonants, relaxed " +
+  "unhurried pace, a slight audible smile. Take a short, purposeful beat at " +
+  "every em dash.";
+
+async function ttsGemini(key, line, take) {
+  fs.mkdirSync(VO_CACHE, { recursive: true });
+  const text = line.gtext || line.text;
+  const note = line.gnote ? ` This line: ${line.gnote}` : "";
+  // g2: measured-onset trim replaces silenceremove (bump on prompt/pipeline change)
+  const hash = crypto
+    .createHash("sha1")
+    .update(`g2|${VOICE}|${GEMINI_DIRECTION}|${note}|${text}|t${take}`)
+    .digest("hex")
+    .slice(0, 16);
+  const cached = path.join(VO_CACHE, `${hash}.mp3`);
+  if (fs.existsSync(cached) && fs.statSync(cached).size > 0) return { file: cached, cached: true };
+
+  const prompt =
+    `${GEMINI_DIRECTION}${note}\n\n` +
+    `Read only the narration between the quotes, exactly as written:\n"${text}"`;
+  // The preview model occasionally answers with text instead of audio — retry.
+  let b64 = null;
+  for (let attempt = 0; attempt < 3 && !b64; attempt++) {
+    const res = await fetch(
+      `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL}:generateContent`,
+      {
+        method: "POST",
+        headers: { "x-goog-api-key": key, "Content-Type": "application/json" },
+        body: JSON.stringify({
+          contents: [{ parts: [{ text: prompt }] }],
+          generationConfig: {
+            responseModalities: ["AUDIO"],
+            speechConfig: { voiceConfig: { prebuiltVoiceConfig: { voiceName: VOICE } } },
+          },
+        }),
+      },
+    );
+    if (!res.ok) {
+      const detail = await res.text().catch(() => "");
+      throw new Error(`Gemini ${res.status}: ${detail.slice(0, 300)}`);
+    }
+    const body = await res.json();
+    const part = (body.candidates?.[0]?.content?.parts || []).find((p) =>
+      p.inlineData?.mimeType?.startsWith("audio/"),
+    );
+    if (part) b64 = part.inlineData.data;
+  }
+  if (!b64) throw new Error(`Gemini returned no audio after 3 attempts for: "${text.slice(0, 60)}…"`);
+
+  // Raw PCM (L16 24kHz mono) → mp3, with the same measured-onset normalization
+  // contract as the EL path (trim to 150ms before detected speech, 80ms fade
+  // over the retained lead, fixed 60ms re-pad).
+  const rawFile = cached.replace(/\.mp3$/, "-raw.pcm");
+  fs.writeFileSync(rawFile, Buffer.from(b64, "base64"));
+  const pcmArgs = ["-f", "s16le", "-ar", "24000", "-ac", "1", "-i", rawFile];
+  const onset = leadingSilence(pcmArgs, -30, 0.05);
+  const trim = Math.max(0, onset - 0.15);
+  sh("ffmpeg", [
+    "-y", ...pcmArgs,
+    "-af",
+    `atrim=start=${trim.toFixed(3)},asetpts=PTS-STARTPTS,` +
+      "afade=t=in:d=0.08,adelay=60|60",
+    "-ar", "44100", "-b:a", "128k",
     cached,
   ]);
   fs.unlinkSync(rawFile);
@@ -189,7 +333,11 @@ async function tts(key, text) {
 // ---- main -------------------------------------------------------------------
 const key = loadKey();
 if (!key) {
-  console.error("No ELEVENLABS_API_KEY / ELEVENLAB_API_KEY in the environment or .env");
+  console.error(
+    PROVIDER === "gemini"
+      ? "No GEMINI_API_KEY in the environment or .env"
+      : "No ELEVENLABS_API_KEY / ELEVENLAB_API_KEY in the environment or .env",
+  );
   process.exit(1);
 }
 
@@ -197,6 +345,10 @@ if (!key) {
 // pick by ear (samples in .artifacts/publish/voice-samples/, then re-run with
 // --voice <winner id>).
 if (process.argv.includes("--bakeoff")) {
+  if (PROVIDER !== "elevenlabs") {
+    console.error("--bakeoff renders ElevenLabs candidates — run with --provider elevenlabs");
+    process.exit(1);
+  }
   const candidates = [
     { name: "rachel-retuned", id: "21m00Tcm4TlvDq8ikWAM" },
     { name: "matilda", id: "XrExE9yKIg1WjnnlVkGX" },
@@ -232,12 +384,28 @@ if (!fs.existsSync(inFile)) {
 }
 const videoDur = dur(inFile);
 
-console.log(`Voicing ${spec.in} (${videoDur.toFixed(1)}s) with voice ${VOICE}…`);
+console.log(`Voicing ${spec.in} (${videoDur.toFixed(1)}s) with ${PROVIDER} voice ${VOICE}…`);
 let chars = 0;
 const prepared = [];
 for (const [i, line] of spec.lines.entries()) {
   chars += line.text.length;
-  const { file, cached } = await tts(key, line.text);
+  let file, cached;
+  if (PROVIDER === "gemini") {
+    // Take-to-take variance is the preview model's weak spot; if a take runs
+    // past its window, re-roll (cached per take index, so takes are stable)
+    // and keep the shortest before falling back to the atempo squeeze.
+    let best = null;
+    for (let take = 0; take < 3; take++) {
+      const t = await ttsGemini(key, line, take);
+      const td = dur(t.file);
+      if (!best || td < best.d) best = { ...t, d: td };
+      if (td <= line.maxSec) break;
+      console.log(`  line ${i + 1} take ${take + 1}: ${td.toFixed(1)}s > ${line.maxSec}s, re-rolling…`);
+    }
+    ({ file, cached } = best);
+  } else {
+    ({ file, cached } = await tts(key, line.text));
+  }
   let d = dur(file);
   let use = file;
   let tempo = 1;
@@ -255,9 +423,17 @@ for (const [i, line] of spec.lines.entries()) {
     }
   }
   prepared.push({ ...line, file: use, dur: d });
+  // Self-check: every processed line must open on silence (the 60ms pad plus
+  // whatever quiet lead survived). Sound at sample zero means a clipped onset.
+  const lead = leadingSilence(["-i", use], -40, 0.03);
   console.log(
-    `  line ${i + 1} @${line.at}s: ${d.toFixed(1)}s / ${line.maxSec}s${tempo > 1 ? ` (atempo ${tempo.toFixed(2)})` : ""}${cached ? " [cached]" : ""}`,
+    `  line ${i + 1} @${line.at}s: ${d.toFixed(1)}s / ${line.maxSec}s · lead ${Math.round(lead * 1000)}ms${tempo > 1 ? ` (atempo ${tempo.toFixed(2)})` : ""}${cached ? " [cached]" : ""}`,
   );
+  if (lead < 0.02) {
+    console.warn(
+      `  WARNING line ${i + 1} starts on sound — first word may be clipped: "${line.text.slice(0, 50)}…"`,
+    );
+  }
 }
 console.log(`  total ${chars} characters sent to TTS`);
 
@@ -298,7 +474,9 @@ if (MUSIC || hasSourceAudio) {
   mapAudio = "[vo]";
 }
 
-const outFile = path.join(PUBLISH, spec.out);
+const outName =
+  PROVIDER === "elevenlabs" ? spec.out.replace(/\.mp4$/, "-elevenlabs.mp4") : spec.out;
+const outFile = path.join(PUBLISH, outName);
 sh("ffmpeg", [
   "-y", ...inputs,
   "-filter_complex", filter,
