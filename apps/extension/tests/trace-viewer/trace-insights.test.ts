@@ -370,4 +370,89 @@ describe("trace insights", () => {
     expect(summary.escalationFireRate).toBeCloseTo(2 / 3);
     expect(summary.escalationRescueRate).toBeCloseTo(0.5);
   });
+
+  test("task_completed classification overrides run outcome and fills the failure facet", () => {
+    const base = {
+      startTime: Date.UTC(2026, 3, 15, 9, 0, 0),
+      endTime: Date.UTC(2026, 3, 15, 9, 1, 0),
+      query: "Objective: task",
+      startUrl: "https://example.com",
+      turnCount: 1,
+      metrics: null,
+    };
+    const sessions = [
+      // Every session individually looks green, but the orchestrator judged
+      // the task incomplete — the classic contract-incomplete partial.
+      { ...base, sessionId: "s1", runId: "run-1", outcome: "completed" },
+      { ...base, sessionId: "s2", runId: "run-1", outcome: "completed" },
+    ];
+    const runEventsByRun = new Map<string, any[]>([
+      [
+        "run-1",
+        [
+          {
+            type: "task_completed",
+            data: {
+              completionStatus: "partial",
+              success: false,
+              classification: "partial_contract",
+            },
+          },
+        ],
+      ],
+    ]);
+
+    const result = buildTraceInsights({
+      sessions,
+      entriesBySession: new Map(),
+      runEventsByRun,
+    });
+
+    expect(result.runs[0].outcome).toBe("partial_contract");
+    expect(
+      result.failures.find((row) => row.id === "partial_contract"),
+    ).toMatchObject({ runs: 1, sessions: 2 });
+    expect(result.facets.failures).toContain("partial_contract");
+  });
+
+  test("run classification does not double-count a session-carried label", () => {
+    const base = {
+      startTime: Date.UTC(2026, 3, 15, 9, 0, 0),
+      endTime: Date.UTC(2026, 3, 15, 9, 1, 0),
+      query: "Objective: task",
+      startUrl: "https://example.com",
+      turnCount: 1,
+      metrics: null,
+    };
+    const sessions = [
+      { ...base, sessionId: "s1", runId: "run-1", outcome: "max_turns" },
+    ];
+    const runEventsByRun = new Map<string, any[]>([
+      [
+        "run-1",
+        [
+          {
+            type: "task_completed",
+            data: {
+              completionStatus: "failed",
+              success: false,
+              classification: "max_turns",
+            },
+          },
+        ],
+      ],
+    ]);
+
+    const result = buildTraceInsights({
+      sessions,
+      entriesBySession: new Map(),
+      runEventsByRun,
+    });
+
+    const row = result.failures.find((item) => item.id === "max_turns");
+    // One failing session, one label row — the run-level classification must
+    // not add a second count on top of the session's own failure label.
+    expect(row).toMatchObject({ sessions: 1, calls: 1 });
+    expect(result.runs[0].outcome).toBe("max_turns");
+  });
 });
