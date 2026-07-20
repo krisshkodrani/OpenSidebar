@@ -277,8 +277,42 @@ export function analyzeTraceSession(
     });
   }
 
+  // Completion attribution: `completion_decision` events carry the
+  // authoritative pipeline verdict (contract kind, deciding source, reason).
+  // Older traces only have the generic `done_rejected` gate events, so those
+  // remain the fallback derivation.
+  const completionDecisions = findEvents(entries, "completion_decision");
+  const rejectedDecisions = completionDecisions.filter(
+    ({ event }) => eventDataString(event, "status") !== "accepted",
+  );
   const doneRejections = findEvents(entries, "done_rejected");
-  if (doneRejections.length > 0) {
+  if (rejectedDecisions.length > 0) {
+    const last = rejectedDecisions[rejectedDecisions.length - 1];
+    const contractKind = eventDataString(last.event, "contractKind");
+    const source = eventDataString(last.event, "source");
+    addFinding(findings, {
+      id: "done-rejection-loop",
+      category: "completion",
+      severity: rejectedDecisions.length >= 3 ? "error" : "warning",
+      title: contractKind
+        ? `Completion rejected by the ${contractKind} contract`
+        : "Completion rejected by the completion pipeline",
+      summary:
+        eventDataString(last.event, "reason") ||
+        `The completion pipeline rejected done ${rejectedDecisions.length} time(s).`,
+      confidence: 0.95,
+      source: "deterministic",
+      derivation: `Authoritative completion_decision event(s): contractKind=${contractKind ?? "unknown"}, source=${source ?? "unknown"}.`,
+      firstTurn: rejectedDecisions[0].entry.turnNumber,
+      evidence: rejectedDecisions.slice(0, 3).map(({ entry, event }) => ({
+        kind: "event",
+        sessionId,
+        turnNumber: entry.turnNumber,
+        eventType: event.type,
+        label: `${eventDataString(event, "status") ?? "rejected"} (${eventDataString(event, "contractKind") ?? "unknown contract"}) on turn ${entry.turnNumber}`,
+      })),
+    });
+  } else if (doneRejections.length > 0) {
     const first = doneRejections[0];
     addFinding(findings, {
       id: "done-rejection-loop",
@@ -290,7 +324,8 @@ export function analyzeTraceSession(
         `The runtime rejected done ${doneRejections.length} time(s).`,
       confidence: 0.9,
       source: "deterministic",
-      derivation: "Trace contains done_rejected runtime gate events.",
+      derivation:
+        "Trace contains done_rejected runtime gate events (no completion_decision attribution available).",
       firstTurn: first.entry.turnNumber,
       evidence: doneRejections.slice(0, 3).map(({ entry, event }) => ({
         kind: "event",
@@ -299,6 +334,38 @@ export function analyzeTraceSession(
         eventType: event.type,
         label: `done_rejected on turn ${entry.turnNumber}`,
       })),
+    });
+  }
+
+  const acceptedDecision = completionDecisions.find(
+    ({ event }) => eventDataString(event, "status") === "accepted",
+  );
+  if (acceptedDecision) {
+    const contractKind = eventDataString(acceptedDecision.event, "contractKind");
+    const source = eventDataString(acceptedDecision.event, "source");
+    addFinding(findings, {
+      id: "completion-accepted-attribution",
+      category: "completion",
+      severity: "info",
+      title: contractKind
+        ? `Completion accepted via the ${contractKind} contract`
+        : "Completion accepted by the completion pipeline",
+      summary:
+        eventDataString(acceptedDecision.event, "reason") ||
+        "The completion pipeline accepted the task as done.",
+      confidence: 0.95,
+      source: "deterministic",
+      derivation: `Authoritative completion_decision event: contractKind=${contractKind ?? "unknown"}, source=${source ?? "unknown"}.`,
+      firstTurn: acceptedDecision.entry.turnNumber,
+      evidence: [
+        {
+          kind: "event",
+          sessionId,
+          turnNumber: acceptedDecision.entry.turnNumber,
+          eventType: acceptedDecision.event.type,
+          label: `accepted (${contractKind ?? "unknown contract"}) on turn ${acceptedDecision.entry.turnNumber}`,
+        },
+      ],
     });
   }
 

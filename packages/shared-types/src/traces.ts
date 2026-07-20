@@ -386,6 +386,17 @@ export interface TraceEventPayloadByType {
     reason: string;
     advancedTo: number;
   };
+  /** The authoritative completion-pipeline decision (accept or reject). */
+  completion_decision: {
+    turn: number;
+    status: "accepted" | "rejected" | "needs_verification";
+    source: "model_done" | "trusted_tool";
+    reason: string;
+    contractKind?: string;
+    resultId?: string;
+    evidenceKeys?: string[];
+    completionEnvelope?: unknown;
+  };
   stuck_signal: {
     type: "escalate";
     stagnantTurns: number;
