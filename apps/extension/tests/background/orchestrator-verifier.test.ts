@@ -590,6 +590,28 @@ describe("programmaticVerify — restraint (draft-only) tasks", () => {
     expect(result?.failureType).not.toBe("state_mismatch");
   });
 
+  test("the JobAgent console's own fill instruction is covered", () => {
+    // The console assembles this prompt for every fill mission (see
+    // scripts/jobagent/manifest.ts promptLines). A live fixture run on
+    // 2026-07-19 filled all four fields byte-exact, did not submit — and was
+    // still marked `failed`, so the package never left `ready`. "Fill but do
+    // not submit" is the pipeline's ONLY shape, so this must never regress.
+    const result = programmaticVerify({
+      taskQuery:
+        "Fill out this job application form. Use EXACTLY the values below — " +
+        "byte for byte, no paraphrasing. Any field not listed here: leave it " +
+        "blank. Do NOT submit the form — when every listed field is filled, " +
+        "stop and report.",
+      objective: "Fill the application form without submitting",
+      successCriteria: "Every listed field filled; form not submitted",
+      output:
+        "All four listed fields are filled exactly as given. The CV/resume " +
+        "upload was not listed, so I left it blank. I did not submit the form.",
+      executorOutcome: "completed",
+    });
+    expect(result?.failureType).not.toBe("state_mismatch");
+  });
+
   test("still flags a genuine failure report on a draft-only task", () => {
     const result = programmaticVerify({
       ...restraintTask,

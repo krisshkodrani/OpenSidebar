@@ -1,11 +1,11 @@
 /**
  * Completion decision recording (RFC LP-15, Phase 0 — golden harness).
  *
- * The completion authority is split between the deterministic contract kernel
- * (`completion-kernel.ts`) and the legacy guard chain inside
- * `AgentLoop.handleDoneToolCall`. Before either can be refactored (Phases 7a/7b),
- * we need a golden corpus of `(input surface -> decision)` pairs so the eventual
- * pure pipeline can be proven byte-identical to today's behaviour.
+ * The completion authority is the pure pipeline (`completion/pipeline.ts`,
+ * kernel-first since Phase 7b; its escape-hatch flag was retired 2026-07-14).
+ * The golden corpus of `(input surface -> decision)` pairs recorded here keeps
+ * every refactor of the pipeline provably byte-identical to the recorded
+ * behaviour.
  *
  * This module defines the serialized record shape and the pure replay seam. It
  * is intentionally free of `chrome.*` and of any `AgentLoop` coupling so the
@@ -30,7 +30,7 @@ import type { PlannerValidationResult } from "./pipeline";
  * corpus fixtures. The replay test asserts every loaded record carries the
  * current version.
  */
-export const COMPLETION_DECISION_RECORD_VERSION = 2;
+export const COMPLETION_DECISION_RECORD_VERSION = 3;
 
 export type CompletionDecisionVerdict = "accepted" | "rejected";
 
@@ -79,8 +79,6 @@ export interface CompletionDecisionRecordInput {
    * duplication keeps the guard context self-contained.
    */
   guardContext: CompletionGuardContext;
-  /** `completionDeterministicAcceptanceEnabled` at decision time. */
-  deterministicAcceptanceEnabled: boolean;
   /** `Boolean(completedResult)` — the duplicate-terminal short-circuit. */
   isDuplicateTerminal: boolean;
   /**

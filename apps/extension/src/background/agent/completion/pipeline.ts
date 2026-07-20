@@ -12,9 +12,15 @@
  *
  * The kernel decision is precomputed by the caller (frozen kernel via
  * `evaluateGeneratedCompletionCandidate`) and the planner stage is an injected
- * async dep — the only two non-pure seams. In shadow the planner reuses the
- * legacy result; in replay it is stubbed. Effects accumulate in execution order
- * (pass-time side-effects included) for the 7b applier.
+ * async dep — the only two non-pure seams. In replay the planner is stubbed
+ * with the recorded result. Effects accumulate in execution order (pass-time
+ * side-effects included) for the 7b applier.
+ *
+ * This pipeline is THE completion authority (the
+ * `completionDeterministicAcceptanceEnabled` escape hatch was retired
+ * 2026-07-14 after zero recorded divergence): the kernel decides accept/reject
+ * unconditionally at stage 4, and the "legacy" guard names below are the
+ * absorbed pre-pipeline guard chain, not a parallel implementation.
  */
 
 import type { CompletionEvaluation } from "../completion-kernel";
@@ -45,7 +51,7 @@ export interface PlannerValidationResult {
   reason: string;
   /**
    * Running plan-step index at validation time, used to build the
-   * run_done_plan_rejection effect (RFC LP-16 Phase 2). Optional so shadow/replay
+   * run_done_plan_rejection effect (RFC LP-16 Phase 2). Optional so replay
    * records — which return [] from buildPlanRejectionEffects — need not carry it.
    */
   effectiveCurrentIdx?: number;
@@ -55,17 +61,15 @@ export interface CompletionPipelineDeps {
   /**
    * Frozen-kernel evaluation for this done() attempt, computed lazily so the
    * live authority path only evaluates the kernel once summary + grounding have
-   * passed (matching legacy order + side-effects). Shadow/replay return a
+   * passed (matching legacy order + side-effects). Replay returns a
    * precomputed pure decision.
    */
   getKernelDecision: () => CompletionEvaluation;
-  /** `this.completionDeterministicAcceptanceEnabled`. */
-  deterministicAcceptanceEnabled: boolean;
   /** `Boolean(this.completedResult)` — duplicate terminal short-circuit. */
   isDuplicateTerminal: boolean;
   /**
-   * Injected planner validation (model call live; legacy-result in shadow;
-   * stubbed in replay). Returns null when no plan applies (`taskId` +
+   * Injected planner validation (model call live; stubbed with the recorded
+   * result in replay). Returns null when no plan applies (`taskId` +
    * `planSubtaskCount > 0` gates the stage).
    */
   validatePlan: () => Promise<PlannerValidationResult | null>;
@@ -77,7 +81,7 @@ export interface CompletionPipelineDeps {
    * conditional pending-autocomplete traces, and the diagnostic message) and the
    * pipeline appends them to the decision so applyCompletionEffects performs the
    * mutations in order. Called only on a non-bypassed kernel rejection; returns
-   * [] in shadow/replay (only the verdict is compared there).
+   * [] in replay (only the verdict is compared there).
    */
   buildKernelRejectionEffects: (
     decision: CompletionEvaluation,
@@ -87,7 +91,7 @@ export interface CompletionPipelineDeps {
    * single-authority): rather than the injected validatePlan dep applying the
    * rejection policy inline, the loop returns a run_done_plan_rejection effect
    * and the pipeline carries it so applyCompletionEffects runs the policy.
-   * Called only on a planner reject; returns [] in shadow/replay.
+   * Called only on a planner reject; returns [] in replay.
    */
   buildPlanRejectionEffects: (
     plan: PlannerValidationResult,
@@ -158,61 +162,55 @@ export async function runCompletionPipeline(
 
   // 4. Kernel evaluation (lazy: only now, after summary + grounding passed).
   const kernel = deps.getKernelDecision();
-  if (deps.deterministicAcceptanceEnabled) {
-    if (kernel.status === "accepted") {
+  if (kernel.status === "accepted") {
+    return {
+      verdict: "accept",
+      basis: "kernel",
+      contractKind: kernel.contract?.kind ?? "unknown",
+      rejectedBy: "kernel",
+      reason: kernel.reason ?? "",
+      recoveryHint: null,
+      effects: [...effects],
+    };
+  }
+  // Only "rejected" / "needs_verification" decide at the kernel; any other
+  // status (e.g. "inconclusive") falls through to the legacy bundle exactly
+  // as legacy does.
+  if (kernel.status === "rejected" || kernel.status === "needs_verification") {
+    const kind = kernel.contract?.kind ?? null;
+    const bypass =
+      ctx.lastContractRejectionKind === kind &&
+      ctx.consecutiveSameKindRejections >= 2;
+    if (bypass) {
+      effects.push({
+        type: "emit_trace",
+        event: "completion_contract_bypassed",
+        data: {
+          kind: ctx.lastContractRejectionKind,
+          consecutiveRejections: ctx.consecutiveSameKindRejections,
+        },
+      });
+      // fall through to the legacy bundle
+    } else {
+      // Single-authority (RFC LP-16 Phase 2): the loop-coupled kernel-reject
+      // mutations + observability are now returned as effects and appended
+      // here, so applyCompletionEffects performs them in order (rather than a
+      // side-effecting callback). The decision carries the pass-time effects
+      // plus this rejection's effects.
       return {
-        verdict: "accept",
-        basis: "kernel",
-        contractKind: kernel.contract?.kind ?? "unknown",
+        verdict: "reject",
+        basis: "kernel_reject",
+        contractKind: kind ?? "unknown",
         rejectedBy: "kernel",
         reason: kernel.reason ?? "",
         recoveryHint: null,
-        effects: [...effects],
+        // Reject effects first, then the pass-time effects: this preserves the
+        // pre-refactor applied order, where the (then side-effecting) callback
+        // ran before applyCompletionEffects consumed the pass-time effects.
+        effects: [...deps.buildKernelRejectionEffects(kernel), ...effects],
       };
     }
-    // Only "rejected" / "needs_verification" decide at the kernel; any other
-    // status (e.g. "inconclusive") falls through to the legacy bundle exactly
-    // as legacy does.
-    if (
-      kernel.status === "rejected" ||
-      kernel.status === "needs_verification"
-    ) {
-      const kind = kernel.contract?.kind ?? null;
-      const bypass =
-        ctx.lastContractRejectionKind === kind &&
-        ctx.consecutiveSameKindRejections >= 2;
-      if (bypass) {
-        effects.push({
-          type: "emit_trace",
-          event: "completion_contract_bypassed",
-          data: {
-            kind: ctx.lastContractRejectionKind,
-            consecutiveRejections: ctx.consecutiveSameKindRejections,
-          },
-        });
-        // fall through to the legacy bundle
-      } else {
-        // Single-authority (RFC LP-16 Phase 2): the loop-coupled kernel-reject
-        // mutations + observability are now returned as effects and appended
-        // here, so applyCompletionEffects performs them in order (rather than a
-        // side-effecting callback). The decision carries the pass-time effects
-        // plus this rejection's effects.
-        return {
-          verdict: "reject",
-          basis: "kernel_reject",
-          contractKind: kind ?? "unknown",
-          rejectedBy: "kernel",
-          reason: kernel.reason ?? "",
-          recoveryHint: null,
-          // Reject effects first, then the pass-time effects: this preserves the
-          // pre-refactor applied order, where the (then side-effecting) callback
-          // ran before applyCompletionEffects consumed the pass-time effects.
-          effects: [...deps.buildKernelRejectionEffects(kernel), ...effects],
-        };
-      }
-    }
   }
-  // (flag off → legacy records a shadow trace; the pipeline just advances.)
 
   // 5. Legacy bundle, in the exact rejectDoneBeforePlanValidation order.
   decided = runGuard(assessMaxRejectionsGuard(ctx));

@@ -159,9 +159,36 @@ export const chromePersistencePort: PersistencePort = {
   session: chromeStorageArea("session"),
 };
 
+/**
+ * Subscribers registered through this port, for local delivery on broadcast.
+ *
+ * `chrome.runtime.sendMessage` never delivers back to the context that sent it,
+ * so a service-worker subscriber cannot see the service worker's own broadcasts
+ * via `chrome.runtime.onMessage` alone. Everything in-process that observes
+ * agent messages (`createAgentRuntime`, and through it the browser bridge)
+ * depends on that delivery, so `broadcast` hands off here as well as to chrome.
+ *
+ * Only listeners registered via this port participate. Code that calls
+ * `chrome.runtime.onMessage.addListener` directly (e.g. `background.ts`) keeps
+ * its existing cross-context-only semantics and is unaffected.
+ */
+type LocalListener = Parameters<RuntimeMessagingPort["onMessage"]>[0];
+const localListeners = new Set<LocalListener>();
+
 export const chromeRuntimeMessagingPort: RuntimeMessagingPort = {
   broadcast(message) {
     chrome.runtime.sendMessage(message).catch(() => {});
+    // Additive to the chrome send above — other contexts (the sidepanel) still
+    // receive it that way; this only adds the in-process subscribers chrome
+    // deliberately skips.
+    for (const listener of [...localListeners]) {
+      try {
+        listener(message, {});
+      } catch {
+        // One bad subscriber must not break delivery to the others, nor throw
+        // back into the broadcasting code path.
+      }
+    }
   },
   request(message) {
     return chrome.runtime.sendMessage(message);
@@ -183,7 +210,11 @@ export const chromeRuntimeMessagingPort: RuntimeMessagingPort = {
       return undefined;
     };
     chrome.runtime.onMessage.addListener(chromeListener);
-    return () => chrome.runtime.onMessage.removeListener(chromeListener);
+    localListeners.add(listener);
+    return () => {
+      chrome.runtime.onMessage.removeListener(chromeListener);
+      localListeners.delete(listener);
+    };
   },
 };
 

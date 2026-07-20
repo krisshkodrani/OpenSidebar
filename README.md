@@ -5,6 +5,7 @@
 <h1 align="center">OpenSidebar</h1>
 
 <p align="center">
+  <a href="https://opensidebar.com"><img src="https://img.shields.io/badge/site-opensidebar.com-4FC3F7" alt="Website" /></a>
   <a href="https://github.com/krisshkodrani/OpenSidebar/actions/workflows/ci.yml"><img src="https://github.com/krisshkodrani/OpenSidebar/actions/workflows/ci.yml/badge.svg" alt="CI" /></a>
   <a href="LICENSE"><img src="https://img.shields.io/badge/License-MIT-blue.svg" alt="License: MIT" /></a>
   <a href="https://nodejs.org/"><img src="https://img.shields.io/badge/node-%3E%3D22-brightgreen" alt="Node.js" /></a>
@@ -13,7 +14,18 @@
 <p align="center">
   Your browser, driven by AI. OpenSidebar is an open-source Chrome extension that puts an autonomous agent in your side panel —<br />
   describe a task in plain English and it sees the page, clicks, types, and carries multi-step work across tabs to done.<br /><br />
-  Bring your own API key. No subscription, no telemetry, no backend — everything runs in your browser.
+  Bring your own API key. No subscription, no telemetry, no backend of ours — the extension runs in your browser and talks only to the model providers you configure.
+</p>
+
+<p align="center">
+  <a href="https://opensidebar.com"><b>Website &amp; demos</b></a> ·
+  <a href="#quick-start">Quick start</a> ·
+  <a href="https://github.com/krisshkodrani/OpenSidebar/tree/main/docs">Docs</a> ·
+  <a href="#for-developers">Contribute</a>
+</p>
+
+<p align="center">
+  <a href="https://opensidebar.com"><img src="docs/assets/hero.gif" alt="OpenSidebar driving a shopping checkout from the side panel — add to cart, apply a coupon, and place the order" width="820" /></a>
 </p>
 
 ---
@@ -47,13 +59,13 @@ OpenSidebar runs an autonomous agent loop inside a Chrome side panel: it perceiv
 ## Highlights
 
 - **Sees the page like you do.** The executor is a vision model that works from the live screenshot plus a DOM snapshot — it reads charts, zooms into fine print with `inspect_region`, and handles pages that defeat pure-DOM bots (canvas widgets, closed shadow DOM).
-- **51 browser tools.** Clicking, typing, and scrolling — but also file upload and download, tab and window management, structured table/chart/filter extraction, and prose composition delegated to a dedicated writer model. See the [Tools Reference](./docs/features/tools.md).
-- **Safe by default.** Four approval modes span ask-before-every-action to fully autonomous. Consequential actions pause for your approval, form submits are dry-run first so you approve the exact field values, and high-risk completions are re-checked by a judge model before the agent calls a task done.
+- **52 browser tools.** Clicking, typing, and scrolling — but also file upload and download, tab and window management, structured table/chart/filter extraction, and prose composition delegated to a dedicated writer model. See the [Tools Reference](./docs/features/tools.md).
+- **Safe by default.** Approvals are on by default and range from ask-before-every-action to fully autonomous. Consequential actions — submitting a job application, sending a message — pause for your approval. When the agent works from a draft you approved, the final submit is checked field-by-field against that draft, and high-risk completions are re-checked by a judge model before the agent calls a task done.
 - **Plans, executes, verifies.** A planner decomposes hard tasks, an executor drives each step, and a verifier confirms completion — with automatic escalation to a stronger model when a run gets stuck instead of burning turns.
-- **Remembers what matters.** A local personal profile you review yourself (sensitive fields are consent-gated and encrypted at rest), per-site skills learned from successful runs, and checkpoints that let tasks survive service-worker restarts. See [Personal Profile](./docs/personal-profile.md).
-- **Yours to inspect.** Every session produces a full-fidelity trace you can replay in the built-in [trace viewer](#trace-viewer). API keys live in Chrome storage; traffic goes browser → provider, nothing else.
-- **Speak or type.** Voice input transcribes straight into the composer.
-- **Extendable.** Optional OpenClaw "brain" integration (default-off) exposes the browser as thick MCP tools to an external agent. See the [CHANGELOG](CHANGELOG.md) and `docs/engineering/` RFCs.
+- **Remembers what matters.** A local personal profile you review yourself (sensitive fields are consent-gated and encrypted at rest), per-site skills you record once and reuse, and checkpoints that let tasks survive service-worker restarts. See [Personal Profile](./docs/personal-profile.md).
+- **Yours to inspect.** Every session produces a full-fidelity trace you can replay in the built-in [trace viewer](#trace-viewer). API keys live in Chrome storage; traffic goes from your browser to the providers you configure — your LLM provider, plus Groq if you enable voice — and nothing else.
+- **Speak or type.** Add a Groq API key and voice input transcribes straight into the composer (Whisper large-v3-turbo).
+- **Extendable.** An optional, default-off bridge exposes the browser as thick tools to an external agent — a local [pi](https://pi.dev) session can drive it directly (`.pi/extensions/`), and any MCP client can connect via `pnpm run mcp:browser`. See the [CHANGELOG](CHANGELOG.md) and `docs/engineering/` RFCs.
 
 ## Quick Start
 

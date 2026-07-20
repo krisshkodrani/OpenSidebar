@@ -24,7 +24,6 @@ type MockLoopConfig = {
     approved?: boolean;
     answer?: string;
   } | null;
-  completionDeterministicAcceptanceEnabled?: boolean;
 };
 
 type MockCompletedResult = {
@@ -454,7 +453,7 @@ describe("Orchestrator integration join tests", () => {
 
     const orchestrator = new Orchestrator(orchestratorDeps);
     activeOrchestrator = orchestrator;
-    await orchestrator.startTask(makeInput("collect then summarize"));
+    await orchestrator.startTask(makeInput("collect the figures from each page, then summarize"));
 
     expect(createdLoopNodeIds).toEqual(["n1", "n2"]);
     expect(capturedInstructions[0].instruction).toContain("Objective: collect data");
@@ -485,25 +484,6 @@ describe("Orchestrator integration join tests", () => {
     expect(capturedInstructions[0].instruction).toContain(
       "Objective: Tell me what page I am on.",
     );
-  });
-
-  test("passes deterministic completion rollback flag to executor loops", async () => {
-    plannerBuildNodesImpl = async () => [makeNode("n1", "select answers")];
-
-    const orchestrator = new Orchestrator(orchestratorDeps);
-    activeOrchestrator = orchestrator;
-    await orchestrator.startTask({
-      ...makeInput("select answers"),
-      settings: {
-        ...baseSettings,
-        completionDeterministicAcceptanceEnabled: false,
-      },
-    });
-
-    expect(createdLoopConfigs[0]).toMatchObject({
-      nodeId: "n1",
-      completionDeterministicAcceptanceEnabled: false,
-    });
   });
 
   test("passes Fireworks provider settings to verifier and replanner", async () => {
@@ -2423,7 +2403,7 @@ describe("Orchestrator integration join tests", () => {
 
     const orchestrator = new Orchestrator(orchestratorDeps);
     activeOrchestrator = orchestrator;
-    await orchestrator.startTask(makeInput("Select the correct option/s"));
+    await orchestrator.startTask(makeInput("Select the correct option on each quiz page"));
 
     expect(verifierDecisionCalls).toBe(0);
     const messages = (globalThis as any).__runtimeMessages as Array<{
@@ -2519,7 +2499,7 @@ describe("Orchestrator integration join tests", () => {
 
     const orchestrator = new Orchestrator(orchestratorDeps);
     activeOrchestrator = orchestrator;
-    await orchestrator.startTask(makeInput("Select the correct option/s"));
+    await orchestrator.startTask(makeInput("Select the correct option on each quiz page"));
 
     expect(verifierDecisionCalls).toBe(0);
     expect(createdLoopNodeIds).toHaveLength(2);

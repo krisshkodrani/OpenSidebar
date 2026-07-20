@@ -7,6 +7,66 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- **Fireworks GPT-OSS 120B is selectable again.** The curated Fireworks model
+  list offered the catalog-style `openai/gpt-oss-120b` id, which 404s on the
+  Fireworks endpoint — picking it for a planner or writer seat silently broke
+  every call for that seat. The list now offers the `accounts/…` API id, and a
+  settings migration repairs the id already stored for affected users (only on
+  Fireworks-served provider modes — the same id is the correct one on Groq and
+  OpenRouter). Groq's GPT-OSS 20B also gained its missing pricing row, so runs
+  on it are no longer costed as free.
+
+### Changed
+
+- **Completion's rollback flag is gone (RFC LP-15/LP-16 follow-up).** The pure
+  pipeline has been the single completion authority since the Phase 7b flip;
+  `completionDeterministicAcceptanceEnabled` (never surfaced in settings) and
+  the shadow-comparison scaffolding behind it are removed after zero recorded
+  divergence across the full trace corpus. Completion decision records bump to
+  version 3.
+- **ServiceNow record-form and catalog controllers move into the agent-side
+  quarantine adapter.** ~1,150 lines leave `agent/loop.ts` for
+  `agent/servicenow/`, continuing the LP-15 Phase 12 detachment; `loop.ts` is
+  down to ~5.6K lines / 148 methods (from ~10.3K at the start of the LP-16
+  decomposition). Behavior-preserving.
+- **`RuntimeMessage` is composed of per-domain sub-unions** (session, progress,
+  interaction, content-protocol, skills, watch-mode, e2e) under
+  `shared-types/src/messages/`, so a consumer can type against just its own
+  slice. Existing imports are unaffected. Two dead variants (`SETTINGS_UPDATE`,
+  `SPEECH_TRANSCRIPTION_RESULT`) that nothing sent or handled are removed.
+- **The decomposition ratchet now guards the whole tree.** Every source file
+  under `apps/extension/src` and `packages/` is capped at 1,500 lines, with
+  pre-existing larger files grandfathered on shrink-only budgets — so extracting
+  code out of a landmine file into a fresh giant no longer passes lint.
+### Added
+
+- **Pi as an optional brain (pi-backend Phases 1–3).** A local
+  [pi](https://pi.dev) session can drive the browser through the existing
+  loopback WebSocket bridge: `.pi/extensions/opensidebar.ts` registers the
+  seven thick browser tools with their JSON schemas passed through verbatim.
+  The bridge now actually delivers completions in a real browser (the
+  service-worker broadcast never reached in-process subscribers before —
+  proven fixed by a new offline e2e), reacts live to the
+  `opensidebar:browserMcpWsPort` setting (no extension reload), carries the
+  run's `PartialProgressHandoff` on every status, supports session-scoped tab
+  reuse (missions sharing a session continue in one tab and workspace, with
+  serialized starts), and honors mid-run cancellation via a new
+  `{ id, cancel: true }` wire frame wired to pi's `AbortSignal`.
+
+### Removed
+
+- **OpenClaw integration (RFC LP-8 M3–M5).** The `openclaw/` scaffold and stub
+  gateway, the planner-gateway routing (`llm-routing.ts`, `openclaw-client.ts`),
+  the knowledge-sync layer (`knowledge-sync*.ts`, sync paths in website-skills
+  and personal-profile), the dormant bridge `agent-runner.ts`, and the Docker
+  services/scripts that ran them. The generic pieces OpenClaw drove — the
+  browser MCP host, the WebSocket bridge, the thick tools, and the M1 at-rest
+  profile encryption — all remain; pi (or any MCP client) is the brain now.
+  The "OpenClaw RL Guidelines" trajectory-grading rubric in the observability
+  engine is unrelated and unchanged.
+
 ## [0.5.0] - 2026-07-09
 
 Agent-loop decomposition (RFC LP-16, Phase 3 "driver-flip"): the ~2,300-line

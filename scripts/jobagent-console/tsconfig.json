@@ -1,0 +1,17 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "lib": ["ESNext"],
+    "types": ["node"],
+    "jsx": "preserve",
+    "noEmit": true,
+    "moduleResolution": "Bundler"
+  },
+  "include": [
+    "./*.ts",
+    "../jobagent/*.ts",
+    "../browser-mcp/bridge.ts",
+    "../browser-mcp/ws-bridge.ts",
+    "../browser-mcp/tools.ts"
+  ]
+}

@@ -213,7 +213,7 @@
 
   <!-- ── 4-E: Tool Execution ────────────────────────────────── -->
   <rect x="66" y="1074" width="968" height="100" rx="10" fill="#071a0e" stroke="#16a34a40" stroke-width="1"/>
-  <text x="88" y="1093" font-size="11" font-weight="600" fill="#4ade80">Tool Execution  (51 registered tools · DOM bridge via Content Script)</text>
+  <text x="88" y="1093" font-size="11" font-weight="600" fill="#4ade80">Tool Execution  (52 registered tools · DOM bridge via Content Script)</text>
 
   <!-- tool tiles -->
   <rect x="88"  y="1100" width="142" height="30" rx="6" fill="#16a34a10" stroke="#16a34a25"/>
@@ -242,7 +242,7 @@
 
   <text x="88" y="1162" font-size="10" fill="#94a3b8">Stable hash element IDs · empty-page retry 300+500 ms · ToolResultCache idempotency guard · DOM-modifying refresh policy</text>
   <rect x="872" y="1078" width="148" height="13" rx="6" fill="#16a34a10" stroke="#16a34a28"/>
-  <text x="946" y="1088" text-anchor="middle" font-size="8" fill="#4ade80">Tool Use  ·  51 tools</text>
+  <text x="946" y="1088" text-anchor="middle" font-size="8" fill="#4ade80">Tool Use  ·  52 tools</text>
   <line x1="550" y1="1174" x2="550" y2="1192" stroke="#64748b" stroke-width="1.5" marker-end="url(#arrow)"/>
 
   <!-- ── 4-F: Stagnation / Escalation ──────────────────────── -->

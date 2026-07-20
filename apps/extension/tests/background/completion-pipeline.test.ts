@@ -36,6 +36,9 @@ function ctx(over: Partial<CompletionGuardContext> = {}): CompletionGuardContext
 }
 
 const accepted = { status: "accepted", contract: { kind: "generic" } } as unknown as CompletionEvaluation;
+// Non-deciding kernel outcome: the pipeline falls through to the guard bundle,
+// so bundle-stage tests can use it as the default.
+const inconclusive = { status: "inconclusive", contract: null } as unknown as CompletionEvaluation;
 function rejected(kind: string): CompletionEvaluation {
   return {
     status: "rejected",
@@ -47,8 +50,7 @@ function rejected(kind: string): CompletionEvaluation {
 
 function deps(over: Partial<CompletionPipelineDeps> = {}): CompletionPipelineDeps {
   return {
-    getKernelDecision: () => accepted,
-    deterministicAcceptanceEnabled: false,
+    getKernelDecision: () => inconclusive,
     isDuplicateTerminal: false,
     validatePlan: async () => null,
     buildKernelRejectionEffects: () => [],
@@ -65,7 +67,7 @@ describe("runCompletionPipeline", () => {
     expect(d.rejectedBy).toBe("idempotency");
   });
 
-  test("clean state falls through to legacy_done_guards accept", async () => {
+  test("inconclusive kernel falls through to legacy_done_guards accept", async () => {
     const d = await runCompletionPipeline(ctx(), deps());
     expect(d.verdict).toBe("accept");
     expect(d.basis).toBe("legacy_done_guards");
@@ -75,7 +77,7 @@ describe("runCompletionPipeline", () => {
   test("kernel acceptance returns basis kernel", async () => {
     const d = await runCompletionPipeline(
       ctx(),
-      deps({ deterministicAcceptanceEnabled: true, getKernelDecision: () => accepted }),
+      deps({ getKernelDecision: () => accepted }),
     );
     expect(d.verdict).toBe("accept");
     expect(d.basis).toBe("kernel");
@@ -85,7 +87,6 @@ describe("runCompletionPipeline", () => {
     const d = await runCompletionPipeline(
       ctx(),
       deps({
-        deterministicAcceptanceEnabled: true,
         getKernelDecision: () => rejected("money_table"),
       }),
     );
@@ -98,7 +99,6 @@ describe("runCompletionPipeline", () => {
     const d = await runCompletionPipeline(
       ctx({ lastContractRejectionKind: "money_table", consecutiveSameKindRejections: 2 }),
       deps({
-        deterministicAcceptanceEnabled: true,
         getKernelDecision: () => rejected("money_table"),
       }),
     );

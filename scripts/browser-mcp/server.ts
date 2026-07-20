@@ -2,17 +2,20 @@
  * Browser MCP host (RFC LP-8, M2 "The Bridge").
  *
  * A Model Context Protocol server that exposes thick, intent-level browser tools
- * to an external orchestrator (OpenClaw). It mirrors the proven LP-7 pattern
+ * to an external MCP client. It mirrors the proven LP-7 pattern
  * (`scripts/obs/mcp-server.ts`): the server holds no browser logic — every call
  * is validated and forwarded over a `BrowserBridge` to the OpenSidebar
- * extension, which runs the actual `AgentLoop`.
+ * extension, which runs the actual `AgentLoop`. (A local pi session skips this
+ * server entirely and drives the WebSocket bridge directly via
+ * `.pi/extensions/opensidebar.ts`.)
  *
- * Two transports to the orchestrator (OpenClaw):
- *   - stdio (default)              — OpenClaw spawns this process as a child.
+ * Two transports to the MCP client:
+ *   - stdio (default)              — the client spawns this process as a child.
  *                                    Best for a native, single-machine install.
- *   - streamable-http (network)    — set BROWSER_MCP_HTTP_PORT. OpenClaw connects
- *                                    over the network. Required when OpenClaw runs
- *                                    in its own container (it can't spawn our repo).
+ *   - streamable-http (network)    — set BROWSER_MCP_HTTP_PORT. The client
+ *                                    connects over the network. Required when it
+ *                                    runs in its own container (it can't spawn
+ *                                    our repo).
  *
  * Transport to the *extension* is independent: a loopback WebSocket on
  * BROWSER_MCP_WS_PORT (the extension connects as a client). Until that is set the
@@ -32,6 +35,8 @@ import {
   CallToolRequestSchema,
   ListToolsRequestSchema,
 } from "@modelcontextprotocol/sdk/types.js";
+import { SpanStatusCode, metrics, trace } from "@opentelemetry/api";
+import { SeverityNumber, logs } from "@opentelemetry/api-logs";
 
 import {
   NotConnectedBridge,
@@ -42,6 +47,16 @@ import { BROWSER_TOOLS } from "./tools.js";
 import { WebSocketBridge } from "./ws-bridge.js";
 
 type Args = Record<string, unknown>;
+
+// Telemetry handles (Bluebox, see scripts/otel/sdk.ts). Pure no-ops until
+// startOtel() runs in the auto-start block — unit tests never export anything.
+const otelTracer = trace.getTracer("opensidebar-browser-mcp");
+const otelLogger = logs.getLogger("opensidebar-browser-mcp");
+const toolCallCounter = metrics
+  .getMeter("opensidebar-browser-mcp")
+  .createCounter("opensidebar.browser_tool.calls", {
+    description: "Thick browser tool calls dispatched over the bridge, by outcome",
+  });
 
 /** Validate required args against a tool's schema before forwarding. */
 function validateArgs(name: string, args: Args): void {
@@ -66,7 +81,36 @@ export async function dispatch(
   args: Args,
 ): Promise<BrowserToolResponse> {
   validateArgs(name, args);
-  return bridge.call({ tool: name, args });
+  return otelTracer.startActiveSpan(
+    `browser_tool ${name}`,
+    { attributes: { "opensidebar.tool.name": name } },
+    async (span) => {
+      try {
+        const response = await bridge.call({ tool: name, args });
+        span.setAttribute("opensidebar.tool.status", response.status);
+        toolCallCounter.add(1, { tool: name, status: response.status });
+        if (response.status === "error") {
+          span.setStatus({ code: SpanStatusCode.ERROR, message: response.reason });
+          otelLogger.emit({
+            severityNumber: SeverityNumber.ERROR,
+            severityText: "ERROR",
+            body: `browser_tool ${name} failed: ${response.reason ?? "unknown"}`,
+            attributes: { "opensidebar.tool.name": name },
+          });
+        }
+        return response;
+      } catch (error) {
+        span.setStatus({
+          code: SpanStatusCode.ERROR,
+          message: (error as Error).message,
+        });
+        toolCallCounter.add(1, { tool: name, status: "thrown" });
+        throw error;
+      } finally {
+        span.end();
+      }
+    },
+  );
 }
 
 /** Build a configured MCP server bound to the given bridge (no transport yet). */
@@ -110,7 +154,7 @@ export type BrowserMcpTransport =
   | { kind: "stdio" }
   | { kind: "http"; port: number; host?: string };
 
-/** Connect the server over stdio (OpenClaw spawns us as a child process). */
+/** Connect the server over stdio (the MCP client spawns us as a child process). */
 async function startStdio(bridge: BrowserBridge): Promise<void> {
   const server = buildBrowserMcpServer(bridge);
   await server.connect(new StdioServerTransport());
@@ -133,10 +177,10 @@ function readBody(req: import("node:http").IncomingMessage): Promise<unknown> {
 }
 
 /**
- * Serve MCP over streamable-http (stateless) so a networked orchestrator — e.g.
- * OpenClaw running in its own container — can reach us. One server+transport per
- * request keeps it stateless (no cross-request session state; the bridge holds
- * all the real state).
+ * Serve MCP over streamable-http (stateless) so a networked orchestrator —
+ * e.g. one running in its own container — can reach us. One server+transport
+ * per request keeps it stateless (no cross-request session state; the bridge
+ * holds all the real state).
  */
 async function startHttp(
   bridge: BrowserBridge,
@@ -188,10 +232,14 @@ export async function startBrowserMcpServer(
 // Auto-start only when run directly (not when imported by tests).
 //   - Extension transport: loopback WebSocket when BROWSER_MCP_WS_PORT is set;
 //     otherwise NotConnectedBridge (extension transport not configured).
-//   - OpenClaw transport: streamable-http when BROWSER_MCP_HTTP_PORT is set
-//     (Docker / networked); otherwise stdio (native, OpenClaw spawns us).
+//   - MCP-client transport: streamable-http when BROWSER_MCP_HTTP_PORT is set
+//     (Docker / networked); otherwise stdio (native, the client spawns us).
 const entryPath = process.argv[1] ? resolve(process.argv[1]) : "";
 if (entryPath && entryPath === fileURLToPath(import.meta.url)) {
+  // Bluebox telemetry (default-off; no-op without OTEL_EXPORTER_OTLP_ENDPOINT
+  // / .env.otel). Dynamic import keeps the SDK out of unit-test module graphs.
+  const { startOtel } = await import("../otel/sdk.js");
+  await startOtel("opensidebar-browser-mcp");
   const wsPort = process.env.BROWSER_MCP_WS_PORT;
   const bridge: BrowserBridge = wsPort
     ? new WebSocketBridge({

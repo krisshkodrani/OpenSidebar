@@ -122,6 +122,121 @@ export function getVisibleText(el: Element): string {
   return "";
 }
 
+/**
+ * Resolve a form control's associated label — the accessible name a human reads
+ * next to it — for matching against a drafted field expectation. A control's
+ * own text/value (what `getVisibleText` returns) is NOT its label: a checkbox
+ * has no text and its `name`/`id` is an internal token like `partner-terms`, so
+ * only the associated `<label>` carries "I accept the partner portal terms".
+ * Resolution order: aria-label/title, `label[for]`, wrapping `<label>`,
+ * `aria-labelledby`. Returns "" when none resolves.
+ */
+export function getControlLabel(el: Element): string {
+  const aria =
+    el.getAttribute("aria-label")?.trim() || el.getAttribute("title")?.trim();
+  if (aria) return aria;
+
+  const collapse = (s: string) => s.trim().replace(/\s+/g, " ");
+  const doc = el.ownerDocument;
+  const id = (el as HTMLElement).id;
+  if (id && doc) {
+    const forLabel = doc.querySelector(`label[for="${CSS.escape(id)}"]`);
+    const t = forLabel?.textContent?.trim();
+    if (t) return collapse(t);
+  }
+  const wrapping = el.closest("label");
+  if (wrapping?.textContent?.trim()) return collapse(wrapping.textContent);
+
+  const labelledBy = el.getAttribute("aria-labelledby");
+  if (labelledBy && doc) {
+    const t = labelledBy
+      .split(/\s+/)
+      .map((refId) => doc.getElementById(refId)?.textContent?.trim())
+      .filter(Boolean)
+      .join(" ");
+    if (t) return collapse(t);
+  }
+  return "";
+}
+
+/**
+ * A file <input> the agent can upload to via `upload_file`. These are almost
+ * always visually HIDDEN behind a styled "Attach/Choose file" button (the only
+ * web API for file selection), so the normal visibility filter drops them — and
+ * then the agent, seeing only the button, CLICKS it, which opens an OS file
+ * dialog nothing can control. Tagging the input directly gives upload_file a
+ * target and lets the click guard steer away from the button.
+ */
+export function isUploadFileInput(el: Element): boolean {
+  return (
+    el.tagName === "INPUT" &&
+    (el as HTMLInputElement).type === "file" &&
+    !(el as HTMLInputElement).disabled
+  );
+}
+
+/**
+ * Custom-select (combobox) detection for VALUE READING. ARIA combobox pattern
+ * plus the ubiquitous react-select-style class conventions. Deliberately
+ * generic — no site-specific selectors.
+ */
+export function isComboboxLikeElement(el: Element): boolean {
+  const role = el.getAttribute("role")?.toLowerCase() ?? "";
+  if (role === "combobox") return true;
+  if (el.hasAttribute("aria-autocomplete") || el.hasAttribute("list")) {
+    return true;
+  }
+  if (el.getAttribute("aria-haspopup")?.toLowerCase() === "listbox") {
+    return true;
+  }
+  if (el.closest?.('[role="combobox"]')) return true;
+  const blob = [
+    el.getAttribute("class"),
+    el.getAttribute("id"),
+    el.getAttribute("name"),
+  ]
+    .filter(Boolean)
+    .join(" ")
+    .toLowerCase();
+  return /\b(combobox|autocomplete|typeahead)\b|select__/.test(blob);
+}
+
+/**
+ * Resolve the COMMITTED value of a custom-select widget (react-select-style
+ * combobox). These widgets clear their inner <input> when a selection commits
+ * and render the chosen value in a sibling display node instead — so
+ * `input.value` reads empty right after a successful selection, which (before
+ * this helper) made the agent conclude the selection failed and retry in a
+ * loop. Resolution: the live input value wins; else walk up a few ancestors
+ * looking for an unambiguous single-value display node; a non-empty hidden
+ * input is a last-resort fallback. Returns null when nothing is committed.
+ */
+export function readComboboxCommittedValue(el: Element): string | null {
+  const collapse = (s: string) => s.trim().replace(/\s+/g, " ");
+  if (isInputElement(el) && el.value.trim()) return collapse(el.value);
+
+  const DISPLAY_SELECTOR =
+    '[class*="single-value"], [class*="singleValue"], [class*="selected-value"], [class*="selectedValue"]';
+  let hiddenFallback: string | null = null;
+  let node: Element | null = el;
+  for (let depth = 0; node && depth < 5; node = node.parentElement, depth++) {
+    const displays = node.querySelectorAll<HTMLElement>(DISPLAY_SELECTOR);
+    if (displays.length === 1) {
+      const text = displays[0].textContent && collapse(displays[0].textContent);
+      if (text) return text;
+    }
+    if (displays.length > 1) break; // ambiguous region (multiple widgets) — stop
+    if (!hiddenFallback) {
+      const hidden = node.querySelector<HTMLInputElement>(
+        'input[type="hidden"]',
+      );
+      const hv = hidden?.value && collapse(hidden.value);
+      if (hv) hiddenFallback = hv;
+    }
+  }
+  return hiddenFallback;
+}
+
 export function extractAttributes(el: Element): Record<string, string> {
   const attrs: Record<string, string> = {};
 
@@ -159,6 +274,27 @@ export function extractAttributes(el: Element): Record<string, string> {
       if (selected) {
         attrs["selected"] = selected.textContent?.trim() || selected.value;
       }
+    }
+  }
+
+  // File input: mark it so the LLM targets it with upload_file (and does not
+  // click the styled button beside it, which opens an OS dialog). These are
+  // usually hidden, so this is often the only handle to the upload.
+  if (isUploadFileInput(el)) {
+    attrs["type"] = "file";
+    attrs["upload"] = "use upload_file with a URL";
+  }
+
+  // Custom-select combobox (react-select-style): the committed value lives in a
+  // sibling display node, not in input.value — surface it as selected/value so
+  // snapshots (and the guards reading attributes.value) see the true state
+  // instead of a deceptively empty input.
+  if (!attrs["value"] && !isSelectElement(el) && isComboboxLikeElement(el)) {
+    const committed = readComboboxCommittedValue(el);
+    if (committed) {
+      const clipped = committed.slice(0, ATTR_TRUNCATION);
+      attrs["selected"] = clipped;
+      attrs["value"] = clipped;
     }
   }
 
