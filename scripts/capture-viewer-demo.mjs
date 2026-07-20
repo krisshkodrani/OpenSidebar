@@ -103,7 +103,7 @@ async function main() {
     // to light, which is exactly what we want, so we emulate nothing.
 
     // ── 1. Attention inbox (the new default landing) ──
-    await gotoHash(page, "#top=attention");
+    await gotoHash(page, "#top=runs&review=needs");
     await waitForText(page, "Needs adjudication");
     const hasAttention = await page.evaluate(() =>
       document.body.innerText.includes("Attention"),
@@ -118,7 +118,7 @@ async function main() {
 
     // ── Open the run via the Traces table (a real click resolves the runId
     //    immediately; deep-linking races the session-list load). ──
-    await gotoHash(page, "#top=sessions");
+    await gotoHash(page, "#top=runs");
     await waitForText(page, ROW_TEXT);
     await sleep(700);
     const clicked = await page.evaluate((t) => {

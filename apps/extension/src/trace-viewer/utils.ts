@@ -1,5 +1,6 @@
 import type { TraceSession } from "../types/traces";
-import type { TraceFilters } from "./store/types";
+import type { RunAnnotation, TraceFilters } from "./store/types";
+import { annotationKeyFor } from "./store/types";
 
 export function formatTime(ms: number | undefined | null): string {
   if (!ms) return "---";
@@ -240,14 +241,13 @@ export function defaultTraceFilters(): TraceFilters {
     skill: "all",
     runId: "",
     adjudication: "all",
+    needsReview: "off",
   };
 }
 
 /**
- * True when any filter deviates from the default 7-day window. Shared by the
- * FilterBar and the FleetOverview summary so both surfaces agree on when a
- * "Clear filters" affordance is warranted — including date-window changes,
- * which the FleetOverview summary previously ignored.
+ * True when any filter deviates from the default 7-day window — including
+ * date-window changes. Gates the FilterBar's "Clear filters" affordance.
  */
 export function hasActiveTraceFilters(filters: TraceFilters): boolean {
   const def = defaultTraceFilters();
@@ -260,13 +260,35 @@ export function hasActiveTraceFilters(filters: TraceFilters): boolean {
     filters.model !== def.model ||
     filters.skill !== def.skill ||
     filters.runId !== def.runId ||
-    filters.adjudication !== def.adjudication
+    filters.adjudication !== def.adjudication ||
+    filters.needsReview !== def.needsReview
   );
 }
 
 /** True when filters are exactly the default 7-day window. */
 export function isDefaultTraceWindow(filters: TraceFilters): boolean {
   return !hasActiveTraceFilters(filters);
+}
+
+/** Outcomes that put an unreviewed session in the needs-review queue. */
+const NEEDS_LOOK_OUTCOMES = new Set(["error", "max_turns", "stopped"]);
+
+/**
+ * The adjudication-queue predicate (formerly the Attention inbox): a session
+ * needs review when it failed or only partially finished AND no human verdict
+ * has been recorded for its run (or, for standalone sessions, itself).
+ * Reviewed runs drop out of the queue — that is the point.
+ */
+export function sessionNeedsReview(
+  session: TraceSession,
+  annotations: Record<string, RunAnnotation>,
+): boolean {
+  const reviewed =
+    !!annotations[
+      annotationKeyFor({ runId: session.runId, sessionId: session.sessionId })
+    ];
+  if (reviewed) return false;
+  return NEEDS_LOOK_OUTCOMES.has(session.outcome) || !!session.partialHandoff;
 }
 
 export function summarizeEventData(ev: {

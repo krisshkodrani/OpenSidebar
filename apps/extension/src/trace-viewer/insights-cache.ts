@@ -2,10 +2,11 @@
  * Module-level cache for /api/trace-insights responses.
  *
  * Solves two problems:
- *  1. InsightsTab and MetricsTab both call fetchTraceInsights with identical
- *     filters — the second call is a pure duplicate.
+ *  1. Multiple consumers (the Analytics KPI row and its drill-down sections)
+ *     call fetchTraceInsights with identical filters — later calls are pure
+ *     duplicates.
  *  2. Every tab-switch re-mounts the component and fires a fresh fetch, so
- *     navigating Insights → Metrics → Insights costs three round trips.
+ *     navigating away from Analytics and back costs extra round trips.
  *
  * Strategy:
  *  - One cache slot keyed by JSON.stringify(filters).

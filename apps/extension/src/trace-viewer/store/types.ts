@@ -36,6 +36,8 @@ export interface TraceFilters {
   runId: string; // "" means no filter, otherwise prefix match
   /** Client-side human-adjudication filter: all | unreviewed | reviewed | disagreed */
   adjudication: string;
+  /** Client-side adjudication-queue chip (the former Attention inbox): off | on */
+  needsReview: string;
 }
 
 // ── Human adjudication ─────────────────────────────────────────
@@ -102,7 +104,6 @@ export interface TracesSlice {
   sessions: TraceSession[];
   runGroups: RunGroup[];
   activeTopLevelView: TopLevelView;
-  traceListMode: "sessions" | "runs";
   availableDays: DayBucket[];
   availableModels: ModelBucket[];
   filters: TraceFilters;
@@ -133,7 +134,6 @@ export interface TracesSlice {
   setLogsWarning: (warning: string | null) => void;
   setSearchQuery: (query: string) => void;
   setActiveTopLevelView: (view: TopLevelView) => void;
-  setTraceListMode: (mode: "sessions" | "runs") => void;
   /** Turn number to scroll to after a tab switch (cleared after scroll completes) */
   focusTurnNumber: number | null;
   focusTurnRequest: FocusTurnRequest | null;
@@ -143,8 +143,6 @@ export interface TracesSlice {
   navigateToTurn: (turnNumber: number) => void;
   /** Switch to Perception tab and scroll to a specific turn's perception */
   navigateToPerception: (turnNumber: number) => void;
-  tableSort: { column: string; direction: "asc" | "desc" };
-  setTableSort: (column: string, direction: "asc" | "desc") => void;
   setTracesLoading: (loading: boolean) => void;
   setTracesError: (error: string | null) => void;
   toggleRunGroup: (runId: string) => void;
@@ -157,21 +155,14 @@ export interface TracesSlice {
 
 export type Subview =
   | "story"
-  | "overview"
   | "plan"
   | "turns"
-  | "trajectory"
   | "perception"
   | "prompts"
   | "skills"
   | "logs";
 
-export type TopLevelView =
-  | "attention"
-  | "sessions"
-  | "runs"
-  | "insights"
-  | "metrics";
+export type TopLevelView = "runs" | "analytics";
 
 export interface ScrollPositions {
   [key: string]: number;

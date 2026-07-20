@@ -153,45 +153,80 @@ function makeBeat(beat, idx) {
   fs.writeFileSync(rawList, pieceList.map((p) => `file '${p.replace(/\\/g, "/")}'`).join("\n"), "utf8");
   const raw = path.join(tmp, `b${idx}raw.mp4`);
   sh("ffmpeg", ["-y", "-f", "concat", "-safe", "0", "-i", rawList, "-c", "copy", raw]);
-  // 3) lower third + brand chip + fades over the joined beat
+  // 3) lower third (gradient scrim + accent tick) + brand chip + fades
   const dur = beatDuration(beat);
-  const bandH = 92;
-  const vf = [
-    `drawbox=x=0:y=${H - bandH}:w=${W}:h=${bandH}:color=black@0.5:t=fill`,
-    dt(beat.headline, "white", 36, "60", `${H}-64`,
+  const chain = [
+    // Gradient scrim instead of a hard half-black band — reads as a produced
+    // lower third, not a letterbox bar.
+    `[0:v][1:v]overlay=0:${H - BAND_H}`,
+    // Accent tick that grows in alongside the headline's fade.
+    `drawbox=x=56:y=${H - 70}:w=6:h='min(48,max(0,(t-0.35)/0.4)*48)':color=${ACCENT}@0.9:t=fill`,
+    dt(beat.headline, "white", 36, "76", `${H}-64`,
       ":alpha='min(1,max(0,(t-0.35)/0.5))'"),
     dt(BRAND_CHIP, ACCENT, 20, `w-text_w-40`, `${H}-38`,
       ":alpha='min(1,max(0,(t-0.35)/0.5))'"),
     ...fades(dur),
   ].join(",");
   const out = path.join(tmp, `beat${idx}.mp4`);
-  sh("ffmpeg", ["-y", "-i", raw, "-vf", vf, ...X264, out]);
+  sh("ffmpeg", ["-y", "-i", raw, "-i", gradientBand(), "-filter_complex", chain, ...X264, out]);
   segments.push(out);
   console.log(`  beat: ${beat.task} (${dur.toFixed(1)}s)`);
 }
 
+// Bottom scrim: black with alpha ramping 0 → ~0.8 down the strip (eased), so
+// the lower third melts into the footage. Rendered once as a PNG.
+const BAND_H = 180;
+let bandPng = null;
+function gradientBand() {
+  if (bandPng) return bandPng;
+  bandPng = path.join(tmp, "band.png");
+  sh("ffmpeg", [
+    "-y", "-f", "lavfi", "-i", `color=c=black:s=${W}x${BAND_H}:d=1:r=1`,
+    "-vf", "format=gbrap,geq=r=0:g=0:b=0:a='clip(pow(Y/H,1.3)*205,0,205)'",
+    "-frames:v", "1", bandPng,
+  ]);
+  return bandPng;
+}
+
 // ---- animated cards (push-in + staggered text fades) -----------------------
-// Rendered at 2x and zoomed from the supersampled frame: zoompan crops on
+// Rendered at 4x and zoomed from the supersampled frame: zoompan crops on
 // integer pixels of its INPUT, so a slow zoom at 1080p steps visibly ("shaky"
-// text); at 2x those steps are half-pixels at output size — smooth.
-const SS = 2;
-function makeCard(lines, sec, name) {
+// text); 2x still left half-pixel judder on large type — at 4x the steps are
+// quarter-pixels at output size, below visibility.
+const SS = 4;
+function makeCard(lines, sec, name, { underline = false } = {}) {
   const texts = lines.map((l) => {
-    // Scale the vertical offset in expressions like "(h/2)-120" to the 2x frame.
-    const y = l.y.replace(/\(h\/2\)([+-])(\d+)/, (_, sign, off) => `(h/2)${sign}${Number(off) * SS}`);
-    return dt(l.text, l.color, l.size * SS, "(w-text_w)/2", y,
-      `:alpha='min(1,max(0,(t-${l.at})/0.5))'`);
+    // Scale the vertical offset in expressions like "(h/2)-120" to the SS frame,
+    // then add a small settle: text rises ~10px (output) while it fades in.
+    const yBase = l.y.replace(/\(h\/2\)([+-])(\d+)/, (_, sign, off) => `(h/2)${sign}${Number(off) * SS}`);
+    const ramp = `min(1,max(0,(t-${l.at})/0.5))`;
+    return dt(l.text, l.color, l.size * SS, "(w-text_w)/2",
+      `'${yBase}+${10 * SS}*(1-${ramp})'`,
+      `:alpha='${ramp}'`);
   });
+  const sweep = underline
+    ? [
+        // Accent rule under the title, sweeping out from center after it lands.
+        `drawbox=x='(iw-min(${560 * SS},max(0,(t-0.55)*${Math.round(560 * SS / 0.6)})))/2'` +
+          `:y=(ih/2)-${24 * SS}:w='min(${560 * SS},max(0,(t-0.55)*${Math.round(560 * SS / 0.6)}))'` +
+          `:h=${3 * SS}:color=${ACCENT}@0.85:t=fill`,
+      ]
+    : [];
   const vf = [
     ...texts,
+    ...sweep,
     `zoompan=z='min(1.045,1+0.00025*on)':d=1:x='iw/2-(iw/zoom/2)':y='ih/2-(ih/zoom/2)':s=${W}x${H}:fps=${FPS}`,
+    "vignette=angle=PI/5",
     ...fades(sec),
   ].join(",");
   const out = path.join(tmp, `${name}.mp4`);
-  sh("ffmpeg", [
-    "-y", "-f", "lavfi", "-i", `color=c=${BG}:s=${W * SS}x${H * SS}:d=${sec}:r=${FPS}`,
-    "-vf", vf, ...X264, out,
-  ]);
+  // Live background: a slowly drifting radial gradient in navy shades (center
+  // lifted toward the accent) instead of a flat fill — the "breathing" card.
+  const bg =
+    `gradients=s=${W * SS}x${H * SS}:c0=0x11304F:c1=0x06111F:nb_colors=2:type=radial` +
+    `:x0=${(W * SS) / 2}:y0=${Math.round(H * SS * 0.42)}:x1=${(W * SS) / 2}:y1=${H * SS}` +
+    `:speed=0.008:d=${sec}:r=${FPS}`;
+  sh("ffmpeg", ["-y", "-f", "lavfi", "-i", bg, "-vf", vf, ...X264, out]);
   segments.push(out);
   console.log(`  card: ${lines[0].text}`);
 }
@@ -209,7 +244,7 @@ BEATS.forEach((beat, idx) => {
   }
   makeBeat(beat, idx);
 });
-makeCard(CTA.lines, CTA.sec, "cta");
+makeCard(CTA.lines, CTA.sec, "cta", { underline: true });
 
 const listFile = path.join(tmp, "list.txt");
 fs.writeFileSync(
