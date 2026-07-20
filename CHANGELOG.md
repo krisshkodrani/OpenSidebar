@@ -7,6 +7,39 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- **Fireworks GPT-OSS 120B is selectable again.** The curated Fireworks model
+  list offered the catalog-style `openai/gpt-oss-120b` id, which 404s on the
+  Fireworks endpoint — picking it for a planner or writer seat silently broke
+  every call for that seat. The list now offers the `accounts/…` API id, and a
+  settings migration repairs the id already stored for affected users (only on
+  Fireworks-served provider modes — the same id is the correct one on Groq and
+  OpenRouter). Groq's GPT-OSS 20B also gained its missing pricing row, so runs
+  on it are no longer costed as free.
+
+### Changed
+
+- **Completion's rollback flag is gone (RFC LP-15/LP-16 follow-up).** The pure
+  pipeline has been the single completion authority since the Phase 7b flip;
+  `completionDeterministicAcceptanceEnabled` (never surfaced in settings) and
+  the shadow-comparison scaffolding behind it are removed after zero recorded
+  divergence across the full trace corpus. Completion decision records bump to
+  version 3.
+- **ServiceNow record-form and catalog controllers move into the agent-side
+  quarantine adapter.** ~1,150 lines leave `agent/loop.ts` for
+  `agent/servicenow/`, continuing the LP-15 Phase 12 detachment; `loop.ts` is
+  down to ~5.6K lines / 148 methods (from ~10.3K at the start of the LP-16
+  decomposition). Behavior-preserving.
+- **`RuntimeMessage` is composed of per-domain sub-unions** (session, progress,
+  interaction, content-protocol, skills, watch-mode, e2e) under
+  `shared-types/src/messages/`, so a consumer can type against just its own
+  slice. Existing imports are unaffected. Two dead variants (`SETTINGS_UPDATE`,
+  `SPEECH_TRANSCRIPTION_RESULT`) that nothing sent or handled are removed.
+- **The decomposition ratchet now guards the whole tree.** Every source file
+  under `apps/extension/src` and `packages/` is capped at 1,500 lines, with
+  pre-existing larger files grandfathered on shrink-only budgets — so extracting
+  code out of a landmine file into a fresh giant no longer passes lint.
 ### Added
 
 - **Pi as an optional brain (pi-backend Phases 1–3).** A local

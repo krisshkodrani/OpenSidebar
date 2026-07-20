@@ -279,3 +279,23 @@ export async function resolveServiceNowCreateRecordUrlFromCurrentList(
   }
   return null;
 }
+
+/**
+ * Whether the task text targets a ServiceNow list sort (platform vocabulary:
+ * instance hostnames and `*_list.do` list views). Used by the generic
+ * list-sort verification gate so SN grounding stays in the adapter.
+ */
+export function isServiceNowListSortQuery(queryText: string): boolean {
+  return /service-now\.com|servicenow|incident_list\.do|_list\.do/.test(
+    queryText,
+  );
+}
+
+/**
+ * Whether a completion summary carries durable ServiceNow sort evidence
+ * (sysparm_query / ORDERBY / aria-sort / explicit sort state) rather than a
+ * bare "sorted" claim.
+ */
+export function hasDurableServiceNowSortEvidence(summary: string): boolean {
+  return /\b(sysparm_query|orderby|aria-sort|sort state)\b/.test(summary);
+}

@@ -165,6 +165,67 @@ describe("settings storage", () => {
     expect(payload.executorModel).toBeUndefined();
   });
 
+  test("repairs a Fireworks planner/writer id persisted in the catalog form", async () => {
+    // The curated Fireworks catalog offered "openai/gpt-oss-120b" until it was
+    // corrected to the accounts/... API form; that id 404s on Fireworks, and
+    // unlike executorModel these seats have no eligibility normalizer to heal
+    // them. Without the migration the stored id keeps 404ing after the fix.
+    const syncSet = vi.fn(async () => {});
+    chrome.storage.sync.get = vi.fn(async () => ({
+      userSettings: {
+        providerMode: "fireworks",
+        plannerModel: "openai/gpt-oss-120b",
+        writerModel: "openai/gpt-oss-120b",
+        maxTurns: 30,
+        theme: "system",
+        showSessionMetrics: true,
+        requireApprovals: true,
+        allowNavigation: true,
+      },
+    })) as any;
+    chrome.storage.sync.set = syncSet as any;
+    chrome.storage.local.get = vi.fn(async () => ({
+      fireworksApiKey_local: "fw-test",
+    })) as any;
+    chrome.storage.session.get = vi.fn(async () => ({})) as any;
+
+    const settings = await loadSettings();
+
+    expect(settings?.plannerModel).toBe(
+      "accounts/fireworks/models/gpt-oss-120b",
+    );
+    expect(settings?.writerModel).toBe(
+      "accounts/fireworks/models/gpt-oss-120b",
+    );
+    // and the repair is written back, so it happens once rather than every load
+    const payload = syncSet.mock.calls[0]?.[0]?.userSettings;
+    expect(payload.plannerModel).toBe("accounts/fireworks/models/gpt-oss-120b");
+  });
+
+  test("leaves the same id alone on Groq, where it is the correct one", async () => {
+    const syncSet = vi.fn(async () => {});
+    chrome.storage.sync.get = vi.fn(async () => ({
+      userSettings: {
+        providerMode: "openrouter-groq",
+        plannerModel: "openai/gpt-oss-120b",
+        maxTurns: 30,
+        theme: "system",
+        showSessionMetrics: true,
+        requireApprovals: true,
+        allowNavigation: true,
+      },
+    })) as any;
+    chrome.storage.sync.set = syncSet as any;
+    chrome.storage.local.get = vi.fn(async () => ({
+      groqApiKey_local: "gsk-test",
+    })) as any;
+    chrome.storage.session.get = vi.fn(async () => ({})) as any;
+
+    const settings = await loadSettings();
+
+    expect(settings?.plannerModel).toBe("openai/gpt-oss-120b");
+  });
+
   test("keeps an eligible non-default executor override on load", async () => {
     chrome.storage.sync.get = vi.fn(async () => ({
       userSettings: {

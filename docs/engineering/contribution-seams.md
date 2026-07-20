@@ -15,18 +15,18 @@ fit in the machine."
    user query             │              SIDE PANEL  (React/Zustand)    │
         │                 │   chat · settings · approvals · progress    │  ← seam: UI must not import chrome.*
         ▼                 └───────────────┬────────────────────────────┘
-┌───────────────────┐                     │ RuntimeMessage (bridge.ts, exhaustive union)
+┌───────────────────┐                     │ RuntimeMessage (per-domain sub-unions)
 │   ORCHESTRATOR    │  ◀──────────────────┘
 │  TaskPlanner →    │
 │  TaskNode[] →     │   ╔══════════════════════════════════════════════╗
 │  per-node loop →  │   ║   ░░ OWNER-GATED GIANTS ░░                    ║
-│  verifier         │   ║                                              ║
-└─────────┬─────────┘   ║   loop.ts            (~10K lines)            ║
-          │             ║   completion-kernel.ts (~14K lines)          ║
-          ▼             ║   skills.ts          (hardcoded dispatch)    ║
-   ┌─────────────┐      ║                                              ║
-   │  AGENT LOOP │ ─────╫─▶ completion logic is SPLIT across the first ║
-   │  observe →  │      ║   two — a "local" change often isn't.        ║
+│  verifier         │   ║   (sizes drift — loop-ratchet.mjs --report)  ║
+└─────────┬─────────┘   ║   loop.ts             (~5.6K lines)          ║
+          │             ║   completion-kernel.ts (~5.9K lines)         ║
+          ▼             ║   orchestrator/index.ts (~5.8K lines)        ║
+   ┌─────────────┐      ║   skills.ts           (hardcoded dispatch)   ║
+   │  AGENT LOOP │ ─────╫─▶ every file in the tree is capped at 1,500  ║
+   │  observe →  │      ║   lines; these carry shrink-only budgets.    ║
    │  think →    │      ╚══════════════════════════════════════════════╝
    │  act →      │
    │  done       │      ── open seams (contribute here) ──────────────
