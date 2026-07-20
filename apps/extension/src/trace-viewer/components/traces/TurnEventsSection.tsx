@@ -24,6 +24,28 @@ function DoneRejectedCard({
   );
 }
 
+function CompletionDecisionCard({
+  data,
+}: {
+  data: TraceEventPayloadByType["completion_decision"];
+}) {
+  const accepted = data.status === "accepted";
+  return (
+    <div className="flex flex-wrap items-center gap-2">
+      <Badge variant={accepted ? "success" : "error"}>
+        completion {data.status}
+      </Badge>
+      {data.contractKind && (
+        <span className="text-[11px] font-mono text-trace-subtle">
+          {data.contractKind}
+        </span>
+      )}
+      <span className="text-[10px] text-trace-dim">{data.source}</span>
+      <span className="text-[11px] text-trace-muted">{data.reason}</span>
+    </div>
+  );
+}
+
 function PlanMonitorCard({
   data,
 }: {
@@ -273,6 +295,13 @@ function renderEventCard(ev: TraceEvent, index: number): React.ReactNode {
         <DoneRejectedCard
           key={index}
           data={data as TraceEventPayloadByType["done_rejected"]}
+        />
+      );
+    case "completion_decision":
+      return (
+        <CompletionDecisionCard
+          key={index}
+          data={data as unknown as TraceEventPayloadByType["completion_decision"]}
         />
       );
     case "plan_monitor":

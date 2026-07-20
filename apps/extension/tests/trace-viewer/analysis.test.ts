@@ -209,6 +209,89 @@ describe("trace investigation analysis", () => {
     expect(investigation.metrics.replanCount).toBe(0);
   });
 
+  test("attributes completion rejection to the authoritative completion_decision", () => {
+    const investigation = analyzeTraceSession({
+      session: session({ outcome: "max_turns" }),
+      entries: [
+        entry({
+          turnNumber: 2,
+          events: [
+            {
+              eventId: "session-1:turn:2:event:0",
+              turnId: "session-1:turn:2",
+              sessionId: "session-1",
+              turnNumber: 2,
+              type: "completion_decision",
+              timestamp: 1,
+              data: {
+                turn: 2,
+                status: "rejected",
+                source: "model_done",
+                reason: "form not submitted",
+                contractKind: "form_submission",
+                evidenceKeys: [],
+              },
+            },
+            {
+              eventId: "session-1:turn:2:event:1",
+              turnId: "session-1:turn:2",
+              sessionId: "session-1",
+              turnNumber: 2,
+              type: "done_rejected",
+              timestamp: 2,
+              data: { rejections: 1, reason: "form not submitted", advancedTo: 2 },
+            },
+          ],
+        }),
+      ],
+    });
+
+    const finding = investigation.findings.find(
+      (candidate) => candidate.id === "done-rejection-loop",
+    );
+    expect(finding?.title).toBe(
+      "Completion rejected by the form_submission contract",
+    );
+    expect(finding?.derivation).toContain("contractKind=form_submission");
+    expect(finding?.derivation).toContain("source=model_done");
+  });
+
+  test("reports the accepting contract as an info finding", () => {
+    const investigation = analyzeTraceSession({
+      session: session({ outcome: "completed" }),
+      entries: [
+        entry({
+          turnNumber: 3,
+          events: [
+            {
+              eventId: "session-1:turn:3:event:0",
+              turnId: "session-1:turn:3",
+              sessionId: "session-1",
+              turnNumber: 3,
+              type: "completion_decision",
+              timestamp: 1,
+              data: {
+                turn: 3,
+                status: "accepted",
+                source: "trusted_tool",
+                reason: "navigation contract satisfied",
+                contractKind: "navigation",
+                evidenceKeys: ["navigation_reached:example.com"],
+              },
+            },
+          ],
+        }),
+      ],
+    });
+
+    const finding = investigation.findings.find(
+      (candidate) => candidate.id === "completion-accepted-attribution",
+    );
+    expect(finding?.severity).toBe("info");
+    expect(finding?.title).toBe("Completion accepted via the navigation contract");
+    expect(finding?.derivation).toContain("source=trusted_tool");
+  });
+
   test("detects near-repeat tool loops within a five-turn window", () => {
     const investigation = analyzeTraceSession({
       session: session({ outcome: "max_turns" }),
