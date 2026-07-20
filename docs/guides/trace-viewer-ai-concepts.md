@@ -52,6 +52,36 @@ Why it matters:
 - Separates "the agent took an action" from "the user's goal was met."
 - Helps prevent a subtask from being judged against the wrong full-task scope.
 
+## Judge Gate
+
+High-risk node completions get a second opinion: a dedicated judge model
+scores the claimed result against the node's success criteria before the
+completion is accepted. An entailment pre-check can skip the judge when
+trusted evidence already resolves every criterion, and judge failures fail
+open to acceptance (the risky action itself still stays human-gated). The
+viewer renders each `judge_call` with its decision, per-criterion reasoning,
+confidence, and cost.
+
+Why it matters:
+
+- Catches plausible-but-wrong completions the executor believes in.
+- Keeps the gate cheap: it runs only on high-risk completions, and only when
+  entailment cannot settle the question.
+- Makes the verdict auditable instead of a hidden accept/reject.
+
+## Human Adjudication
+
+The viewer closes the loop with a human verdict: for any run you can record
+agree / disagree (with the corrected outcome) / unsure next to the evidence,
+and export adjudicated runs as golden eval cases. Verdicts persist locally in
+`evals/annotations.jsonl`.
+
+Why it matters:
+
+- Measures the judge and verifier against ground truth over time.
+- Turns everyday debugging into a growing offline eval set.
+- Gives "the run passed" a reviewable paper trail.
+
 ## Done Hardening
 
 Calling `done` is treated as a completion claim, not proof. The runtime checks summaries, pending UI state, task contracts, grounding evidence, and workflow-specific requirements before accepting completion.

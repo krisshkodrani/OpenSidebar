@@ -10,8 +10,6 @@ import { useTraceData } from "./hooks/useTraceData";
 import ViewerHeader from "./components/ViewerHeader";
 import ViewerErrorBoundary from "./components/ViewerErrorBoundary";
 import Tooltip from "./components/Tooltip";
-import FleetOverview from "./components/traces/FleetOverview";
-import FleetInsights from "./components/traces/FleetInsights";
 import FilterBar from "./components/traces/FilterBar";
 import ErrorBanner from "./components/ErrorBanner";
 import LoadingSpinner from "./components/LoadingSpinner";
@@ -23,15 +21,12 @@ import TurnTimeline from "./components/traces/TurnTimeline";
 import TrajectoryScorecard from "./components/traces/TrajectoryScorecard";
 import PerceptionList from "./components/traces/PerceptionList";
 import LogList from "./components/traces/LogList";
-import OverviewTab from "./components/traces/OverviewTab";
+import StoryTab from "./components/traces/story/StoryTab";
 import PlanTab from "./components/traces/PlanTab";
 import SkillsTab from "./components/traces/SkillsTab";
 import PromptsTab from "./components/traces/PromptsTab";
-import TrajectoryTab from "./components/traces/TrajectoryTab";
-import UnifiedSessionsTableView from "./components/traces/UnifiedSessionsTableView";
 import RunsTableView from "./components/traces/RunsTableView";
-import InsightsTab from "./components/traces/InsightsTab";
-import MetricsTab from "./components/traces/MetricsTab";
+import AnalyticsTab from "./components/traces/AnalyticsTab";
 import SkillDetail from "./components/traces/SkillDetail";
 import { TRACE_SESSION_SEARCH_LIMIT } from "./api";
 import type { Subview, TopLevelView } from "./store/types";
@@ -45,6 +40,7 @@ function parseHash(): {
   top?: string;
   turn?: number;
   skill?: string;
+  review?: string;
 } {
   const hash = window.location.hash.slice(1);
   if (!hash) return {};
@@ -56,11 +52,12 @@ function parseHash(): {
     top: params.get("top") || undefined,
     turn: turnStr ? parseInt(turnStr, 10) : undefined,
     skill: params.get("skill") || undefined,
+    review: params.get("review") || undefined,
   };
 }
 
 const VALID_SUBVIEWS = new Set([
-  "overview",
+  "story",
   "plan",
   "turns",
   "perception",
@@ -69,12 +66,26 @@ const VALID_SUBVIEWS = new Set([
   "logs",
 ]);
 
-const VALID_TOP_LEVEL_VIEWS = new Set([
-  "sessions",
-  "runs",
-  "insights",
-  "metrics",
-]);
+// Legacy subview hashes from the pre-simplification viewer. Old deep links
+// keep working: Overview folded into Story, RL Trajectory retired (its data
+// stays reachable via the /rl-trajectory endpoint, MCP, and trace-query CLI).
+const SUBVIEW_MIGRATIONS: Record<string, Subview> = {
+  overview: "story",
+  trajectory: "turns",
+};
+
+const VALID_TOP_LEVEL_VIEWS = new Set(["runs", "analytics"]);
+
+// Legacy top-level hashes. The Attention inbox became the "needs review" chip
+// on Runs (the chip itself is restored separately from the review= param); the
+// flat Traces table folded into Runs; Insights and Metrics merged into one
+// Analytics tab. Old deep links land on the closest new surface.
+const TOP_LEVEL_MIGRATIONS: Record<string, TopLevelView> = {
+  attention: "runs",
+  sessions: "runs",
+  insights: "analytics",
+  metrics: "analytics",
+};
 
 // App
 
@@ -85,6 +96,8 @@ export default function App() {
   const setCurrentSessionId = useStore((s) => s.setCurrentSessionId);
   const setActiveSubview = useStore((s) => s.setActiveSubview);
   const setActiveTopLevelView = useStore((s) => s.setActiveTopLevelView);
+  const setFilter = useStore((s) => s.setFilter);
+  const needsReview = useStore((s) => s.filters.needsReview);
   const navigateToTurn = useStore((s) => s.navigateToTurn);
   const viewerTheme = useStore((s) => s.viewerTheme);
   const [currentSkillId, setCurrentSkillId] = useState<string | null>(null);
@@ -112,14 +125,26 @@ export default function App() {
   }, [viewerTheme]);
 
   useEffect(() => {
-    const { session, view, top, turn, skill } = parseHash();
+    const { session, view, top, turn, skill, review } = parseHash();
     if (skill) setCurrentSkillId(skill);
     if (session) setCurrentSessionId(session);
-    if (view && VALID_SUBVIEWS.has(view)) {
-      setActiveSubview(view as Subview);
+    if (view) {
+      const migrated = SUBVIEW_MIGRATIONS[view] ?? view;
+      if (VALID_SUBVIEWS.has(migrated)) {
+        setActiveSubview(migrated as Subview);
+      }
     }
-    if (top && VALID_TOP_LEVEL_VIEWS.has(top)) {
-      setActiveTopLevelView(top as TopLevelView);
+    if (top) {
+      const migrated = TOP_LEVEL_MIGRATIONS[top] ?? top;
+      if (VALID_TOP_LEVEL_VIEWS.has(migrated)) {
+        setActiveTopLevelView(migrated as TopLevelView);
+      }
+    }
+    // The old Attention inbox = Runs filtered to the adjudication queue, so
+    // legacy #top=attention links (and shared review=needs links) restore the
+    // needs-review chip.
+    if (review === "needs" || top === "attention") {
+      setFilter("needsReview", "on");
     }
     if (turn && !isNaN(turn)) {
       requestAnimationFrame(() => navigateToTurn(turn));
@@ -142,9 +167,14 @@ export default function App() {
       parts.push(`skill=${currentSkillId}`);
     } else {
       if (currentSessionId) parts.push(`session=${currentSessionId}`);
-      else if (activeTopLevelView !== "sessions")
-        parts.push(`top=${activeTopLevelView}`);
-      if (currentSessionId && activeSubview && activeSubview !== "overview")
+      else {
+        if (activeTopLevelView !== "runs")
+          parts.push(`top=${activeTopLevelView}`);
+        // Keep the adjudication-queue chip shareable/restorable via URL.
+        if (needsReview === "on" && activeTopLevelView === "runs")
+          parts.push("review=needs");
+      }
+      if (currentSessionId && activeSubview && activeSubview !== "story")
         parts.push(`view=${activeSubview}`);
     }
     const newHash = parts.length > 0 ? `#${parts.join("&")}` : "";
@@ -155,11 +185,13 @@ export default function App() {
         newHash || window.location.pathname,
       );
     }
-  }, [currentSessionId, activeSubview, activeTopLevelView, currentSkillId]);
-
-  const navigateToSkill = useCallback((skillId: string) => {
-    setCurrentSkillId(skillId);
-  }, []);
+  }, [
+    currentSessionId,
+    activeSubview,
+    activeTopLevelView,
+    currentSkillId,
+    needsReview,
+  ]);
 
   const closeSkill = useCallback(() => {
     setCurrentSkillId(null);
@@ -172,10 +204,7 @@ export default function App() {
         {currentSkillId ? (
           <SkillDetail skillId={currentSkillId} onBack={closeSkill} />
         ) : (
-          <ViewerBody
-            navigateToSkill={navigateToSkill}
-            setShowShortcuts={setShowShortcuts}
-          />
+          <ViewerBody setShowShortcuts={setShowShortcuts} />
         )}
       </ViewerErrorBoundary>
       {showShortcuts && (
@@ -194,10 +223,8 @@ export default function App() {
 // Viewer body
 
 function ViewerBody({
-  navigateToSkill,
   setShowShortcuts,
 }: {
-  navigateToSkill: (skillId: string) => void;
   setShowShortcuts: React.Dispatch<React.SetStateAction<boolean>>;
 }) {
   const currentSessionId = useStore((s) => s.currentSessionId);
@@ -232,7 +259,7 @@ function ViewerBody({
       setCurrentSessionId(sessionId);
       setCurrentEntries([]);
       setSearchQuery("");
-      setActiveSubview("overview");
+      setActiveSubview("story");
     },
     [
       currentSessionId,
@@ -305,7 +332,7 @@ function ViewerBody({
       } else if (currentSessionId) {
         if (e.key === "1") {
           e.preventDefault();
-          setActiveSubview("overview");
+          setActiveSubview("story");
         } else if (e.key === "2") {
           e.preventDefault();
           setActiveSubview("plan");
@@ -461,7 +488,11 @@ function ViewerBody({
           onScroll={handleScroll}
           className="flex-1 min-h-0 overflow-y-auto scrollbar-thin"
         >
-          {activeSubview === "turns" ? (
+          {activeSubview === "story" ? (
+            <div className="px-5 py-4">
+              <StoryTab session={currentSession} />
+            </div>
+          ) : activeSubview === "turns" ? (
             <div className="flex flex-col px-5 py-4">
               <TrajectoryScorecard session={currentSession} />
               <TurnSearchBar />
@@ -491,10 +522,6 @@ function ViewerBody({
               )}
               <LogList />
             </div>
-          ) : activeSubview === "overview" ? (
-            <div className="px-5 py-4">
-              <OverviewTab session={currentSession} />
-            </div>
           ) : activeSubview === "plan" ? (
             <div className="px-5 py-4">
               <PlanTab session={currentSession} />
@@ -506,10 +533,6 @@ function ViewerBody({
           ) : activeSubview === "prompts" ? (
             <div className="px-5 py-4">
               <PromptsTab session={currentSession} entries={currentEntries} />
-            </div>
-          ) : activeSubview === "trajectory" ? (
-            <div className="px-5 py-4">
-              <TrajectoryTab session={currentSession} />
             </div>
           ) : (
             <div className="px-5 py-4">
@@ -523,26 +546,12 @@ function ViewerBody({
     );
   }
 
-  // No selected trace: filter bar + unified traces table
+  // No selected trace: filter bar + the active list view
   return (
     <div className="flex-1 min-h-0 flex flex-col overflow-hidden">
-      <TopLevelTabs
-        active={activeTopLevelView}
-        onChange={setActiveTopLevelView}
-      />
       <FilterBar onFiltersChanged={refreshSessions} />
-      {activeTopLevelView !== "insights" &&
-        activeTopLevelView !== "metrics" && (
-        <FleetOverview onFiltersChanged={refreshSessions} />
-      )}
-      {activeTopLevelView !== "insights" &&
-        activeTopLevelView !== "metrics" && (
-          <FleetInsights onSelectSession={selectSession} />
-        )}
-      {activeTopLevelView === "insights" ? (
-        <InsightsTab onSelectSession={selectSession} onFocusRun={focusRun} />
-      ) : activeTopLevelView === "metrics" ? (
-        <MetricsTab />
+      {activeTopLevelView === "analytics" ? (
+        <AnalyticsTab onSelectSession={selectSession} onFocusRun={focusRun} />
       ) : tracesError ? (
         <div className="px-5 py-4">
           <ErrorBanner
@@ -551,65 +560,10 @@ function ViewerBody({
             onRetry={refreshSessions}
           />
         </div>
-      ) : activeTopLevelView === "runs" ? (
-        <RunsTableView onSelectSession={selectSession} />
       ) : (
-        <UnifiedSessionsTableView
-          onSelect={selectSession}
-          navigateToSkill={navigateToSkill}
-          onSelectRun={focusRun}
-        />
+        <RunsTableView onSelectSession={selectSession} />
       )}
     </div>
   );
 }
 
-function TopLevelTabs({
-  active,
-  onChange,
-}: {
-  active: TopLevelView;
-  onChange: (view: TopLevelView) => void;
-}) {
-  const sessions = useStore((s) => s.sessions);
-  const runGroups = useStore((s) => s.runGroups);
-  const sessionsLimitReached = sessions.length >= TRACE_SESSION_SEARCH_LIMIT;
-  const sessionsCountLabel = `${formatCount(sessions.length)}${
-    sessionsLimitReached ? "+" : ""
-  }`;
-  const runsCountLabel = `${formatCount(runGroups.length)}${
-    sessionsLimitReached ? "+" : ""
-  }`;
-  const tabs: Array<{ id: TopLevelView; label: string; countLabel?: string }> = [
-    { id: "runs", label: "Runs", countLabel: runsCountLabel },
-    { id: "sessions", label: "Traces", countLabel: sessionsCountLabel },
-    { id: "insights", label: "Insights" },
-    { id: "metrics", label: "Metrics" },
-  ];
-
-  return (
-    <div className="flex items-center gap-2 px-5 py-2 border-b border-trace-border bg-trace-panel/80 shrink-0">
-      <span className="text-[10px] uppercase tracking-[0.22em] text-trace-muted">
-        Trace Viewer
-      </span>
-      <div className="inline-flex rounded border border-trace-border overflow-hidden">
-        {tabs.map((tab) => (
-          <button
-            key={tab.id}
-            type="button"
-            onClick={() => onChange(tab.id)}
-            className={`px-3 py-1.5 text-[11px] font-semibold transition-colors ${
-              active === tab.id
-                ? "bg-trace-accent/15 text-trace-accent-light"
-                : "bg-transparent text-trace-muted hover:text-trace-text"
-            }`}
-          >
-            {tab.countLabel == null
-              ? tab.label
-              : `${tab.label} (${tab.countLabel})`}
-          </button>
-        ))}
-      </div>
-    </div>
-  );
-}

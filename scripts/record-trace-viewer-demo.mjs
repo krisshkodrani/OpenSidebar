@@ -165,7 +165,7 @@ const SCENES = {
     await sleep(1500);
   },
   async session(page, sessionId) {
-    await gotoHash(page, `session=${sessionId}&view=overview`);
+    await gotoHash(page, `session=${sessionId}&view=story`);
     await sleep(2800);
     await clickButton(page, "Plan");
     await sleep(2600);
@@ -179,7 +179,7 @@ const SCENES = {
     await sleep(2800);
     await smoothScroll(page, 1600, 32, 110);
     await sleep(1200);
-    await gotoHash(page, "top=metrics");
+    await gotoHash(page, "top=analytics");
     await sleep(2400);
     await smoothScroll(page, 900, 18, 110);
     await sleep(1500);
@@ -212,7 +212,7 @@ async function smokeCheck(page, sessionId, problems) {
     await still(`smoke-${tab.replace(/\W+/g, "").toLowerCase()}`);
   }
 
-  await gotoHash(page, `session=${sessionId}&view=overview`);
+  await gotoHash(page, `session=${sessionId}&view=story`);
   await sleep(2200);
   await still("smoke-session-overview");
   for (const sub of ["Plan", "Trajectory (", "Perception ("]) {

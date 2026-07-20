@@ -164,6 +164,26 @@ const PITCH = {
   outro: { title: "Any website today. Your enterprise apps next.", subtitle: "OpenSidebar", note: "Bring your own key · No telemetry · Open source (MIT) · Fork it on GitHub" },
 };
 
+// The job-pipeline voiced story: ONE filmed showcase run, cut into narrative
+// beats via clipStart/clipEnd windows into the same clip. The window
+// timestamps are placeholders until a take is pinned in .artifacts/demo-clips.json
+// and watched — set them per take, then render --stills for sign-off.
+const JOBS = {
+  out: "opensidebar-jobpipeline-demo.mp4",
+  intro: {
+    title: "OpenSidebar",
+    subtitle: "One prompt. Two job applications, ready to send.",
+    note: MODEL_LINE,
+  },
+  scenes: [
+    { task: "showcase-job-pipeline", title: "Read the board like a recruiter", subtitle: "Ten listings screened against the candidate's profile", caption: "Reading 10 listings against the profile: senior frontend · React/TS · remote · $120K–$160K", sceneSec: 14 },
+    { task: "showcase-job-pipeline", title: "Two best matches, two tabs", subtitle: "Each application opened in its own tab", caption: "Opening the two best-match applications, each in its own tab", sceneSec: 12 },
+    { task: "showcase-job-pipeline", title: "Every field, filled and grounded", subtitle: "Details from the prompt; the 'why' written from each posting", caption: "Filling both applications — every field except the CV upload", sceneSec: 16 },
+    { task: "showcase-job-pipeline", title: "Staged — not sent", subtitle: "The agent stops short of submitting, by instruction", caption: "Both applications ready to send — the CV and the click stay yours", sceneSec: 12 },
+  ],
+  outro: { title: "Ready to send. The click stays yours.", subtitle: "OpenSidebar", note: "Kimi K2.7 Code + GLM 5.2 · Fireworks AI" },
+};
+
 // Store-accurate tour: the PITCH minus the observability scenes. The trace
 // viewer is dev-only (stripped from the production dist), so store assets must
 // never show it — a Chrome Web Store installer does not get that surface.
@@ -183,7 +203,7 @@ const STORE = {
 // (Section markers survive the filter: they live on online-shop, settings-provider,
 // and order-developer-laptop — all kept.)
 
-const SHOW = { servicenow: SERVICENOW, fixtures: FIXTURES, traceviewer: TRACEVIEWER, settings: SETTINGS, watch: WATCH, pitch: PITCH, store: STORE }[argVal("--show", "servicenow")] || SERVICENOW;
+const SHOW = { servicenow: SERVICENOW, fixtures: FIXTURES, traceviewer: TRACEVIEWER, settings: SETTINGS, watch: WATCH, pitch: PITCH, store: STORE, jobs: JOBS }[argVal("--show", "servicenow")] || SERVICENOW;
 const INTRO = SHOW.intro;
 const SCENES = SHOW.scenes;
 const OUTRO = SHOW.outro;
@@ -303,8 +323,14 @@ function overlayBand(caption) {
 
 // Scene body (speed + normalize + band, no fades) — shared by video and stills.
 // sceneSec: per-scene length override (scene.sceneSec), else the global SCENE_SEC.
-function sceneBase(clip, caption, sceneSec = SCENE_SEC) {
-  const dur = ffprobeDuration(clip);
+// clipStart/clipEnd: optional window (seconds) into the source clip, so several
+// scenes can tell one long take as separate story beats. The retime factor is
+// computed from the window, not the whole clip.
+function sceneBase(clip, caption, sceneSec = SCENE_SEC, clipStart, clipEnd) {
+  const fullDur = ffprobeDuration(clip);
+  const start = Number.isFinite(clipStart) ? clipStart : 0;
+  const end = Number.isFinite(clipEnd) ? Math.min(clipEnd, fullDur) : fullDur;
+  const dur = Math.max(end - start, 0.5);
   const speed = Math.max(dur / sceneSec, 0.01); // fast-motion factor
   const base = [
     `setpts=PTS/${speed.toFixed(4)}`,
@@ -326,13 +352,18 @@ function makeCard(card, name) {
   segments.push(out);
   console.log(`  card: ${card.title}`);
 }
-function makeScene(clip, name, caption, sceneSec = SCENE_SEC) {
-  const { base, speed, dur } = sceneBase(clip, caption, sceneSec);
+function makeScene(clip, name, caption, sceneSec = SCENE_SEC, clipStart, clipEnd) {
+  const { base, speed, dur } = sceneBase(clip, caption, sceneSec, clipStart, clipEnd);
   const out = path.join(tmp, `${name}.mp4`);
   const vf = [...base, ...fades(sceneSec)].join(",");
-  sh("ffmpeg", ["-y", "-i", clip, "-vf", vf, "-t", String(sceneSec), ...X264, out]);
+  const inputWindow = [
+    ...(Number.isFinite(clipStart) ? ["-ss", String(clipStart)] : []),
+    ...(Number.isFinite(clipEnd) ? ["-to", String(clipEnd)] : []),
+  ];
+  sh("ffmpeg", ["-y", ...inputWindow, "-i", clip, "-vf", vf, "-t", String(sceneSec), ...X264, out]);
   segments.push(out);
-  console.log(`  scene: ${clip}  (${dur.toFixed(0)}s -> ${sceneSec}s, ${speed.toFixed(1)}x)`);
+  const windowNote = inputWindow.length ? ` [${clipStart ?? 0}s–${clipEnd ?? "end"}s]` : "";
+  console.log(`  scene: ${clip}${windowNote}  (${dur.toFixed(0)}s -> ${sceneSec}s, ${speed.toFixed(1)}x)`);
 }
 
 // ---- stills mode (design sign-off before the full build) ------------------
@@ -387,7 +418,7 @@ SCENES.forEach((s, i) => {
     makeSectionCard(s.section, partIndex, `section${i}`);
   }
   makeCard(s, `card${i}`);
-  makeScene(clip, `scene${i}`, s.caption, s.sceneSec ?? SCENE_SEC);
+  makeScene(clip, `scene${i}`, s.caption, s.sceneSec ?? SCENE_SEC, s.clipStart, s.clipEnd);
 });
 makeCard(OUTRO, "outro");
 

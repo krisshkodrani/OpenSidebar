@@ -1,12 +1,14 @@
 import type { TraceSession, TraceEntry } from "../types/traces";
 import type { RunTraceEvent } from "../utils/run-trace";
-import type { RlTrajectory } from "@observability-schema";
 import type {
   TraceFilters,
   DayBucket,
   ModelBucket,
   SessionLogEntry,
+  RunAnnotation,
+  NewAnnotationInput,
 } from "./store/types";
+import type { EvalCase } from "./analysis/adjudication-export";
 
 async function fetchJson<T>(url: string, init?: RequestInit): Promise<T> {
   const r = await fetch(url, init);
@@ -254,18 +256,38 @@ export async function fetchRunTraceEvents(
   );
 }
 
-export async function fetchRlTrajectory(
-  sessionId: string,
-  signal?: AbortSignal,
-): Promise<RlTrajectory> {
-  return fetchJson(
-    `/api/traces/${encodeURIComponent(sessionId)}/rl-trajectory`,
-    signal ? { signal } : undefined,
-  );
-}
-
 export function screenshotUrl(sessionId: string, turn: number): string {
   return `/api/traces/${encodeURIComponent(sessionId)}/screenshots/${turn}`;
+}
+
+// ── Human adjudication ─────────────────────────────────────────
+
+export async function fetchAnnotations(
+  signal?: AbortSignal,
+): Promise<RunAnnotation[]> {
+  return fetchJson("/api/annotations", signal ? { signal } : undefined);
+}
+
+export async function postAnnotation(
+  input: NewAnnotationInput,
+): Promise<RunAnnotation> {
+  return fetchJson("/api/annotations", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(input),
+  });
+}
+
+/** Save a batch of EvalCases to evals/golden/<name>.jsonl. */
+export async function postGolden(
+  name: string,
+  cases: EvalCase[],
+): Promise<{ filename: string; caseCount: number }> {
+  return fetchJson("/golden", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ name, cases }),
+  });
 }
 
 export async function deleteAllTraces(): Promise<{ deleted: number }> {

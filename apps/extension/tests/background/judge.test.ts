@@ -23,6 +23,15 @@ function seatReturning(text: string): JudgeSeat {
   };
 }
 
+function seatReturningWithUsage(
+  text: string,
+  usage: { promptTokens: number; completionTokens: number; totalTokens: number; costUsd?: number },
+): JudgeSeat {
+  return {
+    runJudge: vi.fn(async () => ({ text, model: "gpt-oss-120b", providerId: "fireworks", usage })),
+  };
+}
+
 describe("judgeCacheKey", () => {
   test("is deterministic and varies with evidence", () => {
     expect(judgeCacheKey(rubric)).toBe(judgeCacheKey(rubric));
@@ -97,6 +106,29 @@ describe("runRubricJudge", () => {
     expect(v.model).toBe("glm-5p2");
     expect(typeof v.durationMs).toBe("number");
     expect(v.failureCause).toBeUndefined();
+  });
+
+  test("threads provider + token usage from the seat onto a real verdict", async () => {
+    const seat = seatReturningWithUsage(
+      '{"pass": true, "confidence": 0.8, "perCriterion": [{"id":"c1","pass":true},{"id":"c2","pass":true}], "entailment": []}',
+      { promptTokens: 420, completionTokens: 80, totalTokens: 500, costUsd: 0.0004 },
+    );
+    const v = await runRubricJudge(rubric, { seat });
+    expect(v.providerId).toBe("fireworks");
+    expect(v.usage).toEqual({ promptTokens: 420, completionTokens: 80, totalTokens: 500, costUsd: 0.0004 });
+  });
+
+  test("still attaches usage on a parse-error fail-open (the call was still billed)", async () => {
+    const seat = seatReturningWithUsage("not json", {
+      promptTokens: 400,
+      completionTokens: 5,
+      totalTokens: 405,
+    });
+    const v = await runRubricJudge(rubric, { seat });
+    expect(v.source).toBe("fail_open");
+    expect(v.failureCause).toBe("parse_error");
+    expect(v.usage?.totalTokens).toBe(405);
+    expect(v.providerId).toBe("fireworks");
   });
 
   test("caches a real verdict but not a fail-open", async () => {

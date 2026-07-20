@@ -76,8 +76,9 @@ OpenSidebar-deck.md
 .artifacts/seed/
 **/seed/applications/
 
-# Local data
-data/
+# Local data (root-anchored: bare "data/" would swallow any source dir named
+# data, e.g. the online-shop-pro fixture's src/data/)
+/data/
 apps/backend/data/
 *.sqlite
 *.sqlite3

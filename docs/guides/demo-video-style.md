@@ -103,7 +103,9 @@ before changing (`config/model-config.ts`, `utils/executor-model-policy.ts`,
 
 - **Executor: Kimi K2.7 Code** (`accounts/fireworks/models/kimi-k2p7-code`) —
   vision-capable; it receives the screenshot, so it genuinely "sees" the page.
-- **Planner / Writer / Judge: GLM 5.2** (`accounts/fireworks/models/glm-5p2`).
+- **Planner / Writer: GLM 5.2** (`accounts/fireworks/models/glm-5p2`).
+- **Judge: GPT-OSS-120B** (`accounts/fireworks/models/gpt-oss-120b`) — dedicated
+  fast seat since 2026-07-09; before that the judge shared the GLM planner seat.
 - **Provider: Fireworks AI.**
 
 On-screen form: `OpenSidebar · Executor: Kimi K2.7 Code (vision) · Planner: GLM 5.2

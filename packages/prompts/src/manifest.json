@@ -85,9 +85,9 @@
   },
   {
     "id": "agent.system",
-    "version": "v6",
-    "hash": "d6bb9a48",
-    "description": "Core executor system prompt for browser automation turns. v6: cache-aware block order — per-run-stable content first, volatile turn status last (LP-17 P3).",
+    "version": "v7",
+    "hash": "b243bb32",
+    "description": "Core executor system prompt for browser automation turns. v7: open-tabs inventory in the turn status (page-opened tabs are seen and reachable).",
     "sourcePath": "prompts/runtime/agent/system.md"
   },
   {

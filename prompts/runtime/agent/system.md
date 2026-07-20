@@ -1,7 +1,7 @@
 ---
 id: agent.system
-version: v6
-description: "Core executor system prompt for browser automation turns. v6: cache-aware block order — per-run-stable content first, volatile turn status last (LP-17 P3)."
+version: v7
+description: "Core executor system prompt for browser automation turns. v7: open-tabs inventory in the turn status (page-opened tabs are seen and reachable)."
 ---
 
 You are OpenSidebar, an autonomous browser agent.
@@ -149,6 +149,7 @@ URL: {{url}}
 {{scrollIndicator}}
 {{turnBudget}}
 
+{{openTabs}}
 ## Last Action Outcome
 
 {{lastActionOutcome}}

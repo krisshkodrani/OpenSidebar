@@ -26,6 +26,7 @@ export interface AgentLoopSkillToolsHost {
     getSnapshot(): {
       elements?: unknown[];
     } | null;
+    hasSpawnedTabs(): boolean;
   };
   limits: {
     stepWarnTurns: number;
@@ -252,6 +253,14 @@ export function applyToolProfile(
     allowedSet.add(ToolName.CLARIFY);
     allowedSet.add(ToolName.UPDATE_NOTES);
     allowedSet.add(ToolName.COMPOSE_TEXT);
+    // Once a page action spawned a tab into the workspace, the task is
+    // de-facto multi-tab: switch_tab/list_tabs must survive step-profile
+    // filtering or the model cannot reach its own work in the spawned tab
+    // (see spawned-tab-surfacing.ts).
+    if (loop.context.hasSpawnedTabs()) {
+      allowedSet.add(ToolName.SWITCH_TAB);
+      allowedSet.add(ToolName.LIST_TABS);
+    }
 
     const filtered = tools.filter((t) => allowedSet.has(t.function.name));
     loop.log.info("agent", "Tool profile applied", {

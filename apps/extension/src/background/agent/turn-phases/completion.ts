@@ -37,6 +37,11 @@ import {
   type PostToolSnapshotRefreshHost,
 } from "../post-tool-snapshot-refresh";
 import {
+  refreshOpenTabInventory,
+  surfaceSpawnedTabs,
+  type SpawnedTabSurfacingHost,
+} from "../spawned-tab-surfacing";
+import {
   advanceCompletedSubtasks,
   completeSingleSubtask,
   type AgentLoopPlanProgressHost,
@@ -70,6 +75,8 @@ export interface CompletionPhaseHost {
   readonly turnCount: number;
   readonly originalQuery: string;
   readonly nodeId: string | null;
+  readonly workspaceId: string | null;
+  getWorkspaceTabIds(): Promise<number[] | null>;
   readonly taskId: unknown;
   escalationsOnCurrentStep: number;
   readonly limits: RuntimeLimits;
@@ -211,6 +218,19 @@ export async function runCompletionPhase(
       lastToolArgs = undefined;
     }
   }
+
+  // Page-opened (_blank) tabs: surface any tab the page spawned during this
+  // turn's tool batch, BEFORE effect accounting — a spawned tab means the
+  // action was NOT a no-op even though the current tab's DOM is unchanged.
+  const spawnedTabCount = await surfaceSpawnedTabs(
+    host as unknown as SpawnedTabSurfacingHost,
+    host.workspaceId,
+  );
+  await refreshOpenTabInventory(
+    host as unknown as SpawnedTabSurfacingHost,
+    await host.getWorkspaceTabIds(),
+    session.tabId,
+  );
 
   // Batch snapshot refresh: ONE refresh after all tools complete
   if (turn.domModified && !turn.doneSignaled) {
@@ -712,7 +732,8 @@ export async function runCompletionPhase(
             actionEffect.deltaPercent < ACTION_EFFECT.ZERO_THRESHOLD &&
             !actionEffect.urlChanged &&
             !resetBySemanticProgress &&
-            !smallObservedActionProgress
+            !smallObservedActionProgress &&
+            spawnedTabCount === 0
           ) {
             host.consecutiveZeroEffectTurns++;
             const failureBrief = buildFailureBrief(subgoalAttempts);

@@ -97,7 +97,8 @@ describe("RunsTableView", () => {
     expect(onSelectSession).toHaveBeenCalledWith("session-2");
   });
 
-  test("offers a path back to traces when no run groups exist", async () => {
+  test("shows standalone sessions as top-level rows when no run groups exist", async () => {
+    const onSelectSession = vi.fn();
     await act(async () => {
       useStore.getState().setSessions([
         {
@@ -116,19 +117,19 @@ describe("RunsTableView", () => {
     });
 
     await act(async () => {
-      root.render(<RunsTableView onSelectSession={vi.fn()} />);
+      root.render(<RunsTableView onSelectSession={onSelectSession} />);
     });
 
-    expect(container.textContent).toContain("No trace runs found");
-    const sessionsButton = Array.from(
-      container.querySelectorAll("button"),
-    ).find((button) => button.textContent?.includes("View traces"));
-    expect(sessionsButton).toBeTruthy();
-
-    expect(sessionsButton?.getAttribute("type")).toBe("button");
+    // The former flat Traces table folded into Runs: run-less sessions render
+    // as their own rows and remain directly openable.
+    expect(container.textContent).toContain("inspect standalone trace");
+    const row = Array.from(container.querySelectorAll("button")).find(
+      (button) => button.textContent?.includes("inspect standalone trace"),
+    );
+    expect(row).toBeTruthy();
     await act(async () => {
-      sessionsButton!.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+      row!.dispatchEvent(new MouseEvent("click", { bubbles: true }));
     });
-    expect(useStore.getState().activeTopLevelView).toBe("sessions");
+    expect(onSelectSession).toHaveBeenCalledWith("session-without-run");
   });
 });

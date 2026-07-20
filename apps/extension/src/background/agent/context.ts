@@ -1,6 +1,6 @@
 import { chromePersistencePort } from "../environment/chrome";
 import { LLMMessage } from "../llm/types";
-import { DomSnapshot, PageSkeletonNode, TaggedElement } from "../../types";
+import { DomSnapshot, TaggedElement } from "../../types";
 import { logger } from "../../utils";
 import { AGENT_LIMITS, COMPRESSION_TRIGGERS } from "./constants";
 import { sanitizeForPrompt } from "../security";
@@ -10,10 +10,15 @@ import {
   summarizeHistory,
   deduplicateInvisibleElements,
   compressRepetitiveContent,
+  formatPageSkeleton,
+  buildFormBatchHint,
+  formatLastActionOutcome,
+  buildOpenTabsBlock,
 } from "./context-formatting";
 import {
   EXECUTOR_PERSONA,
   LastActionOutcome,
+  OpenTabInfo,
   PLANNER_PERSONA,
   REFERENCE_VALUE_TOOLS,
   CompressionLevel,
@@ -72,45 +77,6 @@ const ACTION_RELEVANT_ATTRS = new Set([
   "description",
 ]);
 
-/** Format skeleton nodes into indented hierarchy for the agent system prompt. */
-function formatPageSkeleton(skeleton: PageSkeletonNode[]): string {
-  return skeleton
-    .map((n) => {
-      const indent = "  ".repeat(Math.min(n.depth, 4));
-      return `${indent}${n.tagName}: "${n.text}"`;
-    })
-    .join("\n");
-}
-
-/**
- * If 3+ form controls are visible, return a hint telling the LLM
- * to batch independent field actions in a single response.
- */
-function buildFormBatchHint(elements: TaggedElement[]): string | null {
-  const formControlCount = elements.filter((el) => {
-    const tagName = el.tagName.toLowerCase();
-    const role = el.role?.toLowerCase();
-    return (
-      ["input", "textarea", "select"].includes(tagName) ||
-      role === "textbox" ||
-      role === "combobox" ||
-      role === "searchbox" ||
-      role === "checkbox" ||
-      role === "radio"
-    );
-  }).length;
-
-  if (formControlCount < 3) return null;
-
-  return (
-    "\n\n> **Batch hint:** This page has " +
-    formControlCount +
-    " form controls. " +
-    "When independent fields are already mapped, call multiple type_text, select_option, and set_checkbox actions in the same response; they will execute within one turn. " +
-    "Fill all visible requested fields at once. Do not click Next or Submit unless the user or the current plan step explicitly asks for it."
-  );
-}
-
 export class ContextManager {
   private history: LLMMessage[] = [];
   private snapshot: DomSnapshot | null = null;
@@ -135,6 +101,9 @@ export class ContextManager {
   private startTimeMs = 0;
   private workingNotes = "";
   private lastActionOutcome: LastActionOutcome | null = null;
+  private openTabs: OpenTabInfo[] = [];
+  private currentTabIdForPrompt: number | null = null;
+  private spawnedTabSeen = false;
   /** LP-17: per-field read ledger backing the fill-checklist feedback. */
   private fieldReadLedger: FieldReadLedger = new Map();
   /** Signature of the last checklist line injected as feedback (dedupe). */
@@ -267,6 +236,29 @@ export class ContextManager {
   /** Get the most recent action outcome. */
   public getLastActionOutcome(): LastActionOutcome | null {
     return this.lastActionOutcome;
+  }
+
+  /**
+   * Refresh the workspace tab inventory rendered as the "## Open Tabs"
+   * prompt section. Rendered only when the workspace holds 2+ tabs — a
+   * single-tab task pays no prompt cost.
+   */
+  public setOpenTabs(tabs: OpenTabInfo[], currentTabId: number | null): void {
+    this.openTabs = tabs;
+    this.currentTabIdForPrompt = currentTabId;
+  }
+
+  /**
+   * Record that a page action spawned a tab into the workspace. Latched for
+   * the rest of the session: once the environment itself has made the task
+   * multi-tab, the tab-management tool gate no longer applies.
+   */
+  public noteSpawnedTabs(): void {
+    this.spawnedTabSeen = true;
+  }
+
+  public hasSpawnedTabs(): boolean {
+    return this.spawnedTabSeen;
   }
 
   // ---------------------------------------------------------------------------
@@ -732,6 +724,11 @@ Do NOT call done() until every planned step is complete.
     // Remove demonstrations placeholder (demos removed)
     content = content.replace("{{demonstrations}}", "");
 
+    content = content.replace(
+      "{{openTabs}}",
+      buildOpenTabsBlock(this.openTabs, this.currentTabIdForPrompt),
+    );
+
     // Inject working notes (if any)
     if (this.workingNotes) {
       content = content.replace(
@@ -1025,33 +1022,13 @@ Do NOT call done() until every planned step is complete.
 
     content = content.replace(
       "{{lastActionOutcome}}",
-      this.formatLastActionOutcome(),
+      formatLastActionOutcome(this.lastActionOutcome),
     );
 
     return {
       role: "system",
       content: content,
     };
-  }
-
-  private formatLastActionOutcome(): string {
-    if (!this.lastActionOutcome) return "No recent DOM-affecting action recorded.";
-
-    const outcome = this.lastActionOutcome;
-    const roundedDelta = Math.round(outcome.deltaPercent * 100);
-    const effectSummary =
-      roundedDelta === 0 && !outcome.urlChanged
-        ? "No observable page change."
-        : "Observable page change detected.";
-
-    const signals = [
-      `${roundedDelta}% DOM delta`,
-      outcome.urlChanged ? "URL changed" : "same URL",
-      `+${outcome.elementsAdded}`,
-      `-${outcome.elementsRemoved}`,
-    ].join(" | ");
-
-    return `Tool: ${outcome.toolName}\nResult: ${effectSummary}\nSignals: ${signals}`;
   }
 
   /**

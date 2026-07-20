@@ -4,7 +4,6 @@ import { createRoot, type Root } from "react-dom/client";
 import "../setup";
 import App from "../../src/trace-viewer/App";
 import { useStore } from "../../src/trace-viewer/store";
-import { TRACE_SESSION_SEARCH_LIMIT } from "../../src/trace-viewer/api";
 
 const mockUseTraceData = vi.fn();
 
@@ -18,29 +17,14 @@ vi.mock("../../src/trace-viewer/components/ViewerHeader", () => ({
 vi.mock("../../src/trace-viewer/components/ViewerErrorBoundary", () => ({
   default: ({ children }: { children: React.ReactNode }) => <>{children}</>,
 }));
-vi.mock("../../src/trace-viewer/components/traces/FleetOverview", () => ({
-  default: () => <div>FleetOverview</div>,
-}));
-vi.mock("../../src/trace-viewer/components/traces/FleetInsights", () => ({
-  default: () => <div>FleetInsights</div>,
-}));
 vi.mock("../../src/trace-viewer/components/traces/FilterBar", () => ({
   default: () => <div>FilterBar</div>,
 }));
 vi.mock("../../src/trace-viewer/components/traces/RunsTableView", () => ({
   default: () => <div>RunsTableView</div>,
 }));
-vi.mock("../../src/trace-viewer/components/traces/MetricsTab", () => ({
-  default: () => <div>MetricsTab</div>,
-}));
-vi.mock(
-  "../../src/trace-viewer/components/traces/UnifiedSessionsTableView",
-  () => ({
-    default: () => <div>UnifiedSessionsTableView</div>,
-  }),
-);
-vi.mock("../../src/trace-viewer/components/traces/TraceListModeToggle", () => ({
-  default: () => <div>TraceListModeToggle</div>,
+vi.mock("../../src/trace-viewer/components/traces/AnalyticsTab", () => ({
+  default: () => <div>AnalyticsTab</div>,
 }));
 vi.mock("../../src/trace-viewer/components/ErrorBanner", () => ({
   default: ({ message }: { message: string }) => <div>{message}</div>,
@@ -154,7 +138,7 @@ describe("trace-viewer App", () => {
     });
   });
 
-  test("renders metrics view from top-level hash route", async () => {
+  test("migrates the legacy #top=metrics hash to the Analytics view", async () => {
     window.location.hash = "#top=metrics";
 
     await act(async () => {
@@ -162,14 +146,26 @@ describe("trace-viewer App", () => {
     });
 
     await waitFor(() => {
-      expect(useStore.getState().activeTopLevelView).toBe("metrics");
-      expect(container.textContent).toContain("MetricsTab");
-      expect(container.textContent).not.toContain("FleetOverview");
-      expect(container.textContent).not.toContain("FleetInsights");
+      expect(useStore.getState().activeTopLevelView).toBe("analytics");
+      expect(container.textContent).toContain("AnalyticsTab");
+      expect(container.textContent).not.toContain("RunsTableView");
     });
   });
 
-  test("ignores unknown top-level hash routes", async () => {
+  test("migrates the legacy #top=insights hash to the Analytics view", async () => {
+    window.location.hash = "#top=insights";
+
+    await act(async () => {
+      root.render(<App />);
+    });
+
+    await waitFor(() => {
+      expect(useStore.getState().activeTopLevelView).toBe("analytics");
+      expect(container.textContent).toContain("AnalyticsTab");
+    });
+  });
+
+  test("ignores unknown top-level hash routes (stays on the Runs default)", async () => {
     window.location.hash = "#top=docs";
 
     await act(async () => {
@@ -177,145 +173,50 @@ describe("trace-viewer App", () => {
     });
 
     await waitFor(() => {
-      expect(useStore.getState().activeTopLevelView).toBe("sessions");
-      expect(container.textContent).toContain("UnifiedSessionsTableView");
+      // Unknown route is ignored → the default landing (Runs) stands.
+      expect(useStore.getState().activeTopLevelView).toBe("runs");
+      expect(container.textContent).toContain("RunsTableView");
       expect(container.textContent).toContain("FilterBar");
-      expect(container.textContent).toContain("FleetOverview");
-      expect(container.textContent).toContain("FleetInsights");
     });
   });
 
-  test("renders traces as the default trace list", async () => {
-    mockUseTraceData.mockReturnValue({
-      sessions: [
-        {
-          sessionId: "session-1",
-          startTime: 100,
-          endTime: 200,
-          query: "Objective: left",
-          startUrl: "https://example.com",
-          outcome: "completed",
-          turnCount: 2,
-          summary: "done",
-          metrics: null,
-        },
-        {
-          sessionId: "session-2",
-          startTime: 100,
-          endTime: 240,
-          query: "Objective: right",
-          startUrl: "https://example.com",
-          outcome: "error",
-          turnCount: 2,
-          summary: "failed",
-          metrics: null,
-        },
-      ],
-      currentSessionId: null,
-      refreshSessions: vi.fn(),
-    });
+  test("migrates the legacy #top=sessions hash to the Runs view", async () => {
+    window.location.hash = "#top=sessions";
 
     await act(async () => {
       root.render(<App />);
     });
 
     await waitFor(() => {
-      expect(useStore.getState().traceListMode).toBe("sessions");
-      expect(container.textContent).toContain("UnifiedSessionsTableView");
-      expect(container.textContent).toContain("FleetInsights");
+      expect(useStore.getState().activeTopLevelView).toBe("runs");
+      expect(container.textContent).toContain("RunsTableView");
     });
   });
 
-  test("only list-backed top-level tabs show count badges", async () => {
-    useStore.getState().setSessions([
-      {
-        sessionId: "session-1",
-        runId: "run-1",
-        startTime: 100,
-        endTime: 200,
-        query: "Objective: left",
-        startUrl: "https://example.com",
-        outcome: "completed",
-        turnCount: 2,
-        summary: "done",
-        metrics: null,
-      },
-      {
-        sessionId: "session-2",
-        runId: "run-1",
-        startTime: 210,
-        endTime: 240,
-        query: "Objective: right",
-        startUrl: "https://example.com",
-        outcome: "error",
-        turnCount: 2,
-        summary: "failed",
-        metrics: null,
-      },
-    ] as any);
+  test("migrates the legacy #top=attention hash to Runs with the needs-review chip on", async () => {
+    window.location.hash = "#top=attention";
 
     await act(async () => {
       root.render(<App />);
     });
 
     await waitFor(() => {
-      const text = container.textContent ?? "";
-      expect(container.textContent).toContain("Runs (1)");
-      expect(container.textContent).toContain("Traces (2)");
-      expect(text.indexOf("Runs (1)")).toBeLessThan(
-        text.indexOf("Traces (2)"),
-      );
-      expect(container.textContent).toContain("Insights");
-      expect(container.textContent).toContain("Metrics");
-      expect(container.textContent).not.toContain("Insights (2)");
-      expect(container.textContent).not.toContain("Metrics (2)");
+      expect(useStore.getState().activeTopLevelView).toBe("runs");
+      expect(useStore.getState().filters.needsReview).toBe("on");
+      expect(container.textContent).toContain("RunsTableView");
     });
   });
 
-  test("marks list-backed tab counts as capped at the loaded search limit", async () => {
-    const sessions = Array.from(
-      { length: TRACE_SESSION_SEARCH_LIMIT },
-      (_, index) => ({
-        sessionId: `session-${index}`,
-        runId: "run-1",
-        startTime: 100 + index,
-        endTime: 200 + index,
-        query: `Objective: trace ${index}`,
-        startUrl: "https://example.com",
-        outcome: "completed",
-        turnCount: 1,
-        summary: "done",
-        metrics: null,
-      }),
-    );
-
-    useStore.setState({
-      sessions,
-      runGroups: [
-        {
-          runId: "run-1",
-          shortId: "run-1",
-          sessions,
-          totalTurns: sessions.length,
-          totalCost: 0,
-          earliestStart: 100,
-          latestEnd: 200,
-          overallOutcome: "completed",
-          query: "Objective: trace 0",
-          expanded: false,
-        },
-      ],
-    } as any);
+  test("restores the needs-review chip from a shared review=needs hash", async () => {
+    window.location.hash = "#review=needs";
 
     await act(async () => {
       root.render(<App />);
     });
 
     await waitFor(() => {
-      expect(container.textContent).toContain("Runs (1+)");
-      expect(container.textContent).toContain("Traces (1,000+)");
-      expect(container.textContent).not.toContain("Insights (1,000+)");
-      expect(container.textContent).not.toContain("Metrics (1,000+)");
+      expect(useStore.getState().activeTopLevelView).toBe("runs");
+      expect(useStore.getState().filters.needsReview).toBe("on");
     });
   });
 
@@ -397,7 +298,7 @@ describe("trace-viewer App", () => {
   }
 
   async function renderDetail(sessionId: string, sessions = [detailSession(sessionId)]) {
-    useStore.setState({ currentSessionId: sessionId, activeSubview: "overview" });
+    useStore.setState({ currentSessionId: sessionId, activeSubview: "plan" });
     mockUseTraceData.mockReturnValue({
       sessions,
       currentSessionId: sessionId,
@@ -430,7 +331,7 @@ describe("trace-viewer App", () => {
     });
     await flushAsyncWork();
 
-    expect(useStore.getState().scrollPositions["session-1:overview"]).toBe(120);
+    expect(useStore.getState().scrollPositions["session-1:plan"]).toBe(120);
   });
 
   test("restores the saved scroll position when the subview changes", async () => {
@@ -471,7 +372,7 @@ describe("trace-viewer App", () => {
 
     // session-1's scrollTop (200) must not leak under session-2's key.
     expect(
-      useStore.getState().scrollPositions["session-2:overview"],
+      useStore.getState().scrollPositions["session-2:plan"],
     ).not.toBe(200);
   });
 });

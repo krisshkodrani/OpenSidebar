@@ -86,9 +86,14 @@ const routes = [
   { path: "/email-compose", label: "Email", title: "Q3 Strategy Meeting — Scheduling", component: EmailCompose },
   { path: "/support-ticket", label: "Ticket", title: "TICKET-4271 — CSV Export Timeout", component: SupportTicket },
   { path: "/job-board", label: "Jobs", title: "TechJobs Board", component: JobBoard },
-  { path: "/job-application", label: "Apply", title: "Frontend Engineer Application", component: JobApplication },
-  { path: "/ashby-job-application", label: "Ashby", title: "Senior Product Engineer @ Langfuse | Ashby", component: AshbyJobApplication },
-  { path: "/experience-application", label: "Experience", title: "Work Experience Application", component: ExperienceApplication },
+  // navHidden for every job-application form: they are reachable only via a job
+  // posting's Apply Now link (which routes to the parameterized Ashby form) or a
+  // direct URL in tests. A global-nav shortcut lets agents land on a parameterless
+  // fallback form (missing the task's required fields) and fill the wrong job
+  // entirely — the exact thrash observed in the stage-two-applications run.
+  { path: "/job-application", label: "Apply", title: "Frontend Engineer Application", component: JobApplication, navHidden: true },
+  { path: "/ashby-job-application", label: "Ashby", title: "Senior Product Engineer @ Langfuse | Ashby", component: AshbyJobApplication, navHidden: true },
+  { path: "/experience-application", label: "Experience", title: "Work Experience Application", component: ExperienceApplication, navHidden: true },
   { path: "/vendor-onboarding", label: "Vendor", title: "Vendor Access Request", component: VendorOnboarding },
   { path: "/partner-registration", label: "Partner", title: "Partner Registration", component: PartnerRegistration },
   { path: "/workspace-choice", label: "Workspace", title: "Workspace Selector", component: WorkspaceChoice },
@@ -116,7 +121,7 @@ function Layout({ children, currentPath }) {
               <span className="fixture-menu-caret">▾</span>
             </summary>
             <nav className="fixture-menu-panel" aria-label="Fixture pages">
-              {routes.map((route) => (
+              {routes.filter((route) => !route.navHidden).map((route) => (
                 <a
                   key={route.path}
                   href={route.path}
