@@ -25,6 +25,15 @@ import type {
   PlanStatusGate,
 } from "./context-types";
 import type { CompressedHistory } from "./checkpoint-types";
+import {
+  computeFillChecklistStatus,
+  type FieldReadLedger,
+} from "./fill-checklist-policy";
+import {
+  createPageContentEmissionState,
+  decidePageContentEmission,
+  type PageContentEmissionState,
+} from "./page-content-policy";
 
 // Re-export submodules for barrel compatibility
 export * from "./context-types";
@@ -130,6 +139,13 @@ export class ContextManager {
   private openTabs: OpenTabInfo[] = [];
   private currentTabIdForPrompt: number | null = null;
   private spawnedTabSeen = false;
+  /** LP-17: per-field read ledger backing the fill-checklist feedback. */
+  private fieldReadLedger: FieldReadLedger = new Map();
+  /** Signature of the last checklist line injected as feedback (dedupe). */
+  private lastChecklistSignature: string | null = null;
+  /** LP-17: page-content dedupe — replaces an unchanged block with a marker. */
+  private pageContentEmission: PageContentEmissionState =
+    createPageContentEmissionState();
 
   public setModelTier(tier: "executor" | "planner"): void {
     this.modelTier = tier;
@@ -206,6 +222,26 @@ export class ContextManager {
   /** Store the normalized outcome of the most recent DOM-affecting action. */
   public setLastActionOutcome(outcome: LastActionOutcome | null): void {
     this.lastActionOutcome = outcome;
+  }
+
+  /** LP-17: ledger of form-field reads backing the fill-checklist feedback. */
+  public getFieldReadLedger(): FieldReadLedger {
+    return this.fieldReadLedger;
+  }
+
+  /**
+   * LP-17: one-shot checklist feedback. Returns the "Form status" line when
+   * the set of confirmed-filled fields changed since the last injection,
+   * else null — so the feedback phase adds at most one history message per
+   * actual state change (the always-current copy lives in the system prompt).
+   */
+  public consumeChecklistFeedbackLine(): string | null {
+    const status = computeFillChecklistStatus(this.snapshot);
+    if (!status.line || status.signature === this.lastChecklistSignature) {
+      return null;
+    }
+    this.lastChecklistSignature = status.signature;
+    return status.line;
   }
 
   /** Append a working note (ring-buffer, max 500 chars). */
@@ -299,6 +335,9 @@ export class ContextManager {
     }
     this.history.push(...cp.recentMessages);
     this.isFirstTurn = isFirstTurn;
+    // Restored history may no longer contain the full page-content block —
+    // force the next system prompt to emit it in full again.
+    this.pageContentEmission = createPageContentEmissionState();
   }
 
   /** Dynamically adjust the context window size (e.g. expand on escalation). */
@@ -750,13 +789,15 @@ Do NOT call done() until every planned step is complete.
       content = content.replace("{{workingNotes}}", "");
     }
 
-    // Pinned goal: keeps original query visible in every system prompt
-    if (this.originalQuery) {
-      content = content.replace(
-        "## Page Context",
-        `## Current Task\n${this.originalQuery}\nStay focused on this goal.\n\n## Page Context`,
-      );
-    }
+    // Pinned goal: keeps original query visible in every system prompt.
+    // Placeholder-based (LP-17 P3) and per-run stable, so it sits in the
+    // cacheable prefix ahead of the volatile page state.
+    content = content.replace(
+      "{{currentTask}}",
+      this.originalQuery
+        ? `## Current Task\n${this.originalQuery}\nStay focused on this goal.\n`
+        : "",
+    );
 
     // Grounding check: first-turn only prompt injection
     if (this.isFirstTurn) {
@@ -767,8 +808,8 @@ Do NOT call done() until every planned step is complete.
           "You MUST call clarify() to resolve this mismatch before taking any other action. Do NOT proceed with the instruction as given.\n\n";
       }
       groundingBlock +=
-        "The current page snapshot (elements, content, scroll position) is already provided above — do NOT call read_page redundantly.\n" +
-        "Observe the page state from the Visible Elements, Page Content, and Page Interpretation sections above.\n" +
+        "The current page snapshot (elements, content, scroll position) is already provided below — do NOT call read_page redundantly.\n" +
+        "Observe the page state from the Visible Elements, Page Content, and Page Interpretation sections below.\n" +
         "Check Page Interpretation BLOCKERS for MISMATCH entries — if present, the page does not match your task.\n" +
         "Verify the page state matches your task before acting. Then proceed directly with the appropriate action tool.\n";
       content = content.replace(
@@ -886,7 +927,17 @@ Do NOT call done() until every planned step is complete.
         if (!this.isFirstTurn) {
           truncated = compressRepetitiveContent(truncated);
         }
-        content = content.replace("{{pageContent}}", truncated);
+        // LP-17: replace a byte-identical block with a truthful marker —
+        // unchanged page text was measured at ~7% of a long run's input.
+        const emission = decidePageContentEmission({
+          fullBlock: truncated,
+          state: this.pageContentEmission,
+          turn: this.turnCount,
+          url: this.snapshot.url || "",
+          isFirstTurn: this.isFirstTurn,
+        });
+        this.pageContentEmission = emission.nextState;
+        content = content.replace("{{pageContent}}", emission.block);
       } else {
         content = content.replace(
           "{{pageContent}}",
@@ -908,6 +959,16 @@ Do NOT call done() until every planned step is complete.
         content = content.replace(
           "## Page Content",
           warnings + "\n\n## Page Content",
+        );
+      }
+
+      // LP-17 fill checklist: truthful per-snapshot form status, so the model
+      // never has to re-read fields to learn what is already filled.
+      const checklist = computeFillChecklistStatus(this.snapshot);
+      if (checklist.line) {
+        content = content.replace(
+          "## Visible Elements",
+          `${checklist.line}\n\n## Visible Elements`,
         );
       }
 
@@ -976,6 +1037,7 @@ Do NOT call done() until every planned step is complete.
     } else {
       content = content.replace("{{title}}", "No page loaded");
       content = content.replace("{{url}}", "about:blank");
+      content = content.replace("{{langHint}}", "");
       content = content.replace("{{scrollIndicator}}", "");
       content = content.replace("{{elements}}", "");
       content = content.replace("{{pageContent}}", "");
@@ -1635,6 +1697,9 @@ Do NOT call done() until every planned step is complete.
     this.isFirstTurn = true;
     this.contradictionDetails = null;
     this.lastActionOutcome = null;
+    this.fieldReadLedger.clear();
+    this.lastChecklistSignature = null;
+    this.pageContentEmission = createPageContentEmissionState();
     this.saveState().catch(() => {});
   }
 
@@ -1642,6 +1707,9 @@ Do NOT call done() until every planned step is complete.
    *  Used between subtasks so page state carries over. */
   public clearHistory() {
     this.history = [];
+    // A fresh subtask context has never seen the page content — the
+    // "unchanged" marker would be untruthful, so re-emit in full.
+    this.pageContentEmission = createPageContentEmissionState();
     this.saveState().catch(() => {});
   }
 

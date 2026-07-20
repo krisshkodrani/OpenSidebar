@@ -182,3 +182,51 @@ describe("orchestrator parallel contracts", () => {
     );
   });
 });
+
+describe("semantic hint negation guard (LP-17 P4)", () => {
+  function hintsFor(description: string) {
+    const [annotated] = annotateParallelContracts([node("n1", description)]);
+    return annotated.parallelContract?.resourceHints ?? [];
+  }
+
+  test('"do not submit the form" produces no form hint', () => {
+    const hints = hintsFor(
+      "Fill out this job application. Do not submit the form.",
+    );
+    expect(hints.find((h) => h.key === "do-not-submit-the-form")).toBeUndefined();
+    expect(hints.some((h) => h.kind === "form")).toBe(false);
+  });
+
+  test("a positive mention survives alongside a negated one", () => {
+    const hints = hintsFor("Fill in the signup form. Do not submit the form.");
+    expect(
+      hints.some((h) => h.kind === "form" && h.key.includes("signup-form")),
+    ).toBe(true);
+    expect(hints.find((h) => h.key.includes("do-not"))).toBeUndefined();
+  });
+
+  test('"don\'t touch the billing form" is rejected entirely', () => {
+    const hints = hintsFor("Review the invoice but don't touch the billing form");
+    expect(hints.some((h) => h.kind === "form")).toBe(false);
+  });
+
+  test("a purely negated description degrades to the conservative tab hint", () => {
+    const hints = hintsFor("Never open the export wizard");
+    expect(hints.some((h) => h.kind === "form")).toBe(false);
+    expect(hints.some((h) => h.kind === "tab")).toBe(true);
+  });
+
+  test("positive form mentions are unaffected", () => {
+    const hints = hintsFor("Fill in the signup form with the test data");
+    expect(
+      hints.some((h) => h.kind === "form" && h.key.includes("signup-form")),
+    ).toBe(true);
+  });
+
+  test("url extraction is unaffected by the guard", () => {
+    const hints = hintsFor(
+      "Do not submit anything on https://apply.example/form yet",
+    );
+    expect(hints.some((h) => h.kind === "url")).toBe(true);
+  });
+});

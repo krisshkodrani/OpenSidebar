@@ -12,20 +12,25 @@
  *
  * Wire frames (JSON):
  *   host → ext:  { id, request: BrowserToolRequest }
+ *   host → ext:  { id, cancel: true }   — caller aborted; stop the run. The host
+ *                 resolves the call locally, so the extension's late response
+ *                 lands on an unknown id and is dropped.
  *   ext → host:  { id, response: BrowserToolResponse }
  */
 
 import { WebSocketServer, type WebSocket } from "ws";
 
-import type {
-  BrowserBridge,
-  BrowserToolRequest,
-  BrowserToolResponse,
+import {
+  BROWSER_TOOL_CANCELED_REASON,
+  type BrowserBridge,
+  type BrowserToolCallOptions,
+  type BrowserToolRequest,
+  type BrowserToolResponse,
 } from "./bridge.js";
 
 interface Pending {
-  resolve: (r: BrowserToolResponse) => void;
-  timer: ReturnType<typeof setTimeout>;
+  /** Resolves the call exactly once and releases every resource it holds. */
+  settle: (r: BrowserToolResponse) => void;
 }
 
 export interface WebSocketBridgeOptions {
@@ -51,7 +56,15 @@ export class WebSocketBridge implements BrowserBridge {
       host: opts.host ?? "127.0.0.1",
     });
     this.listening = new Promise((resolve) =>
-      this.wss.once("listening", () => resolve()),
+      this.wss.once("listening", () => {
+        // Do not let the bridge server keep its host process alive: inside a
+        // pi extension, a referenced server means `pi -p` NEVER exits after
+        // answering (found live 2026-07-16). The MCP host and tests stay
+        // alive via their own transports/handles. `_server` is ws's internal
+        // http server — no public accessor exists.
+        (this.wss as unknown as { _server?: { unref?: () => void } })._server?.unref?.();
+        resolve();
+      }),
     );
     this.wss.on("connection", (socket: WebSocket) => {
       // Single extension client; a new connection supersedes the old.
@@ -88,30 +101,57 @@ export class WebSocketBridge implements BrowserBridge {
     if (!msg.id) return;
     const pending = this.pending.get(msg.id);
     if (!pending) return;
-    this.pending.delete(msg.id);
-    clearTimeout(pending.timer);
-    pending.resolve(msg.response ?? { status: "error", reason: "malformed response" });
+    pending.settle(msg.response ?? { status: "error", reason: "malformed response" });
   }
 
-  async call(request: BrowserToolRequest): Promise<BrowserToolResponse> {
+  async call(
+    request: BrowserToolRequest,
+    opts: BrowserToolCallOptions = {},
+  ): Promise<BrowserToolResponse> {
+    const { signal } = opts;
+    if (signal?.aborted) {
+      return { status: "error", reason: BROWSER_TOOL_CANCELED_REASON };
+    }
     if (!this.connected || !this.client) {
       return { status: "error", reason: "OpenSidebar extension is not connected." };
     }
     const id = `${++this.seq}`;
     const client = this.client;
     return new Promise<BrowserToolResponse>((resolve) => {
-      const timer = setTimeout(() => {
+      let settled = false;
+      const settle = (response: BrowserToolResponse) => {
+        if (settled) return;
+        settled = true;
         this.pending.delete(id);
-        resolve({ status: "error", reason: "browser tool call timed out" });
+        clearTimeout(timer);
+        signal?.removeEventListener("abort", onAbort);
+        resolve(response);
+      };
+      const onAbort = () => {
+        // Tell the extension to stop the run, then resolve locally — the
+        // caller aborted and must not wait for the stop to drain.
+        try {
+          client.send(JSON.stringify({ id, cancel: true }));
+        } catch {
+          // Socket already gone; local resolution is all that is left.
+        }
+        settle({ status: "error", reason: BROWSER_TOOL_CANCELED_REASON });
+      };
+      const timer = setTimeout(() => {
+        settle({ status: "error", reason: "browser tool call timed out" });
       }, this.timeoutMs);
-      this.pending.set(id, { resolve, timer });
+      signal?.addEventListener("abort", onAbort, { once: true });
+      this.pending.set(id, { settle });
       client.send(JSON.stringify({ id, request }));
     });
   }
 
   async close(): Promise<void> {
-    for (const pending of this.pending.values()) clearTimeout(pending.timer);
-    this.pending.clear();
+    // Settle rather than strand: outstanding callers get a terminal response
+    // instead of a promise that never resolves.
+    for (const pending of [...this.pending.values()]) {
+      pending.settle({ status: "error", reason: "bridge closed" });
+    }
     this.client?.close();
     await new Promise<void>((resolve) => this.wss.close(() => resolve()));
   }

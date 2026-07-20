@@ -114,6 +114,7 @@ const PROMPT_SECTION_HEADERS = [
   "## done() Requirements",
   "## Tool Reminders",
   "## Page Context",
+  "## Turn Status",
   "## Last Action Outcome",
   "## Visible Elements",
   "## Page Content",

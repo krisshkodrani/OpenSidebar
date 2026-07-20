@@ -32,9 +32,14 @@ const STAGED_RESULTS_DIR = path.resolve(
 /** Reporters for spawned vitest runs. CLI reporters override the config's,
  * so the flaky-retry reporter must be re-listed here alongside json. */
 function reporterArgs(jsonOutputPath: string): string[] {
+  // CLI --reporter flags REPLACE the config's reporters list, so every
+  // config reporter must be repeated here or it silently never runs under
+  // staged runs (the otel-reporter was missing at first — per-test spans
+  // vanished while the runner's suite spans arrived).
   return [
     "--reporter=default",
     "--reporter=./tests/e2e/helpers/flaky-reporter.ts",
+    "--reporter=./tests/e2e/helpers/otel-reporter.ts",
     "--reporter=json",
     `--outputFile.json=${jsonOutputPath}`,
   ];
@@ -127,6 +132,7 @@ function runWithStreaming(
   cmd: string,
   args: string[],
   cwd: string,
+  extraEnv: Record<string, string> = {},
 ): Promise<number> {
   return new Promise((resolve) => {
     const child = spawn(cmd, args, {
@@ -134,11 +140,19 @@ function runWithStreaming(
       stdio: "inherit",
       shell: false,
       windowsHide: true,
+      env: { ...process.env, ...extraEnv },
     });
 
     child.on("close", (code) => resolve(code ?? 1));
     child.on("error", () => resolve(1));
   });
+}
+
+/** Flush Bluebox telemetry (no-op when not configured) before exiting. */
+async function exitWithFlush(code: number): Promise<never> {
+  const { shutdownOtel } = await import("./otel/sdk.js");
+  await shutdownOtel();
+  process.exit(code);
 }
 
 function printPlan(suites: E2ESuiteName[]): void {
@@ -212,12 +226,42 @@ async function main(): Promise<void> {
   fs.mkdirSync(STAGED_RESULTS_DIR, { recursive: true });
   const flakyRescues: string[] = [];
 
+  // Bluebox telemetry (default-off; no-op without OTEL_EXPORTER_OTLP_ENDPOINT
+  // / .env.otel): one span per staged run, one child span per suite, handed
+  // into the vitest children as TRACEPARENT so the per-test spans emitted by
+  // tests/e2e/helpers/otel-reporter.ts join the same trace.
+  const { startOtel, shutdownOtel, traceparentFor } = await import(
+    "./otel/sdk.js"
+  );
+  const otelOn = await startOtel("opensidebar-e2e-harness");
+  const {
+    trace: otelTrace,
+    metrics: otelMetrics,
+    context: otelContext,
+  } = await import("@opentelemetry/api");
+  const tracer = otelTrace.getTracer("opensidebar-e2e-harness");
+  const suiteCounter = otelMetrics
+    .getMeter("opensidebar-e2e-harness")
+    .createCounter("opensidebar.e2e.suites", {
+      description: "Staged e2e suite outcomes (passed/flaky-passed/failed)",
+    });
+  const runSpan = tracer.startSpan("e2e_staged_run", {
+    attributes: { "opensidebar.e2e.suites_planned": suites.join(",") },
+  });
+
   for (const suite of suites) {
     const testFiles = E2E_SUITES[suite].map((file) =>
       path.join("tests/e2e", file),
     );
     const appRoot = path.resolve(PROJECT_ROOT, "apps/extension");
     const jsonOutputPath = path.resolve(STAGED_RESULTS_DIR, `${suite}.json`);
+
+    const suiteSpan = tracer.startSpan(
+      `e2e_suite ${suite}`,
+      { attributes: { "opensidebar.e2e.suite": suite } },
+      otelTrace.setSpan(otelContext.active(), runSpan),
+    );
+    const childEnv = otelOn ? { TRACEPARENT: traceparentFor(suiteSpan) } : {};
 
     console.log(`\n[e2e:staged] Running ${suite.toUpperCase()} suite...`);
     const exitCode = await runWithStreaming(
@@ -231,9 +275,13 @@ async function main(): Promise<void> {
         ...testFiles,
       ],
       appRoot,
+      childEnv,
     );
     if (exitCode === 0) {
       console.log(`\n[e2e:staged] ${suite.toUpperCase()} suite passed.`);
+      suiteSpan.setAttribute("opensidebar.e2e.outcome", "passed");
+      suiteSpan.end();
+      suiteCounter.add(1, { suite, outcome: "passed" });
       continue;
     }
 
@@ -246,7 +294,11 @@ async function main(): Promise<void> {
       console.error(
         `\n[e2e:staged] ${suite.toUpperCase()} suite failed before producing per-file results (collection/build error). Stopping.`,
       );
-      process.exit(exitCode);
+      suiteSpan.setAttribute("opensidebar.e2e.outcome", "collection-error");
+      suiteSpan.end();
+      suiteCounter.add(1, { suite, outcome: "collection-error" });
+      runSpan.end();
+      await exitWithFlush(exitCode);
     }
 
     console.warn(
@@ -270,19 +322,30 @@ async function main(): Promise<void> {
         ...failedFiles,
       ],
       appRoot,
+      childEnv,
     );
     if (retestExitCode !== 0) {
       console.error(
         `\n[e2e:staged] ${suite.toUpperCase()} suite failed and the fresh-process retest failed again — treating as a real failure. Stopping before later suites.`,
       );
-      process.exit(retestExitCode);
+      suiteSpan.setAttribute("opensidebar.e2e.outcome", "failed");
+      suiteSpan.end();
+      suiteCounter.add(1, { suite, outcome: "failed" });
+      runSpan.end();
+      await exitWithFlush(retestExitCode);
     }
 
     flakyRescues.push(...failedFiles.map((file) => `${suite}: ${file}`));
     console.warn(
       `\n[e2e:staged] ${suite.toUpperCase()} suite FLAKY-PASSED (failures passed on a fresh-process retest). Continuing.`,
     );
+    suiteSpan.setAttribute("opensidebar.e2e.outcome", "flaky-passed");
+    suiteSpan.end();
+    suiteCounter.add(1, { suite, outcome: "flaky-passed" });
   }
+
+  runSpan.end();
+  await shutdownOtel();
 
   if (flakyRescues.length > 0) {
     console.warn("\n[e2e:staged] ================ FLAKY SUMMARY ================");

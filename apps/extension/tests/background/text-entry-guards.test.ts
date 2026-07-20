@@ -298,6 +298,36 @@ describe("text entry guards", () => {
     ).toBeNull();
   });
 
+  test("allows done for a committed custom combobox (empty input, selected value surfaced, menu closed)", () => {
+    // React-select-style widgets clear their input on commit; the tagging layer
+    // now surfaces the committed value as attributes.value/selected and the
+    // portaled menu is unmounted — no suggestion node remains, so done() must
+    // NOT be blocked.
+    const result = getAutocompleteSuggestionDoneRejection({
+      snapshot: snapshot({
+        elements: [
+          element({
+            tag: 4,
+            attributes: {
+              role: "combobox",
+              label: "What are your salary expectations?",
+              value: "€ 50,000 - 60,000",
+              selected: "€ 50,000 - 60,000",
+            },
+          }),
+        ],
+      }),
+      originalQuery:
+        "Select € 50,000 - 60,000 from the salary expectations dropdown.",
+      activeObjective:
+        "Choose the € 50,000 - 60,000 salary band in the dropdown",
+      successCriteria: "Salary expectations shows € 50,000 - 60,000",
+      summary: "Selected the € 50,000 - 60,000 salary band.",
+    });
+
+    expect(result).toBeNull();
+  });
+
   test("rejects done when a requested autocomplete suggestion is still visible", () => {
     const result = getAutocompleteSuggestionDoneRejection({
       snapshot: snapshot({

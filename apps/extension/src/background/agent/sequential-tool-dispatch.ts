@@ -10,7 +10,11 @@ import {
   assessCatalogOrderPostConfirmationClick,
 } from "./servicenow/catalog-order-policy";
 import { assessConsequentialFinalActionBlock } from "./consequential-action-policy";
-import type { DryRunClassification } from "./mutation-dry-run-policy";
+import {
+  toForwardedApprovalDryRun,
+  type DryRunClassification,
+} from "./mutation-dry-run-policy";
+import type { ForwardedApprovalDryRun } from "@shared-types/browser-bridge";
 import {
   resolveToolApprovalRequest,
   TOOL_APPROVAL_DENIED_MESSAGE,
@@ -37,6 +41,7 @@ import {
   type BlockedAction,
   type RecentAction,
 } from "./loop-helpers";
+import { applyFieldReReadTracking } from "./fill-checklist-policy";
 import {
   handleCloseTabToolCall,
   handleComposeTextToolCall,
@@ -102,6 +107,7 @@ export interface SequentialToolDispatchHost extends AgentLoopToolHandlerHost {
     args: Record<string, unknown>,
     riskLevel: RiskLevel,
     forceApproval: boolean,
+    dryRun?: ForwardedApprovalDryRun,
   ): Promise<boolean>;
   getActiveToolProfileForStep(stepIndex: number): string | null | undefined;
   getConsequentialActionTaskText(): string;
@@ -583,7 +589,16 @@ export async function executeSequentialToolCalls(
       this.context.addMessage({
         role: "tool",
         tool_call_id: toolCall.id,
-        content: cacheLookup.cachedResult,
+        // LP-17: a redundant re-read usually lands here (cache hit) — the
+        // fill-checklist note must ride along or the model never sees it.
+        content: applyFieldReReadTracking({
+          toolName,
+          args,
+          result: cacheLookup.cachedResult,
+          snapshot: this.context.getSnapshot(),
+          ledger: this.context.getFieldReadLedger(),
+          turn: this.turnCount,
+        }),
       });
       continue;
     }
@@ -1119,8 +1134,10 @@ export async function executeSequentialToolCalls(
     // human approval with the result. It never bypasses approval — a clean
     // values-diff does not answer "should this be submitted at all", which is
     // exactly what the consequential-action approval exists to ask.
+    let forwardedDryRun: ForwardedApprovalDryRun | undefined;
     if (forceConsequentialActionApproval) {
       const dryRun = await this.runFormSubmitDryRun(toolName, args, tabId);
+      forwardedDryRun = toForwardedApprovalDryRun(dryRun);
       if (dryRun.kind === "clean") {
         this.stepHandler(
           {
@@ -1153,6 +1170,7 @@ export async function executeSequentialToolCalls(
         args,
         approvalRequest.riskLevel,
         approvalRequest.forceApproval,
+        forwardedDryRun,
       );
       if (!approved) {
         this.context.addMessage({

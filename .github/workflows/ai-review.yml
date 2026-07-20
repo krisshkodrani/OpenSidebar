@@ -1,0 +1,105 @@
+name: AI review
+
+# On demand only: comment `/ai-review` on a PR, or run it manually.
+#
+# SECURITY — why this is safe to give an API key:
+#   `issue_comment` runs in the BASE repo context, so secrets ARE available.
+#   That is only acceptable because this job never checks out or executes the
+#   pull request's code: it checks out the base branch, installs the base
+#   lockfile, and reads the PR diff through the GitHub API as inert text.
+#   Do NOT add a `ref:` that points at the PR head, and do NOT switch this to
+#   `pull_request_target` — either change would run fork-authored code with the
+#   Fireworks key in the environment.
+#
+#   The author_association gate additionally means a drive-by commenter cannot
+#   spend your inference budget.
+
+on:
+  issue_comment:
+    types: [created]
+  workflow_dispatch:
+    inputs:
+      pr_number:
+        description: Pull request number to review
+        required: true
+
+permissions:
+  contents: read
+  pull-requests: write
+
+# One review per PR at a time. Without this, five comments in a row start five
+# concurrent runs that each pay full inference cost to review the same diff.
+concurrency:
+  group: ai-review-${{ github.event.issue.number || github.event.inputs.pr_number }}
+  cancel-in-progress: true
+
+jobs:
+  # A request that fails the permission gate would otherwise do NOTHING: no
+  # run, no reaction, no message. To an outside contributor that is
+  # indistinguishable from the feature being broken. This job holds no secrets
+  # and only writes a comment, so it is safe to run for anyone.
+  reject:
+    if: >
+      github.event_name == 'issue_comment' &&
+      github.event.issue.pull_request != null &&
+      contains(github.event.comment.body, '/ai-review') &&
+      !contains(fromJSON('["OWNER","MEMBER","COLLABORATOR"]'), github.event.comment.author_association)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Explain why nothing ran
+        # Values arrive via env, never interpolated into the script body:
+        # `${{ }}` inside `run:` is the standard Actions script-injection hole,
+        # and comment-triggered workflows are exactly where it gets exploited.
+        run: gh api "repos/$GITHUB_REPOSITORY/issues/$ISSUE_NUMBER/comments" -f body="$BODY"
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          ISSUE_NUMBER: ${{ github.event.issue.number }}
+          BODY: >-
+            `/ai-review` is limited to maintainers — it spends inference
+            budget, so it is gated on repository write access. A maintainer
+            can run it on this PR for you.
+
+  review:
+    # Comment path: must be ON a PR, must say /ai-review, and must come from
+    # someone with write access to this repo.
+    if: >
+      github.event_name == 'workflow_dispatch' ||
+      (github.event.issue.pull_request != null &&
+       contains(github.event.comment.body, '/ai-review') &&
+       contains(fromJSON('["OWNER","MEMBER","COLLABORATOR"]'), github.event.comment.author_association))
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Acknowledge the request
+        if: github.event_name == 'issue_comment'
+        run: gh api "repos/$GITHUB_REPOSITORY/issues/comments/${{ github.event.comment.id }}/reactions" -f content=eyes --silent || true
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      # Base branch only — never the PR head. See the security note above.
+      - uses: actions/checkout@v6
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v6
+        with:
+          version: 11.1.0
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: "22"
+          cache: "pnpm"
+          cache-dependency-path: pnpm-lock.yaml
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Review
+        run: pnpm exec tsx scripts/ai-review/main.ts
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
+          PR_NUMBER: ${{ github.event.issue.number || github.event.inputs.pr_number }}
+          # One key per seat's provider: DeepSeek reviews, Fireworks judges.
+          DEEPSEEK_API_KEY: ${{ secrets.DEEPSEEK_API_KEY }}
+          FIREWORKS_API_KEY: ${{ secrets.FIREWORKS_API_KEY }}

@@ -121,6 +121,35 @@ function addUrlHints(
   }
 }
 
+/**
+ * A semantic keyword match is meaningless when the surrounding phrase negates
+ * it: "do not submit the form" is an instruction, not a form resource. Without
+ * this guard the pattern pass shredded prompt text into garbage keys like
+ * `form:do-not-submit-the-form` (observed in live traces, LP-17), which fed
+ * the scheduler's conflict detection with noise.
+ */
+const NEGATION_MARKER = /\b(?:do not|don'?t|never|without|avoid|not|no)\b/i;
+const NEGATION_KEY_PREFIX = /^(?:do-?not|dont|never|without|avoid|no)-/;
+
+/**
+ * The semantic patterns match greedily from the left, so a negation usually
+ * sits INSIDE the matched phrase ("do not submit the form"), sometimes just
+ * before it. Scan both. Over-rejection is the safe direction here: dropped
+ * hints degrade to the default tab hint, and empty hints serialize.
+ */
+function isNegatedMatch(
+  normalized: string,
+  matchIndex: number,
+  matchText: string,
+): boolean {
+  const windowStart = Math.max(0, matchIndex - 24);
+  const context = normalized.slice(
+    windowStart,
+    matchIndex + matchText.length,
+  );
+  return NEGATION_MARKER.test(context);
+}
+
 function addSemanticTargetHints(
   hints: ResourceHint[],
   text: string,
@@ -163,10 +192,14 @@ function addSemanticTargetHints(
 
   for (const { kind, pattern, confidence } of targetPatterns) {
     for (const match of normalized.matchAll(pattern)) {
+      if (isNegatedMatch(normalized, match.index ?? 0, match[0])) continue;
       const rawKey =
         match[1] && match[2] ? `${match[1]}-${match[2]}` : match[1];
       const key = compactKey(rawKey || kind);
       if (!key) continue;
+      // Belt over braces: a negation captured INSIDE the match window still
+      // shows up as a key prefix.
+      if (NEGATION_KEY_PREFIX.test(key)) continue;
       addHint(hints, {
         kind,
         key,

@@ -1729,16 +1729,15 @@ describe("OrchestratorPlanner.buildNodes returns BuildNodesResult", () => {
         const planner = new OrchestratorPlanner("test-key");
         const result = await planner.buildNodes("Enter code and submit", "Page", "https://example.com");
 
-        expect(result.nodes).toHaveLength(2);
+        // LP-17 P7 merges the same-page enter+submit chain into one node —
+        // the full-default-tools invariant must survive the merge.
+        expect(result.nodes).toHaveLength(1);
         // All nodes get the full default tool set — per-step profile filtering
         // is handled by applyToolProfile() inside the agent loop, not at the
         // orchestrator node level (prevents permanent tool blocking on replan).
         expect(result.nodes[0].allowedTools).toContain(ToolName.TYPE_TEXT);
         expect(result.nodes[0].allowedTools).toContain(ToolName.CLICK_ELEMENT);
         expect(result.nodes[0].allowedTools).toContain(ToolName.GET_PROFILE_FIELDS);
-        expect(result.nodes[1].allowedTools).toContain(ToolName.TYPE_TEXT);
-        expect(result.nodes[1].allowedTools).toContain(ToolName.CLICK_ELEMENT);
-        expect(result.nodes[1].allowedTools).toContain(ToolName.GET_PROFILE_FIELDS);
     });
 
     test("expandNode keeps the initial node tool baseline for replanned child steps", async () => {
@@ -3903,3 +3902,364 @@ describe("TaskPlanner.validateDone", () => {
 // Due to bun's process-global mock.module behavior, these tests only pass
 // reliably when run in isolation: `pnpm exec vitest run apps/extension/tests/background/planner.test.ts`
 // The TaskPlanner unit tests above cover all planner logic paths.
+
+describe("decompose request shape (LP-17 P4)", () => {
+    test("decompose runs with the raised 8192 output cap", async () => {
+        let captured: any = null;
+        completeImpl = (request: any) => {
+            captured = request;
+            return Promise.resolve({
+                role: "assistant",
+                content: JSON.stringify({
+                    isMultiStep: false,
+                    difficulty: "simple",
+                    subtasks: [],
+                }),
+                finish_reason: "stop",
+            });
+        };
+        const planner = new TaskPlanner("test-key");
+        await planner.decompose("Read the page title", "Title", "https://a.test");
+        expect(captured).not.toBeNull();
+        expect(captured.max_tokens).toBe(8192);
+        expect(captured.response_format).toEqual({ type: "json_object" });
+    });
+});
+
+describe("direct-execution skill threading (LP-17 P6)", () => {
+    test("buildDirectExecutionNodes selects a skill when the catalog matches", async () => {
+        const { buildDirectExecutionNodes } = await import(
+            "../../src/background/orchestrator/planner"
+        );
+        const nodes = buildDirectExecutionNodes(
+            "Reply to the latest email from the recruiter",
+            "planned",
+            "Inbox",
+            "https://mail.example/inbox",
+            { enabledSkillPackIds: [] },
+        );
+        expect(nodes).toHaveLength(1);
+        // Which skill wins is the catalog's call — what LP-17 P6 fixed is that
+        // the direct path threads skillCatalogOptions at all (it used to drop
+        // them, leaving direct nodes skill-less).
+        expect(nodes[0].selectedSkillId).toBeTruthy();
+    });
+});
+
+describe("dropTrailingVerifyOnlyNode (LP-17 P5)", () => {
+    function makeNode(
+        id: string,
+        description: string,
+        overrides: Record<string, unknown> = {},
+    ) {
+        return {
+            id,
+            role: "executor" as const,
+            description,
+            successCriteria: `${description} is visible.`,
+            allowedTools: [ToolName.READ_PAGE, ToolName.DONE],
+            dependencies: [] as string[],
+            assumptions: [],
+            handoffArtifacts: [],
+            reflexionLog: [],
+            handoffDepth: 0,
+            status: "pending" as const,
+            retries: 0,
+            ...overrides,
+        };
+    }
+
+    test("drops a trailing verify-only node and folds its criteria forward", async () => {
+        const { dropTrailingVerifyOnlyNode } = await import(
+            "../../src/background/orchestrator/planner"
+        );
+        const nodes = [
+            makeNode("n1", "Submit the report form"),
+            makeNode("n2", "Verify the submission was successful", {
+                dependencies: ["n1"],
+                toolProfile: "read_only",
+                verificationGate: { trigger: "confirmation banner", action: "advance_step" },
+            }),
+        ];
+        const result = dropTrailingVerifyOnlyNode(nodes as any);
+        expect(result).toHaveLength(1);
+        expect(result[0].description).toBe("Submit the report form");
+        expect(result[0].successCriteria).toContain("Verify the submission");
+        // A carried gate finishes the task on the (now final) node.
+        expect(result[0].verificationGate).toEqual({
+            trigger: "confirmation banner",
+            action: "call_done",
+        });
+    });
+
+    test("keeps a trailing return-leg even when it starts with 'verify'", async () => {
+        const { dropTrailingVerifyOnlyNode } = await import(
+            "../../src/background/orchestrator/planner"
+        );
+        const nodes = [
+            makeNode("n1", "Read the inventory count on page 3"),
+            makeNode("n2", "Verify by returning to page 1 and reading Warehouse Alpha", {
+                dependencies: ["n1"],
+            }),
+        ];
+        expect(dropTrailingVerifyOnlyNode(nodes as any)).toHaveLength(2);
+    });
+
+    test("keeps a trailing deliverable step ('check and report')", async () => {
+        const { dropTrailingVerifyOnlyNode } = await import(
+            "../../src/background/orchestrator/planner"
+        );
+        const nodes = [
+            makeNode("n1", "Open the totals view"),
+            makeNode("n2", "Check the total and report it to the user", {
+                dependencies: ["n1"],
+            }),
+        ];
+        expect(dropTrailingVerifyOnlyNode(nodes as any)).toHaveLength(2);
+    });
+
+    test("keeps a verify step that carries its own URL", async () => {
+        const { dropTrailingVerifyOnlyNode } = await import(
+            "../../src/background/orchestrator/planner"
+        );
+        const nodes = [
+            makeNode("n1", "Submit the request"),
+            makeNode("n2", "Verify the record at https://reports.example/records", {
+                dependencies: ["n1"],
+            }),
+        ];
+        expect(dropTrailingVerifyOnlyNode(nodes as any)).toHaveLength(2);
+    });
+
+    test("keeps a write-capable trailing step", async () => {
+        const { dropTrailingVerifyOnlyNode } = await import(
+            "../../src/background/orchestrator/planner"
+        );
+        const nodes = [
+            makeNode("n1", "Fill the form"),
+            makeNode("n2", "Verify and fix any validation errors", {
+                dependencies: ["n1"],
+                toolProfile: "form_fill",
+            }),
+        ];
+        expect(dropTrailingVerifyOnlyNode(nodes as any)).toHaveLength(2);
+    });
+
+    test("single-node plans pass through untouched", async () => {
+        const { dropTrailingVerifyOnlyNode } = await import(
+            "../../src/background/orchestrator/planner"
+        );
+        const single = buildFallbackNodes("Read the page");
+        expect(dropTrailingVerifyOnlyNode(single)).toBe(single);
+    });
+});
+
+describe("collapseSameContextSequentialNodes (LP-17 P7)", () => {
+    function makeChain(
+        descriptions: string[],
+        overrides: Array<Record<string, unknown>> = [],
+    ) {
+        return descriptions.map((description, i) => ({
+            id: `n${i + 1}`,
+            role: "executor" as const,
+            description,
+            successCriteria: `${description} is confirmed.`,
+            allowedTools: [ToolName.READ_PAGE, ToolName.DONE],
+            dependencies: i === 0 ? [] : [`n${i}`],
+            assumptions: [],
+            handoffArtifacts: [],
+            reflexionLog: [],
+            handoffDepth: 0,
+            status: "pending" as const,
+            retries: 0,
+            ...(overrides[i] ?? {}),
+        }));
+    }
+
+    async function collapse(nodes: unknown, query = "Configure and order the product") {
+        const { collapseSameContextSequentialNodes } = await import(
+            "../../src/background/orchestrator/planner"
+        );
+        return collapseSameContextSequentialNodes(
+            nodes as any,
+            query,
+            "Shop",
+            "https://shop.example/product",
+            { enabledSkillPackIds: [] },
+        );
+    }
+
+    test("merges a serialized same-page chain into one node with unioned criteria", async () => {
+        const merged = await collapse(
+            makeChain([
+                "Pick the Large size in the size selector",
+                "Enable the custom engraving checkbox",
+                "Add the configured product to the cart",
+            ]),
+        );
+        expect(merged).toHaveLength(1);
+        expect(merged[0].description).toContain(
+            "Complete these steps in order on the current page",
+        );
+        expect(merged[0].description).toContain("engraving");
+        expect(merged[0].dependencies).toEqual([]);
+        expect(merged[0].successCriteria).toContain("cart");
+    });
+
+    test("a navigation step blocks the merge", async () => {
+        const nodes = makeChain([
+            "Pick the Large size",
+            "Navigate to the checkout page",
+            "Enter the payment details",
+        ]);
+        expect(await collapse(nodes)).toHaveLength(3);
+    });
+
+    test("distinct URL origins block the merge", async () => {
+        const nodes = makeChain([
+            "Read the price at https://a.example/one",
+            "Enter the price into the tracker at https://b.example/two",
+        ]);
+        expect(await collapse(nodes)).toHaveLength(2);
+    });
+
+    test("the 'separate updates' opt-out blocks the merge", async () => {
+        const nodes = makeChain(
+            ["Set the name field to 'Alpha'", "Set the status field to 'Active'"],
+            [{ toolProfile: "form_fill" }, { toolProfile: "form_fill" }],
+        );
+        const result = await collapse(
+            nodes,
+            "Update the name and the status as separate form updates",
+        );
+        expect(result).toHaveLength(2);
+    });
+
+    test("a non-chain graph (parallel siblings) blocks the merge", async () => {
+        const nodes = makeChain(["Fill the left panel", "Fill the right panel"]);
+        (nodes[1] as any).dependencies = []; // sibling, not chained
+        expect(await collapse(nodes)).toHaveLength(2);
+    });
+
+    test("chains longer than 5 nodes are left alone", async () => {
+        const nodes = makeChain([
+            "Step one on the page",
+            "Step two on the page",
+            "Step three on the page",
+            "Step four on the page",
+            "Step five on the page",
+            "Step six on the page",
+        ]);
+        expect(await collapse(nodes)).toHaveLength(6);
+    });
+
+    test("end-state interplay via buildNodes: fill/submit/verify collapses fully", async () => {
+        completeImpl = () => Promise.resolve({
+            role: "assistant",
+            content: JSON.stringify({
+                isMultiStep: true,
+                difficulty: "moderate",
+                subtasks: [
+                    "Fill the order form fields with the requested values",
+                    "Press the 'Place order' button on the form",
+                    "Verify the confirmation banner is shown",
+                ],
+            }),
+            tool_calls: undefined,
+            finish_reason: "stop",
+        });
+        const planner = new OrchestratorPlanner("test-key");
+        const result = await planner.buildNodes(
+            "Fill in the order form and place the order",
+            "Shop",
+            "https://shop.example/order",
+        );
+        expect(result.nodes).toHaveLength(1);
+        expect(result.nodes[0].successCriteria.toLowerCase()).toContain("confirmation");
+    });
+});
+
+describe("planner echo caps (LP-17b CM-2/CM-3)", () => {
+    test("assumptions are capped at parse time (steps path)", async () => {
+        const manyAssumptions = Array.from({ length: 20 }, (_, i) => `Assumption number ${i + 1}`);
+        completeImpl = () => Promise.resolve({
+            role: "assistant",
+            content: JSON.stringify({
+                isMultiStep: true,
+                difficulty: "moderate",
+                steps: [
+                    {
+                        objective: "Fill the form with the requested values",
+                        successCriteria: "Form shows the values",
+                        assumptions: manyAssumptions,
+                    },
+                    {
+                        objective: "Submit the request form",
+                        successCriteria: "Confirmation visible",
+                        assumptions: manyAssumptions,
+                        dependencies: [0],
+                    },
+                ],
+            }),
+            tool_calls: undefined,
+            finish_reason: "stop",
+        });
+        const planner = new OrchestratorPlanner("test-key");
+        const result = await planner.buildNodes(
+            "Fill the form and submit the request",
+            "Portal",
+            "https://portal.example/form",
+        );
+        for (const node of result.nodes) {
+            expect(node.assumptions.length).toBeLessThanOrEqual(6);
+        }
+    });
+
+    test("a query-embedding objective with a huge planner tail is trimmed to the request", async () => {
+        const query = "Reply to the latest recruiter email using my saved profile details";
+        const tail = " Then carefully review the compose window state. ".repeat(30);
+        completeImpl = () => Promise.resolve({
+            role: "assistant",
+            content: JSON.stringify({
+                isMultiStep: false,
+                difficulty: "simple",
+                subtasks: [query + tail],
+            }),
+            tool_calls: undefined,
+            finish_reason: "stop",
+        });
+        const planner = new OrchestratorPlanner("test-key");
+        const result = await planner.buildNodes(query, "Inbox", "https://mail.example/inbox");
+        expect(result.nodes).toHaveLength(1);
+        const description = result.nodes[0].description;
+        expect(description).toContain(query);
+        // The 1.5K-char tail is gone; only the framing prefix remains.
+        expect(description.length).toBeLessThan(query.length + 200);
+    });
+
+    test("multi-node collapse caps the appended planner prose after the verbatim request", async () => {
+        const query = "Fill in the order form and place the order";
+        const longDescription = "Carefully fill the order form field by field with great attention. ".repeat(15);
+        completeImpl = () => Promise.resolve({
+            role: "assistant",
+            content: JSON.stringify({
+                isMultiStep: true,
+                difficulty: "moderate",
+                subtasks: [
+                    longDescription,
+                    "Press the submit control on the order form",
+                ],
+            }),
+            tool_calls: undefined,
+            finish_reason: "stop",
+        });
+        const planner = new OrchestratorPlanner("test-key");
+        const result = await planner.buildNodes(query, "Shop", "https://shop.example/order");
+        expect(result.nodes).toHaveLength(1);
+        const description = result.nodes[0].description;
+        expect(description).toContain(query);
+        expect(description.length).toBeLessThanOrEqual(
+            "Complete the workflow for the original request: ".length + query.length + 450,
+        );
+    });
+});

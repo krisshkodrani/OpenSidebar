@@ -1,0 +1,14 @@
+{
+  "schemaVersion": 1,
+  "company": "Sample Company",
+  "roleTitle": "Sample Engineer",
+  "locationMode": "remote",
+  "sourceUrl": "http://127.0.0.1:0/jobs/sample-engineer",
+  "dateFound": "2026-07-17",
+  "status": "ready",
+  "cv": {
+    "selectedVariant": "sample",
+    "uploadPath": "sample-cv.pdf"
+  },
+  "risks": []
+}

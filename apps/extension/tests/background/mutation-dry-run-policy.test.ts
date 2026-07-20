@@ -10,15 +10,16 @@ import type { FormStateCapture } from "../../src/types";
 import type { FormFillFieldExpectation } from "../../src/background/agent/completion/kernel-types";
 
 function capture(
-  fields: Array<{ name: string; value: string }>,
+  fields: Array<{ name: string; value: string; label?: string; kind?: string }>,
   formKey = "/apply",
 ): FormStateCapture {
   return {
     formKey,
     fields: fields.map((f) => ({
       name: f.name,
+      ...(f.label ? { label: f.label } : {}),
       selector: `[name="${f.name}"]`,
-      kind: "text",
+      kind: f.kind ?? "text",
       value: f.value,
       disabled: false,
     })),
@@ -94,6 +95,54 @@ describe("diffFormStateAgainstDraft", () => {
         { name: "csrfToken", value: "xyz" },
       ]),
       expect_([{ label: "Full name", value: "Sam" }]),
+    );
+    expect(diff.clean).toBe(true);
+  });
+
+  test("matches a ticked checkbox by its label, treating checked == true (pi Phase 8)", () => {
+    // The exact shape the Phase 4 e2e surfaced: the checkbox `name` is an
+    // internal token, and only the associated label carries the drafted text.
+    const diff = diffFormStateAgainstDraft(
+      capture([
+        {
+          name: "partner-terms",
+          label: "I accept the partner portal terms",
+          kind: "checkbox",
+          value: "checked",
+        },
+      ]),
+      expect_([
+        { label: "I accept the partner portal terms", value: "true" },
+      ]),
+    );
+    expect(diff.entries[0].status).toBe("match");
+    expect(diff.clean).toBe(true);
+  });
+
+  test("an unticked checkbox drafted true is a mismatch, not a missing field", () => {
+    const diff = diffFormStateAgainstDraft(
+      capture([
+        {
+          name: "partner-terms",
+          label: "I accept the partner portal terms",
+          kind: "checkbox",
+          value: "unchecked",
+        },
+      ]),
+      expect_([
+        { label: "I accept the partner portal terms", value: "true" },
+      ]),
+    );
+    // Matched by label (so not "missing"), but the value disagrees.
+    expect(diff.entries[0].status).toBe("mismatch");
+  });
+
+  test("boolean synonyms are equivalent (on/yes/1 == true) for toggles", () => {
+    const diff = diffFormStateAgainstDraft(
+      capture([
+        { name: "opt", label: "Subscribe", kind: "checkbox", value: "on" },
+      ]),
+      expect_([{ label: "Subscribe", value: "yes" }]),
     );
     expect(diff.clean).toBe(true);
   });
@@ -174,5 +223,42 @@ describe("diffFormStateAgainstDraft", () => {
     expect(rendered).toContain('"100"');
     expect(rendered).toContain('"999"');
     expect(rendered).toContain("Note");
+  });
+});
+
+describe("toForwardedApprovalDryRun", () => {
+  test("projects a classification into the wire shape; no_draft → undefined", async () => {
+    const { classifyFormSubmitDryRun, toForwardedApprovalDryRun } = await import(
+      "../../src/background/agent/mutation-dry-run-policy"
+    );
+    expect(toForwardedApprovalDryRun({ kind: "no_draft" })).toBeUndefined();
+
+    const cls = classifyFormSubmitDryRun(
+      capture([{ name: "email", value: "x@y.com" }]),
+      expect_([{ label: "email", value: "a@b.com" }]),
+    );
+    const forwarded = toForwardedApprovalDryRun(cls);
+    expect(forwarded).toMatchObject({
+      kind: "unexpected",
+      formKey: "/apply",
+      entries: [
+        { label: "email", expected: "a@b.com", actual: "x@y.com", status: "mismatch" },
+      ],
+    });
+    expect(typeof forwarded!.diffHash).toBe("string");
+    expect(forwarded!.rendered).toContain("email");
+  });
+
+  test("a clean classification forwards without a rendered diff", async () => {
+    const { classifyFormSubmitDryRun, toForwardedApprovalDryRun } = await import(
+      "../../src/background/agent/mutation-dry-run-policy"
+    );
+    const cls = classifyFormSubmitDryRun(
+      capture([{ name: "email", value: "a@b.com" }]),
+      expect_([{ label: "email", value: "a@b.com" }]),
+    );
+    const forwarded = toForwardedApprovalDryRun(cls);
+    expect(forwarded).toMatchObject({ kind: "clean", formKey: "/apply" });
+    expect(forwarded!.rendered).toBeUndefined();
   });
 });

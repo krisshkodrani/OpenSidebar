@@ -35,24 +35,27 @@ import { toolRegistry } from "../tools";
 import type { ToolProfile } from "../tools/metadata";
 import { waitForDomReady } from "../tab-ready";
 import {
-  executeContentTool,
   isBridgeDisconnect,
   recoverContentScriptBridge,
   type BridgeRecoveryTraceHook,
 } from "../tools/bridge";
+import { type DryRunClassification } from "./mutation-dry-run-policy";
 import {
-  buildFormStateCapturedEvidence,
-  classifyFormSubmitDryRun,
-  type DryRunClassification,
-} from "./mutation-dry-run-policy";
+  runFormSubmitDryRun,
+  type FormSubmitDryRunHost,
+} from "./form-submit-dry-run";
+import type { ForwardedApprovalDryRun } from "@shared-types/browser-bridge";
 import { workspaceManager } from "../workspaces/manager";
 import { ContextManager } from "./context";
 import { StagnationMonitor } from "./stagnation";
 import { PerceptionScreenshotState } from "../perception/perception-screenshot-state";
-import { transformScreenshot } from "../perception/screenshot-transform";
+import {
+  captureVLExecutorScreenshot,
+  createVLScreenshotState,
+  type VLScreenshotHost,
+} from "./vl-screenshot";
 import type { PerceptionTaskContext } from "../perception/types";
 import { DomSnapshot } from "../../types";
-import type { FormStateCapture } from "../../types";
 import {
   CompletionResponse,
   LLMMessage,
@@ -124,11 +127,6 @@ import {
   type TurnCheckpointHost,
 } from "./turn-checkpoint";
 import {
-  recordShadowCompletionDecision,
-  shadowCompareCompletionPipeline,
-  type ShadowCompletionHost,
-} from "./shadow-completion";
-import {
   getActiveCompletionContext,
   recordCompletionEvidence,
   refreshCompletionEvidenceFromSnapshot,
@@ -139,22 +137,32 @@ import {
   type CompletionEvidenceHost,
 } from "./completion-evidence";
 import {
-  buildServiceNowMissingFieldInfeasibleSummary,
-  extractServiceNowFormMissingFieldLabels,
   extractServiceNowModuleRequest,
-  resolveServiceNowCreateRecordUrlFromCurrentList,
   maybeInferServiceNowModuleNavigationEvidence,
-  serviceNowFieldSearchTokens,
   type ModuleNavEvidenceHost,
   type ServiceNowMissingFieldSearchEvidence,
   type TrustedCatalogOrderSubmission,
 } from "./servicenow/trusted-workflow-adapter";
 import {
-  buildServiceNowSubmitDeferralMessage,
-  isServiceNowSubmitHardRejected,
-  isServiceNowSubmitRejected,
-  isServiceNowSubmitStayedOnCreateForm,
-} from "./servicenow/submit-diagnostics-policy";
+  assessServiceNowMissingFieldInfeasibility,
+  getServiceNowMissingFieldAdmissionSummary,
+  hasTaskLevelServiceNowSubmitIntent,
+  hasTrustedServiceNowSubmitIntent,
+  isRetryableServiceNowModuleControllerMiss,
+  isTaskLevelServiceNowRecordWorkflow,
+  maybeAutoSubmitTrustedServiceNowForm,
+  maybeRunServiceNowRecordFormController,
+  shouldAutoSubmitTrustedServiceNowForm,
+  startServiceNowRecordControllerTraceTurn,
+  type ServiceNowRecordFormHost,
+} from "./servicenow/record-form-controller";
+import {
+  maybeAutoSubmitConfiguredCatalogItem,
+  maybeCompleteCatalogOrderFromSnapshot,
+  maybeCompleteTrustedCatalogOrderSubmit,
+  shouldAutoSubmitConfiguredCatalogItem,
+  type ServiceNowCatalogHost,
+} from "./servicenow/catalog-controller";
 import { resolveInitialSnapshot } from "./initial-snapshot";
 import { bootstrapRuntimePlan } from "./start-planner-bootstrap";
 import { PendingInteractionYield, runStartExecution } from "./start-result";
@@ -167,7 +175,6 @@ import {
   buildTrustedCompletionCandidate,
   CompletionEvidenceLedger,
   deriveCompletionEvidenceFromSnapshot,
-  generateCompletionContract,
   type CompletionCandidateSource,
   type CompletionEnvelope,
   type CompletionEvaluation,
@@ -245,7 +252,6 @@ export {
   requiresBroadListDetailReview,
 } from "./list-detail-policy";
 import { isPaginationNavigationClick } from "./action-exemption-policy";
-import { setCachedScreenshot } from "./screenshot-cache";
 import { imagePromptUsageForCount } from "./agent-telemetry";
 import {
   approvalRequestMessage,
@@ -363,14 +369,6 @@ type CompletionValidationErrorEvidence = Extract<
 
 const CAPTURE_VISIBLE_TAB_RETRY_DELAY_MS = 300;
 
-function isNegativeFindElementResult(result: string): boolean {
-  return /\bText ".+?" not found on this page\./i.test(result);
-}
-
-function isNegativeInspectHiddenResult(result: string): boolean {
-  return /\bNo hidden elements found matching\b/i.test(result);
-}
-
 // Re-export submodules for barrel compatibility
 export * from "./loop-types";
 export * from "./loop-prompts";
@@ -479,7 +477,6 @@ export class AgentLoop {
   private disableInternalPlanning: boolean;
   private bypassApprovals: boolean;
   private approvalTimeoutMs: number;
-  private completionDeterministicAcceptanceEnabled: boolean;
   private middleware: AgentMiddleware;
 
   /** Workspace ID for session isolation */
@@ -524,6 +521,8 @@ export class AgentLoop {
   private pendingFeedback: string | null = null;
   /** Stateful perception agent — accumulates observations across turns */
   private perception = new PerceptionScreenshotState();
+  /** LP-17b CM-5: reuse state for the VL executor screenshot (vl-screenshot.ts). */
+  private vlScreenshotState = createVLScreenshotState();
   /** Whether the resolved executor model accepts images (gates unified_vl). */
   private executorVLCapable = true;
   /** inspect_region per-turn cap state (LP-13). */
@@ -633,9 +632,9 @@ export class AgentLoop {
   private lastCompletionRejection: CompletionEvaluation | null = null;
   private lastCompletionRecoveryHint: string | null = null;
   /**
-   * The legacy planner-validation result for the current done() decision (null
-   * when no plan applied). Captured so the shadow pipeline / offline replay can
-   * stub the planner stage without a model call (RFC LP-15, Phase 7a).
+   * The planner-validation result for the current done() decision (null
+   * when no plan applied). Captured so the offline replay can stub the
+   * planner stage without a model call (RFC LP-15, Phase 7a).
    */
   private lastDonePlanValidation: PlannerValidationResult | null = null;
 
@@ -767,7 +766,6 @@ export class AgentLoop {
       temperature?: number;
       perceptionMode?: PerceptionRuntimeMode;
       maxImagePromptTokenEstimate?: number;
-      completionDeterministicAcceptanceEnabled?: boolean;
       /** Durable turn checkpoint from a prior SW lifetime — injected by orchestrator on restart. */
       turnCheckpoint?: TurnCheckpoint | null;
       /** Pending user interaction state injected by the orchestrator on resume. */
@@ -823,8 +821,6 @@ export class AgentLoop {
     this.disableInternalPlanning = options?.disableInternalPlanning ?? false;
     this.bypassApprovals = options?.bypassApprovals ?? false;
     this.approvalTimeoutMs = options?.approvalTimeoutMs ?? APPROVAL_TIMEOUT_MS;
-    this.completionDeterministicAcceptanceEnabled =
-      options?.completionDeterministicAcceptanceEnabled ?? true;
     this.middleware = new AgentMiddleware({
       disabledTools: this.disabledTools,
       bypassApprovals: this.bypassApprovals,
@@ -1787,22 +1783,8 @@ export class AgentLoop {
         error: err instanceof Error ? err.message : String(err),
       });
     }
-    await shadowCompareCompletionPipeline(
-      this as unknown as ShadowCompletionHost,
-      input,
-      verdict,
-    );
     return verdict;
   }
-
-  /**
-   * Shadow gate (RFC LP-15, Phase 7a). Runs the pure completion pipeline
-   * alongside the legacy decision and emits `completion_pipeline_divergence`
-   * when the verdicts disagree. The legacy decision is authoritative; this never
-   * affects the returned verdict and never throws into the done path. `input`
-   * carries the pre-inner guard context + the captured planner result, so the
-   * pipeline runs without a second model call.
-   */
 
   /**
    * Snapshot the completion decision input surface as the kernel will see it,
@@ -1847,8 +1829,6 @@ export class AgentLoop {
         completionContext,
         runningSubtaskIndex,
       ),
-      deterministicAcceptanceEnabled:
-        this.completionDeterministicAcceptanceEnabled,
       isDuplicateTerminal: Boolean(this.completedResult),
       // Filled post-inner in recordCompletionDecisionOutcome.
       plannerResult: null,
@@ -2024,17 +2004,8 @@ export class AgentLoop {
           "model_done",
           summary,
         );
-        if (!this.completionDeterministicAcceptanceEnabled) {
-          recordShadowCompletionDecision(
-            this as unknown as ShadowCompletionHost,
-            kernelDecision,
-            summary,
-          );
-        }
         return kernelDecision;
       },
-      deterministicAcceptanceEnabled:
-        this.completionDeterministicAcceptanceEnabled,
       isDuplicateTerminal: false, // handled inline above
       validatePlan: () => this.runDonePlanValidation(toolCallId, summary),
       buildKernelRejectionEffects: (decision) =>
@@ -2267,6 +2238,7 @@ export class AgentLoop {
     toolName: ToolName,
     args: Record<string, unknown>,
     context: string,
+    dryRun?: ForwardedApprovalDryRun,
   ): Promise<boolean> {
     const interaction = getMatchingApprovalInteraction(
       this as unknown as LoopQueriesHost,
@@ -2282,6 +2254,7 @@ export class AgentLoop {
       args,
       context,
       timeoutMs: this.approvalTimeoutMs,
+      ...(dryRun ? { dryRun } : {}),
     };
     const remainingTimeoutMs = Math.max(
       0,
@@ -2488,69 +2461,13 @@ export class AgentLoop {
     args: Record<string, unknown>,
     tabId: number,
   ): Promise<DryRunClassification> {
-    const generated = generateCompletionContract({
-      userRequest: this.originalQuery,
-      snapshot: this.context.getSnapshot(),
-    });
-    const draft =
-      generated?.contract.kind === "form_fill"
-        ? generated.contract.requiredFields
-        : null;
-    if (!draft || draft.length === 0) return { kind: "no_draft" };
-
-    const submitId =
-      typeof (args as { id?: unknown }).id === "number"
-        ? (args as { id: number }).id
-        : undefined;
-    let capture: FormStateCapture | null = null;
-    try {
-      const result = await executeContentTool(
-        ToolName.EXTRACT_FORM_STATE,
-        submitId != null ? { id: submitId } : {},
-        tabId,
-      );
-      capture = JSON.parse(result) as FormStateCapture;
-    } catch (err) {
-      this.log.warn("agent", "form dry-run capture failed", {
-        turn: this.turnCount,
-        error: err instanceof Error ? err.message : String(err),
-      });
-    }
-
-    const classification = classifyFormSubmitDryRun(capture, draft);
-    if (capture) {
-      this.completionEvidence.add(
-        buildFormStateCapturedEvidence(capture, this.turnCount),
-      );
-    }
-    this.traceRecorder?.recordEvent("form_submit_dry_run", {
-      turn: this.turnCount,
-      tool: toolName,
-      kind: classification.kind,
-      formKey: capture?.formKey,
-      diffHash:
-        classification.kind === "no_draft"
-          ? undefined
-          : classification.diff.diffHash,
-    });
-
-    // Seal the dry-run (RFC LP-15 Phase 8: commit → seal): record the form +
-    // approved-diff digest so a replay recognizes this submit was dry-run
-    // verified and does not re-run it blindly.
-    if (capture && classification.kind !== "no_draft") {
-      this.checkpoints.recordMutation({
-        toolName,
-        args,
-        result: `form_dry_run:${classification.kind}`,
-        planIndex: this.lastPlanIndex,
-        turn: this.turnCount,
-        formSubmitSeal: {
-          formKey: capture.formKey,
-          diffHash: classification.diff.diffHash,
-        },
-      });
-    }
-    return classification;
+    // Relocated to form-submit-dry-run.ts (loop ratchet, pi-backend Phase 4).
+    return runFormSubmitDryRun(
+      this as unknown as FormSubmitDryRunHost,
+      toolName,
+      args,
+      tabId,
+    );
   }
 
   private async ensureToolApproval(
@@ -2558,6 +2475,7 @@ export class AgentLoop {
     args: Record<string, unknown>,
     riskLevel: RiskLevel,
     forceApproval = false,
+    dryRun?: ForwardedApprovalDryRun,
   ): Promise<boolean> {
     if (riskLevel !== RiskLevel.HIGH && !forceApproval) return true;
     if (this.bypassApprovals && !forceApproval) {
@@ -2590,7 +2508,7 @@ export class AgentLoop {
       return true;
     }
     const context = formatStepLabel(toolName, args, this.elementResolver);
-    const approved = await this.requestApproval(toolName, args, context);
+    const approved = await this.requestApproval(toolName, args, context, dryRun);
     if (!approved) {
       this.log.warn("policy", "High-risk tool denied or timed out", {
         turn: this.turnCount,
@@ -3508,95 +3426,15 @@ export class AgentLoop {
     this.context.setPageInterpretation(null);
   }
 
-  /** Capture screenshot and store for VL executor injection (no perception VLM call). */
+  /** Capture screenshot and store for VL executor injection (no perception VLM call).
+   *  Body extracted to agent/vl-screenshot.ts (LP-17b CM-5), which also reuses
+   *  the previous screenshot when the page fingerprint is unchanged. */
   private async captureScreenshotForVLExecutor(tabId: number): Promise<void> {
-    const snapshot = this.context.getSnapshot();
-    if (!snapshot) {
-      this.context.setScreenshotForExecutor(null);
-      this.context.setPageInterpretation(null);
-      return;
-    }
-    if (!this.imagePromptBudgetAllows(1)) {
-      this.recordImagePromptBudgetExhausted(1, "vl_executor_screenshot");
-      this.context.setScreenshotForExecutor(null);
-      this.context.setPageInterpretation(null);
-      this.perception.setScreenshotUrl(null);
-      this.traceRecorder?.recordPerception(
-        {
-          interpretation:
-            "[VL mode] Screenshot omitted because the image prompt budget is exhausted.",
-          model: "none (image budget)",
-          durationMs: 0,
-          cached: false,
-          mode: "element_only",
-          source: "fallback",
-          freshnessReason: "dom_fallback",
-          fallbackReason: "image_budget_exhausted",
-          screenshotStatus: "not_requested",
-        },
-        undefined,
-      );
-      return;
-    }
-    try {
-      const tab = await chrome.tabs.get(tabId);
-      if (!tab.active) {
-        try {
-          await chrome.tabs.update(tabId, { active: true });
-        } catch {
-          /* tab may be closed */
-        }
-      }
-      // q90: the LP-9 transform re-encodes at q85 — see refreshPerception.
-      const captured = await this.captureVisibleTabWithRetry(tab.windowId, {
-        format: "jpeg",
-        quality: 90,
-      });
-      // LP-9: own resolution/format/scale before anything downstream sees it.
-      const transformed = await transformScreenshot(captured);
-      const dataUrl = transformed.dataUrl;
-      this.traceRecorder?.recordEvent("screenshot_transform", {
-        scaleFactor: transformed.scaleFactor,
-        width: transformed.width,
-        height: transformed.height,
-        path: "vl_executor",
-      });
-      setCachedScreenshot(tabId, dataUrl, {
-        scaleFactor: transformed.scaleFactor,
-        width: transformed.width,
-        height: transformed.height,
-      });
-      this.context.setScreenshotForExecutor(dataUrl);
-      this.context.setPageInterpretation(null); // VL instructions generated by context
-      this.perception.setScreenshotUrl(dataUrl); // keep for trace recording
-      // Record synthetic perception entry so trace viewer shows the screenshot
-      this.traceRecorder?.recordPerception(
-        {
-          interpretation:
-            "[VL mode] Screenshot sent directly to executor — no separate perception call.",
-          model: "none (unified VL)",
-          durationMs: 0,
-          cached: false,
-          mode: "vl_screenshot_only",
-          source: "fresh",
-          freshnessReason: "vl_screenshot",
-          screenshotStatus: "captured",
-        },
-        dataUrl,
-      );
-    } catch (e: any) {
-      // Capture failed — fall back to 2-call pipeline for this turn
-      this.log.warn(
-        "agent",
-        "VL screenshot capture failed, falling back to perception",
-        {
-          error: e?.message,
-          tabId,
-        },
-      );
-      this.context.setScreenshotForExecutor(null);
-      this.context.setPageInterpretation(null);
-    }
+    return captureVLExecutorScreenshot(
+      this as unknown as VLScreenshotHost,
+      tabId,
+      this.vlScreenshotState,
+    );
   }
 
   /**
@@ -4772,156 +4610,22 @@ export class AgentLoop {
     return { finalSummary, newIndex, completionCandidate };
   }
 
+  // --- ServiceNow record-form controller (quarantined adapter) ---
+  // Thin delegates into ./servicenow/record-form-controller.ts; the loop
+  // passes itself as the dispatch host (every host member is a real loop
+  // field/method).
+
   private hasTrustedServiceNowSubmitIntent(text?: string): boolean {
-    const intentText =
-      text ??
-      `${this.originalQuery}\n${this.planSteps
-        .map((step) => `${step.objective}\n${step.successCriteria ?? ""}`)
-        .join("\n")}`;
-    if (
-      /\b(?:do not submit|not submit|ready to submit|submit action has not been clicked|has not been submitted)\b/i.test(
-        intentText,
-      )
-    ) {
-      return false;
-    }
-    if (
-      /\b(?:submit the form|form submission completes|submitted record|created record|created\/updated record|confirmation|resulting item page)\b/i.test(
-        intentText,
-      )
-    ) {
-      return true;
-    }
-    return /\bcreate\s+(?:a\s+|an\s+|the\s+)?(?:new\s+)?(?:incident|change request|problem|record|user|hardware asset|asset)\b/i.test(
-      intentText,
-    );
-  }
-
-  private hasTaskLevelServiceNowSubmitIntent(): boolean {
-    const text = `${this.originalQuery}\n${this.planSteps
-      .map((step) => `${step.objective}\n${step.successCriteria ?? ""}`)
-      .join("\n")}`;
-    if (
-      /\b(?:submit the form|form submission completes|submitted record|created record|created\/updated record|confirmation|resulting item page)\b/i.test(
-        text,
-      )
-    ) {
-      return true;
-    }
-    if (
-      /\b(?:do not submit|not submit|ready to submit|submit action has not been clicked|has not been submitted)\b/i.test(
-        text,
-      )
-    ) {
-      return false;
-    }
-    return /\bcreate\s+(?:a\s+|an\s+|the\s+)?(?:new\s+)?(?:incident|change request|problem|record|user|hardware asset|asset)\b/i.test(
+    return hasTrustedServiceNowSubmitIntent(
+      this as unknown as ServiceNowRecordFormHost,
       text,
-    );
-  }
-
-  private currentServiceNowPlanStepForbidsSubmit(): boolean {
-    const plan = this.context.getPlanStatusRaw();
-    if (
-      !plan ||
-      plan.currentIndex < 0 ||
-      plan.currentIndex >= plan.subtasks.length
-    ) {
-      return false;
-    }
-    const currentSubtask = plan.subtasks[plan.currentIndex];
-    const currentStep = this.planSteps[plan.currentIndex];
-    const localText = [
-      currentSubtask?.description,
-      currentStep?.objective,
-      currentStep?.successCriteria,
-    ]
-      .filter((part): part is string => typeof part === "string")
-      .join("\n");
-    return /\b(?:do not submit|not submit|submit action has not been clicked|has not been submitted)\b/i.test(
-      localText,
     );
   }
 
   private isTaskLevelServiceNowRecordWorkflow(): boolean {
-    const text = this.getServiceNowRecordWorkflowText();
-    if (
-      this.selectedSkillId === "servicenow-record-form" &&
-      /\bObjective:\s*Complete the workflow for the original request\b/i.test(
-        text,
-      )
-    ) {
-      return true;
-    }
-    if (extractFieldValuePairs(text).length === 0) return false;
-    const hasRecordIntent =
-      /\b(?:create|new|submit|submitted|created record|confirmation)\b/i.test(
-        text,
-      );
-    const hasRecordLanguage =
-      /\b(?:ServiceNow|incident|change request|problem|record|user|hardware asset|asset)\b/i.test(
-        text,
-      );
-    if (!hasRecordIntent || !hasRecordLanguage) return false;
-    if (this.selectedSkillId === "servicenow-record-form") return true;
-
-    const snapshot = this.context.getSnapshot();
-    const groundedInServiceNow =
-      /service-now\.com|servicenow\.com/i.test(
-        `${this.context.getCurrentUrl() ?? ""}\n${snapshot?.url ?? ""}`,
-      ) ||
-      /\b(?:Create|New record)\b[\s\S]{0,80}\b(?:Incident|Problem|Change Request|User|Hardware Asset)\b/i.test(
-        `${snapshot?.title ?? ""}\n${snapshot?.pageContent ?? ""}`,
-      );
-    if (!groundedInServiceNow) return false;
-
-    return !/\b(?:service catalog|catalog item|request item|cart|checkout|list filter|sort list|dashboard|chart)\b/i.test(
-      text,
+    return isTaskLevelServiceNowRecordWorkflow(
+      this as unknown as ServiceNowRecordFormHost,
     );
-  }
-
-  private isLikelyServiceNowRecordFieldWorkflow(): boolean {
-    const text = this.getServiceNowRecordWorkflowText();
-    if (extractFieldValuePairs(text).length === 0) return false;
-    if (
-      this.selectedSkillId === "servicenow-record-form" &&
-      this.isTaskLevelServiceNowRecordWorkflow()
-    ) {
-      return true;
-    }
-
-    const snapshot = this.context.getSnapshot();
-    const url = `${this.context.getCurrentUrl() ?? ""}\n${snapshot?.url ?? ""}`;
-    const pageText = [
-      snapshot?.title,
-      snapshot?.visibleContent,
-      snapshot?.pageContent,
-    ]
-      .filter((part): part is string => typeof part === "string")
-      .join("\n");
-    const hasRecordIntent =
-      /\b(?:create|new|submit|submitted|created record|confirmation)\b/i.test(
-        text,
-      );
-    const hasServiceNowGrounding =
-      /\bServiceNow\b/i.test(text) ||
-      /service-now\.com|servicenow\.com/i.test(url) ||
-      /\b(?:User|Incident|Problem|Change Request)\b/i.test(pageText);
-
-    return hasRecordIntent && hasServiceNowGrounding;
-  }
-
-  private getServiceNowRecordWorkflowText(): string {
-    return [
-      this.originalQuery,
-      ...this.planSteps.flatMap((step) => [
-        step.objective,
-        step.successCriteria ?? "",
-      ]),
-      ...this.planSubtasks.map((subtask) => subtask.description),
-    ]
-      .filter((part): part is string => typeof part === "string")
-      .join("\n");
   }
 
   private async maybeRunAtomicSkillController(
@@ -4983,7 +4687,10 @@ export class AgentLoop {
 
     this.statusHandler(AgentStatus.ACTING, `Running ${contract.name}...`);
     this.turnCount++;
-    this.startServiceNowRecordControllerTraceTurn(fields.length);
+    startServiceNowRecordControllerTraceTurn(
+      this as unknown as ServiceNowRecordFormHost,
+      fields.length,
+    );
     const executeAtomicToolCall = async (idPrefix: string): Promise<string> => {
       const toolCall: ToolCall = {
         id: `${idPrefix}_${crypto.randomUUID()}`,
@@ -5023,7 +4730,7 @@ export class AgentLoop {
     if (
       preferredTool === ToolName.OPEN_SERVICENOW_MODULE &&
       this.getMissingRequiredEvidenceTypes().length > 0 &&
-      this.isRetryableServiceNowModuleControllerMiss(result)
+      isRetryableServiceNowModuleControllerMiss(result)
     ) {
       this.traceRecorder?.recordEvent("atomic_skill_controller_retry", {
         turn: this.turnCount,
@@ -5111,642 +4818,33 @@ export class AgentLoop {
     };
   }
 
-  private isRetryableServiceNowModuleControllerMiss(result: string): boolean {
-    return (
-      /^Error:/i.test(result) &&
-      /\b(?:lookup_timeout|metadata_unavailable|navigator_candidate_not_found|snapshot_[a-z_]*not_found|bridge|content script|timeout)\b/i.test(
-        result,
-      )
-    );
-  }
-
-  private async executeServiceNowRecordControllerTool(params: {
-    tabId: number;
-    args: Record<string, unknown>;
-    label: string;
-    eventName: string;
-  }): Promise<{ toolCall: ToolCall; result: string; ok: boolean }> {
-    const traceArgs = JSON.parse(JSON.stringify(params.args)) as Record<
-      string,
-      unknown
-    >;
-    const toolCall: ToolCall = {
-      id: `controller_${crypto.randomUUID()}`,
-      type: "function",
-      function: {
-        name: ToolName.CONFIGURE_SERVICENOW_FORM,
-        arguments: JSON.stringify(traceArgs),
-      },
-    } as ToolCall;
-    const toolStep: AgentStep = {
-      id: crypto.randomUUID(),
-      type: "tool",
-      label: params.label,
-      detail: JSON.stringify(traceArgs),
-      toolName: ToolName.CONFIGURE_SERVICENOW_FORM,
-      status: "running",
-      timestamp: Date.now(),
-    };
-
-    this.stepHandler(toolStep, false);
-    this.traceRecorder?.recordEvent(params.eventName, {
-      turn: this.turnCount,
-      trustedTool: ToolName.CONFIGURE_SERVICENOW_FORM,
-      fieldCount: Array.isArray(traceArgs.fields) ? traceArgs.fields.length : 0,
-      submit: traceArgs.submit === true,
-    });
-
-    const startedAt = Date.now();
-    let result = "";
-    let ok = false;
-    try {
-      result = await this.executeToolCall(toolCall, params.tabId);
-      ok = !result.startsWith("Error:");
-    } catch (error) {
-      result = `Error: ${error instanceof Error ? error.message : String(error)}`;
-      ok = false;
-    }
-    const durationMs = Date.now() - startedAt;
-
-    this.stepHandler(
-      {
-        ...toolStep,
-        status: ok ? "done" : "error",
-        durationMs,
-        ...(ok ? {} : { errorMessage: result }),
-      },
-      true,
-    );
-    this.traceRecorder?.recordToolExecution(
-      toolCall.id,
-      ToolName.CONFIGURE_SERVICENOW_FORM,
-      traceArgs,
-      result,
-      ok,
-      durationMs,
-      RiskLevel.MEDIUM,
-      ok ? undefined : result,
-    );
-    this.context.addMessage({
-      role: "tool",
-      content: result,
-      tool_call_id: toolCall.id,
-    });
-
-    return { toolCall, result, ok };
-  }
-
-  private isServiceNowRecordFormLoadMiss(result: string): boolean {
-    return /could not find a servicenow record form|no servicenow record form|record form .*not.*found/i.test(
-      result,
-    );
-  }
-
   private assessServiceNowMissingFieldInfeasibility(
     toolOutcomes: TurnToolOutcomeRecord[],
     searchEvidence: Map<string, ServiceNowMissingFieldSearchEvidence>,
   ): string | null {
-    if (!this.isLikelyServiceNowRecordFieldWorkflow()) return null;
-    if (!this.hasTaskLevelServiceNowSubmitIntent()) return null;
-
-    const fields = extractFieldValuePairs(
-      this.getServiceNowRecordWorkflowText(),
+    return assessServiceNowMissingFieldInfeasibility(
+      this as unknown as ServiceNowRecordFormHost,
+      toolOutcomes,
+      searchEvidence,
     );
-    if (fields.length === 0) return null;
-
-    for (const field of fields) {
-      const label = field.field.replace(/\s+/g, " ").trim();
-      if (!label) continue;
-      const evidence =
-        searchEvidence.get(label) ??
-        ({
-          findMisses: 0,
-          hiddenFullLabelMiss: false,
-          hiddenMissTokens: new Set<string>(),
-          configureFieldMissing: false,
-        } satisfies ServiceNowMissingFieldSearchEvidence);
-      const tokens = serviceNowFieldSearchTokens(label);
-
-      for (const outcome of toolOutcomes) {
-        if (outcome.toolName === ToolName.CONFIGURE_SERVICENOW_FORM) {
-          if (
-            extractServiceNowFormMissingFieldLabels(outcome.resultContent)
-              .map((missing) => missing.toLowerCase())
-              .includes(label.toLowerCase())
-          ) {
-            evidence.configureFieldMissing = true;
-          }
-          continue;
-        }
-
-        if (outcome.toolName === ToolName.FIND_ELEMENT) {
-          const text =
-            typeof outcome.args.text === "string" ? outcome.args.text : "";
-          if (
-            text.trim().toLowerCase() === label.toLowerCase() &&
-            isNegativeFindElementResult(outcome.resultContent)
-          ) {
-            evidence.findMisses += 1;
-          }
-          continue;
-        }
-
-        if (outcome.toolName === ToolName.INSPECT_HIDDEN) {
-          const pattern =
-            typeof outcome.args.pattern === "string"
-              ? outcome.args.pattern.trim().toLowerCase()
-              : "";
-          if (
-            pattern === label.toLowerCase() &&
-            isNegativeInspectHiddenResult(outcome.resultContent)
-          ) {
-            evidence.hiddenFullLabelMiss = true;
-            continue;
-          }
-          if (
-            pattern &&
-            tokens.includes(pattern) &&
-            isNegativeInspectHiddenResult(outcome.resultContent)
-          ) {
-            evidence.hiddenMissTokens.add(pattern);
-          }
-        }
-      }
-
-      searchEvidence.set(label, evidence);
-      const hiddenSearchCovered =
-        tokens.length > 0 &&
-        tokens.every((token) => evidence.hiddenMissTokens.has(token));
-      if (
-        evidence.configureFieldMissing ||
-        (evidence.hiddenFullLabelMiss && evidence.hiddenMissTokens.size > 0) ||
-        (evidence.hiddenFullLabelMiss && hiddenSearchCovered) ||
-        (evidence.findMisses > 0 &&
-          (hiddenSearchCovered ||
-            evidence.hiddenFullLabelMiss ||
-            evidence.hiddenMissTokens.size > 0)) ||
-        evidence.findMisses >= 2
-      ) {
-        return buildServiceNowMissingFieldInfeasibleSummary([label]);
-      }
-    }
-
-    return null;
   }
 
   private getServiceNowMissingFieldAdmissionSummary(
     text: string | null,
   ): string | null {
-    if (!text) return null;
-    if (!this.isLikelyServiceNowRecordFieldWorkflow()) return null;
-    if (!this.hasTaskLevelServiceNowSubmitIntent()) return null;
-
-    const lower = text.toLowerCase();
-    const hasStrongMissingFieldAdmission =
-      /\bfield (?:doesn't|does not|didn't|did not) exist\b/.test(lower) ||
-      /\b(?:couldn't|could not|cannot|can't) find\b[\s\S]{0,120}\bfield\b/.test(
-        lower,
-      ) ||
-      /\bfield\b[\s\S]{0,80}\bnot found\b[\s\S]{0,80}\bform\b/.test(lower) ||
-      /\bhelper\b[\s\S]{0,120}\b(?:couldn't|could not|cannot|can't) find\b/.test(
-        lower,
-      );
-    if (!hasStrongMissingFieldAdmission) return null;
-
-    const fields = extractFieldValuePairs(
-      this.getServiceNowRecordWorkflowText(),
+    return getServiceNowMissingFieldAdmissionSummary(
+      this as unknown as ServiceNowRecordFormHost,
+      text,
     );
-    const missing = fields.find((field) =>
-      lower.includes(field.field.toLowerCase()),
-    );
-    return missing
-      ? buildServiceNowMissingFieldInfeasibleSummary([missing.field])
-      : null;
-  }
-
-  private startServiceNowRecordControllerTraceTurn(fieldCount: number): void {
-    if (!this.traceRecorder) return;
-
-    const messages = this.context.getPrompt();
-    const metrics = this.context.getPromptMetricsFrom(messages);
-    const snap = this.context.getSnapshot();
-    const systemContent =
-      messages.length > 0 && messages[0].role === "system"
-        ? typeof messages[0].content === "string"
-          ? messages[0].content
-          : ""
-        : "";
-    const cachedPrefixLength = systemContent.indexOf("## Page Context");
-    const droppedMessageCount = Math.max(
-      0,
-      this.context.getHistoryLength() - (messages.length - 1),
-    );
-
-    this.traceRecorder.startTurn(
-      this.turnCount,
-      {
-        url: snap?.url || "",
-        title: snap?.title || "",
-        elementCount: metrics.elementCount,
-        visibleContentLength: snap?.visibleContent?.length || 0,
-        pageContentLength: snap?.pageContent?.length || 0,
-        scrollY: snap?.scroll?.y || 0,
-      },
-      snap?.elements || [],
-      metrics.systemTokens + metrics.historyTokens,
-      1,
-      this.llm.getCurrentModel(),
-      metrics.compressionLevel,
-      TraceRecorder.toTraceMessages(messages),
-      {
-        systemTokens: metrics.systemTokens,
-        historyTokens: metrics.historyTokens,
-        totalTokens: metrics.totalTokens,
-        maxTokens: metrics.maxTokens,
-        utilization: metrics.utilization,
-        droppedMessageCount,
-        compressionLevel: metrics.compressionLevel,
-        cachedPrefixLength: cachedPrefixLength >= 0 ? cachedPrefixLength : 0,
-      },
-      this.llm.isPlannerTier() ? "planner" : "executor",
-    );
-    this.traceRecorder.recordEvent("servicenow_record_controller_started", {
-      turn: this.turnCount,
-      fieldCount,
-      trustedTool: ToolName.CONFIGURE_SERVICENOW_FORM,
-    });
   }
 
   private async maybeRunServiceNowRecordFormController(
     tabId: number,
   ): Promise<LoopResult | null> {
-    if (!this.isTaskLevelServiceNowRecordWorkflow()) return null;
-    if (!this.hasTaskLevelServiceNowSubmitIntent()) return null;
-    if (this.currentServiceNowPlanStepForbidsSubmit()) return null;
-
-    const workflowText = this.getServiceNowRecordWorkflowText();
-    const fields = extractFieldValuePairs(workflowText);
-    if (fields.length === 0) return null;
-    const moduleRequest = extractServiceNowModuleRequest(workflowText);
-
-    this.statusHandler(AgentStatus.ACTING, "Configuring ServiceNow form...");
-    this.log.info("agent", "ServiceNow record form controller started", {
-      turn: this.turnCount,
-      fieldCount: fields.length,
-    });
-
-    this.turnCount++;
-    this.startServiceNowRecordControllerTraceTurn(fields.length);
-    try {
-      const fillArgs = { fields, submit: false };
-      let fill = await this.executeServiceNowRecordControllerTool({
-        tabId,
-        args: fillArgs,
-        label: "Configure ServiceNow form",
-        eventName: "servicenow_record_controller_fill_started",
-      });
-      let fillSignal = detectTrustedFormFillStepCompletion({
-        toolName: ToolName.CONFIGURE_SERVICENOW_FORM,
-        toolArgs: fillArgs,
-        toolResult: fill.result,
-      });
-      if (
-        (!fill.ok || !fillSignal) &&
-        this.isServiceNowRecordFormLoadMiss(fill.result) &&
-        moduleRequest
-      ) {
-        const navigationArgs = {
-          application: moduleRequest.application,
-          path: moduleRequest.path,
-        };
-        const navigationToolCall: ToolCall = {
-          id: `controller_${crypto.randomUUID()}`,
-          type: "function",
-          function: {
-            name: ToolName.OPEN_SERVICENOW_MODULE,
-            arguments: JSON.stringify(navigationArgs),
-          },
-        } as ToolCall;
-        this.traceRecorder?.recordEvent(
-          "servicenow_record_controller_navigation_started",
-          {
-            turn: this.turnCount,
-            application: moduleRequest.application,
-            path: moduleRequest.path,
-          },
-        );
-        const navigationStartedAt = Date.now();
-        const navigationResult = await this.executeToolCall(
-          navigationToolCall,
-          tabId,
-        );
-        const navigationOk = !navigationResult.startsWith("Error:");
-        this.traceRecorder?.recordToolExecution(
-          navigationToolCall.id,
-          ToolName.OPEN_SERVICENOW_MODULE,
-          navigationArgs,
-          navigationResult,
-          navigationOk,
-          Date.now() - navigationStartedAt,
-          RiskLevel.MEDIUM,
-          navigationOk ? undefined : navigationResult,
-        );
-        this.context.addMessage({
-          role: "tool",
-          content: navigationResult,
-          tool_call_id: navigationToolCall.id,
-        });
-        if (navigationOk) {
-          await waitForDomReady(tabId, {
-            timeoutMs: 1_500,
-            waitForElements: true,
-          });
-          fill = await this.executeServiceNowRecordControllerTool({
-            tabId,
-            args: fillArgs,
-            label: "Configure ServiceNow form after module navigation",
-            eventName:
-              "servicenow_record_controller_fill_after_navigation_started",
-          });
-          fillSignal = detectTrustedFormFillStepCompletion({
-            toolName: ToolName.CONFIGURE_SERVICENOW_FORM,
-            toolArgs: fillArgs,
-            toolResult: fill.result,
-          });
-          if (
-            (!fill.ok || !fillSignal) &&
-            this.isServiceNowRecordFormLoadMiss(fill.result)
-          ) {
-            const createRecordUrl =
-              await resolveServiceNowCreateRecordUrlFromCurrentList(tabId);
-            if (createRecordUrl) {
-              const navigateArgs = { url: createRecordUrl };
-              const navigateToolCall: ToolCall = {
-                id: `controller_${crypto.randomUUID()}`,
-                type: "function",
-                function: {
-                  name: ToolName.NAVIGATE,
-                  arguments: JSON.stringify(navigateArgs),
-                },
-              } as ToolCall;
-              this.traceRecorder?.recordEvent(
-                "servicenow_record_controller_create_navigation_started",
-                {
-                  turn: this.turnCount,
-                  url: createRecordUrl,
-                },
-              );
-              const createNavigationStartedAt = Date.now();
-              const createNavigationResult = await this.executeToolCall(
-                navigateToolCall,
-                tabId,
-              );
-              const createNavigationOk =
-                !createNavigationResult.startsWith("Error:");
-              this.traceRecorder?.recordToolExecution(
-                navigateToolCall.id,
-                ToolName.NAVIGATE,
-                navigateArgs,
-                createNavigationResult,
-                createNavigationOk,
-                Date.now() - createNavigationStartedAt,
-                RiskLevel.MEDIUM,
-                createNavigationOk ? undefined : createNavigationResult,
-              );
-              this.context.addMessage({
-                role: "tool",
-                content: createNavigationResult,
-                tool_call_id: navigateToolCall.id,
-              });
-              if (createNavigationOk) {
-                await waitForDomReady(tabId, {
-                  timeoutMs: 2_000,
-                  waitForElements: true,
-                });
-                fill = await this.executeServiceNowRecordControllerTool({
-                  tabId,
-                  args: fillArgs,
-                  label:
-                    "Configure ServiceNow form after opening create record",
-                  eventName:
-                    "servicenow_record_controller_fill_after_create_navigation_started",
-                });
-                fillSignal = detectTrustedFormFillStepCompletion({
-                  toolName: ToolName.CONFIGURE_SERVICENOW_FORM,
-                  toolArgs: fillArgs,
-                  toolResult: fill.result,
-                });
-              }
-            }
-          }
-        }
-      }
-      const maxFormLoadRetries = 5;
-      for (
-        let attempt = 1;
-        (!fill.ok || !fillSignal) &&
-        this.isServiceNowRecordFormLoadMiss(fill.result) &&
-        attempt <= maxFormLoadRetries;
-        attempt++
-      ) {
-        this.traceRecorder?.recordEvent(
-          "servicenow_record_controller_fill_retry_queued",
-          {
-            turn: this.turnCount,
-            attempt,
-            reason: "form_not_ready",
-          },
-        );
-        await waitForDomReady(tabId, {
-          timeoutMs: 750 + attempt * 500,
-          waitForElements: true,
-        });
-        fill = await this.executeServiceNowRecordControllerTool({
-          tabId,
-          args: fillArgs,
-          label: `Configure ServiceNow form (retry ${attempt})`,
-          eventName: "servicenow_record_controller_fill_retry_started",
-        });
-        fillSignal = detectTrustedFormFillStepCompletion({
-          toolName: ToolName.CONFIGURE_SERVICENOW_FORM,
-          toolArgs: fillArgs,
-          toolResult: fill.result,
-        });
-      }
-      if (!fill.ok || !fillSignal) {
-        const missingFieldLabels = extractServiceNowFormMissingFieldLabels(
-          fill.result,
-        );
-        if (missingFieldLabels.length > 0) {
-          const summary =
-            buildServiceNowMissingFieldInfeasibleSummary(missingFieldLabels);
-          this.traceRecorder?.recordEvent(
-            "servicenow_record_controller_infeasible",
-            {
-              turn: this.turnCount,
-              phase: "fill",
-              missingFieldLabels,
-            },
-          );
-          this.completeTaskResult(summary);
-          return {
-            outcome: "completed",
-            turnCount: this.turnCount,
-            summary,
-            failure: { category: "none", code: "none" },
-            metrics: this.getMetrics(),
-          };
-        }
-        this.traceRecorder?.recordEvent(
-          "servicenow_record_controller_deferred",
-          {
-            turn: this.turnCount,
-            phase: "fill",
-            reason: fill.ok ? "untrusted_fill_result" : "tool_error",
-          },
-        );
-        this.context.addMessage({
-          role: "user",
-          content:
-            "The ServiceNow record form controller could not verify every requested field. Continue manually, using configure_servicenow_form again after correcting missing or mismatched fields.",
-        });
-        return null;
-      }
-
-      this.maybeAdvanceTrustedFormFillStep({
-        toolName: ToolName.CONFIGURE_SERVICENOW_FORM,
-        toolArgs: fillArgs,
-        toolResult: fill.result,
-        mode: "sequential",
-      });
-
-      const submitArgs = { submit: true, submitButton: "Submit" };
-      const submit = await this.executeServiceNowRecordControllerTool({
-        tabId,
-        args: submitArgs,
-        label: "Submit ServiceNow form",
-        eventName: "servicenow_record_controller_submit_started",
-      });
-      let completion = this.maybeCompleteTrustedFormSubmitStep({
-        toolName: ToolName.CONFIGURE_SERVICENOW_FORM,
-        toolArgs: submitArgs,
-        toolResult: submit.result,
-        mode: "sequential",
-      });
-
-      const submitRejected = isServiceNowSubmitRejected(submit.result);
-      const submitStayedOnCreateForm = isServiceNowSubmitStayedOnCreateForm(
-        submit.result,
-      );
-      // A hard validation rejection won't resolve by resubmitting identical
-      // values; the controller still tries its single refill+retry, but on a
-      // persistent rejection it surfaces a diagnostic instead of inviting the
-      // agent to resubmit on a loop (see buildServiceNowSubmitDeferralMessage).
-      const submitHardRejected = isServiceNowSubmitHardRejected(submit.result);
-      if (
-        submit.ok &&
-        !completion &&
-        (!submitRejected || submitStayedOnCreateForm)
-      ) {
-        this.traceRecorder?.recordEvent(
-          "servicenow_record_controller_submit_retry_queued",
-          {
-            turn: this.turnCount,
-            reason: submitStayedOnCreateForm
-              ? "same_create_form_after_submit"
-              : "untrusted_submit_result",
-          },
-        );
-        await waitForDomReady(tabId, { timeoutMs: 500, waitForElements: true });
-
-        const refill = await this.executeServiceNowRecordControllerTool({
-          tabId,
-          args: fillArgs,
-          label: "Recheck ServiceNow form",
-          eventName: "servicenow_record_controller_refill_started",
-        });
-        const refillSignal = detectTrustedFormFillStepCompletion({
-          toolName: ToolName.CONFIGURE_SERVICENOW_FORM,
-          toolArgs: fillArgs,
-          toolResult: refill.result,
-        });
-        if (refill.ok && refillSignal) {
-          this.traceRecorder?.recordEvent(
-            "servicenow_record_controller_submit_retry_ready",
-            {
-              turn: this.turnCount,
-              fieldCount: fields.length,
-            },
-          );
-          const retrySubmit = await this.executeServiceNowRecordControllerTool({
-            tabId,
-            args: submitArgs,
-            label: "Retry ServiceNow submit",
-            eventName: "servicenow_record_controller_submit_retry_started",
-          });
-          completion = this.maybeCompleteTrustedFormSubmitStep({
-            toolName: ToolName.CONFIGURE_SERVICENOW_FORM,
-            toolArgs: submitArgs,
-            toolResult: retrySubmit.result,
-            mode: "sequential",
-          });
-        } else {
-          this.traceRecorder?.recordEvent(
-            "servicenow_record_controller_submit_retry_abandoned",
-            {
-              turn: this.turnCount,
-              reason: refill.ok
-                ? "untrusted_refill_result"
-                : "refill_tool_error",
-            },
-          );
-        }
-      } else if (submit.ok && !completion && submitRejected) {
-        const reason = submitHardRejected ? "submit_hard_validation_rejection" : "submit_rejected_by_servicenow"; // prettier-ignore
-        this.traceRecorder?.recordEvent(
-          "servicenow_record_controller_submit_retry_abandoned",
-          { turn: this.turnCount, reason },
-        );
-      }
-      if (!submit.ok || !completion) {
-        const reason = !submit.ok ? "tool_error" : submitHardRejected ? "submit_hard_validation_rejection" : "untrusted_submit_result"; // prettier-ignore
-        this.traceRecorder?.recordEvent(
-          "servicenow_record_controller_deferred",
-          { turn: this.turnCount, phase: "submit", reason },
-        );
-        this.context.addMessage({
-          role: "user",
-          content: buildServiceNowSubmitDeferralMessage(
-            submit.result,
-            submitHardRejected,
-          ),
-        });
-        return null;
-      }
-
-      const summary = completion.finalSummary;
-      this.completeTaskResult(summary, {
-        completionCandidate: completion.completionCandidate,
-      });
-      this.traceRecorder?.recordEvent(
-        "servicenow_record_controller_completed",
-        {
-          turn: this.turnCount,
-          summary,
-        },
-      );
-
-      return {
-        outcome: "completed",
-        turnCount: this.turnCount,
-        summary,
-        failure: { category: "none", code: "none" },
-        metrics: this.getMetrics(),
-        completionEnvelope: this.completedResult?.completionEnvelope,
-      };
-    } finally {
-      await this.traceRecorder?.endTurn();
-    }
+    return maybeRunServiceNowRecordFormController(
+      this as unknown as ServiceNowRecordFormHost,
+      tabId,
+    );
   }
 
   private shouldAutoSubmitTrustedServiceNowForm(params: {
@@ -5754,92 +4852,10 @@ export class AgentLoop {
     toolArgs?: Record<string, unknown>;
     toolResult: string;
   }): boolean {
-    if (this.selectedSkillId !== "servicenow-record-form") return false;
-    if (!this.isTaskLevelServiceNowRecordWorkflow()) return false;
-    if (!this.hasTaskLevelServiceNowSubmitIntent()) return false;
-    if (this.currentServiceNowPlanStepForbidsSubmit()) return false;
-    const signal = detectTrustedFormFillStepCompletion({
-      toolName: params.toolName,
-      toolArgs: params.toolArgs,
-      toolResult: params.toolResult,
-    });
-    if (!signal) return false;
-    const missingFields =
-      this.getMissingTrustedServiceNowAutoSubmitFields(params);
-    if (missingFields.length > 0) {
-      this.traceRecorder?.recordEvent("trusted_form_auto_submit_blocked", {
-        turn: this.turnCount,
-        reason: "missing_requested_fields",
-        missingFields,
-        trustedTool: ToolName.CONFIGURE_SERVICENOW_FORM,
-      });
-      return false;
-    }
-    return true;
-  }
-
-  private getMissingTrustedServiceNowAutoSubmitFields(params: {
-    toolArgs?: Record<string, unknown>;
-    toolResult: string;
-  }): string[] {
-    const expectedFields = extractFieldValuePairs(
-      this.getServiceNowRecordWorkflowText(),
+    return shouldAutoSubmitTrustedServiceNowForm(
+      this as unknown as ServiceNowRecordFormHost,
+      params,
     );
-    if (expectedFields.length === 0) return [];
-
-    const normalizeField = (value: string) =>
-      value
-        .toLowerCase()
-        .replace(/[^a-z0-9 _-]+/g, "")
-        .replace(/\s+/g, " ")
-        .trim();
-    const normalizeValue = (value: string) => {
-      let normalized = value.trim();
-      if (/^\((empty|none|null)\)$/i.test(normalized)) return "";
-      normalized = normalized
-        .replace(/^"([\s\S]*)"$/, "$1")
-        .replace(/^'([\s\S]*)'$/, "$1")
-        .replace(/\s+/g, " ")
-        .trim()
-        .toLowerCase();
-      return normalized;
-    };
-    const configuredRows = [
-      ...params.toolResult.matchAll(
-        /(?:^|\n)- (.+?)\s+\(([^)]+)\) =\s*([\s\S]*?)(?=\n- .+?\s+\([^)]+\) =|\nServiceNow form fields discovered|\nCurrent URL|\nCurrent title|\nMismatches:|$)/g,
-      ),
-    ].map((match) => ({
-      field: match[1] ?? "",
-      systemName: match[2] ?? "",
-      value: match[3] ?? "",
-    }));
-
-    return expectedFields
-      .filter((expected) => {
-        const expectedField = normalizeField(expected.field);
-        if (!expectedField) return true;
-        const row = configuredRows.find(
-          (entry) =>
-            normalizeField(entry.field) === expectedField ||
-            normalizeField(entry.systemName) === expectedField,
-        );
-        if (!row) return true;
-        const expectedValue = normalizeValue(expected.value);
-        if (!expectedValue) {
-          return normalizeValue(row.value) !== "";
-        }
-        const actualValue = normalizeValue(row.value);
-        if (actualValue === expectedValue) return false;
-        if (
-          actualValue.length >= 3 &&
-          (expectedValue.includes(actualValue) ||
-            actualValue.includes(expectedValue))
-        ) {
-          return false;
-        }
-        return true;
-      })
-      .map((field) => field.field);
   }
 
   private async maybeAutoSubmitTrustedServiceNowForm(params: {
@@ -5853,69 +4869,10 @@ export class AgentLoop {
     newIndex: number;
     completionCandidate: TrustedCompletionCandidate;
   } | null> {
-    if (!this.shouldAutoSubmitTrustedServiceNowForm(params)) return null;
-
-    const submitArgs = { submit: true, submitButton: "Submit" };
-    const submitToolCall: ToolCall = {
-      id: `auto_${crypto.randomUUID()}`,
-      type: "function",
-      function: {
-        name: ToolName.CONFIGURE_SERVICENOW_FORM,
-        arguments: JSON.stringify(submitArgs),
-      },
-    } as ToolCall;
-    const toolStep: AgentStep = {
-      id: crypto.randomUUID(),
-      type: "tool",
-      label: "Submit ServiceNow form",
-      detail: JSON.stringify(submitArgs),
-      toolName: ToolName.CONFIGURE_SERVICENOW_FORM,
-      status: "running",
-      timestamp: Date.now(),
-    };
-    this.stepHandler(toolStep, false);
-    this.log.info("agent", "Auto-submitting trusted ServiceNow form", {
-      turn: this.turnCount,
-      mode: params.mode,
-    });
-    this.traceRecorder?.recordEvent("trusted_form_auto_submit_started", {
-      turn: this.turnCount,
-      mode: params.mode,
-      trustedTool: ToolName.CONFIGURE_SERVICENOW_FORM,
-    });
-
-    const startedAt = Date.now();
-    const result = await this.executeToolCall(submitToolCall, params.tabId);
-    const durationMs = Date.now() - startedAt;
-    this.stepHandler(
-      {
-        ...toolStep,
-        status: "done",
-        durationMs,
-      },
-      true,
+    return maybeAutoSubmitTrustedServiceNowForm(
+      this as unknown as ServiceNowRecordFormHost,
+      params,
     );
-    this.traceRecorder?.recordToolExecution(
-      submitToolCall.id,
-      ToolName.CONFIGURE_SERVICENOW_FORM,
-      submitArgs,
-      result,
-      true,
-      durationMs,
-      RiskLevel.MEDIUM,
-    );
-    this.context.addMessage({
-      role: "tool",
-      content: result,
-      tool_call_id: submitToolCall.id,
-    });
-
-    return this.maybeCompleteTrustedFormSubmitStep({
-      toolName: ToolName.CONFIGURE_SERVICENOW_FORM,
-      toolArgs: submitArgs,
-      toolResult: result,
-      mode: params.mode,
-    });
   }
 
   private maybeCompleteTrustedFormSubmitStep(params: {
@@ -5951,7 +4908,9 @@ export class AgentLoop {
     ) {
       if (
         this.selectedSkillId !== "servicenow-record-form" ||
-        !this.hasTaskLevelServiceNowSubmitIntent()
+        !hasTaskLevelServiceNowSubmitIntent(
+          this as unknown as ServiceNowRecordFormHost,
+        )
       ) {
         return null;
       }
@@ -6021,154 +4980,13 @@ export class AgentLoop {
     return { finalSummary: signal.reason, newIndex, completionCandidate };
   }
 
+  // --- ServiceNow catalog-order controller (quarantined adapter) ---
+  // Thin delegates into ./servicenow/catalog-controller.ts; the loop passes
+  // itself as the dispatch host (every host member is a real loop field).
+
   private maybeCompleteCatalogOrderFromSnapshot(): LoopResult | null {
-    if (this.selectedSkillId !== "catalog-order-workflow") return null;
-    const snapshot = this.context.getSnapshot();
-    if (!snapshot) return null;
-    const pageText = [
-      snapshot.title,
-      snapshot.url,
-      snapshot.visibleContent,
-      snapshot.pageContent,
-    ]
-      .filter(Boolean)
-      .join("\n");
-    const requestNumber = pageText.match(/\bREQ\d+\b/i)?.[0]?.toUpperCase();
-    if (
-      !requestNumber ||
-      !/\border status\b|\brequest number\b/i.test(pageText)
-    ) {
-      return null;
-    }
-
-    const itemName = this.extractExpectedCatalogItemNameFromQuery();
-    const trustedSubmission = this.getFreshTrustedCatalogOrderSubmission();
-    if (
-      itemName &&
-      !pageText.toLowerCase().includes(itemName.toLowerCase()) &&
-      !this.trustedCatalogOrderSubmissionCoversRequest(trustedSubmission)
-    ) {
-      return null;
-    }
-
-    const quantity = this.extractExpectedCatalogQuantityFromQuery();
-    if (
-      quantity &&
-      /\bquantity\b/i.test(pageText) &&
-      !new RegExp(`\\b${quantity}\\b`).test(pageText)
-    ) {
-      return null;
-    }
-
-    const summaryParts = [`Catalog order submitted: ${requestNumber}.`];
-    if (itemName) summaryParts.push(`Item: ${itemName}.`);
-    if (quantity) summaryParts.push(`Quantity: ${quantity}.`);
-    if (trustedSubmission) {
-      summaryParts.push("Requested configuration verified before submission.");
-    }
-    const summary = summaryParts.join(" ");
-    this.completeTaskResult(summary, {
-      completionCandidate: this.createTrustedCompletionCandidate({
-        workflow: "catalog_order",
-        summary,
-        reason: "Trusted catalog order confirmation page matched the request.",
-        evidenceText: pageText,
-        recordId: requestNumber,
-        targetText: itemName ?? undefined,
-      }),
-    });
-    this.traceRecorder?.recordEvent("catalog_order_snapshot_completed", {
-      turn: this.turnCount,
-      requestNumber,
-      itemName: itemName ?? null,
-      quantity,
-    });
-    return {
-      outcome: "completed",
-      turnCount: this.turnCount,
-      summary,
-      failure: { category: "none", code: "none" },
-      metrics: this.getMetrics(),
-      completionEnvelope: this.completedResult?.completionEnvelope,
-    };
-  }
-
-  private extractExpectedCatalogItemNameFromQuery(): string | null {
-    const quotedOrderItem =
-      this.originalQuery.match(
-        /\b(?:order|request|purchase|buy)\s+\d+\s+"([^"]{3,120})"/i,
-      )?.[1] ??
-      this.originalQuery.match(
-        /\b(?:order|request|purchase|buy|configure)\s+"([^"]{3,120})"/i,
-      )?.[1] ??
-      this.originalQuery.match(
-        /"([^"]{3,120})"\s+(?:from|in)\s+(?:the\s+)?(?:service\s+)?catalog\b/i,
-      )?.[1] ??
-      null;
-    if (quotedOrderItem) return quotedOrderItem.trim();
-
-    const namedItem =
-      this.originalQuery.match(
-        /\b(?:catalog item|item|product)\s+(?:named|called)\s+(.{3,120}?)(?=\s+(?:with|and|from|in)\b|[.,;\n]|$)/i,
-      )?.[1] ?? null;
-    return namedItem ? namedItem.replace(/^["']|["']$/g, "").trim() : null;
-  }
-
-  private extractExpectedCatalogQuantityFromQuery(): string | null {
-    return (
-      this.originalQuery.match(/\border\s+(\d+)\b/i)?.[1] ??
-      this.originalQuery.match(/\bquantity\s*(?:of|=|:)?\s*(\d+)\b/i)?.[1] ??
-      null
-    );
-  }
-
-  private extractExpectedCatalogConfigurationFieldsFromQuery(): string[] {
-    const fields = new Set<string>();
-    for (const match of this.originalQuery.matchAll(
-      /['"]([^'"]{2,160})['"]\s*:/g,
-    )) {
-      const field = match[1]?.replace(/\s+/g, " ").trim();
-      if (field) fields.add(field);
-    }
-    return [...fields];
-  }
-
-  private catalogConfigurationEvidenceCoversRequest(
-    toolResult: string,
-  ): boolean {
-    const expectedFields =
-      this.extractExpectedCatalogConfigurationFieldsFromQuery();
-    if (expectedFields.length === 0) return true;
-    const normalize = (value: string) =>
-      value.toLowerCase().replace(/[^a-z0-9]+/g, "");
-    const evidence = normalize(toolResult);
-    return expectedFields.every((field) => evidence.includes(normalize(field)));
-  }
-
-  private getFreshTrustedCatalogOrderSubmission(): TrustedCatalogOrderSubmission | null {
-    if (!this.trustedCatalogOrderSubmission) return null;
-    return this.turnCount -
-      this.trustedCatalogOrderSubmission.submittedAtTurn <=
-      6
-      ? this.trustedCatalogOrderSubmission
-      : null;
-  }
-
-  private trustedCatalogOrderSubmissionCoversRequest(
-    submission: TrustedCatalogOrderSubmission | null,
-  ): boolean {
-    if (!submission) return false;
-    if (
-      this.extractExpectedCatalogConfigurationFieldsFromQuery().length === 0
-    ) {
-      return false;
-    }
-    const itemName = this.extractExpectedCatalogItemNameFromQuery();
-    if (itemName && submission.itemName !== itemName) return false;
-    const quantity = this.extractExpectedCatalogQuantityFromQuery();
-    if (quantity && submission.quantity !== quantity) return false;
-    return this.catalogConfigurationEvidenceCoversRequest(
-      submission.configuredResult,
+    return maybeCompleteCatalogOrderFromSnapshot(
+      this as unknown as ServiceNowCatalogHost,
     );
   }
 
@@ -6177,53 +4995,10 @@ export class AgentLoop {
     toolArgs?: Record<string, unknown>;
     toolResult: string;
   }): boolean {
-    if (this.selectedSkillId !== "catalog-order-workflow") return false;
-    if (params.toolName !== ToolName.CONFIGURE_CATALOG_ITEM) return false;
-    if (params.toolArgs?.submit === true) return false;
-    if (!/\b(order|request|cart|checkout)\b/i.test(this.originalQuery)) {
-      return false;
-    }
-    if (!/^Configured catalog item\./i.test(params.toolResult)) return false;
-    if (
-      /\b(?:Error:|incomplete|Missing|Mismatches|could not|not found)\b/i.test(
-        params.toolResult,
-      )
-    ) {
-      return false;
-    }
-    if (!this.catalogConfigurationEvidenceCoversRequest(params.toolResult)) {
-      return false;
-    }
-    return true;
-  }
-
-  private isTrustedCatalogConfigurationResult(params: {
-    toolName: string;
-    toolResult: string;
-  }): boolean {
-    if (this.selectedSkillId !== "catalog-order-workflow") return false;
-    if (params.toolName !== ToolName.CONFIGURE_CATALOG_ITEM) return false;
-    if (!/\b(order|request|cart|checkout)\b/i.test(this.originalQuery)) {
-      return false;
-    }
-    if (!/^Configured catalog item\./i.test(params.toolResult)) return false;
-    if (
-      /\b(?:Error:|incomplete|Missing|Mismatches|could not|not found)\b/i.test(
-        params.toolResult,
-      )
-    ) {
-      return false;
-    }
-    return this.catalogConfigurationEvidenceCoversRequest(params.toolResult);
-  }
-
-  private markTrustedCatalogOrderSubmission(configuredResult: string): void {
-    this.trustedCatalogOrderSubmission = {
-      itemName: this.extractExpectedCatalogItemNameFromQuery(),
-      quantity: this.extractExpectedCatalogQuantityFromQuery(),
-      configuredResult,
-      submittedAtTurn: this.turnCount,
-    };
+    return shouldAutoSubmitConfiguredCatalogItem(
+      this as unknown as ServiceNowCatalogHost,
+      params,
+    );
   }
 
   async maybeCompleteTrustedCatalogOrderSubmit(params: {
@@ -6233,23 +5008,10 @@ export class AgentLoop {
     tabId: number;
     mode: "parallel" | "sequential";
   }): Promise<{ finalSummary: string } | null> {
-    if (params.toolArgs?.submit !== true) return null;
-    if (!this.isTrustedCatalogConfigurationResult(params)) return null;
-
-    this.markTrustedCatalogOrderSubmission(params.toolResult);
-    const previousElementCount = this.context.getSnapshot()?.elements.length;
-    await this.refreshSnapshotWithRetry(
-      params.tabId,
-      previousElementCount ?? -1,
+    return maybeCompleteTrustedCatalogOrderSubmit(
+      this as unknown as ServiceNowCatalogHost,
+      params,
     );
-    const completion = this.maybeCompleteCatalogOrderFromSnapshot();
-    if (!completion) return null;
-    this.traceRecorder?.recordEvent("trusted_catalog_order_submit_completed", {
-      turn: this.turnCount,
-      mode: params.mode,
-      trustedTool: params.toolName,
-    });
-    return { finalSummary: completion.summary };
   }
 
   private async maybeAutoSubmitConfiguredCatalogItem(params: {
@@ -6259,82 +5021,10 @@ export class AgentLoop {
     tabId: number;
     mode: "parallel" | "sequential";
   }): Promise<void> {
-    if (!this.shouldAutoSubmitConfiguredCatalogItem(params)) return;
-
-    const submitArgs = {
-      ...(params.toolArgs ?? {}),
-      submit: true,
-      continueToCheckout: true,
-    };
-    const submitToolCall: ToolCall = {
-      id: `auto_${crypto.randomUUID()}`,
-      type: "function",
-      function: {
-        name: ToolName.CONFIGURE_CATALOG_ITEM,
-        arguments: JSON.stringify(submitArgs),
-      },
-    } as ToolCall;
-    const toolStep: AgentStep = {
-      id: crypto.randomUUID(),
-      type: "tool",
-      label: "Submit configured catalog item",
-      detail: JSON.stringify(submitArgs),
-      toolName: ToolName.CONFIGURE_CATALOG_ITEM,
-      status: "running",
-      timestamp: Date.now(),
-    };
-    this.stepHandler(toolStep, false);
-    this.log.info("agent", "Auto-submitting configured catalog item", {
-      turn: this.turnCount,
-      mode: params.mode,
-    });
-    this.traceRecorder?.recordEvent("catalog_config_auto_submit_started", {
-      turn: this.turnCount,
-      mode: params.mode,
-      trustedTool: ToolName.CONFIGURE_CATALOG_ITEM,
-    });
-
-    const startedAt = Date.now();
-    const result = await this.executeToolCall(submitToolCall, params.tabId);
-    const durationMs = Date.now() - startedAt;
-    this.stepHandler(
-      {
-        ...toolStep,
-        status: /^Error:/i.test(result) ? "error" : "done",
-        durationMs,
-        ...(/^Error:/i.test(result) ? { errorMessage: result } : {}),
-      },
-      true,
+    return maybeAutoSubmitConfiguredCatalogItem(
+      this as unknown as ServiceNowCatalogHost,
+      params,
     );
-    this.traceRecorder?.recordToolExecution(
-      submitToolCall.id,
-      ToolName.CONFIGURE_CATALOG_ITEM,
-      submitArgs,
-      result,
-      !/^Error:/i.test(result),
-      durationMs,
-      RiskLevel.MEDIUM,
-      /^Error:/i.test(result) ? result : undefined,
-    );
-    this.context.addMessage({
-      role: "tool",
-      content: result,
-      tool_call_id: submitToolCall.id,
-    });
-    if (
-      !/^Error:/i.test(result) &&
-      !/\b(?:incomplete|Missing|Mismatches|could not|not found)\b/i.test(
-        result,
-      ) &&
-      this.isTrustedCatalogConfigurationResult(params)
-    ) {
-      this.markTrustedCatalogOrderSubmission(params.toolResult);
-      const previousElementCount = this.context.getSnapshot()?.elements.length;
-      await this.refreshSnapshotWithRetry(
-        params.tabId,
-        previousElementCount ?? -1,
-      );
-    }
   }
 
   private completeSubmitFormReset(

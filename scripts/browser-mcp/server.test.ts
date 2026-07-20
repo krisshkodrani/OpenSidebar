@@ -29,6 +29,7 @@ describe("BROWSER_TOOLS", () => {
       "browser_research_company",
       "browser_apply_to_job",
       "browser_run_task",
+      "browser_respond_approval",
     ]);
     for (const tool of BROWSER_TOOLS) {
       expect(tool.description.length).toBeGreaterThan(0);

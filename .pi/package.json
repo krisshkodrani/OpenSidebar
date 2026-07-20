@@ -1,0 +1,9 @@
+{
+  "name": "opensidebar-pi-workspace",
+  "private": true,
+  "description": "Pinned pi packages for the .pi/extensions/opensidebar.ts extension. Local typecheck + editor support only — at runtime the pi loader substitutes its own bundled copies of these modules. Delete this directory to remove the pi integration.",
+  "dependencies": {
+    "@earendil-works/pi-coding-agent": "0.80.7",
+    "typebox": "1.1.38"
+  }
+}

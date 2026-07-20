@@ -85,9 +85,9 @@
   },
   {
     "id": "agent.system",
-    "version": "v5",
-    "hash": "cb9e0ee4",
-    "description": "Core executor system prompt for browser automation turns. v6: structured last-action outcome grounding.",
+    "version": "v7",
+    "hash": "b243bb32",
+    "description": "Core executor system prompt for browser automation turns. v7: open-tabs inventory in the turn status (page-opened tabs are seen and reachable).",
     "sourcePath": "prompts/runtime/agent/system.md"
   },
   {
@@ -127,9 +127,9 @@
   },
   {
     "id": "planner.decompose.system",
-    "version": "v4",
-    "hash": "d6098a46",
-    "description": "Planner decomposition system prompt for the task planner. v4: add requires_tab_management intent flag.",
+    "version": "v6",
+    "hash": "14990b41",
+    "description": "Planner decomposition system prompt for the task planner. v6: no literal-value restatement, at most 5 one-line assumptions (LP-17b CM-4).",
     "sourcePath": "prompts/runtime/planner/decompose_system.md"
   },
   {

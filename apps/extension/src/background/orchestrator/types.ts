@@ -229,6 +229,13 @@ export interface OrchestratorTask {
   /** Recent workspace chat context for follow-up requests. */
   conversationContextBrief?: string;
   structuredProgress?: Record<string, TaskRunProgressInput>;
+  /**
+   * How user interactions (approvals) are delivered for this task.
+   * `"handoff"` = forwarded over the browser bridge to an external caller
+   * (pi-backend Phase 4): selects the longer approval timeout. Absent =
+   * the sidepanel path (default 30s).
+   */
+  interactionDelivery?: "handoff";
 }
 
 export interface OrchestratorCheckpoint {
@@ -252,4 +259,6 @@ export interface OrchestratorStartInput {
   settings: UserSettings;
   openRouterApiKey: string;
   conversationContextBrief?: string;
+  /** See OrchestratorTask.interactionDelivery. Set by the browser bridge. */
+  interactionDelivery?: "handoff";
 }

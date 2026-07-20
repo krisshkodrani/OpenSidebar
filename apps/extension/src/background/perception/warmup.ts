@@ -65,7 +65,7 @@ class PerceptionWarmup {
 
   /**
    * Start warmup for a tab. Event-driven: waits for CONTENT_SCRIPT_READY,
-   * then takes snapshot + screenshot + perceive(). Fire-and-forget.
+   * then takes snapshot + screenshot. Fire-and-forget.
    */
   async warmup(tabId: number): Promise<void> {
     // Already warming up this tab — skip

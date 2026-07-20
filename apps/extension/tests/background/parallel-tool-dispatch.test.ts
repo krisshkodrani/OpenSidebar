@@ -47,6 +47,7 @@ function createHost(
   return {
     context: {
       getSnapshot: () => null,
+      getFieldReadLedger: () => new Map(),
       getMessages: () => [],
       getCurrentUrl: () => "https://example.test",
       getPlanStatusRaw: () => null,

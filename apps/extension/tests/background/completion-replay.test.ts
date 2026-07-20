@@ -27,10 +27,10 @@ import { evaluateGeneratedCompletionCandidate } from "../../src/background/agent
 import { generateSeedCorpus } from "./completion-corpus/seed";
 
 /**
- * The shadow gate (RFC LP-15, Phase 7a): re-run the pure completion pipeline from
- * a record and return its verdict, mapped to the recorded verdict vocabulary.
- * The frozen kernel is recomputed from the input; the planner stage is stubbed
- * with the recorded legacy result (no model call).
+ * Re-run the pure completion pipeline from a record and return its verdict,
+ * mapped to the recorded verdict vocabulary. The frozen kernel is recomputed
+ * from the input; the planner stage is stubbed with the recorded result (no
+ * model call).
  */
 async function replayPipelineVerdict(
   record: CompletionDecisionRecord,
@@ -47,7 +47,6 @@ async function replayPipelineVerdict(
   });
   const pipelineDecision = await runCompletionPipeline(input.guardContext, {
     getKernelDecision: () => decision,
-    deterministicAcceptanceEnabled: input.deterministicAcceptanceEnabled,
     isDuplicateTerminal: input.isDuplicateTerminal,
     validatePlan: async () => input.plannerResult,
     buildKernelRejectionEffects: () => [],
@@ -136,12 +135,12 @@ describe("completion golden replay", () => {
     }
   });
 
-  test("shadow pipeline verdict matches the recorded legacy verdict (zero divergence)", async () => {
+  test("replayed pipeline verdict matches the recorded verdict (zero divergence)", async () => {
     for (const { file, record } of loadCorpus()) {
       const pipelineVerdict = await replayPipelineVerdict(record);
       expect(
         pipelineVerdict,
-        `${file}: shadow completion pipeline diverged from the recorded legacy verdict`,
+        `${file}: completion pipeline diverged from the recorded verdict`,
       ).toBe(record.outcome.verdict);
     }
   });

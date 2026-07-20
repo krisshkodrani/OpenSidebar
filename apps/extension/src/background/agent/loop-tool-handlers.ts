@@ -18,6 +18,7 @@ import {
   extractKnowledgeBaseAnswerFromText,
 } from "./knowledge-search-routing";
 import { assessMissingToolEscalation } from "./tool-capabilities";
+import { applyFieldReReadTracking } from "./fill-checklist-policy";
 import {
   checkNavigateGuard,
   type NavigateGuardHost,
@@ -1058,6 +1059,15 @@ export async function handleGenericSequentialToolCall(
     if (autocompleteRewriteReason) {
       result = `${result}\n${autocompleteRewriteReason}`;
     }
+    // LP-17 fill checklist: ledger the read + append a truthful re-read note.
+    result = applyFieldReReadTracking({
+      toolName,
+      args,
+      result,
+      snapshot: preActionSnapshot,
+      ledger: loop.context.getFieldReadLedger(),
+      turn: loop.turnCount,
+    });
     loop.trackListDetailToolSuccess(toolName, args, preActionSnapshot);
     loop.recordCompletionToolEvidence?.(
       toolName,

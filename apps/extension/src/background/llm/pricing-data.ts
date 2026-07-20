@@ -13,6 +13,15 @@ export const DEFAULT_MODEL_PRICING: ModelPricing[] = [
   },
   {
     providerId: "groq",
+    model: "openai/gpt-oss-20b",
+    inputUsdPerMillion: 0.075,
+    outputUsdPerMillion: 0.3,
+    effectiveDate: "2026-04-19",
+    sourceUrl: "https://console.groq.com/docs/model/openai/gpt-oss-20b",
+    confidence: "official",
+  },
+  {
+    providerId: "groq",
     model: "meta-llama/llama-4-scout-17b-16e-instruct",
     inputUsdPerMillion: 0.11,
     outputUsdPerMillion: 0.34,
@@ -59,17 +68,10 @@ export const DEFAULT_MODEL_PRICING: ModelPricing[] = [
   },
   {
     providerId: "fireworks",
-    model: "openai/gpt-oss-120b",
-    inputUsdPerMillion: 0.15,
-    outputUsdPerMillion: 0.6,
-    effectiveDate: "2026-04-19",
-    sourceUrl: "https://fireworks.ai/pricing",
-    confidence: "official",
-  },
-  {
-    providerId: "fireworks",
-    // The Fireworks API id form (the judge seat bills under this id; the
-    // catalog-style openai/... row above is kept for UI/catalog lookups).
+    // Fireworks bills under the accounts/... API id. There is deliberately no
+    // fireworks + "openai/gpt-oss-120b" row: that catalog-style id 404s on the
+    // Fireworks endpoint, so no run can ever bill under it. (The groq and
+    // openrouter rows for that id above are real — it is served there.)
     model: "accounts/fireworks/models/gpt-oss-120b",
     inputUsdPerMillion: 0.15,
     outputUsdPerMillion: 0.6,
@@ -134,6 +136,32 @@ export const DEFAULT_MODEL_PRICING: ModelPricing[] = [
     cachedInputUsdPerMillion: 0.03,
     effectiveDate: "2026-04-19",
     sourceUrl: "https://fireworks.ai/pricing",
+    confidence: "official",
+  },
+  {
+    providerId: "fireworks",
+    // minimax-m3: unified-VL executor candidate under A/B vs kimi-k2p7-code
+    // (2026-07-17). Fireworks serverless rate, confirmed against the M3 launch
+    // and pricing pages; prompt caching cuts effective input ~90%.
+    model: "accounts/fireworks/models/minimax-m3",
+    inputUsdPerMillion: 0.3,
+    outputUsdPerMillion: 1.2,
+    cachedInputUsdPerMillion: 0.03,
+    effectiveDate: "2026-07-17",
+    sourceUrl: "https://fireworks.ai/blog/minimax-m3-launch",
+    confidence: "official",
+  },
+  {
+    providerId: "fireworks",
+    // qwen3p7-plus: multimodal executor candidate (eval 2026-07-17), priced
+    // between minimax-m3 and kimi-k2p7-code. Fireworks serverless rate per the
+    // Qwen 3.7 Plus launch + pricing pages.
+    model: "accounts/fireworks/models/qwen3p7-plus",
+    inputUsdPerMillion: 0.4,
+    outputUsdPerMillion: 1.6,
+    cachedInputUsdPerMillion: 0.08,
+    effectiveDate: "2026-07-17",
+    sourceUrl: "https://fireworks.ai/blog/qwen-3p7-plus",
     confidence: "official",
   },
   {

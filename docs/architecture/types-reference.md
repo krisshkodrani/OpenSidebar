@@ -264,19 +264,6 @@ export interface StopAgentMessage extends BaseMessage {
 }
 ```
 
-### `SettingsUpdateMessage`
-
-```typescript
-/** Settings changed — broadcast to all contexts */
-export interface SettingsUpdateMessage extends BaseMessage {
-  type: "SETTINGS_UPDATE";
-  source: MessageSource.SIDEPANEL;
-  payload: {
-    settings: Partial<UserSettings>;
-  };
-}
-```
-
 ### `SidePanelOpenedMessage`
 
 ```typescript
@@ -742,7 +729,7 @@ export interface JsonSchemaProperty {
 
 ### Tool Argument Interfaces
 
-Each tool has a typed argument interface (51 tools):
+Each tool has a typed argument interface (52 tools):
 
 ```typescript
 /** Arguments for click_element */
