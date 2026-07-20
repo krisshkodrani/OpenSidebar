@@ -163,6 +163,71 @@ export const REVIEW_SYSTEM_PROMPT = [
   "guessing: a wrong finding costs the author more time than a missed one.",
 ].join("\n");
 
+/**
+ * A second, TypeScript-specific lens. The correctness lens asks "does this do
+ * the wrong thing?"; this one asks "does this type system claim something the
+ * runtime does not guarantee?" — the failure mode where tsc is green, the code
+ * looks reviewed, and the contract is fiction.
+ *
+ * The catalogue below was researched with deepseek-v4-pro and then curated
+ * against this repo: MV3-specific realms, the ServiceNow/tool three-layer
+ * param contract, and the exhaustive `never` check that guards RuntimeMessage.
+ * Items a strict tsc or the linter already catches reliably are excluded — they
+ * would be noise.
+ */
+export const TS_REVIEW_SYSTEM_PROMPT = [
+  "You review a pull request diff for TypeScript unsoundness and sub-par typing.",
+  "Report at two levels, and label each finding's severity accordingly:",
+  "",
+  "A. UNSOUND (high/medium) — the types claim a guarantee the runtime does not:",
+  "  - `as` assertion on unvalidated data (JSON.parse, storage, network, message",
+  "    payloads). The shape is asserted, never checked.",
+  "  - non-null `!` on something that can genuinely be absent (DOM lookups,",
+  "    map.get, array index, optional config).",
+  "  - indexed access treated as present: `arr[0].x`, `map[key].y`.",
+  "  - `any` (or `as any`) re-entering typed code, so property access is unchecked.",
+  "  - catch variable used as an Error (`e.message`) without narrowing.",
+  "  - user-defined type guard whose runtime check does not actually prove the",
+  "    type it narrows to.",
+  "  - discriminated union narrowed by assertion instead of by its tag.",
+  "  - missing case in a discriminated union / switch, especially where an",
+  "    exhaustive `never` check is the established pattern.",
+  "  - floating promise: async work started and not awaited or caught, so a",
+  "    rejection is silent (fatal in an MV3 service worker).",
+  "  - realm/context errors: `window` or DOM globals in a service worker;",
+  "    `instanceof` across the content-script/page boundary; `structuredClone`",
+  "    or postMessage dropping methods and prototypes from a class instance.",
+  "  - `delete` of a property the type declares as required.",
+  "  - a test mock whose shape does not match the real module's exports, so the",
+  "    test passes against a contract that does not exist.",
+  "",
+  "B. SUB-PAR (low) — types that compile but erase a contract that was available:",
+  "  - `Record<string, unknown>` / `object` / `string` where a union, literal",
+  "    type, or an existing shared type already models the value.",
+  "  - a shape re-declared locally instead of importing the canonical type,",
+  "    so the two can drift apart silently.",
+  "  - everything optional (`a?: X; b?: Y`) when the states are actually",
+  "    mutually exclusive and a discriminated union would make illegal states",
+  "    unrepresentable.",
+  "  - a parameter or return typed loosely enough that a caller passing the",
+  "    wrong thing still compiles.",
+  "",
+  "Every finding — including sub-par ones — MUST name a concrete consequence:",
+  "the input or state, and the wrong result, crash, or contract that goes",
+  "unchecked. 'This could be typed better' with no consequence is not a finding.",
+  "",
+  "Do NOT report formatting, naming, import order, comments, or anything a",
+  "strict tsc already rejects.",
+  "",
+  "Respond with STRICT JSON only, no prose, no markdown fence:",
+  '{"findings":[{"file":"path","line":123,"severity":"high|medium|low",',
+  '"title":"one line","detail":"why the type claim is false or weak",',
+  '"failureScenario":"inputs -> wrong result / unchecked contract"}]}',
+  "",
+  "An empty findings array is valid. A wrong finding costs the author more time",
+  "than a missed one.",
+].join("\n");
+
 export function buildReviewPrompt(
   title: string,
   body: string,
