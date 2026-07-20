@@ -86,19 +86,22 @@ until the owner records a Decision Stamp.
 
 | # | RFC | Gap it closes | Depends on |
 | --- | --- | --- | --- |
-| LP-18 | [JobAgent queue scheduler & notification channel](lp-0018-jobagent-scheduler-notifications.md) | Every pipeline stage is hand-cranked; approvals invisible without the console open | None |
-| LP-19 | [JobAgent graduated autonomy (auto-approve policy)](lp-0019-jobagent-graduated-autonomy.md) | Both human gates unconditionally manual; no path to earned selective autonomy | LP-18 (audit log for threshold calibration) |
-| LP-20 | [JobAgent free-text answer drafting](lp-0020-jobagent-freetext-drafting.md) | Bespoke questions/cover letters dead-end as hand-written TODOs | None (composes with LP-18/LP-19) |
+| LP-18 | [JobAgent queue scheduler & notification channel](lp-0018-jobagent-scheduler-notifications.md) | Every pipeline stage is hand-cranked; approvals invisible without the console open; no submission pacing | None |
+| LP-19 | [JobAgent graduated autonomy (auto-approve policy)](lp-0019-jobagent-graduated-autonomy.md) | Both human gates unconditionally manual; no path to earned selective autonomy; no post-submission error response | LP-18 §4 (approval-decision log) |
+| LP-20 | [JobAgent free-text answer drafting](lp-0020-jobagent-freetext-drafting.md) | Bespoke questions/cover letters dead-end as hand-written TODOs | None (owns vocabulary LP-18/LP-19 import) |
 
 Suggested sequencing: LP-18 first (compounds everything and generates the
-track record), LP-20 in parallel (independent surface), LP-19 last — activate
-only after LP-18 history calibrates its thresholds.
+approval-decision log), LP-20 in parallel (independent surface), LP-19 last —
+activate only after that log calibrates its thresholds.
 
-A glm-5p2 second-opinion design review of these drafts
+All three are at **revision 2**: a glm-5p2 second-opinion design review
 ([assessed report](../rfc-review-jobagent-autonomy-glm-2026-07-20.md),
 2026-07-20) found one spec bug, three cross-RFC drift errors, and several
-policy hardenings — **revise before stamping**; the sequencing survives with
-LP-18's prerequisite restated as "LP-18 including approval-decision logging".
+policy hardenings, all of which are now folded in. The revised drafts were
+re-reviewed by the same model, which confirmed every finding closed. They
+remain **unstamped** — awaiting owner Decision Stamps, with two questions
+called out for the stamp (LP-19's threshold numbers and its §7
+extension-side-vs-console-side freshness check).
 
 ## Post-launch consolidation series
 

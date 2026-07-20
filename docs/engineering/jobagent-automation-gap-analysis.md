@@ -65,13 +65,29 @@ This is a correctness constraint (orchestrator same-workspace replacement is
 unsafe under concurrency), not a bug — the scheduler must respect it, and
 throughput scaling is out of scope until the constraint itself is redesigned.
 
+### G6 — No submission pacing (→ RFC LP-18, added in revision 2)
+
+Surfaced by the glm-5p2 review: nothing limits how fast applications go out.
+Automated submissions arriving in a burst are an account-level risk (ATS bot
+detection), and a flagged candidate account is a worse outcome than a slow
+queue. Daily/weekly caps, a minimum inter-submission interval, and jitter now
+live in LP-18 §6.
+
+### G7 — No post-submission error response (→ RFC LP-19, added in revision 2)
+
+Also from the review: every rule in the series is preventive, and applications
+cannot be unsubmitted. There was no path for "a wrong one went out" — not even
+a record. LP-19 §8 now makes the flag-as-wrong action the entry point, with a
+templated withdrawal/correction draft the owner may send or discard.
+
 ### Smaller standalone items (no RFC needed)
 
 - **`outcomeSummary` capped upstream** — executor's full final words are not
   recoverable from run records (pi-backend task #36). Telemetry fix.
 - **CV variant selection** — the seed holds 11 CV variants but kits always use
-  the default; per-job selection is a drafting-rule addition (LP-20 touches
-  the adjacent surface but does not depend on it).
+  the default; per-job selection is a deterministic listing→variant rule. It
+  was briefly folded into LP-20 and removed again in revision 2: it has
+  nothing to do with free-text drafting and stays standalone.
 - **Stale queue hygiene** — 4 geo-rejected packages from the first sweep still
   sit as `reviewing`; a re-assess pass over queued packages when criteria
   change would fold naturally into LP-18's sweep stage.
@@ -81,15 +97,27 @@ throughput scaling is out of scope until the constraint itself is redesigned.
 ## Proposed division and sequencing
 
 - **[RFC LP-18 — Queue scheduler & notification channel](rfcs/lp-0018-jobagent-scheduler-notifications.md)**
-  (machinery): closes G1, G2, honors G5. No policy change — both human gates
-  stay exactly as they are.
+  (machinery): closes G1, G2, G6, honors G5. No autonomy-policy change — both
+  human gates stay exactly as they are.
 - **[RFC LP-19 — Graduated autonomy policy](rfcs/lp-0019-jobagent-graduated-autonomy.md)**
-  (risk policy): closes G3. Depends on LP-18 only for the track-record volume
-  that makes thresholds meaningful.
+  (risk policy): closes G3, G7. Depends on LP-18's **approval-decision log**
+  (LP-18 §4) — not merely on elapsed time — since its thresholds count human
+  decisions the scheduler log does not record.
 - **[RFC LP-20 — Free-text answer drafting](rfcs/lp-0020-jobagent-freetext-drafting.md)**
   (content): closes G4. Independent of both; its drafts are permanently
-  excluded from LP-19 auto-approval until human-approved into the library.
+  excluded from LP-19 auto-approval until human-approved into the library, and
+  it owns the `context-free`/`context-bound` marking LP-19 depends on.
 
 Sequencing: LP-18 first (compounds everything), LP-20 in parallel
-(independent surface), LP-19 last and only after LP-18 has produced enough
-clean history to calibrate its thresholds.
+(independent surface), LP-19 last and only after LP-18 — *including its
+approval-decision log* — has produced enough clean history to calibrate its
+thresholds.
+
+## Revision history
+
+- **Revision 1** (2026-07-20, PR #90): initial gap analysis and three drafts.
+- **Revision 2** (2026-07-20, this document + all three RFCs): incorporates
+  the [glm-5p2 second-opinion review](rfc-review-jobagent-autonomy-glm-2026-07-20.md).
+  Added G6 (pacing) and G7 (post-submission response); corrected the LP-19
+  dependency from "track-record volume" to LP-18's approval-decision log;
+  moved CV-variant selection back out of LP-20.
