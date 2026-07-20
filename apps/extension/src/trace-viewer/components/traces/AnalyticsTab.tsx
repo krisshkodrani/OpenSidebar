@@ -280,6 +280,47 @@ export default function AnalyticsTab({
         {/* Drill-downs, collapsed by default */}
         <div className="space-y-2">
           <CollapsibleSection
+            label="Escalations"
+            preview={
+              summary.escalations === 0
+                ? "none"
+                : `${formatPercent(summary.escalationFireRate)} fire · ${formatPercent(summary.escalationRescueRate)} rescue`
+            }
+          >
+            <div className="grid grid-cols-2 xl:grid-cols-4 gap-2 pt-2">
+              <StatTile
+                label="Fire rate"
+                value={formatPercent(summary.escalationFireRate)}
+                sub={`${formatCount(summary.escalatedSessions)} of ${formatCount(summary.totalSessions)} traces, ${formatCount(summary.escalations)} fires`}
+                tone={summary.escalations > 0 ? "warning" : "success"}
+              />
+              <StatTile
+                label="Rescue rate"
+                value={formatPercent(summary.escalationRescueRate)}
+                sub={`${formatCount(summary.escalationRescued)} rescued after escalating`}
+                tone={
+                  summary.escalations === 0
+                    ? "neutral"
+                    : summary.escalationRescueRate >= 0.5
+                      ? "success"
+                      : "warning"
+                }
+              />
+              <StatTile
+                label="Failed fast"
+                value={formatCount(summary.escalationFailedFast)}
+                tone={summary.escalationFailedFast > 0 ? "warning" : "neutral"}
+              />
+              <StatTile
+                label="Budget exhausted"
+                value={formatCount(summary.escalationBudgetExhausted)}
+                tone={
+                  summary.escalationBudgetExhausted > 0 ? "warning" : "neutral"
+                }
+              />
+            </div>
+          </CollapsibleSection>
+          <CollapsibleSection
             label="Failures"
             preview={`${formatCount(insights.failures.length)} kinds`}
           >
