@@ -154,6 +154,13 @@ export interface TraceInsightsResponse {
     partialHandoffCount: number;
     maxTurnsWithHandoffCount: number;
     maxTurnsWithoutUsefulProgressCount: number;
+    escalatedSessions: number;
+    escalations: number;
+    escalationRescued: number;
+    escalationFailedFast: number;
+    escalationBudgetExhausted: number;
+    escalationFireRate: number;
+    escalationRescueRate: number;
   };
   facets: {
     runs: string[];
