@@ -41,6 +41,13 @@ const mockInsights = {
     partialHandoffCount: 0,
     maxTurnsWithHandoffCount: 0,
     maxTurnsWithoutUsefulProgressCount: 0,
+    escalatedSessions: 3,
+    escalations: 4,
+    escalationRescued: 2,
+    escalationFailedFast: 1,
+    escalationBudgetExhausted: 1,
+    escalationFireRate: 0.25,
+    escalationRescueRate: 0.5,
   },
   facets: {
     runs: [],
@@ -110,6 +117,9 @@ describe("AnalyticsTab", () => {
     expect(text).toContain("Runs");
     expect(text).toContain("75%");
     expect(text).toContain("Est. cost");
+    // Escalation aggregate preview (fire · rescue) from the mocked summary.
+    expect(text).toContain("Escalations");
+    expect(text).toContain("25% fire · 50% rescue");
     // Drill-down sections exist but are collapsed by default.
     expect(text).toContain("Failures");
     expect(text).toContain("Tools");

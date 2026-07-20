@@ -1090,6 +1090,47 @@ function buildInsightsSql(
     WHERE tt.session_id IN (SELECT session_id FROM filtered)
   `).get(params) ?? {}) as Record<string, unknown>;
 
+  // ── 3b. Escalation aggregates (turn + session events; mirrors the
+  //        in-memory collectEscalationStats in trace-insights.ts) ─────────
+  const escr = (db.prepare(`
+    ${cte}
+    , esc_events AS (
+      SELECT
+        t.session_id AS session_id,
+        json_extract(ev.value, '$.type') AS type,
+        json_extract(ev.value, '$.data.type') AS data_type,
+        json_extract(ev.value, '$.data.outcome') AS data_outcome
+      FROM trace_turns t
+      JOIN filtered f ON f.session_id = t.session_id
+      JOIN json_each(t.raw_json, '$.events') ev
+
+      UNION ALL
+
+      SELECT
+        f.session_id AS session_id,
+        json_extract(ev.value, '$.type') AS type,
+        json_extract(ev.value, '$.data.type') AS data_type,
+        json_extract(ev.value, '$.data.outcome') AS data_outcome
+      FROM filtered f
+      JOIN trace_sessions ts ON ts.session_id = f.session_id
+      JOIN json_each(ts.raw_json, '$.events') ev
+    )
+    SELECT
+      COUNT(DISTINCT CASE WHEN type = 'escalation'
+             OR (type = 'stuck_signal' AND data_type = 'escalate')
+             THEN session_id END)                                            AS escalatedSessions,
+      SUM(CASE WHEN type = 'escalation'
+             OR (type = 'stuck_signal' AND data_type = 'escalate')
+             THEN 1 ELSE 0 END)                                              AS escalations,
+      SUM(CASE WHEN type = 'escalation_outcome' AND data_outcome = 'rescued'
+             THEN 1 ELSE 0 END)                                              AS escalationRescued,
+      SUM(CASE WHEN type = 'escalation_outcome' AND data_outcome = 'failed_fast'
+             THEN 1 ELSE 0 END)                                              AS escalationFailedFast,
+      SUM(CASE WHEN type = 'escalation_outcome' AND data_outcome = 'budget_exhausted'
+             THEN 1 ELSE 0 END)                                              AS escalationBudgetExhausted
+    FROM esc_events
+  `).get(params) ?? {}) as Record<string, unknown>;
+
   // ── 4. Per-model aggregates (for model mix + cost estimation) ───────────
   const modelAggs = db.prepare(`
     ${cte}
@@ -1426,6 +1467,20 @@ function buildInsightsSql(
     maxTurnsWithoutUsefulProgressCount: asNumber(
       sr.maxTurnsWithoutUsefulProgressCount,
     ),
+    escalatedSessions: asNumber(escr.escalatedSessions),
+    escalations: asNumber(escr.escalations),
+    escalationRescued: asNumber(escr.escalationRescued),
+    escalationFailedFast: asNumber(escr.escalationFailedFast),
+    escalationBudgetExhausted: asNumber(escr.escalationBudgetExhausted),
+    escalationFireRate:
+      totalSessions > 0 ? asNumber(escr.escalatedSessions) / totalSessions : 0,
+    escalationRescueRate: (() => {
+      const resolved =
+        asNumber(escr.escalationRescued) +
+        asNumber(escr.escalationFailedFast) +
+        asNumber(escr.escalationBudgetExhausted);
+      return resolved > 0 ? asNumber(escr.escalationRescued) / resolved : 0;
+    })(),
   };
 
   // ── Model rows ──────────────────────────────────────────────────────────
@@ -1564,6 +1619,9 @@ function buildEmptyInsightsResponse(): TraceInsightsResponse {
       averagePromptTokens: 0, averageCompletionTokens: 0, averageTotalTokens: 0,
       totalLlmDurationMs: 0, averageLlmDurationMs: 0,
       partialHandoffCount: 0, maxTurnsWithHandoffCount: 0, maxTurnsWithoutUsefulProgressCount: 0,
+      escalatedSessions: 0, escalations: 0, escalationRescued: 0,
+      escalationFailedFast: 0, escalationBudgetExhausted: 0,
+      escalationFireRate: 0, escalationRescueRate: 0,
     },
     facets: { runs: [], sessions: [], domains: [], models: [], skills: [], tools: [], failures: [], eventTypes: [] },
     tools: [], skills: [], models: [], failures: [], events: [], runs: [],

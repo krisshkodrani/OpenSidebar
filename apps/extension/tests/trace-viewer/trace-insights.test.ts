@@ -321,4 +321,53 @@ describe("trace insights", () => {
     expect(result.facets.runs).toHaveLength(250);
     expect(result.facets.sessions).toHaveLength(250);
   });
+
+  test("aggregates escalation fires and outcomes into the summary", () => {
+    const base = {
+      startTime: Date.UTC(2026, 3, 15, 9, 0, 0),
+      endTime: Date.UTC(2026, 3, 15, 9, 1, 0),
+      query: "Objective: task",
+      startUrl: "https://example.com",
+      turnCount: 1,
+      metrics: null,
+    };
+    const sessions = [
+      { ...base, sessionId: "s1", outcome: "completed" },
+      // Session-level events count too (stuck_signal escalate is a fire).
+      {
+        ...base,
+        sessionId: "s2",
+        outcome: "error",
+        events: [
+          { type: "stuck_signal", data: { type: "escalate", stagnantTurns: 3 } },
+          { type: "escalation_outcome", data: { outcome: "failed_fast" } },
+        ],
+      },
+      { ...base, sessionId: "s3", outcome: "completed" },
+    ];
+    const entriesBySession = new Map<string, any[]>([
+      [
+        "s1",
+        [
+          {
+            toolExecutions: [],
+            events: [
+              { type: "escalation", data: { reason: "riddle", voluntary: true } },
+              { type: "escalation_outcome", data: { outcome: "rescued" } },
+            ],
+          },
+        ],
+      ],
+    ]);
+
+    const { summary } = buildTraceInsights({ sessions, entriesBySession });
+
+    expect(summary.escalatedSessions).toBe(2);
+    expect(summary.escalations).toBe(2);
+    expect(summary.escalationRescued).toBe(1);
+    expect(summary.escalationFailedFast).toBe(1);
+    expect(summary.escalationBudgetExhausted).toBe(0);
+    expect(summary.escalationFireRate).toBeCloseTo(2 / 3);
+    expect(summary.escalationRescueRate).toBeCloseTo(0.5);
+  });
 });
