@@ -1,6 +1,8 @@
-import React from "react";
+import React, { useMemo, useState } from "react";
 import { ChevronRight } from "lucide-react";
 import type { TraceSession } from "../../../types/traces";
+import type { RunGroup, RunAnnotation } from "../../store/types";
+import { annotationKeyFor } from "../../store/types";
 import { useStore } from "../../store";
 import { TRACE_SESSION_SEARCH_LIMIT } from "../../api";
 import Badge from "../Badge";
@@ -13,6 +15,7 @@ import {
   formatTime,
   getSessionModels,
   outcomeClass,
+  sessionNeedsReview,
   shortModel,
   truncate,
 } from "../../utils";
@@ -21,15 +24,102 @@ interface RunsTableViewProps {
   onSelectSession: (sessionId: string) => void;
 }
 
+// One row of the merged Runs list: either a run group (expandable) or a
+// standalone session that has no runId — previously only visible on the
+// retired flat Traces table.
+type DisplayItem =
+  | { kind: "group"; group: RunGroup; sortTime: number }
+  | { kind: "session"; session: TraceSession; sortTime: number };
+
+// The adjudication select predicate, transplanted from the retired
+// UnifiedSessionsTableView (client-side: verdicts aren't server-searchable).
+function matchesAdjudication(
+  session: TraceSession,
+  filter: string,
+  annotations: Record<string, RunAnnotation>,
+): boolean {
+  if (!filter || filter === "all") return true;
+  const a =
+    annotations[
+      annotationKeyFor({ runId: session.runId, sessionId: session.sessionId })
+    ];
+  if (filter === "unreviewed") return !a;
+  if (filter === "reviewed") return !!a;
+  if (filter === "disagreed") return a?.verdict === "disagree";
+  return true;
+}
+
+function matchesQuery(session: TraceSession, q: string): boolean {
+  return (
+    session.sessionId.toLowerCase().includes(q) ||
+    (session.query ?? "").toLowerCase().includes(q) ||
+    (session.runId ?? "").toLowerCase().includes(q)
+  );
+}
+
 export default function RunsTableView({ onSelectSession }: RunsTableViewProps) {
   const runGroups = useStore((s) => s.runGroups);
   const tracesLoading = useStore((s) => s.tracesLoading);
   const sessions = useStore((s) => s.sessions);
-  const setActiveTopLevelView = useStore((s) => s.setActiveTopLevelView);
+  const annotations = useStore((s) => s.annotations);
+  const adjudicationFilter = useStore((s) => s.filters.adjudication);
+  const needsReviewOn = useStore((s) => s.filters.needsReview === "on");
   const expandAllRunGroups = useStore((s) => s.expandAllRunGroups);
   const collapseAllRunGroups = useStore((s) => s.collapseAllRunGroups);
   const toggleRunGroup = useStore((s) => s.toggleRunGroup);
+  const [query, setQuery] = useState("");
   const sessionsLimitReached = sessions.length >= TRACE_SESSION_SEARCH_LIMIT;
+
+  // Merge run groups and standalone sessions into one newest-first list, then
+  // apply the client-side filters (adjudication select, needs-review chip,
+  // text query). A group stays visible if any member matches.
+  const items = useMemo<DisplayItem[]>(() => {
+    const q = query.trim().toLowerCase();
+
+    const groupItems: DisplayItem[] = runGroups
+      .filter((group) =>
+        group.sessions.some((session) =>
+          matchesAdjudication(session, adjudicationFilter, annotations),
+        ),
+      )
+      .filter(
+        (group) =>
+          !needsReviewOn ||
+          group.sessions.some((session) =>
+            sessionNeedsReview(session, annotations),
+          ),
+      )
+      .filter(
+        (group) =>
+          !q ||
+          group.runId.toLowerCase().includes(q) ||
+          group.sessions.some((session) => matchesQuery(session, q)),
+      )
+      .map((group) => ({
+        kind: "group" as const,
+        group,
+        sortTime: group.earliestStart,
+      }));
+
+    const standaloneItems: DisplayItem[] = sessions
+      .filter((session) => !session.runId || session.runId.length === 0)
+      .filter((session) =>
+        matchesAdjudication(session, adjudicationFilter, annotations),
+      )
+      .filter(
+        (session) => !needsReviewOn || sessionNeedsReview(session, annotations),
+      )
+      .filter((session) => !q || matchesQuery(session, q))
+      .map((session) => ({
+        kind: "session" as const,
+        session,
+        sortTime: session.startTime ?? 0,
+      }));
+
+    return [...groupItems, ...standaloneItems].sort(
+      (a, b) => b.sortTime - a.sortTime,
+    );
+  }, [runGroups, sessions, annotations, adjudicationFilter, needsReviewOn, query]);
 
   if (tracesLoading) {
     return (
@@ -39,24 +129,14 @@ export default function RunsTableView({ onSelectSession }: RunsTableViewProps) {
     );
   }
 
-  if (runGroups.length === 0) {
+  if (items.length === 0) {
     return (
       <div className="flex-1 flex flex-col items-center justify-center gap-3 px-5 text-center text-trace-muted text-sm">
         <div>
-          No trace runs found for the current filters.
-          {sessions.length > 0
-            ? " These traces are still available individually."
-            : ""}
+          {needsReviewOn
+            ? "All caught up — no failed or partial runs in view are waiting on a verdict."
+            : "No runs or traces found for the current filters."}
         </div>
-        {sessions.length > 0 && (
-          <button
-            type="button"
-            onClick={() => setActiveTopLevelView("sessions")}
-            className="rounded border border-trace-border px-3 py-1.5 text-xs text-trace-subtle hover:text-trace-text hover:border-trace-accent/50 transition-colors"
-          >
-            View traces
-          </button>
-        )}
       </div>
     );
   }
@@ -76,78 +156,165 @@ export default function RunsTableView({ onSelectSession }: RunsTableViewProps) {
         >
           Collapse all
         </button>
+        <input
+          type="text"
+          value={query}
+          onChange={(event) => setQuery(event.target.value)}
+          placeholder="Filter runs & traces..."
+          aria-label="Filter runs and traces"
+          className="w-44 bg-trace-surface text-trace-text border border-trace-border rounded px-2 py-1 text-[11px] outline-none transition-colors focus:border-trace-accent placeholder:text-trace-dim"
+        />
         <span className="ml-auto text-[10px] text-trace-dim">
-          {formatCount(runGroups.length)}
-          {sessionsLimitReached ? "+" : ""} runs from loaded traces
+          {formatCount(items.length)}
+          {sessionsLimitReached ? "+" : ""} rows from loaded traces
         </span>
       </div>
       <div className="flex-1 overflow-y-auto scrollbar-thin">
-        {runGroups.map((group) => (
-          <div key={group.runId} className="border-b border-trace-border/50">
-            <button
-              onClick={() => toggleRunGroup(group.runId)}
-              className="w-full text-left px-5 py-3 hover:bg-trace-accent/[0.05] transition-colors"
-            >
-              <div className="flex items-center gap-3">
-                <span className="text-trace-muted text-xs shrink-0">
-                  <ChevronRight
-                    size={14}
-                    className={`transition-transform ${group.expanded ? "rotate-90" : ""}`}
-                    aria-hidden="true"
-                  />
-                </span>
-                <span className="text-[11px] text-trace-muted shrink-0">
-                  {formatTime(group.earliestStart)}
-                </span>
-                <span className="font-mono text-[11px] text-trace-accent-light shrink-0">
-                  {group.shortId}
-                </span>
-                <span className="min-w-0 flex-1 text-[12px] text-trace-text">
-                  {truncate(extractQueryTitle(group.query).title, 80)}
-                </span>
-                <RunOutcomeStrip
-                  outcomes={group.sessions.map((session) => session.outcome)}
-                />
-                <Badge
-                  variant={
-                    outcomeClass(group.overallOutcome) as
-                      | "completed"
-                      | "stopped"
-                      | "error"
-                      | "max_turns"
-                  }
-                >
-                  {group.overallOutcome}
-                </Badge>
-                <AdjudicationBadge session={{ runId: group.runId }} />
-                <span className="text-[11px] text-trace-muted shrink-0">
-                  {formatCount(group.sessions.length)} traces
-                </span>
-                <span className="text-[11px] text-trace-muted shrink-0">
-                  {formatCount(group.totalTurns)} turns
-                </span>
-                <span className="text-[11px] text-trace-muted shrink-0">
-                  {formatDuration(group.latestEnd - group.earliestStart)}
-                </span>
-                <span className="text-[11px] text-trace-subtle font-mono shrink-0">
-                  {formatCost(group.totalCost) || "$0"}
-                </span>
-              </div>
-            </button>
-            {group.expanded && (
-              <div className="pb-2">
-                {group.sessions.map((session) => (
-                  <RunSessionRow
-                    key={session.sessionId}
-                    session={session}
-                    onSelect={() => onSelectSession(session.sessionId)}
-                  />
-                ))}
-              </div>
-            )}
-          </div>
-        ))}
+        {items.map((item) =>
+          item.kind === "group" ? (
+            <RunGroupRow
+              key={`run-${item.group.runId}`}
+              group={item.group}
+              onToggle={() => toggleRunGroup(item.group.runId)}
+              onSelectSession={onSelectSession}
+            />
+          ) : (
+            <StandaloneSessionRow
+              key={`session-${item.session.sessionId}`}
+              session={item.session}
+              onSelect={() => onSelectSession(item.session.sessionId)}
+            />
+          ),
+        )}
       </div>
+    </div>
+  );
+}
+
+function RunGroupRow({
+  group,
+  onToggle,
+  onSelectSession,
+}: {
+  group: RunGroup;
+  onToggle: () => void;
+  onSelectSession: (sessionId: string) => void;
+}) {
+  return (
+    <div className="border-b border-trace-border/50">
+      <button
+        onClick={onToggle}
+        className="w-full text-left px-5 py-3 hover:bg-trace-accent/[0.05] transition-colors"
+      >
+        <div className="flex items-center gap-3">
+          <span className="text-trace-muted text-xs shrink-0">
+            <ChevronRight
+              size={14}
+              className={`transition-transform ${group.expanded ? "rotate-90" : ""}`}
+              aria-hidden="true"
+            />
+          </span>
+          <span className="text-[11px] text-trace-muted shrink-0">
+            {formatTime(group.earliestStart)}
+          </span>
+          <span className="font-mono text-[11px] text-trace-accent-light shrink-0">
+            {group.shortId}
+          </span>
+          <span className="min-w-0 flex-1 text-[12px] text-trace-text">
+            {truncate(extractQueryTitle(group.query).title, 80)}
+          </span>
+          <RunOutcomeStrip
+            outcomes={group.sessions.map((session) => session.outcome)}
+          />
+          <Badge
+            variant={
+              outcomeClass(group.overallOutcome) as
+                | "completed"
+                | "stopped"
+                | "error"
+                | "max_turns"
+            }
+          >
+            {group.overallOutcome}
+          </Badge>
+          <AdjudicationBadge session={{ runId: group.runId }} />
+          <span className="text-[11px] text-trace-muted shrink-0">
+            {formatCount(group.sessions.length)} traces
+          </span>
+          <span className="text-[11px] text-trace-muted shrink-0">
+            {formatCount(group.totalTurns)} turns
+          </span>
+          <span className="text-[11px] text-trace-muted shrink-0">
+            {formatDuration(group.latestEnd - group.earliestStart)}
+          </span>
+          <span className="text-[11px] text-trace-subtle font-mono shrink-0">
+            {formatCost(group.totalCost) || "$0"}
+          </span>
+        </div>
+      </button>
+      {group.expanded && (
+        <div className="pb-2">
+          {group.sessions.map((session) => (
+            <RunSessionRow
+              key={session.sessionId}
+              session={session}
+              onSelect={() => onSelectSession(session.sessionId)}
+            />
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// A session with no runId, shown as its own top-level row so every loaded
+// trace is reachable from the Runs view.
+function StandaloneSessionRow({
+  session,
+  onSelect,
+}: {
+  session: TraceSession;
+  onSelect: () => void;
+}) {
+  const models = getSessionModels(session).map(shortModel).join(", ");
+  return (
+    <div className="border-b border-trace-border/50">
+      <button
+        onClick={onSelect}
+        className="w-full text-left px-5 py-3 hover:bg-trace-accent/[0.05] transition-colors"
+      >
+        <div className="flex items-center gap-3">
+          {/* Chevron slot kept empty so columns align with run rows. */}
+          <span className="w-[14px] shrink-0" aria-hidden="true" />
+          <span className="text-[11px] text-trace-muted shrink-0">
+            {formatTime(session.startTime)}
+          </span>
+          <span className="font-mono text-[11px] text-trace-muted shrink-0">
+            {session.sessionId.slice(0, 8)}
+          </span>
+          <span className="min-w-0 flex-1 text-[12px] text-trace-text">
+            {truncate(extractQueryTitle(session.query).title, 80)}
+          </span>
+          <Badge
+            variant={
+              outcomeClass(session.outcome) as
+                | "completed"
+                | "stopped"
+                | "error"
+                | "max_turns"
+            }
+          >
+            {session.outcome}
+          </Badge>
+          <AdjudicationBadge session={{ sessionId: session.sessionId }} />
+          <span className="text-[11px] text-trace-muted shrink-0">
+            {formatCount(session.turnCount || 0)} turns
+          </span>
+          <span className="text-[10px] text-trace-muted shrink-0">
+            {models || "-"}
+          </span>
+        </div>
+      </button>
     </div>
   );
 }

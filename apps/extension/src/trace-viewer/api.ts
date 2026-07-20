@@ -1,6 +1,5 @@
 import type { TraceSession, TraceEntry } from "../types/traces";
 import type { RunTraceEvent } from "../utils/run-trace";
-import type { RlTrajectory } from "@observability-schema";
 import type {
   TraceFilters,
   DayBucket,
@@ -253,16 +252,6 @@ export async function fetchRunTraceEvents(
 ): Promise<RunTraceEvent[]> {
   return fetchJson(
     `/api/run-traces/${encodeURIComponent(runId)}`,
-    signal ? { signal } : undefined,
-  );
-}
-
-export async function fetchRlTrajectory(
-  sessionId: string,
-  signal?: AbortSignal,
-): Promise<RlTrajectory> {
-  return fetchJson(
-    `/api/traces/${encodeURIComponent(sessionId)}/rl-trajectory`,
     signal ? { signal } : undefined,
   );
 }

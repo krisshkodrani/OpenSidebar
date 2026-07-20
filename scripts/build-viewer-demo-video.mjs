@@ -70,7 +70,7 @@ async function record() {
       page.waitForFunction((x) => document.body.innerText.includes(x), { timeout: to }, t);
 
     // clip A — Attention inbox: hold, then a slow scroll down the queue.
-    await goto("#top=attention");
+    await goto("#top=runs&review=needs");
     await waitText("Needs adjudication");
     await sleep(700);
     let rec = await page.screencast({ path: path.join(tmp, "a.webm") });
@@ -94,7 +94,7 @@ async function record() {
     // clip B — the run's Story: open via a row click (deep-linking races the
     // list load), then a single downward journey: adjudication panel → select a
     // verdict → scroll through the spine → rest on the judge card.
-    await goto("#top=sessions");
+    await goto("#top=runs");
     await waitText(ROW_TEXT);
     await sleep(600);
     await page.evaluate((t) => {

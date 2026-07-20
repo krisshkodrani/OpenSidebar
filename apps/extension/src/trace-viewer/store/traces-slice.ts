@@ -80,8 +80,7 @@ function computeRunGroups(sessions: TraceSession[]): RunGroup[] {
 export const createTracesSlice: SliceCreator<TracesSlice> = (set) => ({
   sessions: [],
   runGroups: [],
-  activeTopLevelView: "attention",
-  traceListMode: "sessions",
+  activeTopLevelView: "runs",
   availableDays: [],
   availableModels: [],
   filters: { ...DEFAULT_FILTERS },
@@ -111,11 +110,6 @@ export const createTracesSlice: SliceCreator<TracesSlice> = (set) => ({
     }),
   tracesLoading: false,
   tracesError: null,
-  tableSort: { column: "startTime", direction: "desc" },
-  setTableSort: (column, direction) =>
-    set((s) => {
-      s.tableSort = { column, direction };
-    }),
 
   setSessions: (sessions) =>
     set((s) => {
@@ -129,13 +123,6 @@ export const createTracesSlice: SliceCreator<TracesSlice> = (set) => ({
         if (prevExpanded.has(g.runId)) g.expanded = true;
       }
       s.runGroups = groups;
-      if (
-        s.traceListMode === "runs" &&
-        groups.length === 0 &&
-        sessions.length > 0
-      ) {
-        s.traceListMode = "sessions";
-      }
     }),
   setAvailableDays: (days) =>
     set((s) => {
@@ -194,10 +181,6 @@ export const createTracesSlice: SliceCreator<TracesSlice> = (set) => ({
   setActiveSubview: (view) =>
     set((s) => {
       s.activeSubview = view;
-    }),
-  setTraceListMode: (mode) =>
-    set((s) => {
-      s.traceListMode = mode;
     }),
   focusTurnNumber: null,
   focusTurnRequest: null,
