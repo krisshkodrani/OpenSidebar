@@ -32,7 +32,7 @@ logs/archive/
 *.log
 
 # Traces (runtime data — never committed; may contain page content/prompts)
-traces/
+/traces/
 
 
 # Test coverage
