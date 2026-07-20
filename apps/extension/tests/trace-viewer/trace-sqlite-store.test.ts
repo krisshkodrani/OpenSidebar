@@ -103,6 +103,17 @@ describe("trace sqlite store", () => {
     ]);
     writeJsonl(join(runs, "run-1.jsonl"), [
       { runId: "run-1", type: "node.failed", role: "executor", turn: 1 },
+      {
+        runId: "run-1",
+        type: "task_completed",
+        role: "system",
+        data: {
+          taskId: "task-1",
+          completionStatus: "failed",
+          success: false,
+          classification: "verification_failed",
+        },
+      },
     ]);
     indexTracesToSqlite({ projectRoot: root, dbPath });
   });
@@ -120,7 +131,7 @@ describe("trace sqlite store", () => {
       archivedSessions: 0,
       turns: 1,
       tools: 1,
-      runEvents: 1,
+      runEvents: 2,
     });
   }, TRACE_SQLITE_TEST_TIMEOUT_MS);
 
@@ -159,8 +170,15 @@ describe("trace sqlite store", () => {
     });
     expect(insights?.runs[0]).toMatchObject({
       runId: "run-1",
+      // The authoritative task_completed classification overrides the
+      // session-derived rollup (issue #45).
+      outcome: "verification_failed",
       topTools: ["configure_servicenow_form"],
     });
+    expect(
+      insights?.failures.find((row) => row.id === "verification_failed"),
+    ).toMatchObject({ runs: 1, sampleRunId: "run-1" });
+    expect(insights?.facets.failures).toContain("verification_failed");
     expect(insights?.runs[0].topSkills).toEqual(
       expect.arrayContaining(["service-form", "record-review"]),
     );

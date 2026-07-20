@@ -1196,6 +1196,36 @@ function buildInsightsSql(
     LIMIT ${MAX_INSIGHTS_FAILURE_ROWS}
   `).all(params) as Array<Record<string, unknown>>;
 
+  // ── 6b. Authoritative run outcomes (issue #45) — the orchestrator's
+  //        task_completed run event carries an explicit success flag and a
+  //        coarse failure classification. `alreadyLabeled` counts sessions in
+  //        the run whose own failure label equals the classification, so the
+  //        JS patch below can avoid double-counting a label the session
+  //        breakdown already carries (mirrors trace-insights.ts).
+  const runOutcomeRows = db.prepare(`
+    ${cte}
+    SELECT
+      re.run_id                                              AS runId,
+      json_extract(re.raw_json,'$.data.classification')      AS classification,
+      json_extract(re.raw_json,'$.data.success')             AS success,
+      MIN(f.session_id)                                      AS sampleSessionId,
+      COUNT(DISTINCT f.session_id)                           AS sessions,
+      SUM(CASE WHEN f.outcome NOT IN ('completed','success') AND f.outcome IS NOT NULL
+               AND COALESCE(
+                 NULLIF(json_extract(ts.raw_json,'$.failureCode'),''),
+                 NULLIF(json_extract(ts.raw_json,'$.failureCategory'),''),
+                 NULLIF(f.outcome,''),
+                 'unknown'
+               ) = json_extract(re.raw_json,'$.data.classification')
+               THEN 1 ELSE 0 END)                            AS alreadyLabeled
+    FROM trace_run_events re
+    JOIN filtered f ON f.run_id = re.run_id
+    JOIN trace_sessions ts ON ts.session_id = f.session_id
+    WHERE re.type = 'task_completed'
+      AND json_extract(re.raw_json,'$.data.classification') IS NOT NULL
+    GROUP BY re.run_id
+  `).all(params) as Array<Record<string, unknown>>;
+
   // ── 7. Skill breakdown (from raw_json.skillToolMetrics.skillId) ─────────
   const skillAggs = db.prepare(`
     ${cte}
@@ -1590,6 +1620,38 @@ function buildInsightsSql(
     sampleSessionId: asString(row.sampleSessionId),
   }));
 
+  // Authoritative run outcomes override the per-session rollup, and failed
+  // classifications no session already labels join the failure rows.
+  const runOutcomes = new Map(
+    runOutcomeRows.map((row) => [asString(row.runId), row]),
+  );
+  for (const run of runs) {
+    const row = runOutcomes.get(run.runId);
+    if (!row) continue;
+    run.outcome =
+      asNumber(row.success) === 1 ? "completed" : asString(row.classification);
+  }
+  for (const row of runOutcomeRows) {
+    if (asNumber(row.success) === 1 || asNumber(row.alreadyLabeled) > 0) {
+      continue;
+    }
+    const label = asString(row.classification);
+    if (!label) continue;
+    const existing = failures.find((item) => item.id === label);
+    if (existing) {
+      existing.runs += 1;
+    } else {
+      failures.push({
+        id: label,
+        label,
+        sessions: asNumber(row.sessions),
+        runs: 1,
+        sampleSessionId: asString(row.sampleSessionId) || undefined,
+        sampleRunId: asString(row.runId) || undefined,
+      });
+    }
+  }
+
   // ── Facets ──────────────────────────────────────────────────────────────
   const facets: TraceInsightsFacets = {
     runs: facetRuns,
@@ -1598,7 +1660,7 @@ function buildInsightsSql(
     models: facetModels,
     skills: skillAggs.map((r) => asString(r.skillId)).filter(Boolean),
     tools: toolAggs.map((r) => asString(r.tool_name)).filter(Boolean),
-    failures: failureAggs.map((r) => asString(r.failureLabel)).filter(Boolean),
+    failures: failures.map((r) => r.id).filter(Boolean),
     eventTypes: eventAggs.map((r) => asString(r.type)).filter(Boolean),
   };
 
