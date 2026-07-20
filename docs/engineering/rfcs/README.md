@@ -94,6 +94,12 @@ Suggested sequencing: LP-18 first (compounds everything and generates the
 track record), LP-20 in parallel (independent surface), LP-19 last — activate
 only after LP-18 history calibrates its thresholds.
 
+A glm-5p2 second-opinion design review of these drafts
+([assessed report](../rfc-review-jobagent-autonomy-glm-2026-07-20.md),
+2026-07-20) found one spec bug, three cross-RFC drift errors, and several
+policy hardenings — **revise before stamping**; the sequencing survives with
+LP-18's prerequisite restated as "LP-18 including approval-decision logging".
+
 ## Post-launch consolidation series
 
 LP-15 was decision-stamped and executed 2026-07-05→07 (all twelve phases'
