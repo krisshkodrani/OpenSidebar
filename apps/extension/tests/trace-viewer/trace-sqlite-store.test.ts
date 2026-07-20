@@ -58,7 +58,11 @@ describe("trace sqlite store", () => {
         planDecomposition: {
           steps: [{ selectedSkillId: "record-review" }],
         },
-        events: [{ type: "session_event", timestamp: Date.UTC(2026, 4, 11) }],
+        events: [
+          { type: "session_event", timestamp: Date.UTC(2026, 4, 11) },
+          { type: "stuck_signal", data: { type: "escalate", stagnantTurns: 3 } },
+          { type: "escalation_outcome", data: { outcome: "failed_fast" } },
+        ],
       },
     ]);
     writeJsonl(join(traces, "session-1.jsonl"), [
@@ -82,7 +86,11 @@ describe("trace sqlite store", () => {
           },
         },
         perception: { mode: "degraded", screenshotStatus: "capture_failed" },
-        events: [{ type: "turn_event", timestamp: Date.UTC(2026, 4, 11) }],
+        events: [
+          { type: "turn_event", timestamp: Date.UTC(2026, 4, 11) },
+          { type: "escalation", data: { reason: "stuck", voluntary: true } },
+          { type: "escalation_outcome", data: { outcome: "rescued" } },
+        ],
         toolExecutions: [
           {
             toolName: "configure_servicenow_form",
@@ -131,6 +139,13 @@ describe("trace sqlite store", () => {
       toolCalls: 1,
       toolFailures: 1,
       maxTurnsWithoutUsefulProgressCount: 1,
+      escalatedSessions: 1,
+      escalations: 2,
+      escalationRescued: 1,
+      escalationFailedFast: 1,
+      escalationBudgetExhausted: 0,
+      escalationFireRate: 1,
+      escalationRescueRate: 0.5,
     });
     expect(insights?.tools[0]).toMatchObject({
       id: "configure_servicenow_form",

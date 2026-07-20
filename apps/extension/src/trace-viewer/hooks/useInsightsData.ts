@@ -42,6 +42,13 @@ function emptyInsights(): TraceInsightsResponse {
       partialHandoffCount: 0,
       maxTurnsWithHandoffCount: 0,
       maxTurnsWithoutUsefulProgressCount: 0,
+      escalatedSessions: 0,
+      escalations: 0,
+      escalationRescued: 0,
+      escalationFailedFast: 0,
+      escalationBudgetExhausted: 0,
+      escalationFireRate: 0,
+      escalationRescueRate: 0,
     },
     facets: {
       runs: [],
