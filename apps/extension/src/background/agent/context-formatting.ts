@@ -2,8 +2,10 @@
  * Context formatting - element formatting, snapshot serialization, history summarization
  */
 
-import { TaggedElement } from "../../types";
+import { PageSkeletonNode, TaggedElement } from "../../types";
 import { LLMMessage } from "../llm/types";
+import { sanitizeForPrompt } from "../security";
+import { LastActionOutcome, OpenTabInfo } from "./context-types";
 
 /**
  * Format a single element in compact notation.
@@ -262,3 +264,87 @@ export function compressRepetitiveContent(
 
 /** Alias for backward compatibility */
 export const summarizeCausalChain = summarizeHistory;
+
+/** Format skeleton nodes into indented hierarchy for the agent system prompt. */
+export function formatPageSkeleton(skeleton: PageSkeletonNode[]): string {
+  return skeleton
+    .map((n) => {
+      const indent = "  ".repeat(Math.min(n.depth, 4));
+      return `${indent}${n.tagName}: "${n.text}"`;
+    })
+    .join("\n");
+}
+
+/**
+ * If 3+ form controls are visible, return a hint telling the LLM
+ * to batch independent field actions in a single response.
+ */
+export function buildFormBatchHint(elements: TaggedElement[]): string | null {
+  const formControlCount = elements.filter((el) => {
+    const tagName = el.tagName.toLowerCase();
+    const role = el.role?.toLowerCase();
+    return (
+      ["input", "textarea", "select"].includes(tagName) ||
+      role === "textbox" ||
+      role === "combobox" ||
+      role === "searchbox" ||
+      role === "checkbox" ||
+      role === "radio"
+    );
+  }).length;
+
+  if (formControlCount < 3) return null;
+
+  return (
+    "\n\n> **Batch hint:** This page has " +
+    formControlCount +
+    " form controls. " +
+    "When independent fields are already mapped, call multiple type_text, select_option, and set_checkbox actions in the same response; they will execute within one turn. " +
+    "Fill all visible requested fields at once. Do not click Next or Submit unless the user or the current plan step explicitly asks for it."
+  );
+}
+
+/** Render the structured last-action outcome block (prompt v6 grounding). */
+export function formatLastActionOutcome(
+  outcome: LastActionOutcome | null,
+): string {
+  if (!outcome) return "No recent DOM-affecting action recorded.";
+
+  const roundedDelta = Math.round(outcome.deltaPercent * 100);
+  const effectSummary =
+    roundedDelta === 0 && !outcome.urlChanged
+      ? "No observable page change."
+      : "Observable page change detected.";
+
+  const signals = [
+    `${roundedDelta}% DOM delta`,
+    outcome.urlChanged ? "URL changed" : "same URL",
+    `+${outcome.elementsAdded}`,
+    `-${outcome.elementsRemoved}`,
+  ].join(" | ");
+
+  return `Tool: ${outcome.toolName}\nResult: ${effectSummary}\nSignals: ${signals}`;
+}
+
+/**
+ * Render the open-tab inventory block. Empty unless the workspace is genuinely
+ * multi-tab, so the model can tell which tab the snapshot belongs to and reach
+ * work it already did in other tabs instead of redoing it.
+ */
+export function buildOpenTabsBlock(
+  tabs: OpenTabInfo[],
+  currentTabId: number | null,
+): string {
+  if (tabs.length < 2) return "";
+  const tabLines = tabs.map((tab) => {
+    const marker =
+      tab.tabId === currentTabId
+        ? " ← CURRENT TAB (the snapshot below shows this tab)"
+        : "";
+    return `Tab ${tab.tabId}: "${sanitizeForPrompt(tab.title || "(untitled)")}" — ${tab.url}${marker}`;
+  });
+  return (
+    `## Open Tabs (workspace)\n${tabLines.join("\n")}\n` +
+    `Only the current tab is visible in the snapshot. Form values and page state in other tabs persist there — use switch_tab({"tabId": N}) to return to them; do not re-open or re-fill a tab that already has your work.\n`
+  );
+}

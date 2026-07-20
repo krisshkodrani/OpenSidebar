@@ -18,6 +18,12 @@ import {
 } from "./types";
 import { LLM_MODEL_CONFIG } from "../../config/model-config";
 import { estimateCostUsd } from "./pricing";
+import {
+  buildJsonHeaders,
+  getProviderCreditsUrl,
+  getProviderDisplayName,
+  sanitizeApiKeyForHeader,
+} from "./provider-headers";
 import type { JudgeUsage } from "../agent/completion/judge";
 
 const OPENROUTER_BASE_URL = "https://openrouter.ai/api/v1/chat/completions";
@@ -42,9 +48,6 @@ function toJudgeUsage(
     ...(costUsd != null ? { costUsd } : {}),
   };
 }
-
-const HEADER_PASTE_ARTIFACTS = /[\u200B-\u200D\uFEFF]/g;
-const WRAPPING_QUOTES = /^[`"'\u201C\u201D\u2018\u2019]+|[`"'\u201C\u201D\u2018\u2019]+$/g;
 
 /** Delay that can be cancelled via an AbortSignal. */
 function abortableDelay(ms: number, signal?: AbortSignal): Promise<void> {
@@ -88,64 +91,6 @@ export const OPENAI_MODEL_PLANNER = LLM_MODEL_CONFIG.openai.planner;
 const GROQ_BASE_URL = "https://api.groq.com/openai/v1/chat/completions";
 export const GROQ_MODEL_PLANNER = LLM_MODEL_CONFIG.groq.planner;
 
-function normalizeHeaderCredential(value: string): string {
-  return value
-    .replace(HEADER_PASTE_ARTIFACTS, "")
-    .trim()
-    .replace(WRAPPING_QUOTES, "");
-}
-
-function assertIso88591HeaderValue(
-  name: string,
-  value: string,
-  providerId: ProviderConfig["providerId"],
-): string {
-  for (const ch of value) {
-    if (ch.charCodeAt(0) > 0xff) {
-      const providerName = getProviderDisplayName(providerId);
-      throw new Error(
-        `${providerName} request header "${name}" contains a non-ISO-8859-1 character. Re-paste the API key/header as plain text in Settings.`,
-      );
-    }
-  }
-  return value;
-}
-
-function sanitizeApiKeyForHeader(
-  apiKey: string,
-  providerId: ProviderConfig["providerId"],
-): string {
-  return assertIso88591HeaderValue(
-    "Authorization",
-    normalizeHeaderCredential(apiKey),
-    providerId,
-  );
-}
-
-function buildJsonHeaders(
-  provider: ProviderConfig,
-  request?: Pick<CompletionRequest, "sessionAffinityId" | "multiTurnSessionId">,
-): Record<string, string> {
-  const headers: Record<string, string> = {
-    "Content-Type": "application/json",
-    Authorization: `Bearer ${provider.apiKey}`,
-    ...provider.headers,
-  };
-
-  if (provider.providerId === "fireworks") {
-    if (request?.sessionAffinityId) {
-      headers["x-session-affinity"] = request.sessionAffinityId;
-    }
-    if (request?.multiTurnSessionId) {
-      headers["x-multi-turn-session-id"] = request.multiTurnSessionId;
-    }
-  }
-
-  for (const [name, value] of Object.entries(headers)) {
-    assertIso88591HeaderValue(name, value, provider.providerId);
-  }
-  return headers;
-}
 
 function parsePositiveIntHeader(headers: Headers, name: string): number | undefined {
   const raw = headers.get(name);
@@ -385,53 +330,6 @@ function openRouterProvider(apiKey: string): ProviderConfig {
   };
 }
 
-function getProviderDisplayName(
-  providerId: ProviderConfig["providerId"],
-): string {
-  switch (providerId) {
-    case "fireworks":
-      return "Fireworks AI";
-    case "moonshot":
-      return "Moonshot AI";
-    case "xiaomi":
-      return "Xiaomi MiMo";
-    case "deepseek":
-      return "DeepSeek";
-    case "cerebras":
-      return "Cerebras";
-    case "groq":
-      return "Groq";
-    case "openai":
-      return "OpenAI";
-    default:
-      return "OpenRouter";
-  }
-}
-
-function getProviderCreditsUrl(
-  providerId: ProviderConfig["providerId"],
-): string | null {
-  switch (providerId) {
-    case "openrouter":
-      return "https://openrouter.ai/credits";
-    case "fireworks":
-      return "https://fireworks.ai";
-    case "moonshot":
-      return "https://platform.kimi.ai";
-    case "xiaomi":
-      return "https://platform.xiaomimimo.com";
-    case "deepseek":
-      return "https://platform.deepseek.com";
-    case "cerebras":
-      return "https://cloud.cerebras.ai";
-    case "groq":
-      return "https://console.groq.com";
-    case "openai":
-      return "https://platform.openai.com";
-    default:
-      return null;
-  }
-}
 
 function shapePayloadForProvider(
   providerId: ProviderConfig["providerId"],
