@@ -3,6 +3,11 @@
  *
  * Runs the same simple read-only task across topology modes. The assertion is
  * intentionally about topology trace shape, not exact latency.
+ *
+ * Since LP-17 P6, the planner gate (qualifiesForDirectSingleNode) short-
+ * circuits the planner for single-node-shaped queries in EVERY topology mode,
+ * so this query must produce zero planner_llm_call events across all three
+ * runs — the topology label still has to flow through to plan_decomposed.
  */
 
 import {
@@ -162,20 +167,30 @@ describe.skipIf(!h.apiKey)("E2E: Lane topology", () => {
       (entry) => entry.type === "node_verified",
     );
 
-    expect(fullPlan?.data?.laneTopologyMode).toBe("full");
-    expect(standardPlan?.data?.laneTopologyMode).toBe("standard");
+    // The LP-17 planner gate must fire for this single-node-shaped query in
+    // every topology mode: planner skipped, one node, zero planner calls.
+    expect(fullPlan?.data).toMatchObject({
+      laneTopologyMode: "full",
+      plannerSkipped: true,
+      nodeCount: 1,
+    });
+    expect(standardPlan?.data).toMatchObject({
+      laneTopologyMode: "standard",
+      plannerSkipped: true,
+      nodeCount: 1,
+    });
     expect(simplePlan?.data).toMatchObject({
       laneTopologyMode: "simple",
       plannerSkipped: true,
       nodeCount: 1,
     });
     expect(simplePlannerCalls).toBe(0);
-    expect(standardPlannerCalls).toBeGreaterThan(0);
+    expect(standardPlannerCalls).toBe(0);
+    expect(fullPlannerCalls).toBe(0);
     expectAcceptedVerification(simpleNodeVerified, "simple");
     expectAcceptedVerification(standardNodeVerified, "standard");
     expectAcceptedVerification(fullNodeVerified, "full");
     expect(simple.summary.toLowerCase()).toContain("transformer");
-    expect(simplePlannerCalls).toBeLessThanOrEqual(fullPlannerCalls);
 
     console.log(
       `[e2e:lane-topology] full: turns=${full.turnCount}, plannerCalls=${fullPlannerCalls}, durationMs=${full.durationMs}`,

@@ -100,7 +100,10 @@ describe.skipIf(!h.apiKey)("E2E: Safe Stop Drain", () => {
     expect(String(completion?.payload?.summary ?? "")).toContain(
       "Stopped by user",
     );
-    expect(["partial", "failed"]).toContain(String(completion?.status ?? ""));
+    // A user-initiated stop reports its own terminal status: the drained task
+    // finalizes through finalizeStoppedTask → sendTerminationCompletion, which
+    // has emitted "stopped" (not partial/failed) since fe8ae030.
+    expect(String(completion?.status ?? "")).toBe("stopped");
     expect(checkedItems.length).toBeLessThan(2);
     expect(
       sawStoppingStatus,
