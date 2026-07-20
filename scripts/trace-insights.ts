@@ -665,6 +665,11 @@ export function buildTraceInsights({
   let escalationFailedFast = 0;
   let escalationBudgetExhausted = 0;
   const processedRunEvents = new Set<string>();
+  /** runId -> authoritative task_completed outcome (issue #45). */
+  const runClassifications = new Map<
+    string,
+    { success: boolean; classification: string }
+  >();
 
   for (const session of selected) {
     const sessionId = asString(session.sessionId);
@@ -905,8 +910,40 @@ export function buildTraceInsights({
         const row = metric(events, type);
         recordSessionMetric(row, session);
         row.calls += 1;
+        // The authoritative run outcome (issue #45): task_completed carries an
+        // explicit success flag + coarse classification from the orchestrator.
+        if (type === "task_completed") {
+          const data = (runEvent.data ?? runEvent) as Record<string, unknown>;
+          const classification = asString(data.classification);
+          if (classification) {
+            runClassifications.set(runId, {
+              success: data.success === true,
+              classification,
+            });
+          }
+        }
       }
     }
+  }
+
+  // Run-level failure classifications fill the facet gap for runs that failed
+  // without any session carrying that failure label (e.g. contract-incomplete
+  // partials where every session individually looks green).
+  for (const [runId, outcome] of runClassifications) {
+    if (outcome.success) continue;
+    const run = runs.get(runId);
+    if (!run) continue;
+    const alreadyLabeled = run.sessions.some(
+      (session) => failureLabel(session) === outcome.classification,
+    );
+    if (alreadyLabeled) continue;
+    facetSets.failures.add(outcome.classification);
+    const row = metric(failures, outcome.classification);
+    for (const session of run.sessions) {
+      recordSessionMetric(row, session);
+    }
+    row.calls += 1;
+    row.failures += 1;
   }
 
   for (const key of Object.keys(facets) as Array<keyof TraceInsightsFacets>) {
@@ -924,10 +961,15 @@ export function buildTraceInsights({
       );
       const earliest = Math.min(...sortedSessions.map((s) => asNumber(s.startTime)));
       const latest = Math.max(...sortedSessions.map((s) => asNumber(s.endTime)));
+      const authoritative = runClassifications.get(run.runId);
       return {
         runId: run.runId,
         query: truncateText(run.query),
-        outcome: run.outcome,
+        outcome: authoritative
+          ? authoritative.success
+            ? "completed"
+            : authoritative.classification
+          : run.outcome,
         sessions: sortedSessions.length,
         failedSessions: sortedSessions.filter((s) => !isSuccessOutcome(s.outcome)).length,
         totalTurns: sortedSessions.reduce(
