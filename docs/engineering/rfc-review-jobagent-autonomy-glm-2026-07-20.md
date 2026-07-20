@@ -224,5 +224,73 @@ but corrects one spec bug (F2), three cross-RFC drift errors (F3, F9, F13),
 and hardens the autonomy policy materially (F1, F7, F14, F10, M3). The
 sequencing recommendation survives intact (LP-18 → LP-20 ∥ → LP-19), with
 LP-18's prerequisite restated as "LP-18 *including approval-decision
-logging*". Re-run the same review against the revised drafts
-(`node .artifacts/rfc-design-review.mjs`) before requesting Decision Stamps.
+logging*".
+
+## Revision 2 and re-review (same day)
+
+All accepted dispositions were folded into the three drafts, then the same
+model was asked to grade its own findings against the revised text
+(`node .artifacts/rfc-review-verify.mjs`, raw output in `.artifacts/`). This
+adversarial re-check earned its keep immediately: it closed 16 of 18 findings
+but held two at PARTIAL and surfaced four new ones, including a genuine
+safety regression introduced by the revision itself.
+
+| Round-1 re-check | Outcome |
+| --- | --- |
+| 16 of 18 original findings | CLOSED with quoted text |
+| F6 (out-of-scope in-flight packages) | PARTIAL → fixed with a durable `outOfScope` flag that survives into `filled-awaiting-submit`/`awaiting-approval` and always-parks under LP-19 §2 |
+| M3 (L2 TOCTOU) | PARTIAL, because the console-side fallback left the window open → fixed by making the extension-side freshness check a **hard prerequisite for L2**, fallback removed |
+
+The four new findings, all fixed:
+
+- **N1 — L2 auto-submissions would bypass pacing entirely** (the one that
+  matters). Pacing counters were derived from "human gate actions", but at L2
+  the console answers the gate, so policy-approved submissions would not have
+  counted — defeating the bot-detection protection M2 was added for. Fixed:
+  `approval-decisions.jsonl` now records *every* gate resolution with
+  `approvedBy: human | policy`; precedents count only `human` rows, pacing
+  counts both. This was a defect the revision introduced, caught only because
+  the re-check was adversarial rather than confirmatory.
+- **N2 — fingerprint mismatch was undetectable.** §3 said the dry-run does not
+  recompute the family, so nothing could detect a form renaming a field
+  without changing its required set. Fixed: the dry-run recomputes the same
+  hash and compares; coverage and fingerprint are now explicitly distinct
+  checks.
+- **N3 — "fully visible form" was an absence of evidence.** A multi-page form
+  passes coverage vacuously. Fixed: positive qualification (no pagination
+  affordance, submit control present, kit field set fully accounted for);
+  "cannot tell" parks.
+- **N4 — scope/open-question contradiction** on whether the extension change
+  was required. Resolved by M3's fix: required for L2, not needed for L0/L1.
+
+**Round 2** re-checked those six fixes the same way: **all 22 findings
+(F1–F15, M1–M3, N1–N4) CLOSED, no new findings introduced**, verdict "ready
+for a decision stamp". It confirmed the two previously-partial items are now
+fully resolved — the `outOfScope` cross-reference exists in LP-19's actual
+rule list rather than only in LP-18's prose, and the L2 freshness check is a
+hard prerequisite with the weaker fallback explicitly rejected. One minor
+under-specification was noted and deliberately left: how the `outOfScope`
+flag clears if criteria revert. It fails safe (the flag parks), so it is an
+implementation detail, not a design gap.
+
+**Assessment of the re-check itself:** N1 alone justifies the pass. A
+confirmatory re-read ("does the revision mention pacing? yes") would have
+missed it; the finding only appears if you trace which log the counters read
+and who writes rows to it. Worth repeating this two-round pattern on any RFC
+whose revisions touch safety-critical accounting.
+
+Two mechanical notes for whoever reruns these scripts: long reasoning passes
+exceed undici's `headersTimeout` while the socket sits header-silent, so the
+request must stream (an `AbortSignal` does not help — it governs a different
+timer); and round 2's prompt carries both the prior review and the longer
+revised drafts, so it needs a materially larger `max_tokens` than round 1.
+Both scripts fail loudly on truncation rather than reporting a partial review
+as a clean one.
+
+## Status
+
+Revision 2 of all three RFCs is **re-reviewed clean and awaiting owner
+Decision Stamps**. Two items are deliberately left for the stamp: LP-19's
+activation thresholds (N=5/10 recommended, to be calibrated against LP-18's
+first weeks of `approval-decisions.jsonl`) and LP-19 Open Question 4's
+ATS-corpus spike for pagination detection, which gates L2 but not L0/L1.
