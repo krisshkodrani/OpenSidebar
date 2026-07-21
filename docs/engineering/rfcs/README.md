@@ -103,6 +103,36 @@ remain **unstamped** — awaiting owner Decision Stamps, with two questions
 called out for the stamp (LP-19's threshold numbers and its §7
 extension-side-vs-console-side freshness check).
 
+## Prompt-cache series (2026-07-21)
+
+Draft RFC from the 2026-07-21 caching review. Direct probes against the
+Fireworks API established that caching is a **cost** lever (cached input is
+discounted 80–90% on our seats) and that **cache retained is a near-linear
+function of how far into the prompt the first change falls** — change one
+character 25% of the way in and 25% survives. Production traces then showed the
+first divergence lands **inside the system message in 2,531 of 2,531 turn-pairs
+(100%)**, because page state is embedded there. Same status rules: **not
+stamped**, ends with a "Recommended Decision". No implementation until the owner
+records a Decision Stamp.
+
+| # | RFC | Problem | Depends on |
+| --- | --- | --- | --- |
+| LP-21 | [Prompt-cache stability](lp-0021-prompt-cache-stability.md) | Volatile page state lives in the system message, so message 0 changes every turn and the prefix dies mid-prompt; the stable-prefix invariant is enforced only by a code comment, so the regression class is silent | None (reuses LP-16's ratchet pattern) |
+
+Suggested sequencing: phase 1 (the `String.replace` collision fix plus a
+structural lint) is cheap and independently justified; **phase 2 — moving
+volatile content out of the system message — is where the value is**; phase 3
+(append-only history) is inert until phase 2 lands, since the cache never
+currently reaches history.
+
+At **revision 4 (final draft)**, after two adversarial review rounds and a round
+of live probes. Three proposed workstreams were eliminated by measurement rather
+than argument: provider eviction (the cache held 100% across a 60s idle gap),
+tool-definition freezing (tool defs serialize at the end of the prefix and cost
+~1.5%), and history rewriting (universal, but unreachable while message 0 breaks
+first). Revisions 1–3 each had claims withdrawn; the RFC's revision history
+records which and why.
+
 ## Post-launch consolidation series
 
 LP-15 was decision-stamped and executed 2026-07-05→07 (all twelve phases'
