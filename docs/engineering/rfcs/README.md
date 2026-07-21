@@ -107,20 +107,32 @@ extension-side-vs-console-side freshness check).
 
 Draft RFC from the 2026-07-21 caching review, which confirmed that Fireworks
 discounts cached input on serverless (so prompt caching is a cost lever, not a
-latency-only one) and measured a 29.8% prompt-construction *ceiling* against a
-22.7% realized hit rate — i.e. the provider side is broadly working and our
-prompt layout is the defect. Same status rules: **not stamped**, ends with a
-"Recommended Decision". No implementation until the owner records a Decision
-Stamp.
+latency-only one) and measured turn-to-turn prompt-prefix overlap of 28.6%
+(30.6% against the best prior turn) against a ~22.3% realized hit rate on the
+same turns. Two defects are measured rather than argued: history is rewritten
+in **100%** of turn-pairs, and the system prompt diverges *above* its own
+volatility anchor in **50.8%** of them. Same status rules: **not stamped**, ends
+with a "Recommended Decision". No implementation until the owner records a
+Decision Stamp.
 
 | # | RFC | Problem | Depends on |
 | --- | --- | --- | --- |
-| LP-21 | [Prompt-cache stability, correctness, and measurement](lp-0021-prompt-cache-stability.md) | Four invalidators break the stable prefix every turn — including a `String.replace` collision that injects per-turn element IDs above the cache breakpoint; the invariant is enforced only by a code comment, so the regression class is silent | None (reuses LP-16's ratchet pattern) |
+| LP-21 | [Prompt-cache stability, correctness, and measurement](lp-0021-prompt-cache-stability.md) | Three invalidators break the stable prefix — including a `String.replace` collision that injects per-turn element IDs above the cache breakpoint; the invariant is enforced only by a code comment, so the regression class is silent | None (reuses LP-16's ratchet pattern) |
 
-Suggested sequencing: phase 0 (measurement + ratchet) first — without it every
-later claim is unfalsifiable — then phase 1 (the bug fix and two small repairs).
-Phases 2 (tool freezing) and 3 (append-only history) are deliberately gated on
-what phase 1 measures.
+Suggested sequencing: phase 0 (measurement + ratchet + a tool-definition
+cache-key probe) first — without it every later claim is unfalsifiable — then
+phase 1 (the bug fix and two small repairs). Phase 2 (tool freezing) is
+**conditional on the probe** and may be dropped entirely; phase 3 (append-only
+history) is justified by the 100% mutation rate but sequenced last as the
+highest task-success risk.
+
+At **revision 2**: a glm-5p2 design review found the revision-1 methodology
+unsound — the "29.8% ceiling" was neither an upper nor a lower bound and was
+divided by a token-based number to produce a "76% realization ratio". Both the
+ceiling framing and that ratio are withdrawn, along with the run-length
+explanation of the kimi/minimax gap. One review finding went the other way:
+invalidator 3 was judged thinly evidenced, and direct measurement showed a 100%
+mutation rate.
 
 ## Post-launch consolidation series
 
