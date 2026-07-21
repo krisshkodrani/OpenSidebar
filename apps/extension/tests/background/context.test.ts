@@ -20,6 +20,33 @@ globalThis.chrome = {
 import { ContextManager } from "../../src/background/agent/context";
 import { LLMMessage } from "../../src/background/llm/types";
 
+/**
+ * LP-21: volatile page state no longer lives in the system message — it is
+ * emitted as a trailing user message so the system message stays byte-stable
+ * across a run and the cache prefix survives.
+ *
+ * Assertions about rendered prompt CONTENT (does the text appear at all?) use
+ * this helper. Assertions about PLACEMENT use systemOf/volatileTailOf — see
+ * the "Stable prefix (LP-21)" block at the end of this file.
+ */
+function renderedPrompt(prompt: LLMMessage[]): string {
+  return prompt
+    .map((m) => (typeof m.content === "string" ? m.content : ""))
+    .join("\n");
+}
+
+/** The run-stable system message (regions A + B). */
+function systemOf(prompt: LLMMessage[]): string {
+  return typeof prompt[0]?.content === "string" ? prompt[0].content : "";
+}
+
+/** The per-turn volatile tail (region C), or "" when absent. */
+function volatileTailOf(prompt: LLMMessage[]): string {
+  const last = prompt[prompt.length - 1];
+  if (!last || last === prompt[0] || last.role !== "user") return "";
+  return typeof last.content === "string" ? last.content : "";
+}
+
 describe("ContextManager", () => {
   let context: ContextManager;
 
@@ -71,10 +98,14 @@ describe("ContextManager", () => {
 
       const prompt = context.getPrompt();
 
-      // Total should be around 6000 tokens max.
-      // 30 * 250 = 7500 tokens > 6000.
-      // Should truncate.
-      expect(prompt.length).toBeLessThan(32); // System + 30 user messages = 31. Should be less.
+      // Ceiling check: system + at most 30 history messages + the LP-21
+      // volatile tail. (This bound was `< 32` before the tail existed; it has
+      // always been a ceiling rather than proof that truncation fired.)
+      expect(prompt.length).toBeLessThanOrEqual(32);
+      const history = prompt.filter(
+        (m, i) => m.role !== "system" && i !== prompt.length - 1,
+      );
+      expect(history.length).toBeLessThanOrEqual(30);
     });
   });
 
@@ -142,7 +173,7 @@ describe("ContextManager", () => {
       });
 
       const prompt = context.getPrompt();
-      const systemContent = prompt[0].content as string;
+      const systemContent = renderedPrompt(prompt);
       expect(systemContent).toContain("more content below");
       expect(systemContent).toContain("500/3000px");
     });
@@ -158,7 +189,7 @@ describe("ContextManager", () => {
       });
 
       const prompt = context.getPrompt();
-      const systemContent = prompt[0].content as string;
+      const systemContent = renderedPrompt(prompt);
       expect(systemContent).toContain("at bottom of page");
       // The scroll indicator line should not contain "more content below"
       // (Note: the phrase may appear elsewhere in the prompt as instructional text)
@@ -178,7 +209,7 @@ describe("ContextManager", () => {
       });
 
       const prompt = context.getPrompt();
-      const systemContent = prompt[0].content as string;
+      const systemContent = renderedPrompt(prompt);
       expect(systemContent).toContain("all content visible");
     });
 
@@ -193,13 +224,13 @@ describe("ContextManager", () => {
       });
 
       const prompt = context.getPrompt();
-      const systemContent = prompt[0].content as string;
+      const systemContent = renderedPrompt(prompt);
       expect(systemContent).toContain("50% down");
     });
 
     test("no scroll indicator when no snapshot", () => {
       const prompt = context.getPrompt();
-      const systemContent = prompt[0].content as string;
+      const systemContent = renderedPrompt(prompt);
       // Should not contain scroll info, and no leftover placeholder
       expect(systemContent).not.toContain("{{scrollIndicator}}");
     });
@@ -365,14 +396,18 @@ describe("ContextManager", () => {
       // Clear history
       context.clearHistory();
 
-      // History should be empty (only system prompt remains)
+      // History should be empty. LP-21: the trailing volatile message carries
+      // page state, not conversation history, so it is excluded from the count.
       const promptAfter = context.getPrompt();
-      const nonSystemMessages = promptAfter.filter(m => m.role !== "system");
-      expect(nonSystemMessages).toHaveLength(0);
+      const history = promptAfter.filter(
+        (m, i) => m.role !== "system" && i !== promptAfter.length - 1,
+      );
+      expect(history).toHaveLength(0);
 
-      // Snapshot should still be present (system prompt mentions elements)
-      const systemPrompt = promptAfter.find(m => m.role === "system");
-      expect(systemPrompt!.content).toContain("example.com");
+      // Snapshot survives the clear — and now lives in the volatile tail
+      // rather than the system message.
+      expect(volatileTailOf(promptAfter)).toContain("example.com");
+      expect(systemOf(promptAfter)).not.toContain("URL: https://example.com");
     });
 
     test("clear() wipes both history and snapshot", () => {
@@ -390,19 +425,23 @@ describe("ContextManager", () => {
       context.clear();
 
       const prompt = context.getPrompt();
-      const nonSystem = prompt.filter(m => m.role !== "system");
-      expect(nonSystem).toHaveLength(0);
+      // Conversation history is empty. The LP-21 volatile tail still renders
+      // (with the snapshot cleared its sections are empty), so exclude it.
+      const history = prompt.filter(
+        (m, i) => m.role !== "system" && i !== prompt.length - 1,
+      );
+      expect(history).toHaveLength(0);
 
-      // System prompt should NOT contain snapshot URL (note: template has "user@example.com" in tool examples)
-      const system = prompt.find(m => m.role === "system");
-      expect(system!.content).not.toContain("URL: https://example.com");
+      // Neither region may carry the snapshot URL (note: the template has
+      // "user@example.com" in tool examples, hence the specific prefix).
+      expect(renderedPrompt(prompt)).not.toContain("URL: https://example.com");
     });
   });
 
   describe("Persona", () => {
     test("executor persona appears by default", () => {
       const prompt = context.getPrompt();
-      const systemContent = prompt[0].content as string;
+      const systemContent = renderedPrompt(prompt);
       expect(systemContent).toContain("You are the execution model");
       expect(systemContent).not.toContain("You are the reasoning model");
     });
@@ -410,7 +449,7 @@ describe("ContextManager", () => {
     test("planner persona appears after setModelTier('planner')", () => {
       context.setModelTier("planner");
       const prompt = context.getPrompt();
-      const systemContent = prompt[0].content as string;
+      const systemContent = renderedPrompt(prompt);
       expect(systemContent).toContain("You are the reasoning model");
       expect(systemContent).not.toContain("You are the execution model");
     });
@@ -419,7 +458,7 @@ describe("ContextManager", () => {
   describe("Plan Instructions Conditionalization", () => {
     test("Multi-Step Planning section absent when no plan set", () => {
       const prompt = context.getPrompt();
-      const systemContent = prompt[0].content as string;
+      const systemContent = renderedPrompt(prompt);
       expect(systemContent).not.toContain("Multi-Step Planning");
       expect(systemContent).not.toContain("Active Plan");
     });
@@ -433,7 +472,7 @@ describe("ContextManager", () => {
         0,
       );
       const prompt = context.getPrompt();
-      const systemContent = prompt[0].content as string;
+      const systemContent = renderedPrompt(prompt);
       expect(systemContent).toContain("Multi-Step Planning");
       expect(systemContent).toContain("Only call done() when ALL steps are completed");
       // Also verify the Active Plan section is present
@@ -445,7 +484,7 @@ describe("ContextManager", () => {
   describe("Investigation Guidance", () => {
     test("system prompt contains investigation guidance", () => {
       const prompt = context.getPrompt();
-      const systemContent = prompt[0].content as string;
+      const systemContent = renderedPrompt(prompt);
       expect(systemContent).toContain("Discovery Rules");
       expect(systemContent).toContain("inspect_hidden");
       expect(systemContent).toContain("read_element");
@@ -453,7 +492,7 @@ describe("ContextManager", () => {
 
     test("system prompt contains page assist tool guidance", () => {
       const prompt = context.getPrompt();
-      const systemContent = prompt[0].content as string;
+      const systemContent = renderedPrompt(prompt);
       expect(systemContent).toContain("xray_page");
     });
   });
@@ -599,7 +638,7 @@ describe("ContextManager", () => {
       });
 
       const prompt = context.getPrompt();
-      const systemContent = prompt[0].content as string;
+      const systemContent = renderedPrompt(prompt);
       expect(systemContent).toContain("Valid element IDs: [5,12]");
     });
 
@@ -613,7 +652,7 @@ describe("ContextManager", () => {
       });
 
       const prompt = context.getPrompt();
-      const systemContent = prompt[0].content as string;
+      const systemContent = renderedPrompt(prompt);
       expect(systemContent).not.toContain("Valid element IDs:");
     });
   });
@@ -630,7 +669,7 @@ describe("ContextManager", () => {
       );
 
       const prompt = context.getPrompt();
-      const sys = prompt[0].content as string;
+      const sys = renderedPrompt(prompt);
       expect(sys).toContain("→ Found the button");
       expect(sys).toContain("→ Clicked submit");
       expect(sys).toContain("Step 3");
@@ -646,7 +685,7 @@ describe("ContextManager", () => {
       );
 
       const prompt = context.getPrompt();
-      const sys = prompt[0].content as string;
+      const sys = renderedPrompt(prompt);
       // The done-item line should NOT have a result arrow
       const doneLineMatch = sys.match(/1-Step 1.*/);
       expect(doneLineMatch).not.toBeNull();
@@ -664,7 +703,7 @@ describe("ContextManager", () => {
       );
 
       const prompt = context.getPrompt();
-      const sys = prompt[0].content as string;
+      const sys = renderedPrompt(prompt);
       expect(sys).toContain("Remaining after this step: 1");
       expect(sys).not.toContain("Next:");
       expect(sys).not.toContain("Next: 3. Step 3");
@@ -810,7 +849,7 @@ describe("Form batch hint", () => {
   test("system prompt includes direct-action batching and repeated-click guidance", () => {
     const ctx = new ContextManager();
     const prompt = ctx.getPrompt();
-    const systemContent = prompt[0].content as string;
+    const systemContent = renderedPrompt(prompt);
 
     expect(systemContent).toContain(
       "call multiple `type_text`, `select_option`, and `set_checkbox` tools in the same response",
@@ -838,7 +877,7 @@ describe("Form batch hint", () => {
     });
 
     const prompt = ctx.getPrompt();
-    const systemContent = prompt[0].content as string;
+    const systemContent = renderedPrompt(prompt);
     expect(systemContent).toContain("Batch hint");
     expect(systemContent).toContain("4 form controls");
     expect(systemContent).toContain("type_text");
@@ -864,7 +903,7 @@ describe("Form batch hint", () => {
     });
 
     const prompt = ctx.getPrompt();
-    const systemContent = prompt[0].content as string;
+    const systemContent = renderedPrompt(prompt);
     expect(systemContent).not.toContain("Batch hint");
   });
 
@@ -882,7 +921,7 @@ describe("Form batch hint", () => {
     });
 
     const prompt = ctx.getPrompt();
-    const systemContent = prompt[0].content as string;
+    const systemContent = renderedPrompt(prompt);
     expect(systemContent).not.toContain("Batch hint");
   });
 
@@ -901,7 +940,7 @@ describe("Form batch hint", () => {
     });
 
     const prompt = ctx.getPrompt();
-    const systemContent = prompt[0].content as string;
+    const systemContent = renderedPrompt(prompt);
     expect(systemContent).toContain("Batch hint");
     expect(systemContent).toContain("3 form controls");
     expect(systemContent).toContain(
@@ -933,7 +972,7 @@ describe("Form batch hint", () => {
     });
 
     const prompt = ctx.getPrompt();
-    const systemContent = prompt[0].content as string;
+    const systemContent = renderedPrompt(prompt);
     expect(systemContent).toContain("Batch hint");
     expect(systemContent).toContain("3 form controls");
     expect(systemContent).toContain(
@@ -959,7 +998,7 @@ describe("Form batch hint", () => {
     });
 
     const prompt = ctx.getPrompt();
-    const systemContent = prompt[0].content as string;
+    const systemContent = renderedPrompt(prompt);
     expect(systemContent).toContain("[preview truncated; use read_element for exact value]");
     expect(systemContent).toContain("Long input and textarea values in Visible Elements may be previews");
   });
@@ -995,7 +1034,7 @@ describe("Attribute Pruning Whitelist", () => {
     });
 
     const prompt = ctx.getPrompt();
-    const systemContent = prompt[0].content as string;
+    const systemContent = renderedPrompt(prompt);
     // NONE compression: all attributes pass through unfiltered
     expect(systemContent).toContain("type=submit");
     expect(systemContent).toContain("btn-primary");
@@ -1032,7 +1071,7 @@ describe("Attribute Pruning Whitelist", () => {
     });
 
     const prompt = ctx.getPrompt();
-    const systemContent = prompt[0].content as string;
+    const systemContent = renderedPrompt(prompt);
     expect(systemContent).toContain("type=email");
     expect(systemContent).toContain("placeholder=");
     expect(systemContent).toContain("name=email");
@@ -1048,7 +1087,7 @@ describe("Working Notes", () => {
     ctx.appendWorkingNote("Element [5] is the submit button");
 
     const prompt = ctx.getPrompt();
-    const systemContent = prompt[0].content as string;
+    const systemContent = renderedPrompt(prompt);
     expect(systemContent).toContain("## Working Notes");
     expect(systemContent).toContain("Element [5] is the submit button");
   });
@@ -1056,7 +1095,7 @@ describe("Working Notes", () => {
   test("working notes placeholder removed when no notes", () => {
     const ctx = new ContextManager();
     const prompt = ctx.getPrompt();
-    const systemContent = prompt[0].content as string;
+    const systemContent = renderedPrompt(prompt);
     expect(systemContent).not.toContain("{{workingNotes}}");
     expect(systemContent).not.toContain("## Working Notes");
   });
@@ -1067,7 +1106,7 @@ describe("Working Notes", () => {
     ctx.appendWorkingNote("B".repeat(300));
 
     const prompt = ctx.getPrompt();
-    const systemContent = prompt[0].content as string;
+    const systemContent = renderedPrompt(prompt);
     // Should have Working Notes section
     expect(systemContent).toContain("## Working Notes");
     // Total should be capped at 500 chars
@@ -1083,7 +1122,7 @@ describe("Working Notes", () => {
     ctx.appendWorkingNote("Note 2: second");
 
     const prompt = ctx.getPrompt();
-    const systemContent = prompt[0].content as string;
+    const systemContent = renderedPrompt(prompt);
     expect(systemContent).toContain("Note 1: first");
     expect(systemContent).toContain("Note 2: second");
   });
@@ -1096,7 +1135,7 @@ describe("Turn Budget", () => {
     ctx.setTimeContext(5, 30, Date.now() - 10000); // 10s ago
 
     const prompt = ctx.getPrompt();
-    const systemContent = prompt[0].content as string;
+    const systemContent = renderedPrompt(prompt);
     expect(systemContent).toContain("Turn 5/30");
     expect(systemContent).toContain("Elapsed:");
     expect(systemContent).toContain("Budget: 25 turns left");
@@ -1105,7 +1144,7 @@ describe("Turn Budget", () => {
   test("turnBudget placeholder removed when no time context", () => {
     const ctx = new ContextManager();
     const prompt = ctx.getPrompt();
-    const systemContent = prompt[0].content as string;
+    const systemContent = renderedPrompt(prompt);
     expect(systemContent).not.toContain("{{turnBudget}}");
     expect(systemContent).not.toContain("Turn 0/0");
   });
@@ -1124,7 +1163,7 @@ describe("Last Action Outcome", () => {
     });
 
     const prompt = ctx.getPrompt();
-    const systemContent = prompt[0].content as string;
+    const systemContent = renderedPrompt(prompt);
     expect(systemContent).toContain("## Last Action Outcome");
     expect(systemContent).toContain("Tool: click_element");
     expect(systemContent).toContain("Result: Observable page change detected.");
@@ -1136,7 +1175,7 @@ describe("Last Action Outcome", () => {
     ctx.setLastActionOutcome(null);
 
     const prompt = ctx.getPrompt();
-    const systemContent = prompt[0].content as string;
+    const systemContent = renderedPrompt(prompt);
     expect(systemContent).toContain("## Last Action Outcome");
     expect(systemContent).toContain(
       "No recent DOM-affecting action recorded.",
@@ -1188,7 +1227,7 @@ describe("Fill checklist (LP-17)", () => {
   test("system prompt carries the Form status line for a form snapshot", () => {
     const ctx = new ContextManager();
     ctx.setSnapshot(formSnapshot() as any);
-    const systemContent = ctx.getPrompt()[0].content as string;
+    const systemContent = renderedPrompt(ctx.getPrompt());
     expect(systemContent).toContain("Form status: 2/3 fields hold confirmed values");
     expect(systemContent).toContain("Still empty: Phone");
     // Placed above the elements list.
@@ -1207,7 +1246,7 @@ describe("Fill checklist (LP-17)", () => {
       viewport: { width: 1280, height: 800 },
       scroll: { x: 0, y: 0, maxY: 0 },
     } as any);
-    expect(ctx.getPrompt()[0].content as string).not.toContain("Form status:");
+    expect(renderedPrompt(ctx.getPrompt())).not.toContain("Form status:");
   });
 
   test("consumeChecklistFeedbackLine fires once per filled-set change", () => {
@@ -1251,14 +1290,14 @@ describe("Page-content unchanged marker (LP-17)", () => {
     const body = "UNIQUE-PAGE-BODY " + "filler ".repeat(100);
     ctx.setSnapshot(pageSnapshot(body) as any);
     ctx.setTimeContext(1, 30, Date.now());
-    const first = ctx.getPrompt()[0].content as string;
+    const first = renderedPrompt(ctx.getPrompt());
     expect(first).toContain("UNIQUE-PAGE-BODY");
     expect(first).not.toContain("«Page Content unchanged");
 
     ctx.setFirstTurnDone();
     ctx.setSnapshot(pageSnapshot(body) as any);
     ctx.setTimeContext(2, 30, Date.now());
-    const second = ctx.getPrompt()[0].content as string;
+    const second = renderedPrompt(ctx.getPrompt());
     expect(second).toContain("«Page Content unchanged since turn 1");
     // The excerpt still grounds the marker.
     expect(second).toContain("Excerpt: UNIQUE-PAGE-BODY");
@@ -1272,7 +1311,7 @@ describe("Page-content unchanged marker (LP-17)", () => {
     ctx.setFirstTurnDone();
     ctx.setSnapshot(pageSnapshot("BODY-TWO " + "y ".repeat(400)) as any);
     ctx.setTimeContext(2, 30, Date.now());
-    const second = ctx.getPrompt()[0].content as string;
+    const second = renderedPrompt(ctx.getPrompt());
     expect(second).toContain("BODY-TWO");
     expect(second).not.toContain("«Page Content unchanged");
   });
@@ -1287,7 +1326,7 @@ describe("Page-content unchanged marker (LP-17)", () => {
     ctx.clearHistory();
     ctx.setSnapshot(pageSnapshot(body) as any);
     ctx.setTimeContext(2, 30, Date.now());
-    const afterClear = ctx.getPrompt()[0].content as string;
+    const afterClear = renderedPrompt(ctx.getPrompt());
     expect(afterClear).toContain("SUBTASK-BODY");
     expect(afterClear).not.toContain("«Page Content unchanged");
   });
@@ -1326,7 +1365,7 @@ describe("System prompt block order (LP-17 P3, template v6)", () => {
       observedEffect: "navigation",
       detail: "clicked Buy",
     } as any);
-    return ctx.getPrompt()[0].content as string;
+    return renderedPrompt(ctx.getPrompt());
   }
 
   test("stable-per-run content precedes page state; volatile turn status is last", () => {
@@ -1364,18 +1403,121 @@ describe("System prompt block order (LP-17 P3, template v6)", () => {
   test("no unsubstituted {{placeholders}} remain — no-snapshot branch", () => {
     const ctx = new ContextManager();
     ctx.setOriginalQuery("Buy the blue widget");
-    const content = ctx.getPrompt()[0].content as string;
+    const content = renderedPrompt(ctx.getPrompt());
     expect(content).not.toMatch(/\{\{[a-zA-Z]+\}\}/);
   });
 
   test("first-turn grounding block points below and precedes the element sections", () => {
     const ctx = new ContextManager();
     ctx.setSnapshot(fullSnapshot() as any);
-    const content = ctx.getPrompt()[0].content as string;
+    const content = renderedPrompt(ctx.getPrompt());
     expect(content).toContain("Grounding Check — First-Turn Protocol");
     expect(content).toContain("provided below");
     expect(content.indexOf("Grounding Check")).toBeLessThan(
       content.indexOf("## Visible Elements"),
     );
+  });
+});
+
+/**
+ * LP-21 — the stable-prefix contract.
+ *
+ * Prefix caching keeps everything before the first byte that changed, so the
+ * system message must be byte-identical for a whole run. These are the tests
+ * that would have caught the `## Page Interpretation` replace() collision:
+ * the element-ID list is per-turn data that used to land in the static rules
+ * section, above the cache breakpoint.
+ */
+describe("Stable prefix (LP-21)", () => {
+  const snapshotWith = (ids: number[], url: string, body: string) => ({
+    title: "Shop",
+    url,
+    elements: ids.map((n) => ({
+      tag: n,
+      tagName: "button",
+      text: `Item ${n}`,
+      isVisible: true,
+      attributes: {},
+    })),
+    visibleContent: body,
+    pageContent: body,
+    viewport: { width: 1280, height: 800 },
+    scroll: { x: 0, y: 0, maxY: 0 },
+  });
+
+  function systemFor(snapshot: unknown): string {
+    const ctx = new ContextManager();
+    ctx.setOriginalQuery("Buy the blue widget");
+    ctx.setSnapshot(snapshot as any);
+    return systemOf(ctx.getPrompt());
+  }
+
+  test("system message is byte-identical when only the page changes", () => {
+    const a = systemFor(snapshotWith([1, 2, 3], "https://shop.test/a", "PAGE-A"));
+    const b = systemFor(
+      snapshotWith([7, 8, 9, 10], "https://shop.test/b", "PAGE-B"),
+    );
+    expect(a).toBe(b);
+  });
+
+  test("volatile page state is absent from the system message", () => {
+    const prompt = (() => {
+      const ctx = new ContextManager();
+      ctx.setOriginalQuery("Buy the blue widget");
+      ctx.setSnapshot(
+        snapshotWith([4, 5], "https://shop.test/x", "UNIQUE-BODY") as any,
+      );
+      return ctx.getPrompt();
+    })();
+
+    const system = systemOf(prompt);
+    const tail = volatileTailOf(prompt);
+
+    for (const marker of [
+      "## Page Context",
+      "## Visible Elements",
+      "## Page Content",
+      "## Turn Status",
+      "UNIQUE-BODY",
+      "https://shop.test/x",
+    ]) {
+      expect(system, `${marker} must not be in the system message`).not.toContain(
+        marker,
+      );
+      expect(tail, `${marker} must be in the volatile tail`).toContain(marker);
+    }
+  });
+
+  test("the volatile tail is the last message", () => {
+    const ctx = new ContextManager();
+    ctx.setOriginalQuery("Buy the blue widget");
+    ctx.addMessage({ role: "user", content: "first" });
+    ctx.addMessage({ role: "assistant", content: "ack" });
+    ctx.setSnapshot(snapshotWith([1], "https://shop.test/z", "BODY-Z") as any);
+
+    const prompt = ctx.getPrompt();
+    const last = prompt[prompt.length - 1];
+    expect(last.role).toBe("user");
+    expect(last.content).toContain("## Page Context");
+  });
+
+  test("element IDs render in the volatile tail, not the static rules", () => {
+    const ctx = new ContextManager();
+    ctx.setSnapshot(snapshotWith([42, 43], "https://shop.test/i", "B") as any);
+    const prompt = ctx.getPrompt();
+
+    expect(volatileTailOf(prompt)).toContain("Valid element IDs: [42,43]");
+    expect(systemOf(prompt)).not.toContain("Valid element IDs");
+    // The static rules keep their own (renamed) heading, and it must not be a
+    // substitution target: `replace()` takes the FIRST match.
+    expect(systemOf(prompt)).toContain("## Reading The Page Interpretation");
+  });
+
+  test("no unsubstituted placeholders survive in either region", () => {
+    const ctx = new ContextManager();
+    ctx.setSnapshot(snapshotWith([1], "https://shop.test/p", "B") as any);
+    const prompt = ctx.getPrompt();
+    expect(systemOf(prompt)).not.toMatch(/\{\{[a-zA-Z]+\}\}/);
+    expect(volatileTailOf(prompt)).not.toMatch(/\{\{[a-zA-Z]+\}\}/);
   });
 });
