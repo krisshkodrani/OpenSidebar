@@ -51,6 +51,39 @@ describe("LLM pricing table", () => {
     });
   });
 
+  test("includes official Fireworks GLM 5.2 pricing for the planner seat", () => {
+    const pricing = findModelPricing(
+      "fireworks",
+      "accounts/fireworks/models/glm-5p2",
+    );
+    expect(pricing).toMatchObject({
+      inputUsdPerMillion: 1.4,
+      outputUsdPerMillion: 4.4,
+      cachedInputUsdPerMillion: 0.14,
+      confidence: "official",
+    });
+  });
+
+  test("prices Fireworks cached input below the full input rate for every seat", () => {
+    // Regression guard: an omitted cachedInputUsdPerMillion silently falls back
+    // to the full input rate (see estimateCostUsd), and a wrong one skews spend
+    // reporting. Both happened before 2026-07-21 on the glm/gpt-oss/minimax rows.
+    const seats = [
+      { model: "accounts/fireworks/models/minimax-m3", cached: 0.06 },
+      { model: "accounts/fireworks/models/qwen3p7-plus", cached: 0.08 },
+      { model: "accounts/fireworks/models/kimi-k2p7-code", cached: 0.19 },
+      { model: "accounts/fireworks/models/glm-5p2", cached: 0.14 },
+      { model: "accounts/fireworks/models/gpt-oss-120b", cached: 0.015 },
+    ];
+    for (const seat of seats) {
+      const pricing = findModelPricing("fireworks", seat.model);
+      expect(pricing?.cachedInputUsdPerMillion).toBe(seat.cached);
+      expect(pricing?.cachedInputUsdPerMillion).toBeLessThan(
+        pricing!.inputUsdPerMillion,
+      );
+    }
+  });
+
   test("includes official Cerebras pricing for Gemma 4 31B", () => {
     const pricing = findModelPricing("cerebras", "gemma-4-31b");
     expect(pricing).toMatchObject({
