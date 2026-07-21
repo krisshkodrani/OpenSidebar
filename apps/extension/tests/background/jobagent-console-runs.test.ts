@@ -72,6 +72,7 @@ interface FakeWorld {
   manager: RunManager;
   bridgeCalls: Array<{ tool: string; args: Record<string, unknown>; session?: string }>;
   events: ConsoleEvent[];
+  runLogs: Map<string, string[]>;
   bridgeClosed: () => number;
   bridgesCreated: () => number;
   finishPi: (code: number) => void;
@@ -79,9 +80,10 @@ interface FakeWorld {
   scriptedResponses: Array<unknown>;
 }
 
-function makeWorld(now = 1_000_000): FakeWorld {
+function makeWorld(now = 1_000_000, opts: { traceSinkUp?: boolean } = {}): FakeWorld {
   const bridgeCalls: FakeWorld["bridgeCalls"] = [];
   const events: ConsoleEvent[] = [];
+  const runLogs = new Map<string, string[]>();
   const scriptedResponses: unknown[] = [];
   let closed = 0;
   let created = 0;
@@ -118,6 +120,13 @@ function makeWorld(now = 1_000_000): FakeWorld {
     now: () => clock++,
     emit: (event) => events.push(event),
     appendAudit: () => {},
+    // Default "up" so existing tests see no trace-sink warning line.
+    probeTraceServer: async () => opts.traceSinkUp ?? true,
+    appendRunLog: (runId, line) => {
+      const lines = runLogs.get(runId) ?? [];
+      lines.push(line);
+      runLogs.set(runId, lines);
+    },
   };
 
   const manager = new RunManager(deps);
@@ -125,6 +134,7 @@ function makeWorld(now = 1_000_000): FakeWorld {
     manager,
     bridgeCalls,
     events,
+    runLogs,
     bridgeClosed: () => closed,
     bridgesCreated: () => created,
     finishPi: (code) => piExit?.(code),
@@ -163,6 +173,55 @@ describe("fill runs", () => {
     expect(world.bridgeCalls[0].session).toContain("console-");
     expect(readStatus("acme-ai-engineer")).toBe("filled-awaiting-submit");
     expect(world.manager.listRuns()[0].state).toBe("ok");
+  });
+
+  // A live fill dies with the browser it drives. Both halves of the durable
+  // record are covered here: the console log must be written line-by-line as
+  // the run proceeds, and a missing agent-trace sink must be stated rather
+  // than left silent (trace.ts logs flush failures at debug level only, so an
+  // untraced run is otherwise indistinguishable from a traced one).
+  test("run log is persisted line-by-line, not at finish", async () => {
+    seedReadyApp();
+    const world = makeWorld();
+    await world.manager.start();
+
+    world.manager.startFill("acme-ai-engineer", "fill");
+    await flush();
+
+    const runId = world.manager.listRuns()[0].id;
+    const lines = world.runLogs.get(runId) ?? [];
+    expect(lines.length).toBeGreaterThan(0);
+    expect(lines.some((l) => l.includes("starting fill mission"))).toBe(true);
+  });
+
+  test("a missing trace sink is recorded and warned about, and does not block the run", async () => {
+    seedReadyApp();
+    const world = makeWorld(1_000_000, { traceSinkUp: false });
+    await world.manager.start();
+
+    world.manager.startFill("acme-ai-engineer", "fill");
+    await flush();
+
+    const run = world.manager.listRuns()[0];
+    expect(run.traceServer).toBe("down");
+    const lines = world.runLogs.get(run.id) ?? [];
+    expect(lines.some((l) => l.includes("7589"))).toBe(true);
+    // Warned, not blocked: the fill still completes.
+    expect(run.state).toBe("ok");
+    expect(readStatus("acme-ai-engineer")).toBe("filled-awaiting-submit");
+  });
+
+  test("a reachable trace sink is recorded without a warning line", async () => {
+    seedReadyApp();
+    const world = makeWorld();
+    await world.manager.start();
+
+    world.manager.startFill("acme-ai-engineer", "fill");
+    await flush();
+
+    const run = world.manager.listRuns()[0];
+    expect(run.traceServer).toBe("up");
+    expect((world.runLogs.get(run.id) ?? []).some((l) => l.includes("7589"))).toBe(false);
   });
 
   test("wrong status is refused up front", async () => {

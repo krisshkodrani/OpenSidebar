@@ -63,6 +63,15 @@ export interface RunManagerDeps {
   now(): number;
   emit(event: ConsoleEvent): void;
   appendAudit?(file: string, record: unknown): void;
+  /**
+   * Is the dev log server (127.0.0.1:7589) accepting trace POSTs? The
+   * extension's trace recorder fires-and-forgets at that address and only
+   * logs failures at debug level, so without this probe a run that produced
+   * NO durable agent trace is indistinguishable from one that did.
+   */
+  probeTraceServer?(): Promise<boolean>;
+  /** Append one line to a run's durable log (defaults to the seed dir). */
+  appendRunLog?(runId: string, line: string): void;
 }
 
 /* ── Records ──────────────────────────────────────────────── */
@@ -88,6 +97,12 @@ export interface RunRecord {
   outcomeSummary?: string;
   handoff?: unknown;
   log: string[];
+  /**
+   * Whether the agent-trace sink was reachable when this run started. "down"
+   * means the turn-by-turn agent trace for this run was NOT persisted — the
+   * console log is then the only surviving record of what the agent did.
+   */
+  traceServer?: "up" | "down";
 }
 
 export type ApprovalState = "pending" | "approved" | "denied" | "expired";
@@ -281,7 +296,38 @@ export class RunManager {
 
   private logLine(run: RunRecord, line: string): void {
     run.log.push(line);
+    // Written through on every line, not at finishRun: a live fill dies with
+    // the browser it drives, and a finish-time write loses the whole log
+    // exactly when the run failed in the way most worth reading about.
+    this.runLog(run.id, line);
     this.deps.emit({ type: "run-log", data: { runId: run.id, line } });
+  }
+
+  private runLog(runId: string, line: string): void {
+    if (this.deps.appendRunLog) return this.deps.appendRunLog(runId, line);
+    const path = join(resolveSeedDir(), "jobagent", "run-logs", `${runId}.log`);
+    mkdirSync(dirname(path), { recursive: true });
+    appendFileSync(path, `${new Date(this.deps.now()).toISOString()} ${line}\n`, "utf8");
+  }
+
+  /**
+   * Record whether the agent trace for this run will survive it. Best-effort:
+   * a probe failure is reported as "down" rather than aborting the run.
+   */
+  private async checkTraceSink(run: RunRecord): Promise<void> {
+    const up = this.deps.probeTraceServer
+      ? await this.deps.probeTraceServer().catch(() => false)
+      : false;
+    run.traceServer = up ? "up" : "down";
+    if (!up) {
+      this.logLine(
+        run,
+        "[console] WARNING: no trace sink on 127.0.0.1:7589 — the agent's " +
+          "turn-by-turn trace will NOT be persisted for this run. Start one " +
+          "with `pnpm run logs` (and load dist-dev, not dist) for a full audit " +
+          "trail.",
+      );
+    }
   }
 
   private finishRun(run: RunRecord, state: RunState, summary?: string): void {
@@ -345,6 +391,8 @@ export class RunManager {
     }
     const signal = this.aborts.get(run.id)!.signal;
     let cvServer: CvServer | null = null;
+    // Before anything touches a real employer's form: is this run auditable?
+    await this.checkTraceSink(run);
     try {
       const app = loadApplication(name);
       let cvUrl: string | undefined;
@@ -486,6 +534,19 @@ export function createProductionDeps(
       const bridge = new WebSocketBridge({ port, timeoutMs: 600_000 });
       await bridge.listening;
       return bridge as unknown as ConsoleBridge;
+    },
+    async probeTraceServer(): Promise<boolean> {
+      // Matches trace.ts's hardcoded TRACE_SERVER_URL; log-server.ts serves
+      // /health on the same port (LOG_SERVER_PORT, default 7589).
+      const port = Number(process.env.LOG_SERVER_PORT ?? 7589);
+      try {
+        const res = await fetch(`http://127.0.0.1:${port}/health`, {
+          signal: AbortSignal.timeout(1_500),
+        });
+        return res.ok;
+      } catch {
+        return false;
+      }
     },
     spawnPi(mission: string): PiProcess {
       const child = spawn(
