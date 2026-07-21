@@ -6,6 +6,11 @@ import { AGENT_LIMITS, COMPRESSION_TRIGGERS } from "./constants";
 import { sanitizeForPrompt } from "../security";
 import { getPromptTemplate } from "../../prompts";
 import {
+  injectDismissedOverlays,
+  injectValidElementIds,
+  splitAtVolatileBoundary,
+} from "./prompt-regions";
+import {
   formatElementCompact,
   summarizeHistory,
   deduplicateInvisibleElements,
@@ -495,12 +500,18 @@ export class ContextManager {
    * @returns Array of messages ready for LLM consumption
    */
   public getPrompt(): LLMMessage[] {
-    const systemMessage = this.constructSystemMessage();
+    const { system: systemMessage, volatileTail } =
+      this.constructSystemMessage();
 
     // 1. Calculate budget
     const RESERVED_OUTPUT_TOKENS = 1000;
 
-    const systemTokens = this.estimateMessageTokens(systemMessage);
+    // The volatile tail is emitted as a trailing message but is still part of
+    // the fixed per-turn cost, so it must be budgeted alongside the system
+    // message rather than competing with history for the remaining window.
+    const systemTokens =
+      this.estimateMessageTokens(systemMessage) +
+      (volatileTail ? this.estimateMessageTokens(volatileTail) : 0);
     let availableTokens =
       this.maxContextTokens - systemTokens - RESERVED_OUTPUT_TOKENS;
 
@@ -656,7 +667,9 @@ export class ContextManager {
         return msg;
       });
 
-    return sanitized;
+    // LP-21: the volatile tail goes last — after history — so everything ahead
+    // of it stays byte-identical across turns and remains cacheable.
+    return volatileTail ? [...sanitized, volatileTail] : sanitized;
   }
 
   private estimateMessageTokens(message: LLMMessage): number {
@@ -680,7 +693,10 @@ export class ContextManager {
     return Math.ceil(text.length / 4);
   }
 
-  private constructSystemMessage(): LLMMessage {
+  private constructSystemMessage(): {
+    system: LLMMessage;
+    volatileTail: LLMMessage | null;
+  } {
     let content = SYSTEM_PROMPT_TEMPLATE;
 
     // Persona: executor vs planner model framing (in static prefix for caching)
@@ -932,38 +948,18 @@ Do NOT call done() until every planned step is complete.
       }
 
       // Archivist: surface text from persisted captured overlays
-      if (this.capturedOverlays.length > 0) {
-        const archived = this.capturedOverlays
-          .map(
-            (t, i) => `[Dismissed Overlay ${i + 1}]: ${sanitizeForPrompt(t)}`,
-          )
-          .join("\n\n");
-        content = content.replace(
-          "## Page Content",
-          `## Dismissed Overlay Content\nThe following text was extracted from overlays/modals that were automatically dismissed during this session. Review for any important information.\n${archived}\n\n## Page Content`,
-        );
-      } else if (
-        // Fallback for immediate snapshot if persistence hasn't caught up (rare)
-        this.snapshot.capturedTexts &&
-        this.snapshot.capturedTexts.length > 0
-      ) {
-        const archived = this.snapshot.capturedTexts
-          .map((t, i) => `[Overlay ${i + 1}]: ${sanitizeForPrompt(t)}`)
-          .join("\n\n");
-        content = content.replace(
-          "## Page Content",
-          `## Dismissed Overlay Content\nThe following text was extracted from overlays/modals that were automatically dismissed. Review for any important information.\n${archived}\n\n## Page Content`,
-        );
-      }
+      content = injectDismissedOverlays(
+        content,
+        this.capturedOverlays,
+        this.snapshot.capturedTexts,
+        sanitizeForPrompt,
+      );
 
-      // Valid element IDs — helps LLM avoid hallucinating non-existent IDs
-      if (this.snapshot.elements.length > 0) {
-        const idList = this.snapshot.elements.map((e) => e.tag).join(",");
-        content = content.replace(
-          "## Page Interpretation",
-          `Valid element IDs: [${idList}]\n\n## Page Interpretation`,
-        );
-      }
+      // Valid element IDs — helps LLM avoid hallucinating non-existent IDs.
+      content = injectValidElementIds(
+        content,
+        this.snapshot.elements.map((e) => e.tag),
+      );
 
       // Page interpretation: perception text, VL instructions, or fallback
       let interpretation: string;
@@ -1025,10 +1021,10 @@ Do NOT call done() until every planned step is complete.
       formatLastActionOutcome(this.lastActionOutcome),
     );
 
-    return {
-      role: "system",
-      content: content,
-    };
+    // Drop the placeholder when the no-snapshot branch skipped the injection.
+    content = injectValidElementIds(content, []);
+
+    return splitAtVolatileBoundary(content);
   }
 
   /**
