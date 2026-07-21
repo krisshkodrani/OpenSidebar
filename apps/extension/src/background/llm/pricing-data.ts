@@ -75,8 +75,12 @@ export const DEFAULT_MODEL_PRICING: ModelPricing[] = [
     model: "accounts/fireworks/models/gpt-oss-120b",
     inputUsdPerMillion: 0.15,
     outputUsdPerMillion: 0.6,
-    effectiveDate: "2026-04-19",
-    sourceUrl: "https://fireworks.ai/pricing",
+    // Cached input is 10% of the input rate (90% discount) — Fireworks' steepest
+    // cache discount in the fleet. Verified 2026-07-21 against the serverless
+    // pricing table; previously omitted, so cached tokens billed at full rate.
+    cachedInputUsdPerMillion: 0.015,
+    effectiveDate: "2026-07-21",
+    sourceUrl: "https://docs.fireworks.ai/serverless/pricing",
     confidence: "official",
   },
   {
@@ -141,14 +145,16 @@ export const DEFAULT_MODEL_PRICING: ModelPricing[] = [
   {
     providerId: "fireworks",
     // minimax-m3: unified-VL executor candidate under A/B vs kimi-k2p7-code
-    // (2026-07-17). Fireworks serverless rate, confirmed against the M3 launch
-    // and pricing pages; prompt caching cuts effective input ~90%.
+    // (2026-07-17). Fireworks serverless rate; prompt caching cuts effective
+    // input 80% (0.30 -> 0.06), not the ~90% previously recorded here — the
+    // 0.03 cached rate was wrong and understated executor cost. Corrected
+    // 2026-07-21 against the serverless pricing table.
     model: "accounts/fireworks/models/minimax-m3",
     inputUsdPerMillion: 0.3,
     outputUsdPerMillion: 1.2,
-    cachedInputUsdPerMillion: 0.03,
-    effectiveDate: "2026-07-17",
-    sourceUrl: "https://fireworks.ai/blog/minimax-m3-launch",
+    cachedInputUsdPerMillion: 0.06,
+    effectiveDate: "2026-07-21",
+    sourceUrl: "https://docs.fireworks.ai/serverless/pricing",
     confidence: "official",
   },
   {
@@ -166,14 +172,18 @@ export const DEFAULT_MODEL_PRICING: ModelPricing[] = [
   },
   {
     providerId: "fireworks",
-    // GLM 5.2 as planner/orchestrator candidate. Pricing is a placeholder
-    // estimate — verify against Fireworks' published rate before trusting cost.
+    // GLM 5.2 — planner/writer seat. The former 0.55/2.19 rate was a
+    // placeholder that understated input ~2.5x and output ~2x; every cost
+    // figure including planner spend before 2026-07-21 is low by that margin.
+    // Real serverless rate verified 2026-07-21; cached input is 10% of input
+    // (90% discount), previously omitted so cached tokens billed at full rate.
     model: "accounts/fireworks/models/glm-5p2",
-    inputUsdPerMillion: 0.55,
-    outputUsdPerMillion: 2.19,
-    effectiveDate: "2026-06-24",
-    sourceUrl: "https://fireworks.ai/pricing",
-    confidence: "best_effort",
+    inputUsdPerMillion: 1.4,
+    outputUsdPerMillion: 4.4,
+    cachedInputUsdPerMillion: 0.14,
+    effectiveDate: "2026-07-21",
+    sourceUrl: "https://docs.fireworks.ai/serverless/pricing",
+    confidence: "official",
   },
   {
     providerId: "moonshot",

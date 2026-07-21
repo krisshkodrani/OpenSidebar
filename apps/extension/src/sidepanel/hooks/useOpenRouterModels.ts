@@ -37,12 +37,12 @@ export const FIREWORKS_MODELS: ProviderModelOption[] = [
   {
     id: "accounts/fireworks/models/glm-5p2",
     name: "GLM 5.2",
-    promptPrice: 0.55 / 1_000_000,
-    completionPrice: 2.19 / 1_000_000,
+    promptPrice: 1.4 / 1_000_000,
+    completionPrice: 4.4 / 1_000_000,
     supportsVision: false,
     provider: "fireworks",
     source: "curated",
-    effectiveDate: "2026-06-24",
+    effectiveDate: "2026-07-21",
   },
   {
     id: "accounts/fireworks/models/kimi-k2p7-code",
