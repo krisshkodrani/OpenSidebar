@@ -105,34 +105,33 @@ extension-side-vs-console-side freshness check).
 
 ## Prompt-cache series (2026-07-21)
 
-Draft RFC from the 2026-07-21 caching review, which confirmed that Fireworks
-discounts cached input on serverless (so prompt caching is a cost lever, not a
-latency-only one) and measured turn-to-turn prompt-prefix overlap of 28.6%
-(30.6% against the best prior turn) against a ~22.3% realized hit rate on the
-same turns. Two defects are measured rather than argued: history is rewritten
-in **100%** of turn-pairs, and the system prompt diverges *above* its own
-volatility anchor in **50.8%** of them. Same status rules: **not stamped**, ends
-with a "Recommended Decision". No implementation until the owner records a
-Decision Stamp.
+Draft RFC from the 2026-07-21 caching review. Direct probes against the
+Fireworks API established that caching is a **cost** lever (cached input is
+discounted 80–90% on our seats) and that **cache retained is a near-linear
+function of how far into the prompt the first change falls** — change one
+character 25% of the way in and 25% survives. Production traces then showed the
+first divergence lands **inside the system message in 2,531 of 2,531 turn-pairs
+(100%)**, because page state is embedded there. Same status rules: **not
+stamped**, ends with a "Recommended Decision". No implementation until the owner
+records a Decision Stamp.
 
 | # | RFC | Problem | Depends on |
 | --- | --- | --- | --- |
-| LP-21 | [Prompt-cache stability, correctness, and measurement](lp-0021-prompt-cache-stability.md) | Three invalidators break the stable prefix — including a `String.replace` collision that injects per-turn element IDs above the cache breakpoint; the invariant is enforced only by a code comment, so the regression class is silent | None (reuses LP-16's ratchet pattern) |
+| LP-21 | [Prompt-cache stability](lp-0021-prompt-cache-stability.md) | Volatile page state lives in the system message, so message 0 changes every turn and the prefix dies mid-prompt; the stable-prefix invariant is enforced only by a code comment, so the regression class is silent | None (reuses LP-16's ratchet pattern) |
 
-Suggested sequencing: phase 0 (measurement + ratchet + a tool-definition
-cache-key probe) first — without it every later claim is unfalsifiable — then
-phase 1 (the bug fix and two small repairs). Phase 2 (tool freezing) is
-**conditional on the probe** and may be dropped entirely; phase 3 (append-only
-history) is justified by the 100% mutation rate but sequenced last as the
-highest task-success risk.
+Suggested sequencing: phase 1 (the `String.replace` collision fix plus a
+structural lint) is cheap and independently justified; **phase 2 — moving
+volatile content out of the system message — is where the value is**; phase 3
+(append-only history) is inert until phase 2 lands, since the cache never
+currently reaches history.
 
-At **revision 2**: a glm-5p2 design review found the revision-1 methodology
-unsound — the "29.8% ceiling" was neither an upper nor a lower bound and was
-divided by a token-based number to produce a "76% realization ratio". Both the
-ceiling framing and that ratio are withdrawn, along with the run-length
-explanation of the kimi/minimax gap. One review finding went the other way:
-invalidator 3 was judged thinly evidenced, and direct measurement showed a 100%
-mutation rate.
+At **revision 4 (final draft)**, after two adversarial review rounds and a round
+of live probes. Three proposed workstreams were eliminated by measurement rather
+than argument: provider eviction (the cache held 100% across a 60s idle gap),
+tool-definition freezing (tool defs serialize at the end of the prefix and cost
+~1.5%), and history rewriting (universal, but unreachable while message 0 breaks
+first). Revisions 1–3 each had claims withdrawn; the RFC's revision history
+records which and why.
 
 ## Post-launch consolidation series
 
