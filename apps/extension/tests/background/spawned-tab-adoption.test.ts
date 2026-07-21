@@ -19,6 +19,14 @@ import { ContextManager } from "../../src/background/agent/context";
 import { tabManagementBlocked } from "../../src/background/agent/loop-tool-handlers";
 import type { AgentLoopToolHandlerHost } from "../../src/background/agent/loop-tool-handlers";
 
+// LP-21: page state moved out of the system message into a trailing user
+// message, so content assertions join the whole rendered prompt.
+function renderedPrompt(prompt: { content?: unknown }[]): string {
+  return prompt
+    .map((m) => (typeof m.content === "string" ? m.content : ""))
+    .join("\n");
+}
+
 const WS_STORAGE = {
   "opensidebar:workspaces": [
     {
@@ -338,7 +346,7 @@ describe("ContextManager open-tab inventory", () => {
       42,
     );
     const prompt = context.getPrompt();
-    const system = prompt[0].content as string;
+    const system = renderedPrompt(prompt);
     expect(system).toContain("## Open Tabs (workspace)");
     expect(system).toContain('Tab 10: "TechJobs Board" — http://x/job-board');
     expect(system).toContain("Tab 42:");
@@ -356,7 +364,7 @@ describe("ContextManager open-tab inventory", () => {
       [{ tabId: 10, title: "Only Tab", url: "http://x/" }],
       10,
     );
-    const system = context.getPrompt()[0].content as string;
+    const system = renderedPrompt(context.getPrompt());
     expect(system).not.toContain("## Open Tabs");
     expect(system).not.toContain("{{openTabs}}");
   });
