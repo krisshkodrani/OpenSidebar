@@ -103,6 +103,25 @@ remain **unstamped** — awaiting owner Decision Stamps, with two questions
 called out for the stamp (LP-19's threshold numbers and its §7
 extension-side-vs-console-side freshness check).
 
+## Prompt-cache series (2026-07-21)
+
+Draft RFC from the 2026-07-21 caching review, which confirmed that Fireworks
+discounts cached input on serverless (so prompt caching is a cost lever, not a
+latency-only one) and measured a 29.8% prompt-construction *ceiling* against a
+22.7% realized hit rate — i.e. the provider side is broadly working and our
+prompt layout is the defect. Same status rules: **not stamped**, ends with a
+"Recommended Decision". No implementation until the owner records a Decision
+Stamp.
+
+| # | RFC | Problem | Depends on |
+| --- | --- | --- | --- |
+| LP-21 | [Prompt-cache stability, correctness, and measurement](lp-0021-prompt-cache-stability.md) | Four invalidators break the stable prefix every turn — including a `String.replace` collision that injects per-turn element IDs above the cache breakpoint; the invariant is enforced only by a code comment, so the regression class is silent | None (reuses LP-16's ratchet pattern) |
+
+Suggested sequencing: phase 0 (measurement + ratchet) first — without it every
+later claim is unfalsifiable — then phase 1 (the bug fix and two small repairs).
+Phases 2 (tool freezing) and 3 (append-only history) are deliberately gated on
+what phase 1 measures.
+
 ## Post-launch consolidation series
 
 LP-15 was decision-stamped and executed 2026-07-05→07 (all twelve phases'
