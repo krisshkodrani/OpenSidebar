@@ -152,6 +152,36 @@ describe("otel-emit span mapping", () => {
     expect(tool.status.code).toBe(2); // SpanStatusCode.ERROR
   });
 
+  it("drops synthetic no-op perception spans but keeps real ones (#99)", async () => {
+    const exporter = await setup();
+    emitObsSpans([
+      obsSpan({
+        kind: "gen_ai.perception",
+        name: "gen_ai.perception",
+        spanId: spanId("p-noop"),
+        attributes: { "gen_ai.request.model": "none (unified VL)" },
+      }),
+      obsSpan({
+        kind: "gen_ai.perception",
+        name: "gen_ai.perception",
+        spanId: spanId("p-budget"),
+        attributes: { "gen_ai.request.model": "none (image budget)" },
+      }),
+      obsSpan({
+        kind: "gen_ai.perception",
+        name: "gen_ai.perception",
+        spanId: spanId("p-real"),
+        attributes: { "gen_ai.request.model": "gemma-4-31b" },
+      }),
+    ]);
+    await flushSpineOtelExport();
+
+    const models = exporter
+      .all()
+      .map((s) => s.attributes["gen_ai.request.model"]);
+    expect(models).toEqual(["gemma-4-31b"]);
+  });
+
   it("caps oversized string attributes", async () => {
     const exporter = await setup();
     emitObsSpans([obsSpan({ attributes: { "os.query": "x".repeat(9000) } })]);
