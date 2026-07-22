@@ -38,7 +38,7 @@ import {
 import type { OTLPTraceExporter } from "@opentelemetry/exporter-trace-otlp-proto";
 
 import { spanId } from "../../packages/observability-schema/src/hash";
-import type { ObsSpan } from "../../packages/observability-schema/src/spans";
+import { GenAiAttr, type ObsSpan } from "../../packages/observability-schema/src/spans";
 import { defaultResourceAttributes, loadOtelEnv } from "../otel/sdk";
 import { redactPiiInText } from "./redact";
 
@@ -189,11 +189,28 @@ function toWireSpan(span: ObsSpan): WireSpan {
   } as unknown as WireSpan;
 }
 
+/**
+ * unified_vl mode records a synthetic per-turn perception entry purely so the
+ * local trace viewer can render the captured screenshot — no perception model
+ * is actually invoked, so its model is a `"none (...)"` sentinel and its
+ * duration is 0 (see agent/vl-screenshot.ts). map-trace-entry projects it as a
+ * `gen_ai.perception` span; forwarding THAT to Bluebox mislabels a no-op as a
+ * degenerate/failed GenAI call (GitHub #99). Keep it local (the trace viewer
+ * still gets it); drop it at the export boundary. A real perception model call
+ * (any other model value) still exports normally.
+ */
+function isSyntheticNoopPerception(span: ObsSpan): boolean {
+  if (span.kind !== "gen_ai.perception") return false;
+  const model = span.attributes?.[GenAiAttr.requestModel];
+  return typeof model === "string" && model.startsWith("none (");
+}
+
 /** Queue spans for export. No-op until initSpineOtelExport() succeeded. */
 export function emitObsSpans(spans: ObsSpan[]): void {
   if (!exporter || spans.length === 0) return;
   try {
     for (const span of spans) {
+      if (isSyntheticNoopPerception(span)) continue;
       if (queue.length >= QUEUE_CAP) {
         dropped += 1;
         continue;
