@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useState } from "react";
-import { AlertTriangle, Loader2, Pause, Play, Square } from "lucide-react";
+import { AlertTriangle, Pause, Play, Square } from "lucide-react";
 import { AgentStatus } from "../../types";
 import { logger } from "../../utils";
 import { usefulProgressLabel } from "../progress-labels";
@@ -108,9 +108,10 @@ function statusDotLabel(tone: TaskRailTone) {
   return "Agent idle";
 }
 
-export function PrimaryTaskRail() {
+export function PrimaryTaskRail({ embedded = false }: { embedded?: boolean } = {}) {
   const taskUi = useTaskUiState();
   const showSessionMetrics = useStore((s) => s.settings.showSessionMetrics);
+  const hasTaskProgress = useStore((s) => Boolean(s.taskProgress));
   const [pauseRequested, setPauseRequested] = useState(false);
 
   useEffect(() => {
@@ -170,7 +171,11 @@ export function PrimaryTaskRail() {
     <section
       aria-live="polite"
       aria-atomic="true"
-      className="mx-3 mt-2 overflow-hidden rounded-lg border border-warm-200/80 bg-white/72 px-2.5 py-1.5 shadow-sm dark:border-warm-700/60 dark:bg-warm-900/58"
+      className={
+        embedded
+          ? "overflow-hidden bg-transparent px-3 py-2"
+          : "mx-3 mt-2 overflow-hidden rounded-lg border border-warm-200/80 bg-white/72 px-2.5 py-1.5 shadow-sm dark:border-warm-700/60 dark:bg-warm-900/58"
+      }
     >
       <div className="flex min-h-8 items-center gap-2">
         <div className="shrink-0">
@@ -181,11 +186,14 @@ export function PrimaryTaskRail() {
               aria-label="Agent stalled"
             />
           ) : rail.showSpinner ? (
-            <Loader2
-              size={14}
-              className="animate-spin text-primary-500"
+            <span
+              className="relative inline-flex h-2.5 w-2.5 items-center justify-center"
+              role="status"
               aria-label="Agent running"
-            />
+            >
+              <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-teal-400 opacity-60" />
+              <span className="relative inline-flex h-2 w-2 rounded-full bg-teal-500" />
+            </span>
           ) : (
             <span
               className={`inline-flex h-2 w-2 rounded-full ${statusDotClass(
@@ -217,7 +225,7 @@ export function PrimaryTaskRail() {
                 Pause requested
               </span>
             ) : null}
-            {rail.secondaryLabel ? (
+            {rail.secondaryLabel && !(embedded && hasTaskProgress) ? (
               <span className="max-w-full truncate text-[10px] text-warm-500 dark:text-warm-400">
                 {rail.secondaryLabel}
               </span>
