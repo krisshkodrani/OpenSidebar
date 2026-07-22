@@ -26,8 +26,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   that emitted the same tool call twice could pair the results ambiguously; the
   agent now matches each call to its result by position, so duplicate calls in a
   turn resolve to the correct results.
-- **JobAgent console live-run records persist**, and a missing trace sink is now
-  surfaced instead of silently dropping the run's trace.
+- **JobAgent reference console live-run records persist**, and a missing trace
+  sink is now surfaced instead of silently dropping the run's trace. (Reference
+  workflow — see the agent-backend bridge note under Added.)
 
 ### Changed
 
@@ -58,18 +59,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
-- **Pi as an optional brain (pi-backend Phases 1–3).** A local
-  [pi](https://pi.dev) session can drive the browser through the existing
-  loopback WebSocket bridge: `.pi/extensions/opensidebar.ts` registers the
-  seven thick browser tools with their JSON schemas passed through verbatim.
-  The bridge now actually delivers completions in a real browser (the
-  service-worker broadcast never reached in-process subscribers before —
-  proven fixed by a new offline e2e), reacts live to the
-  `opensidebar:browserMcpWsPort` setting (no extension reload), carries the
-  run's `PartialProgressHandoff` on every status, supports session-scoped tab
-  reuse (missions sharing a session continue in one tab and workspace, with
-  serialized starts), and honors mid-run cancellation via a new
-  `{ id, cancel: true }` wire frame wired to pi's `AbortSignal`.
+- **Optional agent-backend bridge — experimental reference integration.** The
+  browser can be exposed as thick tools to an *external* agent runtime over the
+  existing default-off loopback WebSocket bridge; a local [pi](https://pi.dev)
+  session is the reference driver (`.pi/extensions/opensidebar.ts` registers the
+  seven browser tools with their JSON schemas passed through verbatim), and any
+  MCP client can connect via `pnpm run mcp:browser`. This is a **reference
+  implementation, not a supported end-user feature**: it has no setup UI, is
+  enabled only by a hidden `opensidebar:browserMcpWsPort` key, and exists to
+  demonstrate the "extension = hands, external runtime = brain" architecture. The
+  bridge now actually delivers completions in a real browser (the service-worker
+  broadcast never reached in-process subscribers before — proven fixed by a new
+  offline e2e), carries the run's `PartialProgressHandoff` on every status,
+  supports session-scoped tab reuse (missions sharing a session continue in one
+  tab and workspace, with serialized starts), and honors mid-run cancellation via
+  a new `{ id, cancel: true }` wire frame. Consequential actions (e.g. a form
+  submit) stay hard-gated behind human approval, forwarded over the wire — the
+  bridge never bypasses the gate. A `scripts/jobagent/` reference workflow builds
+  on this to demonstrate a supervised, human-gated job-application loop (see
+  [`scripts/jobagent/README.md`](scripts/jobagent/README.md)); it is likewise a
+  reference implementation, not a product feature.
 - **Trace-viewer Analytics tab.** The viewer is simplified — the Fleet views are
   retired in favor of a single Analytics tab with escalation fire-rate /
   rescue-rate aggregates, explicit task-outcome classification on

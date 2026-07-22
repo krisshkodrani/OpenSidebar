@@ -1,6 +1,9 @@
 # RFC LP-18 — JobAgent Queue Scheduler & Notification Channel
 
-Lifecycle status: Draft (not stamped) — revision 2, incorporating the
+Lifecycle status: **Parked (2026-07-22)** — JobAgent ships as a reference
+implementation, not a supported product feature; this RFC is parked pending a
+decision to productize the JobAgent pipeline, and is not scheduled for
+implementation. Prior status: Draft (not stamped) — revision 2, incorporating the
 [glm-5p2 second-opinion review](../rfc-review-jobagent-autonomy-glm-2026-07-20.md)
 (F3, F5, F6, F8, F9, F13, M2)
 Date: 2026-07-20

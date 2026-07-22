@@ -1,6 +1,9 @@
 # RFC LP-20 — JobAgent Free-Text Answer Drafting (Honesty-Gated)
 
-Lifecycle status: Draft (not stamped) — revision 2, incorporating the
+Lifecycle status: **Parked (2026-07-22)** — JobAgent ships as a reference
+implementation, not a supported product feature; this RFC is parked pending a
+decision to productize the JobAgent pipeline, and is not scheduled for
+implementation. Prior status: Draft (not stamped) — revision 2, incorporating the
 [glm-5p2 second-opinion review](../rfc-review-jobagent-autonomy-glm-2026-07-20.md)
 (F7, F12, F13, F15)
 Date: 2026-07-20
