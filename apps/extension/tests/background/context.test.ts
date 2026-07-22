@@ -236,10 +236,11 @@ describe("ContextManager", () => {
     });
   });
 
-  describe("Action Trace Summarization", () => {
-    test("compresses old tool results beyond 2 most recent", () => {
-      // Add 4 tool call/result pairs
-      for (let i = 1; i <= 4; i++) {
+  describe("Append-only tool results (LP-21 §6)", () => {
+    test("keeps old tool results full — no in-place truncation", () => {
+      // Several tool call/result pairs with long results, within the short-run
+      // window (no threshold compaction fires).
+      for (let i = 1; i <= 5; i++) {
         context.addMessage(toolCallMsg(`call_${i}`));
         const longResult = `Success: Step ${i} completed.\n${"Detail line.\n".repeat(50)}`;
         context.addMessage(toolResultMsg(`call_${i}`, longResult));
@@ -248,127 +249,58 @@ describe("ContextManager", () => {
       const prompt = context.getPrompt();
       const toolResults = prompt.filter((m) => m.role === "tool");
 
-      // The 2 most recent should be preserved (call_3, call_4)
-      // Older ones should be truncated
+      // History is append-only: older tool results are NOT rewritten/truncated
+      // in place. That per-turn mutation was the #1 cache-prefix breaker.
       for (const result of toolResults) {
-        if (
-          result.tool_call_id === "call_3" ||
-          result.tool_call_id === "call_4"
-        ) {
-          // Recent — should be full
-          expect(result.content!.length).toBeGreaterThan(150);
-        } else if (
-          result.tool_call_id === "call_1" ||
-          result.tool_call_id === "call_2"
-        ) {
-          // Old — should be truncated
-          expect(result.content).toContain("[truncated]");
-          expect(result.content!.length).toBeLessThan(200);
+        expect(result.content).not.toContain("[truncated]");
+      }
+      // The oldest result still in the window keeps its full bytes.
+      const first = toolResults.find((m) => m.tool_call_id === "call_1");
+      if (first && typeof first.content === "string") {
+        expect(first.content.length).toBeGreaterThan(150);
+      }
+    });
+
+    test("messages shared by two consecutive turns are byte-identical (§8.4 invariant)", () => {
+      const keyOf = (m: LLMMessage): string =>
+        m.role === "tool"
+          ? `tool:${m.tool_call_id}`
+          : `asst:${m.tool_calls?.[0]?.id ?? "none"}`;
+      // Only tool/assistant history messages are subject to append-only; the
+      // volatile tail (region C) and injected images are intentionally variable.
+      const historyOf = (prompt: LLMMessage[]) => {
+        const map = new Map<string, string>();
+        for (const m of prompt) {
+          if (m.role !== "tool" && m.role !== "assistant") continue;
+          map.set(keyOf(m), JSON.stringify(m));
+        }
+        return map;
+      };
+
+      for (let i = 1; i <= 4; i++) {
+        context.addMessage(toolCallMsg(`call_${i}`));
+        context.addMessage(
+          toolResultMsg(`call_${i}`, `Result ${i}\n${"line\n".repeat(20)}`),
+        );
+      }
+      const turnN = historyOf(context.getPrompt());
+
+      // Next turn: append one more interaction.
+      context.addMessage(toolCallMsg("call_5"));
+      context.addMessage(
+        toolResultMsg("call_5", `Result 5\n${"line\n".repeat(20)}`),
+      );
+      const turnNext = historyOf(context.getPrompt());
+
+      // Every message present in BOTH turns must be byte-identical.
+      let shared = 0;
+      for (const [key, serialized] of turnNext) {
+        if (turnN.has(key)) {
+          shared++;
+          expect(serialized).toBe(turnN.get(key));
         }
       }
-    });
-
-    test("preserves all results when only 2 tool calls exist", () => {
-      const longResult = `Success: completed.\n${"Detail line.\n".repeat(50)}`;
-
-      context.addMessage(toolCallMsg("call_1"));
-      context.addMessage(toolResultMsg("call_1", longResult));
-      context.addMessage(toolCallMsg("call_2"));
-      context.addMessage(toolResultMsg("call_2", longResult));
-
-      const prompt = context.getPrompt();
-      const toolResults = prompt.filter((m) => m.role === "tool");
-
-      // Both should be fully preserved (only 2, within threshold)
-      for (const result of toolResults) {
-        expect(result.content).not.toContain("[truncated]");
-      }
-    });
-
-    test("does not truncate short tool results", () => {
-      // Add 5 pairs but with short results
-      for (let i = 1; i <= 5; i++) {
-        context.addMessage(toolCallMsg(`call_${i}`));
-        context.addMessage(toolResultMsg(`call_${i}`, `OK step ${i}`));
-      }
-
-      const prompt = context.getPrompt();
-      const toolResults = prompt.filter((m) => m.role === "tool");
-
-      // All short results should be preserved (< 150 chars)
-      for (const result of toolResults) {
-        expect(result.content).not.toContain("[truncated]");
-      }
-    });
-
-    test("preserves discovery tool results with higher limit", () => {
-      // Old discovery tool call with a 400-char result (under 500 limit)
-      context.addMessage(toolCallMsg("call_disc", "inspect_hidden"));
-      const discoveryResult = "Found 5 hidden elements:\n" + "x".repeat(374);
-      context.addMessage(toolResultMsg("call_disc", discoveryResult)); // 400 chars
-
-      // Add 3 more tool results to push the discovery one past preserveRecent=2
-      for (let i = 1; i <= 3; i++) {
-        context.addMessage(toolCallMsg(`call_${i}`, "click_element"));
-        context.addMessage(toolResultMsg(`call_${i}`, `Clicked element ${i}`));
-      }
-
-      const prompt = context.getPrompt();
-      const discResult = prompt.find(
-        (m) => m.role === "tool" && m.tool_call_id === "call_disc",
-      );
-
-      // 400 chars < 500 limit — should NOT be truncated
-      expect(discResult).toBeDefined();
-      expect(discResult!.content).not.toContain("[truncated]");
-    });
-
-    test("truncates discovery tool results above 500 chars", () => {
-      // Old discovery tool call with a 600-char single-line result (over 500 limit)
-      context.addMessage(toolCallMsg("call_js", "execute_js"));
-      const longResult = "Computed values: " + "y".repeat(583);
-      context.addMessage(toolResultMsg("call_js", longResult)); // 600 chars
-
-      // Push past preserveRecent
-      for (let i = 1; i <= 3; i++) {
-        context.addMessage(toolCallMsg(`call_${i}`, "click_element"));
-        context.addMessage(toolResultMsg(`call_${i}`, `Clicked element ${i}`));
-      }
-
-      const prompt = context.getPrompt();
-      const jsResult = prompt.find(
-        (m) => m.role === "tool" && m.tool_call_id === "call_js",
-      );
-
-      expect(jsResult).toBeDefined();
-      expect(jsResult!.content).toContain("[truncated]");
-      // Snippet should be 400 chars (discovery snippet limit), longer than action's 100
-      const snippetLength = jsResult!.content!.replace(" [truncated]", "").length;
-      expect(snippetLength).toBeGreaterThan(100);
-      expect(snippetLength).toBeLessThanOrEqual(400);
-    });
-
-    test("action tool results still truncate at 150 chars", () => {
-      // Old action tool call with a 200-char result
-      context.addMessage(toolCallMsg("call_click", "click_element"));
-      const actionResult = "Clicked successfully.\n" + "z".repeat(179);
-      context.addMessage(toolResultMsg("call_click", actionResult)); // 200 chars
-
-      // Push past preserveRecent
-      for (let i = 1; i <= 3; i++) {
-        context.addMessage(toolCallMsg(`call_${i}`, "type_text"));
-        context.addMessage(toolResultMsg(`call_${i}`, `Typed text ${i}`));
-      }
-
-      const prompt = context.getPrompt();
-      const clickResult = prompt.find(
-        (m) => m.role === "tool" && m.tool_call_id === "call_click",
-      );
-
-      expect(clickResult).toBeDefined();
-      expect(clickResult!.content).toContain("[truncated]");
-      // Snippet should be at most 100 chars + " [truncated]"
-      expect(clickResult!.content!.length).toBeLessThanOrEqual(112);
+      expect(shared).toBeGreaterThan(2); // sanity: real overlap was checked
     });
   });
 

@@ -26,7 +26,6 @@ import {
   LastActionOutcome,
   OpenTabInfo,
   PLANNER_PERSONA,
-  REFERENCE_VALUE_TOOLS,
   CompressionLevel,
 } from "./context-types";
 import type {
@@ -460,10 +459,13 @@ export class ContextManager {
   public addMessage(message: LLMMessage) {
     this.history.push(message);
 
-    // Compress old tool results to save context budget
-    if (message.role === "tool") {
-      this.compressOldToolResults(2);
-    }
+    // LP-21 §6 (increment 1): history is APPEND-ONLY for prompt-cache stability.
+    // We no longer rewrite older tool-result bytes in place every turn — that
+    // mutation was the #1 per-turn cache-prefix breaker (a message emitted in
+    // full on turn N had its bytes rewritten the turn it became 3rd-newest,
+    // invalidating the cached prefix at that position). Size is still bounded by
+    // the getPrompt sliding window and by threshold compaction below; those are
+    // addressed for full cache-window stability in the follow-up increment.
 
     // Turn-count compression triggers
     const len = this.history.length;
@@ -1292,24 +1294,6 @@ Do NOT call done() until every planned step is complete.
     return score;
   }
 
-  /**
-   * Compress old tool call/result pairs into one-line summaries.
-   * Preserves the last `preserveRecent` tool interactions verbatim.
-   */
-  private compressOldToolResults(preserveRecent: number = 2): void {
-    let toolResultCount = 0;
-
-    for (let i = this.history.length - 1; i >= 0; i--) {
-      if (this.history[i].role === "tool") {
-        toolResultCount++;
-      }
-      if (toolResultCount > preserveRecent) {
-        this.compressToolResultsBeforeIndex(i);
-        break;
-      }
-    }
-  }
-
   private findToolNameForResult(toolCallId: string | undefined): string | null {
     if (!toolCallId) return null;
     for (let j = this.history.length - 1; j >= 0; j--) {
@@ -1320,35 +1304,6 @@ Do NOT call done() until every planned step is complete.
       }
     }
     return null;
-  }
-
-  private compressToolResultsBeforeIndex(beforeIndex: number): void {
-    const ACTION_MAX = 150;
-    const ACTION_SNIPPET = 100;
-    const DISCOVERY_MAX = 500;
-    const DISCOVERY_SNIPPET = 400;
-
-    for (let i = 0; i <= beforeIndex; i++) {
-      const msg = this.history[i];
-      if (msg.role === "tool" && msg.content) {
-        if (Array.isArray(msg.content)) {
-          msg.content = "[screenshot truncated]";
-          continue;
-        }
-        const toolName = this.findToolNameForResult(msg.tool_call_id);
-        const isReferenceValue =
-          toolName !== null && REFERENCE_VALUE_TOOLS.has(toolName);
-        const maxLen = isReferenceValue ? DISCOVERY_MAX : ACTION_MAX;
-        const snippetLen = isReferenceValue
-          ? DISCOVERY_SNIPPET
-          : ACTION_SNIPPET;
-
-        if (typeof msg.content === "string" && msg.content.length > maxLen) {
-          const firstLine = msg.content.split("\n")[0].slice(0, snippetLen);
-          msg.content = firstLine + " [truncated]";
-        }
-      }
-    }
   }
 
   /**
