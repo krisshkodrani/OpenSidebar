@@ -71,10 +71,10 @@ export function PlanProgressPanel({
                 </div>
                 {index < rows.length - 1 ? (
                   <div
-                    className={`min-h-[8px] w-px flex-1 ${
+                    className={`min-h-[10px] w-0.5 flex-1 ${
                       row.status === "completed"
-                        ? "bg-green-300/60 dark:bg-green-700/40"
-                        : "bg-warm-200/60 dark:bg-warm-700/40"
+                        ? "bg-teal-400/60 dark:bg-teal-600/50"
+                        : "bg-warm-200/70 dark:bg-warm-700/50"
                     }`}
                   />
                 ) : null}
