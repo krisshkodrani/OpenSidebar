@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.6.0] - 2026-07-22
+
 ### Fixed
 
 - **Fireworks GPT-OSS 120B is selectable again.** The curated Fireworks model
@@ -17,6 +19,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   Fireworks-served provider modes — the same id is the correct one on Groq and
   OpenRouter). Groq's GPT-OSS 20B also gained its missing pricing row, so runs
   on it are no longer costed as free.
+- **Fireworks cached-input rates and the GLM 5.2 seat price are corrected**, so
+  run-cost accounting reflects what providers actually charge — cached input is
+  no longer priced at the full uncached rate.
+- **Tool-call pairing is enforced positionally, not by set membership.** A turn
+  that emitted the same tool call twice could pair the results ambiguously; the
+  agent now matches each call to its result by position, so duplicate calls in a
+  turn resolve to the correct results.
+- **JobAgent console live-run records persist**, and a missing trace sink is now
+  surfaced instead of silently dropping the run's trace.
 
 ### Changed
 
@@ -40,6 +51,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   under `apps/extension/src` and `packages/` is capped at 1,500 lines, with
   pre-existing larger files grandfathered on shrink-only budgets — so extracting
   code out of a landmine file into a fresh giant no longer passes lint.
+- **Prompt-cache stability (RFC LP-21).** Per-turn page state moved out of the
+  system message so the cached prefix survives across turns, and the system
+  prompt is kept byte-stable for the same reason. Warm-cache hit rate rose from
+  ~29.6% to ~43.4% (≈14% lower input cost) with no change to agent behavior.
+
 ### Added
 
 - **Pi as an optional brain (pi-backend Phases 1–3).** A local
@@ -54,6 +70,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   reuse (missions sharing a session continue in one tab and workspace, with
   serialized starts), and honors mid-run cancellation via a new
   `{ id, cancel: true }` wire frame wired to pi's `AbortSignal`.
+- **Trace-viewer Analytics tab.** The viewer is simplified — the Fleet views are
+  retired in favor of a single Analytics tab with escalation fire-rate /
+  rescue-rate aggregates, explicit task-outcome classification on
+  `task_completed`, completion findings attributed to the authoritative
+  decision, and an insights export.
 
 ### Removed
 
