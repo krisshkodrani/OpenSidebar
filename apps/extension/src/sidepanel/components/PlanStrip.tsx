@@ -114,6 +114,30 @@ export function PlanStrip({
       }`
     : `shrink-0 border-b ${viewModel.barClassName}`;
 
+  // Stage C: inside the run card, an in-progress plan shows its step timeline
+  // inline with no collapsed "Plan" bar — the status rail above is the header,
+  // so a second status row would only duplicate it. Planning/confirmation keep
+  // the collapsible bar below since they are distinct affordances.
+  if (embedded && viewModel.mode === "progress") {
+    if (viewModel.rows.length === 0) return null;
+    return (
+      <div className={outerClassName}>
+        <div className="max-h-[30vh] overflow-y-auto px-3 pb-2 pt-2">
+          <PlanProgressPanel
+            canSkip={viewModel.canSkip}
+            onResumeRecoveredTask={() => {
+              if (taskRecovery) setInputText(buildRecoveryHint(taskRecovery));
+            }}
+            onSkipCurrentStep={() => void skipCurrentSubtask()}
+            recovery={taskRecovery}
+            rows={viewModel.rows}
+            runningRef={runningRef}
+          />
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className={outerClassName}>
       <PlanCollapsedBar
