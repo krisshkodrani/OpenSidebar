@@ -21,7 +21,7 @@ export function TaskStatusRegion({
 
   // Status rail and the plan/step timeline share one card: status + controls on
   // top, the step timeline below, separated by a hairline. The stalled-recovery
-  // alert stays a sibling — it is an intervention, not part of the run chrome.
+  // alert stays a sibling — it is an intervention, not part of the run surface.
   const showRunCard = taskUi.showPrimaryRail || taskUi.showPlanStrip;
 
   return (
