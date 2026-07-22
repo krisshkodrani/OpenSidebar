@@ -27,7 +27,14 @@ const entry = {
     content: "ok",
     toolCalls: [],
     finishReason: "tool_calls",
-    usage: { prompt_tokens: 100, completion_tokens: 20, total_tokens: 120, cost: 0.002 },
+    usage: {
+      prompt_tokens: 100,
+      completion_tokens: 20,
+      total_tokens: 120,
+      cost: 0.002,
+      cached_tokens: 64,
+      cacheTelemetry: { provider: "anthropic", cacheHitPct: 64, source: "usage" },
+    },
     durationMs: 300,
     actualModel: "model-a-served",
     actualProviderId: "openrouter",
@@ -91,6 +98,12 @@ describe("traceEntryToSpans", () => {
     expect(chat.attributes["gen_ai.usage.input_tokens"]).toBe(100);
     expect(chat.attributes["gen_ai.usage.output_tokens"]).toBe(20);
     expect(chat.attributes["os.cost_usd"]).toBe(0.002);
+  });
+
+  it("exports prompt-cache usage onto the chat span for Bluebox to watch", () => {
+    const chat = byKind("gen_ai.chat")[0];
+    expect(chat.attributes["os.usage.cached_tokens"]).toBe(64);
+    expect(chat.attributes["os.cache.hit_pct"]).toBe(64);
   });
 
   it("records tool success/failure as span status", () => {
