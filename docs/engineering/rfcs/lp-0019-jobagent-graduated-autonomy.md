@@ -1,6 +1,9 @@
 # RFC LP-19 — JobAgent Graduated Autonomy (Auto-Approve Policy)
 
-Lifecycle status: Draft (not stamped) — revision 2, incorporating the
+Lifecycle status: **Parked (2026-07-22)** — JobAgent ships as a reference
+implementation, not a supported product feature; this RFC is parked pending a
+decision to productize the JobAgent pipeline, and is not scheduled for
+implementation. Prior status: Draft (not stamped) — revision 2, incorporating the
 [glm-5p2 second-opinion review](../rfc-review-jobagent-autonomy-glm-2026-07-20.md)
 (F1, F2, F4, F10, F11, F14, M1, M3)
 Date: 2026-07-20
