@@ -11,9 +11,11 @@ import { PlanProgressPanel } from "./plan/PlanProgressPanel";
 export function PlanStrip({
   isExpanded,
   onToggle,
+  embedded = false,
 }: {
   isExpanded: boolean;
   onToggle: () => void;
+  embedded?: boolean;
 }) {
   const pendingPlan = useStore((s) => s.pendingPlanConfirmation);
   const taskProgress = useStore((s) => s.taskProgress);
@@ -104,8 +106,16 @@ export function PlanStrip({
 
   if (!viewModel.mode) return null;
 
+  const outerClassName = embedded
+    ? `shrink-0 ${
+        viewModel.mode === "confirmation"
+          ? "bg-primary-50/30 dark:bg-primary-900/10"
+          : ""
+      }`
+    : `shrink-0 border-b ${viewModel.barClassName}`;
+
   return (
-    <div className={`shrink-0 border-b ${viewModel.barClassName}`}>
+    <div className={outerClassName}>
       <PlanCollapsedBar
         activeCount={viewModel.activeCount}
         blockedCount={viewModel.blockedCount}
