@@ -28,9 +28,9 @@ Open-source AI browser agent. Navigate, click, type, and automate web tasks from
 ## Full Description
 
 ```text
-OpenSidebar puts an autonomous AI agent in your Chrome side panel. Describe a task in plain English and it sees the page, clicks, types, and carries multi-step work across tabs to done.
+Book the meeting, fill out the job application, pull the numbers off one dashboard and type them into a form on another — describe the outcome you want, and OpenSidebar drives your browser to get there while you watch each step.
 
-Bring your own API key. No subscription, no telemetry, no backend — everything runs in your browser.
+It's an open-source agent that lives in your Chrome side panel and works the page the way you do: reading the live screenshot and the page structure, clicking, typing, scrolling, and carrying multi-step work across tabs. Bring your own API key — no subscription, no telemetry, no servers of ours.
 
 WHAT IT CAN DO
 
