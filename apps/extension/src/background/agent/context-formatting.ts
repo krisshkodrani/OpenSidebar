@@ -348,3 +348,111 @@ export function buildOpenTabsBlock(
     `Only the current tab is visible in the snapshot. Form values and page state in other tabs persist there — use switch_tab({"tabId": N}) to return to them; do not re-open or re-fill a tab that already has your work.\n`
   );
 }
+
+/**
+ * Repair the OpenAI tool-call protocol invariant before a prompt goes out.
+ *
+ * The API requires every assistant `tool_calls` message to be FOLLOWED by one
+ * `role:"tool"` message per `tool_call_id` — contiguously. Two things break
+ * that here: the dispatch loop appends `role:"user"` narration (preflight
+ * warnings, retarget reasons, dry-run notes) between an assistant message and
+ * its results, and the parallel dispatch path interleaves nondeterministically.
+ *
+ * The previous sanitizer validated by SET MEMBERSHIP — "does this id appear
+ * anywhere?" — so `[assistant(tc1), user(..), tool(tc1)]` passed as valid.
+ * Lenient backends (Fireworks, OpenRouter) accept it; Cerebras walks forward
+ * from the assistant, stops at the first non-tool message, and rejects the
+ * request with `wrong_api_format`. That produced 189 HTTP 400s in one medium
+ * e2e run and is why this is positional, not set-based.
+ *
+ * Three guarantees, in order:
+ *  1. A tool result with no matching assistant `tool_calls` is dropped.
+ *  2. An assistant whose results are not ALL present loses its `tool_calls`
+ *     (and any partial results are dropped with it, so none are orphaned).
+ *  3. Surviving results are hoisted to sit immediately after their assistant
+ *     message; anything that landed in between is moved to after the run.
+ *
+ * Narration displaced by (3) is preserved, not dropped — it just follows the
+ * results it describes rather than preceding them.
+ */
+export function repairToolCallPairing(messages: LLMMessage[]): LLMMessage[] {
+  const callIds = new Set<string>();
+  const resultIds = new Set<string>();
+  for (const msg of messages) {
+    if (msg.tool_calls) for (const tc of msg.tool_calls) callIds.add(tc.id);
+    if (msg.role === "tool" && msg.tool_call_id) resultIds.add(msg.tool_call_id);
+  }
+
+  // Stripping is all-or-nothing per assistant message, so the results that DID
+  // arrive for a stripped message must be dropped with it — otherwise they
+  // survive as orphans and trip the mirror-image protocol error.
+  const strippedIds = new Set<string>();
+  for (const msg of messages) {
+    if (
+      msg.tool_calls?.length &&
+      !msg.tool_calls.every((tc) => resultIds.has(tc.id))
+    ) {
+      for (const tc of msg.tool_calls) strippedIds.add(tc.id);
+    }
+  }
+
+  const kept = messages
+    .filter((msg) =>
+      msg.role === "tool" && msg.tool_call_id
+        ? callIds.has(msg.tool_call_id) && !strippedIds.has(msg.tool_call_id)
+        : true,
+    )
+    .map((msg) =>
+      msg.tool_calls?.length &&
+      !msg.tool_calls.every((tc) => resultIds.has(tc.id))
+        ? { ...msg, tool_calls: undefined }
+        : msg,
+    );
+
+  const out: LLMMessage[] = [];
+  const consumed = new Set<number>();
+
+  for (let i = 0; i < kept.length; i++) {
+    if (consumed.has(i)) continue;
+    const msg = kept[i];
+    if (!msg.tool_calls?.length) {
+      out.push(msg);
+      continue;
+    }
+
+    const wanted = new Set(msg.tool_calls.map((tc) => tc.id));
+    const results: LLMMessage[] = [];
+    const displaced: LLMMessage[] = [];
+
+    for (let j = i + 1; j < kept.length && wanted.size > 0; j++) {
+      if (consumed.has(j)) continue;
+      const candidate = kept[j];
+      if (
+        candidate.role === "tool" &&
+        candidate.tool_call_id &&
+        wanted.has(candidate.tool_call_id)
+      ) {
+        results.push(candidate);
+        consumed.add(j);
+        wanted.delete(candidate.tool_call_id);
+      } else if (candidate.tool_calls?.length) {
+        // The next tool-calling turn starts here; results cannot legally live
+        // past it, so stop scanning rather than hoist across turns.
+        break;
+      } else {
+        displaced.push(candidate);
+        consumed.add(j);
+      }
+    }
+
+    if (wanted.size > 0) {
+      // Unreachable results: emit the assistant without tool_calls and drop the
+      // partial results, which would otherwise be orphaned.
+      out.push({ ...msg, tool_calls: undefined }, ...displaced);
+    } else {
+      out.push(msg, ...results, ...displaced);
+    }
+  }
+
+  return out;
+}

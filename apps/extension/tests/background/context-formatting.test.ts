@@ -6,6 +6,7 @@ import { describe, test, expect } from "vitest";
 import {
   deduplicateInvisibleElements,
   compressRepetitiveContent,
+  repairToolCallPairing,
 } from "../../src/background/agent/context-formatting";
 import { TaggedElement } from "../../src/types";
 
@@ -196,5 +197,108 @@ describe("compressRepetitiveContent", () => {
     expect(outputLines).toContainEqual(
       expect.stringContaining("omitting 5 instances"),
     );
+  });
+});
+
+/**
+ * repairToolCallPairing — the OpenAI tool-call protocol invariant.
+ *
+ * Regression origin: a medium e2e run on Cerebras produced 189 HTTP 400s
+ * ("assistant message with 'tool_calls' must be followed by tool messages
+ * responding to each 'tool_call_id'"). The old sanitizer validated by set
+ * membership, so narration appended between an assistant and its results
+ * passed as valid. Lenient backends accepted it; Cerebras did not.
+ */
+describe("repairToolCallPairing", () => {
+  const asst = (...ids: string[]) => ({
+    role: "assistant" as const,
+    content: "",
+    tool_calls: ids.map((id) => ({
+      id,
+      type: "function" as const,
+      function: { name: "click_element", arguments: "{}" },
+    })),
+  });
+  const result = (id: string) => ({
+    role: "tool" as const,
+    content: "ok",
+    tool_call_id: id,
+  });
+  const user = (content: string) => ({ role: "user" as const, content });
+
+  /**
+   * The invariant the API enforces, both directions: every assistant call has
+   * a contiguously-following result, AND every tool result is part of such a
+   * run. The second half matters — stripping an assistant's tool_calls while
+   * leaving its partial results produces the mirror-image violation.
+   */
+  function assertPaired(messages: any[]): void {
+    const claimed = new Set<number>();
+    for (let i = 0; i < messages.length; i++) {
+      const calls = messages[i].tool_calls;
+      if (!calls?.length) continue;
+      const following: string[] = [];
+      for (let j = i + 1; j < messages.length; j++) {
+        if (messages[j].role !== "tool") break;
+        following.push(messages[j].tool_call_id);
+        claimed.add(j);
+      }
+      for (const tc of calls) expect(following).toContain(tc.id);
+    }
+    messages.forEach((m, i) => {
+      if (m.role === "tool") expect(claimed.has(i)).toBe(true);
+    });
+  }
+
+  test("hoists a result past narration injected between call and result", () => {
+    const out = repairToolCallPairing([
+      asst("tc1"),
+      user("Preflight warning: element moved"),
+      result("tc1"),
+    ]);
+    assertPaired(out);
+    expect(out[0].tool_calls).toHaveLength(1);
+    expect(out[1].tool_call_id).toBe("tc1");
+    // Narration is preserved, just moved after the results it describes.
+    expect(out[2].content).toContain("Preflight warning");
+  });
+
+  test("handles narration landing mid-run of parallel tool calls", () => {
+    const out = repairToolCallPairing([
+      asst("tc1", "tc2"),
+      result("tc1"),
+      user("Preflight warning"),
+      result("tc2"),
+    ]);
+    assertPaired(out);
+    expect(out.filter((m: any) => m.role === "tool")).toHaveLength(2);
+  });
+
+  test("strips tool_calls when a result is missing, orphaning nothing", () => {
+    const out = repairToolCallPairing([asst("tc1", "tc2"), result("tc1")]);
+    assertPaired(out);
+    expect(out[0].tool_calls).toBeUndefined();
+    // The partial result must go too, or it becomes an orphan.
+    expect(out.some((m: any) => m.role === "tool")).toBe(false);
+  });
+
+  test("drops a tool result whose assistant fell outside the window", () => {
+    const out = repairToolCallPairing([user("goal"), result("gone")]);
+    assertPaired(out);
+    expect(out.some((m: any) => m.role === "tool")).toBe(false);
+  });
+
+  test("leaves an already-valid conversation untouched", () => {
+    const input = [user("goal"), asst("tc1"), result("tc1"), asst("tc2"), result("tc2")];
+    const out = repairToolCallPairing(input);
+    assertPaired(out);
+    expect(out).toEqual(input);
+  });
+
+  test("does not hoist results across a later tool-calling turn", () => {
+    // tc1's result sits past the next assistant turn — unreachable, so tc1
+    // must lose its tool_calls rather than emit an unanswerable message.
+    const out = repairToolCallPairing([asst("tc1"), asst("tc2"), result("tc2"), result("tc1")]);
+    assertPaired(out);
   });
 });

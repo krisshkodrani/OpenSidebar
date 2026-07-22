@@ -19,6 +19,7 @@ import {
   buildFormBatchHint,
   formatLastActionOutcome,
   buildOpenTabsBlock,
+  repairToolCallPairing,
 } from "./context-formatting";
 import {
   EXECUTOR_PERSONA,
@@ -631,44 +632,16 @@ export class ContextManager {
     // Add selected recent messages (re-reverse to restore order)
     finalMessages.push(...selectedReverse.reverse());
 
-    // 5. Sanitize: drop orphaned tool results whose assistant was dropped by the window
-    const toolCallIdsInPrompt = new Set<string>();
-    for (const msg of finalMessages) {
-      if (msg.tool_calls) {
-        for (const tc of msg.tool_calls) toolCallIdsInPrompt.add(tc.id);
-      }
-    }
-
-    const toolResultIdsInPrompt = new Set<string>();
-    for (const msg of finalMessages) {
-      if (msg.role === "tool" && msg.tool_call_id) {
-        toolResultIdsInPrompt.add(msg.tool_call_id);
-      }
-    }
-
-    const sanitized = finalMessages
-      .filter((msg) => {
-        // Drop tool results without a matching assistant tool_call
-        if (msg.role === "tool" && msg.tool_call_id) {
-          return toolCallIdsInPrompt.has(msg.tool_call_id);
-        }
-        return true;
-      })
-      .map((msg) => {
-        // Strip tool_calls from assistant if ANY result is missing
-        if (msg.tool_calls && msg.tool_calls.length > 0) {
-          const allResultsPresent = msg.tool_calls.every((tc) =>
-            toolResultIdsInPrompt.has(tc.id),
-          );
-          if (!allResultsPresent) {
-            return { ...msg, tool_calls: undefined };
-          }
-        }
-        return msg;
-      });
+    // 5. Repair the tool-call protocol invariant: drop orphaned results, strip
+    // tool_calls whose results are incomplete, and hoist surviving results to
+    // sit immediately after their assistant message. Positional, not
+    // set-based — see repairToolCallPairing.
+    const sanitized = repairToolCallPairing(finalMessages);
 
     // LP-21: the volatile tail goes last — after history — so everything ahead
-    // of it stays byte-identical across turns and remains cacheable.
+    // of it stays byte-identical across turns and remains cacheable. It is a
+    // user message, so appending it after the repair cannot separate an
+    // assistant's tool_calls from their results.
     return volatileTail ? [...sanitized, volatileTail] : sanitized;
   }
 
