@@ -49,6 +49,17 @@ const QUESTIONS_SCHEMA = {
   pageNote: "string — if morePages is true, quote the pagination evidence; else empty string",
 };
 
+/**
+ * Both instructions carry this. Against a real Ashby posting the extractor
+ * answered with a markdown bullet list describing the fields instead of the
+ * object — readable to a human, unusable as data, and correctly refused. Saying
+ * "JSON only" up front is cheaper than trying to parse prose back into facts,
+ * which is exactly the confident-wrong path this module avoids elsewhere.
+ */
+const JSON_ONLY =
+  "Return ONLY a single raw JSON object matching the schema — no prose, no " +
+  "explanation, no markdown formatting, no bullet points, and no code fence.";
+
 /* ── Response parsing ─────────────────────────────────────── */
 
 /** Unwrap a bridge response, turning every non-ok status into a thrown error. */
@@ -120,10 +131,11 @@ export async function extractListing(
         url,
         schema: LISTING_SCHEMA,
         instruction:
-          "Read this job posting and extract the fields. Do not click anything, " +
-          "do not fill anything, and do not navigate away from this page. If a " +
-          "field is genuinely not stated on the page, return an empty string for " +
-          "it rather than inferring a value.",
+          "Read this job posting and extract the fields. " +
+          JSON_ONLY +
+          " Do not click anything, do not fill anything, and do not navigate " +
+          "away from this page. If a field is genuinely not stated on the page, " +
+          "return an empty string for it rather than inferring a value.",
       },
       session: opts.session,
     },
@@ -188,7 +200,8 @@ export async function extractQuestions(
         instruction:
           "List every input on this application form in the order they appear: " +
           "the visible label, the kind of input, and whether it is required. " +
-          "Do NOT fill, click, or submit anything, and do not navigate away. " +
+          JSON_ONLY +
+          " Do NOT fill, click, or submit anything, and do not navigate away. " +
           "Report the labels as written — do not rephrase, translate, or answer them.",
       },
       session: opts.session,
