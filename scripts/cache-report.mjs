@@ -365,6 +365,15 @@ function finalizeGroup(group) {
 
     costUsd: Math.round(group.costUsd * 10000) / 10000,
     costUsdIfNoCache: Math.round(group.costUsdIfNoCache * 10000) / 10000,
+    /**
+     * The only cost figure comparable across populations. Absolute cost tracks
+     * population SIZE, so an A/B between a 205-turn baseline and a 44-turn arm
+     * shows a large "saving" that is purely fewer turns.
+     */
+    costPerWarmTurnUsd:
+      group.warmTurns > 0
+        ? Math.round((group.costUsd / group.warmTurns) * 1000000) / 1000000
+        : 0,
     cacheSavingsUsd:
       Math.round((group.costUsdIfNoCache - group.costUsd) * 10000) / 10000,
     pricedTurns: group.pricedTurns,
@@ -516,8 +525,16 @@ function formatComparison(baseline, current) {
     lines.push(
       `   realized hit   ${prev.realizedHitPct}% → ${group.realizedHitPct}%  (${delta(group.realizedHitPct, prev.realizedHitPct)}pp)`,
     );
+    // Per-turn, not absolute: the two arms rarely have the same turn count, and
+    // an absolute delta then reports the size difference as a saving.
+    const perTurn = (g) => `$${g.costPerWarmTurnUsd.toFixed(6)}`;
+    const perTurnDeltaPct = pct(
+      group.costPerWarmTurnUsd - prev.costPerWarmTurnUsd,
+      prev.costPerWarmTurnUsd,
+    );
     lines.push(
-      `   cost           $${prev.costUsd} → $${group.costUsd}  (${delta(group.costUsd, prev.costUsd)})`,
+      `   cost/warm turn ${perTurn(prev)} → ${perTurn(group)}  (${perTurnDeltaPct > 0 ? "+" : ""}${perTurnDeltaPct}%)` +
+        `   [totals $${prev.costUsd} vs $${group.costUsd} over ${prev.warmTurns} vs ${group.warmTurns} turns — NOT comparable]`,
     );
     lines.push(
       `   UNEXPLAINED    ${prev.unexplainedDivergencePct}% → ${group.unexplainedDivergencePct}%  (${delta(group.unexplainedDivergencePct, prev.unexplainedDivergencePct)}pp)`,

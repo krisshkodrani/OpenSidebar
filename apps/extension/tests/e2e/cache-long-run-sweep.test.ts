@@ -17,8 +17,8 @@
  * The task has to be a realistic workload or the cache numbers do not generalise.
  * A breadth-first extraction sweep is exactly that — collecting a field across
  * many similar records is ordinary agent work — and it produces length honestly:
- * each department is a few turns, and the turns accumulate because they all share
- * one workspace, so history grows the way it does in a real long session.
+ * it is ONE instruction the agent must decompose into eight searches, so the
+ * turns accumulate inside a single session the way they do in a real long task.
  *
  * `data-table` is used because its 50 employees across 8 departments are
  * generated deterministically, so the same task yields a comparable population on
@@ -58,17 +58,20 @@ import {
 import { isE2ESuiteFlagEnabled } from "./helpers/e2e-config";
 
 /**
- * Generous per-step budget: the point is to accumulate turns across the sweep,
- * not to pressure any single step into giving up early. Budget pressure changes
- * agent behaviour, which would change the cache population being measured.
+ * maxTurns has to clear the compaction thresholds by a wide margin or the run
+ * ends before the mechanism under test engages: rolling distillation needs 20+
+ * messages, and threshold compaction fires at history lengths 20/40/70. At
+ * roughly 2-3 messages per turn, 80 turns reaches all of them with headroom.
  */
-const h = createE2EHarness({ maxTurns: 12, testLabel: "cache-long-run-sweep" });
+const h = createE2EHarness({ maxTurns: 80, testLabel: "cache-long-run-sweep" });
 const TURN_TIMEOUT = 180_000;
+/** One long task rather than several short ones, so it needs a long ceiling. */
+const SWEEP_TIMEOUT = 1_800_000;
 const enableCacheLongE2E = isE2ESuiteFlagEnabled("cache-long");
 
 /**
- * The eight departments the fixture generates. Each is one step of the sweep;
- * together they carry the run past the point where compaction fires repeatedly.
+ * The eight departments the fixture generates. Naming them in the instruction
+ * is what makes the run long: the agent has to search each one in turn.
  */
 const DEPARTMENTS = [
   "Engineering",
@@ -90,7 +93,7 @@ describe.skipIf(!h.apiKey || !enableCacheLongE2E)(
     afterAll(() => h.afterAllHook());
 
     it(
-      "sweeps every department in one workspace so history grows past compaction",
+      "decomposes one sweep instruction into a run long enough to compact",
       async () => {
         const workspaceId = `e2e-cache-long-${crypto.randomUUID()}`;
 
@@ -99,54 +102,43 @@ describe.skipIf(!h.apiKey || !enableCacheLongE2E)(
         const tabId = await getActiveTabId(h.ctx.serviceWorker);
         expect(tabId).toBeGreaterThan(0);
 
-        // One workspace for the whole sweep. This is the load-bearing detail:
-        // separate workspaces would reset history each time and never reach the
-        // lengths where rolling distillation and threshold compaction engage.
-        for (const [index, department] of DEPARTMENTS.entries()) {
-          await sendUserChat(
-            h.ctx,
-            `Search the employee table for ${department} and tell me how many ${department} employees there are, plus their names.`,
-            tabId,
-            workspaceId,
-          );
-
-          const step = await waitForTaskCompletion(
-            h.ctx,
-            TURN_TIMEOUT,
-            workspaceId,
-          );
-          // A mid-sweep failure still leaves a usable (shorter) population, so
-          // the message names the step rather than just failing the run.
-          expect(
-            step.ok,
-            `Sweep step ${index + 1}/${DEPARTMENTS.length} (${department}) failed: ${step.reason}`,
-          ).toBe(true);
-
-          await settleWorkspaceBetweenTurns(h.ctx.serviceWorker, workspaceId);
-        }
-
-        // A recall step at the end: it depends on the earlier turns, so it fails
-        // if compaction has quietly destroyed the history it needed. That makes
-        // this a check on compaction QUALITY, not just on cache mechanics — the
-        // RFC's own risk note is that append-only growth can cost task success.
+        // ONE message, so ONE agent session — the load-bearing detail.
+        //
+        // The first version of this test sent eight messages into a shared
+        // workspace, assuming history would accumulate. It does not: each chat
+        // message starts a NEW session with its own history and its own trace,
+        // so eight messages produced eight SHORT runs and compaction never
+        // fired. Run length is per session, so length has to come from a task
+        // the agent decomposes internally.
+        //
+        // The recall clause at the end is what forces the agent to carry the
+        // earlier findings forward rather than answering each department and
+        // discarding it — and it fails if compaction destroys context the agent
+        // still needed, which makes this a check on compaction QUALITY too. The
+        // RFC's own risk note is that append-only growth can cost task success,
+        // and offline metrics cannot detect that.
         await sendUserChat(
           h.ctx,
-          "Across everything you just looked at, which department had the most employees?",
+          `Using the employee table, work through these departments one at a time and search for each: ${DEPARTMENTS.join(", ")}. ` +
+            `For each one, record how many employees it has. When you have done all ${DEPARTMENTS.length}, tell me the per-department counts and which department is largest.`,
           tabId,
           workspaceId,
         );
-        const recall = await waitForTaskCompletion(
+
+        const sweep = await waitForTaskCompletion(
           h.ctx,
-          TURN_TIMEOUT,
+          SWEEP_TIMEOUT,
           workspaceId,
         );
         expect(
-          recall.ok,
-          `Recall after the sweep failed: ${recall.reason}. If this fails while the sweep steps passed, compaction dropped context the agent still needed.`,
+          sweep.ok,
+          `Sweep failed: ${sweep.reason}. If this times out rather than erroring, raise maxTurns — the task is deliberately long.`,
         ).toBe(true);
+
+        await settleWorkspaceBetweenTurns(h.ctx.serviceWorker, workspaceId);
       },
-      // Nine sequential agent steps, each up to the turn timeout.
-      TURN_TIMEOUT * DEPARTMENTS.length + TURN_TIMEOUT * 2,
+      // One long agent task, plus headroom for setup and teardown.
+      SWEEP_TIMEOUT + TURN_TIMEOUT,
     );
   },
 );
