@@ -41,6 +41,14 @@ the daemon's messages say precisely what is wrong and paraphrasing loses that.
 unless asked; it owns a browser bridge and the user may have reasons for it
 being off.
 
+**The tentative table.** Present the kit as a markdown table with the
+provenance column intact — `PROPOSED ⚠` rows must be visually distinct from
+library-resolved rows. Write long proposals (essays) to scratchpad files and
+record them with `set … --file`, so the human can ask for edits without
+re-pasting. Iterate until they're satisfied, record adoptions with `accept`
+only when they say so (AskUserQuestion works well for "accept these three, or
+tell me what to change").
+
 ## Worked shape
 
 ```
@@ -50,8 +58,10 @@ pnpm run jobagent assess <url>               # filter, writes nothing
 pnpm run jobagent ingest <url> --source websearch
 pnpm run jobagent questions <name>
 pnpm run jobagent draft <name>
-   → AskUserQuestion: the unresolved questions
-pnpm run jobagent edit-draft <name> <file>
+pnpm run jobagent set <name> "<label>" --file essay.md --proposed --basis "posting: …"
+   → present the full table; AskUserQuestion: iterate or adopt?
+pnpm run jobagent set <name> "<label>" "<their words>"     # owner's answer
+pnpm run jobagent accept <name> "<label>"                  # owner adopts a proposal
    → AskUserQuestion: approve the kit?
 pnpm run jobagent approve-kit <name> --promote
 pnpm run jobagent fill <name> --follow
