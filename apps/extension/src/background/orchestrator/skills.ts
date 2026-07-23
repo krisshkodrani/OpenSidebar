@@ -3,6 +3,7 @@ import type { ToolProfile } from "../tools/metadata";
 
 import { SKILL_CATALOG } from "./skill-catalog";
 import { SKILL_BODIES } from "./skill-bodies";
+import { SKILL_TOOL_SUPPRESSION_POLICIES } from "./skill-suppression-policies";
 import type {
   SkillCapability,
   SkillDescriptor,
@@ -329,6 +330,7 @@ export function resolveEligibleSkillCandidates(
   const seen = new Set<string>();
   const policyOptions: SkillCatalogOptions = {
     enabledSkillPackIds: input.enabledSkillPackIds,
+    disabledSkillIds: input.disabledSkillIds,
   };
 
   const addSkill = (
@@ -336,6 +338,7 @@ export function resolveEligibleSkillCandidates(
     activationReason: string,
     signalStrength: SkillActivationSignalStrength,
   ) => {
+    if (isSkillDisabled(skill.id, policyOptions)) return;
     if (seen.has(skill.id)) return;
     seen.add(skill.id);
     candidates.push({
@@ -407,6 +410,31 @@ function resolveEnabledSkillPackIds(
   return new Set(options.enabledSkillPackIds);
 }
 
+/**
+ * Skill ids disabled at runtime (user settings / ablation runs). Module-level
+ * so every selection path honors it without threading a new parameter through
+ * the orchestrator's many `{ enabledSkillPackIds }` call sites.
+ *
+ * Selection-time only by design: `getSkillDescriptor` (and therefore
+ * `getLoadedSkillContract` / `getSkillToolPolicy`) deliberately ignores it, so
+ * a node whose skill was selected before a settings change keeps its contract
+ * for the rest of the run.
+ */
+let runtimeDisabledSkillIds: ReadonlySet<string> = new Set();
+
+/** Set the runtime-disabled skill ids (the ablation switch). */
+export function setDisabledSkillIds(ids?: readonly string[]): void {
+  runtimeDisabledSkillIds = new Set(ids ?? []);
+}
+
+function isSkillDisabled(
+  id: string,
+  options?: SkillCatalogOptions,
+): boolean {
+  if (runtimeDisabledSkillIds.has(id)) return true;
+  return options?.disabledSkillIds?.includes(id) ?? false;
+}
+
 function isSkillDescriptorEnabled(
   skill: SkillDescriptor,
   options?: SkillCatalogOptions,
@@ -428,6 +456,7 @@ function selectEnabledSkill(
   id: string,
   reason: string,
 ): SkillSelection | null {
+  if (isSkillDisabled(id, input)) return null;
   if (!getSkillDescriptor(id, input)) return null;
   return { id, reason };
 }
@@ -450,8 +479,10 @@ export function getSkillPack(id: string): SkillPack | undefined {
 export function listSkillDescriptors(
   options?: SkillCatalogOptions,
 ): SkillDescriptor[] {
-  return SKILL_CATALOG.filter((skill) =>
-    isSkillDescriptorEnabled(skill, options),
+  return SKILL_CATALOG.filter(
+    (skill) =>
+      isSkillDescriptorEnabled(skill, options) &&
+      !isSkillDisabled(skill.id, options),
   ).map(cloneSkillDescriptor);
 }
 
@@ -621,206 +652,6 @@ export function resolveSkillToolProfile(
   return currentProfile;
 }
 
-const SKILL_TOOL_SUPPRESSION_POLICIES: Record<
-  string,
-  SkillToolSuppressionPolicy
-> = {
-  "hover-reveal-navigation": {
-    temporarilySuppressedTools: [
-      ToolName.HIDE_ELEMENT,
-      ToolName.INSPECT_HIDDEN,
-      ToolName.XRAY_PAGE,
-      ToolName.EXECUTE_JS,
-      ToolName.CLICK_COORDINATES,
-    ],
-    exemptTools: [
-      ToolName.DONE,
-      ToolName.ESCALATE,
-      ToolName.CLARIFY,
-      ToolName.UPDATE_NOTES,
-    ],
-  },
-  "structured-form-fill": {
-    temporarilySuppressedTools: [
-      ToolName.PRESS_KEY,
-      ToolName.XRAY_PAGE,
-      ToolName.CLICK_COORDINATES,
-    ],
-    exemptTools: [
-      ToolName.DONE,
-      ToolName.ESCALATE,
-      ToolName.CLARIFY,
-      ToolName.UPDATE_NOTES,
-    ],
-  },
-  "progressive-repeatable-form": {
-    temporarilySuppressedTools: [
-      ToolName.NAVIGATE,
-      ToolName.OPEN_SERVICENOW_MODULE,
-      ToolName.GO_BACK,
-      ToolName.CREATE_TAB,
-      ToolName.LIST_TABS,
-      ToolName.INSPECT_HIDDEN,
-      ToolName.XRAY_PAGE,
-      ToolName.PRESS_KEY,
-      ToolName.CLICK_COORDINATES,
-    ],
-    exemptTools: [
-      ToolName.DONE,
-      ToolName.ESCALATE,
-      ToolName.CLARIFY,
-      ToolName.UPDATE_NOTES,
-    ],
-  },
-  "multi-step-form-wizard": {
-    temporarilySuppressedTools: [
-      ToolName.NAVIGATE,
-      ToolName.OPEN_SERVICENOW_MODULE,
-      ToolName.GO_BACK,
-      ToolName.CREATE_TAB,
-      ToolName.LIST_TABS,
-      ToolName.INSPECT_HIDDEN,
-      ToolName.XRAY_PAGE,
-      ToolName.PRESS_KEY,
-      ToolName.CLICK_COORDINATES,
-    ],
-    exemptTools: [
-      ToolName.DONE,
-      ToolName.ESCALATE,
-      ToolName.CLARIFY,
-      ToolName.UPDATE_NOTES,
-    ],
-  },
-  "servicenow-record-form": {
-    temporarilySuppressedTools: [
-      ToolName.CLICK_ELEMENT,
-      ToolName.PRESS_KEY,
-      ToolName.CLICK_COORDINATES,
-    ],
-    exemptTools: [
-      ToolName.DONE,
-      ToolName.ESCALATE,
-      ToolName.CLARIFY,
-      ToolName.UPDATE_NOTES,
-      ToolName.CONFIGURE_SERVICENOW_FORM,
-    ],
-  },
-  "inline-edit-surface": {
-    temporarilySuppressedTools: [ToolName.CLICK_COORDINATES],
-    exemptTools: [
-      ToolName.DONE,
-      ToolName.ESCALATE,
-      ToolName.CLARIFY,
-      ToolName.UPDATE_NOTES,
-    ],
-  },
-  "modal-overlay-recovery": {
-    temporarilySuppressedTools: [
-      ToolName.DISMISS_OVERLAYS,
-      ToolName.NAVIGATE,
-      ToolName.TYPE_TEXT,
-    ],
-    exemptTools: [
-      ToolName.DONE,
-      ToolName.ESCALATE,
-      ToolName.CLARIFY,
-      ToolName.UPDATE_NOTES,
-    ],
-  },
-  "multi-tab-checklist-workflow": {
-    temporarilySuppressedTools: [
-      ToolName.NAVIGATE,
-      ToolName.GO_BACK,
-      ToolName.READ_ELEMENT,
-      ToolName.LIST_TABS,
-      ToolName.INSPECT_HIDDEN,
-      ToolName.XRAY_PAGE,
-      ToolName.CLICK_COORDINATES,
-    ],
-    exemptTools: [
-      ToolName.DONE,
-      ToolName.ESCALATE,
-      ToolName.CLARIFY,
-      ToolName.UPDATE_NOTES,
-    ],
-  },
-  "list-detail-review-loop": {
-    temporarilySuppressedTools: [
-      ToolName.NAVIGATE,
-      ToolName.GO_BACK,
-      ToolName.PRESS_KEY,
-      ToolName.READ_ELEMENT,
-      ToolName.FIND_ELEMENT,
-      ToolName.INSPECT_HIDDEN,
-      ToolName.XRAY_PAGE,
-      ToolName.CLICK_COORDINATES,
-    ],
-    exemptTools: [
-      ToolName.DONE,
-      ToolName.ESCALATE,
-      ToolName.CLARIFY,
-      ToolName.UPDATE_NOTES,
-    ],
-  },
-  "paginated-table-scan": {
-    temporarilySuppressedTools: [
-      ToolName.NAVIGATE,
-      ToolName.GO_BACK,
-      ToolName.READ_ELEMENT,
-      ToolName.FIND_ELEMENT,
-      ToolName.TYPE_TEXT,
-      ToolName.PRESS_KEY,
-      ToolName.SELECT_OPTION,
-      ToolName.SET_CHECKBOX,
-      ToolName.SCROLL_PAGE,
-      ToolName.INSPECT_HIDDEN,
-      ToolName.XRAY_PAGE,
-      ToolName.EXECUTE_JS,
-      ToolName.CLICK_COORDINATES,
-      ToolName.CREATE_TAB,
-      ToolName.LIST_TABS,
-    ],
-    exemptTools: [
-      ToolName.DONE,
-      ToolName.ESCALATE,
-      ToolName.CLARIFY,
-      ToolName.UPDATE_NOTES,
-    ],
-  },
-  "paginated-record-lookup": {
-    temporarilySuppressedTools: [
-      ToolName.NAVIGATE,
-      ToolName.GO_BACK,
-      ToolName.READ_ELEMENT,
-      ToolName.PRESS_KEY,
-      ToolName.INSPECT_HIDDEN,
-      ToolName.XRAY_PAGE,
-      ToolName.EXECUTE_JS,
-      ToolName.CLICK_COORDINATES,
-      ToolName.CREATE_TAB,
-      ToolName.LIST_TABS,
-    ],
-    exemptTools: [
-      ToolName.DONE,
-      ToolName.ESCALATE,
-      ToolName.CLARIFY,
-      ToolName.UPDATE_NOTES,
-    ],
-  },
-  "cross-tab-compare": {
-    temporarilySuppressedTools: [
-      ToolName.NAVIGATE,
-      ToolName.GO_BACK,
-      ToolName.CLICK_COORDINATES,
-    ],
-    exemptTools: [
-      ToolName.DONE,
-      ToolName.ESCALATE,
-      ToolName.CLARIFY,
-      ToolName.UPDATE_NOTES,
-    ],
-  },
-};
 
 export function getSkillToolSuppressionPolicy(
   id?: string,

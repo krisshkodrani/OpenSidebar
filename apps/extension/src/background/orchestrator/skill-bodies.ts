@@ -1223,49 +1223,37 @@ export const SKILL_BODIES: Record<
   },
   "modal-overlay-recovery": {
     procedureMarkdown: [
-      "1. Read the page and identify ALL visible overlays, banners, and modals. Count them and note their close/dismiss/accept buttons.",
-      "2. Dismiss the topmost overlay by clicking its close, dismiss, accept, or X button directly with click_element. Do NOT use dismiss_overlays — it hides elements visually but does not trigger application state changes, so overlays may reappear or remain functional.",
-      "3. After each click, re-read the page immediately to confirm the overlay is actually gone (not just hidden).",
-      "4. Repeat steps 2-3 for each remaining overlay. Handle them one at a time — do not batch.",
-      "5. Only after ALL overlays are confirmed gone via re-read, proceed to the underlying task or call done.",
-      "6. If an overlay reappears after dismissal, try press_key Escape, then re-read. If still present, find and click another dismiss target.",
+      "1. Call dismiss_overlays first. It clicks real close buttons where it finds them and reports what it did: how many closed via close button (these stay closed) and how many were only CSS-hidden (these may reappear).",
+      "2. Re-read the page. For any overlay reported as CSS-hidden, reappeared, or still present, click its close/dismiss/accept/X control directly — one overlay at a time.",
+      "3. After each click, re-read to confirm the overlay is gone and to refresh element IDs (tags shift when the DOM changes).",
+      "4. If an overlay resists, try press_key Escape, then re-read and look for another dismiss target.",
+      "5. Proceed to the underlying task or call done only after a re-read shows no blocking overlays remain.",
     ].join("\n"),
     requiredEvidence: [
-      "Count of overlays detected on initial page read",
-      "Confirmation that each overlay was dismissed via re-read",
-      "Final page state showing no blocking overlays remain",
+      "dismiss_overlays result showing what was dismissed and how",
+      "Re-read confirming no blocking overlays remain",
     ],
     commonFailures: [
       {
-        signal: "calling done after dismissing only one of multiple overlays",
+        signal: "calling done while a CSS-hidden overlay can still reappear",
         recovery:
-          "re-read the page and dismiss remaining overlays before calling done",
+          "re-read after dismissal and click the real close control of any overlay dismiss_overlays reported as hidden",
       },
       {
         signal: "clicking stale element IDs after an overlay is removed",
         recovery:
           "re-read the page to get fresh element tags after each dismissal",
       },
-      {
-        signal:
-          "assuming dismiss_overlays handled all overlays without re-reading",
-        recovery:
-          "always re-read after dismiss_overlays to verify and detect remaining overlays",
-      },
     ],
     executionContract: {
       sequencing: [
-        "Dismiss one overlay, re-read, then move to the next overlay.",
-        "Do not return to the underlying task until all blocking overlays are gone.",
+        "dismiss_overlays first, then targeted close-button clicks for survivors, re-reading between actions.",
       ],
       toolDiscipline: [
-        "Prefer click_element on the actual dismiss control over dismiss_overlays.",
         "Use done immediately after read_page or inspection confirms no blocking overlays remain.",
       ],
       completionChecks: [
-        "Initial overlay count is known.",
         "Each dismissal is confirmed by a re-read.",
-        "Final page state shows no blocking overlays remain.",
         "A no-match read_page or inspect_hidden check for overlay terms is sufficient final evidence.",
       ],
       failureRecovery: [

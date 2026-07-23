@@ -819,7 +819,7 @@ export const SKILL_CATALOG: SkillDescriptor[] = [
     id: "modal-overlay-recovery",
     name: "Modal Overlay Recovery",
     description:
-      "Detect and dismiss blocking overlays one at a time by clicking their close buttons, re-grounding after each dismissal before proceeding.",
+      "Clear blocking overlays: run dismiss_overlays first, then click the close control of anything it reports as CSS-hidden or surviving, re-grounding after each dismissal.",
     tags: ["workflow", "modal", "overlay", "popup", "banner", "recovery"],
     triggers: [
       "close popup",
@@ -829,13 +829,19 @@ export const SKILL_CATALOG: SkillDescriptor[] = [
       "blocking overlay",
     ],
     maturity: "candidate",
-    preferredTools: ["read_page", "click_element", "press_key", "read_element"],
-    discouragedTools: ["navigate", "type_text", "dismiss_overlays"],
+    preferredTools: [
+      "dismiss_overlays",
+      "read_page",
+      "click_element",
+      "press_key",
+      "read_element",
+    ],
+    discouragedTools: ["navigate", "type_text"],
     contextScope: "turn",
     verifierMode: "hybrid",
     notes: [
-      "Click the overlay's close/dismiss/accept/X button directly — do not use dismiss_overlays.",
-      "Dismiss one overlay at a time, re-read after each to verify it is gone.",
+      "dismiss_overlays clicks real close buttons where it finds them and reports which overlays were only CSS-hidden — handle those by clicking their close control directly.",
+      "Re-read after each dismissal to verify it is gone and to refresh element IDs.",
       "Call done after ALL blocking overlays are confirmed gone.",
       "If read_page or inspect_hidden shows no cookie, newsletter, popup, banner, modal, close, dismiss, or accept controls remain, stop searching and call done.",
     ],

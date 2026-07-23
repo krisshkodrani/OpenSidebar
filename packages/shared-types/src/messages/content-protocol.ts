@@ -69,6 +69,16 @@ export interface DismissModalsResponse extends BaseMessage {
   source: MessageSource.CONTENT;
   payload: {
     dismissed: number;
+    /**
+     * Of `dismissed`, how many were closed by clicking a real close button —
+     * these trigger framework state updates and stay closed.
+     */
+    clickedClose: number;
+    /**
+     * Of `dismissed`, how many were only CSS-hidden (no close button found) —
+     * these may reappear on the next framework re-render.
+     */
+    cssHidden: number;
     /** Non-null if heuristics couldn't dismiss a viewport-covering overlay */
     remainingOverlay: OverlayDescriptor | null;
     /** Text content extracted from dismissed overlays (deduplicated) */
