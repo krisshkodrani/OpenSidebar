@@ -83,6 +83,8 @@
     "fixtures": "nx run tools:fixtures",
     "fixtures:build": "nx run fixture-online-shop-pro:build",
     "logs": "nx run tools:local-server",
+    "cache:report": "tsx scripts/cache-report.mjs",
+    "cache:preflight": "tsx scripts/cache-run-preflight.mjs",
     "jobagent": "tsx scripts/jobagent-console/cli.ts",
     "jobagent:rehearsal": "tsx scripts/jobagent-rehearsal.ts",
     "logs:tail": "nx run tools:logs-tail",

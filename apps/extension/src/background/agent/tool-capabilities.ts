@@ -272,17 +272,36 @@ export function buildToolCapabilityCatalog(
   ].join("\n");
 }
 
+/**
+ * Append the capability catalog as the LAST message of the prompt.
+ *
+ * The catalog is built from the tools selected for this turn, so its bytes
+ * change whenever the tool SET changes (a tool-profile switch or skill
+ * suppression — not mere reordering, which `buildToolCapabilityCatalog` sorts
+ * away). That makes it volatile content, and prefix caching keeps only the
+ * bytes before the first change.
+ *
+ * It used to be appended to the END of the system message, which put volatile
+ * bytes AHEAD of the whole conversation history: one tool-set change threw away
+ * the cached prefix for every history message behind it. Measured at 21% of warm
+ * turns in the LP-21 step-2 observation window (issue #107), and it is upstream
+ * of history, so the append-only work in #103/#102 cannot help those turns.
+ *
+ * Last position is the cheapest place for volatile content — RFC LP-21 §4's
+ * stable-first/volatile-last contract. The page-state tail already changes every
+ * turn, so anything after it is invalidated regardless; putting the catalog
+ * there costs nothing, while putting it before history costs everything.
+ *
+ * A separate message rather than appending onto the tail: no detection of which
+ * trailing message is the volatile tail, and it stays correct when there is no
+ * snapshot and therefore no tail at all.
+ */
 export function withToolCapabilityCatalog(
   messages: LLMMessage[],
   tools: ToolDefinition[],
 ): LLMMessage[] {
   if (tools.length === 0) return messages;
-  const catalog = buildToolCapabilityCatalog(tools);
-  const [first, ...rest] = messages;
-  if (first?.role === "system" && typeof first.content === "string") {
-    return [{ ...first, content: `${first.content}\n\n${catalog}` }, ...rest];
-  }
-  return [{ role: "system", content: catalog }, ...messages];
+  return [...messages, { role: "user", content: buildToolCapabilityCatalog(tools) }];
 }
 
 export function assessMissingToolEscalation(params: {

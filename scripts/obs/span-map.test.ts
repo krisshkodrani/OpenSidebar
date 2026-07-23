@@ -106,6 +106,79 @@ describe("traceEntryToSpans", () => {
     expect(chat.attributes["os.cache.hit_pct"]).toBe(64);
   });
 
+  // LP-21 §9: the hit % says how much we paid; these say why. Issue #103 had to
+  // infer the cause from turn-to-turn token deltas because it was never exported.
+  it("exports prompt-prefix divergence so cache misses are explainable", () => {
+    const withPrefix = {
+      ...entry,
+      llmRequest: {
+        ...entry.llmRequest,
+        contextMetrics: {
+          promptPrefix: {
+            digest: "deadbeef",
+            firstDivergenceMessageIndex: 2,
+            firstDivergenceOffset: 1536,
+            firstDivergenceRegion: "history",
+            stablePrefixChars: 1536,
+            stablePrefixPct: 42.5,
+            stablePrefixMessages: 2,
+            totalChars: 3614,
+          },
+        },
+      },
+    } as unknown as TraceEntry;
+
+    const chat = traceEntryToSpans(withPrefix).filter(
+      (s) => s.kind === "gen_ai.chat",
+    )[0];
+
+    expect(chat.attributes["os.prompt.prefix_digest"]).toBe("deadbeef");
+    expect(chat.attributes["os.prompt.diverges_in"]).toBe("history");
+    expect(chat.attributes["os.prompt.first_divergence_offset"]).toBe(1536);
+    expect(chat.attributes["os.prompt.prefix_stable_pct"]).toBe(42.5);
+    // Absent when no compaction ran — the miss is unexplained, i.e. the defect.
+    expect(chat.attributes["os.prompt.prefix_reset_cause"]).toBeUndefined();
+  });
+
+  it("marks a compaction turn's miss as a deliberate one-time reset", () => {
+    const withReset = {
+      ...entry,
+      llmRequest: {
+        ...entry.llmRequest,
+        contextMetrics: {
+          promptPrefix: {
+            digest: "cafe",
+            firstDivergenceMessageIndex: 1,
+            firstDivergenceOffset: 12,
+            firstDivergenceRegion: "history",
+            stablePrefixChars: 12,
+            stablePrefixPct: 1,
+            stablePrefixMessages: 1,
+            totalChars: 1200,
+            prefixReset: {
+              cause: "rolling_distill",
+              messagesBefore: 24,
+              messagesAfter: 9,
+            },
+          },
+        },
+      },
+    } as unknown as TraceEntry;
+
+    const chat = traceEntryToSpans(withReset).filter(
+      (s) => s.kind === "gen_ai.chat",
+    )[0];
+
+    expect(chat.attributes["os.prompt.prefix_reset_cause"]).toBe("rolling_distill");
+    expect(chat.attributes["os.prompt.prefix_reset_messages_dropped"]).toBe(15);
+  });
+
+  it("omits prefix attributes entirely when a turn carries no prefix metrics", () => {
+    const chat = byKind("gen_ai.chat")[0];
+    expect(chat.attributes["os.prompt.prefix_digest"]).toBeUndefined();
+    expect(chat.attributes["os.prompt.diverges_in"]).toBeUndefined();
+  });
+
   it("records tool success/failure as span status", () => {
     const tools = byKind("execute_tool");
     expect(tools.find((t) => t.name.includes("read_page"))?.status?.code).toBe("ok");
