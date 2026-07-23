@@ -1,5 +1,5 @@
 /**
- * JobAgent console server (pi Phase 9, v0) — offline route tests.
+ * JobAgent daemon (pi Phase 9, v0) — offline route tests.
  *
  * A real server instance on port 0 over a temp seed dir; requests via raw
  * node:http (happy-dom's fetch enforces same-origin — seed-kit.test.ts
@@ -220,24 +220,15 @@ describe("criteria", () => {
   });
 });
 
-describe("ui + events", () => {
-  test("root serves the single-file UI", async () => {
-    const reply = await new Promise<{ status: number; text: string }>((resolve, reject) => {
-      const req = request(
-        { host: "127.0.0.1", port: server!.port, method: "GET", path: "/" },
-        (res) => {
-          const chunks: Buffer[] = [];
-          res.on("data", (c: Buffer) => chunks.push(c));
-          res.on("end", () =>
-            resolve({ status: res.statusCode ?? 0, text: Buffer.concat(chunks).toString("utf8") }),
-          );
-        },
-      );
-      req.on("error", reject);
-      req.end();
-    });
+describe("index + events", () => {
+  test("root serves the machine-readable route index, not a page", async () => {
+    const reply = await call(server!.port, "GET", "/");
     expect(reply.status).toBe(200);
-    expect(reply.text).toContain("JobAgent Console");
+    expect(reply.body.service).toBe("jobagent-daemon");
+    expect(reply.body.headless).toBe(true);
+    // Every documented route maps to the CLI verb that fronts it.
+    expect(reply.body.routes["GET /api/queue"]).toBe("queue");
+    expect(reply.body.routes["POST /api/approvals/:id"]).toContain("decide");
   });
 
   test("SSE stream connects and receives broadcasts (raw chunk read)", async () => {
@@ -331,12 +322,53 @@ describe("kit routes (v1)", () => {
     expect(detail.body.package.status).toBe("ready");
   });
 
-  test("generate without a library is a 409 pointing at the Answers tab", async () => {
+  test("generate without a library is a 409 pointing at the answers verb", async () => {
     writePackage(process.env.JOBAGENT_APPLICATIONS_DIR!, "acme-ai-engineer");
     const reply = await call(server!.port, "POST", "/api/applications/acme-ai-engineer/kit-draft", {
       questions: [{ label: "Email" }],
     });
     expect(reply.status).toBe(409);
     expect(reply.body.error).toContain("answer library");
+  });
+
+  /* — LP-22: questions.json is the default drafting input — */
+
+  test("drafting with no body uses the extracted questions.json", async () => {
+    const dir = join(process.env.JOBAGENT_APPLICATIONS_DIR!, "acme-ai-engineer");
+    writePackage(process.env.JOBAGENT_APPLICATIONS_DIR!, "acme-ai-engineer");
+    await call(server!.port, "PUT", "/api/answers", library);
+    writeFileSync(
+      join(dir, "questions.json"),
+      JSON.stringify([{ label: "Email", kind: "text" }, { label: "Salary Expectation" }]),
+      "utf8",
+    );
+
+    // No `questions` in the body — this is the `questions` → `draft` chain.
+    const reply = await call(
+      server!.port,
+      "POST",
+      "/api/applications/acme-ai-engineer/kit-draft",
+      {},
+    );
+
+    expect(reply.status).toBe(200);
+    expect(reply.body.perField).toHaveLength(2);
+    expect(reply.body.perField[0].answer).toBe("sam@example.test");
+    // The judgment question stays a TODO — drafting never guesses a salary.
+    expect(reply.body.unresolved).toEqual(["Salary Expectation"]);
+  });
+
+  test("drafting with neither a body nor questions.json says which verb to run", async () => {
+    writePackage(process.env.JOBAGENT_APPLICATIONS_DIR!, "acme-ai-engineer");
+    await call(server!.port, "PUT", "/api/answers", library);
+
+    const reply = await call(
+      server!.port,
+      "POST",
+      "/api/applications/acme-ai-engineer/kit-draft",
+      {},
+    );
+    expect(reply.status).toBe(409);
+    expect(reply.body.error).toContain("jobagent questions acme-ai-engineer");
   });
 });

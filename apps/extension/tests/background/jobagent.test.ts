@@ -138,6 +138,51 @@ describe("assembleFillBrief", () => {
     expect(brief).toContain("Sample Engineer");
     expect(brief).toContain("Sample Company");
   });
+
+  /* — submit mode (issue #109) — */
+
+  test("submit mode carries the SAME approved values, not a bare submit order", () => {
+    process.env.JOBAGENT_APPLICATIONS_DIR = FIXTURES_DIR;
+    const app = loadApplication(APP_NAME);
+    const fill = assembleFillBrief(app.package, app.manifest, "http://127.0.0.1:9/cv.pdf");
+    const submit = assembleFillBrief(
+      app.package,
+      app.manifest,
+      "http://127.0.0.1:9/cv.pdf",
+      { submit: true },
+    );
+
+    // Submit re-fills from the manifest rather than trusting an earlier tab,
+    // so every approved value must still be present verbatim.
+    expect(submit).toContain("jordan.sample@example.com");
+    for (const line of app.manifest.promptLines) expect(submit).toContain(line);
+    // Same field lines in both modes — the manifest is the only source.
+    for (const line of app.manifest.promptLines) expect(fill).toContain(line);
+    expect(submit).toContain("http://127.0.0.1:9/cv.pdf");
+  });
+
+  test("submit mode drops the fill-only guard but still defers to the human gate", () => {
+    process.env.JOBAGENT_APPLICATIONS_DIR = FIXTURES_DIR;
+    const app = loadApplication(APP_NAME);
+    const submit = assembleFillBrief(app.package, app.manifest, undefined, {
+      submit: true,
+    });
+
+    expect(submit).not.toMatch(/DO NOT submit the application/i);
+    // The approval pause is expected, not an obstacle to route around.
+    expect(submit).toMatch(/pause for human approval/i);
+    expect(submit).toMatch(/wait for the decision/i);
+    // A partly filled form is still never submitted.
+    expect(submit).toMatch(/do NOT submit a partly filled form/i);
+  });
+
+  test("fill mode is unchanged by the new option", () => {
+    process.env.JOBAGENT_APPLICATIONS_DIR = FIXTURES_DIR;
+    const app = loadApplication(APP_NAME);
+    expect(assembleFillBrief(app.package, app.manifest, "http://x/cv.pdf")).toBe(
+      assembleFillBrief(app.package, app.manifest, "http://x/cv.pdf", { submit: false }),
+    );
+  });
 });
 
 describe("recordStatus", () => {
