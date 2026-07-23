@@ -51,6 +51,13 @@ export interface SkillPack {
 export interface SkillCatalogOptions {
   enabledSkillPackIds?: readonly string[];
   candidateSkillIds?: readonly string[];
+  /**
+   * Skill ids excluded from selection — the ablation switch (2026-07-23 skills
+   * audit, Finding 5). Merged with the module-level set from user settings.
+   * Selection-time only: an already-selected skill keeps its loaded contract
+   * so a mid-run settings change cannot strand a running node.
+   */
+  disabledSkillIds?: readonly string[];
 }
 
 export interface SkillToolPolicy {
@@ -78,6 +85,8 @@ export interface SkillMatcherInput {
   runtimeContext?: readonly string[];
   enabledSkillPackIds?: readonly string[];
   candidateSkillIds?: readonly string[];
+  /** Skill ids excluded from selection (see SkillCatalogOptions). */
+  disabledSkillIds?: readonly string[];
 }
 
 export type SkillActivationSignalStrength = "always" | "weak" | "strong";

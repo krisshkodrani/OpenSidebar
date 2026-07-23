@@ -125,6 +125,19 @@ export function normalizeEnabledSkillPackIds(value: unknown): string[] {
   return normalized;
 }
 
+/** Unlike pack ids there is no default: absent means "no skills disabled". */
+export function normalizeDisabledSkillIds(value: unknown): string[] {
+  if (!Array.isArray(value)) return [];
+  const normalized: string[] = [];
+  for (const item of value) {
+    if (typeof item !== "string") continue;
+    const id = item.trim();
+    if (!id || normalized.includes(id)) continue;
+    normalized.push(id);
+  }
+  return normalized;
+}
+
 /**
  * Save settings: API keys to local storage, everything else to sync storage.
  * All API keys are credentials — never sync them.
@@ -143,6 +156,7 @@ export async function saveSettings(
     enabledSkillPackIds: normalizeEnabledSkillPackIds(
       settings.enabledSkillPackIds,
     ),
+    disabledSkillIds: normalizeDisabledSkillIds(settings.disabledSkillIds),
   };
   if (
     normalized.executorModel &&
@@ -303,6 +317,7 @@ export async function loadSettings(
   raw.enabledSkillPackIds = normalizeEnabledSkillPackIds(
     raw.enabledSkillPackIds,
   );
+  raw.disabledSkillIds = normalizeDisabledSkillIds(raw.disabledSkillIds);
 
   if (
     typeof raw.executorModel === "string" &&
