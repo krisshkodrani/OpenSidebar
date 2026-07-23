@@ -122,6 +122,34 @@ describe("deriveTaskUiState", () => {
     expect(state.rail.secondaryLabel).toBe("Step 1 of 1");
   });
 
+  test("prefers the planner display label over the raw instruction in the rail", () => {
+    const state = deriveTaskUiState(
+      baseState({
+        agentStatus: AgentStatus.ACTING,
+        isAgentRunning: true,
+        taskProgress: {
+          taskId: "task-1",
+          currentIndex: 0,
+          totalTurnsUsed: 0,
+          subtasks: [
+            {
+              description:
+                "Complete these steps in order on the current page: Close any popup dialogs; Set the notification email field; Click the delete account button",
+              label: "Dismiss popups · Set email · Delete account",
+              status: "running",
+              turnsUsed: 0,
+              turnBudget: 4,
+            },
+          ],
+        },
+      }),
+    );
+
+    expect(state.rail.primaryLabel).toBe(
+      "Dismiss popups · Set email · Delete account",
+    );
+  });
+
   test("compacts internal planner context in the primary rail label", () => {
     const state = deriveTaskUiState(
       baseState({

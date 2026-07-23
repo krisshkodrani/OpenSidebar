@@ -1,4 +1,11 @@
 import { MAX_PLANNER_ASSUMPTIONS, TaskPlanner } from "../agent/planner";
+import { composeCollapsedDisplayLabel } from "../agent/plan-display-label";
+import {
+  compactText,
+  dedupeStrings,
+  nodeUrlOrigins,
+  unionTools,
+} from "./planner-node-utils";
 import type { LLMClientOptions } from "../llm";
 import type { TokenUsage } from "../llm/types";
 import type { Difficulty } from "../agent/constants";
@@ -140,6 +147,8 @@ export function validatePlannerAssignments(raw: unknown): PlannerAssignment[] {
 
 interface DecompositionStep {
   objective: string;
+  /** Planner-authored short display summary (UI-only, already sanitized). */
+  label?: string;
   successCriteria?: string;
   dependencies?: number[];
   assumptions?: string[];
@@ -172,20 +181,6 @@ const SKILL_OWNED_WORKFLOW_IDS = new Set([
   "multi-step-form-wizard",
   "hover-reveal-navigation",
 ]);
-
-function unionTools(groups: TaskNode[]): ToolName[] {
-  const tools: ToolName[] = [];
-  for (const node of groups) {
-    for (const tool of node.allowedTools) {
-      if (!tools.includes(tool)) tools.push(tool);
-    }
-  }
-  return tools;
-}
-
-function dedupeStrings(values: string[]): string[] {
-  return [...new Set(values.map((value) => value.trim()).filter(Boolean))];
-}
 
 function isMultiTabChecklistOpenNode(node: TaskNode): boolean {
   return (
@@ -734,22 +729,6 @@ const NODE_NAVIGATION_VERB =
 const ITEMWISE_ORDINAL_TARGET =
   /\b(?:first|second|third|fourth|fifth|next|another)\b[\w\s-]{0,24}\b(?:item|record|entry|row|product|listing|application|ticket|task)s?\b/i;
 
-function nodeUrlOrigins(nodes: TaskNode[]): Set<string> {
-  const origins = new Set<string>();
-  for (const node of nodes) {
-    for (const match of node.description.matchAll(
-      /https?:\/\/[^\s"'<>]+/gi,
-    )) {
-      try {
-        origins.add(new URL(match[0]).origin.toLowerCase());
-      } catch {
-        origins.add(match[0].toLowerCase());
-      }
-    }
-  }
-  return origins;
-}
-
 /**
  * LP-17 P7: merge a serialized chain of same-page, same-skill nodes into one.
  * Live plans split sequential single-page work (add-to-cart → coupon →
@@ -810,6 +789,10 @@ export function collapseSameContextSequentialNodes(
   if (description.length > SAME_PAGE_COLLAPSE_MAX_DESCRIPTION_CHARS) {
     return nodes;
   }
+  const displayLabel = composeCollapsedDisplayLabel(
+    nodes.map((node) => node.displayLabel),
+    nodes.length,
+  );
 
   const firstNode = nodes[0];
   const lastGate = [...nodes]
@@ -832,6 +815,7 @@ export function collapseSameContextSequentialNodes(
       selectedSkillId: mergedSkill?.id,
       selectedSkillReason: mergedSkill?.reason,
       description,
+      displayLabel,
       successCriteria: compactText(
         dedupeStrings(nodes.map((node) => node.successCriteria)).join(" "),
       ),
@@ -944,10 +928,6 @@ function preserveOriginalScopeForSingleSkillOwnedNode(
       ],
     },
   ];
-}
-
-function compactText(value: string): string {
-  return value.replace(/\s+/g, " ").trim();
 }
 
 function navigationOnlySuccessCriteria(): string {
@@ -1173,6 +1153,7 @@ function stepsToNodes(
     id: nodeIds[index],
     role: assignment.role,
     description: assignment.objective,
+    ...(steps[index]?.label ? { displayLabel: steps[index].label } : {}),
     successCriteria: assignment.successCriteria,
     ...(steps[index]?.toolProfile
       ? { toolProfile: steps[index].toolProfile }
@@ -1590,6 +1571,7 @@ export class OrchestratorPlanner {
         id: nodeIds[index],
         role: "executor",
         description: step.objective,
+        ...(step.label ? { displayLabel: step.label } : {}),
         successCriteria:
           step.successCriteria ||
           `The subtask outcome for "${step.objective}" is verified on the page or in tool output.`,

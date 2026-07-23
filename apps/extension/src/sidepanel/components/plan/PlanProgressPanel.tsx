@@ -50,6 +50,19 @@ export function PlanProgressPanel({
   rows: PlanRow[];
   runningRef: (node: HTMLDivElement | null) => void;
 }) {
+  // Rows without a planner label fall back to the clamped description; the
+  // clamp is expandable per row so the precise instruction stays reachable.
+  const [expandedRows, setExpandedRows] = React.useState<Set<string>>(
+    () => new Set(),
+  );
+  const toggleExpanded = (id: string) =>
+    setExpandedRows((current) => {
+      const next = new Set(current);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+
   return (
     <>
       {recovery ? (
@@ -58,7 +71,13 @@ export function PlanProgressPanel({
 
       <div className="ml-1">
         {rows.map((row, index) => {
-          const displayDescription = compactTaskDisplayLabel(row.description);
+          const compactDescription = compactTaskDisplayLabel(row.description);
+          const displayDescription = row.label ?? compactDescription;
+          // A label always differs from the instruction, so keep the full
+          // text one hover away; expansion is only offered on the fallback
+          // path, where the clamp is what hides information.
+          const expandable = !row.label && compactDescription.length > 90;
+          const isExpanded = expandedRows.has(row.id);
           return (
             <div
               key={row.id}
@@ -100,7 +119,22 @@ export function PlanProgressPanel({
                         : "text-warm-600 dark:text-warm-300"
                   }`}
                 >
-                  {displayDescription}
+                  {expandable && !isExpanded ? (
+                    <span className="line-clamp-2">{compactDescription}</span>
+                  ) : isExpanded ? (
+                    compactDescription
+                  ) : (
+                    displayDescription
+                  )}
+                  {expandable ? (
+                    <button
+                      type="button"
+                      onClick={() => toggleExpanded(row.id)}
+                      className="ml-1 align-middle text-[10px] font-medium text-primary-600 hover:underline dark:text-primary-400"
+                    >
+                      {isExpanded ? "less" : "more"}
+                    </button>
+                  ) : null}
                   {row.selectedSkillId ? (
                     <span className="ml-1.5 inline-flex rounded bg-primary-100 px-1 py-0.5 align-middle text-[9px] font-normal text-primary-700 dark:bg-primary-900/40 dark:text-primary-300">
                       {row.selectedSkillId}

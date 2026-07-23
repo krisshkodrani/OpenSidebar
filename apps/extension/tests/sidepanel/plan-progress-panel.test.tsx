@@ -109,4 +109,88 @@ describe("PlanProgressPanel", () => {
     );
     expect(container.textContent).not.toContain("PROFILE DIGEST CONTEXT");
   });
+
+  const LONG_INSTRUCTION =
+    "Complete these steps in order on the current page: Close any popup, modal, or overlay dialogs currently visible on the page; Set the notification email field to the requested address; Click the delete account button to remove the account";
+
+  function renderRows(rows: PlanRow[]) {
+    return act(async () => {
+      root.render(
+        <PlanProgressPanel
+          canSkip={false}
+          onResumeRecoveredTask={() => {}}
+          onSkipCurrentStep={() => {}}
+          recovery={null}
+          rows={rows}
+          runningRef={() => {}}
+        />,
+      );
+    });
+  }
+
+  test("a planner label replaces the instruction on screen but keeps it on hover", async () => {
+    await renderRows([
+      {
+        id: "task:n1",
+        description: LONG_INSTRUCTION,
+        label: "Dismiss popups · Set email · Delete account",
+        status: "running",
+        turnsUsed: 0,
+      },
+    ]);
+
+    expect(container.textContent).toContain(
+      "Dismiss popups · Set email · Delete account",
+    );
+    expect(container.textContent).not.toContain("Complete these steps in order");
+    // The precise instruction stays one hover away.
+    const holder = container.querySelector(`[title*="Complete these steps"]`);
+    expect(holder).not.toBeNull();
+    // A labelled row needs no expander.
+    expect(container.textContent).not.toContain("more");
+  });
+
+  test("an unlabelled long instruction clamps with a working more/less toggle", async () => {
+    await renderRows([
+      {
+        id: "task:n1",
+        description: LONG_INSTRUCTION,
+        status: "running",
+        turnsUsed: 0,
+      },
+    ]);
+
+    const toggle = [...container.querySelectorAll("button")].find(
+      (button) => button.textContent === "more",
+    );
+    expect(toggle).toBeDefined();
+    // Collapsed: the text is present (clamping is CSS) inside a line-clamp box.
+    expect(container.querySelector(".line-clamp-2")).not.toBeNull();
+
+    await act(async () => {
+      toggle!.click();
+    });
+    expect(container.querySelector(".line-clamp-2")).toBeNull();
+    const less = [...container.querySelectorAll("button")].find(
+      (button) => button.textContent === "less",
+    );
+    expect(less).toBeDefined();
+  });
+
+  test("a short unlabelled row gets neither clamp nor toggle", async () => {
+    await renderRows([
+      {
+        id: "task:n1",
+        description: "Read the dashboard",
+        status: "running",
+        turnsUsed: 0,
+      },
+    ]);
+    expect(container.querySelector(".line-clamp-2")).toBeNull();
+    expect(
+      [...container.querySelectorAll("button")].some(
+        (button) => button.textContent === "more",
+      ),
+    ).toBe(false);
+  });
 });

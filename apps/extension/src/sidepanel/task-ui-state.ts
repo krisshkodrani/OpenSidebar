@@ -89,7 +89,13 @@ function currentSubtaskLabel(
     Math.max(taskProgress.currentIndex, 0),
     taskProgress.subtasks.length - 1,
   );
-  return usefulProgressLabel(taskProgress.subtasks[currentIndex]?.description);
+  const subtask = taskProgress.subtasks[currentIndex];
+  // Prefer the planner-authored display label: the description is executor
+  // material and one CSS-truncated line of it shows only its boilerplate head.
+  return (
+    usefulProgressLabel(subtask?.label) ??
+    usefulProgressLabel(subtask?.description)
+  );
 }
 
 function fallbackPrimaryLabel(status: AgentStatus, detail: string): string {
