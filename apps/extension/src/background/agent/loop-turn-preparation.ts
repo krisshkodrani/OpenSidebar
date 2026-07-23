@@ -73,7 +73,11 @@ export async function prepareLlmTurnRequest(
   deps: LlmTurnPreparationDeps,
 ): Promise<LlmTurnPreparationResult> {
   const tools = deps.selectTools(deps.allTools);
-  const messages = withToolCapabilityCatalog(deps.context.getPrompt(), tools);
+  // Kept separately: the catalog appended by #107 is a synthetic trailing
+  // message, not conversation history, so history-derived counts below must be
+  // taken from the pre-injection prompt or they silently drift by one.
+  const promptWithoutCatalog = deps.context.getPrompt();
+  const messages = withToolCapabilityCatalog(promptWithoutCatalog, tools);
   const metrics = deps.context.getPromptMetricsFrom(messages);
   const previousElementCount =
     deps.previousElementCount < 0
@@ -128,7 +132,7 @@ export async function prepareLlmTurnRequest(
         : systemContent.length;
     const droppedMessageCount = Math.max(
       0,
-      deps.context.getHistoryLength() - (messages.length - 1),
+      deps.context.getHistoryLength() - (promptWithoutCatalog.length - 1),
     );
     const promptSections = buildPromptSectionMetrics({
       messages,
