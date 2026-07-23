@@ -1381,13 +1381,11 @@ Do NOT call done() until every planned step is complete.
           content: `[COMPRESSED HISTORY — ${timeline.length} actions]\n${timeline.join("\n")}`,
         });
       }
-      // Carry plan state through HEAVY compression (plan persistence)
-      if (this.planStatus) {
-        const planBlock = this.formatPlanStatus();
-        if (planBlock) {
-          this.history.push({ role: "user", content: planBlock });
-        }
-      }
+      // LP-21: plan state is NOT re-pushed into history here. It is rendered
+      // from this.planStatus into {{planStatus}} on every turn (see
+      // constructSystemMessage), so the copy was redundant — and it landed at
+      // history position ~2, re-breaking the cached prefix at every compaction
+      // no matter how stable the rest of history is.
       this.history.push(...recentMessages);
 
       logger.info("agent", "HEAVY compression applied", {
@@ -1698,13 +1696,9 @@ Do NOT call done() until every planned step is complete.
         content: `[DISTILLED HISTORY — ${timeline.length} actions]\n${timeline.join("\n")}`,
       });
     }
-    // Carry plan state through rolling distillation (plan persistence)
-    if (this.planStatus) {
-      const planBlock = this.formatPlanStatus();
-      if (planBlock) {
-        this.history.push({ role: "user", content: planBlock });
-      }
-    }
+    // LP-21: see compressHistoryByLevel — plan state is rendered from
+    // this.planStatus every turn, so re-pushing it here only moved a volatile
+    // block to history position ~2 and broke the prefix on every distill pass.
     this.history.push(...recentMessages);
     this.prefixResets.record("rolling_distill", messagesBefore, this.history.length);
 
