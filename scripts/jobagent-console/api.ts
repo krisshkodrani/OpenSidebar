@@ -1,5 +1,5 @@
 /**
- * JobAgent console — route handlers (pi Phase 9).
+ * JobAgent daemon — route handlers (pi Phase 9).
  *
  * Pure functions over the jobagent data layer: each handler takes parsed
  * inputs and returns `{status, body}`. No HTTP plumbing here (server.ts owns
@@ -127,7 +127,8 @@ export function getCriteria(): ApiResult {
   if (!existsSync(path)) {
     return err(
       404,
-      `no search criteria at ${path} — create it here in the Criteria tab ` +
+      `no search criteria at ${path} — author one and load it with ` +
+        `\`pnpm run jobagent criteria <file.json>\` ` +
         `(schemaVersion 1, roles[], boards[{name, searchUrl}])`,
     );
   }
@@ -157,8 +158,9 @@ export function getAnswers(): ApiResult {
   if (!library) {
     return err(
       404,
-      `no answer library at ${resolveAnswerLibraryPath()} — create it in the ` +
-        `Answers tab (schemaVersion 1, identity{fullName,email}, answers[], cvVariants[])`,
+      `no answer library at ${resolveAnswerLibraryPath()} — author one and ` +
+        `load it with \`pnpm run jobagent answers <file.json>\` ` +
+        `(schemaVersion 1, identity{fullName,email}, answers[], cvVariants[])`,
     );
   }
   return ok(library);
@@ -186,9 +188,26 @@ export function postKitDraft(name: string, body: unknown): ApiResult {
   if (!pkg) return err(404, `no application package for "${name}"`);
   const library = loadAnswerLibrary();
   if (!library) {
-    return err(409, "no answer library — author it in the Answers tab first");
+    return err(
+      409,
+      "no answer library — load one with `pnpm run jobagent answers <file.json>` first",
+    );
   }
-  const questions = (body as { questions?: unknown })?.questions;
+  // Questions come from the request when a caller supplies them explicitly,
+  // and otherwise from the questions.json the `questions` extraction wrote —
+  // that fallback is what makes `questions` → `draft` need no hand-authored
+  // input (RFC LP-22 §4).
+  let questions = (body as { questions?: unknown })?.questions;
+  if (questions === undefined) {
+    questions = readJsonIfPresent(join(dir, "questions.json"));
+    if (questions === undefined) {
+      return err(
+        409,
+        `no questions for "${name}" — run \`pnpm run jobagent questions ${name}\` ` +
+          `first, or pass { questions } explicitly`,
+      );
+    }
+  }
   try {
     const draft = buildKitDraft(pkg, questions as FormQuestion[], library);
     writeFileSync(

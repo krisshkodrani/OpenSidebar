@@ -171,10 +171,35 @@ describe("save/approve flow", () => {
     expect(saved.unresolved).toEqual([]);
     expect(saved.manifest.promptLines.join("\n")).toContain("Stegosaurus");
 
+    // The form has a Resume/CV slot, so approval now also requires a servable
+    // CV — without one the agent would be told to attach a file it does not
+    // have (issue #110). Configure it the way a real kit does.
+    expect(() => approveKitDraft(dir)).toThrow(/needs a CV to upload/);
+    const withCv = {
+      ...saved,
+      manifest: { ...saved.manifest, cvServe: { dir: ".", port: 0, file: "cv.pdf" } },
+    };
+    writeFileSync(join(dir, "kit-draft.json"), JSON.stringify(withCv), "utf8");
+
     const manifest = approveKitDraft(dir);
     expect(manifest.expectedFieldValues).toContain("Stegosaurus");
     // Byte-compatible with the Phase-5 loader.
     expect(loadFillManifest(dir)?.formUrl).toBe(pkg.sourceUrl);
+  });
+
+  test("approval refuses a CV slot the kit cannot serve (issue #110)", () => {
+    const dir = tempDir();
+    // Every field resolves, including the CV — but no cvServe means there is
+    // no file to hand the agent, which is how a fabricated upload reached a
+    // real form field live.
+    const draft = buildKitDraft(pkg, [{ label: "Resume/CV", kind: "file" }], library);
+    expect(draft.unresolved).toEqual([]);
+    expect(draft.manifest.cvServe).toBeUndefined();
+    writeFileSync(join(dir, "kit-draft.json"), JSON.stringify(draft), "utf8");
+
+    expect(() => approveKitDraft(dir)).toThrow(/needs a CV to upload/);
+    // And the brief never asks for an upload it cannot supply.
+    expect(draft.manifest.promptLines.join("\n")).not.toMatch(/upload_file/);
   });
 
   test("force-approve bypasses the unresolved gate", () => {

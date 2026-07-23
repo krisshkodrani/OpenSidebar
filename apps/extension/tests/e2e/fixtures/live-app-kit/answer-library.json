@@ -1,0 +1,30 @@
+{
+  "schemaVersion": 1,
+  "_comment": "SYNTHETIC fixture identity — never a real person. Deliberately incomplete: it answers the mechanical fields and leaves the judgment ones (salary, start date, why-this-company) unanswered, so the kit gate has something real to gate on. See jobagent-fixture-kit.test.ts.",
+  "identity": {
+    "fullName": "Sam Example",
+    "email": "sam@example.test",
+    "phone": "+49 170 0000000",
+    "linkedin": "https://www.linkedin.com/in/sam-example",
+    "location": "Vienna, Austria"
+  },
+  "answers": [
+    {
+      "tag": "how_heard",
+      "question": "How did you hear about us?",
+      "keywords": ["hear"],
+      "text": "Through the company's public job board."
+    },
+    {
+      "tag": "pronouns",
+      "question": "Pronouns",
+      "keywords": ["pronouns"],
+      "text": "they/them"
+    }
+  ],
+  "cvVariants": [{ "name": "default", "file": "sample-cv.pdf" }],
+  "defaults": {
+    "remoteOk": true,
+    "workAuthorization": "Yes"
+  }
+}
