@@ -446,7 +446,7 @@ export const ESCALATE_DEF: ToolDefinition = {
   function: {
     name: ToolName.ESCALATE,
     description:
-      "Switch to the planner model for complex reasoning. Use when stuck on riddles, puzzles, math, or multi-step logic. Do not use this only because an action tool seems missing until you have checked the Available Tool Capabilities catalog in the system prompt.",
+      "Switch to the planner model for complex reasoning. Use when stuck on riddles, puzzles, math, or multi-step logic. Do not use this only because an action tool seems missing until you have checked the Available Tool Capabilities catalog at the end of this conversation.",
     parameters: {
       type: "object",
       properties: {
