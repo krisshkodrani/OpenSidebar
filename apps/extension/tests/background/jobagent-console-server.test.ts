@@ -358,6 +358,35 @@ describe("kit routes (v1)", () => {
     expect(reply.body.unresolved).toEqual(["Salary Expectation"]);
   });
 
+  test("PUT preserves proposed provenance and recomputes unreviewed (LP-23)", async () => {
+    writePackage(process.env.JOBAGENT_APPLICATIONS_DIR!, "acme-ai-engineer");
+    await call(server!.port, "PUT", "/api/answers", library);
+    const generated = await call(server!.port, "POST", "/api/applications/acme-ai-engineer/kit-draft", {
+      questions: [{ label: "Email", kind: "text" }, { label: "Why us?", kind: "longtext" }],
+    });
+
+    // The platform records a proposal (what `jobagent set --proposed` sends).
+    const edited = {
+      ...generated.body,
+      perField: generated.body.perField.map((f) =>
+        f.question.label === "Why us?"
+          ? { ...f, answer: "Proposed text.", source: { kind: "proposed", basis: "posting" } }
+          : f,
+      ),
+    };
+    const saved = await call(server!.port, "PUT", "/api/applications/acme-ai-engineer/kit-draft", edited);
+    expect(saved.status).toBe(200);
+    expect(saved.body.unreviewed).toEqual(["Why us?"]);
+    expect(saved.body.perField.find((f) => f.question.label === "Why us?").source.kind).toBe("proposed");
+    // Unreviewed text is held out of the manifest.
+    expect(JSON.stringify(saved.body.manifest)).not.toContain("Proposed text");
+
+    // Approval refuses until the owner accepts.
+    const blocked = await call(server!.port, "POST", "/api/applications/acme-ai-engineer/kit-approve", {});
+    expect(blocked.status).toBe(409);
+    expect(blocked.body.error).toContain("unreviewed proposed");
+  });
+
   test("drafting with neither a body nor questions.json says which verb to run", async () => {
     writePackage(process.env.JOBAGENT_APPLICATIONS_DIR!, "acme-ai-engineer");
     await call(server!.port, "PUT", "/api/answers", library);

@@ -357,3 +357,133 @@ describe("live-smoke regressions", () => {
     expect(() => approveKitDraft(dir)).not.toThrow();
   });
 });
+
+/* ── LP-23: proposed provenance, review gate, demographics ── */
+
+describe("proposed provenance (LP-23)", () => {
+  const questions: FormQuestion[] = [
+    { label: "Email", kind: "text" },
+    { label: "Why do you want to work here?", kind: "longtext", required: true },
+  ];
+
+  function draftWithProposal() {
+    const draft = buildKitDraft(pkg, questions, library);
+    const essay = draft.perField.find((f) => f.question.label.startsWith("Why"))!;
+    essay.answer = "Because of the posting's stated ownership model.";
+    essay.source = { kind: "proposed", basis: "posting: 'you own the whole stack'" };
+    return draft;
+  }
+
+  test("saveKitDraft preserves proposals verbatim — saving is not accepting", () => {
+    const dir = tempDir();
+    const saved = saveKitDraft(dir, pkg, draftWithProposal());
+
+    const essay = saved.perField.find((f) => f.question.label.startsWith("Why"))!;
+    expect(essay.source).toEqual({
+      kind: "proposed",
+      basis: "posting: 'you own the whole stack'",
+    });
+    expect(saved.unreviewed).toEqual(["Why do you want to work here?"]);
+    // And it round-trips through disk unchanged.
+    expect(loadKitDraft(dir)!.unreviewed).toEqual(["Why do you want to work here?"]);
+  });
+
+  test("an unreviewed proposal never reaches the manifest", () => {
+    const dir = tempDir();
+    const saved = saveKitDraft(dir, pkg, draftWithProposal());
+
+    const manifestText = JSON.stringify(saved.manifest);
+    expect(manifestText).not.toContain("ownership model");
+    // The library-resolved field is still there — only the proposal is held.
+    expect(saved.manifest.promptLines.join("\n")).toContain("sam@example.test");
+  });
+
+  test("approve refuses unreviewed proposals; acceptance unlocks it", () => {
+    const dir = tempDir();
+    // Through the real save path, so unresolved/unreviewed are recomputed.
+    const draft = saveKitDraft(dir, pkg, draftWithProposal());
+
+    expect(() => approveKitDraft(dir)).toThrow(/unreviewed proposed answer/);
+    expect(() => approveKitDraft(dir)).toThrow(/Why do you want to work here\?/);
+
+    // The owner accepts (what `jobagent accept` records), then approves.
+    const essay = draft.perField.find((f) => f.question.label.startsWith("Why"))!;
+    essay.source = { ...essay.source, accepted: true, acceptedVia: "single" } as never;
+    const saved = saveKitDraft(dir, pkg, draft);
+    expect(saved.unreviewed).toEqual([]);
+    // Accepted proposal text NOW belongs in the manifest.
+    expect(saved.manifest.expectedLongTexts?.join(" ") ?? saved.manifest.promptLines.join(" ")).toContain(
+      "ownership model",
+    );
+    const manifest = approveKitDraft(dir);
+    expect(JSON.stringify(manifest)).toContain("ownership model");
+  });
+
+  test("drafts from before LP-23 (no unreviewed field) still parse and approve", () => {
+    const dir = tempDir();
+    const draft = buildKitDraft(pkg, [{ label: "Email", kind: "text" }], library);
+    delete (draft as Record<string, unknown>).unreviewed;
+    writeFileSync(join(dir, "kit-draft.json"), JSON.stringify(draft), "utf8");
+    expect(() => approveKitDraft(dir)).not.toThrow();
+  });
+});
+
+describe("demographic questions (LP-23, owner decision: library-only)", () => {
+  const demographicLibrary: AnswerLibrary = {
+    ...library,
+    answers: [
+      ...library.answers,
+      { tag: "gender", question: "Gender", keywords: [], text: "Prefer not to say" },
+    ],
+  };
+
+  test("keyword-matched demographic questions resolve from explicit entries only", () => {
+    const draft = buildKitDraft(
+      pkg,
+      [
+        { label: "Gender", kind: "text" },
+        { label: "Race/Ethnicity", kind: "text" },
+      ],
+      demographicLibrary,
+    );
+    const byLabel = new Map(draft.perField.map((f) => [f.question.label, f]));
+
+    // Explicit library entry → resolves like any answer.
+    expect(byLabel.get("Gender")!.answer).toBe("Prefer not to say");
+    expect(byLabel.get("Gender")!.source.kind).toBe("answer");
+    // No entry → skip with a note, NOT todo: it can neither block approval
+    // nor become proposable.
+    const race = byLabel.get("Race/Ethnicity")!;
+    expect(race.source.kind).toBe("skip");
+    expect(draft.unresolved).toEqual([]);
+  });
+
+  test("the structural flag from an ATS adapter routes the same way", () => {
+    const draft = buildKitDraft(
+      pkg,
+      [{ label: "Background", kind: "select", options: ["A", "B"], demographic: true }],
+      library,
+    );
+    expect(draft.perField[0].source.kind).toBe("skip");
+  });
+
+  test("a demographic select whose library answer mismatches degrades to skip, not todo", () => {
+    const draft = buildKitDraft(
+      pkg,
+      [{ label: "Gender", kind: "select", options: ["Woman", "Man", "Non-binary"] }],
+      demographicLibrary, // library says "Prefer not to say" — not an option
+    );
+    expect(draft.perField[0].source.kind).toBe("skip");
+    expect(draft.unresolved).toEqual([]);
+  });
+
+  test("demographic questions never resolve via keyword overlap", () => {
+    const sneaky: AnswerLibrary = {
+      ...library,
+      answers: [{ tag: "x", keywords: ["veteran"], text: "should never appear" }],
+    };
+    const draft = buildKitDraft(pkg, [{ label: "Veteran Status" }], sneaky);
+    expect(draft.perField[0].answer).toBe("");
+    expect(draft.perField[0].source.kind).toBe("skip");
+  });
+});

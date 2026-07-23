@@ -67,14 +67,24 @@ type QueueApp = {
   hasKitDraft: boolean;
   hasRunConfig: boolean;
 };
-type FieldSource = { kind: string; key?: string; tag?: string };
+type FieldSource = {
+  kind: string;
+  key?: string;
+  tag?: string;
+  note?: string;
+  basis?: string;
+  accepted?: true;
+  acceptedVia?: "single" | "bulk";
+};
+type KitField = {
+  question?: { label: string; kind?: string; options?: string[] };
+  answer?: string;
+  source?: FieldSource;
+};
 type KitDraft = {
-  perField?: Array<{
-    question?: { label: string };
-    answer?: string;
-    source?: FieldSource;
-  }>;
+  perField?: KitField[];
   unresolved?: string[];
+  unreviewed?: string[];
 };
 
 /** Render a field's provenance compactly: where the answer actually came from. */
@@ -83,8 +93,39 @@ function describeSource(source: FieldSource | undefined): string {
   if (source.kind === "identity") return `identity:${source.key}`;
   if (source.kind === "answer") return `answer:${source.tag}`;
   if (source.kind === "default") return `default:${source.key}`;
+  if (source.kind === "proposed") {
+    // The distinction the whole LP-23 design rides on: the reviewer must
+    // always be able to tell the platform's words from the owner's.
+    return source.accepted
+      ? `proposed✓ (${source.acceptedVia ?? "single"})`
+      : `PROPOSED ⚠ ${source.basis ? `(${source.basis})` : "(no basis!)"}`;
+  }
+  if (source.kind === "skip") return source.note ? `skip: ${source.note}` : "skip";
   return source.kind;
 }
+/** The kit table plus its two review lists — shared by draft/set/accept. */
+function renderDraft(body: KitDraft): string {
+  const lines = [
+    table(
+      (body.perField ?? []).map((f) => ({
+        label: f.question?.label ?? "",
+        answer: f.answer || "—",
+        source: describeSource(f.source),
+      })),
+      ["label", "answer", "source"],
+    ),
+    `\nunresolved (need the candidate's own judgment): ` +
+      `${(body.unresolved ?? []).join(", ") || "none"}`,
+  ];
+  if ((body.unreviewed ?? []).length > 0) {
+    lines.push(
+      `unreviewed proposals (accept or overwrite before approve-kit): ` +
+        body.unreviewed!.join(", "),
+    );
+  }
+  return lines.join("\n");
+}
+
 type AppDetail = {
   name: string;
   package: {
@@ -472,20 +513,87 @@ export const verbs: Record<string, { help: string; run: Verb }> = {
       const body = a.flags.show
         ? await ok<KitDraft>("GET", path)
         : await ok<KitDraft>("POST", path, file ? { questions: readJsonFile(file) } : {});
-      out(json, body, () =>
-        [
-          table(
-            (body.perField ?? []).map((f) => ({
-              label: f.question?.label ?? "",
-              answer: f.answer || "—",
-              source: describeSource(f.source),
-            })),
-            ["label", "answer", "source"],
-          ),
-          `\nunresolved (need the candidate's own judgment): ` +
-            `${(body.unresolved ?? []).join(", ") || "none"}`,
-        ].join("\n"),
-      );
+      out(json, body, () => renderDraft(body));
+    },
+  },
+
+  set: {
+    help: '<name> "<label>" ["<text>" | --file <path>] [--proposed --basis "<why>"] — write one field; without --proposed it is the owner\'s final answer',
+    run: async (a, json) => {
+      const name = need(a, 0, "name");
+      const label = need(a, 1, "label");
+      const fromFile = typeof a.flags.file === "string" ? a.flags.file : undefined;
+      const inline = a.positional[2];
+      if ((fromFile && inline !== undefined) || (!fromFile && inline === undefined)) {
+        throw new Error('provide the text either inline or via --file, not both/neither');
+      }
+      const text = fromFile ? readFileSync(fromFile, "utf8").trim() : inline!;
+      const proposed = a.flags.proposed === true;
+      const basis = typeof a.flags.basis === "string" ? a.flags.basis : "";
+      if (proposed && !basis) {
+        // A proposal with no stateable grounding is exactly the
+        // confident-wrong shape the review gate exists to catch.
+        throw new Error("--proposed requires --basis naming what the answer is grounded in");
+      }
+
+      const body = await mutateDraft(name, (field, all) => {
+        if (!field) {
+          throw new Error(
+            `no field labelled "${label}" — labels are: ` +
+              all.map((f) => JSON.stringify(f.question?.label)).join(", "),
+          );
+        }
+        const options = field.question?.options;
+        if (field.question?.kind === "select" && options?.length) {
+          const match = options.find((o) => o.toLowerCase() === text.toLowerCase());
+          if (!match) {
+            throw new Error(
+              `"${text}" is not one of the select's options: ${options.join(" | ")}`,
+            );
+          }
+          field.answer = match; // snap to the option's canonical casing
+        } else {
+          field.answer = text;
+        }
+        field.source = proposed
+          ? { kind: "proposed", basis }
+          : { kind: "answer", tag: "owner" };
+      }, label);
+      out(json, body, () => renderDraft(body));
+    },
+  },
+
+  accept: {
+    help: '<name> ["<label>" | --all-proposed] — adopt proposed answer(s) as reviewed',
+    run: async (a, json) => {
+      const name = need(a, 0, "name");
+      const all = a.flags["all-proposed"] === true;
+      const label = a.positional[1];
+      if (all === !!label || (!all && !label)) {
+        throw new Error('provide exactly one of "<label>" or --all-proposed');
+      }
+      const body = await mutateDraftFields(name, (fields) => {
+        const targets = fields.filter(
+          (f) =>
+            f.source?.kind === "proposed" &&
+            f.source.accepted !== true &&
+            (all || f.question?.label === label),
+        );
+        if (targets.length === 0) {
+          throw new Error(
+            all
+              ? "no unaccepted proposals in this kit"
+              : `no unaccepted proposal labelled "${label}"`,
+          );
+        }
+        for (const field of targets) {
+          field.source!.accepted = true;
+          // The audit distinction the owner chose: bulk adoption is a
+          // legitimate but DISTINCT act, recorded as such.
+          field.source!.acceptedVia = all ? "bulk" : "single";
+        }
+      });
+      out(json, body, () => renderDraft(body));
     },
   },
 
@@ -643,6 +751,30 @@ export const verbs: Record<string, { help: string; run: Verb }> = {
     },
   },
 };
+
+/* ── Draft mutation helpers (set / accept) ────────────────── */
+
+/** GET the draft, mutate one labelled field, PUT it back. */
+async function mutateDraft(
+  name: string,
+  mutate: (field: KitField | undefined, all: KitField[]) => void,
+  label: string,
+): Promise<KitDraft> {
+  return mutateDraftFields(name, (fields) => {
+    mutate(fields.find((f) => f.question?.label === label), fields);
+  });
+}
+
+/** GET the draft, run a mutation over its fields, PUT it back. */
+async function mutateDraftFields(
+  name: string,
+  mutate: (fields: KitField[]) => void,
+): Promise<KitDraft> {
+  const path = `/api/applications/${encodeURIComponent(name)}/kit-draft`;
+  const draft = await ok<KitDraft>("GET", path);
+  mutate(draft.perField ?? []);
+  return ok<KitDraft>("PUT", path, draft);
+}
 
 /* ── Run helpers ──────────────────────────────────────────── */
 

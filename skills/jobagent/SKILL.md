@@ -37,10 +37,12 @@ you need to read a field rather than show a human the output.
 | 3. Create the package | `ingest <url> --source <where-you-found-it>` | yours |
 | 4. Read the form | `questions <name>` | yours |
 | 5. Draft the kit | `draft <name>` | yours |
-| 6. **Approve the kit** | `approve-kit <name> --promote` | **the human's** |
-| 7. Fill the form | `fill <name> --follow` | yours |
-| 8. **Approve the submit** | `decide <approvalId> approve` | **the human's** |
-| 9. Submit | `submit <name> --follow` | yours |
+| 6. Propose the rest | `set <name> "<label>" --file <f> --proposed --basis "<why>"` | yours |
+| 7. Present the table; iterate | `set` / `accept` as the human directs | **the human's words, your typing** |
+| 8. **Approve the kit** | `approve-kit <name> --promote` | **the human's** |
+| 9. Fill the form | `fill <name> --follow` | yours |
+| 10. **Approve the submit** | `decide <approvalId> approve` | **the human's** |
+| 11. Submit | `submit <name> --follow` | yours |
 
 ### Searching (step 1)
 
@@ -75,21 +77,36 @@ human — the page did not name a company and the value is a placeholder.
 supported yet, and a kit drafted from page one would look complete while
 missing whole pages. Report it and move to the next package.
 
-### Drafting (step 5)
+### Drafting and proposing (steps 5–7)
 
-`draft` maps the form's questions onto the answer library. It answers what it
-can and marks everything else `unresolved` — deliberately. Unresolved questions
-are the ones that need the candidate's own judgment: salary expectations, start
-dates, "why this company".
+`draft` maps the form's questions onto the answer library. What it cannot
+resolve comes back `unresolved` — those need the candidate's judgment: salary
+expectations, start dates, "why this company".
 
-**Do not answer them yourself.** Present them to the human, with the question
-text and any context from the posting that helps them answer. When they give
-you answers, put them in the draft with `edit-draft <name> <file.json>`.
+**You then propose an answer for each of them** — that is the tentative table
+the human iterates on. Rules for proposing:
 
-You may help the human *compose* an answer they have given you the substance
-of. You may not supply the substance.
+- Record every proposal with `set … --proposed --basis "<grounding>"`. The
+  basis names what the answer stands on: the posting's own text, a fact from
+  the CV, a library entry. If you cannot state a basis, do not propose —
+  leave it and ask.
+- **Never propose demographic or EEO answers** (age, gender, race/ethnicity,
+  veteran or disability status, and the like). Drafting already sidelines
+  these; leave them sidelined. If the human wants them answered they add
+  explicit entries to their answer library, or fill them in the form
+  themselves.
+- Proposals are visibly provisional: the table marks them `PROPOSED ⚠` until
+  the human acts. Present the whole table with that distinction intact —
+  the human must always be able to tell your words from theirs.
 
-### The two gates (steps 6 and 8)
+Then iterate as directed: re-propose with `set --proposed` when they want
+changes, record their own wording with plain `set` (their words, final), and
+record adoption with `accept <name> "<label>"` — or `accept <name>
+--all-proposed` when they say to take the rest as-is. Only the human's
+say-so triggers an `accept`; approval stays blocked while anything is
+unreviewed, and that blocking is the point.
+
+### The two gates (steps 8 and 10)
 
 These are the whole safety model. At each one:
 
@@ -113,9 +130,11 @@ before submitting, that is a reasonable thing to encourage.
 
 ## Rules
 
-- **Never invent personal data.** Not a salary, not a start date, not a reason
-  for wanting the job. If it is not in the answer library and the human has not
-  told you, it is `unresolved`.
+- **Propose, never pass off.** You may draft answers the library lacks, but
+  only as marked proposals with a stated basis — never as settled fields. A
+  proposal the human has not acted on cannot reach a form, and nothing you do
+  should try to change that. Facts about the human (salary numbers, dates,
+  their history) come from them or their library, not from your inference.
 - **Never bypass a gate**, including by "helpfully" pre-approving a kit you are
   confident about. Confidence is exactly the failure mode here: a past live run
   produced four wrong answers that all carried confident provenance and an
