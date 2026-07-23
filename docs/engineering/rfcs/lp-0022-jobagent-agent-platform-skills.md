@@ -1,7 +1,15 @@
 # RFC LP-22 — JobAgent as an Agent-Platform Skill (Claude Code, pi, Codex)
 
-Lifecycle status: **Draft (not stamped) — implemented ahead of the stamp on owner instruction.** Revision 3: the three open questions were decided by the owner on 2026-07-23 (see Resolved decisions), and phases 0–1 were then built, live-proven, and opened as PR #106 the same day (see Implementation status). The stamp is outstanding paperwork, not a gate this work waited on — recorded plainly here so the sequence is not mistaken for the house rule.
+Lifecycle status: **Decision stamped**
 Date: 2026-07-23
+Decision date: 2026-07-23 (owner decided in session: slug + host-hash ingest
+naming, an `AGENTS.md` pointer for Codex rather than an inlined copy, and no
+`assess` verdict cache; directed phases 0–1 be implemented ahead of this stamp;
+chose manifest re-fill over cross-run tab continuity for issue #109)
+Revision 3 — the implementation ran **ahead of** the stamp on owner instruction,
+which inverts the LP-18/19/20 house rule of stamp-then-build. Recorded plainly
+here so the sequence is not read as precedent. Phases 0–1 shipped as PR #106 and
+the full loop was live-proven the same day (see Implementation status).
 Scope: `scripts/jobagent-console/` (three new CLI verbs: `ingest`, `assess`, `questions`; no new authority), `scripts/jobagent/` (single-listing ingest path reusing `assessListing`/`recordDiscovery`; form-question extraction), new `skills/jobagent/` shared skill spec plus three thin per-platform wrappers. No extension changes. **Neither human gate changes.**
 Related: [JobAgent README](../../../scripts/jobagent/README.md) (safety model); [pi-backend spike](../pi-backend-spike.md) Phase 9; RFC LP-19 (graduated autonomy — remains parked; §6 explains why this RFC does not depend on it), RFC LP-20 (free-text drafting — remains parked)
 

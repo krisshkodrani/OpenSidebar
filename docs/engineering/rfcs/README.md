@@ -145,11 +145,11 @@ before any submit — and the answer library stays hand-authored; the RFC
 automates only the three mechanical steps. At **revision 3**: the three
 questions it opened (ingest naming, Codex skill location, whether `assess`
 caches) were decided by the owner on 2026-07-23 and folded in, with the
-rejected alternatives recorded. **Unlike LP-18/19/20 this one was implemented
-ahead of its stamp, on owner instruction** — phases 0–1 shipped as PR #106 and
-the full loop was live-proven the same day, both gates exercised. The stamp is
-outstanding paperwork; the RFC records the inverted sequence plainly so it is
-not read as the house rule. Two defects surfaced that its risk table did not
+rejected alternatives recorded. **Decision stamped 2026-07-23** — and unlike
+LP-18/19/20 it was implemented *ahead of* that stamp, on owner instruction:
+phases 0–1 shipped as PR #106 and the full loop was live-proven the same day,
+both gates exercised. The RFC records the inverted sequence plainly so it is not
+read as precedent for the stamp-then-build rule. Two defects surfaced that its risk table did not
 predict — both in the seams *between* stages — and the RFC now carries that
 lesson for the remaining phases.
 
