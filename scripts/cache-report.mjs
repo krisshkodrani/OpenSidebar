@@ -212,7 +212,7 @@ function emptyGroup(key) {
     hitPctSamples: [],
     stablePrefixPctSamples: [],
     divergenceOffsetSamples: [],
-    regionCounts: { system: 0, history: 0, volatile_tail: 0, none: 0 },
+    regionCounts: { tools: 0, system: 0, history: 0, volatile_tail: 0, none: 0 },
     resets: 0,
     resetCauses: {},
     unexplainedDivergences: 0,
@@ -450,7 +450,7 @@ function formatGroup(group) {
   if (group.instrumentedWarmTurns > 0) {
     const r = group.divergenceRegions;
     lines.push(
-      `   diverges in    system ${r.system} · history ${r.history} · ` +
+      `   diverges in    tools ${r.tools ?? 0} · system ${r.system} · history ${r.history} · ` +
         `volatile_tail ${r.volatile_tail} · none ${r.none}`,
     );
     lines.push(
