@@ -26,6 +26,12 @@ export interface ApplicationPackage {
   roleTitle: string;
   locationMode?: string;
   sourceUrl?: string;
+  /**
+   * The application FORM's URL, when it differs from `sourceUrl` (the posting).
+   * Job boards routinely put the form on a separate ATS page, so without this
+   * a fill would open the posting and find no form to fill.
+   */
+  formUrl?: string;
   dateFound?: string;
   status?: ApplicationStatus;
   cv?: { selectedVariant?: string; uploadPath?: string };

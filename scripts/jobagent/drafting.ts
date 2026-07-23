@@ -207,9 +207,17 @@ export function deriveManifest(
   for (const field of fields) {
     if (field.source.kind === "todo" || !field.answer) continue;
     if (field.question.kind === "file") {
-      promptLines.push(
-        `Attach the CV via upload_file on the file input for "${field.question.label}".`,
-      );
+      // Only ask for an upload when the manifest actually serves a file. An
+      // "attach the CV" line with no `cvServe` gives the agent an instruction
+      // it cannot satisfy from approved data — observed live, it attached a
+      // fabricated `dummy.pdf` to a real form field, which is exactly the
+      // honesty property this pipeline claims. `markUnservableCv` turns that
+      // case into a blocked gate instead.
+      if (existing?.cvServe) {
+        promptLines.push(
+          `Attach the CV via upload_file on the file input for "${field.question.label}".`,
+        );
+      }
       continue;
     }
     promptLines.push(`Field "${field.question.label}": ${field.answer}`);
@@ -224,7 +232,10 @@ export function deriveManifest(
   }
 
   return {
-    formUrl: existing?.formUrl ?? pkg.sourceUrl ?? "",
+    // The package's formUrl wins over sourceUrl: a posting page and its
+    // application form are usually different URLs, and filling the posting
+    // would find no form at all.
+    formUrl: existing?.formUrl ?? pkg.formUrl ?? pkg.sourceUrl ?? "",
     maxTurns: existing?.maxTurns ?? 40,
     ...(existing?.cvServe ? { cvServe: existing.cvServe } : {}),
     promptLines,
@@ -256,16 +267,34 @@ export function buildKitDraft(
     question,
     ...resolveField(question, library),
   }));
+  const manifest = deriveManifest(pkg, perField);
   const unresolved = perField
     .filter((f) => f.source.kind === "todo")
     .map((f) => f.question.label);
   return {
     schemaVersion: 1,
     generatedAt: (opts.now ?? new Date()).toISOString(),
-    manifest: deriveManifest(pkg, perField),
+    manifest,
     perField,
     unresolved,
   };
+}
+
+/**
+ * Does this draft ask for a CV the manifest cannot actually serve?
+ *
+ * The mapping rule ("this label means the CV") and the delivery question ("can
+ * we hand the agent that file?") are separate concerns, so the draft keeps
+ * recording the intent with its provenance and the APPROVAL is what refuses.
+ * `cvVariants[].file` names a path relative to the seed dir, but nothing yet
+ * turns that into the `cvServe` block a fill needs — see issue #110.
+ */
+export function unservableCvField(draft: KitDraft): string | null {
+  if (draft.manifest.cvServe) return null;
+  const field = draft.perField.find(
+    (f) => f.question.kind === "file" && f.source.kind !== "todo" && f.answer,
+  );
+  return field ? field.question.label : null;
 }
 
 /** Validate a (possibly human-edited) draft shape. */
@@ -349,6 +378,17 @@ export function approveKitDraft(
     throw new Error(
       `kit draft has ${draft.unresolved.length} unresolved field(s): ` +
         draft.unresolved.join(", "),
+    );
+  }
+  // A CV slot with no servable file is a gate, not a warning: approving it
+  // would hand the agent "attach the CV" with no CV, and it attached a
+  // fabricated file when that happened live (issue #110).
+  const unservable = unservableCvField(draft);
+  if (unservable && !opts.force) {
+    throw new Error(
+      `"${unservable}" needs a CV to upload, but this kit has no cvServe block — ` +
+        `add one to run-config.json (dir relative to the application, plus file) ` +
+        `or the agent will be asked to attach a file it does not have`,
     );
   }
   writeFileSync(

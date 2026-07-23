@@ -40,6 +40,7 @@ export {
 export {
   assessListing,
   findDuplicate,
+  ingestName,
   listingSlug,
   loadSearchCriteria,
   parseSearchCriteria,
