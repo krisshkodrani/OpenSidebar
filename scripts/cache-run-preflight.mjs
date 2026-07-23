@@ -18,7 +18,7 @@
  * This checks both before anything is launched. Exits non-zero on a hard fail.
  */
 
-import { readFileSync, readdirSync, statSync } from "node:fs";
+import { readFileSync, readdirSync, statSync, existsSync } from "node:fs";
 import { join, dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { execSync } from "node:child_process";
@@ -234,9 +234,49 @@ function checkPromptVersionStamp() {
   }
 }
 
+/**
+ * Credentials and fixture build — the two things whose absence produces a run
+ * that LOOKS fine and measures nothing.
+ *
+ * Both cost a launch on 2026-07-23. A missing `.env` makes the harness's
+ * `skipIf(!apiKey)` skip the suite and exit 0, which reads as success at the
+ * shell level. A missing fixture `dist` serves an empty page, so the agent
+ * flails until the step times out — and that one costs real API budget. Neither
+ * is carried into a git worktree, since worktrees hold only tracked files.
+ */
+function checkRunPrerequisites() {
+  const envPath = join(PROJECT_ROOT, ".env");
+  if (existsSync(envPath)) {
+    check("API credentials (.env)", "pass", "Present in this checkout.");
+  } else {
+    check(
+      "API credentials (.env)",
+      "fail",
+      "No .env here, so the harness skips the suite and EXITS 0 — a silent no-op that reads as success.",
+      "Copy .env from the main checkout (it is gitignored, so a worktree never gets it).",
+    );
+  }
+
+  const fixtureDist = join(
+    PROJECT_ROOT,
+    "apps/extension/tests/e2e/fixtures/online-shop-pro/dist",
+  );
+  if (existsSync(fixtureDist)) {
+    check("fixture app built", "pass", "online-shop-pro/dist is present.");
+  } else {
+    check(
+      "fixture app built",
+      "fail",
+      "online-shop-pro/dist is missing, so fixture routes serve nothing and the agent times out burning real API budget.",
+      "pnpm run fixtures:build",
+    );
+  }
+}
+
 async function main() {
   checkGitState();
   checkDistDev();
+  checkRunPrerequisites();
   await checkLogServer();
   checkTraceDir();
   checkPromptVersionStamp();
