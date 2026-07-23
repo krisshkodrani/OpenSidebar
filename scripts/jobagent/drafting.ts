@@ -21,6 +21,12 @@ export interface FormQuestion {
   kind?: "text" | "longtext" | "select" | "file";
   options?: string[];
   required?: boolean;
+  /**
+   * Structurally flagged as demographic/EEO by the source (Greenhouse
+   * separates these in its API). Demographic questions resolve from explicit
+   * library entries only and are never proposed (RFC LP-23 §2).
+   */
+  demographic?: boolean;
 }
 
 export type FieldSource =
