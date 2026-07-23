@@ -1520,4 +1520,44 @@ describe("Stable prefix (LP-21)", () => {
     expect(systemOf(prompt)).not.toMatch(/\{\{[a-zA-Z]+\}\}/);
     expect(volatileTailOf(prompt)).not.toMatch(/\{\{[a-zA-Z]+\}\}/);
   });
+
+  // RFC LP-21 §9. Compaction has to rewrite already-cached bytes, so the
+  // resulting cache miss is a one-time cost rather than the per-turn prefix
+  // breakage of issue #103. Recording it is what lets telemetry tell the two
+  // apart — without it, both look like an unexplained miss.
+  describe("prompt-prefix reset reporting", () => {
+    test("no reset is reported on an ordinary append", () => {
+      const ctx = new ContextManager();
+      ctx.addMessage({ role: "user", content: "hello" });
+
+      expect(ctx.consumePrefixReset()).toBeNull();
+    });
+
+    test("rolling distillation reports a reset, and only once", () => {
+      const ctx = new ContextManager();
+      for (let i = 0; i < 14; i++) {
+        ctx.addMessage({ role: "user", content: `turn ${i}` });
+      }
+      ctx.consumePrefixReset(); // drain anything the threshold triggers queued
+
+      expect(ctx.rollingDistill(6, 15)).toBe(true);
+
+      const reset = ctx.consumePrefixReset();
+      expect(reset?.cause).toBe("rolling_distill");
+      expect(reset!.messagesAfter).toBeLessThan(reset!.messagesBefore);
+      // The next turn must not re-report a reset it did not cause.
+      expect(ctx.consumePrefixReset()).toBeNull();
+    });
+
+    test("threshold compaction reports a reset naming its level", () => {
+      const ctx = new ContextManager();
+      // LIGHT compression triggers at exactly COMPRESSION_TRIGGERS.LIGHT_TURN_COUNT.
+      for (let i = 0; i < 20; i++) {
+        ctx.addMessage({ role: "user", content: `turn ${i}` });
+      }
+
+      const reset = ctx.consumePrefixReset();
+      expect(reset?.cause).toMatch(/^threshold_compaction:/);
+    });
+  });
 });

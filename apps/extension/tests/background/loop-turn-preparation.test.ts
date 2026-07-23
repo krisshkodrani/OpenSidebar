@@ -53,6 +53,7 @@ function makeContext(overrides = {}) {
       ],
     })),
     getHistoryLength: vi.fn(() => 4),
+    consumePrefixReset: vi.fn(() => null),
     ...overrides,
   };
 }
@@ -101,11 +102,15 @@ describe("prepareLlmTurnRequest", () => {
     });
 
     expect(result.messages).not.toBe(messages);
-    expect(result.messages[0]?.content).toContain(
+    // #107: the catalog is volatile (its bytes change with the tool SET), so it
+    // goes LAST. It used to sit at the end of message 0, ahead of all history,
+    // where one tool-set change invalidated the whole cached history prefix.
+    const catalogMessage = result.messages[result.messages.length - 1];
+    expect(catalogMessage.content).toContain("## Available Tool Capabilities");
+    expect(catalogMessage.content).toContain("click_elements: click_element");
+    // The system message must stay free of it — that is the whole point.
+    expect(result.messages[0]?.content).not.toContain(
       "## Available Tool Capabilities",
-    );
-    expect(result.messages[0]?.content).toContain(
-      "click_elements: click_element",
     );
     expect(result.messages[1]).toBe(messages[1]);
     expect(result.tools).toEqual([allTools[1]]);
@@ -167,7 +172,19 @@ describe("prepareLlmTurnRequest", () => {
       expect.objectContaining({
         totalTokens: 150,
         droppedMessageCount: 3,
-        cachedPrefixLength: 7,
+        // Turn 1: nothing was cached yet, so the stable-prefix length is 0.
+        cachedPrefixLength: 0,
+        promptPrefix: expect.objectContaining({
+          firstDivergenceRegion: "none",
+          firstDivergenceOffset: null,
+        }),
+        // Populations built from different prompt templates are not comparable,
+        // so every turn records which template produced it.
+        promptTemplate: expect.objectContaining({
+          id: "agent.system",
+          version: expect.any(String),
+          hash: expect.any(String),
+        }),
       }),
       "planner",
     );

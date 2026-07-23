@@ -638,9 +638,8 @@ export class AgentLoop {
    */
   private lastDonePlanValidation: PlannerValidationResult | null = null;
 
-  /** Session telemetry: metrics, session clock, context spend, citations. */
+  /** Session telemetry: metrics, session clock, context spend, citations, turn carry. */
   private telemetry!: AgentTelemetryController;
-  private previousSnapshotForDelta: DomSnapshot | null = null;
 
   /** Accumulate usage from an LLM response */
   private recordUsage(response: CompletionResponse, llmMs: number): void {
@@ -2610,7 +2609,6 @@ export class AgentLoop {
     this.completedResult = null;
     this.perception.reset();
     this.telemetry.reset();
-    this.previousSnapshotForDelta = null;
     this.traceRecorder = new TraceRecorder(crypto.randomUUID());
     this.log = logger.withSessionId(this.traceRecorder.sessionId);
     this.traceRecorder.setSessionInfo(
