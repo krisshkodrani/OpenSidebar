@@ -135,8 +135,28 @@ export async function extractListing(
     company: str(record.company),
     location: str(record.location),
     snippet: str(record.snippet),
-    applyUrl: str(record.applyUrl) || url,
+    applyUrl: absolutize(str(record.applyUrl), url),
   };
+}
+
+/**
+ * Resolve an extracted link against the page it came from.
+ *
+ * The extractor returns whatever the page showed, and pages show relative
+ * hrefs — observed live returning `/apply?job=1` for the same link it had
+ * returned absolute minutes earlier, so this is intermittent rather than
+ * per-site. A relative value stored as a package's `formUrl` is unusable: the
+ * fill would have nothing to navigate to. Falls back to the posting URL when
+ * nothing was extracted, and leaves a value that will not resolve alone rather
+ * than guessing at it.
+ */
+function absolutize(candidate: string, base: string): string {
+  if (!candidate) return base;
+  try {
+    return new URL(candidate, base).toString();
+  } catch {
+    return base;
+  }
 }
 
 export interface ExtractedQuestions {
