@@ -60,7 +60,27 @@ export interface CompactionRecord {
   /** Projection length before and after. */
   before: number;
   after: number;
+  /**
+   * True when the summary chain hit its cap and was folded into one message.
+   * A fold rewrites bytes at the very front of the projection, so it is the one
+   * compaction that costs the WHOLE cached prefix rather than just the tail.
+   */
+  chainFolded?: boolean;
 }
+
+/**
+ * How many summaries the chain holds before folding.
+ *
+ * Uncapped, the chain grows one message per compaction, and on a long run the
+ * accumulated summaries push the projection past the context budget — at which
+ * point `getPrompt`'s window starts shedding messages from the front every
+ * turn, which breaks the prefix continuously instead of at compaction points.
+ * A cap trades that for one deliberate reset every N compactions.
+ */
+const MAX_SUMMARY_CHAIN = 6;
+
+/** Cap on folded summary text; the tail is kept, being the more recent context. */
+const FOLDED_SUMMARY_MAX_CHARS = 8000;
 
 /**
  * Builds the summary text for a compaction. Injected rather than imported so
@@ -75,6 +95,10 @@ export type SummaryBuilder = (
   previousSummary: LLMMessage | null,
   elided: readonly LLMMessage[],
 ) => string | null;
+
+function summaryText(message: LLMMessage): string {
+  return typeof message.content === "string" ? message.content : "";
+}
 
 export class HistoryLog {
   /**
@@ -137,7 +161,26 @@ export class HistoryLog {
    * everything that did not change — the §8.4 invariant.
    */
   project(): LLMMessage[] {
-    return [...this.summaries, ...this.entries.slice(this.activeFrom)];
+    return [
+      ...this.entries.slice(0, this.pinnedCount),
+      ...this.summaries,
+      ...this.entries.slice(this.liveFrom),
+    ];
+  }
+
+  /**
+   * The opening user message is pinned: compaction and window-shedding both
+   * step over it, so the goal survives an arbitrarily long run (goal-amnesia
+   * prevention) and occupies a fixed, byte-stable slot right after the system
+   * message instead of being re-found and re-placed each turn.
+   */
+  private get pinnedCount(): number {
+    return this.entries.length > 0 && this.entries[0].role === "user" ? 1 : 0;
+  }
+
+  /** First live entry, never inside the pinned prefix. */
+  private get liveFrom(): number {
+    return Math.max(this.activeFrom, this.pinnedCount);
   }
 
   /**
@@ -155,9 +198,9 @@ export class HistoryLog {
     const cut = this.entries.length - Math.max(0, args.keepRecent);
     // Nothing new to fold in — compacting again would append a summary that
     // says nothing and reset the prefix for no gain.
-    if (cut <= this.activeFrom) return false;
+    if (cut <= this.liveFrom) return false;
 
-    const elided = this.entries.slice(this.activeFrom, cut);
+    const elided = this.entries.slice(this.liveFrom, cut);
     const previousSummary =
       this.summaries.length > 0
         ? this.summaries[this.summaries.length - 1]
@@ -169,7 +212,17 @@ export class HistoryLog {
     const before = this.projectionLength();
     // Rule 3: APPEND a new summary. The previous one keeps its bytes, so the
     // prompt prefix up to it survives this compaction.
-    this.summaries.push({ role: "user", content });
+    const chainFolded = this.summaries.length >= MAX_SUMMARY_CHAIN;
+    if (chainFolded) {
+      const merged = [...this.summaries.map(summaryText), content].join("\n");
+      this.summaries.length = 0;
+      this.summaries.push({
+        role: "user",
+        content: merged.slice(-FOLDED_SUMMARY_MAX_CHARS),
+      });
+    } else {
+      this.summaries.push({ role: "user", content });
+    }
     this.activeFrom = cut;
     const after = this.projectionLength();
 
@@ -178,12 +231,66 @@ export class HistoryLog {
       elidedCount: elided.length,
       before,
       after,
+      chainFolded,
     };
     return true;
   }
 
+  /**
+   * Permanently drop `count` messages from the front of the projection.
+   *
+   * `getPrompt` sheds old messages when the projection exceeds the token
+   * budget. Recomputing that cut per turn moves the prompt's front on every
+   * turn, so nothing stays cached. Recording it here makes the cut MONOTONE:
+   * once shed, a message stays shed, and the front only moves when the budget
+   * actually forces it again.
+   *
+   * Summaries go first — they are the oldest, most already-lossy content.
+   * Returns true when the window actually moved.
+   */
+  advanceWindow(count: number): boolean {
+    if (count <= 0) return false;
+    let remaining = count;
+    const summariesDropped = Math.min(remaining, this.summaries.length);
+    if (summariesDropped > 0) {
+      this.summaries.splice(0, summariesDropped);
+      remaining -= summariesDropped;
+    }
+    if (remaining > 0) {
+      this.activeFrom = Math.min(this.entries.length, this.liveFrom + remaining);
+    }
+    return true;
+  }
+
+  /**
+   * Release elided entries beyond `maxRetained`, oldest first.
+   *
+   * Only touches entries already outside the projection, so it can never change
+   * a byte the model has seen. This is the memory bound that the old
+   * `history.slice(-1000)` provided, without that version's side effect of
+   * rewriting live history.
+   */
+  trimElided(maxRetained: number): void {
+    const excess = this.entries.length - maxRetained;
+    if (excess <= 0) return;
+    const pinned = this.pinnedCount;
+    const removable = Math.min(excess, this.liveFrom - pinned);
+    if (removable <= 0) return;
+    this.entries.splice(pinned, removable);
+    this.activeFrom -= removable;
+  }
+
+  /** Messages the model will see: summary chain plus live tail. */
+  get projectedLength(): number {
+    return this.projectionLength();
+  }
+
   private projectionLength(): number {
-    return this.summaries.length + (this.entries.length - this.activeFrom);
+    return (
+      this.pinnedCount +
+      this.summaries.length +
+      (this.entries.length - this.liveFrom)
+    );
   }
 
   /**

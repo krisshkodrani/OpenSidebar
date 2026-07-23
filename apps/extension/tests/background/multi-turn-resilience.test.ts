@@ -166,9 +166,18 @@ describe("ContextManager.rollingDistill", () => {
     expect(result).toBe(true);
 
     const messages = context.getMessages();
-    // Should be: original query + distilled summary + 4 recent
+    // LP-21 §6: the shape is [pinned goal, ...summary chain, ...4 recent].
+    // The chain can hold more than one entry — a threshold compaction may
+    // already have written one — but the goal and the recent tail are fixed.
     expect(messages.length).toBeLessThan(beforeCount);
-    expect(messages.length).toBe(6); // 1 original + 1 summary + 4 recent
+    expect(messages[0].content).toBe("original query");
+    expect(messages[messages.length - 1]).toBe(lastToolResult);
+    const summaries = messages.slice(1, -4);
+    expect(summaries.length).toBeGreaterThanOrEqual(1);
+    for (const s of summaries) {
+      expect(s.role).toBe("user");
+      expect(String(s.content)).toMatch(/^\[(DISTILLED|COMPRESSED) HISTORY/);
+    }
   });
 
   test("inserts distilled summary block", () => {
@@ -181,12 +190,15 @@ describe("ContextManager.rollingDistill", () => {
     context.rollingDistill(4, 15);
 
     const messages = context.getMessages();
-    // Second message should be the distilled summary
-    const summaryMsg = messages[1];
-    expect(summaryMsg.role).toBe("user");
-    expect(typeof summaryMsg.content).toBe("string");
-    expect(summaryMsg.content).toContain("[DISTILLED HISTORY");
-    expect(summaryMsg.content).toContain("click_element");
+    // The distilled block is APPENDED to the summary chain, so it is the newest
+    // summary rather than always index 1 (LP-21 §6 rule 3: summaries are
+    // immutable — a later pass never rewrites an earlier one).
+    const summaryMsg = messages.find((m) =>
+      String(m.content).includes("[DISTILLED HISTORY"),
+    );
+    expect(summaryMsg).toBeDefined();
+    expect(summaryMsg!.role).toBe("user");
+    expect(summaryMsg!.content).toContain("click_element");
   });
 });
 

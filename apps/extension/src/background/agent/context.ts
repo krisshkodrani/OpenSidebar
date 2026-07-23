@@ -30,6 +30,8 @@ import {
   CompressionLevel,
   maxCompressionLevel,
 } from "./context-types";
+import { HistoryLog } from "./context-history";
+import type { CompactionCause } from "./context-history";
 import { PrefixResetLedger } from "./prompt-prefix-telemetry";
 import type { PromptPrefixReset } from "./prompt-prefix-telemetry";
 import type {
@@ -87,7 +89,15 @@ const ACTION_RELEVANT_ATTRS = new Set([
 ]);
 
 export class ContextManager {
-  private history: LLMMessage[] = [];
+  /**
+   * LP-21 §6: the conversation is an APPEND-ONLY log with an immutable summary
+   * chain. `history` is the per-turn projection of it — derived, never the
+   * source of truth, and never written back.
+   */
+  private readonly log = new HistoryLog();
+  private get history(): LLMMessage[] {
+    return this.log.project();
+  }
   /** LP-21 §9: deliberate prefix discards, so telemetry can excuse their cost. */
   private readonly prefixResets = new PrefixResetLedger();
   private snapshot: DomSnapshot | null = null;
@@ -282,13 +292,16 @@ export class ContextManager {
    * older messages into one-line entries via `summarizeHistory()`.
    */
   public exportForCheckpoint(recentWindow = 8): CompressedHistory {
-    const recent = this.history.slice(-recentWindow);
-    const older = this.history.slice(0, Math.max(0, this.history.length - recentWindow));
-    const olderSummaries = summarizeHistory(older, 30);
+    // The FULL log, not the projection: compaction no longer destroys history,
+    // so a checkpoint can now export what actually happened rather than
+    // whatever survived the last summary pass.
+    const full = this.log.fullLog;
+    const recent = full.slice(-recentWindow);
+    const older = full.slice(0, Math.max(0, full.length - recentWindow));
     return {
-      recentMessages: recent,
-      olderSummaries,
-      originalCount: this.history.length,
+      recentMessages: [...recent],
+      olderSummaries: summarizeHistory([...older], 30),
+      originalCount: full.length,
     };
   }
 
@@ -302,14 +315,17 @@ export class ContextManager {
     cp: CompressedHistory,
     isFirstTurn: boolean,
   ): void {
-    this.history = [];
-    if (cp.olderSummaries.length > 0) {
-      this.history.push({
-        role: "system",
-        content: `Prior turns (compressed, ${cp.originalCount - cp.recentMessages.length} messages):\n${cp.olderSummaries.join("\n")}`,
-      });
-    }
-    this.history.push(...cp.recentMessages);
+    this.log.restore([
+      ...(cp.olderSummaries.length > 0
+        ? [
+            {
+              role: "system" as const,
+              content: `Prior turns (compressed, ${cp.originalCount - cp.recentMessages.length} messages):\n${cp.olderSummaries.join("\n")}`,
+            },
+          ]
+        : []),
+      ...cp.recentMessages,
+    ]);
     this.isFirstTurn = isFirstTurn;
     // Restored history may no longer contain the full page-content block —
     // force the next system prompt to emit it in full again.
@@ -326,9 +342,9 @@ export class ContextManager {
     return this.maxContextTokens;
   }
 
-  /** Get the total number of messages currently in conversation history. */
+  /** Messages currently projected to the model (summary chain + live tail). */
   public getHistoryLength(): number {
-    return this.history.length;
+    return this.log.projectedLength;
   }
 
   /**
@@ -472,15 +488,12 @@ export class ContextManager {
   }
 
   public addMessage(message: LLMMessage) {
-    this.history.push(message);
+    this.log.push(message);
 
-    // Compress old tool results to save context budget
-    if (message.role === "tool") {
-      this.compressOldToolResults(2);
-    }
-
-    // Turn-count compression triggers
-    const len = this.history.length;
+    // Thresholds count messages EVER appended, not the projection, so they fire
+    // on a monotone counter. Reading the projection here would re-arm the same
+    // threshold after every compaction shrank it back below the line.
+    const len = this.log.totalLength;
     if (
       len === COMPRESSION_TRIGGERS.LIGHT_TURN_COUNT ||
       len === COMPRESSION_TRIGGERS.MEDIUM_TURN_COUNT ||
@@ -490,16 +503,31 @@ export class ContextManager {
           COMPRESSION_TRIGGERS.HEAVY_RECOMPRESS_INTERVAL ===
           0)
     ) {
+      const before = this.log.projectedLength;
+      // The level names the reset for telemetry continuity; it does NOT gate
+      // the compaction. It used to, via getCompressionLevel()'s `!snapshot →
+      // NONE` early return, so a conversation that grew without a DOM snapshot
+      // never compacted at all.
       const level = this.getCompressionLevel();
-      this.compressHistoryByLevel(level);
-      this.prefixResets.record(`threshold_compaction:${level}`, len, this.history.length);
+      if (
+        this.appendSummary(
+          "threshold_compaction",
+          COMPRESSION_TRIGGERS.HEAVY_KEEP_RECENT,
+          30,
+          "COMPRESSED HISTORY",
+        )
+      ) {
+        this.prefixResets.record(
+          `threshold_compaction:${level}`,
+          before,
+          this.log.projectedLength,
+        );
+      }
     }
 
-    if (this.history.length > 1000) {
-      const before = this.history.length;
-      this.history = this.history.slice(-1000);
-      this.prefixResets.record("history_cap", before, this.history.length);
-    }
+    // Memory bound. Only releases entries already outside the projection, so
+    // unlike the old `history.slice(-1000)` it cannot rewrite live history.
+    this.log.trimElided(1000);
     this.saveState().catch((err) =>
       logger.error("agent", "Auto-save failed", { error: err }),
     );
@@ -538,15 +566,15 @@ export class ContextManager {
       availableTokens = 1000; // Emergency fallback
     }
 
-    // 2. Always keep the first user message (Goal Amnesia Prevention)
+    // 2. Always keep the first user message (Goal Amnesia Prevention).
+    // `HistoryLog` pins it, so neither compaction nor the shed below can take
+    // it, and it holds a fixed byte-stable slot right after the system message.
     const finalMessages: LLMMessage[] = [];
-    let firstUserMsg: LLMMessage | null = null;
-    const remainingHistory = [...this.history];
+    const remainingHistory = this.log.project();
+    let firstUserMsg: LLMMessage | null =
+      remainingHistory.find((m) => m.role === "user") ?? null;
 
-    // Find and preserve first user message
-    const firstUserIdx = remainingHistory.findIndex((m) => m.role === "user");
-    if (firstUserIdx !== -1) {
-      firstUserMsg = remainingHistory[firstUserIdx];
+    if (firstUserMsg) {
       const tokens = this.estimateMessageTokens(firstUserMsg);
       if (availableTokens >= tokens) {
         availableTokens -= tokens;
@@ -558,6 +586,8 @@ export class ContextManager {
     // 3. Fill from end (most recent)
     const reversedHistory = [...remainingHistory].reverse();
     const selectedReverse: LLMMessage[] = [];
+    /** Reversed index where the budget ran out; length means nothing was shed. */
+    let stoppedAt = reversedHistory.length;
 
     for (let i = 0; i < reversedHistory.length; i++) {
       const msg = reversedHistory[i];
@@ -591,8 +621,27 @@ export class ContextManager {
         selectedReverse.push(...group);
         availableTokens -= groupTokens;
       } else {
+        stoppedAt = i;
         break;
       }
+    }
+
+    // 3b. Make the shed MONOTONE. Whatever the budget forced us to leave off
+    // the front is dropped from the log for good, so the next turn starts from
+    // the same place instead of recomputing a cut that drifts forward one
+    // message at a time — the drift that keeps nothing cached (LP-21 §6).
+    // The pinned goal is inside the shed range but cannot be dropped, so it is
+    // discounted here rather than costing an extra live message.
+    const shed = Math.max(
+      0,
+      reversedHistory.length - stoppedAt - (firstUserMsg ? 1 : 0),
+    );
+    if (shed > 0 && this.log.advanceWindow(shed)) {
+      this.prefixResets.record(
+        "context_window_shed",
+        remainingHistory.length,
+        this.log.projectedLength,
+      );
     }
 
     // 4. Assemble
@@ -1062,8 +1111,10 @@ Do NOT call done() until every planned step is complete.
   public getCompressionLevel(): CompressionLevel {
     if (!this.snapshot) return CompressionLevel.NONE;
 
-    // Turn-count level: floor based on conversation length
-    const historyLen = this.history.length;
+    // Turn-count level: floor based on conversation AGE, i.e. everything ever
+    // appended. Reading the projection would let it fall back to NONE after
+    // each compaction shrank it, so DOM detail would ratchet down and back up.
+    const historyLen = this.log.totalLength;
     let turnLevel: CompressionLevel;
     if (historyLen >= COMPRESSION_TRIGGERS.HEAVY_TURN_COUNT) {
       turnLevel = CompressionLevel.HEAVY;
@@ -1290,258 +1341,52 @@ Do NOT call done() until every planned step is complete.
   }
 
   /**
-   * Compress old tool call/result pairs into one-line summaries.
-   * Preserves the last `preserveRecent` tool interactions verbatim.
+   * The one way history shrinks: summarise the elided range and APPEND it.
+   *
+   * LP-21 §6 removed the three-level scheme this replaces. LIGHT and MEDIUM
+   * saved tokens by REWRITING messages already sent — masking old tool results
+   * in place and splicing repeated tool runs out of the middle — and a fourth
+   * path (`compressOldToolResults`) truncated an older result on every single
+   * tool message. Each changed bytes the provider had already cached, which is
+   * what made 266 of 271 measured warm turns diverge with no compaction to
+   * explain it. Token savings now come only from here, and this only appends.
+   *
+   * The builder returns only the NEW increment — `HistoryLog` keeps the whole
+   * summary chain in its projection, so folding the previous summary's text in
+   * here would both duplicate it and rewrite bytes the model has already seen.
    */
-  private compressOldToolResults(preserveRecent: number = 2): void {
-    let toolResultCount = 0;
-
-    for (let i = this.history.length - 1; i >= 0; i--) {
-      if (this.history[i].role === "tool") {
-        toolResultCount++;
-      }
-      if (toolResultCount > preserveRecent) {
-        this.compressToolResultsBeforeIndex(i);
-        break;
-      }
-    }
-  }
-
-  private findToolNameForResult(toolCallId: string | undefined): string | null {
-    if (!toolCallId) return null;
-    for (let j = this.history.length - 1; j >= 0; j--) {
-      const msg = this.history[j];
-      if (msg.role === "assistant" && msg.tool_calls) {
-        const tc = msg.tool_calls.find((c) => c.id === toolCallId);
-        if (tc) return tc.function.name;
-      }
-    }
-    return null;
-  }
-
-  private compressToolResultsBeforeIndex(beforeIndex: number): void {
-    const ACTION_MAX = 150;
-    const ACTION_SNIPPET = 100;
-    const DISCOVERY_MAX = 500;
-    const DISCOVERY_SNIPPET = 400;
-
-    for (let i = 0; i <= beforeIndex; i++) {
-      const msg = this.history[i];
-      if (msg.role === "tool" && msg.content) {
-        if (Array.isArray(msg.content)) {
-          msg.content = "[screenshot truncated]";
-          continue;
+  private appendSummary(
+    cause: CompactionCause,
+    keepRecent: number,
+    maxSummaryEntries: number,
+    label: string,
+  ): boolean {
+    const applied = this.log.compact({
+      cause,
+      keepRecent,
+      buildSummary: (_previous, elided) => {
+        const timeline = summarizeHistory([...elided], maxSummaryEntries);
+        // summarizeHistory only describes tool activity, so a stretch of plain
+        // messages yields nothing. Returning null there would abandon the
+        // compaction and let history grow without bound, so record the elision
+        // itself instead.
+        if (timeline.length === 0) {
+          return `[${label} — ${elided.length} earlier messages elided]`;
         }
-        const toolName = this.findToolNameForResult(msg.tool_call_id);
-        const isReferenceValue =
-          toolName !== null && REFERENCE_VALUE_TOOLS.has(toolName);
-        const maxLen = isReferenceValue ? DISCOVERY_MAX : ACTION_MAX;
-        const snippetLen = isReferenceValue
-          ? DISCOVERY_SNIPPET
-          : ACTION_SNIPPET;
-
-        if (typeof msg.content === "string" && msg.content.length > maxLen) {
-          const firstLine = msg.content.split("\n")[0].slice(0, snippetLen);
-          msg.content = firstLine + " [truncated]";
-        }
-      }
-    }
-  }
-
-  /**
-   * Apply aggressive compression to history based on compression level.
-   * Called when crossing turn-count thresholds (30, 60, 100, and every 20 in HEAVY).
-   */
-  private compressHistoryByLevel(level: CompressionLevel): void {
-    if (level === CompressionLevel.NONE) return;
-
-    if (level === CompressionLevel.HEAVY) {
-      // Distill everything except last HEAVY_KEEP_RECENT messages
-      const keepRecent = COMPRESSION_TRIGGERS.HEAVY_KEEP_RECENT;
-      if (this.history.length <= keepRecent + 2) return; // nothing to compress
-
-      // Preserve first user message
-      const firstUserIdx = this.history.findIndex((m) => m.role === "user");
-      const firstUserMsg =
-        firstUserIdx >= 0 ? this.history[firstUserIdx] : null;
-
-      // Summarize old messages
-      const oldMessages = this.history.slice(0, -keepRecent);
-      const timeline = summarizeHistory(oldMessages, 30);
-      const recentMessages = this.history.slice(-keepRecent);
-
-      // Rebuild history
-      this.history = [];
-      if (firstUserMsg) {
-        this.history.push(firstUserMsg);
-      }
-      if (timeline.length > 0) {
-        this.history.push({
-          role: "user",
-          content: `[COMPRESSED HISTORY — ${timeline.length} actions]\n${timeline.join("\n")}`,
-        });
-      }
-      // LP-21: plan state is NOT re-pushed into history here. It is rendered
-      // from this.planStatus into {{planStatus}} on every turn (see
-      // constructSystemMessage), so the copy was redundant — and it landed at
-      // history position ~2, re-breaking the cached prefix at every compaction
-      // no matter how stable the rest of history is.
-      this.history.push(...recentMessages);
-
-      logger.info("agent", "HEAVY compression applied", {
-        timelineEntries: timeline.length,
-        newHistoryLength: this.history.length,
-        planPreserved: !!this.planStatus,
-      });
-      return;
-    }
-
-    // LIGHT and MEDIUM: observation masking on old tool results
-    // Keep actions visible (agent remembers what it did), mask verbose output
-    const preserveRecent = level === CompressionLevel.MEDIUM ? 3 : 4;
-
-    let toolResultCount = 0;
-    let turnNum = 0;
-    for (let i = this.history.length - 1; i >= 0; i--) {
-      if (this.history[i].role === "tool") toolResultCount++;
-      if (toolResultCount > preserveRecent) {
-        // Mask all tool results from index 0..i with one-liner summaries
-        for (let j = 0; j <= i; j++) {
-          const msg = this.history[j];
-          if (msg.role === "tool" && typeof msg.content === "string") {
-            turnNum++;
-            const toolName = this.findToolNameForResult(msg.tool_call_id);
-            const firstLine = msg.content.split("\n")[0].slice(0, 100);
-            const label = toolName ? `${toolName} → ${firstLine}` : firstLine;
-            msg.content = `[T${turnNum}: ${label}]`;
-          }
-        }
-        break;
-      }
-    }
-
-    // MEDIUM: also collapse runs of 3+ identical tool names into a summary
-    if (level === CompressionLevel.MEDIUM) {
-      this.collapseRepeatedToolRuns(3);
-    }
-
-    logger.info("agent", `${level.toUpperCase()} compression applied`, {
-      historyLength: this.history.length,
-      preserveRecent,
+        return `[${label} — ${timeline.length} actions]\n${timeline.join("\n")}`;
+      },
     });
-  }
+    if (!applied) return false;
 
-  /**
-   * Collapse runs of N+ identical tool names in history into a single summary message.
-   * Preserves the first and last in each run, replaces middle entries.
-   */
-  private collapseRepeatedToolRuns(minRunLength: number): void {
-    // Find runs of assistant tool_calls with the same tool name
-    let i = 0;
-    while (i < this.history.length) {
-      const msg = this.history[i];
-      if (
-        msg.role !== "assistant" ||
-        !msg.tool_calls ||
-        msg.tool_calls.length !== 1
-      ) {
-        i++;
-        continue;
-      }
-
-      const toolName = msg.tool_calls[0].function.name;
-      let runEnd = i;
-
-      // Find consecutive assistant messages calling the same tool
-      for (let j = i + 1; j < this.history.length; j++) {
-        // Skip tool result messages (they pair with the assistant)
-        if (this.history[j].role === "tool") continue;
-        const next = this.history[j];
-        if (
-          next.role === "assistant" &&
-          next.tool_calls?.length === 1 &&
-          next.tool_calls[0].function.name === toolName
-        ) {
-          runEnd = j;
-        } else {
-          break;
-        }
-      }
-
-      // Count distinct assistant messages in this run
-      const runMessages: number[] = [];
-      for (let j = i; j <= runEnd; j++) {
-        if (
-          this.history[j].role === "assistant" &&
-          this.history[j].tool_calls
-        ) {
-          runMessages.push(j);
-        }
-      }
-
-      if (runMessages.length >= minRunLength) {
-        // Keep first and last, collapse middle
-        const middleStart = runMessages[1];
-        const middleEnd = runMessages[runMessages.length - 2];
-        // Find the range including tool results
-        const removeStart = middleStart;
-        let removeEnd = middleEnd;
-        // Extend removeEnd to include the tool result after the last collapsed assistant
-        if (
-          removeEnd + 1 < this.history.length &&
-          this.history[removeEnd + 1].role === "tool"
-        ) {
-          removeEnd += 1;
-        }
-        const collapsedCount = runMessages.length - 2;
-
-        // Collect compact results from collapsed tool calls (50 chars each, 200 chars cap)
-        const resultSnippets: string[] = [];
-        let totalLen = 0;
-        for (let k = 1; k < runMessages.length - 1; k++) {
-          const assistIdx = runMessages[k];
-          const tcId = this.history[assistIdx]?.tool_calls?.[0]?.id;
-          if (!tcId) continue;
-          // Look for paired tool result right after
-          for (
-            let r = assistIdx + 1;
-            r < this.history.length && r <= assistIdx + 2;
-            r++
-          ) {
-            if (
-              this.history[r].role === "tool" &&
-              this.history[r].tool_call_id === tcId
-            ) {
-              const content =
-                typeof this.history[r].content === "string"
-                  ? (this.history[r].content ?? "").slice(0, 50)
-                  : "[non-text]";
-              if (totalLen + content.length <= 200) {
-                resultSnippets.push(`"${content}"`);
-                totalLen += content.length;
-              }
-              break;
-            }
-          }
-        }
-
-        const resultSuffix =
-          resultSnippets.length > 0
-            ? ` — results: ${resultSnippets.join(", ")}`
-            : "";
-        const summaryMsg: LLMMessage = {
-          role: "user",
-          content: `[${collapsedCount} collapsed ${toolName} calls${resultSuffix}]`,
-        };
-        this.history.splice(
-          removeStart,
-          removeEnd - removeStart + 1,
-          summaryMsg,
-        );
-      }
-
-      i = runEnd + 1;
-    }
+    const record = this.log.consumeCompaction();
+    this.saveState().catch(() => {});
+    logger.info("agent", "History compacted", {
+      cause,
+      elided: record?.elidedCount,
+      chainFolded: record?.chainFolded,
+      projectedLength: this.log.projectedLength,
+    });
+    return true;
   }
 
   public async loadState() {
@@ -1550,7 +1395,7 @@ Do NOT call done() until every planned step is complete.
       // eslint-disable-next-line @typescript-eslint/no-explicit-any -- opaque persisted blob
       const saved = data[this.storageKey] as any;
       if (saved) {
-        this.history = saved.history || [];
+        this.restoreLog(saved.history || []);
         this.planStatus = saved.planStatus || null;
         this.capturedOverlays = saved.capturedOverlays || [];
         this.lastActionOutcome = saved.lastActionOutcome || null;
@@ -1569,7 +1414,9 @@ Do NOT call done() until every planned step is complete.
     try {
       await chromePersistencePort.session.set({
         [this.storageKey]: {
-          history: this.history,
+          // The projection, not the full log: this is resume state, and the
+          // elided detail is already represented by the summary chain.
+          history: this.log.project(),
           planStatus: this.planStatus,
           capturedOverlays: this.capturedOverlays,
           lastActionOutcome: this.lastActionOutcome,
@@ -1580,8 +1427,23 @@ Do NOT call done() until every planned step is complete.
     }
   }
 
+  /**
+   * Replace the log wholesale — restore, escalation, or navigation recovery.
+   *
+   * Every caller here starts a new cache lineage by definition (the provider
+   * has never seen this prefix), so it is a deliberate, recorded reset rather
+   * than a silent rewrite.
+   */
+  private restoreLog(messages: readonly LLMMessage[], cause?: string): void {
+    const before = this.log.projectedLength;
+    this.log.restore(messages);
+    if (cause) {
+      this.prefixResets.record(cause, before, this.log.projectedLength);
+    }
+  }
+
   public clear() {
-    this.history = [];
+    this.log.clear();
     this.snapshot = null;
     this.planStatus = null;
     this.capturedOverlays = [];
@@ -1600,7 +1462,7 @@ Do NOT call done() until every planned step is complete.
   /** Clear conversation history but keep the current DOM snapshot intact.
    *  Used between subtasks so page state carries over. */
   public clearHistory() {
-    this.history = [];
+    this.log.clear();
     // A fresh subtask context has never seen the page content — the
     // "unchanged" marker would be untruthful, so re-emit in full.
     this.pageContentEmission = createPageContentEmissionState();
@@ -1611,7 +1473,7 @@ Do NOT call done() until every planned step is complete.
    * Restore conversation history from a saved state (after navigation).
    */
   public restoreFromState(messages: LLMMessage[]) {
-    this.history = [...messages];
+    this.restoreLog(messages, "restore_from_state");
     // We don't overwrite capturedOverlays here because they should
     // persist independently or be loaded via loadState().
     // If we wanted to sync them from `savedState` (AgentLoopState),
@@ -1639,76 +1501,52 @@ Do NOT call done() until every planned step is complete.
    * The current DOM snapshot is preserved (in system prompt, not history).
    */
   public summarizeTrajectory(originalQuery: string): void {
-    const timeline = summarizeHistory(this.history);
+    const timeline = summarizeHistory(this.log.project());
 
-    // Replace history with compact context
-    this.history = [];
-    this.history.push({ role: "user", content: originalQuery });
-
+    // Escalation deliberately discards the trajectory in favour of a report, so
+    // this is one of the few places a full reset is the intent, not a defect.
+    const replacement: LLMMessage[] = [{ role: "user", content: originalQuery }];
     if (timeline.length > 0) {
-      const report = `ATTEMPT LOG (${timeline.length} actions):\n${timeline.join("\n")}`;
-      this.history.push({ role: "user", content: report });
+      replacement.push({
+        role: "user",
+        content: `ATTEMPT LOG (${timeline.length} actions):\n${timeline.join("\n")}`,
+      });
     }
-
     // Carry plan state into the escalated context
-    if (this.planStatus) {
-      const planBlock = this.formatPlanStatus();
-      if (planBlock) {
-        this.history.push({ role: "user", content: planBlock });
-      }
-    }
+    const planBlock = this.planStatus ? this.formatPlanStatus() : null;
+    if (planBlock) replacement.push({ role: "user", content: planBlock });
 
+    this.restoreLog(replacement, "escalation_summarize");
     this.saveState().catch(() => {});
     logger.info("agent", "Trajectory summarized for escalation", {
       timelineEntries: timeline.length,
-      historyLength: this.history.length,
+      historyLength: this.log.projectedLength,
     });
   }
 
   /**
-   * Rolling distillation: compress old history while keeping recent messages verbatim.
-   * Returns true if distillation was applied, false if history is too short.
+   * Rolling distillation: append a summary of everything older than the recent
+   * tail. Returns true if a summary was written.
    */
   public rollingDistill(
     keepRecent: number,
     maxSummaryEntries: number,
   ): boolean {
-    if (this.history.length <= keepRecent + 2) return false;
-    const messagesBefore = this.history.length;
-
-    // Preserve first user message
-    const firstUserIdx = this.history.findIndex((m) => m.role === "user");
-    const firstUserMsg = firstUserIdx >= 0 ? this.history[firstUserIdx] : null;
-
-    // Summarize old messages (everything except the recent tail)
-    const oldMessages = this.history.slice(0, -keepRecent);
-    const timeline = summarizeHistory(oldMessages, maxSummaryEntries);
-    const recentMessages = this.history.slice(-keepRecent);
-
-    // Rebuild history
-    this.history = [];
-    if (firstUserMsg) {
-      this.history.push(firstUserMsg);
+    const before = this.log.projectedLength;
+    const applied = this.appendSummary(
+      "rolling_distill",
+      keepRecent,
+      maxSummaryEntries,
+      "DISTILLED HISTORY",
+    );
+    if (applied) {
+      this.prefixResets.record(
+        "rolling_distill",
+        before,
+        this.log.projectedLength,
+      );
     }
-    if (timeline.length > 0) {
-      this.history.push({
-        role: "user",
-        content: `[DISTILLED HISTORY — ${timeline.length} actions]\n${timeline.join("\n")}`,
-      });
-    }
-    // LP-21: see compressHistoryByLevel — plan state is rendered from
-    // this.planStatus every turn, so re-pushing it here only moved a volatile
-    // block to history position ~2 and broke the prefix on every distill pass.
-    this.history.push(...recentMessages);
-    this.prefixResets.record("rolling_distill", messagesBefore, this.history.length);
-
-    this.saveState().catch(() => {});
-    logger.info("agent", "Rolling distillation applied", {
-      timelineEntries: timeline.length,
-      newHistoryLength: this.history.length,
-      planPreserved: !!this.planStatus,
-    });
-    return true;
+    return applied;
   }
 }
 
