@@ -2932,11 +2932,10 @@ export class Orchestrator {
                 subtasks: [
                   {
                     description: node.description,
+                    ...(node.displayLabel ? { label: node.displayLabel } : {}),
                     successCriteria: node.successCriteria,
                     status: "running" as const,
-                    ...(nodeToolProfile
-                      ? { toolProfile: nodeToolProfile }
-                      : {}),
+                    ...(nodeToolProfile ? { toolProfile: nodeToolProfile } : {}),
                   },
                 ],
               },
