@@ -1,6 +1,6 @@
 # RFC LP-22 — JobAgent as an Agent-Platform Skill (Claude Code, pi, Codex)
 
-Lifecycle status: **Draft (not stamped)** — revision 2, with the three open questions decided by the owner on 2026-07-23 (see Resolved decisions). Still awaiting a Decision Stamp before implementation.
+Lifecycle status: **Draft (not stamped) — implemented ahead of the stamp on owner instruction.** Revision 3: the three open questions were decided by the owner on 2026-07-23 (see Resolved decisions), and phases 0–1 were then built, live-proven, and opened as PR #106 the same day (see Implementation status). The stamp is outstanding paperwork, not a gate this work waited on — recorded plainly here so the sequence is not mistaken for the house rule.
 Date: 2026-07-23
 Scope: `scripts/jobagent-console/` (three new CLI verbs: `ingest`, `assess`, `questions`; no new authority), `scripts/jobagent/` (single-listing ingest path reusing `assessListing`/`recordDiscovery`; form-question extraction), new `skills/jobagent/` shared skill spec plus three thin per-platform wrappers. No extension changes. **Neither human gate changes.**
 Related: [JobAgent README](../../../scripts/jobagent/README.md) (safety model); [pi-backend spike](../pi-backend-spike.md) Phase 9; RFC LP-19 (graduated autonomy — remains parked; §6 explains why this RFC does not depend on it), RFC LP-20 (free-text drafting — remains parked)
@@ -187,17 +187,24 @@ Two notes on the split:
 
 ## Phases
 
-| Phase | Work | Exit criterion |
-| --- | --- | --- |
-| 0 | `assess` + `ingest` over the existing `recordDiscovery` path | A pasted URL becomes a criteria-checked package; a rejected one reports its reason |
-| 1 | `questions` extraction (single-page forms; partial detection) | `questions` → `draft` runs with no hand-authored input on a fixture form |
-| 2 | `skills/jobagent/SKILL.md` shared spec + skill lint | Lint fails a skill that restates lifecycle vocabulary |
-| 3 | Claude Code wrapper | Full loop to the kit gate, driven by the skill, on a fixture |
-| 4 | pi + Codex wrappers | Same transcript shape on all three; no behavioural divergence |
-| 5 | One supervised live run, end to end | Filled and submitted with both gates exercised, page-verified |
+| Phase | Work | Exit criterion | Status (2026-07-23) |
+| --- | --- | --- | --- |
+| 0 | `assess` + `ingest` over the existing `recordDiscovery` path | A pasted URL becomes a criteria-checked package; a rejected one reports its reason | **Done** — PR #106 |
+| 1 | `questions` extraction (single-page forms; partial detection) | `questions` → `draft` runs with no hand-authored input on a fixture form | **Done** — PR #106 |
+| 2 | `skills/jobagent/SKILL.md` shared spec + skill lint | Lint fails a skill that restates lifecycle vocabulary | **Spec done, lint NOT built** |
+| 3 | Claude Code wrapper | Full loop to the kit gate, driven by the skill, on a fixture | Not started |
+| 4 | pi + Codex wrappers | Same transcript shape on all three; no behavioural divergence | **pi adapter done; Codex not started** |
+| 5 | One supervised live run, end to end | Filled and submitted with both gates exercised, page-verified | **Done** — see Implementation status |
 
 Phases 3 and 4 are deliberately ordered: prove the loop on one platform before
-paying the cost of three, so a spec bug is found once.
+paying the cost of three, so a spec bug is found once. In practice phase 4's pi
+half ran first (pi already had a bridge driver), which is how phase 5 completed
+before phase 3 — worth noting so the ordering rationale is not read as having
+been followed.
+
+The **skill lint is the outstanding piece of phase 2** and the only mechanical
+guard against §1's drift risk. Until it exists, "wrappers stay thin" is a
+convention, not an invariant.
 
 ## Test plan
 
@@ -218,6 +225,49 @@ paying the cost of three, so a spec bug is found once.
 | A skill starts making gate decisions to "be helpful" | Gate protocol is explicit; skill lint on lifecycle vocabulary; the daemon is the only status writer regardless of what a skill believes |
 | Three wrappers drift | One shared `SKILL.md`; wrappers are adapters only; phase 4 asserts identical transcript shape |
 | Ingest becomes a criteria bypass | Ingest goes through `recordDiscovery` unchanged — same matching, same dedupe, same rejection |
+
+**Neither defect that actually materialised is in the table above.** Both were
+found by running the loop, not by reasoning about it, and both lived in the
+seams *between* the stages this RFC treated as already-solved:
+
+| Defect | Why the table missed it |
+| --- | --- |
+| The kit's `formUrl` was the posting, not the form — a fill would have opened the job board and found nothing to fill (fixed, PR #106) | The RFC reasoned about ingest and drafting separately and never asked what ingest owed drafting. `applyUrl` was extracted and then dropped on the floor. |
+| `submit` opened its own tab, so it never saw the fill it was meant to submit; the run failed before reaching the approval gate (issue #109, fixed) | The RFC treated fill/submit as pre-existing and out of scope. The assumption "already filled in this browser" was true but useless — form state is per-tab, and the two runs get different tabs. |
+
+The transferable lesson for the remaining phases: this RFC's risk analysis was
+good at *within-stage* failure (bad extraction, drifting skills) and blind to
+*between-stage* contracts. Phases 2–4 should be reviewed with that lens — what
+does each stage owe the next, and what silently gets dropped between them.
+
+## Implementation status (2026-07-23)
+
+Phases 0–1 shipped as **PR #106** (4 commits) the same day this RFC was written,
+on owner instruction ahead of the stamp.
+
+**Proven live**, driving the real extension against local fixture pages, with a
+throwaway seed dir and no real employer involved:
+
+- pi, given only a posting URL and `skills/jobagent/SKILL.md`, ran
+  assess → ingest → questions → draft unaided, extracted **10/10** form fields,
+  and **stopped at the kit gate** with 3 unresolved questions, nothing filled,
+  nothing approved. Its own words: *"The library has no answers for these, and
+  I cannot invent them."*
+- The post-gate half then ran through the CLI: `edit-draft` → `approve-kit` →
+  `fill` → **approval gate** → `decide approve` → `submitted-by-user`. The fill
+  was verified byte-exact by reading the page directly rather than trusting the
+  agent's self-report, and the submission was confirmed by the fixture's own
+  `Application received` heading and result marker.
+
+Both gates were observed doing their job: `approve-kit` returned a 409 listing
+the three unresolved fields, and the submit paused for a human decision that the
+CLI surfaced verbatim.
+
+**Not proven:** multi-page ATS forms (out of scope, §4), any real employer form,
+and the Claude Code and Codex wrappers (phases 3–4). The fixture kit is
+deliberately unable to answer three of the form's ten questions, and
+`jobagent-fixture-kit.test.ts` pins that — so the rehearsal cannot quietly
+degrade into a no-op if someone later completes the fixture library.
 
 ## Resolved decisions (2026-07-23)
 
