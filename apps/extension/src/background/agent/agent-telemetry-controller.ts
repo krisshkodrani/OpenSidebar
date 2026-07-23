@@ -33,6 +33,7 @@ import {
   type ContextProgressSignal,
 } from "./context-economy";
 import type { TraceRecorder } from "./trace";
+import { TurnCarry } from "./turn-carry";
 import {
   canSpendImagePromptBudget,
   emptySessionMetrics,
@@ -68,6 +69,8 @@ export class AgentTelemetryController {
   private readonly contextSpend = new ContextSpendTracker();
   private citations: Citation[] = [];
   private readonly citationUrls = new Set<string>();
+  /** Baselines one turn hands the next for diffing (DOM delta, prompt prefix). */
+  readonly turnCarry = new TurnCarry();
 
   constructor(private readonly deps: AgentTelemetryDeps) {}
 
@@ -76,6 +79,7 @@ export class AgentTelemetryController {
     this.metrics = emptySessionMetrics();
     this.contextSpend.reset();
     this.sessionStart = Date.now();
+    this.turnCarry.reset();
   }
 
   /** Accumulate usage from an LLM response. */

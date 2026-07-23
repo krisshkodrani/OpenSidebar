@@ -28,7 +28,10 @@ import {
   PLANNER_PERSONA,
   REFERENCE_VALUE_TOOLS,
   CompressionLevel,
+  maxCompressionLevel,
 } from "./context-types";
+import { PrefixResetLedger } from "./prompt-prefix-telemetry";
+import type { PromptPrefixReset } from "./prompt-prefix-telemetry";
 import type {
   ContextMetrics,
   PlanStatus,
@@ -85,6 +88,8 @@ const ACTION_RELEVANT_ATTRS = new Set([
 
 export class ContextManager {
   private history: LLMMessage[] = [];
+  /** LP-21 §9: deliberate prefix discards, so telemetry can excuse their cost. */
+  private readonly prefixResets = new PrefixResetLedger();
   private snapshot: DomSnapshot | null = null;
   private maxHistory = 20;
   private maxContextTokens: number;
@@ -326,6 +331,15 @@ export class ContextManager {
     return this.history.length;
   }
 
+  /**
+   * Drain the pending prompt-prefix reset (LP-21 §9). Called once per turn by
+   * turn preparation, so a compaction's one-time cache cost is attributed to
+   * the turn that actually pays it.
+   */
+  public consumePrefixReset(): PromptPrefixReset | null {
+    return this.prefixResets.consume();
+  }
+
   constructor(
     maxContextTokens: number = 32000,
     workspaceId?: string | null,
@@ -478,10 +492,13 @@ export class ContextManager {
     ) {
       const level = this.getCompressionLevel();
       this.compressHistoryByLevel(level);
+      this.prefixResets.record(`threshold_compaction:${level}`, len, this.history.length);
     }
 
     if (this.history.length > 1000) {
+      const before = this.history.length;
       this.history = this.history.slice(-1000);
+      this.prefixResets.record("history_cap", before, this.history.length);
     }
     this.saveState().catch((err) =>
       logger.error("agent", "Auto-save failed", { error: err }),
@@ -1030,26 +1047,6 @@ Do NOT call done() until every planned step is complete.
     return this.getPromptMetricsFrom(this.getPrompt());
   }
 
-  /** Numeric ordering for CompressionLevel — used by maxCompressionLevel(). */
-  private static readonly COMPRESSION_ORDER: Record<CompressionLevel, number> =
-    {
-      [CompressionLevel.NONE]: 0,
-      [CompressionLevel.LIGHT]: 1,
-      [CompressionLevel.MEDIUM]: 2,
-      [CompressionLevel.HEAVY]: 3,
-    };
-
-  /** Return the higher (more aggressive) of two compression levels. */
-  private static maxCompressionLevel(
-    a: CompressionLevel,
-    b: CompressionLevel,
-  ): CompressionLevel {
-    return ContextManager.COMPRESSION_ORDER[a] >=
-      ContextManager.COMPRESSION_ORDER[b]
-      ? a
-      : b;
-  }
-
   /**
    * Compute the compression level for this turn.
    *
@@ -1123,7 +1120,7 @@ Do NOT call done() until every planned step is complete.
     }
 
     // Return whichever signal demands more compression
-    return ContextManager.maxCompressionLevel(turnLevel, utilizationLevel);
+    return maxCompressionLevel(turnLevel, utilizationLevel);
   }
 
   /** Maximum items shown per group before collapsing the rest into a summary. */
@@ -1679,6 +1676,7 @@ Do NOT call done() until every planned step is complete.
     maxSummaryEntries: number,
   ): boolean {
     if (this.history.length <= keepRecent + 2) return false;
+    const messagesBefore = this.history.length;
 
     // Preserve first user message
     const firstUserIdx = this.history.findIndex((m) => m.role === "user");
@@ -1708,6 +1706,7 @@ Do NOT call done() until every planned step is complete.
       }
     }
     this.history.push(...recentMessages);
+    this.prefixResets.record("rolling_distill", messagesBefore, this.history.length);
 
     this.saveState().catch(() => {});
     logger.info("agent", "Rolling distillation applied", {
