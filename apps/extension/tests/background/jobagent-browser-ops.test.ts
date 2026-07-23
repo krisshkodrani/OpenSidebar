@@ -91,6 +91,29 @@ describe("extractListing", () => {
     expect(listing.location).toBe("");
   });
 
+  test("a relative applyUrl is resolved against the posting URL", async () => {
+    // Observed live: the same link came back absolute once and relative the
+    // next time. Stored relative, it becomes a formUrl the fill cannot open.
+    const bridge = fakeBridge(
+      okResult({ title: "T", company: "C", applyUrl: "/ashby-job-application?job=sr-fe-1" }),
+    );
+    const listing = await extractListing(
+      bridge.call,
+      "http://localhost:3333/job-board?job=sr-fe-1",
+    );
+    expect(listing.applyUrl).toBe(
+      "http://localhost:3333/ashby-job-application?job=sr-fe-1",
+    );
+  });
+
+  test("an absolute applyUrl is left alone", async () => {
+    const bridge = fakeBridge(
+      okResult({ title: "T", company: "C", applyUrl: "https://ats.example/apply/1" }),
+    );
+    const listing = await extractListing(bridge.call, "http://board.example/jobs/1");
+    expect(listing.applyUrl).toBe("https://ats.example/apply/1");
+  });
+
   test("a non-ok bridge response surfaces its reason", async () => {
     const bridge = fakeBridge({ status: "error", reason: "tab crashed" });
     await expect(extractListing(bridge.call, "https://b.example/1")).rejects.toThrow(
