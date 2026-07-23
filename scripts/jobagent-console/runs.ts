@@ -590,13 +590,13 @@ export class RunManager {
         );
         cvUrl = cvServer.url;
       }
-      const instruction =
-        mode === "fill"
-          ? assembleFillBrief(app.package, app.manifest, cvUrl)
-          : `Open ${app.manifest.formUrl} — the application form was already ` +
-            `filled in this browser. Verify the previously filled values are ` +
-            `still present, then submit the application form. Stop after the ` +
-            `submit outcome is visible and report it.`;
+      // Both modes build from the SAME manifest. Submit re-fills rather than
+      // trusting an earlier fill to still be on screen: it runs in its own
+      // session and gets its own tab, and form state does not survive that
+      // (issue #109). Re-filling is deterministic and safe to retry.
+      const instruction = assembleFillBrief(app.package, app.manifest, cvUrl, {
+        submit: mode === "submit",
+      });
       const session = `console-${run.id}`;
 
       this.logLine(run, `[console] starting ${mode} mission at ${app.manifest.formUrl}`);
