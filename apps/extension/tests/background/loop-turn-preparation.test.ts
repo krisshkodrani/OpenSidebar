@@ -174,6 +174,13 @@ describe("prepareLlmTurnRequest", () => {
           firstDivergenceRegion: "none",
           firstDivergenceOffset: null,
         }),
+        // Populations built from different prompt templates are not comparable,
+        // so every turn records which template produced it.
+        promptTemplate: expect.objectContaining({
+          id: "agent.system",
+          version: expect.any(String),
+          hash: expect.any(String),
+        }),
       }),
       "planner",
     );
