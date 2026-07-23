@@ -181,7 +181,20 @@ function sectionRanges(systemContent: string): Map<string, number> {
 function historyCharCount(messages: LLMMessage[]): number {
   return messages
     .slice(1)
+    .filter((message) => !isToolCapabilityCatalog(message))
     .reduce((sum, message) => sum + contentToString(message.content).length, 0);
+}
+
+/**
+ * The tool-capability catalog (#107) rides as a synthetic trailing message. It
+ * is prompt scaffolding, not conversation, so counting it as history would
+ * inflate `historyChars` and double-count against
+ * `toolCapabilityCatalogChars`.
+ */
+function isToolCapabilityCatalog(message: LLMMessage): boolean {
+  return contentToString(message.content).startsWith(
+    "## Available Tool Capabilities",
+  );
 }
 
 function toolOutputCharCount(messages: LLMMessage[]): number {
@@ -214,7 +227,19 @@ export function buildPromptSectionMetrics(args: {
       ? contentToString(args.messages[0].content)
       : "";
   const prompt = getPromptDefinition("agent.system");
+  // Section headers no longer all live in message 0. LP-21 phase 2 moved the
+  // page-state block into a trailing message and #107 moved the tool catalog
+  // into one, so scanning only messages[0] silently reported 0 chars for every
+  // section that had moved. Scan the non-system messages too, and let a later
+  // occurrence win — the volatile copy is the live one.
   const ranges = sectionRanges(systemContent);
+  for (const message of args.messages.slice(1)) {
+    for (const [header, size] of sectionRanges(
+      contentToString(message.content),
+    )) {
+      ranges.set(header, size);
+    }
+  }
   const sectionSignatureHash = fnv1a([...ranges.keys()].join("|"));
   const pageContextIndex = systemContent.indexOf("## Page Context");
   const toolRemindersIndex = systemContent.indexOf("## Tool Reminders");
