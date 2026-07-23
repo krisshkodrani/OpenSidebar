@@ -1,0 +1,21 @@
+[
+  { "label": "Name", "kind": "text", "required": true },
+  { "label": "Email", "kind": "text", "required": true },
+  { "label": "LinkedIn URL", "kind": "text" },
+  { "label": "Phone", "kind": "text" },
+  { "label": "Resume/CV", "kind": "file" },
+  { "label": "Current Location", "kind": "text", "required": true },
+  {
+    "label": "EU Work Permit",
+    "kind": "select",
+    "required": true,
+    "options": ["Yes", "No"]
+  },
+  { "label": "Salary Expectation", "kind": "text", "required": true },
+  { "label": "Earliest Start Date", "kind": "text", "required": true },
+  {
+    "label": "Why Do You Care About Nextera Tech?",
+    "kind": "longtext",
+    "required": true
+  }
+]

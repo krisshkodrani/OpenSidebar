@@ -1,5 +1,5 @@
 /**
- * JobAgent console run manager (pi Phase 9, v2).
+ * JobAgent daemon run manager (pi Phase 9, v2).
  *
  * Owns the two kinds of browser-consuming work and the ONE invariant that
  * makes them safe together: a single WS-bridge port owner and a single
@@ -22,7 +22,7 @@
  * sockets or spawn processes.
  */
 import { spawn } from "node:child_process";
-import { appendFileSync, mkdirSync } from "node:fs";
+import { appendFileSync, mkdirSync, writeFileSync } from "node:fs";
 import { dirname, join, resolve as resolvePath } from "node:path";
 
 import type {
@@ -31,12 +31,19 @@ import type {
 } from "../browser-mcp/bridge";
 import {
   assembleFillBrief,
+  ingestName,
   loadApplication,
+  loadSearchCriteria,
+  recordDiscovery,
   recordStatus,
+  resolveApplicationDir,
   resolveSeedDir,
   startCvServer,
+  assessListing as scoreListing,
   type CvServer,
+  type DiscoveredListing,
 } from "../jobagent/index";
+import { extractListing, extractQuestions } from "./browser-ops";
 import type { ConsoleEvent } from "./events";
 
 /* ── Injectable seam ──────────────────────────────────────── */
@@ -114,6 +121,15 @@ export interface ApprovalItem extends ForwardedApprovalRequest {
 }
 
 export type BridgeOwner = "console" | "pi-run" | "released";
+
+/** Host of a URL, or the raw string when it will not parse. */
+function hostOf(url: string): string {
+  try {
+    return new URL(url).host;
+  } catch {
+    return url;
+  }
+}
 
 /* ── Manager ──────────────────────────────────────────────── */
 
@@ -207,7 +223,7 @@ export class RunManager {
     return true;
   }
 
-  /** Resolve a pending approval from the UI. */
+  /** Resolve a pending approval (the human gate; `jobagent decide`). */
   resolveApproval(
     approvalId: string,
     approved: boolean,
@@ -269,6 +285,177 @@ export class RunManager {
     const run = this.createRun(mode, name);
     this.busy = this.busy.then(() => this.runFill(run, name, mode)).catch(() => {});
     return { status: 200, body: { runId: run.id } };
+  }
+
+  /* — read-only page extractions (RFC LP-22) — */
+
+  /**
+   * A bridge we may use right now, or an error explaining why not.
+   *
+   * Extractions are quick and read-only, but they share the one WS bridge with
+   * runs — and a discovery run hands that port to pi entirely. Refusing while a
+   * run is active is honest; queueing behind the mutex would make a "quick
+   * assess" silently block for the length of a fill.
+   */
+  private availableBridge(): { bridge: ConsoleBridge } | { error: string } {
+    if (this.hasActiveRun()) {
+      return { error: "a run is active — the bridge is busy; retry when it finishes" };
+    }
+    if (!this.bridge) return { error: "console bridge is not up" };
+    return { bridge: this.bridge };
+  }
+
+  /** Score a posting URL against the criteria. Writes nothing. */
+  async assessUrl(url: string): Promise<{ status: number; body: unknown }> {
+    const available = this.availableBridge();
+    if ("error" in available) return { status: 409, body: { error: available.error } };
+    let criteria;
+    try {
+      criteria = loadSearchCriteria();
+    } catch (e) {
+      return { status: 409, body: { error: e instanceof Error ? e.message : String(e) } };
+    }
+    try {
+      const extracted = await extractListing(available.bridge.call.bind(available.bridge), url);
+      const listing: DiscoveredListing = {
+        title: extracted.title,
+        company: extracted.company,
+        url,
+        source: "assess",
+        location: extracted.location || undefined,
+        snippet: extracted.snippet || undefined,
+      };
+      const assessment = scoreListing(listing, criteria);
+      return {
+        status: 200,
+        body: {
+          url,
+          listing,
+          match: assessment.match,
+          reasons: assessment.reasons,
+          risks: assessment.risks,
+          applyUrl: extracted.applyUrl,
+        },
+      };
+    } catch (e) {
+      return { status: 502, body: { error: e instanceof Error ? e.message : String(e) } };
+    }
+  }
+
+  /**
+   * Turn a single posting URL into a review-queue package.
+   *
+   * The extracted listing goes through `recordDiscovery` **unchanged**, so
+   * criteria matching, dedupe, and rejection are the same code the board sweep
+   * runs. Ingest is a new way in, never a new set of rules.
+   */
+  async ingestUrl(
+    url: string,
+    opts: { source?: string; name?: string } = {},
+  ): Promise<{ status: number; body: unknown }> {
+    const available = this.availableBridge();
+    if ("error" in available) return { status: 409, body: { error: available.error } };
+    let criteria;
+    try {
+      criteria = loadSearchCriteria();
+    } catch (e) {
+      return { status: 409, body: { error: e instanceof Error ? e.message : String(e) } };
+    }
+    let extracted;
+    try {
+      extracted = await extractListing(available.bridge.call.bind(available.bridge), url);
+    } catch (e) {
+      return { status: 502, body: { error: e instanceof Error ? e.message : String(e) } };
+    }
+    // A title is genuinely required: the criteria match is a role-phrase test
+    // against it, so without one there is nothing to assess and any verdict
+    // would be invented.
+    if (!extracted.title) {
+      return {
+        status: 422,
+        body: {
+          error: `could not read a job title from ${url} — check the page loaded and is a posting`,
+          extracted,
+        },
+      };
+    }
+    // A missing company is survivable: it names the package and fills a field,
+    // but decides nothing. Record the URL host in its place so the value stays
+    // traceable rather than invented, flag it loudly, and let the name fall
+    // back to host+hash (RFC LP-22 Resolved decisions §1).
+    const inferredCompany = !extracted.company;
+    const name = opts.name ?? ingestName(extracted, url);
+    const listing: DiscoveredListing = {
+      title: extracted.title,
+      company: extracted.company || hostOf(url),
+      url,
+      source: opts.source ?? "ingest",
+      location: extracted.location || undefined,
+      snippet: extracted.snippet || undefined,
+    };
+    try {
+      const outcome = recordDiscovery(listing, criteria, {
+        name,
+        // Carry the form URL the posting linked to; without it the kit's
+        // formUrl falls back to the posting and a fill opens the wrong page.
+        formUrl: extracted.applyUrl,
+      });
+      if (outcome.outcome === "created") {
+        this.deps.emit({ type: "queue-changed", data: { name: outcome.name } });
+        return {
+          status: 200,
+          body: {
+            ...outcome,
+            applyUrl: extracted.applyUrl,
+            ...(inferredCompany ? { inferredCompany: listing.company } : {}),
+          },
+        };
+      }
+      return { status: 200, body: outcome };
+    } catch (e) {
+      return { status: 400, body: { error: e instanceof Error ? e.message : String(e) } };
+    }
+  }
+
+  /**
+   * Extract an application form's questions into the package's questions.json.
+   *
+   * A form that continues past page one is a hard stop: a kit drafted from a
+   * partial extraction would look complete while missing whole pages, which is
+   * exactly the confident-but-wrong failure the human gate exists to catch.
+   */
+  async extractFormQuestions(
+    name: string,
+    formUrl: string,
+  ): Promise<{ status: number; body: unknown }> {
+    const available = this.availableBridge();
+    if ("error" in available) return { status: 409, body: { error: available.error } };
+    let extracted;
+    try {
+      extracted = await extractQuestions(available.bridge.call.bind(available.bridge), formUrl);
+    } catch (e) {
+      return { status: 502, body: { error: e instanceof Error ? e.message : String(e) } };
+    }
+    if (extracted.partial) {
+      return {
+        status: 422,
+        body: {
+          error:
+            "this form continues past the first page — multi-page forms are not " +
+            "supported yet, and a kit drafted from page one would silently omit " +
+            "the rest",
+          partial: true,
+          pageNote: extracted.pageNote,
+          questions: extracted.questions,
+        },
+      };
+    }
+    const path = join(resolveApplicationDir(name), "questions.json");
+    writeFileSync(path, JSON.stringify(extracted.questions, null, 2) + "\n", "utf8");
+    return {
+      status: 200,
+      body: { name, formUrl, path, count: extracted.questions.length, questions: extracted.questions },
+    };
   }
 
   /* — internals — */
@@ -403,13 +590,13 @@ export class RunManager {
         );
         cvUrl = cvServer.url;
       }
-      const instruction =
-        mode === "fill"
-          ? assembleFillBrief(app.package, app.manifest, cvUrl)
-          : `Open ${app.manifest.formUrl} — the application form was already ` +
-            `filled in this browser. Verify the previously filled values are ` +
-            `still present, then submit the application form. Stop after the ` +
-            `submit outcome is visible and report it.`;
+      // Both modes build from the SAME manifest. Submit re-fills rather than
+      // trusting an earlier fill to still be on screen: it runs in its own
+      // session and gets its own tab, and form state does not survive that
+      // (issue #109). Re-filling is deterministic and safe to retry.
+      const instruction = assembleFillBrief(app.package, app.manifest, cvUrl, {
+        submit: mode === "submit",
+      });
       const session = `console-${run.id}`;
 
       this.logLine(run, `[console] starting ${mode} mission at ${app.manifest.formUrl}`);

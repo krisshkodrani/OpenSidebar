@@ -1,10 +1,15 @@
 /**
- * JobAgent console — SSE event hub (pi Phase 9).
+ * JobAgent daemon — SSE event hub (pi Phase 9).
  *
- * One process-wide hub; every connected browser tab gets every event. Events
- * are the UI's live-update channel (queue-changed, run-status, run-log,
- * approval-pending, approval-resolved, bridge-status). A comment heartbeat
- * every 25s keeps intermediaries from closing idle streams.
+ * One process-wide hub; every connected client gets every event
+ * (queue-changed, run-status, run-log, approval-pending, approval-resolved,
+ * bridge-status). This is the push channel for anything watching a run
+ * without polling — a `curl`ed stream, a future notifier, or a second
+ * front-end. The CLI deliberately polls `/api/runs/:id` instead: a poll loop
+ * resumes cleanly after the process that ran it goes away, which is the
+ * normal case for an agent that hands control back at the approval gate.
+ * A comment heartbeat every 25s keeps intermediaries from closing idle
+ * streams.
  */
 import type { ServerResponse } from "node:http";
 
