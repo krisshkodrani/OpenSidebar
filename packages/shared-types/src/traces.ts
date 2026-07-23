@@ -102,6 +102,44 @@ export interface TraceStructuredRuntimeStateShadowMetrics {
   };
 }
 
+/**
+ * Where this turn's prompt first diverged from the previous turn's (RFC LP-21
+ * §9). Prefix caching pays only for bytes before that point, so this is the
+ * direct measurement of cache-prefix stability — previously it could only be
+ * inferred from turn-to-turn input-token deltas (issue #103).
+ *
+ * Hashes and offsets only: no prompt text is carried here, so page content
+ * cannot reach an exported span through this field.
+ */
+export interface TracePromptPrefixMetrics {
+  /** Digest of the whole prompt; changes iff any byte changed. */
+  digest: string;
+  /** First diverging message index, or null when nothing diverged. */
+  firstDivergenceMessageIndex: number | null;
+  /** Char offset of the first divergence (block-aligned lower bound). */
+  firstDivergenceOffset: number | null;
+  /** "system" / "history" are defects; "volatile_tail" is by design. */
+  firstDivergenceRegion: "system" | "history" | "volatile_tail" | "none";
+  stablePrefixChars: number;
+  stablePrefixPct: number;
+  stablePrefixMessages: number;
+  totalChars: number;
+  /**
+   * Set when this turn's prompt prefix was deliberately reset by history
+   * compaction. A cache miss on such a turn is expected and one-time; a miss
+   * WITHOUT this flag is the defect.
+   */
+  prefixReset?: TracePromptPrefixReset;
+}
+
+export interface TracePromptPrefixReset {
+  /** Which compaction mechanism reset the prefix. */
+  cause: string;
+  /** History length before and after the compaction. */
+  messagesBefore: number;
+  messagesAfter: number;
+}
+
 export interface TraceContextMetrics {
   systemTokens: number;
   historyTokens: number;
@@ -110,7 +148,15 @@ export interface TraceContextMetrics {
   utilization: number;
   droppedMessageCount: number;
   compressionLevel: string;
+  /**
+   * Length of the byte-stable prefix of the SYSTEM message, in characters.
+   *
+   * Derived from the real cross-turn prompt diff (`promptPrefix`). Until LP-21
+   * this was `systemContent.indexOf("## Page Context")`, which silently became
+   * a constant 0 once phase 2 moved page state out of the system message.
+   */
   cachedPrefixLength: number;
+  promptPrefix?: TracePromptPrefixMetrics;
   promptSections?: TracePromptSectionMetrics;
   contextMode?: TraceContextModeTelemetry;
   domPromptDelta?: TraceDomPromptDeltaMetrics | null;

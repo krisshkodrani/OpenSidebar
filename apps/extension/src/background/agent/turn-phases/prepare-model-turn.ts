@@ -16,6 +16,7 @@ import { LLMClient } from "../../llm";
 import { ContextManager } from "../context";
 import { PerceptionScreenshotState } from "../../perception/perception-screenshot-state";
 import { TraceRecorder } from "../trace";
+import type { TurnCarry } from "../turn-carry";
 import { logger, SessionScopedLogger } from "../../../utils";
 import type { AgentStep } from "../../../types";
 import type { LoopResult } from "../loop-types";
@@ -53,7 +54,7 @@ export interface PrepareModelTurnHost {
   readonly disabledTools: Parameters<typeof toolRegistry.getDefinitions>[0];
   readonly taskId: string | null;
   readonly runId: string | null;
-  previousSnapshotForDelta: LlmTurnPreparationDeps["previousSnapshotForDelta"];
+  readonly telemetry: { readonly turnCarry: TurnCarry };
   activeToolNamesForTurn: string[];
   applyToolProfile(tools: ToolDefs): ToolDefs;
   applySkillToolSuppression(tools: ToolDefs): ToolDefs;
@@ -113,9 +114,11 @@ export async function runPrepareModelTurnPhase(
     perception: host.perception,
     log: host.log,
     traceRecorder: host.traceRecorder,
-    previousSnapshotForDelta: host.previousSnapshotForDelta,
+    previousSnapshotForDelta: host.telemetry.turnCarry.previousSnapshotForDelta,
+    previousPromptFingerprint: host.telemetry.turnCarry.previousPromptFingerprint,
   });
-  host.previousSnapshotForDelta = host.context.getSnapshot();
+  host.telemetry.turnCarry.previousSnapshotForDelta = host.context.getSnapshot();
+  host.telemetry.turnCarry.previousPromptFingerprint = preparation.promptFingerprint;
 
   const thinkingStep: AgentStep = {
     id: crypto.randomUUID(),

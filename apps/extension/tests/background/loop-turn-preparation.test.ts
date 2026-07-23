@@ -53,6 +53,7 @@ function makeContext(overrides = {}) {
       ],
     })),
     getHistoryLength: vi.fn(() => 4),
+    consumePrefixReset: vi.fn(() => null),
     ...overrides,
   };
 }
@@ -167,7 +168,12 @@ describe("prepareLlmTurnRequest", () => {
       expect.objectContaining({
         totalTokens: 150,
         droppedMessageCount: 3,
-        cachedPrefixLength: 7,
+        // Turn 1: nothing was cached yet, so the stable-prefix length is 0.
+        cachedPrefixLength: 0,
+        promptPrefix: expect.objectContaining({
+          firstDivergenceRegion: "none",
+          firstDivergenceOffset: null,
+        }),
       }),
       "planner",
     );

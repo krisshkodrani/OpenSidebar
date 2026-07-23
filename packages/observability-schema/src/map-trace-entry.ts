@@ -81,6 +81,30 @@ export function traceEntryToSpans(entry: TraceEntry): ObsSpan[] {
       chatAttrs["os.cache.hit_pct"] = usage.cacheTelemetry.cacheHitPct;
     }
   }
+
+  // Prompt-prefix stability (LP-21 §9). The cache-hit rate above says how much
+  // we PAID; these say WHY. Issue #103 had to infer prefix breaks from
+  // turn-to-turn input-token deltas because the cause was never exported —
+  // `diverges_in` names the region directly, and `prefix_reset_cause` marks the
+  // turns whose miss is a deliberate one-time compaction cost rather than a
+  // defect. Digests and offsets only; no prompt text crosses this boundary.
+  const prefix = entry.llmRequest.contextMetrics?.promptPrefix;
+  if (prefix) {
+    chatAttrs["os.prompt.prefix_digest"] = prefix.digest;
+    chatAttrs["os.prompt.prefix_stable_pct"] = prefix.stablePrefixPct;
+    chatAttrs["os.prompt.prefix_stable_chars"] = prefix.stablePrefixChars;
+    chatAttrs["os.prompt.total_chars"] = prefix.totalChars;
+    chatAttrs["os.prompt.diverges_in"] = prefix.firstDivergenceRegion;
+    if (typeof prefix.firstDivergenceOffset === "number") {
+      chatAttrs["os.prompt.first_divergence_offset"] =
+        prefix.firstDivergenceOffset;
+    }
+    if (prefix.prefixReset) {
+      chatAttrs["os.prompt.prefix_reset_cause"] = prefix.prefixReset.cause;
+      chatAttrs["os.prompt.prefix_reset_messages_dropped"] =
+        prefix.prefixReset.messagesBefore - prefix.prefixReset.messagesAfter;
+    }
+  }
   spans.push({
     traceId,
     spanId: spanId(turnSpanId, "chat"),
