@@ -109,6 +109,11 @@ function makeWorld(): World {
     appendAudit: () => {},
     probeTraceServer: async () => true,
     appendRunLog: () => {},
+    // Offline: the LP-23 parse-first tiers must fail fast and fall back to
+    // the fake bridge, never attempt real network.
+    atsFetch: async () => {
+      throw new Error("no network in tests");
+    },
   };
   return { manager: new RunManager(deps), replies, events };
 }
@@ -302,6 +307,88 @@ describe("ingest", () => {
     })) as { body: { name: string } };
     expect(reply.body.name).toBe("my-package");
     expect(existsSync(appDir("my-package"))).toBe(true);
+  });
+});
+
+describe("parse-first tiers (LP-23)", () => {
+  /** A Greenhouse payload the ATS adapter can serve without any bridge. */
+  const ghJob = JSON.stringify({
+    title: "AI Engineer",
+    company_name: "Acme",
+    location: { name: "Remote" },
+    content: "Build agents.",
+    absolute_url: "https://boards.greenhouse.io/acme/jobs/123",
+    questions: [
+      { label: "Email", required: true, fields: [{ type: "input_text" }] },
+      {
+        label: "Country",
+        required: true,
+        fields: [
+          { type: "multi_value_single_select", values: [{ label: "Austria" }, { label: "Spain" }] },
+        ],
+      },
+    ],
+  });
+  const GH_URL = "https://boards.greenhouse.io/acme/jobs/123";
+
+  function withAtsWorld(): World {
+    const world = makeWorld();
+    world.manager["deps"].atsFetch = (async () =>
+      new Response(ghJob, { status: 200 })) as never;
+    return world;
+  }
+
+  test("assess resolves via the adapter with NO bridge at all", async () => {
+    seedCriteria();
+    const world = withAtsWorld();
+    // Deliberately no manager.start(): tier 1 must not need the bridge.
+    const reply = (await world.manager.assessUrl(GH_URL)) as {
+      status: number;
+      body: { match: boolean; tier: string };
+    };
+    expect(reply.status).toBe(200);
+    expect(reply.body.tier).toBe("greenhouse-api");
+    expect(reply.body.match).toBe(true);
+  });
+
+  test("assess works DURING an active run when the adapter hits", async () => {
+    seedCriteria();
+    const world = withAtsWorld();
+    await world.manager.start();
+    world.manager.startDiscovery(); // the bridge is now owned by the run
+    const reply = (await world.manager.assessUrl(GH_URL)) as { status: number };
+    // Before LP-23 this was a 409 "bridge is busy" — the adapter tier removed
+    // the contention entirely.
+    expect(reply.status).toBe(200);
+  });
+
+  test("questions via the adapter keep select options end to end", async () => {
+    seedPackage();
+    const world = withAtsWorld();
+    const reply = (await world.manager.extractFormQuestions(
+      "acme-ai-engineer",
+      GH_URL,
+    )) as { status: number; body: { tier: string } };
+    expect(reply.status).toBe(200);
+    expect(reply.body.tier).toBe("greenhouse-api");
+    const written = readJson("acme-ai-engineer", "questions.json");
+    expect(written.find((q: { label: string }) => q.label === "Country").options).toEqual([
+      "Austria",
+      "Spain",
+    ]);
+  });
+
+  test("an unrecognised URL still falls back to the browser tier", async () => {
+    seedCriteria();
+    const world = makeWorld(); // offline atsFetch → tiers 1-2 fail fast
+    await world.manager.start();
+    world.replies.push(listingReply());
+    const reply = (await world.manager.assessUrl("https://board.example/jobs/1")) as {
+      status: number;
+      body: { tier: string };
+    };
+    expect(reply.status).toBe(200);
+    expect(reply.body.tier).toBe("browser");
   });
 });
 

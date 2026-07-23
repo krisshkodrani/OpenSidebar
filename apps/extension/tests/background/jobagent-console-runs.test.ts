@@ -122,6 +122,10 @@ function makeWorld(now = 1_000_000, opts: { traceSinkUp?: boolean } = {}): FakeW
     appendAudit: () => {},
     // Default "up" so existing tests see no trace-sink warning line.
     probeTraceServer: async () => opts.traceSinkUp ?? true,
+    // Offline: LP-23 parse-first tiers fail fast → fall back to the fake bridge.
+    atsFetch: async () => {
+      throw new Error("no network in tests");
+    },
     appendRunLog: (runId, line) => {
       const lines = runLogs.get(runId) ?? [];
       lines.push(line);
