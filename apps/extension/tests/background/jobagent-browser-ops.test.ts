@@ -65,6 +65,9 @@ describe("extractListing", () => {
     const instruction = String(bridge.calls[0].args.instruction);
     expect(instruction).toContain("Do not click");
     expect(instruction).toContain("do not fill");
+    // Observed on the first real Ashby posting: without this the extractor
+    // answered with a markdown bullet list instead of the object.
+    expect(instruction).toContain("ONLY a single raw JSON object");
   });
 
   test("parses a JSON string result (the extractor returns either shape)", async () => {

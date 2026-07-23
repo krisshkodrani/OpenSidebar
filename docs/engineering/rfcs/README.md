@@ -153,13 +153,29 @@ read as precedent for the stamp-then-build rule. Two defects surfaced that its r
 predict — both in the seams *between* stages — and the RFC now carries that
 lesson for the remaining phases.
 
+LP-23 is the follow-on, drafted the same day from the first real-employer run
+(Ashby, Engineering Manager - EU). That run surfaced four gaps: browser-driven
+discovery is slow and model-dependent (the extractor returned prose on its
+first real page), select options are lost between extraction and drafting (so
+library-answerable fields became TODOs), the application form hides behind a
+click at a URL the extractor never surfaced, and "drafting never invents an
+answer" makes the owner's target loop — link → complete tentative table →
+iterate → agree → fill — structurally impossible. LP-23 proposes parse-first
+discovery (ATS JSON APIs → static HTML → OpenSidebar as fallback; filling
+always stays OpenSidebar) and a `proposed` field provenance with per-field
+review, which un-parks LP-20's substance under containment LP-20 lacked.
+Demographic/EEO questions are never proposed. **Draft, not stamped — back to
+the stamp-then-build house rule**; ends with a Recommended Decision.
+
 | # | RFC | Problem | Depends on |
 | --- | --- | --- | --- |
 | LP-22 | [JobAgent as an agent-platform skill](lp-0022-jobagent-agent-platform-skills.md) | The CLI has no driver: no single-URL ingest, no host-side form-question extraction, and no skill on Claude Code / pi / Codex | None (LP-19 and LP-20 stay parked; §6 explains why this does not need them) |
+| LP-23 | [Parse-first discovery and tentative kits](lp-0023-jobagent-parse-first-tentative-kits.md) | Discovery is minutes of model-dependent browser work per posting; select options drop between stages; a complete tentative table is impossible while drafting may never propose | LP-22 (amends its §6 boundary); supersedes LP-20's scope with containment |
 
-Suggested sequencing: phases 0–1 (`assess`/`ingest`, then `questions`) are the
-whole functional gap and are independently useful from a terminal; the three
-skill wrappers are cheap once one platform proves the shared spec.
+Suggested sequencing: LP-22 phases 0–1 shipped in PR #106. For LP-23, phases
+0–2 (ATS spike, adapters, schema+verbs) are policy-free engineering; phases
+3–5 enact the proposed-answers policy change and want the demographic
+carve-out confirmed at stamp time.
 
 ## Post-launch consolidation series
 
