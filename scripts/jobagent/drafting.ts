@@ -21,6 +21,12 @@ export interface FormQuestion {
   kind?: "text" | "longtext" | "select" | "file";
   options?: string[];
   required?: boolean;
+  /**
+   * Structurally flagged as demographic/EEO by the source (Greenhouse
+   * separates these in its API). Demographic questions resolve from explicit
+   * library entries only and are never proposed (RFC LP-23 §2).
+   */
+  demographic?: boolean;
 }
 
 export type FieldSource =
@@ -29,6 +35,14 @@ export type FieldSource =
   | { kind: "default"; key: string }
   /** Deliberately left blank by the human (optional field, no approved answer). */
   | { kind: "skip"; note?: string }
+  /**
+   * Drafted by the agent platform, NOT (yet) the owner's words (RFC LP-23 §2).
+   * `basis` names what it was grounded in; `accepted` is set only by an
+   * explicit owner act (`jobagent accept`), and `approveKitDraft` refuses
+   * while any proposal is unaccepted. The daemon never writes proposals —
+   * it only bookkeeps them.
+   */
+  | { kind: "proposed"; basis: string; accepted?: true; acceptedVia?: "single" | "bulk" }
   | { kind: "todo" };
 
 export interface KitDraftField {
@@ -43,6 +57,18 @@ export interface KitDraft {
   manifest: FillManifest;
   perField: KitDraftField[];
   unresolved: string[];
+  /** Labels of unaccepted proposals — the review gate's display list (LP-23). */
+  unreviewed?: string[];
+}
+
+/** Is this field a proposal the owner has not yet reviewed? */
+export function isUnreviewedProposal(field: KitDraftField): boolean {
+  return field.source.kind === "proposed" && field.source.accepted !== true;
+}
+
+/** Recompute the unreviewed list from the fields. */
+function unreviewedOf(fields: KitDraftField[]): string[] {
+  return fields.filter(isUnreviewedProposal).map((f) => f.question.label);
 }
 
 const DRAFT_FILE = "kit-draft.json";
@@ -84,6 +110,22 @@ const DEFAULT_RULES: Array<{ key: string; pattern: RegExp }> = [
 const CV_FILE_PATTERN = /\b(resume|cv|curriculum vitae|lebenslauf)\b/i;
 
 /**
+ * Demographic/EEO question detection (RFC LP-23 §2, owner decision
+ * 2026-07-23): these resolve from EXPLICIT library entries only and are never
+ * proposed. The ATS adapters flag them structurally where the payload
+ * separates them (Greenhouse); this matcher covers the rest and deliberately
+ * errs WIDE — a false positive means the owner fills a legitimate question
+ * themselves (no harm); a false negative would let a demographic answer be
+ * proposed (harm).
+ */
+const DEMOGRAPHIC_PATTERN =
+  /\b(age|gender|race|ethnicit\w*|racial|veteran|disabilit\w*|sexual orientation|lgbtq\w*|pronouns|religion|nationality|demographic)\b/i;
+
+export function isDemographicQuestion(question: FormQuestion): boolean {
+  return question.demographic === true || DEMOGRAPHIC_PATTERN.test(question.label);
+}
+
+/**
  * Identity values, including the ones derived from `fullName` / `location`
  * when not stated explicitly. Derivation is deliberately conservative: a
  * country is only read off a location that actually names one after a comma,
@@ -112,6 +154,36 @@ function resolveField(
   library: AnswerLibrary,
 ): { answer: string; source: FieldSource } {
   const label = question.label;
+
+  // (0) demographic/EEO questions: explicit library entries only — the exact
+  // tag/question match below — never keyword-overlap resolution, never
+  // proposable, and `skip` rather than `todo` when absent so they cannot
+  // block approval or invite a proposal (LP-23 §2).
+  if (isDemographicQuestion(question)) {
+    const normalized = norm(label);
+    const skip: { answer: string; source: FieldSource } = {
+      answer: "",
+      source: {
+        kind: "skip",
+        note: "demographic/EEO — yours to fill in the form or leave blank; never proposed",
+      },
+    };
+    for (const entry of library.answers) {
+      if (
+        norm(entry.tag).replace(/_/g, " ") === normalized ||
+        (entry.question && norm(entry.question) === normalized)
+      ) {
+        const resolved = finishTextAnswer(question, entry.text, {
+          kind: "answer",
+          tag: entry.tag,
+        });
+        // A select mismatch degrades to skip, not todo: a demographic field
+        // must never block approval or become proposable.
+        return resolved.source.kind === "todo" ? skip : resolved;
+      }
+    }
+    return skip;
+  }
 
   // (5) file kind: only actual CV slots get the CV. A cover-letter (or any
   // other) upload is left for the human — attaching the résumé there would be
@@ -206,6 +278,10 @@ export function deriveManifest(
 
   for (const field of fields) {
     if (field.source.kind === "todo" || !field.answer) continue;
+    // An UNREVIEWED proposal is excluded like a todo: its text must never
+    // leak into a manifest, even a preview one — the manifest is the exact
+    // material a fill would type (LP-23 §2).
+    if (isUnreviewedProposal(field)) continue;
     if (field.question.kind === "file") {
       // Only ask for an upload when the manifest actually serves a file. An
       // "attach the CV" line with no `cvServe` gives the agent an instruction
@@ -277,6 +353,7 @@ export function buildKitDraft(
     manifest,
     perField,
     unresolved,
+    unreviewed: unreviewedOf(perField),
   };
 }
 
@@ -341,6 +418,9 @@ export function saveKitDraft(
   opts: { now?: Date } = {},
 ): KitDraft {
   const draft = parseKitDraft(raw);
+  // Todos the human answered become manual answers; PROPOSED fields are
+  // preserved exactly as stored — acceptance is a distinct explicit act
+  // (`jobagent accept`), never a side effect of saving (LP-23 §3).
   const perField = draft.perField.map((field) =>
     field.source.kind === "todo" && field.answer.length > 0
       ? { ...field, source: { kind: "answer", tag: "manual" } as FieldSource }
@@ -355,6 +435,7 @@ export function saveKitDraft(
     manifest: deriveManifest(pkg, perField, draft.manifest),
     perField,
     unresolved,
+    unreviewed: unreviewedOf(perField),
   };
   writeFileSync(
     join(dir, DRAFT_FILE),
@@ -378,6 +459,17 @@ export function approveKitDraft(
     throw new Error(
       `kit draft has ${draft.unresolved.length} unresolved field(s): ` +
         draft.unresolved.join(", "),
+    );
+  }
+  // Unreviewed proposals block approval unconditionally on the normal path:
+  // a proposal is the platform's words, and only an explicit owner act
+  // (`jobagent accept` / `jobagent set`) turns it into approvable material.
+  const unreviewed = draft.perField.filter(isUnreviewedProposal).map((f) => f.question.label);
+  if (unreviewed.length > 0 && !opts.force) {
+    throw new Error(
+      `kit draft has ${unreviewed.length} unreviewed proposed answer(s): ` +
+        `${unreviewed.join(", ")} — review each with \`jobagent accept\` or ` +
+        `overwrite with \`jobagent set\``,
     );
   }
   // A CV slot with no servable file is a gate, not a warning: approving it

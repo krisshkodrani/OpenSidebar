@@ -65,6 +65,45 @@ async function call(
 const str = (params: unknown, key: string): string =>
   String(((params ?? {}) as Record<string, unknown>)[key] ?? "");
 
+interface KitFieldShape {
+  question?: { label?: string };
+  answer?: string;
+  source?: unknown;
+}
+
+/** GET the kit draft, mutate its fields, PUT it back (same seam as the CLI). */
+async function mutateKitFields(
+  name: string,
+  mutate: (fields: KitFieldShape[]) => void,
+): Promise<unknown> {
+  const path = `/api/applications/${encodeURIComponent(name)}/kit-draft`;
+  const draft = (await call("GET", path)) as { perField?: KitFieldShape[]; error?: string };
+  if (draft?.error) return draft;
+  try {
+    mutate(draft.perField ?? []);
+  } catch (e) {
+    return { error: e instanceof Error ? e.message : String(e) };
+  }
+  return call("PUT", path, draft);
+}
+
+async function mutateKitField(
+  name: string,
+  label: string,
+  mutate: (field: KitFieldShape) => void,
+): Promise<unknown> {
+  return mutateKitFields(name, (fields) => {
+    const field = fields.find((f) => f.question?.label === label);
+    if (!field) {
+      throw new Error(
+        `no field labelled ${JSON.stringify(label)} — labels: ` +
+          fields.map((f) => JSON.stringify(f.question?.label)).join(", "),
+      );
+    }
+    mutate(field);
+  });
+}
+
 export default function jobagentApplyExtension(pi: ExtensionAPI): void {
   pi.registerTool({
     name: "jobagent_status",
@@ -174,6 +213,88 @@ export default function jobagentApplyExtension(pi: ExtensionAPI): void {
       // `jobagent_questions` extracted.
       return text(
         await call("POST", `/api/applications/${encodeURIComponent(name)}/kit-draft`, {}),
+      );
+    },
+  });
+
+  pi.registerTool({
+    name: "jobagent_set",
+    label: "JobAgent: set a kit field",
+    description:
+      "Write one field of the kit draft. Without `proposed`, the text is the " +
+      "OWNER's final answer (their words). With `proposed: true` you are " +
+      "recording your own draft — `basis` is then required and must name what " +
+      "the answer is grounded in (the posting's text, a CV fact, a library " +
+      "entry). Proposals stay visibly provisional and block kit approval " +
+      "until the owner accepts or overwrites them. Never propose demographic " +
+      "or EEO answers.",
+    parameters: {
+      type: "object",
+      additionalProperties: false,
+      required: ["name", "label", "text"],
+      properties: {
+        name: { type: "string", description: "The package name." },
+        label: { type: "string", description: "The field's exact label." },
+        text: { type: "string", description: "The answer text." },
+        proposed: { type: "boolean", description: "This is YOUR draft, not the owner's words." },
+        basis: { type: "string", description: "Required with proposed: what grounds this answer." },
+      },
+    } as unknown as TSchema,
+    async execute(_id, params) {
+      const p = (params ?? {}) as Record<string, unknown>;
+      if (p.proposed === true && !str(params, "basis")) {
+        return text({ error: "proposed answers require a basis naming their grounding" });
+      }
+      return text(
+        await mutateKitField(str(params, "name"), str(params, "label"), (field) => {
+          field.answer = str(params, "text");
+          field.source =
+            p.proposed === true
+              ? { kind: "proposed", basis: str(params, "basis") }
+              : { kind: "answer", tag: "owner" };
+        }),
+      );
+    },
+  });
+
+  pi.registerTool({
+    name: "jobagent_accept",
+    label: "JobAgent: accept proposed answer(s)",
+    description:
+      "Record the OWNER's adoption of proposed answer(s) — call this only " +
+      "after they explicitly said to adopt. Pass `label` for one field or " +
+      "`allProposed: true` when they said to take all remaining proposals " +
+      "(recorded distinctly as a bulk adoption).",
+    parameters: {
+      type: "object",
+      additionalProperties: false,
+      required: ["name"],
+      properties: {
+        name: { type: "string", description: "The package name." },
+        label: { type: "string", description: "One field's exact label." },
+        allProposed: { type: "boolean", description: "Adopt every remaining proposal." },
+      },
+    } as unknown as TSchema,
+    async execute(_id, params) {
+      const p = (params ?? {}) as Record<string, unknown>;
+      const all = p.allProposed === true;
+      const label = str(params, "label");
+      if (all === !!label) {
+        return text({ error: "pass exactly one of label or allProposed" });
+      }
+      return text(
+        await mutateKitFields(str(params, "name"), (fields) => {
+          let hit = 0;
+          for (const field of fields) {
+            const source = field.source as Record<string, unknown> | undefined;
+            if (source?.kind !== "proposed" || source.accepted === true) continue;
+            if (!all && field.question?.label !== label) continue;
+            source.accepted = true;
+            source.acceptedVia = all ? "bulk" : "single";
+            hit++;
+          }
+          if (hit === 0) throw new Error("no matching unaccepted proposal");
+        }),
       );
     },
   });
