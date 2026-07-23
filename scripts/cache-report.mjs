@@ -247,10 +247,20 @@ function aggregate(turns, sessions) {
     const model = turn.llmResponse.actualModel ?? turn.llmRequest?.model ?? "unknown";
     const tier = turn.llmRequest?.modelTier ?? "executor";
     const bin = binFor(turnCountBySession.get(turn.sessionId) ?? 0);
-    const keyString = `${tier}|${provider}|${model}|${bin}`;
+    // The template IS the cached prefix, so a prompt change makes two runs
+    // incomparable. Hash, not just version — an edit that skips a version bump
+    // still moves every byte after it. "unknown" = pre-#105 traces.
+    const template = turn.llmRequest?.contextMetrics?.promptTemplate;
+    const promptId = template
+      ? `${template.version}@${String(template.hash).slice(0, 8)}`
+      : "unknown";
+    const keyString = `${tier}|${provider}|${model}|${bin}|${promptId}`;
 
     if (!groups.has(keyString)) {
-      groups.set(keyString, emptyGroup({ tier, provider, model, runLengthBin: bin }));
+      groups.set(
+        keyString,
+        emptyGroup({ tier, provider, model, runLengthBin: bin, prompt: promptId }),
+      );
     }
     const group = groups.get(keyString);
     group.runs.add(turn.sessionId);
@@ -338,6 +348,7 @@ function finalizeGroup(group) {
     provider: group.provider,
     model: group.model,
     runLengthBin: group.runLengthBin,
+    prompt: group.prompt,
     runs: group.runs.size,
     coldTurns: group.coldTurns,
     warmTurns: group.warmTurns,
@@ -394,7 +405,7 @@ function finalizeGroup(group) {
 function formatGroup(group) {
   const lines = [];
   lines.push(
-    `\n── ${group.tier} · ${group.model} @ ${group.provider} · run length ${group.runLengthBin}`,
+    `\n── ${group.tier} · ${group.model} @ ${group.provider} · run length ${group.runLengthBin} · prompt ${group.prompt}`,
   );
   lines.push(
     `   ${group.runs} run(s), ${group.warmTurns} warm turn(s) (+${group.coldTurns} cold, excluded)`,
@@ -478,7 +489,7 @@ function formatComparison(baseline, current) {
   const byKey = (report) => {
     const map = new Map();
     for (const g of report.groups) {
-      map.set(`${g.tier}|${g.provider}|${g.model}|${g.runLengthBin}`, g);
+      map.set(`${g.tier}|${g.provider}|${g.model}|${g.runLengthBin}|${g.prompt}`, g);
     }
     return map;
   };
@@ -486,10 +497,15 @@ function formatComparison(baseline, current) {
   const lines = ["\n═══ A/B vs baseline ═══"];
 
   for (const group of current.groups) {
-    const key = `${group.tier}|${group.provider}|${group.model}|${group.runLengthBin}`;
+    const key = `${group.tier}|${group.provider}|${group.model}|${group.runLengthBin}|${group.prompt}`;
     const prev = before.get(key);
     if (!prev) {
-      lines.push(`\n── ${key}\n   (no matching baseline population — not compared)`);
+      // Most often this means the prompt template changed between the two runs.
+      // Refusing to compare is the point: the A/B would measure the edit.
+      lines.push(
+        `\n── ${key}\n   (no matching baseline population — not compared. ` +
+          `If only the prompt segment differs, the template changed and the A/B is invalid.)`,
+      );
       continue;
     }
     const delta = (a, b) => {

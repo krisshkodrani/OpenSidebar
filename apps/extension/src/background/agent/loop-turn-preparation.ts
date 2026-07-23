@@ -1,3 +1,4 @@
+import { listPromptDescriptors } from "../../prompts";
 import type { ToolDefinition } from "../../types";
 import type { DomSnapshot } from "../../types";
 import type { logger } from "../../utils";
@@ -22,6 +23,14 @@ import { TraceRecorder } from "./trace";
 import { withToolCapabilityCatalog } from "./tool-capabilities";
 
 type TurnPreparationLogger = Pick<typeof logger, "info">;
+
+/**
+ * Identity of the executor system-prompt template, resolved once at module load
+ * (the generated registry is static, so it cannot change within a run).
+ * Recorded per turn so cache analysis can refuse to compare populations built
+ * from different prompts — the template IS the cached prefix.
+ */
+const SYSTEM_PROMPT_IDENTITY = listPromptDescriptors(["agent.system"])[0];
 
 export type LlmTurnPreparationDeps = {
   turnCount: number;
@@ -172,6 +181,11 @@ export async function prepareLlmTurnRequest(
           stablePrefixMessages: promptDivergence.stablePrefixMessages,
           totalChars: promptFingerprint.totalChars,
           ...(prefixReset ? { prefixReset } : {}),
+        },
+        promptTemplate: {
+          id: SYSTEM_PROMPT_IDENTITY.id,
+          version: SYSTEM_PROMPT_IDENTITY.version,
+          hash: SYSTEM_PROMPT_IDENTITY.hash,
         },
         promptSections,
         structuredRuntimeState,

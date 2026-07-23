@@ -203,17 +203,35 @@ function checkTraceDir() {
   }
 }
 
-function checkPromptVersionLimitation() {
-  // RFC open question 2 (seat differences) is unanswerable partly because
-  // prompt version is not recorded per turn. Surfacing it here so the run's
-  // limitations are known going in rather than discovered during analysis.
-  check(
-    "prompt version in traces",
-    "warn",
-    "Prompt version is NOT recorded per turn, so populations cannot be split by it.",
-    "Keep the prompt template FROZEN across the baseline and the step-3 A/B, or the " +
-      "two populations are not comparable and the A/B proves nothing.",
-  );
+function checkPromptVersionStamp() {
+  // The template IS the cached prefix, so populations built from different
+  // prompts are not comparable. Stamping it per turn lets the report enforce
+  // that instead of relying on the operator to remember.
+  let bundle;
+  try {
+    bundle = bundlePath();
+  } catch {
+    return; // dist-dev check already failed and reported.
+  }
+  if (!bundle) return;
+
+  const hasStamp = readFileSync(bundle, "utf8").includes("promptTemplate");
+  if (hasStamp) {
+    check(
+      "prompt template stamped in traces",
+      "pass",
+      "Turns record the prompt id/version/hash, so the report splits populations by it " +
+        "and refuses to A/B across a template change.",
+    );
+  } else {
+    check(
+      "prompt template stamped in traces",
+      "warn",
+      "This build does not stamp the prompt template per turn.",
+      "Rebuild from a tree containing the stamp, or keep the template FROZEN across " +
+        "the baseline and the step-3 A/B by hand — otherwise the A/B measures the edit.",
+    );
+  }
 }
 
 async function main() {
@@ -221,7 +239,7 @@ async function main() {
   checkDistDev();
   await checkLogServer();
   checkTraceDir();
-  checkPromptVersionLimitation();
+  checkPromptVersionStamp();
 
   const icon = { pass: "✔", warn: "!", fail: "✘" };
   console.log("\nLP-21 observation-window preflight\n");
