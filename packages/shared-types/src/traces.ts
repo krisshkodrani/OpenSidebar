@@ -132,6 +132,24 @@ export interface TracePromptPrefixMetrics {
   prefixReset?: TracePromptPrefixReset;
 }
 
+/**
+ * Which system-prompt template produced this turn.
+ *
+ * Two prompt versions are two different populations: the template IS the cached
+ * prefix, so comparing cache metrics across a template change measures the edit,
+ * not the change under test. RFC LP-21 open question 2 ("is there a real seat
+ * difference?") is unanswerable from historical data partly because this was
+ * never recorded and the seats' traces span different prompt versions.
+ *
+ * `hash` matters as much as `version`: an edit that does not bump the version
+ * still moves every byte after it.
+ */
+export interface TracePromptTemplateIdentity {
+  id: string;
+  version: string;
+  hash: string;
+}
+
 export interface TracePromptPrefixReset {
   /** Which compaction mechanism reset the prefix. */
   cause: string;
@@ -157,6 +175,7 @@ export interface TraceContextMetrics {
    */
   cachedPrefixLength: number;
   promptPrefix?: TracePromptPrefixMetrics;
+  promptTemplate?: TracePromptTemplateIdentity;
   promptSections?: TracePromptSectionMetrics;
   contextMode?: TraceContextModeTelemetry;
   domPromptDelta?: TraceDomPromptDeltaMetrics | null;
