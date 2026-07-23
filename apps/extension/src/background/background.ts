@@ -31,6 +31,7 @@ import { registerContentScriptReadyListener } from "./tab-ready";
 import { resolveValidTabId } from "./infrastructure/tab-resolution";
 import { isUiMessageSource } from "./ui-message-source";
 import { orchestrator } from "./orchestrator";
+import { setDisabledSkillIds } from "./orchestrator/skills";
 import { PassiveMonitorController } from "./passive-monitor";
 import { transcribeWithGroq } from "./speech/groq";
 import { TabAudioCaptureController } from "./speech/tab-audio";
@@ -1378,6 +1379,9 @@ async function handleUserChat(
         );
       }
       try {
+        // Ablation switch: honored by every skill-selection path (see
+        // orchestrator/skills.ts setDisabledSkillIds).
+        setDisabledSkillIds(settings.disabledSkillIds);
         await orchestrator.startTask({
           query: agentQuery,
           tabId,
