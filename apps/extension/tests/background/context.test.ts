@@ -237,34 +237,28 @@ describe("ContextManager", () => {
   });
 
   describe("Action Trace Summarization", () => {
-    test("compresses old tool results beyond 2 most recent", () => {
-      // Add 4 tool call/result pairs
+    // LP-21 §6: retroactive truncation is GONE. It rewrote tool results that
+    // had already been sent, invalidating the cached prefix from that message
+    // onward — on every single tool call. Token savings now come only from
+    // compaction, which appends a summary and never edits what it summarises.
+    test("never rewrites a tool result that has already been sent", () => {
+      const longResult = `Success: step done.\n${"Detail line.\n".repeat(50)}`;
       for (let i = 1; i <= 4; i++) {
         context.addMessage(toolCallMsg(`call_${i}`));
-        const longResult = `Success: Step ${i} completed.\n${"Detail line.\n".repeat(50)}`;
         context.addMessage(toolResultMsg(`call_${i}`, longResult));
       }
 
-      const prompt = context.getPrompt();
-      const toolResults = prompt.filter((m) => m.role === "tool");
+      const before = context.getPrompt();
+      // Another turn's worth of traffic — what used to trigger the truncation.
+      context.addMessage(toolCallMsg("call_5"));
+      context.addMessage(toolResultMsg("call_5", longResult));
+      const after = context.getPrompt();
 
-      // The 2 most recent should be preserved (call_3, call_4)
-      // Older ones should be truncated
-      for (const result of toolResults) {
-        if (
-          result.tool_call_id === "call_3" ||
-          result.tool_call_id === "call_4"
-        ) {
-          // Recent — should be full
-          expect(result.content!.length).toBeGreaterThan(150);
-        } else if (
-          result.tool_call_id === "call_1" ||
-          result.tool_call_id === "call_2"
-        ) {
-          // Old — should be truncated
-          expect(result.content).toContain("[truncated]");
-          expect(result.content!.length).toBeLessThan(200);
-        }
+      const byId = (msgs: typeof before, id: string) =>
+        msgs.find((m) => m.role === "tool" && m.tool_call_id === id);
+      for (const id of ["call_1", "call_2", "call_3", "call_4"]) {
+        expect(byId(after, id)?.content).toBe(byId(before, id)?.content);
+        expect(byId(after, id)?.content).not.toContain("[truncated]");
       }
     });
 
@@ -323,53 +317,6 @@ describe("ContextManager", () => {
       expect(discResult!.content).not.toContain("[truncated]");
     });
 
-    test("truncates discovery tool results above 500 chars", () => {
-      // Old discovery tool call with a 600-char single-line result (over 500 limit)
-      context.addMessage(toolCallMsg("call_js", "execute_js"));
-      const longResult = "Computed values: " + "y".repeat(583);
-      context.addMessage(toolResultMsg("call_js", longResult)); // 600 chars
-
-      // Push past preserveRecent
-      for (let i = 1; i <= 3; i++) {
-        context.addMessage(toolCallMsg(`call_${i}`, "click_element"));
-        context.addMessage(toolResultMsg(`call_${i}`, `Clicked element ${i}`));
-      }
-
-      const prompt = context.getPrompt();
-      const jsResult = prompt.find(
-        (m) => m.role === "tool" && m.tool_call_id === "call_js",
-      );
-
-      expect(jsResult).toBeDefined();
-      expect(jsResult!.content).toContain("[truncated]");
-      // Snippet should be 400 chars (discovery snippet limit), longer than action's 100
-      const snippetLength = jsResult!.content!.replace(" [truncated]", "").length;
-      expect(snippetLength).toBeGreaterThan(100);
-      expect(snippetLength).toBeLessThanOrEqual(400);
-    });
-
-    test("action tool results still truncate at 150 chars", () => {
-      // Old action tool call with a 200-char result
-      context.addMessage(toolCallMsg("call_click", "click_element"));
-      const actionResult = "Clicked successfully.\n" + "z".repeat(179);
-      context.addMessage(toolResultMsg("call_click", actionResult)); // 200 chars
-
-      // Push past preserveRecent
-      for (let i = 1; i <= 3; i++) {
-        context.addMessage(toolCallMsg(`call_${i}`, "type_text"));
-        context.addMessage(toolResultMsg(`call_${i}`, `Typed text ${i}`));
-      }
-
-      const prompt = context.getPrompt();
-      const clickResult = prompt.find(
-        (m) => m.role === "tool" && m.tool_call_id === "call_click",
-      );
-
-      expect(clickResult).toBeDefined();
-      expect(clickResult!.content).toContain("[truncated]");
-      // Snippet should be at most 100 chars + " [truncated]"
-      expect(clickResult!.content!.length).toBeLessThanOrEqual(112);
-    });
   });
 
   describe("clearHistory", () => {
