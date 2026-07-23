@@ -73,6 +73,17 @@ describe("extractListing", () => {
     expect(listing.title).toBe("AI Engineer");
   });
 
+  test("parses JSON wrapped in a markdown code fence", async () => {
+    // Observed live: the extractor wraps its JSON in ```json … ``` often enough
+    // that treating it as unparseable fails a real run.
+    const bridge = fakeBridge(
+      okResult('```json\n{"title":"AI Engineer","company":"Acme"}\n```'),
+    );
+    const listing = await extractListing(bridge.call, "https://b.example/1");
+    expect(listing.title).toBe("AI Engineer");
+    expect(listing.company).toBe("Acme");
+  });
+
   test("missing fields become empty strings, never invented values", async () => {
     const bridge = fakeBridge(okResult({ title: "AI Engineer" }));
     const listing = await extractListing(bridge.call, "https://b.example/1");

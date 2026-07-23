@@ -224,7 +224,10 @@ export function deriveManifest(
   }
 
   return {
-    formUrl: existing?.formUrl ?? pkg.sourceUrl ?? "",
+    // The package's formUrl wins over sourceUrl: a posting page and its
+    // application form are usually different URLs, and filling the posting
+    // would find no form at all.
+    formUrl: existing?.formUrl ?? pkg.formUrl ?? pkg.sourceUrl ?? "",
     maxTurns: existing?.maxTurns ?? 40,
     ...(existing?.cvServe ? { cvServe: existing.cvServe } : {}),
     promptLines,
