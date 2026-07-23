@@ -162,7 +162,9 @@ function resolveFormUrl(name: string): string | undefined {
     const dir = resolveApplicationDir(name);
     const manifest = loadFillManifest(dir);
     if (manifest?.formUrl) return manifest.formUrl;
-    return loadApplicationPackage(dir)?.sourceUrl || undefined;
+    const pkg = loadApplicationPackage(dir);
+    // formUrl before sourceUrl: the form is often on a separate ATS page.
+    return pkg?.formUrl || pkg?.sourceUrl || undefined;
   } catch {
     return undefined;
   }

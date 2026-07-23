@@ -394,7 +394,12 @@ export class RunManager {
       snippet: extracted.snippet || undefined,
     };
     try {
-      const outcome = recordDiscovery(listing, criteria, { name });
+      const outcome = recordDiscovery(listing, criteria, {
+        name,
+        // Carry the form URL the posting linked to; without it the kit's
+        // formUrl falls back to the posting and a fill opens the wrong page.
+        formUrl: extracted.applyUrl,
+      });
       if (outcome.outcome === "created") {
         this.deps.emit({ type: "queue-changed", data: { name: outcome.name } });
         return {

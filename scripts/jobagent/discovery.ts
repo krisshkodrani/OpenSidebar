@@ -405,7 +405,7 @@ export type DiscoveryOutcome =
 export function recordDiscovery(
   listing: DiscoveredListing,
   criteria: SearchCriteria,
-  opts: { now?: Date; name?: string } = {},
+  opts: { now?: Date; name?: string; formUrl?: string } = {},
 ): DiscoveryOutcome {
   for (const field of ["title", "company", "url", "source"] as const) {
     if (!nonEmptyString(listing[field])) {
@@ -432,6 +432,9 @@ export function recordDiscovery(
     company: listing.company,
     roleTitle: listing.title,
     sourceUrl: listing.url,
+    // Only recorded when the form genuinely lives elsewhere; equal to the
+    // posting means there is nothing extra to remember.
+    ...(opts.formUrl && opts.formUrl !== listing.url ? { formUrl: opts.formUrl } : {}),
     dateFound: now.toISOString().slice(0, 10),
     status: "reviewing",
     ...(assessment.risks.length > 0 ? { risks: assessment.risks } : {}),

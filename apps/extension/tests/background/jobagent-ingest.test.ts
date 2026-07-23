@@ -266,6 +266,31 @@ describe("ingest", () => {
     expect(readJson(reply.body.name, "application-package.json").company).toBe("board.example");
   });
 
+  test("records the form URL when the posting links one elsewhere", async () => {
+    seedCriteria();
+    const world = makeWorld();
+    await world.manager.start();
+    world.replies.push(listingReply({ applyUrl: "https://ats.example/apply/1" }));
+
+    await world.manager.ingestUrl("https://board.example/jobs/1");
+
+    // Without this the kit's formUrl falls back to the POSTING url and a fill
+    // opens the job board, where there is no form to fill.
+    const pkg = readJson("acme-ai-engineer", "application-package.json");
+    expect(pkg.sourceUrl).toBe("https://board.example/jobs/1");
+    expect(pkg.formUrl).toBe("https://ats.example/apply/1");
+  });
+
+  test("a form URL equal to the posting is not recorded twice", async () => {
+    seedCriteria();
+    const world = makeWorld();
+    await world.manager.start();
+    world.replies.push(listingReply({ applyUrl: "https://board.example/jobs/1" }));
+
+    await world.manager.ingestUrl("https://board.example/jobs/1");
+    expect(readJson("acme-ai-engineer", "application-package.json").formUrl).toBeUndefined();
+  });
+
   test("an explicit name overrides the derived one", async () => {
     seedCriteria();
     const world = makeWorld();
