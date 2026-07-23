@@ -9,6 +9,22 @@ export enum CompressionLevel {
   HEAVY = "heavy",
 }
 
+/** Numeric ordering for CompressionLevel — used by maxCompressionLevel(). */
+const COMPRESSION_ORDER: Record<CompressionLevel, number> = {
+  [CompressionLevel.NONE]: 0,
+  [CompressionLevel.LIGHT]: 1,
+  [CompressionLevel.MEDIUM]: 2,
+  [CompressionLevel.HEAVY]: 3,
+};
+
+/** Return the higher (more aggressive) of two compression levels. */
+export function maxCompressionLevel(
+  a: CompressionLevel,
+  b: CompressionLevel,
+): CompressionLevel {
+  return COMPRESSION_ORDER[a] >= COMPRESSION_ORDER[b] ? a : b;
+}
+
 export interface ContextMetrics {
   systemTokens: number;
   historyTokens: number;
