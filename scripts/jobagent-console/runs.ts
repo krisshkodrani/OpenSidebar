@@ -43,7 +43,13 @@ import {
   type CvServer,
   type DiscoveredListing,
 } from "../jobagent/index";
-import { extractListing, extractQuestions } from "./browser-ops";
+import { resolveListing, resolveQuestions, type FetchLike } from "../jobagent/ats/index";
+import type { FormQuestion } from "../jobagent/drafting";
+import {
+  extractListing,
+  extractQuestions,
+  type ExtractedListing,
+} from "./browser-ops";
 import type { ConsoleEvent } from "./events";
 
 /* ── Injectable seam ──────────────────────────────────────── */
@@ -79,6 +85,12 @@ export interface RunManagerDeps {
   probeTraceServer?(): Promise<boolean>;
   /** Append one line to a run's durable log (defaults to the seed dir). */
   appendRunLog?(runId: string, line: string): void;
+  /**
+   * HTTP fetch for the LP-23 parse-first tiers (ATS APIs, static HTML).
+   * Injected so offline tests never touch the network; production uses
+   * global fetch.
+   */
+  atsFetch?: FetchLike;
 }
 
 /* ── Records ──────────────────────────────────────────────── */
@@ -287,7 +299,7 @@ export class RunManager {
     return { status: 200, body: { runId: run.id } };
   }
 
-  /* — read-only page extractions (RFC LP-22) — */
+  /* — read-only page extractions (RFC LP-22; tiered per LP-23) — */
 
   /**
    * A bridge we may use right now, or an error explaining why not.
@@ -295,7 +307,9 @@ export class RunManager {
    * Extractions are quick and read-only, but they share the one WS bridge with
    * runs — and a discovery run hands that port to pi entirely. Refusing while a
    * run is active is honest; queueing behind the mutex would make a "quick
-   * assess" silently block for the length of a fill.
+   * assess" silently block for the length of a fill. NOTE: this constraint now
+   * applies only to the browser tier — an adapter hit (LP-23 tiers 1–2) is a
+   * plain HTTP fetch and runs regardless of bridge state.
    */
   private availableBridge(): { bridge: ConsoleBridge } | { error: string } {
     if (this.hasActiveRun()) {
@@ -305,41 +319,66 @@ export class RunManager {
     return { bridge: this.bridge };
   }
 
+  /**
+   * A listing for `url`, parse-first: ATS adapter → JSON-LD → browser. The
+   * error return carries the tier-3 refusal (bridge busy/down) or extraction
+   * failure; adapter tiers never produce user-facing errors, only fallback.
+   */
+  private async fetchListing(
+    url: string,
+  ): Promise<
+    | { listing: ExtractedListing & { tier: string } }
+    | { status: number; error: string }
+  > {
+    const parsed = await resolveListing(url, this.deps.atsFetch ?? fetch);
+    if (parsed) return { listing: parsed };
+    const available = this.availableBridge();
+    if ("error" in available) return { status: 409, error: available.error };
+    try {
+      const extracted = await extractListing(
+        available.bridge.call.bind(available.bridge),
+        url,
+      );
+      return { listing: { ...extracted, tier: "browser" } };
+    } catch (e) {
+      return { status: 502, error: e instanceof Error ? e.message : String(e) };
+    }
+  }
+
   /** Score a posting URL against the criteria. Writes nothing. */
   async assessUrl(url: string): Promise<{ status: number; body: unknown }> {
-    const available = this.availableBridge();
-    if ("error" in available) return { status: 409, body: { error: available.error } };
     let criteria;
     try {
       criteria = loadSearchCriteria();
     } catch (e) {
       return { status: 409, body: { error: e instanceof Error ? e.message : String(e) } };
     }
-    try {
-      const extracted = await extractListing(available.bridge.call.bind(available.bridge), url);
-      const listing: DiscoveredListing = {
-        title: extracted.title,
-        company: extracted.company,
-        url,
-        source: "assess",
-        location: extracted.location || undefined,
-        snippet: extracted.snippet || undefined,
-      };
-      const assessment = scoreListing(listing, criteria);
-      return {
-        status: 200,
-        body: {
-          url,
-          listing,
-          match: assessment.match,
-          reasons: assessment.reasons,
-          risks: assessment.risks,
-          applyUrl: extracted.applyUrl,
-        },
-      };
-    } catch (e) {
-      return { status: 502, body: { error: e instanceof Error ? e.message : String(e) } };
+    const fetched = await this.fetchListing(url);
+    if ("error" in fetched) {
+      return { status: fetched.status, body: { error: fetched.error } };
     }
+    const extracted = fetched.listing;
+    const listing: DiscoveredListing = {
+      title: extracted.title,
+      company: extracted.company,
+      url,
+      source: "assess",
+      location: extracted.location || undefined,
+      snippet: extracted.snippet || undefined,
+    };
+    const assessment = scoreListing(listing, criteria);
+    return {
+      status: 200,
+      body: {
+        url,
+        listing,
+        match: assessment.match,
+        reasons: assessment.reasons,
+        risks: assessment.risks,
+        applyUrl: extracted.applyUrl,
+        tier: extracted.tier,
+      },
+    };
   }
 
   /**
@@ -353,20 +392,17 @@ export class RunManager {
     url: string,
     opts: { source?: string; name?: string } = {},
   ): Promise<{ status: number; body: unknown }> {
-    const available = this.availableBridge();
-    if ("error" in available) return { status: 409, body: { error: available.error } };
     let criteria;
     try {
       criteria = loadSearchCriteria();
     } catch (e) {
       return { status: 409, body: { error: e instanceof Error ? e.message : String(e) } };
     }
-    let extracted;
-    try {
-      extracted = await extractListing(available.bridge.call.bind(available.bridge), url);
-    } catch (e) {
-      return { status: 502, body: { error: e instanceof Error ? e.message : String(e) } };
+    const fetched = await this.fetchListing(url);
+    if ("error" in fetched) {
+      return { status: fetched.status, body: { error: fetched.error } };
     }
+    const extracted = fetched.listing;
     // A title is genuinely required: the criteria match is a role-phrase test
     // against it, so without one there is nothing to assess and any verdict
     // would be invented.
@@ -428,13 +464,26 @@ export class RunManager {
     name: string,
     formUrl: string,
   ): Promise<{ status: number; body: unknown }> {
-    const available = this.availableBridge();
-    if ("error" in available) return { status: 409, body: { error: available.error } };
-    let extracted;
-    try {
-      extracted = await extractQuestions(available.bridge.call.bind(available.bridge), formUrl);
-    } catch (e) {
-      return { status: 502, body: { error: e instanceof Error ? e.message : String(e) } };
+    // Parse-first (LP-23): an ATS adapter that knows this form's API or
+    // server-rendered page needs no bridge and captures select options
+    // verbatim — the thing the browser tier demonstrably lost.
+    let extracted: {
+      questions: FormQuestion[];
+      partial: boolean;
+      pageNote: string;
+      tier?: string;
+    } | null = await resolveQuestions(formUrl, this.deps.atsFetch ?? fetch);
+    if (!extracted) {
+      const available = this.availableBridge();
+      if ("error" in available) return { status: 409, body: { error: available.error } };
+      try {
+        extracted = await extractQuestions(
+          available.bridge.call.bind(available.bridge),
+          formUrl,
+        );
+      } catch (e) {
+        return { status: 502, body: { error: e instanceof Error ? e.message : String(e) } };
+      }
     }
     if (extracted.partial) {
       return {
@@ -454,7 +503,14 @@ export class RunManager {
     writeFileSync(path, JSON.stringify(extracted.questions, null, 2) + "\n", "utf8");
     return {
       status: 200,
-      body: { name, formUrl, path, count: extracted.questions.length, questions: extracted.questions },
+      body: {
+        name,
+        formUrl,
+        path,
+        count: extracted.questions.length,
+        questions: extracted.questions,
+        tier: extracted.tier ?? "browser",
+      },
     };
   }
 

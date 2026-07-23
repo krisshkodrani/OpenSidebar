@@ -1,8 +1,14 @@
 # RFC LP-23 — Parse-First Discovery and Tentative Kits (link → table → iterate → fill)
 
-Lifecycle status: **Draft (not stamped)** — awaiting a Decision Stamp before implementation. Back to the LP-18/19/20 house rule: LP-22's build-ahead-of-stamp sequence was a one-off on explicit owner instruction, not precedent.
+Lifecycle status: **Decision stamped**
 Date: 2026-07-23
-Scope: new `scripts/jobagent/ats/` adapter layer (Ashby, Greenhouse, Lever, generic HTML) with a three-tier fetch; a fourth field provenance (`proposed`) plus a per-field review marker in the kit-draft schema; two CLI verbs (`set`, `accept`) and a `--tentative` drafting mode; `approve-kit` refusal rule extended; wrapper updates in `skills/jobagent/`. The daemon stays LLM-free. **Neither human gate is removed; the kit gate gains a stricter refusal condition.**
+Decision date: 2026-07-23 (owner approved the implementation plan in session,
+which stamped this RFC with three question resolutions: **demographics resolve
+from explicit library entries only and are never proposed** — a refinement of
+§2's original skip-always; **bulk accept kept** as a distinct logged act
+(`acceptedVia: "bulk"`); **long text flows via `set --file`**, no new verb.
+Stamp-then-build order restored after LP-22's one-off inversion.)
+Scope: new `scripts/jobagent/ats/` adapter layer (Ashby, Greenhouse, Lever, generic HTML) with a three-tier fetch; a fourth field provenance (`proposed`) plus a per-field review marker in the kit-draft schema; two CLI verbs (`set`, `accept`); `approve-kit` refusal rule extended; wrapper updates in `skills/jobagent/`. The daemon stays LLM-free. **Neither human gate is removed; the kit gate gains a stricter refusal condition.** (The drafted `--tentative` mode was dropped in implementation: the platform proposes via `set --proposed`, so the daemon needs no mode at all.)
 Related: RFC LP-22 (this amends its §6 "hand-authored library stays canonical" boundary); RFC LP-20 (free-text drafting — stays parked as written; §4 below supersedes its scope with a containment story it lacked); [JobAgent README](../../../scripts/jobagent/README.md) (safety model); issue #110 (cvServe derivation — orthogonal, unchanged by this RFC)
 
 ## Problem
@@ -156,6 +162,22 @@ canonical" is amended to: **the library stays the only source that resolves
 without review; everything else is proposed and gated.** The 2026-07-18
 lesson that motivated the original rule — four confidently-wrong answers with
 clean provenance — is answered by the review marker, not by prohibition.
+
+## Phase 0 findings (2026-07-23, verified live)
+
+Recorded payloads live as trimmed fixtures under
+`apps/extension/tests/background/fixtures/ats/`.
+
+| ATS | Listing | Questions | Demographics |
+| --- | --- | --- | --- |
+| Ashby | tier 1: `api.ashbyhq.com/posting-api/job-board/<org>` ✓ (no org display name); tier 2: page `window.__appData.posting` ✓ (adds `organization.name`) | **neither carries the form** (verified against the live EM-EU posting) — browser tier only | n/a (browser tier) |
+| Greenhouse | tier 1: `boards-api…/jobs/<id>` ✓ | tier 1 `?questions=true` ✓ — kinds, required flags, **full option lists** (real 197-option country select, 7-option visa select) | structural: `demographic_questions` + `compliance[].type === "eeoc"` → flagged `demographic: true` |
+| Lever | tier 1: `api.lever.co/v0/postings/<org>/<id>` ✓ | tier 2: apply page is server-rendered — labels, required marks, selects, checkbox groups parse structurally | keyword matcher (no structural separation) |
+
+Notes: several well-known orgs probed for Lever fixtures had migrated off
+(empty boards) — adapter recognition is by URL shape, so dead boards cost one
+404 and fall through. Greenhouse embed URLs
+(`/embed/job_app?for=<board>&token=<id>`) resolve to the same API.
 
 ## Non-goals
 

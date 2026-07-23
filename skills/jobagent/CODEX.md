@@ -34,6 +34,12 @@ that says what to do about it.
 
 **When the daemon is down** (exit code 2), say so and stop.
 
+**The tentative table.** Render the kit as a plain-text table keeping the
+provenance column — `PROPOSED ⚠` rows must be distinguishable from
+library-resolved rows at a glance. Write long proposals to files and record
+them via `set … --file`. After presenting the table, STOP; record `accept`
+only for fields the human explicitly adopted, `set` for their own wording.
+
 ## Worked shape
 
 ```
@@ -43,8 +49,10 @@ pnpm run jobagent assess <url>
 pnpm run jobagent ingest <url> --source websearch
 pnpm run jobagent questions <name>
 pnpm run jobagent draft <name>
-   → ask the unresolved questions, STOP
-pnpm run jobagent edit-draft <name> <file>
+pnpm run jobagent set <name> "<label>" --file essay.md --proposed --basis "…"
+   → present the table, STOP
+pnpm run jobagent set <name> "<label>" "<their words>"
+pnpm run jobagent accept <name> "<label>"
    → ask whether to approve the kit, STOP
 pnpm run jobagent approve-kit <name> --promote
 pnpm run jobagent fill <name> --follow

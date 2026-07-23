@@ -164,8 +164,11 @@ iterate → agree → fill — structurally impossible. LP-23 proposes parse-fir
 discovery (ATS JSON APIs → static HTML → OpenSidebar as fallback; filling
 always stays OpenSidebar) and a `proposed` field provenance with per-field
 review, which un-parks LP-20's substance under containment LP-20 lacked.
-Demographic/EEO questions are never proposed. **Draft, not stamped — back to
-the stamp-then-build house rule**; ends with a Recommended Decision.
+Demographic/EEO questions are never proposed (they resolve from explicit
+library entries only — owner decision at the stamp). **Decision stamped
+2026-07-23** via the approved implementation plan, stamp-then-build order
+restored; phases 0–4 implemented the same day with phase-0 findings recorded
+in the RFC.
 
 | # | RFC | Problem | Depends on |
 | --- | --- | --- | --- |
