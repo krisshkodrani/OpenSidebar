@@ -11,6 +11,7 @@ export type E2EFocusSuiteName =
   | "memory-regression"
   | "multi-turn-workflows"
   | "escalation-rescue"
+  | "cache-long-run"
   | "arena";
 export type E2ESuiteName = E2EDefaultSuiteName | E2EFocusSuiteName;
 
@@ -89,6 +90,10 @@ export const E2E_SUITES: Record<E2ESuiteName, readonly string[]> = {
     "memory-recall-dashboard.test.ts",
   ],
   "multi-turn-workflows": ["multi-turn-workflows.test.ts"],
+  // Produces the long-run population the LP-21 cache work needs (issue #103).
+  // The staged suites never reach the lengths where compaction fires, so a
+  // cache A/B run on them cannot see the mechanism under test.
+  "cache-long-run": ["cache-long-run-sweep.test.ts"],
   "escalation-rescue": ["escalation-rescue.test.ts"],
   arena: ["arena-suite.test.ts"],
 };
@@ -108,6 +113,7 @@ export const E2E_FOCUS_SUITE_ORDER: readonly E2EFocusSuiteName[] = [
   "memory-regression",
   "multi-turn-workflows",
   "escalation-rescue",
+  "cache-long-run",
   "arena",
 ];
 
