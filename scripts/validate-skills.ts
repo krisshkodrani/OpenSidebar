@@ -121,13 +121,20 @@ function validateDescriptor(
     );
   }
 
-  const memoryScope = descriptor.memoryScope ?? descriptor.contextScope;
+  // The runtime field is `contextScope`; `memoryScope` was a disk-only alias
+  // that let the two copies drift apart unnoticed (2026-07-23 skills audit).
+  if (descriptor.memoryScope !== undefined) {
+    errors.push(
+      `${formatPath(descriptorPath)} uses "memoryScope" — rename to "contextScope" (the runtime field name)`,
+    );
+  }
+  const contextScope = descriptor.contextScope;
   if (
-    memoryScope !== undefined &&
-    (typeof memoryScope !== "string" || !allowedMemoryScope.has(memoryScope))
+    contextScope !== undefined &&
+    (typeof contextScope !== "string" || !allowedMemoryScope.has(contextScope))
   ) {
     errors.push(
-      `${formatPath(descriptorPath)} memoryScope/contextScope must be one of ${[
+      `${formatPath(descriptorPath)} contextScope must be one of ${[
         ...allowedMemoryScope,
       ].join(", ")}`,
     );

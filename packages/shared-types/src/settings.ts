@@ -74,6 +74,11 @@ export interface UserSettings {
   laneTopologyMode?: LaneTopologyMode;
   /** Enabled optional built-in skill packs. Defaults to DEFAULT_ENABLED_SKILL_PACK_IDS. */
   enabledSkillPackIds?: string[];
+  /**
+   * Skill ids excluded from selection — the ablation switch. Lets a run (or an
+   * A/B eval) execute with specific skills off without editing the catalog.
+   */
+  disabledSkillIds?: string[];
   /** Override executor model. Must support screenshots and tool calling. */
   executorModel?: string;
   /** Override planner model. */

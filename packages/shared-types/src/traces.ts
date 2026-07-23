@@ -118,12 +118,20 @@ export interface TracePromptPrefixMetrics {
   firstDivergenceMessageIndex: number | null;
   /** Char offset of the first divergence (block-aligned lower bound). */
   firstDivergenceOffset: number | null;
-  /** "system" / "history" are defects; "volatile_tail" is by design. */
-  firstDivergenceRegion: "system" | "history" | "volatile_tail" | "none";
+  /**
+   * "system" / "history" are defects; "volatile_tail" is by design. "tools" is
+   * a changed or reordered function-tool array — it serializes ahead of every
+   * message, so it invalidates the whole cached prefix.
+   */
+  firstDivergenceRegion: "tools" | "system" | "history" | "volatile_tail" | "none";
   stablePrefixChars: number;
   stablePrefixPct: number;
   stablePrefixMessages: number;
   totalChars: number;
+  /** How the tools array changed vs the previous turn (LP-21 tools region). */
+  toolsChange?: "none" | "reordered" | "set_changed" | "unknown";
+  /** Number of tools sent this turn; null when tools were not fingerprinted. */
+  toolsCount?: number | null;
   /**
    * Set when this turn's prompt prefix was deliberately reset by history
    * compaction. A cache miss on such a turn is expected and one-time; a miss

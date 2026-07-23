@@ -87,7 +87,10 @@ export async function prepareLlmTurnRequest(
   // LP-21 §9. Computed unconditionally — the fingerprint has to carry to the
   // next turn whether or not a trace recorder is attached, and a divergence
   // measured only on traced runs would miss the runs we most want to explain.
-  const promptFingerprint = fingerprintPrompt(messages);
+  // Tools are fingerprinted too: the profile pipeline filters AND reorders the
+  // array per turn, and providers serialize it ahead of every message — churn
+  // there breaks the cache with zero message-level divergence to show for it.
+  const promptFingerprint = fingerprintPrompt(messages, tools);
   const promptDivergence = comparePromptPrefix(
     deps.previousPromptFingerprint ?? null,
     promptFingerprint,
@@ -106,6 +109,7 @@ export async function prepareLlmTurnRequest(
     toolCount: tools.length,
     prefixStablePct: promptDivergence.stablePrefixPct,
     prefixDivergesIn: promptDivergence.firstDivergenceRegion,
+    prefixToolsChange: promptDivergence.toolsChange,
     prefixReset: prefixReset?.cause,
   });
 
@@ -184,6 +188,8 @@ export async function prepareLlmTurnRequest(
           stablePrefixPct: promptDivergence.stablePrefixPct,
           stablePrefixMessages: promptDivergence.stablePrefixMessages,
           totalChars: promptFingerprint.totalChars,
+          toolsChange: promptDivergence.toolsChange,
+          toolsCount: promptFingerprint.toolsCount ?? null,
           ...(prefixReset ? { prefixReset } : {}),
         },
         promptTemplate: {

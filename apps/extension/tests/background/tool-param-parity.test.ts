@@ -20,6 +20,9 @@ import { fileURLToPath } from "node:url";
 import ts from "typescript";
 import "../setup";
 import * as toolDefs from "../../src/background/tools/definitions";
+// The ServiceNow adapter owns its own definitions; without this import the two
+// most complex schemas in the system would silently skip every parity check.
+import * as servicenowDefs from "../../src/background/tools/servicenow/definitions";
 import { ToolName, type ToolDefinition } from "../../src/types";
 
 const here = dirname(fileURLToPath(import.meta.url));
@@ -51,7 +54,7 @@ function isToolDefinition(value: unknown): value is ToolDefinition {
 
 /** All runtime definitions, keyed by wire name (`def.function.name`). */
 const defsByWireName = new Map<string, ToolDefinition>(
-  Object.values(toolDefs)
+  [...Object.values(toolDefs), ...Object.values(servicenowDefs)]
     .filter(isToolDefinition)
     .map((def) => [def.function.name, def]),
 );
@@ -106,15 +109,24 @@ function parseArgsInterfaces(): Map<string, Member[]> {
   );
   const interfaces = new Map<string, Member[]>();
   for (const statement of source.statements) {
-    if (!ts.isInterfaceDeclaration(statement)) continue;
-    if (!statement.name.text.endsWith("Args")) continue;
-    interfaces.set(
-      statement.name.text.toLowerCase(),
-      statement.members.filter(ts.isPropertySignature).map((member) => ({
-        name: propertyName(member.name, source),
-        optional: member.questionToken !== undefined,
-      })),
-    );
+    if (ts.isInterfaceDeclaration(statement) && statement.name.text.endsWith("Args")) {
+      interfaces.set(
+        statement.name.text.toLowerCase(),
+        statement.members.filter(ts.isPropertySignature).map((member) => ({
+          name: propertyName(member.name, source),
+          optional: member.questionToken !== undefined,
+        })),
+      );
+      continue;
+    }
+    // Argless tools use `type XxxArgs = Record<string, never>` — zero members.
+    if (
+      ts.isTypeAliasDeclaration(statement) &&
+      statement.name.text.endsWith("Args") &&
+      statement.type.getText(source).replace(/\s/g, "") === "Record<string,never>"
+    ) {
+      interfaces.set(statement.name.text.toLowerCase(), []);
+    }
   }
   return interfaces;
 }
@@ -194,10 +206,16 @@ describe("tool parameter parity (schema ↔ args interface)", () => {
     return members ? [{ wire, enumMember, def, members }] : [];
   });
 
-  test("the convention-based pairing actually matched a meaningful set", () => {
-    // If a rename breaks the CLICK_ELEMENT -> ClickElementArgs convention, the
-    // per-tool tests silently vanish; this floor makes that failure loud.
-    expect(paired.length).toBeGreaterThanOrEqual(30);
+  test("EVERY tool definition is paired with an args interface", () => {
+    // A tool that falls out of the CLICK_ELEMENT -> ClickElementArgs naming
+    // convention silently loses its per-tool parity tests. Exact coverage
+    // makes that failure loud: adding a tool without an args interface (or
+    // renaming one) must fail here, not vanish.
+    const unpaired = [...defsByWireName.keys()].filter(
+      (wire) => !paired.some((p) => p.wire === wire),
+    );
+    expect(unpaired).toEqual([]);
+    expect(paired.length).toBe(defsByWireName.size);
   });
 
   test.each(paired.map((p) => [p.wire, p] as const))(
