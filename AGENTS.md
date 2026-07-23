@@ -184,6 +184,20 @@ filter/sort, dashboard/chart extraction, knowledge-search answer extraction, cat
 ordering, multi-tab checklist work, infeasible-task clarification. Keep skills as broad
 as the workflow allows.
 
+## JobAgent
+
+A reference workflow (not a product feature) that drives the browser agent
+through a supervised job-application loop. To operate it, read
+`skills/jobagent/SKILL.md` — the verb table, judgment rules, and gate protocol
+live there, and platform notes live beside it (`CODEX.md`, and
+`.claude/skills/jobagent/SKILL.md` for Claude Code). Deliberately not repeated
+here: one copy, enforced by `scripts/skill-lint.mjs`.
+
+Two properties matter if you touch it: the pipeline's lifecycle is written only
+by `recordStatus`, and both human gates (`approve-kit` before any fill, `decide`
+before any submit) are mandatory. Design and rationale: RFC LP-22. Safety model:
+`scripts/jobagent/README.md`.
+
 ## E2E Workflow
 
 - Prefer staged execution via `scripts/run-e2e-staged.ts`. Run `easy` → `medium` → `hard` unless scoped to one failing test.
