@@ -41,6 +41,30 @@ describe("plan-board-view", () => {
     });
   });
 
+  test("derivePlanRows carries the planner display label through (LP: RunCard readability)", () => {
+    const rows = derivePlanRows(
+      {
+        taskId: "task-1",
+        currentIndex: 0,
+        totalTurnsUsed: 0,
+        subtasks: [
+          {
+            description:
+              "Complete these steps in order on the current page: Close any popup dialogs; Set the notification email field; Click the delete account button",
+            label: "Dismiss popups · Set email · Delete account",
+            status: "running",
+            turnsUsed: 0,
+            turnBudget: 5,
+          },
+        ],
+      },
+      null,
+    );
+    expect(rows[0].label).toBe("Dismiss popups · Set email · Delete account");
+    // The precise instruction is preserved untouched alongside it.
+    expect(rows[0].description).toContain("Complete these steps in order");
+  });
+
   test("derivePlanRows maps completion rows when progress is absent", () => {
     const rows = derivePlanRows(null, {
       taskId: "task-2",

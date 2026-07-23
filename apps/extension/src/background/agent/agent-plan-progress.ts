@@ -11,6 +11,8 @@ type MutablePlanSubtask = Pick<
 export interface RestorablePlanState {
   subtasks: Array<{
     description: string;
+    /** Planner-authored display summary; rides through to SubtaskSummary. */
+    label?: string;
     successCriteria?: string;
     status: SubtaskSummary["status"];
     turnsUsed?: number;
@@ -61,6 +63,7 @@ export function buildRestoredPlanState(
   return {
     planSubtasks: initialPlanState.subtasks.map((subtask) => ({
       description: subtask.description,
+      ...(subtask.label ? { label: subtask.label } : {}),
       status: subtask.status,
       turnsUsed: subtask.turnsUsed ?? 0,
       turnBudget: subtask.turnBudget ?? 0,

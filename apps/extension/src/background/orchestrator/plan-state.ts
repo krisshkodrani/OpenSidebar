@@ -61,6 +61,7 @@ export function buildInitialPlanState(
       const toolProfile = getNodeToolProfile(node);
       return {
         description: node.description,
+        ...(node.displayLabel ? { label: node.displayLabel } : {}),
         successCriteria: node.successCriteria,
         status: node.status,
         turnsUsed: 0,
