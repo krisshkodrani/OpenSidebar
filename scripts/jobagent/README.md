@@ -43,10 +43,31 @@ implementation.
 
 - `scripts/jobagent/` — pure host-side logic (paths, package/lifecycle, manifest,
   brief assembly, discovery, drafting, answers, CV serve). No extension imports.
-- `scripts/jobagent-console/` — a standalone loopback backend + single-file UI
-  (`pnpm run jobagent` → `http://127.0.0.1:7591`): queue review, answer library,
-  kit drafting, and the approval inbox. Owns the WS bridge directly.
+- `scripts/jobagent-console/` — a standalone **headless** loopback daemon
+  (`pnpm run jobagent serve` → `http://127.0.0.1:7591`) plus the CLI verb
+  surface that fronts it (`pnpm run jobagent help`): queue review, answer
+  library, kit drafting, run orchestration, and the approval inbox. The daemon
+  owns the WS bridge directly. There is no bundled web UI — it was removed in
+  favour of the CLI so agent-platform skills and a human terminal share one
+  tested surface.
 - `.pi/extensions/jobagent.ts` — the pi-side reference driver over the bridge.
+
+## Driving it
+
+```
+pnpm run jobagent serve                  # daemon (owns the WS bridge)
+pnpm run jobagent status                 # daemon + bridge + active run
+pnpm run jobagent queue                  # packages and their lifecycle status
+pnpm run jobagent draft <name> q.json    # build a kit draft from the library
+pnpm run jobagent approve-kit <name> --promote
+pnpm run jobagent fill <name> --follow   # fills only; never submits
+pnpm run jobagent submit <name> --follow # pauses at the approval gate
+pnpm run jobagent decide <approvalId> approve
+```
+
+`--follow` streams a run's log and **returns control at the approval gate**
+rather than waiting through it — the human decision is a separate, deliberate
+`decide` call. Add `--json` to any verb for raw API output.
 
 ## Proven state
 

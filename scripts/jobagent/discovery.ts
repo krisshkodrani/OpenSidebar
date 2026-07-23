@@ -16,6 +16,7 @@
  * `~/.opensidebar/seed/jobagent/search-criteria.json`.
  */
 
+import { createHash } from "node:crypto";
 import { existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 
@@ -324,6 +325,37 @@ export function listingSlug(listing: Pick<DiscoveredListing, "company" | "title"
   return slug.slice(0, 60).replace(/-+$/g, "") || "listing";
 }
 
+/**
+ * Package name for a single-URL ingest (RFC LP-22 §2).
+ *
+ * `company-title` when the page yielded both, so the queue stays readable; the
+ * URL host plus a short hash when it did not, so ingest never fails on a messy
+ * title alone. An unreadable name is recoverable — a refused ingest in the
+ * middle of a twenty-result sweep is friction.
+ */
+export function ingestName(
+  listing: Pick<DiscoveredListing, "company" | "title">,
+  url: string,
+): string {
+  if (nonEmptyString(listing.company) && nonEmptyString(listing.title)) {
+    return listingSlug(listing);
+  }
+  const hash = createHash("sha256").update(normalizeUrl(url)).digest("hex").slice(0, 6);
+  let host = "posting";
+  try {
+    host = new URL(url).host;
+  } catch {
+    /* unparseable URL — the hash alone still disambiguates */
+  }
+  const hostSlug = host
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "")
+    .slice(0, 40)
+    .replace(/-+$/g, "");
+  return `${hostSlug || "posting"}-${hash}`;
+}
+
 /** Trailing-slash/case-insensitive-host URL normalization for dedupe. */
 function normalizeUrl(url: string): string {
   try {
@@ -373,7 +405,7 @@ export type DiscoveryOutcome =
 export function recordDiscovery(
   listing: DiscoveredListing,
   criteria: SearchCriteria,
-  opts: { now?: Date } = {},
+  opts: { now?: Date; name?: string } = {},
 ): DiscoveryOutcome {
   for (const field of ["title", "company", "url", "source"] as const) {
     if (!nonEmptyString(listing[field])) {
@@ -387,7 +419,10 @@ export function recordDiscovery(
   const duplicate = findDuplicate(listing);
   if (duplicate) return { outcome: "duplicate", existing: duplicate };
 
-  const name = listingSlug(listing);
+  // Sweeps always take the derived slug; single-URL ingest may pass a name it
+  // derived from the URL host when the page had no clean company/title (see
+  // `ingestName`), or one the caller supplied with `--name`.
+  const name = opts.name ?? listingSlug(listing);
   const dir = resolveApplicationDir(name);
   mkdirSync(dir, { recursive: true });
 

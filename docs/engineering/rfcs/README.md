@@ -133,6 +133,29 @@ tool-definition freezing (tool defs serialize at the end of the prefix and cost
 first). Revisions 1–3 each had claims withdrawn; the RFC's revision history
 records which and why.
 
+## JobAgent agent-platform series (2026-07-23)
+
+Draft RFC from the 2026-07-23 pivot that deleted the JobAgent web console UI in
+favour of a headless daemon plus an 18-verb CLI. It closes the three gaps
+between "the CLI works" and "an agent applies to a job": nothing ingests a
+posting from outside the configured boards, nothing extracts a form's questions
+(so the drafting stage has no automatic input), and no platform knows the verbs.
+**Both human gates are unchanged** — `approve-kit` before any fill, `decide`
+before any submit — and the answer library stays hand-authored; the RFC
+automates only the three mechanical steps. At **revision 2**: the three
+questions it opened (ingest naming, Codex skill location, whether `assess`
+caches) were decided by the owner on 2026-07-23 and folded in, with the
+rejected alternatives recorded. Same status rules as LP-18/19/20: **not
+stamped**, no implementation until the owner records a Decision Stamp.
+
+| # | RFC | Problem | Depends on |
+| --- | --- | --- | --- |
+| LP-22 | [JobAgent as an agent-platform skill](lp-0022-jobagent-agent-platform-skills.md) | The CLI has no driver: no single-URL ingest, no host-side form-question extraction, and no skill on Claude Code / pi / Codex | None (LP-19 and LP-20 stay parked; §6 explains why this does not need them) |
+
+Suggested sequencing: phases 0–1 (`assess`/`ingest`, then `questions`) are the
+whole functional gap and are independently useful from a terminal; the three
+skill wrappers are cheap once one platform proves the shared spec.
+
 ## Post-launch consolidation series
 
 LP-15 was decision-stamped and executed 2026-07-05→07 (all twelve phases'

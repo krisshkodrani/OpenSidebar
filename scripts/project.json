@@ -21,7 +21,7 @@
         "command": "tsx scripts/log-server.ts"
       }
     },
-    "jobagent-console": {
+    "jobagent-daemon": {
       "executor": "nx:run-commands",
       "cache": false,
       "options": {

@@ -1,7 +1,12 @@
 /**
- * JobAgent console server (pi Phase 9) — the standalone local backend for the
+ * JobAgent daemon (pi Phase 9) — the standalone local backend for the
  * job-application pipeline: review queue, criteria/answer editing, kit
  * drafting, run orchestration, and the submit-approval inbox.
+ *
+ * Headless by design. It exists to hold what a prompt cannot: the WS bridge
+ * to the extension, the single-active-run mutex, and the run/approval
+ * registries. The front-end is `cli.ts` (and, through it, agent-platform
+ * skills) — there is no bundled web UI.
  *
  * Design rules (see docs/engineering/pi-backend-spike.md, Phase 9):
  *  - The seed dir IS the database (no server state beyond in-memory run/
@@ -16,18 +21,20 @@
  *    scripts/log-server.ts.
  *  - Removable: delete scripts/jobagent-console/ and everything else works.
  *
- * Start: `pnpm run jobagent` (nx run tools:jobagent-console). Port via
- * JOBAGENT_CONSOLE_PORT (default 7591).
+ * Start: `pnpm run jobagent serve`. Port via JOBAGENT_CONSOLE_PORT
+ * (default 7591).
  */
 import {
   createServer,
   type IncomingMessage,
   type ServerResponse,
 } from "node:http";
-import { readFileSync } from "node:fs";
-import { dirname, join, resolve } from "node:path";
+import { resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
+import { resolveApplicationDir } from "../jobagent/index";
+import { loadFillManifest } from "../jobagent/manifest";
+import { loadApplicationPackage } from "../jobagent/package";
 import { EventHub } from "./events";
 import {
   createProductionDeps,
@@ -49,9 +56,6 @@ import {
   putKitDraft,
   type ApiResult,
 } from "./api";
-
-const HERE = dirname(fileURLToPath(import.meta.url));
-const UI_PATH = join(HERE, "ui", "index.html");
 
 export const CONSOLE_PORT = Number(process.env.JOBAGENT_CONSOLE_PORT ?? 7591);
 const HOST = "127.0.0.1";
@@ -109,10 +113,59 @@ function send(res: ServerResponse, result: ApiResult, origin?: string): void {
   res.end(JSON.stringify(result.body));
 }
 
-function sendHtml(res: ServerResponse): void {
-  // Read per-request: the UI is a dev surface; no caching, no build step.
-  res.writeHead(200, { "Content-Type": "text/html; charset=utf-8" });
-  res.end(readFileSync(UI_PATH));
+/**
+ * Root is a machine-readable index, not a page. An agent (or a curious human
+ * with curl) that hits the daemon cold gets the route list and the CLI verb
+ * that fronts each one, so the surface is discoverable without reading this
+ * file.
+ */
+function getIndex(): ApiResult {
+  return {
+    status: 200,
+    body: {
+      service: "jobagent-daemon",
+      headless: true,
+      cli: "pnpm run jobagent help",
+      routes: {
+        "GET /api/health": "status",
+        "GET /api/queue": "queue",
+        "POST /api/assess": "assess <url>",
+        "POST /api/ingest": "ingest <url>",
+        "POST /api/applications/:name/questions": "questions <name>",
+        "GET /api/applications/:name": "show <name>",
+        "POST /api/applications/:name/status": "set-status <name> <status>",
+        "GET|PUT /api/criteria": "criteria [file]",
+        "GET|PUT /api/answers": "answers [file]",
+        "GET|POST|PUT /api/applications/:name/kit-draft": "draft / edit-draft",
+        "POST /api/applications/:name/kit-approve": "approve-kit <name>",
+        "GET /api/bridge": "status",
+        "GET /api/runs": "runs",
+        "POST /api/runs/discovery": "discover",
+        "POST /api/runs/fill": "fill <name> | submit <name>",
+        "GET /api/runs/:id": "run <id>",
+        "POST /api/runs/:id/cancel": "cancel <id>",
+        "GET /api/approvals": "approvals",
+        "POST /api/approvals/:id": "decide <id> approve|deny",
+        "GET /api/events": "(SSE stream)",
+      },
+    },
+  };
+}
+
+/**
+ * Where a package's application form lives: the approved run config if there is
+ * one, else the posting URL discovery recorded. Returns undefined when neither
+ * exists, so the caller can ask for `{ formUrl }` rather than guess.
+ */
+function resolveFormUrl(name: string): string | undefined {
+  try {
+    const dir = resolveApplicationDir(name);
+    const manifest = loadFillManifest(dir);
+    if (manifest?.formUrl) return manifest.formUrl;
+    return loadApplicationPackage(dir)?.sourceUrl || undefined;
+  } catch {
+    return undefined;
+  }
 }
 
 /* ── Server ───────────────────────────────────────────────── */
@@ -174,8 +227,8 @@ export async function startConsoleServer(
         });
       }
 
-      if (method === "GET" && (path === "/" || path === "/index.html")) {
-        return sendHtml(res);
+      if (method === "GET" && path === "/") {
+        return send(res, getIndex(), origin);
       }
       if (method === "GET" && path === "/api/health") {
         return send(res, getHealth(actualPort()), origin);
@@ -247,6 +300,55 @@ export async function startConsoleServer(
           origin,
         );
       }
+      /* — LP-22: single-URL ingest + form-question extraction — */
+      if (path === "/api/assess" && method === "POST") {
+        const body = (await parseJsonBody(req).catch(() => null)) as {
+          url?: string;
+        } | null;
+        if (!body?.url) {
+          return send(res, { status: 400, body: { error: "body must be { url }" } }, origin);
+        }
+        return send(res, (await runs.assessUrl(body.url)) as ApiResult, origin);
+      }
+      if (path === "/api/ingest" && method === "POST") {
+        const body = (await parseJsonBody(req).catch(() => null)) as {
+          url?: string;
+          source?: string;
+          name?: string;
+        } | null;
+        if (!body?.url) {
+          return send(res, { status: 400, body: { error: "body must be { url, source?, name? }" } }, origin);
+        }
+        const result = (await runs.ingestUrl(body.url, {
+          source: body.source,
+          name: body.name,
+        })) as ApiResult;
+        return send(res, result, origin);
+      }
+      const questionsMatch = path.match(/^\/api\/applications\/([^/]+)\/questions$/);
+      if (method === "POST" && questionsMatch) {
+        const name = decodeURIComponent(questionsMatch[1]);
+        const body = (await parseJsonBody(req).catch(() => null)) as {
+          formUrl?: string;
+        } | null;
+        const formUrl = body?.formUrl ?? resolveFormUrl(name);
+        if (!formUrl) {
+          return send(
+            res,
+            {
+              status: 409,
+              body: {
+                error:
+                  `no form URL for "${name}" — the package has no run-config or ` +
+                  `sourceUrl; pass { formUrl } explicitly`,
+              },
+            },
+            origin,
+          );
+        }
+        return send(res, (await runs.extractFormQuestions(name, formUrl)) as ApiResult, origin);
+      }
+
       if (path === "/api/runs" && method === "GET") {
         return send(
           res,
@@ -347,17 +449,20 @@ export async function startConsoleServer(
   });
 }
 
-/* ── CLI entry ────────────────────────────────────────────── */
+/* ── Direct entry ─────────────────────────────────────────── */
 
+// `pnpm run jobagent serve` is the documented way in (cli.ts imports this
+// module); running server.ts directly stays supported so the daemon can be
+// started without the CLI layer — e.g. from a supervisor or a debugger.
 const isMain =
   !!process.argv[1] &&
   resolve(process.argv[1]) === fileURLToPath(import.meta.url);
 
 if (process.env.VITEST === undefined && isMain) {
   startConsoleServer(CONSOLE_PORT, { ownBridge: true }).then((s) => {
-    console.log(`[jobagent-console] listening on ${s.url}`);
+    console.log(`[jobagent] daemon listening on ${s.url}`);
     console.log(
-      `[jobagent-console] WS bridge owned on port ${process.env.OPENSIDEBAR_WS_PORT ?? 8917} — ` +
+      `[jobagent] WS bridge owned on port ${process.env.OPENSIDEBAR_WS_PORT ?? 8917} — ` +
         `launch the browser side with: node .artifacts/pi-live/launch-chrome.mjs`,
     );
   });
