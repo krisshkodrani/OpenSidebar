@@ -309,7 +309,7 @@ export interface UploadFileArgs {
   /** The numeric tag ID of the <input type="file"> element */
   id: number;
   /** URL of the file to upload (fetched by the service worker) */
-  url?: string;
+  url: string;
 }
 
 /** Arguments for go_back */
@@ -561,6 +561,18 @@ export interface GetProfileFieldsArgs {
   fields: string[];
 }
 
+/** Arguments for create_window */
+export interface CreateWindowArgs {
+  /** Optional URL to open in the new window */
+  url?: string;
+}
+
+/** Arguments for update_plan */
+export interface UpdatePlanArgs {
+  /** Brief summary of progress or plan update */
+  summary?: string;
+}
+
 // --- Tool Routing Types ---
 
 /** Maps tool names to their execution handlers */
@@ -619,8 +631,8 @@ export type ToolArgsMap = {
   [ToolName.CLARIFY]: ClarifyArgs;
   [ToolName.UPDATE_NOTES]: UpdateNotesArgs;
   [ToolName.GET_PROFILE_FIELDS]: GetProfileFieldsArgs;
-  [ToolName.CREATE_WINDOW]: Record<string, unknown>;
-  [ToolName.UPDATE_PLAN]: Record<string, unknown>;
+  [ToolName.CREATE_WINDOW]: CreateWindowArgs;
+  [ToolName.UPDATE_PLAN]: UpdatePlanArgs;
   [ToolName.COMPOSE_TEXT]: ComposeTextArgs;
   [ToolName.INSPECT_REGION]: InspectRegionArgs;
 };

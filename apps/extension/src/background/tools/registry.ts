@@ -60,7 +60,14 @@ export class ToolRegistry {
 
     if (!executor) {
       logger.error("tools", `Tool not found: ${name}`);
-      return { result: `Error: Tool ${name} not found.` };
+      // This fires exactly when the model hallucinated a tool name, so the
+      // error is the one place a corrective list is guaranteed to be read.
+      const available = this.definitions
+        .map((d) => d.function.name)
+        .join(", ");
+      return {
+        result: `Error: Tool ${name} not found. Available tools: ${available}.`,
+      };
     }
 
     let args: Record<string, unknown> = {};
@@ -72,7 +79,17 @@ export class ToolRegistry {
         logger.error("tools", `Failed to parse arguments for ${name}`, {
           error: e,
         });
-        return { result: `Error: Invalid JSON arguments for ${name}.` };
+        const def = this.definitions.find((d) => d.function.name === name);
+        const params = Object.keys(
+          (def?.function.parameters as { properties?: Record<string, unknown> })
+            ?.properties ?? {},
+        );
+        const hint = params.length > 0
+          ? ` Expected parameters: ${params.join(", ")}.`
+          : "";
+        return {
+          result: `Error: Invalid JSON arguments for ${name}.${hint} Retry with a valid JSON object.`,
+        };
       }
     }
 

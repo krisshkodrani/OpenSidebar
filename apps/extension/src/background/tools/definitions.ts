@@ -647,7 +647,7 @@ export const UPLOAD_FILE_DEF: ToolDefinition = {
   function: {
     name: ToolName.UPLOAD_FILE,
     description:
-      'Upload a file to an <input type="file"> element. Provide a url for the remote file to fetch and attach (max 10MB).',
+      'Upload a file to an <input type="file"> element. Fetches the file from url and attaches it (max 10MB).',
     parameters: {
       type: "object",
       properties: {
@@ -660,7 +660,7 @@ export const UPLOAD_FILE_DEF: ToolDefinition = {
           description: "URL of the file to upload.",
         },
       },
-      required: ["id"],
+      required: ["id", "url"],
     },
   },
 };
@@ -787,7 +787,8 @@ export const GET_COOKIES_DEF: ToolDefinition = {
   type: "function",
   function: {
     name: ToolName.GET_COOKIES,
-    description: "Get cookies for a URL. Defaults to current tab.",
+    description:
+      "Get cookies for a URL (defaults to current tab). Only for tasks explicitly about cookies or session state — not for ordinary page reading.",
     parameters: {
       type: "object",
       properties: {
@@ -805,7 +806,8 @@ export const SET_COOKIE_DEF: ToolDefinition = {
   type: "function",
   function: {
     name: ToolName.SET_COOKIE,
-    description: "Set a cookie for a URL.",
+    description:
+      "Set a cookie for a URL. Only when the task explicitly requires setting cookies — never to bypass consent banners or login flows.",
     parameters: {
       type: "object",
       properties: {
@@ -824,7 +826,8 @@ export const DELETE_COOKIE_DEF: ToolDefinition = {
   type: "function",
   function: {
     name: ToolName.DELETE_COOKIE,
-    description: "Delete a specific cookie by name and URL.",
+    description:
+      "Delete a specific cookie by name and URL. Only for tasks explicitly about clearing cookies or session state.",
     parameters: {
       type: "object",
       properties: {
@@ -840,7 +843,8 @@ export const SEARCH_HISTORY_DEF: ToolDefinition = {
   type: "function",
   function: {
     name: ToolName.SEARCH_HISTORY,
-    description: "Search browser history by keyword.",
+    description:
+      "Search browser history by keyword. Only when the task references previously visited pages the current tab cannot reach.",
     parameters: {
       type: "object",
       properties: {
@@ -1280,7 +1284,7 @@ export const CREATE_WINDOW_DEF: ToolDefinition = {
   function: {
     name: ToolName.CREATE_WINDOW,
     description:
-      "Open a new browser window. Used by the orchestrator for parallel lane execution.",
+      "Open a new browser window, optionally at a URL. Rarely needed — prefer create_tab to keep work in the current workspace; only use when the task explicitly requires a separate window.",
     parameters: {
       type: "object",
       properties: {
@@ -1299,7 +1303,7 @@ export const UPDATE_PLAN_DEF: ToolDefinition = {
   function: {
     name: ToolName.UPDATE_PLAN,
     description:
-      "Update the current task plan with progress or revised steps. Intercepted by the agent loop to broadcast progress to the side panel.",
+      "Report plan progress or a revised plan. Call after completing a plan step or when the plan changes; the summary is shown to the user. Not for saving working facts — use update_notes.",
     parameters: {
       type: "object",
       properties: {

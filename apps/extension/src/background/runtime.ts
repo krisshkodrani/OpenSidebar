@@ -13,6 +13,7 @@
  */
 
 import { orchestrator as defaultOrchestrator } from "./orchestrator";
+import { setDisabledSkillIds } from "./orchestrator/skills";
 import type { OrchestratorStartInput } from "./orchestrator/types";
 import type { RuntimeEnvironment } from "./environment/types";
 import type { TaskCompletionMessage, TaskPausedMessage } from "../types";
@@ -93,6 +94,10 @@ export function createAgentRuntime(
 
   return {
     startTask(input) {
+      // Ablation switch (2026-07-23 skills audit): every skill-selection path
+      // honors the module-level disabled set. Set here — outside the guarded
+      // orchestrator landmine — before the task begins selecting skills.
+      setDisabledSkillIds(input.settings.disabledSkillIds);
       return orchestrator.startTask(input);
     },
     stopTask(workspaceId) {

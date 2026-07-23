@@ -186,7 +186,9 @@ describe("Orchestrator role contracts", () => {
     );
     const contract = buildRoleExecutionContract("executor", baseSettings, node);
 
-    expect(contract.allowedTools.includes(ToolName.DISMISS_OVERLAYS)).toBe(false);
+    // dismiss_overlays is the skill's opening move — it clicks real close
+    // buttons and reports which overlays were only CSS-hidden.
+    expect(contract.allowedTools.includes(ToolName.DISMISS_OVERLAYS)).toBe(true);
     expect(contract.allowedTools.includes(ToolName.NAVIGATE)).toBe(false);
     expect(contract.allowedTools.includes(ToolName.TYPE_TEXT)).toBe(false);
     expect(contract.allowedTools.includes(ToolName.CLICK_ELEMENT)).toBe(true);

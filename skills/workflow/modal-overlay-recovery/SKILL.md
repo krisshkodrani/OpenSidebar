@@ -19,32 +19,27 @@ Do not use it for:
 
 ## Procedure
 
-1. Read the page and identify ALL visible overlays, banners, and modals. Count them and note their close/dismiss/accept/X buttons.
-2. Dismiss the topmost (highest z-index) overlay first by clicking its close, dismiss, accept, or X button directly with `click_element`. Do NOT use `dismiss_overlays` — it hides elements visually with CSS but does not trigger application state changes (React setState, Vue reactivity, etc.), so overlays may reappear or remain functionally present.
-3. After each click, re-read the page immediately to confirm the overlay is actually gone (not just hidden) AND to detect any remaining overlays.
-4. Repeat steps 2-3 for each remaining overlay. Do not batch dismissals — handle them one at a time.
-5. Only after ALL overlays are confirmed gone via re-read, proceed to the underlying task or call done.
-6. If an overlay reappears after clicking its close button, try `press_key("Escape")`, then re-read. If still present, look for alternative dismiss targets.
+1. Call `dismiss_overlays` first. It clicks real close buttons where it finds them (framework state updates — these stay closed) and falls back to CSS-hiding only when no close control exists. Its result reports which path each dismissal took and any surviving overlay.
+2. Re-read the page. For any overlay reported as CSS-hidden, reappeared, or still present, click its close/dismiss/accept/X control directly — one overlay at a time.
+3. After each click, re-read to confirm the overlay is gone and to refresh element IDs (tags shift when the DOM changes).
+4. If an overlay resists, try `press_key("Escape")`, then re-read and look for another dismiss target.
+5. Proceed to the underlying task or call done only after a re-read shows no blocking overlays remain.
 
 ## Required Evidence
 
-- Count of overlays detected on initial page read
-- Confirmation that each overlay was dismissed (re-read after each)
-- Final page state showing no blocking overlays remain
-- If underlying task follows, evidence that the content is now accessible
+- The dismiss_overlays result showing what was dismissed and how
+- Re-read confirming no blocking overlays remain
+- If an underlying task follows, evidence that the content is now accessible
 
 ## Common Failures
 
-- Calling done after dismissing only one of multiple overlays
+- Calling done while a CSS-hidden overlay can still reappear
 - Clicking stale element IDs after an overlay is removed (tags shift when DOM changes)
-- Assuming dismiss_overlays handled all overlays without re-reading
-- Trying to interact with content behind an overlay that is still present
 - Batching multiple dismiss attempts without re-grounding between them
 
 ## Verification
 
-- Confirm each overlay's dismiss button or close mechanism was activated.
-- After each dismissal, verify via re-read that the overlay element is no longer present.
+- After each dismissal, verify via re-read that the overlay is no longer present.
 - Final verification: the underlying page content is visible and interactive.
 
 ## Relevance
