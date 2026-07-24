@@ -10,6 +10,7 @@ function makeCoordinator(opts: { reduced?: boolean; brokenRaf?: boolean } = {}) 
     prefersReducedMotion: () => opts.reduced ?? false,
     // brokenRaf simulates a throttled/hung tab: frames never fire.
     raf: opts.brokenRaf ? () => {} : (cb) => setTimeout(cb, 0),
+    sessionHideDelayMs: 60,
   });
 }
 
@@ -95,7 +96,7 @@ describe("presence coordinator", () => {
     coord.setMode("off");
   });
 
-  test("session-scoped visibility: no per-action hiding, fade only at session end", async () => {
+  test("session-scoped visibility: no per-action hiding, debounced fade at session end", async () => {
     const coord = makeCoordinator({ reduced: true });
     coord.setMode("subtle");
     coord.setSessionActive(true);
@@ -107,7 +108,40 @@ describe("presence coordinator", () => {
     // Still visible after the action — a real cursor never vanishes mid-run.
     expect(cursorEl.classList.contains("visible")).toBe(true);
     coord.setSessionActive(false);
+    // Debounce: still visible right after the signal drops...
+    expect(cursorEl.classList.contains("visible")).toBe(true);
+    await new Promise((r) => setTimeout(r, 140));
+    // ...and hidden once the debounce elapses with no reactivation.
     expect(cursorEl.classList.contains("visible")).toBe(false);
+    coord.setMode("off");
+  });
+
+  test("lane flip (inactive then active again) never hides the cursor", async () => {
+    const coord = makeCoordinator({ reduced: true });
+    coord.setMode("subtle");
+    coord.setSessionActive(true);
+    const cursorEl = coord.cursor
+      .getLayer()!
+      .querySelector("#cursor") as HTMLElement;
+    coord.setSessionActive(false);
+    coord.setSessionActive(true); // next lane starts within the debounce
+    await new Promise((r) => setTimeout(r, 140));
+    expect(cursorEl.classList.contains("visible")).toBe(true);
+    coord.setMode("off");
+  });
+
+  test("chips spawn in the settle phase, anchored to fresh geometry", async () => {
+    const coord = makeCoordinator({ reduced: true });
+    coord.setMode("subtle");
+    const script = clickScript(120, 120);
+    script.kind = "select";
+    script.chipText = "Finance ✓";
+    await coord.perform(script);
+    // Settle rides the queue after dispatch — allow it to run.
+    await new Promise((r) => setTimeout(r, 60));
+    const chip = coord.cursor.getLayer()!.querySelector(".chip");
+    expect(chip).not.toBeNull();
+    expect(chip!.textContent).toBe("Finance ✓");
     coord.setMode("off");
   });
 

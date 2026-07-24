@@ -167,17 +167,21 @@ export class PresenceCursor {
    * session starts and the cursor then STAYS visible — no idle hide — until
    * `hide()` at session end. wake() only guarantees attachment+visibility.
    */
-  show(): void {
+  /** Returns true when the cursor was hidden and is now fading in — callers
+   *  wait a beat so movement never starts on an invisible cursor. */
+  show(): boolean {
     this.attach();
+    const wasHidden = !this.cursorEl?.classList.contains("visible");
     this.cursorEl?.classList.add("visible");
+    return wasHidden;
   }
 
   hide(): void {
     this.cursorEl?.classList.remove("visible");
   }
 
-  wake(): void {
-    this.show();
+  wake(): boolean {
+    return this.show();
   }
 
   pressDown(): void {
