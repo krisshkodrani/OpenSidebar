@@ -133,6 +133,19 @@ tool-definition freezing (tool defs serialize at the end of the prefix and cost
 first). Revisions 1–3 each had claims withdrawn; the RFC's revision history
 records which and why.
 
+## Presence series (2026-07-24)
+
+Draft RFC for a visible, natural agent cursor rendered in-page while the
+agent acts — glide/press choreography per control type (radio, field focus,
+select, drag), perception-safe (the executor's own screenshots never see
+it), presentation-only (real event dispatch is untouched). **Decision
+stamped 2026-07-24** — all three §10 questions resolved in session (default
+`subtle`, no captions, error shake in all modes).
+
+| # | RFC | Problem | Depends on |
+| --- | --- | --- | --- |
+| LP-24 | [The Presence Layer: a visible, natural agent cursor](lp-0024-presence-layer.md) | Pages change with no visible cause during runs and demos; a naive synthetic cursor (teleport + pulse) misleads more than it explains; per-control-type motion grammar, perception cleanliness, and determinism have to be designed, not bolted on | None (builds beside the existing in-page HUD; shares the LP-12 Phase B iframe constraint) |
+
 ## JobAgent agent-platform series (2026-07-23)
 
 Draft RFC from the 2026-07-23 pivot that deleted the JobAgent web console UI in

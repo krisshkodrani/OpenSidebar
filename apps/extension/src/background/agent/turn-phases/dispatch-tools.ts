@@ -39,7 +39,15 @@ import {
   type SequentialToolDispatchOutput,
   type SequentialToolDispatchHost,
 } from "../sequential-tool-dispatch";
-import { EXPLORATION_BUDGET, EXPLORATION_ONLY_TOOLS } from "../constants";
+import {
+  EXPLORATION_BUDGET,
+  EXPLORATION_ONLY_TOOLS,
+  TOOL_BATCH_LIMITS,
+} from "../constants";
+import {
+  buildBatchTruncationNotice,
+  clampToolCallBatch,
+} from "../tool-batch-policy";
 
 /** Repeat-action detection window handed to the dispatchers. */
 const REPEAT_ACTION_WINDOW = 20;
@@ -118,6 +126,33 @@ export async function runDispatchToolsPhase(
     discoveredTagIds,
     resultPageProgress,
   } = turnState;
+  // Per-turn batch cap: clamp BEFORE the batch is captured or recorded, so
+  // dropped calls never enter history (they need no tool replies and cannot
+  // inflate the message count into a compaction trigger).
+  const clamped = clampToolCallBatch(
+    response.tool_calls!,
+    TOOL_BATCH_LIMITS.MAX_CALLS_PER_TURN,
+  );
+  if (clamped.droppedCount > 0) {
+    response.tool_calls = clamped.kept;
+    host.log.warn("agent", "Tool batch truncated", {
+      turn: host.turnCount,
+      kept: clamped.kept.length,
+      dropped: clamped.droppedCount,
+    });
+    host.traceRecorder?.recordEvent("tool_batch_truncated", {
+      turn: host.turnCount,
+      kept: clamped.kept.length,
+      dropped: clamped.droppedCount,
+    });
+    host.context.addMessage({
+      role: "user",
+      content: buildBatchTruncationNotice(
+        clamped.droppedCount,
+        TOOL_BATCH_LIMITS.MAX_CALLS_PER_TURN,
+      ),
+    });
+  }
   // loop() only enters the ACTION path when tool_calls is present and non-empty.
   const toolCalls = response.tool_calls!;
 

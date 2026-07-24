@@ -1,4 +1,32 @@
-import type { LaneTopologyMode, PerceptionRuntimeMode, UserSettings } from "../../../types";
+import type {
+  LaneTopologyMode,
+  PerceptionRuntimeMode,
+  PresenceMode,
+  UserSettings,
+} from "../../../types";
+
+/** LP-24 presence layer modes (visible agent cursor). */
+export const PRESENCE_MODE_OPTIONS: {
+  value: PresenceMode;
+  label: string;
+  description: string;
+}[] = [
+  {
+    value: "subtle",
+    label: "Subtle",
+    description: "Fast, restrained cursor choreography while the agent acts.",
+  },
+  {
+    value: "cinematic",
+    label: "Cinematic",
+    description: "Full choreography with slower, demo-grade pacing.",
+  },
+  {
+    value: "off",
+    label: "Off",
+    description: "No visible cursor; pages change without a visual narrator.",
+  },
+];
 
 export const MAX_TURNS_PRESETS = [30, 50, 100, 200, 500];
 

@@ -24,6 +24,12 @@ import {
 import { buildSnapshot } from "./snapshot";
 import { executeAction } from "./actions";
 import {
+  initPresence,
+  resumePresence,
+  setPresenceSessionActive,
+  suspendPresence,
+} from "./presence";
+import {
   isElementVisible,
   dismissElement,
   addDynamicTag,
@@ -125,6 +131,9 @@ if (document.readyState === "complete") {
 } else {
   window.addEventListener("load", runJanitor);
 }
+
+// LP-24 presence layer: read mode from settings and follow changes.
+initPresence();
 // Watch for late-injected cookie/GDPR banners (no delay — react to DOM mutations)
 let janitorRan = false;
 
@@ -614,6 +623,9 @@ if (typeof chrome !== "undefined" && chrome.runtime?.onMessage) {
           pageActivity: message.payload.pageActivity,
         });
         applyAgentActivitySignalState(reduction.state);
+        // LP-24: cursor visibility is session-scoped — visible for the whole
+        // run, faded out at the end (no per-action blinking).
+        setPresenceSessionActive(reduction.state.sessionActive);
         if (reduction.accepted) {
           e2eRailState = {
             ...e2eRailState,
@@ -902,6 +914,19 @@ if (typeof chrome !== "undefined" && chrome.runtime?.onMessage) {
           });
         })();
         return true; // async response
+      }
+
+      // LP-24: capture bracket — hide the presence cursor the same frame so
+      // perception screenshots never contain it (RFC §6).
+      if (message.type === "PRESENCE_SUSPEND") {
+        suspendPresence();
+        sendResponse?.({ ok: true });
+        return true;
+      }
+      if (message.type === "PRESENCE_RESUME") {
+        resumePresence();
+        sendResponse?.({ ok: true });
+        return true;
       }
 
       if (message.type === "TOOL_EXECUTE") {

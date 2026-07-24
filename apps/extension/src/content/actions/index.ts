@@ -12,6 +12,10 @@
  */
 
 import {
+  presenceAfterAction,
+  presenceBeforeAction,
+} from "../presence";
+import {
   ToolName,
   ClickElementArgs,
   ClickCoordinatesArgs,
@@ -53,6 +57,18 @@ export * from "./inspection";
 export * from "./page-manipulation";
 
 export async function executeAction(
+  toolName: ToolName,
+  args: Record<string, unknown>,
+): Promise<{ success: boolean; result: string; navigated: boolean }> {
+  // LP-24 presence layer: pre-dispatch choreography (fail-open, presentation
+  // only — resolves immediately for read tools and `off` mode).
+  await presenceBeforeAction(toolName, args);
+  const outcome = await executeActionInner(toolName, args);
+  presenceAfterAction(toolName, outcome.success);
+  return outcome;
+}
+
+async function executeActionInner(
   toolName: ToolName,
   args: Record<string, unknown>,
 ): Promise<{ success: boolean; result: string; navigated: boolean }> {
