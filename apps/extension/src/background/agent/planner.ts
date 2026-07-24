@@ -6,6 +6,7 @@ import { renderPrompt } from "../../prompts";
 import type { Difficulty, RuntimeLimits } from "./constants";
 import type { ToolProfile } from "../tools/metadata";
 import { tokenizeStepText } from "./loop-helpers";
+import { sanitizePlanLabel } from "./plan-display-label";
 
 /**
  * LP-17b CM-2: hard cap on planner assumptions per step/node. The list is
@@ -22,29 +23,7 @@ import {
 } from "./task-contract";
 import { isDraftOnlyCommunicationTask } from "./consequential-action-policy";
 
-/** Generic criteria patterns that have no DOM-observable tokens */
-const GENERIC_CRITERIA = [
-  /^the user goal is/i,
-  /^the subtask outcome for/i,
-  /^step .* is completed/i,
-  /^step completed/i,
-  /^completed and verified/i,
-  /^task (is )?(completed|done|finished)/i,
-];
-
-/**
- * Ensure successCriteria contains DOM-observable tokens.
- * If the planner provides generic criteria, derive better ones from the objective.
- */
-function ensureObservableCriteria(criteria: string, objective: string): string {
-  const isGeneric = GENERIC_CRITERIA.some((p) => p.test(criteria));
-  if (!isGeneric) return criteria;
-
-  // Derive from objective: extract meaningful tokens and rebuild
-  const tokens = tokenizeStepText(objective);
-  if (tokens.length === 0) return criteria; // can't improve, keep original
-  return `Page shows: ${tokens.slice(0, 6).join(", ")}`;
-}
+import { ensureObservableCriteria } from "./plan-criteria";
 
 /** Result of task decomposition */
 export interface PlanDecomposition {
@@ -67,6 +46,8 @@ export interface PlanDecomposition {
 
 export interface PlanStep {
   objective: string;
+  /** Planner-authored short display summary (≤ ~60 chars); UI-only. */
+  label?: string;
   successCriteria: string;
   dependencies: number[];
   assumptions: string[];
@@ -1187,9 +1168,11 @@ export class TaskPlanner {
             }
           }
 
+          const label = sanitizePlanLabel(obj.label);
           result.push(
             sanitizeUnsupportedFieldSubmitStep(query, {
               objective: obj.objective.trim(),
+              ...(label ? { label } : {}),
               successCriteria,
               dependencies,
               assumptions,

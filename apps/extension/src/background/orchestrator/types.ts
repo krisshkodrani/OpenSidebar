@@ -122,6 +122,11 @@ export interface TaskNode {
   id: string;
   role: Extract<AgentRole, "executor">;
   description: string;
+  /**
+   * Planner-authored short summary for UI display (≤ ~60 chars). Never fed
+   * back to the LLM — `description` remains the precise instruction.
+   */
+  displayLabel?: string;
   successCriteria: string;
   selectedSkillId?: string;
   selectedSkillReason?: string;

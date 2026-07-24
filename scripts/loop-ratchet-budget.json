@@ -13,7 +13,7 @@
       "fileLines": 132
     },
     "apps/extension/src/background/orchestrator/index.ts": {
-      "fileLines": 5753
+      "fileLines": 5752
     },
     "apps/extension/src/background/orchestrator/skills.ts": {
       "fileLines": 1182
@@ -24,11 +24,11 @@
     "apps/extension/src/background/agent/completion/read-answer-analysis.ts": 3293,
     "apps/extension/src/background/agent/loop-helpers.ts": 2659,
     "apps/extension/src/background/tools/servicenow/register.ts": 2405,
-    "apps/extension/src/background/agent/planner.ts": 1935,
+    "apps/extension/src/background/agent/planner.ts": 1918,
     "apps/extension/src/background/tools/servicenow/register-list-actions.ts": 1902,
     "apps/extension/src/background/agent/context.ts": 1554,
     "apps/extension/src/background/llm/client.ts": 1646,
-    "apps/extension/src/background/orchestrator/planner.ts": 1684,
+    "apps/extension/src/background/orchestrator/planner.ts": 1666,
     "apps/extension/src/background/tools/servicenow/navigation.ts": 1596,
     "apps/extension/src/background/orchestrator/skill-bodies.ts": 1557
   }
