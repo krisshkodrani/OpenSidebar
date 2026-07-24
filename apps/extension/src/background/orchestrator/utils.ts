@@ -100,6 +100,7 @@ export function toSubtasks(nodes: TaskNode[]): SubtaskSummary[] {
     const worker = workerStatusForNode(node, runningNodes, nodesById);
     return {
       description: node.description,
+      ...(node.displayLabel ? { label: node.displayLabel } : {}),
       status:
         node.status === "completed"
           ? "completed"

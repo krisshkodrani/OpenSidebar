@@ -123,6 +123,13 @@ export interface DurableRunStatusMessage extends BaseMessage {
 /** Summary of a single subtask within a decomposed task */
 export interface SubtaskSummary {
   description: string;
+  /**
+   * Planner-authored display summary (≤ ~60 chars) for UI surfaces. The
+   * `description` stays the precise executor instruction; this is what humans
+   * read. Absent on pre-label plans and non-planner steps — UIs fall back to
+   * clamping the description.
+   */
+  label?: string;
   status: "pending" | "running" | "completed" | "failed" | "skipped";
   turnsUsed: number;
   turnBudget: number;

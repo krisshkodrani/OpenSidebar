@@ -16,6 +16,8 @@ export interface PlanRow {
   id: string;
   nodeId?: string;
   description: string;
+  /** Planner-authored short summary; when present the UI shows it instead of clamping description. */
+  label?: string;
   status: PlanRowStatus;
   turnsUsed: number;
   turnBudget?: number;
@@ -38,6 +40,7 @@ export function derivePlanRows(
       id: `${taskProgress.taskId}:${index}`,
       nodeId: subtask.nodeId,
       description: subtask.description,
+      label: subtask.label,
       status: subtask.status,
       turnsUsed: subtask.turnsUsed,
       turnBudget: subtask.turnBudget,
