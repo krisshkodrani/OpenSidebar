@@ -52,8 +52,8 @@ describe("presence coordinator", () => {
     const coord = makeCoordinator({ reduced: true });
     coord.setMode("subtle");
     const script = clickScript();
-    // Sabotage: a haloTarget whose getBoundingClientRect throws.
-    script.haloTarget = {
+    // Sabotage: an anchorTarget whose getBoundingClientRect throws.
+    script.anchorTarget = {
       getBoundingClientRect() {
         throw new Error("boom");
       },
@@ -151,7 +151,7 @@ describe("presence coordinator", () => {
     document.body.innerHTML = `<input id="field" />`;
     const script = clickScript(100, 100);
     script.kind = "type";
-    script.haloTarget = document.getElementById("field");
+    script.anchorTarget = document.getElementById("field");
     script.ripple = "none";
     await coord.perform(script);
     await new Promise((r) => setTimeout(r, 60));

@@ -57,19 +57,6 @@ export const PRESENCE_STYLE_TEXT = `
 .ripple.error { border-color: ${PRESENCE_ERROR}; }
 .ripple.square { border-radius: 4px; }
 
-.halo {
-  position: absolute;
-  border-radius: 8px;
-  /* A soft aura, deliberately NOT a border: the page draws its own focus
-   * ring on the real focus, and a second rectangle reads as a double
-   * highlight (owner report, 2026-07-24). */
-  box-shadow:
-    0 0 0 3px rgba(37, 99, 235, 0.28),
-    0 0 14px 5px rgba(37, 99, 235, 0.18);
-  opacity: 0;
-  transition: opacity 180ms ease;
-}
-.halo.visible { opacity: 1; }
 
 .chip {
   position: absolute;

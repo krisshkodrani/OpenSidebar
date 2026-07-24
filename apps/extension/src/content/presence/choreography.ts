@@ -4,7 +4,7 @@
  * Maps action kind × control type to a visual script: where the cursor
  * glides, which glyph it wears, where the ripple lands (radio/checkbox
  * clicks retarget the visual from the label to the control), whether a
- * focus halo appears, and what chip (if any) narrates a non-visual effect.
+ * chip (if any) narrates a non-visual effect and where it anchors.
  */
 
 import type { Point } from "./motion";
@@ -29,8 +29,8 @@ export interface ChoreographyScript {
   /** Width of the visual target — feeds Fitts duration scaling. */
   targetWidth: number;
   ripple: "accent" | "square" | "none";
-  /** Element that receives a persistent focus halo (text fields, selects). */
-  haloTarget: Element | null;
+  /** Element the settle-phase chip anchors to (fields, selects, uploads). */
+  anchorTarget: Element | null;
   /** Chip text narrating an effect the page won't render (select value, upload). */
   chipText: string | null;
   /** Key label for key-cap chips. */
@@ -172,7 +172,7 @@ export function buildScript(params: {
     point: params.point ?? null,
     targetWidth: 24,
     ripple: "none",
-    haloTarget: null,
+    anchorTarget: null,
     chipText: null,
     keyLabel: null,
     scrollDirection: null,
@@ -206,17 +206,15 @@ export function buildScript(params: {
       script.ripple = "accent";
       break;
     case "type":
-      // No ripple and no halo: the field's native focus ring (from the real
-      // focus) is the one and only highlight — everything we layered on it
-      // read as a double (owner reports x3). haloTarget survives purely as
-      // the chip/geometry anchor.
+      // No ripple: the field's native focus ring (from the real focus) is
+      // the one and only highlight (owner reports x3).
       script.ripple = "none";
-      if (target && isTextEntry(target)) script.haloTarget = target;
+      if (target && isTextEntry(target)) script.anchorTarget = target;
       script.lingerMs = typeLingerMs(params.typedTextLength ?? 10);
       break;
     case "select":
       script.ripple = "none";
-      script.haloTarget = target;
+      script.anchorTarget = target;
       script.lingerMs = 500;
       // Honesty over mime: the OS picker never renders in-page, so narrate
       // the chosen value with a chip instead of faking a menu (RFC §5).

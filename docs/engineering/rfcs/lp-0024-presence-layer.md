@@ -244,15 +244,23 @@ decision-making. Each phase lands independently behind the setting.
 3. **Error shake: ships in all modes.** Blocked/failed actions become
    visible — honest UX over a purely positive picture.
 
-Implementation-review amendments (owner, 2026-07-24, after the first filmed
-run): (a) the glyph must NOT resemble the OS cursor — larger (32px) with
-brand-blue fill, white outline, soft blue glow; (b) **no glyph morphing** —
-the §5 I-beam morph is dropped, the cursor keeps one form and the focus halo
-alone marks text-entry targets; (c) **visibility is session-scoped, not
-action-scoped** — the §4 idle dim/hide behavior is dropped (it made the
-cursor materialize near each new target like a focus point instead of
-travelling). The cursor fades in when the agent session starts, stays
-visible the whole run — gliding between actions, sitting still while the
-model thinks — and fades out at session end (driven by the same
-AGENT_ACTIVITY signal as the agent border). Capture suspends resume with a
-150ms soft fade instead of a hard pop.
+Implementation-review amendments (owner, 2026-07-24, across four filmed
+review rounds): (a) the glyph must NOT resemble the OS cursor — larger
+(32px) with brand-blue fill, white outline, soft blue glow; (b) **no glyph
+morphing** — the §5 I-beam morph is dropped, the cursor keeps one form;
+(c) **visibility is session-scoped, not action-scoped** — the §4 idle
+dim/hide behavior is dropped. The cursor fades in when the agent session
+starts, stays visible the whole run, and fades out at session end (driven
+by the AGENT_ACTIVITY signal, with the hide debounced 4s so lane flips
+never blink it); a glide never starts on a still-invisible cursor;
+(d) **glides run on the compositor** (Web Animations API over the sampled
+Bézier path, rAF fallback) with a 300ms cinematic floor, post-action
+lingers, and rest-drift off the last control; (e) **fields get ZERO
+overlay** — the §5 focus halo is REMOVED entirely (three double-highlight
+reports): anything that receives browser focus shows only the page's
+native focus ring, and ripples fire only on non-focusing controls; chips
+spawn in the post-dispatch settle phase anchored to the element's fresh
+rect so reflows cannot strand them; (f) **capture-hide is a setting**
+(`presenceHideDuringCapture`, default on): §6's suspend bracket stays the
+default, but turning it off removes the per-turn blink at the cost of the
+model seeing the cursor in its screenshots — film runs seed it off.

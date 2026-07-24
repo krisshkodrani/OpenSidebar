@@ -3,9 +3,9 @@
  *
  * Runs a script (glide → dwell → press → ripple) ahead of the real event
  * dispatch. Fail-open by construction: `perform` resolves at the dispatch
- * point, and a hard watchdog (600ms subtle / 1600ms cinematic) guarantees it
- * resolves even if an effect throws or the tab is throttled. Presence can
- * delay an action by at most the watchdog; it can never block one (RFC §2.1).
+ * point, and a hard watchdog (WATCHDOG_MS per mode) guarantees it resolves
+ * even if an effect throws or the tab is throttled. Presence can delay an
+ * action by at most the watchdog; it can never block one (RFC §2.1).
  */
 
 import type { PresenceMode } from "@shared-types/settings";
@@ -14,7 +14,6 @@ import type { Point } from "./motion";
 import { ARRIVAL_DWELL_MS, sampleGlide } from "./motion";
 import { PresenceCursor } from "./cursor";
 import { PresenceEffects } from "./effects";
-import { FocusHalo } from "./focus-halo";
 
 /** Cinematic covers the previous action's linger + a full glide + dwell. */
 export const WATCHDOG_MS = { subtle: 600, cinematic: 2800 } as const;
@@ -36,7 +35,6 @@ export interface CoordinatorOptions {
 export class PresenceCoordinator {
   readonly cursor: PresenceCursor;
   readonly effects: PresenceEffects;
-  readonly halo: FocusHalo;
   private mode: PresenceMode = "off";
   private queue: Promise<void> = Promise.resolve();
   private reducedMotion: () => boolean;
@@ -46,7 +44,6 @@ export class PresenceCoordinator {
     const doc = options.doc ?? document;
     this.cursor = new PresenceCursor(doc);
     this.effects = new PresenceEffects(() => this.cursor.getLayer());
-    this.halo = new FocusHalo(() => this.cursor.getLayer());
     this.reducedMotion =
       options.prefersReducedMotion ??
       (() =>
@@ -65,7 +62,6 @@ export class PresenceCoordinator {
   setMode(mode: PresenceMode): void {
     this.mode = mode;
     if (mode === "off") {
-      this.halo.clear();
       this.cursor.detach();
     } else if (this.sessionActive) {
       this.cursor.show();
@@ -96,7 +92,6 @@ export class PresenceCoordinator {
     this.sessionHideTimer = setTimeout(() => {
       this.sessionHideTimer = null;
       if (!this.sessionActive) {
-        this.halo.clear();
         this.cursor.hide();
       }
     }, this.sessionHideDelayMs);
@@ -109,9 +104,6 @@ export class PresenceCoordinator {
   }
 
   suspend(): void {
-    // Clear (not just hide) the halo: re-showing it after the capture reads
-    // as the focus highlight appearing twice.
-    this.halo.clear();
     this.cursor.suspend();
   }
 
@@ -156,7 +148,7 @@ export class PresenceCoordinator {
       // Two frames: let the framework re-render before reading the rect.
       await this.frame();
       await this.frame();
-      const anchor = script.haloTarget ?? script.point;
+      const anchor = script.anchorTarget ?? script.point;
       if (anchor) this.effects.chip(anchor, script.chipText);
     }
     if (this.mode !== "cinematic" || this.reducedMotion()) return;
@@ -183,7 +175,6 @@ export class PresenceCoordinator {
 
   private async runScript(script: ChoreographyScript): Promise<void> {
     const wasHidden = this.cursor.wake();
-    this.halo.retargetCheck(script.haloTarget);
 
     if (script.point) {
       if (wasHidden && !this.reducedMotion()) {
