@@ -138,6 +138,92 @@ describe("comparePromptPrefix", () => {
   });
 });
 
+describe("tools-array fingerprinting", () => {
+  const tool = (name: string, description = "d") => ({
+    type: "function",
+    function: { name, description, parameters: { type: "object", properties: {} } },
+  });
+  const msgs = [sys("stable"), user("goal")];
+
+  test("identical tools report no divergence and toolsChange none", () => {
+    const result = comparePromptPrefix(
+      fingerprintPrompt(msgs, [tool("a"), tool("b")]),
+      fingerprintPrompt(msgs, [tool("a"), tool("b")]),
+    );
+
+    expect(result.toolsChange).toBe("none");
+    expect(result.firstDivergenceRegion).toBe("none");
+  });
+
+  test("a reordered tools array is a divergence at offset 0 — the skill-ranking signature", () => {
+    // applySkillToolRanking reorders the array without changing the set. The
+    // provider serializes tools ahead of every message, so this alone breaks
+    // the whole cached prefix even though every message byte is identical.
+    const result = comparePromptPrefix(
+      fingerprintPrompt(msgs, [tool("a"), tool("b")]),
+      fingerprintPrompt(msgs, [tool("b"), tool("a")]),
+    );
+
+    expect(result.toolsChange).toBe("reordered");
+    expect(result.firstDivergenceRegion).toBe("tools");
+    expect(result.firstDivergenceOffset).toBe(0);
+    expect(result.stablePrefixPct).toBe(0);
+  });
+
+  test("a filtered tool set is set_changed, not reordered", () => {
+    const result = comparePromptPrefix(
+      fingerprintPrompt(msgs, [tool("a"), tool("b"), tool("c")]),
+      fingerprintPrompt(msgs, [tool("a"), tool("b")]),
+    );
+
+    expect(result.toolsChange).toBe("set_changed");
+    expect(result.firstDivergenceRegion).toBe("tools");
+  });
+
+  test("a changed tool DESCRIPTION is set_changed — definition bytes are part of the cache key", () => {
+    const result = comparePromptPrefix(
+      fingerprintPrompt(msgs, [tool("a", "old")]),
+      fingerprintPrompt(msgs, [tool("a", "new")]),
+    );
+
+    expect(result.toolsChange).toBe("set_changed");
+  });
+
+  test("fingerprints without tools stay comparable and report unknown", () => {
+    // Backward compatibility: a fingerprint carried over from a build that did
+    // not hash tools must not fabricate a tools divergence.
+    const result = comparePromptPrefix(
+      fingerprintPrompt(msgs),
+      fingerprintPrompt(msgs, [tool("a")]),
+    );
+
+    expect(result.toolsChange).toBe("unknown");
+    expect(result.firstDivergenceRegion).toBe("none");
+  });
+
+  test("tools churn takes precedence over message divergence in attribution", () => {
+    // Both changed: the tools break the prefix EARLIER than any message byte,
+    // so the region must say tools, not history.
+    const result = comparePromptPrefix(
+      fingerprintPrompt([sys("s"), user("a"), user("p1")], [tool("a")]),
+      fingerprintPrompt([sys("s"), user("b"), user("p2")], [tool("b")]),
+    );
+
+    expect(result.firstDivergenceRegion).toBe("tools");
+  });
+
+  test("retains no tool text — only digests and counts", () => {
+    const fingerprint = fingerprintPrompt(msgs, [
+      tool("secret_tool_name", "secret tool description"),
+    ]);
+
+    const serialized = JSON.stringify(fingerprint);
+    expect(serialized).not.toContain("secret_tool_name");
+    expect(serialized).not.toContain("secret tool description");
+    expect(fingerprint.toolsCount).toBe(1);
+  });
+});
+
 describe("PrefixResetLedger", () => {
   test("reports a reset exactly once, to the turn that pays for it", () => {
     const ledger = new PrefixResetLedger();

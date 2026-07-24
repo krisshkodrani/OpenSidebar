@@ -186,9 +186,14 @@ describe("Orchestrator role contracts", () => {
     );
     const contract = buildRoleExecutionContract("executor", baseSettings, node);
 
-    expect(contract.allowedTools.includes(ToolName.DISMISS_OVERLAYS)).toBe(false);
+    // dismiss_overlays is the skill's opening move — it clicks real close
+    // buttons and reports which overlays were only CSS-hidden. type_text stays
+    // available (ranking demotes it): the matcher applies this skill to mixed
+    // "close popups then fill the form" tasks, and suppressing type_text made
+    // an agent type an email one press_key at a time (2026-07-23 baseline).
+    expect(contract.allowedTools.includes(ToolName.DISMISS_OVERLAYS)).toBe(true);
     expect(contract.allowedTools.includes(ToolName.NAVIGATE)).toBe(false);
-    expect(contract.allowedTools.includes(ToolName.TYPE_TEXT)).toBe(false);
+    expect(contract.allowedTools.includes(ToolName.TYPE_TEXT)).toBe(true);
     expect(contract.allowedTools.includes(ToolName.CLICK_ELEMENT)).toBe(true);
     expect(contract.allowedTools.includes(ToolName.ESCALATE)).toBe(true);
     expect(contract.allowedTools.includes(ToolName.CLARIFY)).toBe(true);

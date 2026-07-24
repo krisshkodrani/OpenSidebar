@@ -162,11 +162,26 @@ export function registerInteractionTools(toolRegistry: ToolRegistry): void {
             source: MessageSource.BACKGROUND,
             payload: {},
           });
-          const { dismissed, remainingOverlay } = response.payload;
-          let msg =
-            dismissed > 0
-              ? `Dismissed ${dismissed} overlay(s).`
-              : "No overlays found.";
+          const { dismissed, clickedClose, cssHidden, remainingOverlay } =
+            response.payload;
+          let msg: string;
+          if (dismissed > 0) {
+            // Which path each dismissal took matters: a clicked close button
+            // updates framework state and stays closed; a CSS-hidden overlay
+            // may reappear on the next re-render.
+            msg = `Dismissed ${dismissed} overlay(s)`;
+            const parts: string[] = [];
+            if (clickedClose > 0) parts.push(`${clickedClose} via close button`);
+            if (cssHidden > 0) parts.push(`${cssHidden} hidden with CSS`);
+            if (parts.length > 0) msg += ` (${parts.join(", ")})`;
+            msg += ".";
+            if ((cssHidden ?? 0) > 0) {
+              msg +=
+                " CSS-hidden overlays may reappear — if one does, click its close/dismiss control directly.";
+            }
+          } else {
+            msg = "No overlays found.";
+          }
           if (remainingOverlay) {
             msg += ` Warning: overlay [${remainingOverlay.tagId}] still covers ${remainingOverlay.coveragePercent}% of viewport. Use hide_element to remove it.`;
           }
