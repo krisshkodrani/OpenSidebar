@@ -37,23 +37,32 @@ export function normalizePresenceMode(value: unknown): PresenceMode {
 export function initPresence(): void {
   try {
     if (typeof chrome === "undefined" || !chrome.storage?.sync) return;
-    void chrome.storage.sync.get("userSettings").then((result) => {
-      const settings = result.userSettings as Partial<UserSettings> | undefined;
+    const apply = (settings: Partial<UserSettings> | undefined) => {
       getCoordinator().setMode(normalizePresenceMode(settings?.presenceMode));
+      setPresenceCaptureHide(settings?.presenceHideDuringCapture !== false);
+    };
+    void chrome.storage.sync.get("userSettings").then((result) => {
+      apply(result.userSettings as Partial<UserSettings> | undefined);
     });
     chrome.storage.onChanged.addListener((changes, area) => {
       if (area !== "sync" || !changes.userSettings) return;
-      const next = changes.userSettings.newValue as
-        | Partial<UserSettings>
-        | undefined;
-      getCoordinator().setMode(normalizePresenceMode(next?.presenceMode));
+      apply(changes.userSettings.newValue as Partial<UserSettings> | undefined);
     });
   } catch {
     /* presence is optional — never let it break content-script init */
   }
 }
 
+let hideDuringCapture = true;
+
+export function setPresenceCaptureHide(hide: boolean): void {
+  hideDuringCapture = hide;
+}
+
 export function suspendPresence(): void {
+  // Owner-facing knob: when capture-hiding is off, the cursor stays visible
+  // in the agent's screenshots and the per-turn blink disappears entirely.
+  if (!hideDuringCapture) return;
   coordinator?.suspend();
 }
 

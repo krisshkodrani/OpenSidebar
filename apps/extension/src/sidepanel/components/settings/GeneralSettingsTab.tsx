@@ -141,6 +141,16 @@ export function GeneralSettingsTab({
               </button>
             ))}
           </div>
+          {(formState.presenceMode ?? "subtle") !== "off" ? (
+            <ToggleRow
+              checked={formState.presenceHideDuringCapture !== false}
+              description="Prevents the agent from seeing the cursor in its own view; causes a brief blink each time it looks at the page."
+              label="Hide cursor from the agent's screenshots"
+              onChange={(checked) =>
+                onChange("presenceHideDuringCapture", checked)
+              }
+            />
+          ) : null}
         </div>
 
         <div className="space-y-2">
