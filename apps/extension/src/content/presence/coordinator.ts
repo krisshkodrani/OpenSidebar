@@ -29,6 +29,8 @@ export interface CoordinatorOptions {
   prefersReducedMotion?: () => boolean;
   /** Test seam — defaults to requestAnimationFrame with setTimeout fallback. */
   raf?: (cb: () => void) => void;
+  /** Debounce before hiding at session end (lane flips must not blink). */
+  sessionHideDelayMs?: number;
 }
 
 export class PresenceCoordinator {
@@ -57,6 +59,7 @@ export class PresenceCoordinator {
         if (view?.requestAnimationFrame) view.requestAnimationFrame(() => cb());
         else setTimeout(cb, 16);
       });
+    this.sessionHideDelayMs = options.sessionHideDelayMs ?? 4000;
   }
 
   setMode(mode: PresenceMode): void {
@@ -70,23 +73,36 @@ export class PresenceCoordinator {
   }
 
   private sessionActive = false;
+  private sessionHideTimer: ReturnType<typeof setTimeout> | null = null;
 
   /**
    * Session-scoped visibility (owner feedback 2026-07-24): show the cursor
    * for the whole agent session — it glides between actions and sits still
    * while the model thinks, like a real hand on a real mouse — and fade it
-   * out only when the session ends.
+   * out only when the session ends. The hide is DEBOUNCED: the orchestrator
+   * flips the activity signal off/on between plan lanes, and hiding on every
+   * flip made the cursor appear and disappear mid-run (owner report #3).
    */
   setSessionActive(active: boolean): void {
     this.sessionActive = active;
     if (this.mode === "off") return;
     if (active) {
+      if (this.sessionHideTimer) clearTimeout(this.sessionHideTimer);
+      this.sessionHideTimer = null;
       this.cursor.show();
-    } else {
-      this.halo.clear();
-      this.cursor.hide();
+      return;
     }
+    if (this.sessionHideTimer) clearTimeout(this.sessionHideTimer);
+    this.sessionHideTimer = setTimeout(() => {
+      this.sessionHideTimer = null;
+      if (!this.sessionActive) {
+        this.halo.clear();
+        this.cursor.hide();
+      }
+    }, this.sessionHideDelayMs);
   }
+
+  private readonly sessionHideDelayMs: number;
 
   getMode(): PresenceMode {
     return this.mode;
@@ -130,12 +146,19 @@ export class PresenceCoordinator {
 
   private performGeneration = 0;
 
-  /** Cinematic rhythm: hold after the action, then, if no further action is
-   *  queued, drift off the control into nearby whitespace to rest. */
+  /** Post-dispatch settle: the page has reacted by now, so effects that
+   *  narrate the OUTCOME (chips) anchor against fresh element geometry. */
   private async postAction(
     script: ChoreographyScript,
     generation: number,
   ): Promise<void> {
+    if (script.chipText) {
+      // Two frames: let the framework re-render before reading the rect.
+      await this.frame();
+      await this.frame();
+      const anchor = script.haloTarget ?? script.point;
+      if (anchor) this.effects.chip(anchor, script.chipText);
+    }
     if (this.mode !== "cinematic" || this.reducedMotion()) return;
     if (script.lingerMs > 0) {
       await new Promise((resolve) => setTimeout(resolve, script.lingerMs));
@@ -159,10 +182,15 @@ export class PresenceCoordinator {
   }
 
   private async runScript(script: ChoreographyScript): Promise<void> {
-    this.cursor.wake();
+    const wasHidden = this.cursor.wake();
     this.halo.retargetCheck(script.haloTarget);
 
     if (script.point) {
+      if (wasHidden && !this.reducedMotion()) {
+        // Movement must never start on an invisible cursor — let the fade-in
+        // land first so the viewer sees the cursor LEAVE, not arrive.
+        await new Promise((resolve) => setTimeout(resolve, 240));
+      }
       await this.glideTo(script.point, script.targetWidth);
       await this.dwell();
     }
@@ -185,9 +213,8 @@ export class PresenceCoordinator {
           );
         }
         if (script.haloTarget) this.halo.show(script.haloTarget);
-        if (script.chipText && script.point) {
-          this.effects.chip(script.point, script.chipText);
-        }
+        // Chips spawn in settle(), AFTER the page has reacted — spawning here
+        // let layout reflows strand them at stale coordinates.
         break;
       }
       case "key": {

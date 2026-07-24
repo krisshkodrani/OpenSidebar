@@ -8,6 +8,13 @@ import type { Point } from "./motion";
 
 const MAX_CONCURRENT_EFFECTS = 3;
 
+function isElementAnchor(anchor: Element | Point): anchor is Element {
+  return (
+    typeof (anchor as { getBoundingClientRect?: unknown })
+      .getBoundingClientRect === "function"
+  );
+}
+
 export class PresenceEffects {
   private live = 0;
 
@@ -52,16 +59,29 @@ export class PresenceEffects {
     this.spawn(el, 300);
   }
 
-  /** Selection / status chip ("Business ✓", "file attached") near a point. */
-  chip(at: Point, text: string): void {
+  /**
+   * Selection / status chip ("Business ✓", "file attached"). Anchored to the
+   * ELEMENT when given one: the rect is read at spawn time — after the page
+   * has reacted to the action — so a reflow (e.g. conditional fields
+   * appearing) cannot strand the chip at stale coordinates (owner report).
+   */
+  chip(anchor: Element | Point, text: string): void {
     const doc = this.getLayer()?.ownerDocument;
     if (!doc) return;
+    let at: Point;
+    if (isElementAnchor(anchor)) {
+      const rect = anchor.getBoundingClientRect();
+      if (rect.width === 0 && rect.height === 0) return; // element left the page
+      at = { x: rect.right - 8, y: rect.top };
+    } else {
+      at = anchor;
+    }
     const el = doc.createElement("div");
     el.className = "chip";
     el.textContent = text;
     el.style.left = `${at.x + 14}px`;
     el.style.top = `${at.y - 30}px`;
-    this.spawn(el, 1300);
+    this.spawn(el, 900);
   }
 
   /** Key-cap chip for non-pointer actions (⏎, esc, tab) — RFC §5. */

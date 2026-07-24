@@ -80,7 +80,7 @@ export const PRESENCE_STYLE_TEXT = `
   font-size: 12px;
   line-height: 16px;
   white-space: nowrap;
-  animation: presence-chip 1200ms ease forwards;
+  animation: presence-chip 800ms ease forwards;
 }
 .chip.key {
   font-family: ui-monospace, monospace;
