@@ -16,6 +16,10 @@ export interface Point {
 /** Cinematic pacing multiplier over subtle-mode durations (RFC §4). */
 export const CINEMATIC_PACE = 1.8;
 
+/** Cinematic glide floor: short hops at 1.8×90ms ≈ 162ms are ~5 video frames
+ *  — nearly a jump on camera. Every cinematic movement must be perceivable. */
+export const CINEMATIC_MIN_GLIDE_MS = 300;
+
 /** Dwell after arrival before the press begins, ms (RFC §4). */
 export const ARRIVAL_DWELL_MS = { subtle: 60, cinematic: 90 } as const;
 
@@ -53,7 +57,9 @@ export function glideDurationMs(
   const width = Math.max(8, targetWidth);
   const base = 60 + 70 * Math.log2(dist / width + 1);
   const clamped = Math.round(Math.min(420, Math.max(90, base)));
-  return mode === "cinematic" ? Math.round(clamped * CINEMATIC_PACE) : clamped;
+  return mode === "cinematic"
+    ? Math.max(CINEMATIC_MIN_GLIDE_MS, Math.round(clamped * CINEMATIC_PACE))
+    : clamped;
 }
 
 /**

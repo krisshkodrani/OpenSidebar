@@ -27,7 +27,11 @@ export class PresenceEffects {
     setTimeout(drop, ttlMs + 400);
   }
 
-  ripple(at: Point, variant: "accent" | "error" | "square" = "accent"): void {
+  ripple(
+    at: Point,
+    variant: "accent" | "error" | "square" = "accent",
+    scale = 1,
+  ): void {
     const doc = this.getLayer()?.ownerDocument;
     if (!doc) return;
     const el = doc.createElement("div");
@@ -39,6 +43,12 @@ export class PresenceEffects {
           : "ripple";
     el.style.left = `${at.x}px`;
     el.style.top = `${at.y}px`;
+    if (scale !== 1) {
+      const size = Math.round(14 * scale);
+      el.style.width = `${size}px`;
+      el.style.height = `${size}px`;
+      el.style.margin = `-${size / 2}px 0 0 -${size / 2}px`;
+    }
     this.spawn(el, 300);
   }
 

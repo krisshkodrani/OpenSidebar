@@ -33,10 +33,12 @@ describe("presence motion math", () => {
     expect(mid).toBeLessThanOrEqual(420);
   });
 
-  test("cinematic pacing is ×1.8 over subtle", () => {
+  test("cinematic pacing is ×1.8 over subtle, floored at 300ms", () => {
     const subtle = glideDurationMs(A, B, 40, "subtle");
     const cinematic = glideDurationMs(A, B, 40, "cinematic");
-    expect(cinematic).toBe(Math.round(subtle * 1.8));
+    expect(cinematic).toBe(Math.max(300, Math.round(subtle * 1.8)));
+    // Short hop: subtle clamps to 90ms; cinematic must still be perceivable.
+    expect(glideDurationMs(A, { x: 110, y: 100 }, 40, "cinematic")).toBe(300);
   });
 
   test("zero-distance glides cost nothing", () => {

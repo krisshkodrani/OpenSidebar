@@ -41,6 +41,14 @@ export interface ChoreographyScript {
   dragSourceRect: DOMRect | null;
   /** Drag destination point. */
   dragTo: Point | null;
+  /** Cinematic-only post-action hold (ms) before the next glide — restores a
+   *  human rhythm after instant value-pops (owner feedback: zip-pop cadence). */
+  lingerMs: number;
+}
+
+/** Linger scaled to how much "typing" the instant value-pop stood in for. */
+export function typeLingerMs(textLength: number): number {
+  return Math.min(800, 250 + 25 * textLength);
 }
 
 function centerOf(el: Element): Point {
@@ -99,6 +107,7 @@ export function buildScript(params: {
   key?: string | null;
   scrollDirection?: "up" | "down" | "left" | "right" | null;
   dragTarget?: Element | null;
+  typedTextLength?: number;
 }): ChoreographyScript {
   const script: ChoreographyScript = {
     kind: params.kind,
@@ -111,6 +120,7 @@ export function buildScript(params: {
     scrollDirection: null,
     dragSourceRect: null,
     dragTo: null,
+    lingerMs: 120,
   };
 
   const target = params.target ?? null;
@@ -136,10 +146,12 @@ export function buildScript(params: {
     case "type":
       script.ripple = "accent";
       if (target && isTextEntry(target)) script.haloTarget = target;
+      script.lingerMs = typeLingerMs(params.typedTextLength ?? 10);
       break;
     case "select":
       script.ripple = "accent";
       script.haloTarget = target;
+      script.lingerMs = 500;
       // Honesty over mime: the OS picker never renders in-page, so narrate
       // the chosen value with a chip instead of faking a menu (RFC §5).
       script.chipText = params.optionLabel ? `${params.optionLabel} ✓` : null;

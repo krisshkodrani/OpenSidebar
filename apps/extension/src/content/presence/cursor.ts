@@ -109,9 +109,56 @@ export class PresenceCursor {
     this.applyPosition();
   }
 
+  /**
+   * Compositor-driven glide (owner feedback 2026-07-24: the movement through
+   * x,y space must always render). Web Animations API with pre-eased path
+   * keyframes runs on the compositor, so the travel stays smooth even while
+   * the agent is busy mutating the DOM on the main thread. Returns false when
+   * WAAPI is unavailable so the caller can fall back to the rAF loop.
+   */
+  animateGlide(points: Point[], durationMs: number): Promise<boolean> {
+    const el = this.cursorEl;
+    if (!el || typeof el.animate !== "function" || points.length === 0) {
+      return Promise.resolve(false);
+    }
+    // Downsample to ≤16 keyframes — the points are already eased, so equal
+    // keyframe spacing with linear easing preserves the acceleration curve.
+    const step = Math.max(1, Math.floor(points.length / 15));
+    const sampled = points.filter((_, i) => i % step === 0);
+    if (sampled[sampled.length - 1] !== points[points.length - 1]) {
+      sampled.push(points[points.length - 1]);
+    }
+    const keyframes = sampled.map((p) => ({
+      transform: `translate3d(${p.x - 5}px, ${p.y - 3}px, 0)`,
+    }));
+    const animation = el.animate(keyframes, {
+      duration: Math.max(1, durationMs),
+      easing: "linear",
+      fill: "forwards",
+    });
+    const target = points[points.length - 1];
+    return new Promise<boolean>((resolve) => {
+      const settle = () => {
+        this.position = target;
+        this.applyPosition();
+        try {
+          animation.cancel();
+        } catch {
+          /* already done */
+        }
+        resolve(true);
+      };
+      animation.finished.then(settle).catch(settle);
+      // Guard: a paused/throttled document must not strand the glide.
+      setTimeout(settle, durationMs + 400);
+    });
+  }
+
   private applyPosition(): void {
     if (!this.cursorEl) return;
-    this.cursorEl.style.transform = `translate3d(${this.position.x}px, ${this.position.y}px, 0)`;
+    // Hotspot registration: the arrow TIP sits ~(5,3)px inside the 32px SVG;
+    // offset so the tip — not the glyph's corner — lands on the target.
+    this.cursorEl.style.transform = `translate3d(${this.position.x - 5}px, ${this.position.y - 3}px, 0)`;
   }
 
   /**
