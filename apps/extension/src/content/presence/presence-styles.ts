@@ -59,13 +59,17 @@ export const PRESENCE_STYLE_TEXT = `
 
 .halo {
   position: absolute;
-  border: 2px solid ${PRESENCE_ACCENT};
-  border-radius: 6px;
+  border-radius: 8px;
+  /* A soft aura, deliberately NOT a border: the page draws its own focus
+   * ring on the real focus, and a second rectangle reads as a double
+   * highlight (owner report, 2026-07-24). */
+  box-shadow:
+    0 0 0 3px rgba(37, 99, 235, 0.28),
+    0 0 14px 5px rgba(37, 99, 235, 0.18);
   opacity: 0;
   transition: opacity 180ms ease;
-  animation: presence-breathe 4s ease-in-out 180ms infinite;
 }
-.halo.visible { opacity: 0.85; }
+.halo.visible { opacity: 1; }
 
 .chip {
   position: absolute;
@@ -104,10 +108,6 @@ export const PRESENCE_STYLE_TEXT = `
   from { transform: scale(0.5); opacity: 0.9; }
   to { transform: scale(2.6); opacity: 0; }
 }
-@keyframes presence-breathe {
-  0%, 100% { box-shadow: 0 0 0 0 rgba(37, 99, 235, 0.25); }
-  50% { box-shadow: 0 0 0 4px rgba(37, 99, 235, 0.12); }
-}
 @keyframes presence-chip {
   0% { opacity: 0; transform: translateY(4px); }
   12% { opacity: 1; transform: translateY(0); }
@@ -125,7 +125,6 @@ export const PRESENCE_STYLE_TEXT = `
 }
 @media (prefers-reduced-motion: reduce) {
   .ripple { animation-duration: 150ms; }
-  .halo { animation: none; }
   #cursor.shake { animation: none; }
 }
 `;

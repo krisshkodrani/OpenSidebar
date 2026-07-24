@@ -111,6 +111,29 @@ describe("presence coordinator", () => {
     coord.setMode("off");
   });
 
+  test("focus halo appears once: auto-fades after TTL and never survives a suspend", async () => {
+    const coord = makeCoordinator({ reduced: true });
+    coord.setMode("subtle");
+    document.body.innerHTML = `<input id="field" />`;
+    const script = clickScript(100, 100);
+    script.kind = "type";
+    script.haloTarget = document.getElementById("field");
+    await coord.perform(script);
+    const layer = coord.cursor.getLayer()!;
+    expect(layer.querySelector(".halo")).not.toBeNull();
+    // Suspend (capture bracket) clears it — resume must NOT bring it back.
+    coord.suspend();
+    coord.resume();
+    await new Promise((r) => setTimeout(r, 250));
+    expect(layer.querySelector(".halo")).toBeNull();
+    // And when undisturbed, it fades on its own after HALO_TTL_MS.
+    await coord.perform(script);
+    expect(layer.querySelector(".halo")).not.toBeNull();
+    await new Promise((r) => setTimeout(r, 1200));
+    expect(layer.querySelector(".halo")).toBeNull();
+    coord.setMode("off");
+  });
+
   test("errorPulse is safe in every mode", () => {
     const coord = makeCoordinator();
     coord.setMode("off");

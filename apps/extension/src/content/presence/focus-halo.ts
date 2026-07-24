@@ -1,14 +1,18 @@
 /**
  * LP-24 presence layer — field focus halo (RFC §5 text-field grammar).
  *
- * A rounded-rect outline drawn around the field border: 180ms fade-in,
- * subtle breathing at a 4s period, persists while the field stays the
- * action target, fades on retarget or explicit clear. One halo at a time.
+ * A soft glow aura drawn around the field: 180ms fade-in, auto-fades after
+ * HALO_TTL_MS. It deliberately does NOT persist until the next action — the
+ * per-turn capture suspend would hide and re-show it, which reads as the
+ * highlight appearing twice (owner report, 2026-07-24). One halo at a time.
  */
+
+export const HALO_TTL_MS = 900;
 
 export class FocusHalo {
   private el: HTMLElement | null = null;
   private target: Element | null = null;
+  private ttlTimer: ReturnType<typeof setTimeout> | null = null;
 
   constructor(private getLayer: () => HTMLElement | null) {}
 
@@ -31,10 +35,13 @@ export class FocusHalo {
     requestAnimationFrame(() => el.classList.add("visible"));
     this.el = el;
     this.target = target;
+    this.ttlTimer = setTimeout(() => this.clear(), HALO_TTL_MS);
   }
 
   /** Fade and remove; safe to call when nothing is shown. */
   clear(): void {
+    if (this.ttlTimer) clearTimeout(this.ttlTimer);
+    this.ttlTimer = null;
     const el = this.el;
     this.el = null;
     this.target = null;
