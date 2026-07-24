@@ -10,7 +10,10 @@ import { ToolName } from "../../src/types";
 import { executeAction } from "../../src/content/actions";
 import { resetStableIds, tagElements } from "../../src/content/tagging";
 import { getPresenceCoordinator } from "../../src/content/presence";
-import { resolveVisualTarget } from "../../src/content/presence/choreography";
+import {
+  resolveVisualAnchor,
+  resolveVisualTarget,
+} from "../../src/content/presence/choreography";
 
 const OBSERVED_EVENTS = [
   "pointerover",
@@ -89,5 +92,35 @@ describe("presence parity (LP-24 principle 1)", () => {
     const radio = document.getElementById("opt")!;
     expect(resolveVisualTarget(label)).toBe(radio);
     expect(resolveVisualTarget(radio)).toBe(radio);
+  });
+
+  test("visual anchor: visible control → its center; hidden control → start of its label; nothing → null", () => {
+    document.body.innerHTML = `
+      <label id="lab"><input type="radio" id="r" name="g" />Customer data</label>`;
+    const label = document.getElementById("lab")!;
+    const radio = document.getElementById("r")!;
+    const stub = (el: Element, rect: Partial<DOMRect>) => {
+      (el as HTMLElement).getBoundingClientRect = () =>
+        ({ left: 0, top: 0, width: 0, height: 0, right: 0, bottom: 0, ...rect }) as DOMRect;
+    };
+
+    // Custom-widget case: the input is hidden, only the label has geometry.
+    stub(radio, { width: 0, height: 0 });
+    stub(label, { left: 50, top: 50, width: 140, height: 22 });
+    const fromLabel = resolveVisualAnchor(radio, "checkbox")!;
+    expect(fromLabel.point).toEqual({ x: 64, y: 61 }); // start of the label
+    expect(fromLabel.width).toBe(48);
+
+    // Native case: the radio itself is visible → land dead-center on it.
+    stub(radio, { left: 60, top: 55, width: 16, height: 16 });
+    const fromControl = resolveVisualAnchor(label, "click")!;
+    expect(fromControl.point).toEqual({ x: 68, y: 63 });
+
+    // Nothing measurable → no anchor, glide is skipped (never fly to 0,0).
+    stub(radio, { width: 0, height: 0 });
+    stub(label, { width: 0, height: 0 });
+    document.body.getBoundingClientRect = () =>
+      ({ left: 0, top: 0, width: 0, height: 0, right: 0, bottom: 0 }) as DOMRect;
+    expect(resolveVisualAnchor(radio, "checkbox")).toBeNull();
   });
 });
