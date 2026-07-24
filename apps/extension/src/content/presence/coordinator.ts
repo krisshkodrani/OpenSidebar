@@ -212,9 +212,9 @@ export class PresenceCoordinator {
             this.mode === "cinematic" ? 1.6 : 1,
           );
         }
-        if (script.haloTarget) this.halo.show(script.haloTarget);
-        // Chips spawn in settle(), AFTER the page has reacted — spawning here
-        // let layout reflows strand them at stale coordinates.
+        // No halo on focusable fields — the page's native focus ring is the
+        // only highlight (owner reports: anything layered on it reads as a
+        // double). Chips spawn in settle(), AFTER the page has reacted.
         break;
       }
       case "key": {

@@ -145,26 +145,21 @@ describe("presence coordinator", () => {
     coord.setMode("off");
   });
 
-  test("focus halo appears once: auto-fades after TTL and never survives a suspend", async () => {
+  test("field actions draw NO extra highlight — the page's focus ring is the only one", async () => {
     const coord = makeCoordinator({ reduced: true });
     coord.setMode("subtle");
     document.body.innerHTML = `<input id="field" />`;
     const script = clickScript(100, 100);
     script.kind = "type";
     script.haloTarget = document.getElementById("field");
+    script.ripple = "none";
     await coord.perform(script);
+    await new Promise((r) => setTimeout(r, 60));
     const layer = coord.cursor.getLayer()!;
-    expect(layer.querySelector(".halo")).not.toBeNull();
-    // Suspend (capture bracket) clears it — resume must NOT bring it back.
-    coord.suspend();
-    coord.resume();
-    await new Promise((r) => setTimeout(r, 250));
+    // No halo, no ripple: anything layered on the native focus ring reads
+    // as a double highlight (owner reports x3).
     expect(layer.querySelector(".halo")).toBeNull();
-    // And when undisturbed, it fades on its own after HALO_TTL_MS.
-    await coord.perform(script);
-    expect(layer.querySelector(".halo")).not.toBeNull();
-    await new Promise((r) => setTimeout(r, 1200));
-    expect(layer.querySelector(".halo")).toBeNull();
+    expect(layer.querySelector(".ripple")).toBeNull();
     coord.setMode("off");
   });
 
