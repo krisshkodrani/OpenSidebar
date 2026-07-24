@@ -93,6 +93,9 @@ export class PresenceCoordinator {
   }
 
   suspend(): void {
+    // Clear (not just hide) the halo: re-showing it after the capture reads
+    // as the focus highlight appearing twice.
+    this.halo.clear();
     this.cursor.suspend();
   }
 
