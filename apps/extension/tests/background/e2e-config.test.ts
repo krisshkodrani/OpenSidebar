@@ -9,16 +9,27 @@ import {
 } from "../e2e/helpers/e2e-config";
 
 describe("E2E config", () => {
-  test("keeps the supported public env surface at seven vars", () => {
+  test("keeps the supported public env surface at eight vars", () => {
     expect(PUBLIC_E2E_ENV_VARS).toEqual([
       "E2E_PROFILE",
       "E2E_PROVIDER",
       "E2E_MODEL",
       "E2E_PLANNER_MODEL",
       "E2E_PERCEPTION_MODE",
+      "E2E_PRESENCE_MODE",
       "E2E_SUITE_FLAGS",
       "E2E_ARTIFACTS",
     ]);
+  });
+
+  test("presence defaults: cinematic on the video profile, off elsewhere", () => {
+    expect(readE2EConfig({ env: {} }).presenceMode).toBe("off");
+    expect(
+      readE2EConfig({ env: { E2E_PROFILE: "video" } }).presenceMode,
+    ).toBe("cinematic");
+    expect(
+      readE2EConfig({ env: { E2E_PRESENCE_MODE: "subtle" } }).presenceMode,
+    ).toBe("subtle");
   });
 
   test("defaults to the local fireworks overlay profile", () => {

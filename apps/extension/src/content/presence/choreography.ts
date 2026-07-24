@@ -1,0 +1,165 @@
+/**
+ * LP-24 presence layer — the choreography grammar (RFC §5).
+ *
+ * Maps action kind × control type to a visual script: where the cursor
+ * glides, which glyph it wears, where the ripple lands (radio/checkbox
+ * clicks retarget the visual from the label to the control), whether a
+ * focus halo appears, and what chip (if any) narrates a non-visual effect.
+ */
+
+import type { Point } from "./motion";
+
+export type PresenceActionKind =
+  | "click"
+  | "right_click"
+  | "type"
+  | "select"
+  | "checkbox"
+  | "hover"
+  | "key"
+  | "drag"
+  | "scroll"
+  | "upload"
+  | "none";
+
+export interface ChoreographyScript {
+  kind: PresenceActionKind;
+  /** Where the cursor glides / the ripple lands (viewport coords). */
+  point: Point | null;
+  /** Width of the visual target — feeds Fitts duration scaling. */
+  targetWidth: number;
+  ripple: "accent" | "square" | "none";
+  /** Element that receives a persistent focus halo (text fields, selects). */
+  haloTarget: Element | null;
+  /** Chip text narrating an effect the page won't render (select value, upload). */
+  chipText: string | null;
+  /** Key label for key-cap chips. */
+  keyLabel: string | null;
+  /** Scroll direction for the chevron glyph. */
+  scrollDirection: "up" | "down" | "left" | "right" | null;
+  /** Drag source rect for the ghost outline. */
+  dragSourceRect: DOMRect | null;
+  /** Drag destination point. */
+  dragTo: Point | null;
+}
+
+function centerOf(el: Element): Point {
+  const rect = el.getBoundingClientRect();
+  return { x: rect.left + rect.width / 2, y: rect.top + rect.height / 2 };
+}
+
+function isTextEntry(el: Element): boolean {
+  const tag = el.tagName.toLowerCase();
+  if (tag === "textarea") return true;
+  if (el instanceof HTMLElement && el.isContentEditable) return true;
+  if (tag !== "input") return false;
+  const type = (el.getAttribute("type") ?? "text").toLowerCase();
+  return ![
+    "checkbox",
+    "radio",
+    "button",
+    "submit",
+    "reset",
+    "range",
+    "color",
+    "file",
+    "image",
+  ].includes(type);
+}
+
+function isToggleControl(el: Element): boolean {
+  if (el.tagName.toLowerCase() !== "input") return false;
+  const type = (el.getAttribute("type") ?? "").toLowerCase();
+  return type === "checkbox" || type === "radio";
+}
+
+/**
+ * Clicks on a <label> visually belong to the control it labels — the ripple
+ * lands on the radio/checkbox, not the text (RFC §5).
+ */
+export function resolveVisualTarget(el: Element): Element {
+  if (isToggleControl(el)) return el;
+  const label = el.closest("label");
+  if (label) {
+    const forId = label.getAttribute("for");
+    const doc = el.ownerDocument;
+    const control = forId
+      ? doc.getElementById(forId)
+      : label.querySelector("input[type=checkbox], input[type=radio]");
+    if (control && isToggleControl(control)) return control;
+  }
+  return el;
+}
+
+export function buildScript(params: {
+  kind: PresenceActionKind;
+  target?: Element | null;
+  point?: Point | null;
+  optionLabel?: string | null;
+  key?: string | null;
+  scrollDirection?: "up" | "down" | "left" | "right" | null;
+  dragTarget?: Element | null;
+}): ChoreographyScript {
+  const script: ChoreographyScript = {
+    kind: params.kind,
+    point: params.point ?? null,
+    targetWidth: 24,
+    ripple: "none",
+    haloTarget: null,
+    chipText: null,
+    keyLabel: null,
+    scrollDirection: null,
+    dragSourceRect: null,
+    dragTo: null,
+  };
+
+  const target = params.target ?? null;
+  if (target) {
+    const visual = params.kind === "click" ? resolveVisualTarget(target) : target;
+    const rect = visual.getBoundingClientRect();
+    script.point = centerOf(visual);
+    script.targetWidth = Math.max(8, Math.min(rect.width, 400));
+  }
+
+  switch (params.kind) {
+    case "click":
+    case "upload":
+      script.ripple = "accent";
+      if (params.kind === "upload") script.chipText = "file attached";
+      break;
+    case "right_click":
+      script.ripple = "square";
+      break;
+    case "checkbox":
+      script.ripple = "accent";
+      break;
+    case "type":
+      script.ripple = "accent";
+      if (target && isTextEntry(target)) script.haloTarget = target;
+      break;
+    case "select":
+      script.ripple = "accent";
+      script.haloTarget = target;
+      // Honesty over mime: the OS picker never renders in-page, so narrate
+      // the chosen value with a chip instead of faking a menu (RFC §5).
+      script.chipText = params.optionLabel ? `${params.optionLabel} ✓` : null;
+      break;
+    case "hover":
+      break;
+    case "key":
+      script.keyLabel = params.key ?? null;
+      break;
+    case "scroll":
+      script.scrollDirection = params.scrollDirection ?? "down";
+      break;
+    case "drag": {
+      if (target) script.dragSourceRect = target.getBoundingClientRect();
+      if (params.dragTarget) script.dragTo = centerOf(params.dragTarget);
+      script.ripple = "accent";
+      break;
+    }
+    case "none":
+      break;
+  }
+  return script;
+}

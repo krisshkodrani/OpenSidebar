@@ -69,6 +69,16 @@ export interface DismissModalsResponse extends BaseMessage {
   source: MessageSource.CONTENT;
   payload: {
     dismissed: number;
+    /**
+     * Of `dismissed`, how many were closed by clicking a real close button —
+     * these trigger framework state updates and stay closed.
+     */
+    clickedClose: number;
+    /**
+     * Of `dismissed`, how many were only CSS-hidden (no close button found) —
+     * these may reappear on the next framework re-render.
+     */
+    cssHidden: number;
     /** Non-null if heuristics couldn't dismiss a viewport-covering overlay */
     remainingOverlay: OverlayDescriptor | null;
     /** Text content extracted from dismissed overlays (deduplicated) */
@@ -121,6 +131,20 @@ export interface ScrollToPositionResponse extends BaseMessage {
   payload: { actualY: number };
 }
 
+/** LP-24: background hides the presence cursor before a perception capture */
+export interface PresenceSuspendMessage extends BaseMessage {
+  type: "PRESENCE_SUSPEND";
+  source: MessageSource.BACKGROUND;
+  payload: Record<string, never>;
+}
+
+/** LP-24: background restores the presence cursor after a perception capture */
+export interface PresenceResumeMessage extends BaseMessage {
+  type: "PRESENCE_RESUME";
+  source: MessageSource.BACKGROUND;
+  payload: Record<string, never>;
+}
+
 /** Background ↔ content-script page-protocol messages. */
 export type ContentProtocolMessage =
   | DomSnapshotRequest
@@ -133,4 +157,6 @@ export type ContentProtocolMessage =
   | DomReadyProbeMessage
   | DomReadyAckMessage
   | ScrollToPositionMessage
-  | ScrollToPositionResponse;
+  | ScrollToPositionResponse
+  | PresenceSuspendMessage
+  | PresenceResumeMessage;
