@@ -193,7 +193,10 @@ export function buildScript(params: {
   switch (params.kind) {
     case "click":
     case "upload":
-      script.ripple = "accent";
+      // A click into a text field triggers the page's own focus ring — a
+      // ripple on top reads as a double highlight (owner report). The focus
+      // ring IS the feedback there; ripples are for non-focus-ring controls.
+      script.ripple = target && isTextEntry(target) ? "none" : "accent";
       if (params.kind === "upload") script.chipText = "file attached";
       break;
     case "right_click":
@@ -203,12 +206,16 @@ export function buildScript(params: {
       script.ripple = "accent";
       break;
     case "type":
-      script.ripple = "accent";
+      // No ripple and no halo: the field's native focus ring (from the real
+      // focus) is the one and only highlight — everything we layered on it
+      // read as a double (owner reports x3). haloTarget survives purely as
+      // the chip/geometry anchor.
+      script.ripple = "none";
       if (target && isTextEntry(target)) script.haloTarget = target;
       script.lingerMs = typeLingerMs(params.typedTextLength ?? 10);
       break;
     case "select":
-      script.ripple = "accent";
+      script.ripple = "none";
       script.haloTarget = target;
       script.lingerMs = 500;
       // Honesty over mime: the OS picker never renders in-page, so narrate
