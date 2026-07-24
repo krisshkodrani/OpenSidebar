@@ -7,6 +7,7 @@ import {
 import {
   LANE_TOPOLOGY_OPTIONS,
   MAX_TURNS_PRESETS,
+  PRESENCE_MODE_OPTIONS,
   SKILL_PACK_OPTIONS,
 } from "./settings-options";
 import type { SettingsChangeHandler } from "./types";
@@ -112,6 +113,34 @@ export function GeneralSettingsTab({
               )?.description
             }
           </p>
+        </div>
+
+        <div className="space-y-2">
+          <div>
+            <label className="text-sm font-medium dark:text-warm-300">
+              Presence cursor
+            </label>
+            <p className="text-xs text-warm-400 dark:text-warm-500">
+              Show a cursor on the page while the agent clicks and types.
+            </p>
+          </div>
+          <div className="grid grid-cols-3 gap-1 rounded-lg bg-warm-100 p-1 dark:bg-warm-800">
+            {PRESENCE_MODE_OPTIONS.map((option) => (
+              <button
+                key={option.value}
+                type="button"
+                onClick={() => onChange("presenceMode", option.value)}
+                title={option.description}
+                className={`min-h-8 rounded-md px-2 py-1.5 text-xs font-medium transition-colors ${
+                  (formState.presenceMode ?? "subtle") === option.value
+                    ? "bg-warm-50 text-primary-700 shadow-sm dark:bg-warm-900 dark:text-primary-300"
+                    : "text-warm-500 hover:text-warm-700 dark:text-warm-400 dark:hover:text-warm-200"
+                }`}
+              >
+                {option.label}
+              </button>
+            ))}
+          </div>
         </div>
 
         <div className="space-y-2">

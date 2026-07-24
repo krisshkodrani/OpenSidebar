@@ -4,6 +4,7 @@ export const PUBLIC_E2E_ENV_VARS = [
   "E2E_MODEL",
   "E2E_PLANNER_MODEL",
   "E2E_PERCEPTION_MODE",
+  "E2E_PRESENCE_MODE",
   "E2E_SUITE_FLAGS",
   "E2E_ARTIFACTS",
 ] as const;
@@ -19,6 +20,9 @@ export interface E2EConfig {
   /** Planner-seat model override (planner sweeps, e.g. GLM-5.2 eval). */
   plannerModel: string | undefined;
   perceptionMode: string | undefined;
+  /** LP-24 presence cursor: "off" everywhere except the video profile
+   *  (cinematic) so timing assertions stay presence-free by default. */
+  presenceMode: string | undefined;
   suiteFlags: Set<string>;
   diagnostic: boolean;
   browser: {
@@ -286,6 +290,7 @@ function buildConfigFromDefaults(profile: E2EProfileName): E2EConfig {
     model: undefined,
     plannerModel: undefined,
     perceptionMode: undefined,
+    presenceMode: profile === "video" ? "cinematic" : "off",
     suiteFlags: new Set(),
     diagnostic: defaults.diagnostic,
     browser: {
@@ -325,6 +330,8 @@ export function readE2EConfig(
     warnDeprecated(warnings, env, "E2E_EXECUTOR_MODEL");
   config.plannerModel = envValue(env, "E2E_PLANNER_MODEL");
   config.perceptionMode = envValue(env, "E2E_PERCEPTION_MODE");
+  config.presenceMode =
+    envValue(env, "E2E_PRESENCE_MODE") ?? config.presenceMode;
 
   const suiteFlags = parseFlagSet(envValue(env, "E2E_SUITE_FLAGS"));
   for (const flag of suiteFlags) applySuiteFlag(config.suiteFlags, flag);
@@ -475,6 +482,9 @@ export function withE2EConfigEnv(
       : {}),
     ...(config.perceptionMode
       ? { E2E_PERCEPTION_MODE: config.perceptionMode }
+      : {}),
+    ...(config.presenceMode
+      ? { E2E_PRESENCE_MODE: config.presenceMode }
       : {}),
     E2E_SUITE_FLAGS: serializeE2ESuiteFlags(config),
     E2E_ARTIFACTS: serializeE2EArtifacts(config),

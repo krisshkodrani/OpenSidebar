@@ -12,6 +12,7 @@
 import type { DomSnapshot } from "../../types";
 import { transformScreenshot } from "../perception/screenshot-transform";
 import { setCachedScreenshot } from "./screenshot-cache";
+import { withPresenceSuspended } from "./capture-guard";
 import { getSnapshotFingerprint } from "./loop-helpers";
 import { extractPerceptionPageSignals } from "../../utils/perception-mode";
 
@@ -109,10 +110,13 @@ export async function captureVLExecutorScreenshot(
       }
     }
     // q90: the LP-9 transform re-encodes at q85 — see refreshPerception.
-    const captured = await host.captureVisibleTabWithRetry(tab.windowId, {
-      format: "jpeg",
-      quality: 90,
-    });
+    // LP-24: presence cursor is hidden for the capture (RFC §6).
+    const captured = await withPresenceSuspended(tabId, () =>
+      host.captureVisibleTabWithRetry(tab.windowId, {
+        format: "jpeg",
+        quality: 90,
+      }),
+    );
     // LP-9: own resolution/format/scale before anything downstream sees it.
     const transformed = await transformScreenshot(captured);
     const dataUrl = transformed.dataUrl;
