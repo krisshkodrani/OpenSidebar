@@ -16,7 +16,12 @@ import { PresenceCursor } from "./cursor";
 import { PresenceEffects } from "./effects";
 import { FocusHalo } from "./focus-halo";
 
-export const WATCHDOG_MS = { subtle: 600, cinematic: 1600 } as const;
+/** Cinematic covers the previous action's linger + a full glide + dwell. */
+export const WATCHDOG_MS = { subtle: 600, cinematic: 2800 } as const;
+
+/** Deterministic rest offset: after a batch, drift off the last control into
+ *  nearby whitespace instead of hovering over it (owner feedback). */
+const REST_DRIFT = { x: 28, y: 64 } as const;
 
 export interface CoordinatorOptions {
   doc?: Document;
@@ -108,13 +113,46 @@ export class PresenceCoordinator {
     }
     const watchdogMs =
       this.mode === "cinematic" ? WATCHDOG_MS.cinematic : WATCHDOG_MS.subtle;
+    const generation = ++this.performGeneration;
     const run = this.queue.then(() => this.runScript(script)).catch(() => {});
     // The shared queue keeps visuals ordered; the watchdog bounds the wait.
-    this.queue = run;
+    // The post-action linger/rest-drift rides the queue AFTER the dispatch
+    // point, so it paces the next glide without delaying this dispatch.
+    this.queue = run.then(() => this.postAction(script, generation)).catch(() => {});
     return Promise.race([
       run,
       new Promise<void>((resolve) => setTimeout(resolve, watchdogMs)),
     ]);
+  }
+
+  private performGeneration = 0;
+
+  /** Cinematic rhythm: hold after the action, then, if no further action is
+   *  queued, drift off the control into nearby whitespace to rest. */
+  private async postAction(
+    script: ChoreographyScript,
+    generation: number,
+  ): Promise<void> {
+    if (this.mode !== "cinematic" || this.reducedMotion()) return;
+    if (script.lingerMs > 0) {
+      await new Promise((resolve) => setTimeout(resolve, script.lingerMs));
+    }
+    // A newer action arrived during the linger — it glides from here.
+    if (generation !== this.performGeneration) return;
+    if (script.point) {
+      const view = this.cursor.getLayer()?.ownerDocument.defaultView;
+      const rest = {
+        x: Math.min(
+          (view?.innerWidth ?? 1200) - 40,
+          this.cursor.position.x + REST_DRIFT.x,
+        ),
+        y: Math.min(
+          (view?.innerHeight ?? 800) - 40,
+          this.cursor.position.y + REST_DRIFT.y,
+        ),
+      };
+      await this.glideTo(rest, 200);
+    }
   }
 
   private async runScript(script: ChoreographyScript): Promise<void> {
@@ -140,6 +178,7 @@ export class PresenceCoordinator {
           this.effects.ripple(
             script.point,
             script.ripple === "square" ? "square" : "accent",
+            this.mode === "cinematic" ? 1.6 : 1,
           );
         }
         if (script.haloTarget) this.halo.show(script.haloTarget);
@@ -193,12 +232,18 @@ export class PresenceCoordinator {
       this.cursor.moveTo(to);
       return;
     }
-    const { points } = sampleGlide(
+    const { points, durationMs } = sampleGlide(
       this.cursor.position,
       to,
       targetWidth,
       this.mode === "cinematic" ? "cinematic" : "subtle",
     );
+    // Preferred path: compositor-driven WAAPI glide — the x,y travel renders
+    // smoothly even while agent actions jank the main thread. The drag ghost
+    // follower still needs the rAF path to track the cursor.
+    if (!follower && (await this.cursor.animateGlide(points, durationMs))) {
+      return;
+    }
     for (const point of points) {
       this.cursor.moveTo(point);
       if (follower) {

@@ -143,6 +143,10 @@ export async function presenceBeforeAction(
             : null,
         key: kind === "key" && typeof args.key === "string" ? args.key : null,
         scrollDirection: kind === "scroll" ? scrollDirectionOf(args) : null,
+        typedTextLength:
+          kind === "type" && typeof args.text === "string"
+            ? args.text.length
+            : undefined,
       }),
     );
   } catch {
