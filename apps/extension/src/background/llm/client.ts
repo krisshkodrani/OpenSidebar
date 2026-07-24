@@ -8,6 +8,11 @@ import {
 } from "../../utils/executor-model-policy";
 import { parseSSEStream } from "../streaming";
 import {
+  hasImageUrlContent,
+  isImageUrlUnsupported,
+  toTextOnlyMessages,
+} from "./image-capability";
+import {
   CompletionRequest,
   CompletionResponse,
   LLMMessage,
@@ -430,42 +435,6 @@ function createThinkFilter(emit: (text: string) => void) {
       }
     },
   };
-}
-
-function hasImageUrlContent(messages: LLMMessage[]): boolean {
-  return messages.some(
-    (message) =>
-      Array.isArray(message.content) &&
-      message.content.some((part) => part.type === "image_url"),
-  );
-}
-
-function toTextOnlyMessages(messages: LLMMessage[]): LLMMessage[] {
-  return messages.map((message) => {
-    if (!Array.isArray(message.content)) return message;
-    const text = message.content
-      .map((part) =>
-        part.type === "text"
-          ? part.text
-          : "[image omitted: model does not support image_url]",
-      )
-      .join("\n");
-    return {
-      ...message,
-      content: text,
-    };
-  });
-}
-
-function isImageUrlUnsupported(status: number, errorText: string): boolean {
-  if (status !== 422) return false;
-  const normalized = errorText.toLowerCase();
-  return (
-    normalized.includes("image_url") &&
-    (normalized.includes("not supported") ||
-      normalized.includes("only 'text' content type") ||
-      normalized.includes("wrong_api_format"))
-  );
 }
 
 // --- Provider Pool (configured-slot failover) ---
