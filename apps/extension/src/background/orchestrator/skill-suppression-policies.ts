@@ -108,9 +108,12 @@ export const SKILL_TOOL_SUPPRESSION_POLICIES: Record<
     // dismiss_overlays is deliberately NOT suppressed: it clicks real close
     // buttons first and reports which overlays were only CSS-hidden, so it is
     // the skill's opening move rather than a hazard (2026-07-23 tools audit).
+    // type_text is deliberately NOT suppressed either: the matcher applies
+    // this skill to mixed tasks ("close popups, then fill the form"), and
+    // removing type_text made an agent type an email address one press_key
+    // at a time (baseline smoke, 2026-07-23). Ranking already demotes it.
     temporarilySuppressedTools: [
       ToolName.NAVIGATE,
-      ToolName.TYPE_TEXT,
     ],
     exemptTools: [
       ToolName.DONE,

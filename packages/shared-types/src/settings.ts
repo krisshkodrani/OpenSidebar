@@ -7,6 +7,9 @@ import type { AgentLoopState } from "./agent";
 // --- Configuration Types ---
 
 export type PerceptionRuntimeMode = "auto" | "unified_vl" | "structured";
+/** LP-24 presence layer: visible agent cursor rendered in-page while acting */
+export type PresenceMode = "off" | "subtle" | "cinematic";
+export const DEFAULT_PRESENCE_MODE: PresenceMode = "subtle";
 export type LaneTopologyMode = "simple" | "standard" | "full";
 export const DEFAULT_MAX_IMAGE_PROMPT_TOKEN_ESTIMATE = 25_000;
 export const DEFAULT_ENABLED_SKILL_PACK_IDS = [
@@ -106,6 +109,19 @@ export interface UserSettings {
    * back to structured DOM mode when this budget is exhausted.
    */
   maxImagePromptTokenEstimate?: number;
+  /**
+   * LP-24 presence layer: synthetic cursor + action choreography rendered
+   * in-page while the agent acts. Presentation-only — never changes event
+   * dispatch. Default: "subtle".
+   */
+  presenceMode?: PresenceMode;
+  /**
+   * Hide the presence cursor while the agent captures its own screenshots
+   * (default: true — the model never sees the synthetic pointer). Turning it
+   * off removes the brief per-turn blink at the cost of the cursor being
+   * visible in the agent's view of the page.
+   */
+  presenceHideDuringCapture?: boolean;
 }
 
 // --- Workspace / Tab Group Types ---

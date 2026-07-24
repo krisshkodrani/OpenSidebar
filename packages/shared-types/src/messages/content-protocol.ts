@@ -131,6 +131,20 @@ export interface ScrollToPositionResponse extends BaseMessage {
   payload: { actualY: number };
 }
 
+/** LP-24: background hides the presence cursor before a perception capture */
+export interface PresenceSuspendMessage extends BaseMessage {
+  type: "PRESENCE_SUSPEND";
+  source: MessageSource.BACKGROUND;
+  payload: Record<string, never>;
+}
+
+/** LP-24: background restores the presence cursor after a perception capture */
+export interface PresenceResumeMessage extends BaseMessage {
+  type: "PRESENCE_RESUME";
+  source: MessageSource.BACKGROUND;
+  payload: Record<string, never>;
+}
+
 /** Background ↔ content-script page-protocol messages. */
 export type ContentProtocolMessage =
   | DomSnapshotRequest
@@ -143,4 +157,6 @@ export type ContentProtocolMessage =
   | DomReadyProbeMessage
   | DomReadyAckMessage
   | ScrollToPositionMessage
-  | ScrollToPositionResponse;
+  | ScrollToPositionResponse
+  | PresenceSuspendMessage
+  | PresenceResumeMessage;

@@ -937,6 +937,7 @@ export function createE2EHarness(options: HarnessOptions = {}): E2EHarness {
       const plannerModel = e2eConfig.plannerModel;
       const temperature = e2eConfig.runtime.temperature;
       const perceptionMode = e2eConfig.perceptionMode;
+      const presenceMode = e2eConfig.presenceMode;
       suiteReport.setRunMetadata({
         provider: providerMode,
         lane,
@@ -959,6 +960,7 @@ export function createE2EHarness(options: HarnessOptions = {}): E2EHarness {
           plannerModelOverride: string | null,
           temp: number | null,
           perceptionMode: string | null,
+          presenceMode: string | null,
         ) => {
           const localData: Record<string, string> = {};
           if (openRouterKey) localData.openRouterApiKey_local = openRouterKey;
@@ -982,6 +984,12 @@ export function createE2EHarness(options: HarnessOptions = {}): E2EHarness {
           if (plannerModelOverride) settings.plannerModel = plannerModelOverride;
           if (temp !== null) settings.temperature = temp;
           if (perceptionMode) settings.perceptionMode = perceptionMode;
+          if (presenceMode) settings.presenceMode = presenceMode;
+          // Film runs: keep the cursor visible during captures — no per-turn
+          // blink on camera (the model tolerates seeing the pointer).
+          if (presenceMode === "cinematic") {
+            settings.presenceHideDuringCapture = false;
+          }
           await chrome.storage.sync.set({ userSettings: settings });
         },
         openRouterKey ?? null,
@@ -998,6 +1006,7 @@ export function createE2EHarness(options: HarnessOptions = {}): E2EHarness {
         plannerModel ?? null,
         temperature ?? null,
         perceptionMode ?? null,
+        presenceMode ?? null,
       );
 
       await setupEventMonitor(ctx.serviceWorker);

@@ -435,8 +435,14 @@ export function autoDismissModals(): DismissResult {
     }
   }
 
-  // Phase D: Re-scan for remaining overlays
-  const remaining = detectViewportCoveringOverlays();
+  // Phase D: Re-scan for remaining overlays. Apply the same app-content guard
+  // as Phases A/B: without it, a fixed nav/header covering >15% of the
+  // viewport gets reported as a "surviving overlay" and the warning actively
+  // misdirects the agent into hiding page chrome (seen live 2026-07-23: the
+  // agent hid a <nav> and kept overlay-hunting instead of doing the task).
+  const remaining = detectViewportCoveringOverlays().filter(
+    ({ el }) => isBackdropElement(el) || !isLikelyAppContent(el),
+  );
   if (remaining.length > 0) {
     const top = remaining[0];
     const tagId = addDynamicTag(top.el);
