@@ -115,6 +115,13 @@ export interface UserSettings {
    * dispatch. Default: "subtle".
    */
   presenceMode?: PresenceMode;
+  /**
+   * Hide the presence cursor while the agent captures its own screenshots
+   * (default: true — the model never sees the synthetic pointer). Turning it
+   * off removes the brief per-turn blink at the cost of the cursor being
+   * visible in the agent's view of the page.
+   */
+  presenceHideDuringCapture?: boolean;
 }
 
 // --- Workspace / Tab Group Types ---

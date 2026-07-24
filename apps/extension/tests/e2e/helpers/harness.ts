@@ -985,6 +985,11 @@ export function createE2EHarness(options: HarnessOptions = {}): E2EHarness {
           if (temp !== null) settings.temperature = temp;
           if (perceptionMode) settings.perceptionMode = perceptionMode;
           if (presenceMode) settings.presenceMode = presenceMode;
+          // Film runs: keep the cursor visible during captures — no per-turn
+          // blink on camera (the model tolerates seeing the pointer).
+          if (presenceMode === "cinematic") {
+            settings.presenceHideDuringCapture = false;
+          }
           await chrome.storage.sync.set({ userSettings: settings });
         },
         openRouterKey ?? null,
