@@ -2,11 +2,18 @@
   "id": "structured-form-fill",
   "name": "Structured Form Fill",
   "description": "Fill a multi-field form with explicit field mapping and submit-last discipline.",
-  "tags": ["workflow", "forms", "data-entry"],
+  "tags": [
+    "workflow",
+    "forms",
+    "data-entry"
+  ],
   "triggers": [
     "fill form",
     "multi-field data entry",
-    "choose values then submit"
+    "choose values then submit",
+    "configure product options",
+    "upload file",
+    "attach file"
   ],
   "maturity": "candidate",
   "preferredTools": [
@@ -14,13 +21,17 @@
     "type_text",
     "select_option",
     "set_checkbox",
+    "upload_file",
     "click_element"
   ],
-  "discouragedTools": ["press_key"],
-  "memoryScope": "turn",
+  "discouragedTools": [
+    "press_key"
+  ],
+  "contextScope": "turn",
   "verifierMode": "deterministic",
   "notes": [
     "Map values to fields before typing.",
-    "Submit only after all intended fields are complete."
+    "For configurators, verify any derived total, price, or summary after changing options before finishing.",
+    "If same-page validation errors appear after submit, repair the named fields and resubmit instead of treating validation as completion."
   ]
 }

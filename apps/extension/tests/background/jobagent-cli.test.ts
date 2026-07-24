@@ -55,6 +55,8 @@ describe("verb surface", () => {
       "criteria",
       "answers",
       "draft",
+      "set",
+      "accept",
       "approve-kit",
       "discover",
       "fill",

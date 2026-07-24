@@ -44,4 +44,14 @@ See [docs/skills-roadmap-2026-04-13.md](../docs/skills-roadmap-2026-04-13.md) fo
 
 ## Current Status
 
-The workflow skills in this directory are wired into runtime selection and prompt assembly.
+**The runtime source of truth is the TypeScript catalog** —
+`apps/extension/src/background/orchestrator/skill-catalog.ts` (descriptors) and
+`skill-bodies.ts` (procedure bodies). The MV3 extension cannot read this
+directory at runtime, and no build step inlines it.
+
+This directory mirrors a subset of the runtime catalog for review and
+authoring. The mirrored `descriptor.json` files are kept field-identical to the
+catalog (checked by `tests/background/skill-disk-parity.test.ts`; regenerate
+from the catalog when the runtime changes — live wins every conflict). A
+build-time generator that makes this directory the single source is the
+planned end state (2026-07-23 skills audit, Finding 1).

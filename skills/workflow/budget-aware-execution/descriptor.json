@@ -2,7 +2,12 @@
   "id": "budget-aware-execution",
   "name": "Budget Aware Execution",
   "description": "Shift into a conservation mode when the workflow is at risk of exhausting turn budget before completion.",
-  "tags": ["workflow", "budget", "planning", "verification"],
+  "tags": [
+    "workflow",
+    "budget",
+    "planning",
+    "verification"
+  ],
   "triggers": [
     "remaining turns are low",
     "hover or exploratory workflow is eating budget",
@@ -18,7 +23,7 @@
   "discouragedTools": [
     "done"
   ],
-  "memoryScope": "turn",
+  "contextScope": "turn",
   "verifierMode": "hybrid",
   "notes": [
     "Prefer consolidation over exploration.",
