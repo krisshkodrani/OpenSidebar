@@ -562,3 +562,83 @@ describe("fill-checklist re-read note (LP-17)", () => {
     expect(toolMessages[1].content).toContain('[note] You already read "Email" on turn 4');
   });
 });
+
+describe("grounding rejection batch abort (issue #117)", () => {
+  const groundedSnapshot = {
+    elements: [
+      {
+        tag: 1,
+        tagName: "button",
+        role: "button",
+        text: "Advance",
+        attributes: {},
+        rect: { width: 80, height: 24 },
+        isVisible: true,
+        isDisabled: false,
+      },
+    ],
+  } as any;
+
+  test("aborts the batch after 5 consecutive invalid element ids and stubs the rest", async () => {
+    const host = createHost();
+    (host.context as any).getSnapshot = () => groundedSnapshot;
+
+    const calls = Array.from({ length: 8 }, (_, i) =>
+      toolCall(ToolName.READ_ELEMENT, { id: 100 + i }, `read-${i}`),
+    );
+    await executeSequentialToolCalls.call(host, {
+      toolCalls: calls,
+      repeatActionWindow: 20,
+      llmIntention: null,
+      signalCompletedResult: vi.fn(),
+      state: baseState(),
+    });
+
+    expect(host.executeToolCall).not.toHaveBeenCalled();
+    const toolMessages = (host.context.addMessage as any).mock.calls
+      .map((c: any[]) => c[0])
+      .filter((m: any) => m.role === "tool");
+    // 5 grounding rejections answered, then 3 remaining calls stubbed.
+    expect(toolMessages).toHaveLength(8);
+    expect(toolMessages[4].content).toContain("does not exist");
+    expect(toolMessages[5].tool_call_id).toBe("read-5");
+    expect(toolMessages[5].content).toContain("Not executed");
+    expect(toolMessages[7].tool_call_id).toBe("read-7");
+    expect(host.traceRecorder?.recordEvent).toHaveBeenCalledWith(
+      "grounding_rejection_batch_abort",
+      expect.objectContaining({
+        consecutiveRejections: 5,
+        skippedCalls: 3,
+        mode: "sequential",
+      }),
+    );
+  });
+
+  test("a valid call between rejections resets the abort counter", async () => {
+    const host = createHost();
+    (host.context as any).getSnapshot = () => groundedSnapshot;
+    (host.executeToolCall as any).mockResolvedValue("ok");
+
+    const calls = [
+      toolCall(ToolName.READ_ELEMENT, { id: 100 }, "bad-0"),
+      toolCall(ToolName.READ_ELEMENT, { id: 101 }, "bad-1"),
+      toolCall(ToolName.READ_ELEMENT, { id: 102 }, "bad-2"),
+      toolCall(ToolName.READ_ELEMENT, { id: 103 }, "bad-3"),
+      toolCall(ToolName.READ_ELEMENT, { id: 1 }, "good-0"),
+      toolCall(ToolName.READ_ELEMENT, { id: 104 }, "bad-4"),
+    ];
+    await executeSequentialToolCalls.call(host, {
+      toolCalls: calls,
+      repeatActionWindow: 20,
+      llmIntention: null,
+      signalCompletedResult: vi.fn(),
+      state: baseState(),
+    });
+
+    expect(
+      (host.traceRecorder?.recordEvent as any).mock.calls.map(
+        (c: any[]) => c[0],
+      ),
+    ).not.toContain("grounding_rejection_batch_abort");
+  });
+});

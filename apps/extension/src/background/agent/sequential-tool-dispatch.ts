@@ -19,7 +19,11 @@ import {
   resolveToolApprovalRequest,
   TOOL_APPROVAL_DENIED_MESSAGE,
 } from "./approval-enforcement";
-import { TOOL_CACHE } from "./constants";
+import { TOOL_BATCH_LIMITS, TOOL_CACHE } from "./constants";
+import {
+  buildGroundingAbortStub,
+  GroundingRejectionAbortTracker,
+} from "./tool-batch-policy";
 import {
   assessListDetailWorkflow,
   isListDetailReturnControlRepeatExempt,
@@ -239,7 +243,10 @@ export async function executeSequentialToolCalls(
     return params.state;
   }
   const sameResponseClickKeys = new Set<string>();
-  for (const toolCall of params.toolCalls) {
+  const groundingAbort = new GroundingRejectionAbortTracker(
+    TOOL_BATCH_LIMITS.GROUNDING_ABORT_CONSECUTIVE,
+  );
+  for (const [batchIndex, toolCall] of params.toolCalls.entries()) {
     if (!this.isRunning) break;
     this.throwIfGracefulStopRequested();
 
@@ -659,8 +666,35 @@ export async function executeSequentialToolCalls(
             }
           : {},
       );
+      if (groundingAbort.recordRejection()) {
+        // Remaining calls are already recorded on the assistant message, so
+        // each needs a tool reply before the batch stops.
+        const remaining = params.toolCalls.slice(batchIndex + 1);
+        for (const skipped of remaining) {
+          this.context.addMessage({
+            role: "tool",
+            tool_call_id: skipped.id,
+            content: buildGroundingAbortStub(
+              TOOL_BATCH_LIMITS.GROUNDING_ABORT_CONSECUTIVE,
+            ),
+          });
+        }
+        const abortData = {
+          turn: this.turnCount,
+          consecutiveRejections: groundingAbort.consecutiveRejections,
+          skippedCalls: remaining.length,
+          mode: "sequential",
+        };
+        this.log.warn("agent", "Grounding rejection batch abort", abortData);
+        this.traceRecorder?.recordEvent(
+          "grounding_rejection_batch_abort",
+          abortData,
+        );
+        break;
+      }
       continue;
     }
+    groundingAbort.recordPass();
 
     const samePageAnchorClick = assessSamePageAnchorClick({
       toolName,

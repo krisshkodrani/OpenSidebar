@@ -79,6 +79,22 @@ export const TOOL_FAILURE_THRESHOLDS = {
   EXIT: 4,
 } as const;
 
+/** Per-turn tool-call batch limits. A degenerate model response can run to the
+ *  output-token cap emitting hundreds of tool calls (observed: 593 in one turn,
+ *  issue #117); every other guardrail is turn-count gated, so the batch itself
+ *  must be bounded before it reaches history or dispatch. */
+export const TOOL_BATCH_LIMITS = {
+  /** Max tool calls kept from a single LLM response — the rest are dropped
+   *  before the assistant message is recorded, so history stays small enough
+   *  that one bad turn cannot trigger heavy compaction. Healthy turns observed
+   *  in traces run 1-15 calls. */
+  MAX_CALLS_PER_TURN: 25,
+  /** Abort the remainder of a sequential batch after this many consecutive
+   *  grounding (invalid element id) rejections — the model is enumerating
+   *  stale/hallucinated ids, and more of the same batch cannot succeed. */
+  GROUNDING_ABORT_CONSECUTIVE: 5,
+} as const;
+
 /** Exploration budget: nudge after consecutive turns of only reading/inspecting */
 export const EXPLORATION_BUDGET = {
   /** Soft nudge injected after this many consecutive exploration-only turns */
