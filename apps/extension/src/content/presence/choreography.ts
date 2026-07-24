@@ -56,6 +56,64 @@ function centerOf(el: Element): Point {
   return { x: rect.left + rect.width / 2, y: rect.top + rect.height / 2 };
 }
 
+/** Rect only when the element has real on-screen geometry. */
+function visibleRectOf(el: Element | null | undefined): DOMRect | null {
+  if (!el) return null;
+  const rect = el.getBoundingClientRect();
+  return rect.width > 1 && rect.height > 1 ? rect : null;
+}
+
+function labelOf(control: Element): Element | null {
+  const wrapping = control.closest("label");
+  if (wrapping) return wrapping;
+  const id = control.getAttribute("id");
+  if (!id) return null;
+  try {
+    return control.ownerDocument.querySelector(
+      `label[for="${typeof CSS !== "undefined" ? CSS.escape(id) : id}"]`,
+    );
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Where the cursor lands for an element-targeted action. Custom radios and
+ * checkboxes hide the real input (opacity:0 / sr-only / 1x1px), so its rect
+ * would put the cursor "in the general area" — or at the page origin — not
+ * on the choice (owner report 2026-07-24). Resolution order:
+ *   1. the control's own visible rect → its center;
+ *   2. its label's (or parent's) rect → the START of that rect, where the
+ *      choice bullet visually sits;
+ *   3. nothing visible → null, and the glide is skipped entirely.
+ */
+export function resolveVisualAnchor(
+  target: Element,
+  kind: PresenceActionKind,
+): { point: Point; width: number } | null {
+  const control =
+    kind === "click" || kind === "checkbox"
+      ? resolveVisualTarget(target)
+      : target;
+  const own = visibleRectOf(control);
+  if (own) {
+    return {
+      point: { x: own.left + own.width / 2, y: own.top + own.height / 2 },
+      width: own.width,
+    };
+  }
+  const fallback =
+    visibleRectOf(labelOf(control)) ?? visibleRectOf(control.parentElement);
+  if (!fallback) return null;
+  return {
+    point: {
+      x: fallback.left + Math.min(14, fallback.width / 2),
+      y: fallback.top + fallback.height / 2,
+    },
+    width: Math.min(fallback.width, 48),
+  };
+}
+
 function isTextEntry(el: Element): boolean {
   const tag = el.tagName.toLowerCase();
   if (tag === "textarea") return true;
@@ -125,10 +183,11 @@ export function buildScript(params: {
 
   const target = params.target ?? null;
   if (target) {
-    const visual = params.kind === "click" ? resolveVisualTarget(target) : target;
-    const rect = visual.getBoundingClientRect();
-    script.point = centerOf(visual);
-    script.targetWidth = Math.max(8, Math.min(rect.width, 400));
+    const anchor = resolveVisualAnchor(target, params.kind);
+    if (anchor) {
+      script.point = anchor.point;
+      script.targetWidth = Math.max(8, Math.min(anchor.width, 400));
+    }
   }
 
   switch (params.kind) {
