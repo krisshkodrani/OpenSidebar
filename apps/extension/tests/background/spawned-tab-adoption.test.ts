@@ -6,7 +6,8 @@
  * scored the click as a no-op, the model was told its click "did nothing",
  * and the tab-management gate blocked switch_tab so the spawned tabs were
  * unreachable. These tests pin the three layers of the fix:
- *   1. WorkspaceManager adopts tabs whose openerTabId belongs to a workspace.
+ *   1. WorkspaceManager adopts page-created navigation targets whose source
+ *      tab belongs to a workspace.
  *   2. surfaceSpawnedTabs drains the queue into a model-visible note.
  *   3. The spawned-tab latch unlocks the tab-management tool gate, and the
  *      context renders a standing "## Open Tabs" section when multi-tab.
@@ -44,25 +45,35 @@ describe("WorkspaceManager page-opened tab adoption", () => {
   let consoleSpy: any;
   let groupSpy: any;
   let groupEndSpy: any;
-  let capturedOnCreated: ((tab: chrome.tabs.Tab) => void) | null;
-  let originalOnCreated: unknown;
+  let capturedNavigationTarget:
+    | ((
+        details: chrome.webNavigation.WebNavigationSourceCallbackDetails,
+      ) => void)
+    | null;
+  let originalNavigationTarget: unknown;
 
   beforeEach(() => {
     consoleSpy = vi.spyOn(console, "log").mockImplementation(() => {});
     groupSpy = vi.spyOn(console, "groupCollapsed").mockImplementation(() => {});
     groupEndSpy = vi.spyOn(console, "groupEnd").mockImplementation(() => {});
-    capturedOnCreated = null;
-    originalOnCreated = (globalThis.chrome.tabs as any).onCreated;
-    (globalThis.chrome.tabs as any).onCreated = {
-      addListener: (fn: (tab: chrome.tabs.Tab) => void) => {
-        capturedOnCreated = fn;
+    capturedNavigationTarget = null;
+    originalNavigationTarget = (globalThis.chrome.webNavigation as any)
+      .onCreatedNavigationTarget;
+    (globalThis.chrome.webNavigation as any).onCreatedNavigationTarget = {
+      addListener: (
+        fn: (
+          details: chrome.webNavigation.WebNavigationSourceCallbackDetails,
+        ) => void,
+      ) => {
+        capturedNavigationTarget = fn;
       },
       removeListener: () => {},
     };
   });
 
   afterEach(async () => {
-    (globalThis.chrome.tabs as any).onCreated = originalOnCreated;
+    (globalThis.chrome.webNavigation as any).onCreatedNavigationTarget =
+      originalNavigationTarget;
     consoleSpy?.mockRestore();
     groupSpy?.mockRestore();
     groupEndSpy?.mockRestore();
@@ -85,13 +96,13 @@ describe("WorkspaceManager page-opened tab adoption", () => {
 
   test("adopts a tab whose openerTabId belongs to a workspace and queues it", async () => {
     const manager = await buildManager();
-    expect(capturedOnCreated).not.toBeNull();
+    expect(capturedNavigationTarget).not.toBeNull();
 
-    capturedOnCreated!({
-      id: 42,
-      openerTabId: 10,
-      pendingUrl: "http://127.0.0.1/ashby-job-application?job=sr-fe-1",
-    } as chrome.tabs.Tab);
+    capturedNavigationTarget!({
+      tabId: 42,
+      sourceTabId: 10,
+      url: "http://127.0.0.1/ashby-job-application?job=sr-fe-1",
+    } as chrome.webNavigation.WebNavigationSourceCallbackDetails);
     await new Promise((r) => setTimeout(r, 50));
 
     const ws = await manager.getWorkspaceById("ws1");
@@ -136,11 +147,11 @@ describe("WorkspaceManager page-opened tab adoption", () => {
     expect(await manager.getWorkspaceById("e2e-run-2")).toBeNull();
 
     // The anchored run now adopts page-opened tabs.
-    capturedOnCreated!({
-      id: 72,
-      openerTabId: 70,
-      pendingUrl: "http://x/detail",
-    } as chrome.tabs.Tab);
+    capturedNavigationTarget!({
+      tabId: 72,
+      sourceTabId: 70,
+      url: "http://x/detail",
+    } as chrome.webNavigation.WebNavigationSourceCallbackDetails);
     await new Promise((r) => setTimeout(r, 50));
     expect(
       (await manager.getWorkspaceById("e2e-run-1"))?.tabIds,
@@ -148,17 +159,14 @@ describe("WorkspaceManager page-opened tab adoption", () => {
     expect(manager.drainSpawnedTabs("e2e-run-1")).toHaveLength(1);
   });
 
-  test("ignores tabs without an opener (create_tab / orchestrator path) and foreign openers", async () => {
+  test("ignores page-created targets whose source tab is outside the workspace", async () => {
     const manager = await buildManager();
 
-    // No openerTabId — created via chrome.tabs.create, takes the explicit path.
-    capturedOnCreated!({ id: 43, url: "http://x/a" } as chrome.tabs.Tab);
-    // Opener not in any workspace.
-    capturedOnCreated!({
-      id: 44,
-      openerTabId: 999,
+    capturedNavigationTarget!({
+      tabId: 44,
+      sourceTabId: 999,
       url: "http://x/b",
-    } as chrome.tabs.Tab);
+    } as chrome.webNavigation.WebNavigationSourceCallbackDetails);
     await new Promise((r) => setTimeout(r, 50));
 
     const ws = await manager.getWorkspaceById("ws1");

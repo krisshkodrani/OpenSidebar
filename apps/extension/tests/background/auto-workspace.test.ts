@@ -1,81 +1,37 @@
-import { describe, test, expect } from "vitest";
-import "../setup";
+import { describe, expect, test } from "vitest";
+import {
+  isWorkspaceGroupTitle,
+  parseWorkspaceGroupNumber,
+} from "../../src/background/workspaces/manager";
+import {
+  colorForStatus,
+  truncateTaskTitle,
+} from "../../src/background/workspaces/tab-group-appearance";
+import { AgentStatus } from "../../src/types";
 
-describe("Auto-Managed Workspace System", () => {
-  test("sequential workspace naming", () => {
-    // Verify workspace names follow OpenSidebar N pattern
-    const name1 = "OpenSidebar 1";
-    const name2 = "OpenSidebar 2";
-    const name10 = "OpenSidebar 10";
-
-    expect(name1).toMatch(/OpenSidebar \d+/);
-    expect(name2).toMatch(/OpenSidebar \d+/);
-    expect(name10).toMatch(/OpenSidebar \d+/);
-
-    // Verify sequential numbering
-    const num1 = parseInt(name1.match(/\d+/)![0]);
-    const num2 = parseInt(name2.match(/\d+/)![0]);
-    expect(num2).toBe(num1 + 1);
+describe("workspace group policy", () => {
+  test("recognizes only exact generated workspace titles", () => {
+    expect(parseWorkspaceGroupNumber("OS 1")).toBe(1);
+    expect(parseWorkspaceGroupNumber("OpenSidebar 42")).toBe(42);
+    expect(isWorkspaceGroupTitle("OS Project")).toBe(false);
+    expect(isWorkspaceGroupTitle("OS 1 notes")).toBe(false);
+    expect(isWorkspaceGroupTitle("My OpenSidebar 1")).toBe(false);
   });
 
-  test("workspace color cycling", () => {
-    // Verify colors cycle through 8 standard Chrome tab group colors
-    const validColors = [
-      "grey",
-      "blue",
-      "red",
-      "yellow",
-      "green",
-      "pink",
-      "purple",
-      "cyan",
-      "orange",
-    ];
-
-    validColors.forEach((color) => {
-      expect(validColors).toContain(color);
-    });
-
-    // Verify cycling logic (modulo 8)
-    const index9 = 9 % 8; // Should be 1 (blue)
-    expect(index9).toBe(1);
-    expect(validColors[index9]).toBe("blue");
+  test("truncates task titles at a readable word boundary", () => {
+    expect(truncateTaskTitle("  Short   task  ")).toBe("Short task");
+    expect(
+      truncateTaskTitle("Review every account in the quarterly report", 24),
+    ).toBe("Review every account in...");
   });
 
-  test("auto-delete triggers", () => {
-    // Verify auto-delete conditions
-    const workspace = {
-      id: "test-123",
-      name: "OpenSidebar 1",
-      tabIds: [] as number[],
-    };
-
-    // Workspace should be deleted when empty
-    expect(workspace.tabIds.length).toBe(0);
-
-    // Workspace should persist with tabs
-    workspace.tabIds.push(1, 2, 3);
-    expect(workspace.tabIds.length).toBe(3);
-  });
-
-  test("per-tab sidebar behavior", () => {
-    // Verify sidebar state tracking per tab
-    const sidebarState = new Map<number, boolean>();
-
-    // Initially closed
-    expect(sidebarState.get(1)).toBeUndefined();
-
-    // Open on tab 1
-    sidebarState.set(1, true);
-    expect(sidebarState.get(1)).toBe(true);
-
-    // Tab 2 should not have sidebar open
-    expect(sidebarState.get(2)).toBeUndefined();
-
-    // Switch to tab 2 - sidebar should close on tab 1
-    sidebarState.set(1, false);
-    sidebarState.set(2, true);
-    expect(sidebarState.get(1)).toBe(false);
-    expect(sidebarState.get(2)).toBe(true);
+  test("maps lifecycle status and outcomes to Chrome group colors", () => {
+    expect(colorForStatus(AgentStatus.THINKING)).toBe("cyan");
+    expect(colorForStatus(AgentStatus.ACTING)).toBe("purple");
+    expect(colorForStatus(AgentStatus.PAUSED)).toBe("yellow");
+    expect(colorForStatus(AgentStatus.ERROR)).toBe("red");
+    expect(colorForStatus(AgentStatus.IDLE, "completed")).toBe("green");
+    expect(colorForStatus(AgentStatus.IDLE, "partial")).toBe("orange");
+    expect(colorForStatus(AgentStatus.IDLE, "stopped")).toBe("yellow");
   });
 });

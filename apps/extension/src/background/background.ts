@@ -16,7 +16,7 @@ import {
 } from "../utils/provider-keys";
 import { storageLogger } from "../utils/storage-logger";
 import { getBlockedRuleForUrl } from "../utils/site-access";
-import { workspaceManager } from "./workspaces/manager";
+import { isWorkspaceGroupTitle, workspaceManager } from "./workspaces/manager";
 import { sanitizeUserInput } from "./security";
 import {
   registerNavigationListeners,
@@ -424,7 +424,7 @@ async function handleSidePanelOpened(
           "Creating new workspace for tab (User Initiated)",
           { tabId },
         );
-        const workspaceName = workspaceManager.getNextWorkspaceName();
+        const workspaceName = await workspaceManager.getNextWorkspaceName();
         const workspaceColor = workspaceManager.getNextColor();
 
         try {
@@ -1450,8 +1450,8 @@ async function restoreWorkspacesFromExistingGroups() {
 
     // Then, discover any orphaned groups with our naming convention
     const groups = await chrome.tabGroups.query({});
-    const opensidebarGroups = groups.filter(
-      (g) => g.title?.startsWith("OS ") || g.title?.startsWith("OpenSidebar "),
+    const opensidebarGroups = groups.filter((group) =>
+      isWorkspaceGroupTitle(group.title),
     );
 
     if (opensidebarGroups.length > 0) {

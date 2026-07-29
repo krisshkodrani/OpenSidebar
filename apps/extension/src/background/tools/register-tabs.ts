@@ -7,6 +7,7 @@ import { ToolName } from "../../types";
 import { logger } from "../../utils";
 import { sanitizeUrl } from "../security";
 import { isUsableTabUrl } from "../infrastructure/tab-resolution";
+import { createWorkspaceTab } from "../workspaces/create-workspace-tab";
 import { workspaceManager } from "../workspaces/manager";
 import { ToolRegistry } from "./registry";
 import { getTabUrl } from "./helpers";
@@ -18,7 +19,7 @@ import {
 import { CREATE_TAB_DEF, CLOSE_TAB_DEF, SWITCH_TAB_DEF } from "./definitions";
 
 export function registerTabTools(toolRegistry: ToolRegistry): void {
-    toolRegistry.register(ToolName.CREATE_TAB, CREATE_TAB_DEF, async (args) => {
+    toolRegistry.register(ToolName.CREATE_TAB, CREATE_TAB_DEF, async (args, sourceTabId) => {
       const allowedOrigins = await getAllowedNavigationOrigins();
       if (allowedOrigins.length > 0) {
         const targetOrigin = normalizeOrigin(args.url as string);
@@ -34,34 +35,30 @@ export function registerTabTools(toolRegistry: ToolRegistry): void {
       }
       const urlResult = sanitizeUrl(args.url as string);
       if (!urlResult.ok) return `Error: ${urlResult.error}`;
+      const sourceWorkspace =
+        await workspaceManager.getWorkspaceForTab(sourceTabId);
       logger.info("tools", "create_tab", { url: urlResult.value });
-      const tab = await chrome.tabs.create({ url: urlResult.value });
+      const tab = await createWorkspaceTab({
+        sourceTabId,
+        url: urlResult.value,
+        workspaceId: sourceWorkspace?.id,
+      });
       logger.info("tools", "create_tab created", {
         tabId: tab.id,
         url: urlResult.value,
       });
-  
-      // Auto-add to active workspace if exists
-      const activeWorkspace = await workspaceManager.getActiveWorkspace();
-      if (activeWorkspace && tab.id) {
-        try {
-          await workspaceManager.addTabToWorkspace(tab.id, activeWorkspace.id);
+
+      if (sourceWorkspace && tab.id) {
           logger.info("tools", "create_tab grouped", {
             tabId: tab.id,
-            workspace: activeWorkspace.name,
+            workspace: sourceWorkspace.name,
           });
-          return `Created new tab (ID: ${tab.id}) with URL: ${urlResult.value} (added to ${activeWorkspace.name})`;
-        } catch (e) {
-          logger.warn("tools", "Failed to auto-group tab to workspace", {
-            tabId: tab.id,
-            error: e,
-          });
-        }
+          return `Created new tab (ID: ${tab.id}) with URL: ${urlResult.value} (added to ${sourceWorkspace.name})`;
       }
-  
+
       return `Created new tab (ID: ${tab.id}) with URL: ${urlResult.value}`;
     });
-  
+
     toolRegistry.register(
       ToolName.CLOSE_TAB,
       CLOSE_TAB_DEF,
