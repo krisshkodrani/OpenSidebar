@@ -51,16 +51,18 @@ export function useWorkspaceSync(settings: UserSettings): string | null {
         );
         const newWorkspaceId = workspace?.id ?? null;
         const currentWorkspaceId = useStore.getState().activeWorkspaceId;
-        if (newWorkspaceId !== currentWorkspaceId && newWorkspaceId != null) {
+        if (newWorkspaceId !== currentWorkspaceId) {
           useStore.getState().setActiveWorkspaceId(newWorkspaceId);
-          uiRuntime
-            .sendMessage({
-              type: "WORKSPACE_SYNC",
-              requestId: crypto.randomUUID(),
-              source: uiRuntime.source,
-              payload: { workspaceId: newWorkspaceId },
-            })
-            .catch(() => {});
+          if (newWorkspaceId != null) {
+            uiRuntime
+              .sendMessage({
+                type: "WORKSPACE_SYNC",
+                requestId: crypto.randomUUID(),
+                source: uiRuntime.source,
+                payload: { workspaceId: newWorkspaceId },
+              })
+              .catch(() => {});
+          }
         }
         await refreshBlockedWarning(activeInfo.tabId);
       } catch (error) {

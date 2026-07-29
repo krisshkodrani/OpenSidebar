@@ -7,6 +7,25 @@ import { workspaceManager } from "./manager";
 
 type ColorEnum = chrome.tabGroups.ColorEnum;
 
+const appearanceQueues = new Map<string, Promise<void>>();
+
+function enqueueAppearanceUpdate(
+  workspaceId: string,
+  operation: () => Promise<void>,
+): Promise<void> {
+  const previous = appearanceQueues.get(workspaceId) ?? Promise.resolve();
+  const current = previous
+    .catch(() => undefined)
+    .then(operation)
+    .finally(() => {
+      if (appearanceQueues.get(workspaceId) === current) {
+        appearanceQueues.delete(workspaceId);
+      }
+    });
+  appearanceQueues.set(workspaceId, current);
+  return current;
+}
+
 /** Truncate a user query to fit in a Chrome tab group title. */
 export function truncateTaskTitle(query: string, maxLen = 30): string {
   const oneLine = query.replace(/\s+/g, " ").trim();
@@ -56,16 +75,20 @@ export async function updateTabGroupAppearance(
     completionStatus?: "completed" | "partial" | "failed" | "stopped";
   },
 ): Promise<void> {
+  return enqueueAppearanceUpdate(workspaceId, async () => {
   try {
     const ws = await workspaceManager.getWorkspaceById(workspaceId);
     if (!ws) return;
 
-    const updates: { name?: string; color?: ColorEnum } = {};
+      const updates: {
+        name?: string;
+        baseName?: string;
+        color?: ColorEnum;
+      } = {};
 
     if (opts.title !== undefined) {
-      // Preserve original name on first title set
       if (!ws.baseName) {
-        ws.baseName = ws.name;
+          updates.baseName = ws.name;
       }
       const truncated = truncateTaskTitle(opts.title);
       if (truncated) updates.name = truncated;
@@ -75,12 +98,17 @@ export async function updateTabGroupAppearance(
       updates.color = colorForStatus(opts.status, opts.completionStatus);
     }
 
-    if (updates.name !== undefined || updates.color !== undefined) {
+      if (
+        updates.name !== undefined ||
+        updates.baseName !== undefined ||
+        updates.color !== undefined
+      ) {
       await workspaceManager.updateWorkspace(workspaceId, updates);
     }
   } catch {
-    // fire-and-forget
+      // Appearance is best-effort and must not affect task execution.
   }
+  });
 }
 
 /**
@@ -89,6 +117,7 @@ export async function updateTabGroupAppearance(
 export async function resetTabGroupAppearance(
   workspaceId: string,
 ): Promise<void> {
+  return enqueueAppearanceUpdate(workspaceId, async () => {
   try {
     const ws = await workspaceManager.getWorkspaceById(workspaceId);
     if (!ws) return;
@@ -98,6 +127,7 @@ export async function resetTabGroupAppearance(
       color: "blue",
     });
   } catch {
-    // fire-and-forget
+      // Appearance is best-effort and must not affect task execution.
   }
+  });
 }

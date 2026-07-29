@@ -1391,6 +1391,7 @@ export async function executeSequentialToolCalls(
         toolCall.id,
         toolName,
         args,
+        tabId,
       );
       continue;
     }
