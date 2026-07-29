@@ -184,8 +184,9 @@ export function InputArea({
 
       <div className="p-2">
         <WatchModeControl disabled={isAgentRunning} />
-        {isAgentRunning ? (
-          <div className="space-y-1.5">
+        {/* Keep one composer mounted so run-state updates cannot reset its caret. */}
+        <div className={isAgentRunning ? "space-y-1.5" : undefined}>
+          {isAgentRunning ? (
             <div className="px-1">
               <div className="text-[11px] font-medium text-warm-600 dark:text-warm-300">
                 Guide the agent
@@ -195,20 +196,25 @@ export function InputArea({
                 current run continues.
               </div>
             </div>
-            <ComposerBox
-              hasText={hasText}
-              inputRef={composer.textareaRef}
-              isGuidance
-              onBlur={composer.handleBlur}
-              onChange={handleInputChange}
-              onFocus={composer.handleFocus}
-              onKeyDown={composer.handleKeyDown}
-              onSpeechToggle={speech.toggle}
-              onSubmit={handleSubmit}
-              placeholder="Guide the agent..."
-              speechState={speech.state}
-              value={inputText}
-            />
+          ) : null}
+          <ComposerBox
+            key="composer"
+            hasText={hasText}
+            inputRef={composer.textareaRef}
+            isGuidance={isAgentRunning}
+            onBlur={composer.handleBlur}
+            onChange={handleInputChange}
+            onFocus={composer.handleFocus}
+            onKeyDown={composer.handleKeyDown}
+            onSpeechToggle={speech.toggle}
+            onSubmit={handleSubmit}
+            placeholder={
+              isAgentRunning ? "Guide the agent..." : "What can I help with?"
+            }
+            speechState={speech.state}
+            value={inputText}
+          />
+          {isAgentRunning ? (
             <p className="select-none px-1 text-[10px] text-warm-400 dark:text-warm-500">
               Guidance is sent into the current run. Press{" "}
               <kbd className="rounded bg-warm-200/60 px-1 py-0.5 font-mono text-[9px] text-warm-500 dark:bg-warm-700/60 dark:text-warm-400">
@@ -216,56 +222,42 @@ export function InputArea({
               </kbd>{" "}
               to stop immediately.
             </p>
-          </div>
-        ) : (
-          <>
-            <ComposerBox
-              hasText={hasText}
-              inputRef={composer.textareaRef}
-              isGuidance={false}
-              onBlur={composer.handleBlur}
-              onChange={handleInputChange}
-              onFocus={composer.handleFocus}
-              onKeyDown={composer.handleKeyDown}
-              onSpeechToggle={speech.toggle}
-              onSubmit={handleSubmit}
-              placeholder="What can I help with?"
-              speechState={speech.state}
-              value={inputText}
-            />
-            <div className="relative mt-1.5 flex items-center px-1">
-              <InteractionModeMenu
-                mode={interactionMode}
-                onChange={setInteractionMode}
-              />
-              <button
-                type="button"
-                onClick={handleProfileToggle}
-                aria-pressed={profileActive}
-                className={`ml-auto inline-flex h-6 items-center gap-1.5 rounded-md border px-2 text-[11px] font-medium transition ${
-                  profileActive
-                    ? "border-primary-200 bg-primary-50 text-primary-700 dark:border-primary-800 dark:bg-primary-900/20 dark:text-primary-200"
-                    : "border-warm-200 text-warm-500 hover:bg-warm-100 dark:border-warm-700 dark:text-warm-300 dark:hover:bg-warm-800"
-                }`}
-                title={
-                  profileAvailable
-                    ? profileActive
-                      ? profileDigestReady
-                        ? "Profile is on. Digest ready for new tasks."
-                        : "Profile is on. Analyze notes for the best results."
-                      : "Turn profile on for new tasks"
-                    : "Add Profile Notes"
-                }
-              >
-                <UserRound size={12} />
-                {profileActive ? "Profile on" : "Profile off"}
-              </button>
-            </div>
-            <p className="mt-1 select-none text-center text-[10px] text-warm-400 dark:text-warm-500">
-              AI can make mistakes. Please double-check responses.
-            </p>
-          </>
-        )}
+          ) : (
+            <>
+              <div className="relative mt-1.5 flex items-center px-1">
+                <InteractionModeMenu
+                  mode={interactionMode}
+                  onChange={setInteractionMode}
+                />
+                <button
+                  type="button"
+                  onClick={handleProfileToggle}
+                  aria-pressed={profileActive}
+                  className={`ml-auto inline-flex h-6 items-center gap-1.5 rounded-md border px-2 text-[11px] font-medium transition ${
+                    profileActive
+                      ? "border-primary-200 bg-primary-50 text-primary-700 dark:border-primary-800 dark:bg-primary-900/20 dark:text-primary-200"
+                      : "border-warm-200 text-warm-500 hover:bg-warm-100 dark:border-warm-700 dark:text-warm-300 dark:hover:bg-warm-800"
+                  }`}
+                  title={
+                    profileAvailable
+                      ? profileActive
+                        ? profileDigestReady
+                          ? "Profile is on. Digest ready for new tasks."
+                          : "Profile is on. Analyze notes for the best results."
+                        : "Turn profile on for new tasks"
+                      : "Add Profile Notes"
+                  }
+                >
+                  <UserRound size={12} />
+                  {profileActive ? "Profile on" : "Profile off"}
+                </button>
+              </div>
+              <p className="mt-1 select-none text-center text-[10px] text-warm-400 dark:text-warm-500">
+                AI can make mistakes. Please double-check responses.
+              </p>
+            </>
+          )}
+        </div>
       </div>
     </div>
   );
