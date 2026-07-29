@@ -80,11 +80,22 @@ global.chrome = {
     },
     tabGroups: {
         query: async () => [],
+        get: async (groupId: number) => ({
+            id: groupId,
+            windowId: 1,
+            color: "blue",
+        }),
         update: async () => ({}),
+        onCreated: { addListener: () => { }, removeListener: () => { } },
         onRemoved: { addListener: () => { }, removeListener: () => { } },
+        onUpdated: { addListener: () => { }, removeListener: () => { } },
         TAB_GROUP_ID_NONE: -1,
     },
     webNavigation: {
+        onCreatedNavigationTarget: {
+            addListener: () => { },
+            removeListener: () => { },
+        },
         onCompleted: { addListener: () => { }, removeListener: () => { } },
         onErrorOccurred: { addListener: () => { }, removeListener: () => { } },
     },

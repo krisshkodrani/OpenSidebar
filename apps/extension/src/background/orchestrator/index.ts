@@ -26,6 +26,7 @@ import {
   loadPersonalizationState,
 } from "../../utils/personal-profile";
 import { workspaceManager } from "../workspaces/manager";
+import { createWorkspaceTab } from "../workspaces/create-workspace-tab";
 import { agentNotifications } from "../notifications";
 import { isUsableTab } from "../infrastructure/tab-resolution";
 import {
@@ -5104,12 +5105,11 @@ export class Orchestrator {
     task: OrchestratorTask,
     url: string,
   ): Promise<number> {
-    const tab = await chrome.tabs.create({ url, active: false });
-    if (!tab.id) throw new Error("Failed to create worker tab");
-    await this.deps.workspaceManager.addTabToWorkspace(
-      tab.id,
-      task.workspaceId,
-    );
+    const tab = await createWorkspaceTab({
+      sourceTabId: task.rootTabId,
+      url, workspaceId: task.workspaceId,
+      manager: this.deps.workspaceManager,
+    });
     claimTaskTab(task, {
       tabId: tab.id,
       role: "auxiliary",

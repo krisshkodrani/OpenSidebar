@@ -8,8 +8,9 @@
  * and destroys its own work, while orphan duplicate tabs accumulate. (Observed
  * as the dominant failure mode of long multi-tab arena runs, 2026-07-11.)
  *
- * WorkspaceManager adopts such tabs via chrome.tabs.onCreated (openerTabId ∈
- * workspace) and queues a SpawnedTabRecord. The completion phase calls
+ * WorkspaceManager adopts such tabs via
+ * chrome.webNavigation.onCreatedNavigationTarget (source tab in workspace) and
+ * queues a SpawnedTabRecord. The completion phase calls
  * surfaceSpawnedTabs() each turn to drain that queue into (a) an explicit
  * model-visible note naming the new tab and how to reach it, and (b) the
  * context's spawned-tab latch, which unlocks the tab-management tool gate.
