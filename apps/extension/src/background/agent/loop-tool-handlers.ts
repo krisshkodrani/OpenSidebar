@@ -1,7 +1,7 @@
 import { AgentStatus, AgentStep, ToolCall, ToolName } from "../../types";
 import { DOM_MODIFYING_TOOLS, CACHEABLE_TOOLS } from "../tools/metadata";
 import { sanitizeUrl } from "../security";
-import { workspaceManager } from "../workspaces/manager";
+import { createWorkspaceTab } from "../workspaces/create-workspace-tab";
 import { isUsableTabUrl } from "../infrastructure/tab-resolution";
 import { formatStepLabel } from "../../utils/step-labels";
 import { ToolResultCache } from "./tool-cache";
@@ -916,6 +916,7 @@ export async function handleCreateTabToolCall(
   toolCallId: string,
   toolName: ToolName,
   args: Record<string, unknown>,
+  sourceTabId: number,
 ): Promise<void> {
   if (loop.replayMutationSensitiveAction(toolCallId, toolName, args)) {
     return;
@@ -948,12 +949,11 @@ export async function handleCreateTabToolCall(
   }
 
   try {
-    const newTab = await chrome.tabs.create({
+    const newTab = await createWorkspaceTab({
+      sourceTabId,
       url: urlResult.value,
+      workspaceId: loop.workspaceId,
     });
-    if (newTab.id && loop.workspaceId && loop.workspaceId !== "default") {
-      await workspaceManager.addTabToWorkspace(newTab.id, loop.workspaceId);
-    }
 
     loop.context.addMessage({
       role: "tool",
