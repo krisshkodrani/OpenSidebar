@@ -26,6 +26,8 @@ interface ToolCallSpec {
 }
 
 interface LocalMockProviderState {
+  loginFieldsFilledReturned: boolean;
+  loginSubmitId: number | null;
   loginSubmitReturned: boolean;
   navigationCodeSubmitReturned: boolean;
   quizCorrectSelectionsReturned: boolean;
@@ -748,13 +750,15 @@ function executorToolCalls(
         },
       ];
     }
-    const fieldsAlreadyFilled =
-      /admin@example\.com/.test(text) &&
-      /secret123/.test(text) &&
-      /checked=true/.test(text);
-    if (fieldsAlreadyFilled) {
+    // Password inputs deliberately do not expose their current value in later
+    // snapshots. Track the fill response we returned instead of waiting for
+    // secret123 to reappear in model context, which would repeat stale tag IDs
+    // until the turn budget is exhausted.
+    if (state.loginFieldsFilledReturned) {
       const submitId =
-        parseTaggedId(text, /button.*Log In|Log In.*button/i) ?? 5;
+        state.loginSubmitId ??
+        parseTaggedId(text, /button.*Log In|Log In.*button/i) ??
+        5;
       state.loginSubmitReturned = true;
       return [{ name: "click_element", args: { id: submitId } }];
     }
@@ -764,6 +768,9 @@ function executorToolCalls(
       parseTaggedId(text, /login-password|label=Password|type=password/i) ?? 3;
     const rememberId =
       parseTaggedId(text, /remember-me|Remember me|type=checkbox/i) ?? 1;
+    state.loginSubmitId =
+      parseTaggedId(text, /button.*Log In|Log In.*button/i) ?? null;
+    state.loginFieldsFilledReturned = true;
     return [
       { name: "type_text", args: { id: emailId, text: "admin@example.com" } },
       { name: "type_text", args: { id: passwordId, text: "secret123" } },
@@ -862,6 +869,8 @@ export async function installLocalMockProviderInterceptor(
   scenarioName: LocalMockProviderScenarioName,
 ): Promise<void> {
   const state: LocalMockProviderState = {
+    loginFieldsFilledReturned: false,
+    loginSubmitId: null,
     loginSubmitReturned: false,
     navigationCodeSubmitReturned: false,
     quizCorrectSelectionsReturned: false,
