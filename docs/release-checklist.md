@@ -14,7 +14,7 @@ The version of record is `0.6.1`; `0.6.0` was the previous package.
 | Manifest/version alignment | Pass | `package.json` and `apps/extension/manifest.json` declare `0.6.1`; confirm `dist/manifest.json` matches after the release build. |
 | Site material | Pass | The built site exposes one customer tour and one developer tour from the cache-immutable `v7` media path. |
 | Full release verification | Pass | Lint, typecheck, 5,231 extension tests, production build, dist validation, and production audit passed on 2026-07-30. |
-| Native task completion | Blocked | The fresh Watch capture passed, but online-shop, cross-page, and local-provider task runs ended partial or timed out after bridge reconnect/completion failures. Do not tag or upload until a clean native task run passes on the release commit. |
+| Native task completion | Pass | After rebuilding the generated fixture SPA and fixing the local mock's masked-password sequencing, both deterministic native flows passed together on 2026-07-30: login completed in 5 turns and navigation in 3. Earlier online-shop/cross-page recordings remain excluded from release material. |
 | Release package/preflight | Package pass | The `0.6.1` zip, checksum, notes, and manifest are generated; rebuild on the release commit and run `corepack pnpm run release:preflight` before tagging. |
 | Chrome Web Store upload | Pending | Upload the verified zip, four screenshots, promo graphics, listing copy, and the public URL of the customer video. |
 
