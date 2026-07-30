@@ -20,7 +20,7 @@
     />
     <meta
       property="og:description"
-      content="An open-source Chrome extension that puts an autonomous AI agent in your side panel. Bring your own key. No telemetry, no backend."
+      content="An open-source Chrome extension that puts an autonomous AI agent in your side panel. Bring your own key. Local by default, with no hosted relay."
     />
     <meta property="og:url" content="https://opensidebar.com/" />
     <meta property="og:image" content="https://opensidebar.com/og.png" />
@@ -85,9 +85,10 @@
               multi-step work across tabs to done.
             </p>
             <p class="hero-promise">
-              Bring your own API key. No subscription, no telemetry, no backend
-              of ours — the extension runs in your browser and talks only to the
-              model providers you configure.
+              Bring your own API key. No subscription or hosted relay — the
+              extension runs in your browser and talks only to the model
+              providers you configure. Optional reliability summaries stay
+              local, off by default, and under your control.
             </p>
             <div class="hero-cta">
               <a class="btn btn-primary" href="#quickstart">
@@ -127,13 +128,13 @@
           <div class="reveal">
             <figure
               class="player"
-              data-src="/media/v7/customer-tour.mp4"
+              data-src="/media/v8/customer-tour.mp4"
               aria-label="OpenSidebar 60-second overview"
             >
               <span class="badge">▶ 60-sec tour</span>
               <img
                 class="poster"
-                src="/media/v7/customer-tour.mp4.poster.jpg"
+                src="/media/v8/customer-tour.mp4.poster.jpg"
                 alt="OpenSidebar side panel driving a web task"
                 width="960"
                 height="540"
@@ -208,13 +209,13 @@ Load unpacked <span class="c">→</span> select <span class="p">dist/</span></pr
             <article class="show-card reveal">
               <figure
                 class="player"
-                data-src="/media/v7/customer-tour.mp4"
+                data-src="/media/v8/customer-tour.mp4"
                 aria-label="Customer overview"
               >
                 <span class="badge">▶ For customers · 58 sec</span>
                 <img
                   class="poster"
-                  src="/media/v7/customer-tour.mp4.poster.jpg"
+                  src="/media/v8/customer-tour.mp4.poster.jpg"
                   alt="Agent completing a checkout on a shopping site"
                   loading="lazy"
                 />
@@ -234,13 +235,13 @@ Load unpacked <span class="c">→</span> select <span class="p">dist/</span></pr
             <article class="show-card reveal">
               <figure
                 class="player"
-                data-src="/media/v7/developer-tour.mp4"
+                data-src="/media/v8/developer-tour.mp4"
                 aria-label="Developer architecture and evidence tour"
               >
                 <span class="badge">▶ For developers · 95 sec</span>
                 <img
                   class="poster"
-                  src="/media/v7/developer-tour.mp4.poster.jpg"
+                  src="/media/v8/developer-tour.mp4.poster.jpg"
                   alt="OpenSidebar investigating a multi-page workflow with its side panel visible"
                   loading="lazy"
                 />
@@ -372,17 +373,16 @@ Load unpacked <span class="c">→</span> select <span class="p">dist/</span></pr
             </h2>
             <div class="providers">
               <span class="pill reco"
-                >Fireworks <small>recommended</small></span
+                >OpenRouter <small>recommended</small></span
               >
-              <span class="pill">OpenRouter</span>
-              <span class="pill">Moonshot / Kimi</span>
-              <span class="pill">Xiaomi MiMo</span>
+              <span class="pill">Fireworks</span>
             </div>
             <p class="note">
-              Hybrid stacks add DeepSeek-, Cerebras-, and Groq-served models.
-              Your API keys stay in Chrome storage; page context goes only to the
-              providers you configure. No analytics, no tracking, no hosted relay,
-              no OpenSidebar servers.
+              OpenRouter is the recommended default; Fireworks is the supported
+              alternative. Your API keys stay in Chrome storage, and page context
+              goes only to the providers you configure. This release has no
+              analytics client, hosted model relay, or first-party telemetry
+              upload endpoint.
             </p>
           </div>
         </div>
@@ -426,13 +426,13 @@ Load unpacked <span class="c">→</span> select <span class="p">dist/</span></pr
             <div class="reveal">
               <figure
                 class="player"
-                data-src="/media/v7/developer-tour.mp4"
+                data-src="/media/v8/developer-tour.mp4"
                 aria-label="Developer architecture and evidence tour"
               >
                 <span class="badge">▶ Developer tour</span>
                 <img
                   class="poster"
-                  src="/media/v7/developer-tour.mp4.poster.jpg"
+                  src="/media/v8/developer-tour.mp4.poster.jpg"
                   alt="OpenSidebar investigating a multi-page workflow with its side panel visible"
                   loading="lazy"
                 />
@@ -469,8 +469,8 @@ Load unpacked <span class="c">→</span> select <span class="p">dist/</span></pr
             Bring your own provider key</span
           >
           <span
-            >This site sets no cookies and loads no trackers — the same
-            no-telemetry promise as the extension.</span
+            >This site sets no cookies and loads no trackers; the extension has
+            no analytics client or first-party telemetry upload endpoint.</span
           >
         </div>
       </div>

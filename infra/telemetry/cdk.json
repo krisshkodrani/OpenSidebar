@@ -1,0 +1,7 @@
+{
+  "app": "npx tsx bin/telemetry.ts",
+  "context": {
+    "aws-cdk:enable-path-metadata": false,
+    "aws-cdk:enable-version-reporting": false
+  }
+}

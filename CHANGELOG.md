@@ -7,7 +7,47 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-## [0.6.1] - 2026-07-29
+## [0.7.0] - 2026-07-30
+
+### Added
+
+- **Visible agent presence.** A branded in-page cursor and action choreography
+  make it clear where the agent is working, while capture guards keep the
+  presence layer out of model screenshots when configured.
+- **A unified RunCard.** Planning and execution status now share one compact
+  timeline with planner-authored step labels, so active work is easier to
+  follow from the side panel.
+- **Optional local reliability summaries.** Users can inspect and clear a
+  privacy-preserving, sampled summary of agent outcomes. The public `0.7.0`
+  build has no upload endpoint compiled into it; internal upload infrastructure
+  remains isolated from the published extension.
+- **Expanded evaluation workflows.** New multi-source renewal and sports
+  research scenarios, prompt-injection red-team coverage, model compatibility
+  checks, and trajectory analysis improve release confidence.
+
+### Changed
+
+- **Provider setup is simpler.** Settings now present the release-verified
+  OpenRouter and Fireworks stacks, recommend OpenRouter by default, derive
+  available choices from configured keys, and retain compatibility logic for
+  legacy stored settings.
+- **Release material now has one customer story and one developer story.** The
+  website, repository overview, Chrome Web Store copy, screenshots, and narrated
+  films are split by audience. Store assets show only the shipping extension;
+  trace and observability material stays in the developer path.
+- **The canonical customer and developer films use a British female voice.**
+  Their timed narration specs and reproducible site/store staging are maintained
+  in the repository.
+- **Long-run context is append-only and cache-aware.** Conversation history,
+  prompt-prefix telemetry, and compaction behavior were tightened to reduce
+  accidental context rewrites and make cache regressions observable.
+- **Workspace grouping is more durable.** Spawned tabs are adopted consistently,
+  group appearance is restored after browser lifecycle events, and grouping
+  failures no longer leave the task runtime in an inconsistent state.
+- **JobAgent's reference workflow gained parse-first ATS discovery, tentative
+  application kits, and a supervised headless command surface.** Its approval
+  gates remain mandatory and it is still a developer reference workflow, not a
+  supported extension feature.
 
 ### Fixed
 
@@ -17,18 +57,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Workspace grouping now follows the complete tab lifecycle.** New and spawned
   tabs are adopted into the correct workspace group, group appearance is kept
   in sync, and reopen/cleanup paths no longer leave grouping state behind.
-- **DOMPurify is updated to the patched `3.4.12` release.** The obsolete
-  `@types/dompurify` stub is removed because DOMPurify ships its own types.
+- Fireworks image-capability retries now reach the intended text-only fallback.
+- Tasks started without an actionable web page recover cleanly instead of
+  entering a dead-end run.
+- Tool batching and duplicate-mutation recovery are stricter, reducing repeated
+  browser actions across turns and service-worker restarts.
+- DOMPurify is updated to `3.4.12` to clear the production dependency advisory.
 
-### Changed
+### Security
 
-- **Release material now has one customer story and one developer story.** The
-  website, repository overview, Chrome Web Store copy, screenshots, and narrated
-  films are split by audience. Store assets show only the shipping extension;
-  trace and observability material stays in the developer path.
-- **The canonical customer and developer films use a British female voice.**
-  Their timed narration specs and reproducible site/store staging are maintained
-  in the repository.
+- Public release builds are verified to contain no internal fleet-telemetry
+  endpoint.
+- Page-content prompt-injection and sensitive-data handling gained dedicated
+  adversarial fixtures and release checks.
 
 ## [0.6.0] - 2026-07-22
 

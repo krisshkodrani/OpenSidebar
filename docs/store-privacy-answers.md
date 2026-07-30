@@ -41,10 +41,12 @@ OpenSidebar is a general-purpose browser agent: the user chooses which website t
 
 ## Data Usage Disclosures
 
-The extension has no servers: it collects nothing for the developer. Data leaves
-the browser only as requests to the AI provider the user configures (BYOK).
-Declare the following categories, because page data is transmitted off-device to
-that user-chosen provider during tasks:
+The published extension collects nothing for the developer and contains no
+first-party telemetry upload endpoint. Its optional reliability-summary preview
+is local-only, off by default, inspectable, and clearable. Data leaves the
+browser only as requests to the AI provider the user configures (BYOK).
+Declare the following categories, because page data is transmitted off-device
+to that user-chosen provider during tasks:
 
 | Dashboard category | Declare? | Why |
 | --- | --- | --- |

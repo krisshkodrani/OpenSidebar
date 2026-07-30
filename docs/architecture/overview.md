@@ -16,16 +16,19 @@ The same side panel React app also runs inside the overlay harness for browser-d
 
 ## Model Stack
 
-| Role | Current Default |
-| --- | --- |
-| Provider mode | `fireworks` |
-| Executor | `accounts/fireworks/models/kimi-k2p7-code` |
-| Executor fallback | `accounts/fireworks/models/kimi-k2p7-code` |
-| Planner | `accounts/fireworks/routers/kimi-k2p6-turbo` |
-| Perception | `unified_vl` through the executor by default; structured fallback is provider-specific |
+| Role          | Current Default                                                                        |
+| ------------- | -------------------------------------------------------------------------------------- |
+| Provider mode | `openrouter`                                                                           |
+| Executor      | `minimax/minimax-m3`                                                                   |
+| Planner       | `z-ai/glm-5.2`                                                                         |
+| Judge         | `openai/gpt-oss-120b`                                                                  |
+| Perception    | `unified_vl` through the executor by default; structured fallback is provider-specific |
 
-Models are configurable in Settings.
-Xiaomi MiMo is available as an agent provider mode. Configure it with `XIAOMI_API_KEY`; the executor defaults to `mimo-v2-omni` and the planner defaults to `mimo-v2-pro`.
+Defaults live in `apps/extension/src/config/model-config.ts` and
+`apps/extension/src/utils/executor-model-policy.ts`; trust those over this
+table when they disagree. Settings offers the release-verified OpenRouter and
+Fireworks modes. Experimental adapters remain available to internal evaluation
+commands but are not part of the supported setup surface.
 
 ## Core Subsystems
 

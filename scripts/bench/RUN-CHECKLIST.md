@@ -57,12 +57,18 @@ Provider modes the harness supports: `fireworks` (default), `deepseek`,
 `moonshot`/`kimi`, `xiaomi`, `openrouter`, `groq`/`openrouter-groq`,
 `openai-groq`. Key availability today:
 
+Key availability re-verified 2026-07-26 with live completions (the previous
+table dated from 2026-06-11 and marked Fireworks dead — it is not).
+
 | Config (E2E_PROVIDER / E2E_MODEL) | Key in `.env`? | Notes |
 | --- | --- | --- |
-| `fireworks` / kimi-k2p6-turbo (default) | ⚠️ dead — replace first | The flagship config |
+| `openrouter` / minimax-m3 + glm-5.2 + gpt-oss-120b | ✅ `OPENROUTER_API_KEY` | **The shipped default (preset A).** Paid tier, no free-variant daily cap. Smoke-validated 6/6 on 2026-07-26 |
+| `fireworks` / minimax-m3 | ✅ `FIREWORKS_API_KEY` | Live — the 2026-06-11 "dead key" note was stale. Same executor model and rate as preset A |
 | `deepseek` / DeepSeek V3.2 | ✅ `DEEPSEEK_API_KEY` | 84% on internal E2E; honest second config |
-| `openrouter` / gpt-5.4-mini | ❌ no `OPENROUTER_API_KEY` | Add key if a third config is wanted |
 | `groq` variants | ❌ no Groq key | Optional speed-focused config |
+
+Judge key: `OPENAI_API_KEY` is present, so WebJudge falls back to OpenAI direct
+(`gpt-5.4-mini`) with no extra setup.
 
 - [ ] Same `--size`, `--seed`, levels, and task revision for every config.
 - [ ] Distinct `--config-label` per sweep (it's the report headline).

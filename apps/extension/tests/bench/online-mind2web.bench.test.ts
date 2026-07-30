@@ -36,6 +36,7 @@ import {
 } from "../e2e/helpers/utils";
 import { extractDoneSummary, readTrace } from "../e2e/helpers/diagnostics";
 import { loadTaskFile, selectStratifiedSubset } from "../../../../scripts/bench/loader";
+import { buildTrajectory as renderTrajectory } from "../../../../scripts/bench/trajectory";
 import { buildSafetyProfile } from "../../../../scripts/bench/safety-profile";
 import type {
   BenchDifficulty,
@@ -81,24 +82,9 @@ const tasks = resolveSubset();
 const h = createE2EHarness({ maxTurns: MAX_TURNS, testLabel: "bench-om2w" });
 
 function buildTrajectory(traceFiles: string[]): string[] {
-  const lines: string[] = [];
-  for (const file of traceFiles) {
-    for (const turn of readTrace(file)) {
-      const url = turn.url ? ` @ ${turn.url}` : "";
-      if (turn.toolCalls.length > 0) {
-        for (const call of turn.toolCalls) {
-          const args = Object.entries(call.args)
-            .filter(([, v]) => typeof v === "string" || typeof v === "number")
-            .map(([k, v]) => `${k}=${String(v).slice(0, 40)}`)
-            .join(", ");
-          lines.push(`T${turn.turnNumber} ${call.name}(${args})${url}`);
-        }
-      } else if (turn.llmContent) {
-        lines.push(`T${turn.turnNumber} say "${turn.llmContent.slice(0, 80)}"${url}`);
-      }
-    }
-  }
-  return lines;
+  // Rendering lives in scripts/bench/trajectory.ts so it is unit-testable and
+  // can be replayed over existing receipts by the backfill (--judge-only).
+  return traceFiles.flatMap((file) => renderTrajectory(readTrace(file)));
 }
 
 function extractCostUsd(events: unknown[]): number | null {

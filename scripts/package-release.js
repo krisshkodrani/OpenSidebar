@@ -183,17 +183,17 @@ OpenSidebar v${version} is the GitHub-first OSS BYOK preview release candidate. 
 
 ## Highlights
 
-- Multi-provider BYOK preview with Fireworks, OpenRouter, Moonshot/Kimi, Xiaomi MiMo, and advanced split-provider modes.
+- OpenRouter is the recommended default BYOK provider, with Fireworks retained as the supported alternative.
+- A compact unified task timeline keeps planner-authored steps readable without repeating the primary task label.
+- A visible in-page agent cursor makes active browser work easier to follow.
+- Optional reliability summaries stay local, off by default, inspectable, and clearable; the public build contains no telemetry upload endpoint.
+- Workspace grouping, no-page recovery, composer focus, and duplicate-action handling are more durable.
 - Release package builds \`dist/\` and writes a SHA-256 checksum.
 - Manifest/package version alignment enforced by \`ci:dist\`.
 - Public install docs use Corepack-managed pnpm and a safe read-only first task.
 - Native side-panel launch can be driven through the default \`Ctrl+Shift+Y\` extension action shortcut.
 - Known limitations are documented for agent reliability, Done/verifier behavior, permissions, traces, providers, and distribution.
-- Local backend and log-server origin handling rejects arbitrary browser origins.
-- E2E overlay bridge uses per-mount tokens, explicit storage keys, and credential-key filtering.
-- Cookie and history tools are classified as high risk.
-- \`execute_js\` blocks page cookie/storage reads and page-context network requests.
-- Unused vulnerable \`uuid\` dependency removed.
+- DOMPurify is updated to \`3.4.12\`, and the production dependency audit is clean.
 
 ## Verification
 

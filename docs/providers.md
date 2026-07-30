@@ -7,24 +7,27 @@ are governed by the provider you select.
 
 ## Provider matrix
 
-This table stays aligned with `UserSettings["providerMode"]` and the Settings
-UI.
+Settings derives this list from the keys stored locally. Single-provider
+stacks appear when their key is present; hybrid stacks appear only when both
+required keys are present. Removing a required key selects another usable
+stack when possible and clears incompatible model overrides.
 
-| Provider mode | Required key(s) | Role | Status | Notes |
-| --- | --- | --- | --- | --- |
-| `fireworks` | Fireworks key | Executor and planner | Recommended default | Current docs and E2E default use Fireworks. |
-| `openrouter` | OpenRouter key | Executor and planner | Supported | Model availability depends on OpenRouter. |
-| `moonshot` | Kimi key | Executor and planner | Supported | Direct Moonshot/Kimi provider mode. |
-| `xiaomi` | Xiaomi key | Executor and planner | Supported | Xiaomi MiMo support is scoped to the agent provider stack. |
-| `fireworks-deepseek` | Fireworks + DeepSeek keys | Fireworks executor, DeepSeek planner/verifier | Advanced | Requires two configured keys. |
-| `openrouter-groq` | OpenRouter + Groq keys | OpenRouter executor, Groq planner | Advanced | Two keys; faster planning inference. |
-| `openai-groq` | OpenAI-compatible + Groq keys | OpenAI-compatible executor, Groq planner | Advanced | Two keys. |
+| Provider mode | Required key(s) | Role             | Status              | Notes                                   |
+| ------------- | --------------- | ---------------- | ------------------- | --------------------------------------- |
+| `openrouter`  | OpenRouter key  | Full agent stack | Recommended default | Live catalog with a verified allowlist. |
+| `fireworks`   | Fireworks key   | Full agent stack | Supported           | Curated, compatibility-checked models.  |
+
+Experimental and legacy provider modes remain understood by the runtime for
+migrations and internal evaluation, but are not offered in Settings. A provider
+or model is promoted only after `pnpm models:check` and the release smoke pass.
 
 ## What gets sent to the provider
 
 When a task needs it, page context (element lists, extracted text) and
-screenshots may be sent to the selected model provider. Nothing is sent
-anywhere else: there is no telemetry, no hosted relay, and no backend.
+screenshots may be sent to the selected model provider. Model traffic is not
+routed through OpenSidebar, and the published extension contains no
+first-party telemetry upload endpoint. The optional reliability-summary
+preview in Settings remains local-only in this release.
 
 ## Failure expectations
 

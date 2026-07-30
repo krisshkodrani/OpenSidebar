@@ -103,7 +103,6 @@ export class RunTraceWriter {
   }
 }
 
-const DEFAULT_RUN_TRACE_SERVER_URL = "http://127.0.0.1:7589";
 const DEFAULT_FLUSH_TIMEOUT_MS = 2000;
 
 async function postJson(
@@ -133,7 +132,15 @@ export function createHttpRunTraceWriter(serverUrl?: string): RunTraceWriter {
   if (typeof __DEV__ !== "undefined" && !__DEV__) {
     return new RunTraceWriter(async () => {});
   }
-  const base = (serverUrl ?? DEFAULT_RUN_TRACE_SERVER_URL).replace(/\/+$/, "");
+  const base = (
+    serverUrl ??
+    (typeof __LOCAL_OBSERVABILITY_SERVER_URL__ === "string"
+      ? __LOCAL_OBSERVABILITY_SERVER_URL__
+      : "")
+  ).replace(/\/+$/, "");
+  if (!base) {
+    return new RunTraceWriter(async () => {});
+  }
   return new RunTraceWriter(async (record) => {
     if (record.kind === "manifest") {
       await postJson(`${base}/run-traces/session`, record.manifest);

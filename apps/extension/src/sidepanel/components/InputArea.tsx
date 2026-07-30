@@ -1,5 +1,5 @@
 import React, { useCallback } from "react";
-import { ShieldAlert, UserRound } from "lucide-react";
+import { Bookmark, ShieldAlert, UserRound } from "lucide-react";
 import { useStore } from "../store";
 import { ApprovalOverlay } from "./ApprovalOverlay";
 import { EscalationOverlay } from "./EscalationOverlay";
@@ -25,8 +25,8 @@ interface InputAreaProps {
   onSend: (text: string) => void;
   onSendFeedback: (text: string) => void;
   onStop: () => void;
-  onOpenSettings: () => void;
   onOpenPersonalProfile: () => void;
+  onOpenSavedPrompts: () => void;
 }
 
 function PendingInteractionShell({ children }: { children: React.ReactNode }) {
@@ -42,6 +42,7 @@ export function InputArea({
   onSendFeedback,
   onStop,
   onOpenPersonalProfile,
+  onOpenSavedPrompts,
 }: InputAreaProps) {
   const inputText = useStore((s) => s.inputText);
   const setInputText = useStore((s) => s.setInputText);
@@ -183,7 +184,7 @@ export function InputArea({
       ) : null}
 
       <div className="p-2">
-        <WatchModeControl disabled={isAgentRunning} />
+        {!isAgentRunning ? <WatchModeControl /> : null}
         {/* Keep one composer mounted so run-state updates cannot reset its caret. */}
         <div className={isAgentRunning ? "space-y-1.5" : undefined}>
           {isAgentRunning ? (
@@ -206,7 +207,9 @@ export function InputArea({
             onChange={handleInputChange}
             onFocus={composer.handleFocus}
             onKeyDown={composer.handleKeyDown}
-            onSpeechToggle={speech.toggle}
+            onSpeechToggle={
+              settings.groqApiKey?.trim() ? speech.toggle : undefined
+            }
             onSubmit={handleSubmit}
             placeholder={
               isAgentRunning ? "Guide the agent..." : "What can I help with?"
@@ -231,7 +234,18 @@ export function InputArea({
                 />
                 <button
                   type="button"
+                  onClick={onOpenSavedPrompts}
+                  aria-label="Saved Prompts"
+                  className="ml-1 inline-flex h-6 items-center gap-1.5 rounded-md border border-warm-200 px-2 text-[11px] font-medium text-warm-500 transition hover:bg-warm-100 dark:border-warm-700 dark:text-warm-300 dark:hover:bg-warm-800"
+                  title="Use a saved prompt"
+                >
+                  <Bookmark size={12} />
+                  Prompts
+                </button>
+                <button
+                  type="button"
                   onClick={handleProfileToggle}
+                  aria-label="Personalize"
                   aria-pressed={profileActive}
                   className={`ml-auto inline-flex h-6 items-center gap-1.5 rounded-md border px-2 text-[11px] font-medium transition ${
                     profileActive

@@ -50,6 +50,9 @@ import ParallelWork from "./routes/parallel-work";
 import QuizDerailment from "./routes/quiz-derailment";
 import FileTransfer from "./routes/file-transfer";
 import PromptInjectionReview from "./routes/prompt-injection";
+import Sports from "./routes/sports";
+import RenewalReview from "./routes/renewal-review";
+import "./presentation.css";
 
 const routes = [
   { path: "/summarize", label: "Summarize", title: "Transformer Architecture in Modern AI", component: Summarize },
@@ -105,7 +108,23 @@ const routes = [
   { path: "/quiz-derailment", label: "Quiz", title: "Quiz Derailment Fixture", component: QuizDerailment },
   { path: "/file-transfer", label: "Files", title: "Vendor File Transfer", component: FileTransfer },
   { path: "/prompt-injection", label: "Injection", title: "Customer Renewal Update", component: PromptInjectionReview },
+  { path: "/sports", label: "Sports", title: "OpenSports Live Desk", component: Sports },
+  { path: "/renewal-review", label: "Renewal", title: "Atlas Cloud Renewal Review", component: RenewalReview },
 ];
+
+const presentationBrands = {
+  "/dashboard": "Meridian Operations",
+  "/shop": "Northstar Outfitters",
+  "/data-table": "Meridian People",
+  "/email-compose": "Meridian Mail",
+  "/job-board": "Arcade Careers",
+  "/ashby-job-application": "Candidate Portal",
+  "/vendor-onboarding": "Northstar Security",
+  "/visual-canvas": "Atlas Analytics",
+  "/visual-canvas-small": "Atlas Analytics",
+  "/sports": "OpenSports",
+  "/renewal-review": "Meridian Finance",
+};
 
 function Layout({ children, currentPath }) {
   const currentRoute = routes.find((route) => route.path === currentPath);
@@ -114,7 +133,10 @@ function Layout({ children, currentPath }) {
     <>
       <div className="fixture-nav">
         <div className="fixture-nav-inner">
-          <span className="fixture-logo">OpenSidebar Fixtures</span>
+          <span className="fixture-logo">
+            <span className="fixture-logo-mark" aria-hidden="true" />
+            {presentationBrands[currentPath] || "OpenSidebar Demo Lab"}
+          </span>
           <details className="fixture-menu">
             <summary aria-label="Open fixture navigation">
               <span>{currentRoute?.label || "Fixtures"}</span>

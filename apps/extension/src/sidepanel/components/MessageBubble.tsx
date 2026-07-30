@@ -158,7 +158,7 @@ export const MessageBubble = React.memo(function MessageBubble({
             "max-w-[92%] text-sm",
             isUser
               ? clsx(
-                  "max-h-[30vh] overflow-y-auto overscroll-contain rounded-2xl px-3 py-2 whitespace-pre-wrap break-words",
+                  "rounded-2xl px-3 py-2 whitespace-pre-wrap break-words",
                   isGuidance
                     ? "border border-primary-200 bg-primary-50/90 text-primary-900 dark:border-primary-800 dark:bg-primary-950/20 dark:text-primary-100"
                     : "bg-warm-200 text-warm-800 dark:bg-warm-700 dark:text-warm-100",

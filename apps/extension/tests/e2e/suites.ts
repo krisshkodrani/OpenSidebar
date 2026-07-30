@@ -11,6 +11,7 @@ export type E2EFocusSuiteName =
   | "memory-regression"
   | "multi-turn-workflows"
   | "escalation-rescue"
+  | "security-redteam"
   | "cache-long-run"
   | "arena";
 export type E2ESuiteName = E2EDefaultSuiteName | E2EFocusSuiteName;
@@ -35,6 +36,7 @@ export const E2E_SUITES: Record<E2ESuiteName, readonly string[]> = {
     "go-back-navigation.test.ts",
     "hover-menus.test.ts",
     "information-extraction.test.ts",
+    "sports-research.test.ts",
     "infinite-scroll.test.ts",
     "keyboard-nav.test.ts",
     "modal-overlays.test.ts",
@@ -56,6 +58,7 @@ export const E2E_SUITES: Record<E2ESuiteName, readonly string[]> = {
     "continuation.test.ts",
     "lane-topology.test.ts",
     "partner-registration-validation.test.ts",
+    "renewal-investigation.test.ts",
     "sequential-tasks.test.ts",
     "stop-drain-recovery.test.ts",
     "vendor-onboarding-wizard.test.ts",
@@ -95,6 +98,7 @@ export const E2E_SUITES: Record<E2ESuiteName, readonly string[]> = {
   // cache A/B run on them cannot see the mechanism under test.
   "cache-long-run": ["cache-long-run-sweep.test.ts"],
   "escalation-rescue": ["escalation-rescue.test.ts"],
+  "security-redteam": ["page-content-redteam.test.ts"],
   arena: ["arena-suite.test.ts"],
 };
 
@@ -113,6 +117,7 @@ export const E2E_FOCUS_SUITE_ORDER: readonly E2EFocusSuiteName[] = [
   "memory-regression",
   "multi-turn-workflows",
   "escalation-rescue",
+  "security-redteam",
   "cache-long-run",
   "arena",
 ];

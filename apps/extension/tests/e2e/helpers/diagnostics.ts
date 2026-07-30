@@ -27,7 +27,7 @@ export const TRACE_DIR = join(PROJECT_ROOT, "traces");
 const RUN_TRACE_DIR = join(TRACE_DIR, "runs");
 const LOG_SERVER_SCRIPT = join(PROJECT_ROOT, "scripts", "log-server.ts");
 const TSX_CLI = join(PROJECT_ROOT, "node_modules", "tsx", "dist", "cli.mjs");
-const LOG_SERVER_PORT = 7589;
+const LOG_SERVER_PORT = Number(process.env.E2E_LOG_SERVER_PORT) || 7589;
 const LOG_SERVER_START_TIMEOUT_MS =
   Number(process.env.E2E_LOG_SERVER_START_TIMEOUT_MS) || 30_000;
 
@@ -52,6 +52,11 @@ export async function startLogServer(): Promise<void> {
   let stderr = "";
   logServerProcess = spawn(process.execPath, [TSX_CLI, LOG_SERVER_SCRIPT], {
     cwd: PROJECT_ROOT,
+    env: {
+      ...process.env,
+      LOG_SERVER_PORT: String(LOG_SERVER_PORT),
+      LOG_SERVER_SKIP_TRACE_WARMUP: "1",
+    },
     stdio: ["ignore", "pipe", "pipe"],
     windowsHide: true,
   });
@@ -204,6 +209,15 @@ export interface TraceTurn {
   }>;
   durationMs?: number;
   url?: string;
+  /**
+   * Visible text of the tagged elements the agent perceived on this turn.
+   *
+   * This is the harness's own record of what was on the page — independent of
+   * anything the model says — which makes it the only evidence that can ground
+   * a turn where the agent answered straight from perception without calling a
+   * read tool. The bench judge uses it for exactly those turns.
+   */
+  observedText?: string[];
 }
 
 interface RunTraceEventRecord {
@@ -474,6 +488,12 @@ export function readTrace(filePath: string): TraceTurn[] {
           toolResults,
           durationMs: entry.llmResponse?.durationMs,
           url: entry.snapshot?.url,
+          observedText: Array.isArray(entry.elements)
+            ? (entry.elements as Array<Record<string, any>>)
+                .filter((el) => el?.isVisible && typeof el.text === "string")
+                .map((el) => String(el.text).replace(/\s+/g, " ").trim())
+                .filter((text) => text.length > 0)
+            : undefined,
         } as TraceTurn;
       } catch {
         return null;

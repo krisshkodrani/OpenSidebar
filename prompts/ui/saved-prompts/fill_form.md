@@ -1,6 +1,6 @@
 ---
 id: ui.saved_prompt.fill_form
-version: v1
+version: v2
 description: Default sidepanel saved prompt for form completion.
 ---
-Fill out the form on this page using reasonable placeholder values. For each field, pick a realistic value based on the label. Do not submit until all fields are filled.
+Help me complete the form on this page using information already visible or values I have provided. Ask me for any required personal or sensitive information that is missing. Do not invent personal details, and do not submit the form without my approval.

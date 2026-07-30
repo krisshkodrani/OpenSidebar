@@ -166,6 +166,11 @@ export function PrimaryTaskRail({ embedded = false }: { embedded?: boolean } = {
   }
 
   const { rail } = taskUi;
+  const secondaryLabel =
+    rail.secondaryLabel?.trim().toLocaleLowerCase() ===
+    rail.primaryLabel.trim().toLocaleLowerCase()
+      ? null
+      : rail.secondaryLabel;
 
   return (
     <section
@@ -225,9 +230,9 @@ export function PrimaryTaskRail({ embedded = false }: { embedded?: boolean } = {
                 Pause requested
               </span>
             ) : null}
-            {rail.secondaryLabel && !(embedded && hasTaskProgress) ? (
+            {secondaryLabel && !(embedded && hasTaskProgress) ? (
               <span className="max-w-full truncate text-[10px] text-warm-500 dark:text-warm-400">
-                {rail.secondaryLabel}
+                {secondaryLabel}
               </span>
             ) : null}
             {rail.turnProgress?.provider ? (

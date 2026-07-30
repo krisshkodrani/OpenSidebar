@@ -1,8 +1,9 @@
 # Trace Viewer Observability
 
-Date: 2026-05-12
+Date: 2026-07-24 (originally 2026-05-12 as a plan; the model described here is
+now shipped)
 
-Scope: Trace Viewer metrics, trace indexing, and retention direction.
+Scope: Trace Viewer metrics, trace indexing, and retention.
 
 Related: [Trace Viewer Architecture](trace-viewer.md) for how the harness is structured (pipeline, log-server API, app layout); [Trace Viewer AI Concepts](../guides/trace-viewer-ai-concepts.md) for a concise explanation of the agent concepts and how the viewer makes those concepts observable.
 
@@ -12,9 +13,15 @@ The Trace Viewer should help engineers move from a failing browser-agent run to 
 
 ## Storage Model
 
+- **The span spine (`traces/spans/`) is the authoritative read source** for
+  turn entries and run events (`scripts/obs/span-store.ts`, schema in
+  `packages/observability-schema/`); the log server dual-writes it on every
+  trace write and reads it first (`OBS_DISABLE_SPINE_READS=1` reverts to the
+  derived stores). The spine also feeds the OTLP export path — see
+  [OTel Mapping](trace-viewer-otel-mapping.md).
 - SQLite stores normalized trace rows plus raw JSON copies for viewer queries and copy/paste evidence.
 - Raw JSONL traces stay in `traces/` only for the hot debug window.
-- The viewer should read SQLite first and tolerate missing raw files after pruning.
+- The viewer reads spine/SQLite first and tolerates missing raw files after pruning.
 - `traces:index` remains the repair/backfill path when SQLite needs to be rebuilt from hot JSONL.
 
 ## Hot And Cold Policy
@@ -24,7 +31,7 @@ The Trace Viewer should help engineers move from a failing browser-agent run to 
 - SQLite sessions remain discoverable after raw JSONL and screenshots are pruned.
 - Screenshots are hot debug artifacts in this phase; old sessions may show expired screenshots.
 
-## Suggested SQLite Tables
+## SQLite Tables
 
 - `trace_sessions`: session id, run id, start/end time, outcome, domain, query title, model list, cost, token totals, archive state.
 - `trace_turns`: session id, turn number, model, provider, request tokens, response tokens, total tokens, cost, duration, context utilization, perception status.
@@ -34,9 +41,9 @@ The Trace Viewer should help engineers move from a failing browser-agent run to 
 - `trace_artifacts`: session id, artifact type, hot path, size bytes, mtime.
 - `trace_index_meta`: indexed/ingested timestamps and schema version.
 
-## Metrics Page
+## Analytics Metrics
 
-The Metrics page should use the same aggregate contract whether data comes from JSONL scanning or SQLite. Required baseline metrics:
+The Analytics view uses the same aggregate contract whether data comes from JSONL scanning or SQLite. Baseline metrics:
 
 - sessions and runs
 - LLM request count
@@ -73,10 +80,9 @@ Operationally:
 - Treat `.artifacts/trace-index.sqlite` as the viewer store.
 - Change the raw-file window with `pnpm run traces:delete-old -- --hot-days <days>` when needed.
 
-## Implementation Order
+## Status
 
-1. Fix viewer trust bugs so selected sessions cannot show stale evidence.
-2. Add request/token/cost metrics to the current JSONL-backed insights endpoint.
-3. Add the Metrics page.
-4. Add SQLite as the primary store behind the same endpoint contract.
-5. Add the 7-day delete command with SQLite coverage checks.
+The original implementation plan (viewer trust fixes, token/cost metrics,
+metrics page, SQLite primary store, the 7-day delete command) has shipped in
+full, and the span spine has since been layered on top as the authoritative
+store. This doc now describes current behavior, not a roadmap.

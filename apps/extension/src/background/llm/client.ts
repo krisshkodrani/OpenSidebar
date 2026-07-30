@@ -21,7 +21,17 @@ import {
   ProviderConfig,
   TokenUsage,
 } from "./types";
-import { LLM_MODEL_CONFIG } from "../../config/model-config";
+import {
+  DEEPSEEK_MODEL_PLANNER,
+  FIREWORKS_MODEL_PLANNER,
+  GROQ_MODEL_PLANNER,
+  MODEL_JUDGE,
+  MOONSHOT_MODEL_PLANNER,
+  OPENAI_MODEL_PLANNER,
+  OPENROUTER_MODEL_JUDGE,
+  OPENROUTER_MODEL_PLANNER,
+  XIAOMI_MODEL_PLANNER,
+} from "./seat-models";
 import { estimateCostUsd } from "./pricing";
 import {
   buildJsonHeaders,
@@ -72,29 +82,16 @@ function abortableDelay(ms: number, signal?: AbortSignal): Promise<void> {
   });
 }
 
-/** Executor model tier — used for initial turns (Fireworks Kimi K2.5 Turbo) */
-export const MODEL_EXECUTOR =
-  LLM_MODEL_CONFIG.executor;
-/** Fallback: same model (no :nitro variant on Fireworks) */
-export const MODEL_EXECUTOR_EMPTY_RESPONSE_FALLBACK =
-  LLM_MODEL_CONFIG.executorEmptyResponseFallback;
-/** Planner model tier — used after escalation (Fireworks Kimi K2.5 Turbo) */
-export const MODEL_PLANNER = LLM_MODEL_CONFIG.planner;
-/** Writer specialist model — used for one-shot prose composition (compose_text) */
-export const MODEL_WRITER = LLM_MODEL_CONFIG.writer;
-/** Verification judge model — used for the rubric judge (RFC LP-15 Phase 10) */
-export const MODEL_JUDGE = LLM_MODEL_CONFIG.judge;
+// Seat model ids live in ./seat-models (extracted 2026-07-26 for the
+// decomposition budget); re-exported so `from "./client"` imports still work.
+export * from "./seat-models";
 
 /** OpenAI direct API — redirected to Fireworks */
 const OPENAI_BASE_URL =
   "https://api.fireworks.ai/inference/v1/chat/completions";
-export const OPENAI_MODEL_EXECUTOR =
-  LLM_MODEL_CONFIG.openai.executor;
-export const OPENAI_MODEL_PLANNER = LLM_MODEL_CONFIG.openai.planner;
 
 /** Groq direct API */
 const GROQ_BASE_URL = "https://api.groq.com/openai/v1/chat/completions";
-export const GROQ_MODEL_PLANNER = LLM_MODEL_CONFIG.groq.planner;
 
 
 function parsePositiveIntHeader(headers: Headers, name: string): number | undefined {
@@ -178,20 +175,12 @@ function withUsageCacheTelemetry(
 
 /** Moonshot direct API */
 const MOONSHOT_BASE_URL = "https://api.moonshot.ai/v1/chat/completions";
-export const MOONSHOT_MODEL_EXECUTOR =
-  LLM_MODEL_CONFIG.moonshot.executor;
-export const MOONSHOT_MODEL_PLANNER = LLM_MODEL_CONFIG.moonshot.planner;
 
 /** Xiaomi MiMo direct API */
 const XIAOMI_BASE_URL = "https://api.xiaomimimo.com/v1/chat/completions";
-export const XIAOMI_MODEL_EXECUTOR =
-  LLM_MODEL_CONFIG.xiaomi.executor;
-export const XIAOMI_MODEL_PLANNER = LLM_MODEL_CONFIG.xiaomi.planner;
 
 /** DeepSeek direct API (planner/verifier only; executor remains Fireworks). */
 const DEEPSEEK_BASE_URL = "https://api.deepseek.com/chat/completions";
-export const DEEPSEEK_MODEL_PLANNER = LLM_MODEL_CONFIG.deepseek.planner;
-export const DEEPSEEK_MODEL_PLANNER_PRO = LLM_MODEL_CONFIG.deepseek.plannerPro;
 
 function openAIProvider(apiKey: string): ProviderConfig {
   return {
@@ -214,9 +203,6 @@ function groqProvider(apiKey: string): ProviderConfig {
 /** Fireworks AI direct API */
 const FIREWORKS_BASE_URL =
   "https://api.fireworks.ai/inference/v1/chat/completions";
-export const FIREWORKS_MODEL_EXECUTOR =
-  LLM_MODEL_CONFIG.fireworks.executor;
-export const FIREWORKS_MODEL_PLANNER = LLM_MODEL_CONFIG.fireworks.planner;
 
 /** Check if a model supports unified VL executor mode (vision + tool calling). */
 export const isVLCapable = isExecutorVLCapable;
@@ -259,7 +245,6 @@ function deepseekProvider(apiKey: string): ProviderConfig {
 
 /** Cerebras direct API (executor only; planner remains Fireworks). */
 const CEREBRAS_BASE_URL = "https://api.cerebras.ai/v1/chat/completions";
-export const CEREBRAS_MODEL_EXECUTOR = LLM_MODEL_CONFIG.cerebras.executor;
 
 function cerebrasProvider(apiKey: string): ProviderConfig {
   return {
@@ -770,11 +755,12 @@ export class LLMClient {
       const plannerModel = options?.plannerModel || OPENAI_MODEL_PLANNER;
       this.plannerPool = singleProviderPool(oaiProv, plannerModel);
     } else {
-      // OpenRouter for planner
+      // OpenRouter for planner. Uses the OpenRouter-form planner id — MODEL_PLANNER
+      // is a Fireworks accounts/... id and 404s here.
       this.plannerPool = openRouterProviderPool(
         openRouterApiKey,
         applyNitro(
-          options?.plannerModel || MODEL_PLANNER,
+          options?.plannerModel || OPENROUTER_MODEL_PLANNER,
           nitro,
         ),
       );
@@ -798,17 +784,22 @@ export class LLMClient {
     // --- Build judge pool ---
     // The verification judge runs on the planner's provider with its own model
     // (the verifier historically ran on the planner seat). When unconfigured,
-    // Fireworks-served planner modes default to MODEL_JUDGE — the judge is a
-    // text-only rubric task that must not queue behind GLM planner traffic
-    // (sharing the seat made ~75% of judge calls hit the hard timeout and fail
-    // open). Non-Fireworks planner providers keep the transparent planner-pool
-    // reuse: MODEL_JUDGE is a Fireworks catalog id and may not exist there.
+    // Fireworks- and OpenRouter-served planner modes get a DEDICATED judge model
+    // — the judge is a text-only rubric task that must not queue behind GLM
+    // planner traffic (sharing the seat made ~75% of judge calls hit the hard
+    // timeout and fail open). Each provider needs its own id form: MODEL_JUDGE
+    // is a Fireworks accounts/... id, OPENROUTER_MODEL_JUDGE the catalog form.
+    // Any other planner provider keeps the transparent planner-pool reuse,
+    // since neither id is guaranteed to exist there.
     const plannerSlotForJudge = this.plannerPool.getActive();
-    const judgeModelOption =
-      options?.judgeModel ??
-      (plannerSlotForJudge.provider.providerId === "fireworks"
+    const defaultJudgeForPlannerProvider =
+      plannerSlotForJudge.provider.providerId === "fireworks"
         ? MODEL_JUDGE
-        : undefined);
+        : plannerSlotForJudge.provider.providerId === "openrouter"
+          ? OPENROUTER_MODEL_JUDGE
+          : undefined;
+    const judgeModelOption =
+      options?.judgeModel ?? defaultJudgeForPlannerProvider;
     if (!judgeModelOption) {
       this.judgePool = this.plannerPool;
     } else {

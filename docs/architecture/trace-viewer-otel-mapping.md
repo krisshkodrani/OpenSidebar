@@ -1,165 +1,88 @@
 # Trace Viewer → OpenTelemetry / GenAI Mapping
 
-Date: 2026-06-24
+Date: 2026-07-24
 
-Status: Design sketch (no exporter implemented yet). Purpose: show that the
-existing OpenSidebar trace schema maps cleanly onto OpenTelemetry traces and the
-OpenTelemetry **GenAI semantic conventions** (`gen_ai.*`), so the telemetry can be
-shipped to any OTLP backend (Dynatrace, Grafana Tempo, Honeycomb, …) without a
-schema rebuild.
+Status: **Shipped.** The OTLP exporter exists and is wired into the log
+server: `scripts/obs/otel-emit.ts` maps span-spine records (`ObsSpan[]`) to
+OTLP and exports them (Dynatrace/Bluebox today; any OTLP backend in
+principle), and `scripts/obs/export-otel.ts` is the backfill CLI
+(`pnpm run obs:export-otel`). The log server calls `initSpineOtelExport()` on
+boot and emits spans on every `/traces` / `/run-traces` write. Configuration
+lives in `.env.otel`.
 
-Related: [Trace Viewer Observability](./trace-viewer-observability.md),
-[Trace Viewer Metric Semantics](./trace-viewer-metric-semantics.md). Source of
-truth for fields: `packages/shared-types/src/traces.ts`.
-
-## TL;DR
-
-We already capture the hard part — typed, correlated, full-fidelity AI-agent
-telemetry with stable cross-stream IDs. What is missing is an **OTLP export layer**
-that re-labels our bespoke records as OTel spans + GenAI attributes. This is a
-mapping/adapter, not a re-instrumentation. Cost and a handful of AI-agent-specific
-fields have no standard yet and go under an `opensidebar.*` custom namespace.
+Related: [Trace Viewer](./trace-viewer.md) (the span spine),
+[Trace Viewer Observability](./trace-viewer-observability.md),
+[Metric Semantics](./trace-viewer-metric-semantics.md). Source of truth for
+fields: `packages/shared-types/src/traces.ts` and
+`scripts/obs/map-trace-entry.ts` (the actual on-the-wire mapping — trust it
+over the tables here).
 
 ## Span hierarchy
 
-Our four record kinds form a clean parent/child span tree. The IDs we already
-emit become the OTel span/trace identifiers.
+The record kinds form a parent/child span tree; IDs we already emit become the
+OTel identifiers. W3C trace ids are derived deterministically
+(`sha256(spineTraceId)`, `otel-emit.ts`).
 
 ```
-trace_id  = correlationId            (end-to-end across orchestrator + agent)
+trace_id  = derived from correlationId   (end-to-end across orchestrator + agent)
 │
-└─ span: invoke_agent "{query}"      ← orchestrator.run.manifest (runId)
-   │   gen_ai.operation.name = invoke_agent
-   │
-   ├─ span: agent session            ← agent.session (sessionId)
-   │  │   gen_ai.operation.name = invoke_agent
-   │  │
-   │  ├─ span: turn {turnNumber}      ← agent.turn (turnId)
-   │  │  │
-   │  │  ├─ span: chat {model}        ← turn.llmRequest / llmResponse
-   │  │  │       gen_ai.operation.name = chat
-   │  │  │
-   │  │  ├─ span: execute_tool {name} ← turn.toolExecutions[] (executionId)
-   │  │  │       gen_ai.operation.name = execute_tool
-   │  │  │
-   │  │  └─ span events               ← turn.events[]  (eventId)
-   │  │
+└─ span: orchestrator.run                ← run manifest (runId)
+   ├─ span: agent.session                ← sessionId
+   │  ├─ span: agent.turn                ← turnId
+   │  │  ├─ span: gen_ai.chat            ← llmRequest / llmResponse
+   │  │  ├─ span: execute_tool {name}    ← toolExecutions[]
+   │  │  ├─ span: gen_ai.perception      ← perception block (when present)
+   │  │  └─ span events                  ← turn.events[]
    │  └─ … more turns
-   │
-   └─ run-level span events           ← orchestrator.run.event
+   └─ run-level span events
 ```
 
-| OpenSidebar record | OTel span | Span/ID source |
-| --- | --- | --- |
-| `orchestrator.run.manifest` | root `invoke_agent` span | `runId` → span_id, `correlationId` → trace_id |
-| `agent.session` | child agent span | `sessionId` → span_id, `parentRunId`/`runId` → parent |
-| `agent.turn` | turn span | `turnId` → span_id |
-| `turn.llmRequest` + `llmResponse` | `chat` (GenAI) span | new span_id; parent = `turnId` |
-| `turn.toolExecutions[]` | `execute_tool` span | `executionId` → span_id |
-| `turn.events[]` | span events on the turn span | `eventId` |
-| `orchestrator.run.event` | span events on the run span | — |
+## The `gen_ai.chat` span
 
-Timestamps: `turn.timestamp` / `recordedAt` → span start; `+ llmResponse.durationMs`
-or `toolExecution.durationMs` → span end. W3C `traceparent` is derived from
-`correlationId` + the parent span id for propagation.
-
-## The `chat` span — GenAI attribute mapping
-
-This is the highest-value mapping: each LLM call becomes a standard GenAI span.
+Standard GenAI attributes:
 
 | OTel GenAI attribute | OpenSidebar field |
 | --- | --- |
-| `gen_ai.operation.name` | `"chat"` (constant) |
-| `gen_ai.system` | provider from `llmResponse.actualProviderId` (e.g. `openrouter`, `openai`, `groq`) |
+| `gen_ai.system` | `llmResponse.actualProviderId` |
 | `gen_ai.request.model` | `llmRequest.model` |
 | `gen_ai.response.model` | `llmResponse.actualModel` (captures failover) |
-| `gen_ai.response.finish_reasons` | `[llmResponse.finishReason]` |
-| `gen_ai.usage.input_tokens` | `llmResponse.usage.prompt_tokens` |
-| `gen_ai.usage.output_tokens` | `llmResponse.usage.completion_tokens` |
-| `server.duration` / span duration | `llmResponse.durationMs` |
-| (span events) `gen_ai.system.message`, `gen_ai.user.message`, `gen_ai.assistant.message`, `gen_ai.tool.message` | `llmRequest.messages[]` (already flattened in `TraceLLMMessage`) |
-| (span event) `gen_ai.choice` | `llmResponse.content` + `toolCalls` |
+| `gen_ai.usage.input_tokens` | `usage.prompt_tokens` |
+| `gen_ai.usage.output_tokens` | `usage.completion_tokens` |
+| span duration | `llmResponse.durationMs` |
 
-Custom (`opensidebar.*`) — no GenAI standard yet:
-
-| Custom attribute | OpenSidebar field |
-| --- | --- |
-| `opensidebar.model.tier` | `llmRequest.modelTier` (`executor`/`planner`) |
-| `opensidebar.usage.cached_tokens` | `llmResponse.usage.cached_tokens` |
-| `opensidebar.usage.cache_hit_pct` | `llmResponse.usage.cacheTelemetry.cacheHitPct` |
-| `opensidebar.cost.usd` | `llmResponse.usage.cost` |
-| `opensidebar.context.utilization` | `llmRequest.contextMetrics.utilization` |
-| `opensidebar.context.dropped_messages` | `llmRequest.contextMetrics.droppedMessageCount` |
-| `opensidebar.context.compression_level` | `llmRequest.contextMetrics.compressionLevel` |
-
-> Cost is deliberately custom: GenAI conventions do **not** standardize a cost
-> attribute. Keep `costMode` (`actual`/`estimated`/`mixed`) provenance so a backend
-> can distinguish billed vs. estimated spend.
+Custom attributes use the **`os.*` namespace** (not `opensidebar.*`):
+`os.cost_usd`, `os.usage.cached_tokens`, `os.cache.hit_pct`, `os.model_tier`,
+… — see `map-trace-entry.ts` for the full list. Cost is deliberately custom:
+GenAI conventions do not standardize a cost attribute; `costMode`
+(`actual`/`estimated`) provenance is preserved.
 
 ## The `execute_tool` span
 
-| OTel GenAI attribute | OpenSidebar field |
-| --- | --- |
-| `gen_ai.operation.name` | `"execute_tool"` (constant) |
-| `gen_ai.tool.name` | `toolExecution.toolName` |
-| `gen_ai.tool.call.id` | `toolExecution.toolCallId` |
-| span status | `toolExecution.success` → `Ok` / `Error` |
-| span status description | `toolExecution.error` |
-| span duration | `toolExecution.durationMs` |
-| `opensidebar.tool.risk_level` | `toolExecution.riskLevel` |
+Emits `os.tool.name`, `os.tool.success`, `os.tool.risk`, with span status
+ok/error from `toolExecution.success`.
 
 ## Events → span events
 
-Our typed `TraceEvent` union maps to span events with attributes. Examples:
+Turn events attach to the `agent.turn` span using the **raw `TraceEvent.type`
+string** as the event name (no per-event attribute mapping is currently
+implemented).
 
-| TraceEvent type | Span event name | Notable attributes |
-| --- | --- | --- |
-| `done_rejected` | `opensidebar.completion.rejected` | `reason`, `rejections`, `advancedTo` |
-| `plan_monitor` | `opensidebar.plan.monitor` | `alignment`, `stepIndex`, `reason` |
-| `plan_replan` | `opensidebar.plan.replan` | `fromIndex`, `replanNumber` |
-| `escalation` | `opensidebar.escalation` | `reason`, `voluntary` |
-| `circuit_breaker` | `opensidebar.circuit_breaker` | `reason`, `count` |
-| `safety_gate_blocked` | `opensidebar.safety.blocked` | `tool`, `reason`, `phase` |
+## Export behavior worth knowing
 
-Setting span status to `Error` on `done_rejected`, `circuit_breaker`, and tool
-failures lets a backend's error-tracking light up automatically.
+- **PII redaction at the export boundary is implemented** —
+  `redactPiiInText` (`scripts/obs/redact.ts`) runs before emit.
+- Resource `service.name` is **`opensidebar-agent-runtime`**.
+- Attribute values are clipped to 4,000 chars (Dynatrace limit).
+- Synthetic no-op perception spans are dropped (GitHub #99).
+- Backends may reject spans older than their ingest window — the backfill CLI
+  documents this caveat (`export-otel.ts`).
 
-## Resource attributes (set once per exporter)
+## Not implemented (aspirational)
 
-| Attribute | Value |
-| --- | --- |
-| `service.name` | `opensidebar-agent` |
-| `service.version` | extension version |
-| `gen_ai.system` | default provider (overridden per `chat` span) |
-| `deployment.environment` | `local` / `bench` / `e2e` |
-
-## Metrics (OTel metrics API)
-
-The Metrics page aggregates can be emitted as standard GenAI metric instruments,
-so the same numbers show up on a dashboard without re-deriving them:
-
-| OTel instrument | Source |
-| --- | --- |
-| `gen_ai.client.token.usage` (histogram, `token.type=input\|output`) | `usage.prompt_tokens` / `completion_tokens` |
-| `gen_ai.client.operation.duration` (histogram) | `llmResponse.durationMs` |
-| `opensidebar.session.cost` (counter, USD) | `SessionMetrics.totalCost` (+ `costMode`) |
-| `opensidebar.session.turns` (histogram) | `turnCount` |
-| `opensidebar.tool.failures` (counter) | tool `success === false` |
-
-## Where the exporter would live
-
-A new `scripts/otel-export.ts` (or a tap inside `scripts/log-server.ts` at the
-`/ingest` and `/traces` POST handlers) reads each record as it lands and emits
-OTLP/HTTP. Because every record already carries `correlationId` / `runId` /
-`sessionId` / `turnId` / `executionId` / `eventId`, the exporter is **stateless
-per record** — it never has to reconstruct parentage from scratch.
-
-## What this does NOT cover (honest gaps)
-
-- **PII**: spans would carry DOM text, screenshots, and LLM message bodies. A
-  redaction pass at the exporter boundary is a prerequisite for shipping to a
-  shared backend.
-- **Live anomaly detection / baselining**: out of scope here — that is the
-  backend's job (e.g. Davis AI) once the data is flowing in OTLP.
+- **OTel metrics instruments** (`gen_ai.client.token.usage`,
+  `gen_ai.client.operation.duration`, cost counters): only trace **spans**
+  are exported today; the Metrics-page aggregates are not emitted as metric
+  instruments.
 - **Sampling / cardinality control**: full-fidelity capture is fine locally;
-  fleet/prod volume would need head/tail sampling and label-cardinality limits.
+  fleet-scale volume would need head/tail sampling.
+- **Live anomaly detection / baselining**: the backend's job once data flows.

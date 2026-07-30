@@ -96,20 +96,25 @@ works.
 
 ## Model attribution (keep accurate)
 
-The bar and intro line credit the exact seats the runs use. Verify against the code
-before changing (`config/model-config.ts`, `utils/executor-model-policy.ts`,
-`background/llm/client.ts`) rather than trusting the handoff report, whose
-`executorModel`/`plannerModel` fields are null unless `E2E_MODEL` is exported.
+The bar and intro line credit the exact seats used for the featured surface. Verify
+against the code before changing (`config/model-config.ts`,
+`utils/executor-model-policy.ts`, `background/llm/client.ts`) rather than trusting
+the handoff report, whose `executorModel`/`plannerModel` fields are null unless
+`E2E_MODEL` is exported.
 
-- **Executor: Kimi K2.7 Code** (`accounts/fireworks/models/kimi-k2p7-code`) —
-  vision-capable; it receives the screenshot, so it genuinely "sees" the page.
-- **Planner / Writer: GLM 5.2** (`accounts/fireworks/models/glm-5p2`).
-- **Judge: GPT-OSS-120B** (`accounts/fireworks/models/gpt-oss-120b`) — dedicated
-  fast seat since 2026-07-09; before that the judge shared the GLM planner seat.
-- **Provider: Fireworks AI.**
+The customer promo follows the recommended product defaults:
 
-On-screen form: `OpenSidebar · Executor: Kimi K2.7 Code (vision) · Planner: GLM 5.2
-· Fireworks AI`.
+- **Executor: MiniMax M3** (`minimax/minimax-m3`).
+- **Planner: GLM 5.2** (`z-ai/glm-5.2`).
+- **Judge: GPT-OSS-120B** (`openai/gpt-oss-120b`).
+- **Provider: OpenRouter.**
+
+On-screen form: `OpenSidebar · MiniMax M3 + GLM 5.2 · Judge: GPT-OSS 120B ·
+OpenRouter`.
+
+Internal E2E recordings may still use the Fireworks development lane. If a film
+uses those recordings, credit the Fireworks model IDs actually used by that run;
+do not reuse that attribution in the customer promo.
 
 ## Choosing scenes (the cleanliness rule)
 
