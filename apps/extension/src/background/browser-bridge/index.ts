@@ -12,18 +12,35 @@ import {
   chromeRuntimeEnvironment,
 } from "../environment/chrome";
 import { createDefaultBrowserAgentRunner } from "./orchestrator-driver";
-import { BrowserBridgeClient } from "./ws-client";
+import {
+  BrowserBridgeClient,
+  type BrowserBridgeConnectionState,
+} from "./ws-client";
 import type { DelegatedTaskPersistence } from "./delegated-task-service";
 import { MessageSource } from "../../types";
 import { ToolName } from "../../types";
 import { executeContentTool } from "../tools/bridge";
+import { startKeepalive, stopKeepalive } from "../keepalive";
 
 export const BROWSER_MCP_WS_PORT_KEY = "opensidebar:browserMcpWsPort";
 export const BROWSER_MCP_AUTH_TOKEN_KEY = "opensidebar:browserMcpAuthToken";
+export const BROWSER_MCP_CONNECTION_STATE_KEY =
+  "opensidebar:browserMcpConnectionState";
 const DELEGATED_TASKS_KEY = "opensidebar:delegatedBrowserTasks:v1";
 
 let client: BrowserBridgeClient | null = null;
 let stopListener: (() => void) | null = null;
+
+async function persistConnectionState(
+  state: BrowserBridgeConnectionState | "unpaired",
+): Promise<void> {
+  await chromePersistencePort.local.set({
+    [BROWSER_MCP_CONNECTION_STATE_KEY]: {
+      state,
+      updatedAt: Date.now(),
+    },
+  });
+}
 
 export async function startBrowserBridge(): Promise<boolean> {
   if (client) return true;
@@ -36,7 +53,8 @@ export async function startBrowserBridge(): Promise<boolean> {
     ]);
     const value = stored[BROWSER_MCP_WS_PORT_KEY];
     if (typeof value === "number") port = value;
-    else if (typeof value === "string" && value.trim()) port = Number(value.trim());
+    else if (typeof value === "string" && value.trim())
+      port = Number(value.trim());
     const tokenValue = stored[BROWSER_MCP_AUTH_TOKEN_KEY];
     if (typeof tokenValue === "string" && tokenValue.length >= 32) {
       authToken = tokenValue;
@@ -44,16 +62,28 @@ export async function startBrowserBridge(): Promise<boolean> {
   } catch {
     return false;
   }
-  if (!port || Number.isNaN(port) || port <= 0 || !authToken) return false;
+  if (!port || Number.isNaN(port) || port <= 0 || !authToken) {
+    await persistConnectionState("unpaired");
+    return false;
+  }
 
   client = new BrowserBridgeClient({
     url: `ws://127.0.0.1:${port}`,
     authToken,
     runner: createDefaultBrowserAgentRunner(),
+    onConnectionStateChange(state) {
+      void persistConnectionState(state);
+    },
+    onRequestActivityChange(active) {
+      void (active
+        ? startKeepalive("browser-bridge-request")
+        : stopKeepalive("browser-bridge-request"));
+    },
     delegatedTaskOptions: {
       persistence: {
         async load() {
-          const stored = await chromePersistencePort.local.get(DELEGATED_TASKS_KEY);
+          const stored =
+            await chromePersistencePort.local.get(DELEGATED_TASKS_KEY);
           const value = stored[DELEGATED_TASKS_KEY];
           return Array.isArray(value)
             ? (value as Awaited<ReturnType<DelegatedTaskPersistence["load"]>>)
@@ -73,6 +103,26 @@ export async function startBrowserBridge(): Promise<boolean> {
           workspaceId: null,
           payload: task,
         });
+      },
+      onActiveStateChange(active) {
+        void (active
+          ? startKeepalive("browser-bridge-task")
+          : stopKeepalive("browser-bridge-task"));
+      },
+      async activeTabReader() {
+        const [tab] = await chrome.tabs.query({
+          active: true,
+          lastFocusedWindow: true,
+        });
+        if (typeof tab?.id !== "number") {
+          throw new Error("No active Chrome tab is available.");
+        }
+        return {
+          tabId: tab.id,
+          url: tab.url ?? tab.pendingUrl ?? "",
+          title: tab.title ?? "",
+          windowId: tab.windowId,
+        };
       },
       fileUploader: {
         async getTabUrl(tabId) {

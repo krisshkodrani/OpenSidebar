@@ -7,61 +7,72 @@ import { describe, test, expect, beforeEach, vi } from "vitest";
 
 // Mock chrome APIs
 globalThis.chrome = {
-    alarms: {
-        create: vi.fn(async () => { }),
-        clear: vi.fn(async () => { }),
-        onAlarm: { addListener: vi.fn(() => { }) },
-    },
+  alarms: {
+    create: vi.fn(async () => {}),
+    clear: vi.fn(async () => {}),
+    onAlarm: { addListener: vi.fn(() => {}) },
+  },
 } as any;
 
 // Import after mocking
 import {
-    startKeepalive,
-    stopKeepalive,
-    registerAlarmListener,
+  startKeepalive,
+  stopKeepalive,
+  registerAlarmListener,
 } from "../../src/background/keepalive";
 
 describe("Keepalive Module", () => {
-    beforeEach(() => {
-        // Reset mocks
-        (chrome.alarms.create as any).mockClear();
-        (chrome.alarms.clear as any).mockClear();
+  beforeEach(() => {
+    // Reset mocks
+    (chrome.alarms.create as any).mockClear();
+    (chrome.alarms.clear as any).mockClear();
+  });
+
+  describe("startKeepalive", () => {
+    test("creates alarm with correct name and period", async () => {
+      await startKeepalive();
+
+      expect(chrome.alarms.create).toHaveBeenCalledWith(
+        "opensidebar:keepalive",
+        expect.objectContaining({ periodInMinutes: expect.any(Number) }),
+      );
+    });
+  });
+
+  describe("stopKeepalive", () => {
+    test("clears alarm by name", async () => {
+      // First start to set isActive
+      await startKeepalive();
+      await stopKeepalive();
+
+      expect(chrome.alarms.clear).toHaveBeenCalledWith("opensidebar:keepalive");
     });
 
-    describe("startKeepalive", () => {
-        test("creates alarm with correct name and period", async () => {
-            await startKeepalive();
+    test("clears alarm even when called without prior startKeepalive (SW restart scenario)", async () => {
+      // Simulate SW restart: isActive is false, but alarm exists in Chrome registry.
+      // stopKeepalive should still attempt to clear the alarm.
+      await stopKeepalive();
 
-            expect(chrome.alarms.create).toHaveBeenCalledWith(
-                "opensidebar:keepalive",
-                expect.objectContaining({ periodInMinutes: expect.any(Number) })
-            );
-        });
+      expect(chrome.alarms.clear).toHaveBeenCalledWith("opensidebar:keepalive");
     });
 
-    describe("stopKeepalive", () => {
-        test("clears alarm by name", async () => {
-            // First start to set isActive
-            await startKeepalive();
-            await stopKeepalive();
+    test("keeps the alarm while another lease is active", async () => {
+      await startKeepalive("agent");
+      await startKeepalive("browser-bridge-task");
 
-            expect(chrome.alarms.clear).toHaveBeenCalledWith("opensidebar:keepalive");
-        });
+      await stopKeepalive("agent");
+      expect(chrome.alarms.clear).not.toHaveBeenCalled();
 
-        test("clears alarm even when called without prior startKeepalive (SW restart scenario)", async () => {
-            // Simulate SW restart: isActive is false, but alarm exists in Chrome registry.
-            // stopKeepalive should still attempt to clear the alarm.
-            await stopKeepalive();
-
-            expect(chrome.alarms.clear).toHaveBeenCalledWith("opensidebar:keepalive");
-        });
+      await stopKeepalive("browser-bridge-task");
+      expect(chrome.alarms.clear).toHaveBeenCalledWith("opensidebar:keepalive");
     });
+  });
 
-    describe("registerAlarmListener", () => {
-        test("registers onAlarm listener", () => {
-            registerAlarmListener();
+  describe("registerAlarmListener", () => {
+    test("registers onAlarm listener", () => {
+      registerAlarmListener();
 
-            expect(chrome.alarms.onAlarm.addListener).toHaveBeenCalled();
-        });
+      expect(chrome.alarms.onAlarm.addListener).toHaveBeenCalled();
     });
+  });
 });

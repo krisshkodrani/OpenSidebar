@@ -32,6 +32,14 @@ class FakeWebSocket {
 
 const AUTH_TOKEN = "test-browser-bridge-token-32-bytes-minimum";
 
+function deferred<T>() {
+  let resolve!: (value: T) => void;
+  const promise = new Promise<T>((done) => {
+    resolve = done;
+  });
+  return { promise, resolve };
+}
+
 function proof(value: string): string {
   return createHmac("sha256", AUTH_TOKEN).update(value).digest("base64url");
 }
@@ -54,10 +62,64 @@ async function authenticate(ws: FakeWebSocket): Promise<void> {
 }
 
 function runner(outcome: AgentRunOutcome): AgentRunner {
-  return { async run() { return outcome; } };
+  return {
+    async run() {
+      return outcome;
+    },
+  };
 }
 
 describe("BrowserBridgeClient", () => {
+  test("reports connection lifecycle states", async () => {
+    const states: string[] = [];
+    const client = new BrowserBridgeClient({
+      url: "ws://127.0.0.1:0",
+      authToken: AUTH_TOKEN,
+      runner: runner({ status: "completed" }),
+      webSocketImpl: FakeWebSocket as unknown as new (url: string) => WebSocket,
+      onConnectionStateChange: (state) => states.push(state),
+    });
+
+    client.start();
+    const ws = FakeWebSocket.last!;
+    await authenticate(ws);
+    expect(states).toEqual(["connecting", "connected"]);
+
+    ws.onclose?.();
+    expect(states).toEqual(["connecting", "connected", "reconnecting"]);
+
+    client.stop();
+    expect(states.at(-1)).toBe("disconnected");
+  });
+
+  test("reports request activity until a bridge request settles", async () => {
+    const run = deferred<AgentRunOutcome>();
+    const activity: boolean[] = [];
+    const client = new BrowserBridgeClient({
+      url: "ws://127.0.0.1:0",
+      authToken: AUTH_TOKEN,
+      runner: {
+        async run() {
+          return run.promise;
+        },
+      },
+      webSocketImpl: FakeWebSocket as unknown as new (url: string) => WebSocket,
+      onRequestActivityChange: (active) => activity.push(active),
+    });
+    client.start();
+    const ws = FakeWebSocket.last!;
+    await authenticate(ws);
+
+    ws.emit({
+      id: "active",
+      request: { tool: "browser_run_task", args: { instruction: "x" } },
+    });
+    await vi.waitFor(() => expect(activity).toEqual([true]));
+
+    run.resolve({ status: "completed" });
+    await vi.waitFor(() => expect(activity).toEqual([true, false]));
+  });
+
   test("dispatches a request to the handler and replies with the correlated id", async () => {
     const client = new BrowserBridgeClient({
       url: "ws://127.0.0.1:0",
@@ -69,7 +131,10 @@ describe("BrowserBridgeClient", () => {
     const ws = FakeWebSocket.last!;
     await authenticate(ws);
 
-    ws.emit({ id: "7", request: { tool: "browser_navigate", args: { url: "https://x.test" } } });
+    ws.emit({
+      id: "7",
+      request: { tool: "browser_navigate", args: { url: "https://x.test" } },
+    });
     await new Promise((r) => setTimeout(r, 0));
 
     expect(ws.sent).toHaveLength(1);
@@ -83,7 +148,12 @@ describe("BrowserBridgeClient", () => {
     const client = new BrowserBridgeClient({
       url: "ws://127.0.0.1:0",
       authToken: AUTH_TOKEN,
-      runner: { async run() { runCalls += 1; return { status: "completed" }; } },
+      runner: {
+        async run() {
+          runCalls += 1;
+          return { status: "completed" };
+        },
+      },
       webSocketImpl: FakeWebSocket as unknown as new (url: string) => WebSocket,
     });
     client.start();
@@ -93,7 +163,10 @@ describe("BrowserBridgeClient", () => {
     ws.emit({ id: "1", request: { tool: "browser_ping", args: {} } });
     await new Promise((r) => setTimeout(r, 0));
 
-    expect(JSON.parse(ws.sent[0]).response).toEqual({ status: "ok", result: "pong" });
+    expect(JSON.parse(ws.sent[0]).response).toEqual({
+      status: "ok",
+      result: "pong",
+    });
     expect(runCalls).toBe(0);
   });
 
@@ -136,7 +209,10 @@ describe("BrowserBridgeClient", () => {
     const ws = FakeWebSocket.last!;
     await authenticate(ws);
 
-    ws.emit({ id: "9", request: { tool: "browser_run_task", args: { instruction: "x" } } });
+    ws.emit({
+      id: "9",
+      request: { tool: "browser_run_task", args: { instruction: "x" } },
+    });
     await new Promise((r) => setTimeout(r, 0));
     expect(ws.sent).toHaveLength(0); // still running
 
@@ -186,7 +262,10 @@ describe("BrowserBridgeClient", () => {
     const ws = FakeWebSocket.last!;
     await authenticate(ws);
 
-    ws.emit({ id: "5", request: { tool: "browser_run_task", args: { instruction: "x" } } });
+    ws.emit({
+      id: "5",
+      request: { tool: "browser_run_task", args: { instruction: "x" } },
+    });
     await new Promise((r) => setTimeout(r, 0));
     expect(ws.sent).toHaveLength(1);
 

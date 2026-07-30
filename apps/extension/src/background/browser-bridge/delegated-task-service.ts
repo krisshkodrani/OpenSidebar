@@ -50,6 +50,13 @@ export interface DelegatedTaskServiceOptions {
   createId?: () => string;
   persistence?: DelegatedTaskPersistence;
   onUpdate?: (task: DelegatedBrowserTask) => void;
+  onActiveStateChange?: (active: boolean) => void;
+  activeTabReader?: () => Promise<{
+    tabId: number;
+    url: string;
+    title: string;
+    windowId: number;
+  }>;
   fileUploader?: {
     getTabUrl(tabId: number): Promise<string>;
     upload(input: {
@@ -82,13 +89,18 @@ function positiveNumber(value: unknown): number | undefined {
     : undefined;
 }
 
-function parseDelegateInput(args: Record<string, unknown>): DelegateBrowserTaskInput {
+function parseDelegateInput(
+  args: Record<string, unknown>,
+): DelegateBrowserTaskInput {
   const goal = typeof args.goal === "string" ? args.goal.trim() : "";
   if (!goal) throw new Error("delegate_browser_task needs a non-empty goal");
   const allowedDomains = stringArray(args.allowed_domains).map((item) =>
     item.trim().toLowerCase(),
   );
-  if (allowedDomains.length === 0 || allowedDomains.some((item) => !DOMAIN_PATTERN.test(item))) {
+  if (
+    allowedDomains.length === 0 ||
+    allowedDomains.some((item) => !DOMAIN_PATTERN.test(item))
+  ) {
     throw new Error("allowed_domains must contain valid hostnames");
   }
   const maxSteps = positiveNumber(args.max_steps);
@@ -122,7 +134,9 @@ function parseDelegateInput(args: Record<string, unknown>): DelegateBrowserTaskI
   }
   if (
     allowedRoles.length > 0 &&
-    ["planner", "executor", "verifier"].some((role) => !allowedRoles.includes(role))
+    ["planner", "executor", "verifier"].some(
+      (role) => !allowedRoles.includes(role),
+    )
   ) {
     throw new Error(
       "allowed_model_roles must include planner, executor, and verifier for the existing runtime",
@@ -179,6 +193,8 @@ export class DelegatedTaskService {
   private readonly createId: () => string;
   private readonly persistence?: DelegatedTaskPersistence;
   private readonly onUpdate?: (task: DelegatedBrowserTask) => void;
+  private readonly onActiveStateChange?: (active: boolean) => void;
+  private readonly activeTabReader?: DelegatedTaskServiceOptions["activeTabReader"];
   private readonly fileUploader?: DelegatedTaskServiceOptions["fileUploader"];
   private loadPromise?: Promise<void>;
   private persistQueue: Promise<void> = Promise.resolve();
@@ -189,16 +205,22 @@ export class DelegatedTaskService {
   ) {
     this.now = options.now ?? Date.now;
     this.createId =
-      options.createId ??
-      (() => `browser-task-${crypto.randomUUID()}`);
+      options.createId ?? (() => `browser-task-${crypto.randomUUID()}`);
     this.persistence = options.persistence;
     this.onUpdate = options.onUpdate;
+    this.onActiveStateChange = options.onActiveStateChange;
+    this.activeTabReader = options.activeTabReader;
     this.fileUploader = options.fileUploader;
   }
 
   async handle(req: BrowserToolRequest): Promise<unknown> {
     await this.ensureLoaded();
     switch (req.tool) {
+      case "get_active_browser_tab":
+        if (!this.activeTabReader) {
+          throw new Error("active browser tab inspection is not configured");
+        }
+        return this.activeTabReader();
       case "delegate_browser_task":
         return this.delegate(parseDelegateInput(req.args));
       case "get_browser_task":
@@ -221,6 +243,11 @@ export class DelegatedTaskService {
           queuedTasks: this.queue.length,
           capacity: 1,
           providerCheckRequired: false,
+          ...(this.activeTabReader
+            ? {
+                activeTab: await this.activeTabReader().catch(() => null),
+              }
+            : {}),
         };
       case "request_browser_file_upload":
         return this.requestFileUpload(req.args);
@@ -272,10 +299,7 @@ export class DelegatedTaskService {
 
   private list(args: Record<string, unknown>): DelegatedBrowserTask[] {
     const status = typeof args.status === "string" ? args.status : undefined;
-    const limit = Math.min(
-      100,
-      Math.max(1, positiveNumber(args.limit) ?? 20),
-    );
+    const limit = Math.min(100, Math.max(1, positiveNumber(args.limit) ?? 20));
     return [...this.records.values()]
       .map((record) => record.snapshot)
       .filter((task) => !status || task.status === status)
@@ -301,24 +325,33 @@ export class DelegatedTaskService {
         .cancel?.({ instruction: record.input.goal, session: taskId })
         .catch(() => {});
       this.activeTaskId = null;
+      if (this.queue.length === 0) this.onActiveStateChange?.(false);
     }
     queueMicrotask(() => this.pump());
     return copy(record.snapshot);
   }
 
-  private async approve(args: Record<string, unknown>): Promise<DelegatedBrowserTask> {
+  private async approve(
+    args: Record<string, unknown>,
+  ): Promise<DelegatedBrowserTask> {
     const taskId = this.taskId(args);
     const record = this.records.get(taskId);
     if (!record) throw new Error(`unknown browser task: ${taskId}`);
-    if (record.snapshot.status !== "waiting_for_approval" || !record.snapshot.approval) {
+    if (
+      record.snapshot.status !== "waiting_for_approval" ||
+      !record.snapshot.approval
+    ) {
       throw new Error("task has no pending approval");
     }
     if (args.checkpoint_id !== record.snapshot.approval.approvalId) {
       throw new Error("checkpoint does not match the exact pending action");
     }
-    if (typeof args.approved !== "boolean") throw new Error("approved must be boolean");
+    if (typeof args.approved !== "boolean")
+      throw new Error("approved must be boolean");
     if (!record.input.policy.approvalPolicy.allowSupervisorRelay) {
-      throw new Error("this task policy does not allow supervisor-relayed approval");
+      throw new Error(
+        "this task policy does not allow supervisor-relayed approval",
+      );
     }
     if (!this.runner.respondApproval) {
       if (!record.pendingFileUpload) {
@@ -368,8 +401,7 @@ export class DelegatedTaskService {
           });
           record.snapshot.evidence.push({
             url: actualUrl,
-            visibleText:
-              `Attached ${pending.filename} (${pending.size} bytes, sha256 ${pending.sha256}) to input ${pending.inputId}. ${result}`,
+            visibleText: `Attached ${pending.filename} (${pending.size} bytes, sha256 ${pending.sha256}) to input ${pending.inputId}. ${result}`,
           });
         }
       } finally {
@@ -397,12 +429,17 @@ export class DelegatedTaskService {
     return copy(record.snapshot);
   }
 
-  private async continue(args: Record<string, unknown>): Promise<DelegatedBrowserTask> {
+  private async continue(
+    args: Record<string, unknown>,
+  ): Promise<DelegatedBrowserTask> {
     const taskId = this.taskId(args);
     const record = this.records.get(taskId);
     if (!record) throw new Error(`unknown browser task: ${taskId}`);
     const clarification = record.snapshot.clarification;
-    if (record.snapshot.status !== "waiting_for_clarification" || !clarification) {
+    if (
+      record.snapshot.status !== "waiting_for_clarification" ||
+      !clarification
+    ) {
       throw new Error("task has no pending clarification");
     }
     if (typeof args.response !== "string" || !args.response.trim()) {
@@ -466,7 +503,9 @@ export class DelegatedTaskService {
       );
     }
     if (!record.input.policy.approvalPolicy.allowSupervisorRelay) {
-      throw new Error("this task policy does not allow supervisor-relayed approval");
+      throw new Error(
+        "this task policy does not allow supervisor-relayed approval",
+      );
     }
     const tabId = args.tab_id;
     const inputId = args.input_id;
@@ -486,7 +525,9 @@ export class DelegatedTaskService {
       throw new Error("invalid local upload target");
     }
     if (record.snapshot.currentTabId !== tabId) {
-      throw new Error("upload tab does not match the delegated task's current tab");
+      throw new Error(
+        "upload tab does not match the delegated task's current tab",
+      );
     }
     const actualUrl = await this.fileUploader?.getTabUrl(tabId);
     if (!actualUrl || new URL(actualUrl).origin !== new URL(origin).origin) {
@@ -598,6 +639,7 @@ export class DelegatedTaskService {
       return;
     }
     this.activeTaskId = taskId;
+    this.onActiveStateChange?.(true);
     this.update(record, "planning");
     this.addEvent(record, { at: this.now(), type: "started" });
     const timeout = record.input.policy.timeoutSeconds;
@@ -721,13 +763,18 @@ export class DelegatedTaskService {
         )
       ) {
         this.activeTaskId = null;
+        if (this.queue.length === 0) this.onActiveStateChange?.(false);
         queueMicrotask(() => this.pump());
       }
     }
   }
 
-  private result(record: TaskRecord, outcome: AgentRunOutcome): BrowserTaskResult {
-    const summary = outcome.summary ?? "Browser task completed and was verified.";
+  private result(
+    record: TaskRecord,
+    outcome: AgentRunOutcome,
+  ): BrowserTaskResult {
+    const summary =
+      outcome.summary ?? "Browser task completed and was verified.";
     return {
       taskId: record.snapshot.taskId,
       status: "completed",
@@ -888,6 +935,7 @@ export class DelegatedTaskService {
 }
 
 export const TASK_FIRST_BROWSER_TOOLS = new Set([
+  "get_active_browser_tab",
   "delegate_browser_task",
   "get_browser_task",
   "continue_browser_task",

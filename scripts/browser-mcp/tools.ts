@@ -23,6 +23,13 @@ export interface BrowserToolDef {
 
 const TASK_FIRST_TOOLS: BrowserToolDef[] = [
   {
+    name: "get_active_browser_tab",
+    kind: "mechanical",
+    description:
+      "Return the active Chrome tab id, URL, title, and window id directly from the extension without invoking a model or opening a tab.",
+    inputSchema: { type: "object", properties: {} },
+  },
+  {
     name: "delegate_browser_task",
     kind: "intent",
     description:
@@ -30,10 +37,22 @@ const TASK_FIRST_TOOLS: BrowserToolDef[] = [
     inputSchema: {
       type: "object",
       properties: {
-        goal: { type: "string", description: "Complete browser outcome to achieve." },
-        context: { type: "string", description: "Optional trusted task context." },
-        constraints: { type: "array", description: "Explicit behavioral constraints." },
-        preferred_tab_id: { type: "number", description: "Existing tab to prefer." },
+        goal: {
+          type: "string",
+          description: "Complete browser outcome to achieve.",
+        },
+        context: {
+          type: "string",
+          description: "Optional trusted task context.",
+        },
+        constraints: {
+          type: "array",
+          description: "Explicit behavioral constraints.",
+        },
+        preferred_tab_id: {
+          type: "number",
+          description: "Existing tab to prefer.",
+        },
         allowed_domains: {
           type: "array",
           description: "Hostnames the task may navigate to.",
@@ -44,7 +63,10 @@ const TASK_FIRST_TOOLS: BrowserToolDef[] = [
             "Mandatory-checkpoint policy and whether exact approvals may be relayed.",
         },
         max_steps: { type: "number", description: "Maximum agent turns." },
-        max_cost_usd: { type: "number", description: "Maximum provider cost in USD." },
+        max_cost_usd: {
+          type: "number",
+          description: "Maximum provider cost in USD.",
+        },
         timeout_seconds: { type: "number", description: "Wall-clock timeout." },
         allowed_model_roles: {
           type: "array",
@@ -66,16 +88,22 @@ const TASK_FIRST_TOOLS: BrowserToolDef[] = [
         task_id: { type: "string", description: "Paused delegated task id." },
         file_path: {
           type: "string",
-          description: "Absolute local path. The host validates, hashes, and caps it at 10MB.",
+          description:
+            "Absolute local path. The host validates, hashes, and caps it at 10MB.",
         },
-        tab_id: { type: "number", description: "Exact destination browser tab id." },
+        tab_id: {
+          type: "number",
+          description: "Exact destination browser tab id.",
+        },
         origin: {
           type: "string",
-          description: "Exact expected page origin, for example https://play.google.com.",
+          description:
+            "Exact expected page origin, for example https://play.google.com.",
         },
         input_id: {
           type: "number",
-          description: "Exact tagged <input type=file> id reported by the browser task.",
+          description:
+            "Exact tagged <input type=file> id reported by the browser task.",
         },
       },
       required: ["task_id", "file_path", "tab_id", "origin", "input_id"],
@@ -84,17 +112,21 @@ const TASK_FIRST_TOOLS: BrowserToolDef[] = [
   {
     name: "get_browser_task",
     kind: "mechanical",
-    description: "Get lifecycle, plan, pending interaction, evidence, usage, and result.",
+    description:
+      "Get lifecycle, plan, pending interaction, evidence, usage, and result.",
     inputSchema: {
       type: "object",
-      properties: { task_id: { type: "string", description: "Delegated task id." } },
+      properties: {
+        task_id: { type: "string", description: "Delegated task id." },
+      },
       required: ["task_id"],
     },
   },
   {
     name: "continue_browser_task",
     kind: "mechanical",
-    description: "Answer the exact clarification a delegated task is waiting on.",
+    description:
+      "Answer the exact clarification a delegated task is waiting on.",
     inputSchema: {
       type: "object",
       properties: {
@@ -113,7 +145,10 @@ const TASK_FIRST_TOOLS: BrowserToolDef[] = [
       type: "object",
       properties: {
         task_id: { type: "string", description: "Delegated task id." },
-        checkpoint_id: { type: "string", description: "Exact pending checkpoint id." },
+        checkpoint_id: {
+          type: "string",
+          description: "Exact pending checkpoint id.",
+        },
         approved: { type: "boolean", description: "Approve or deny." },
       },
       required: ["task_id", "checkpoint_id", "approved"],
@@ -125,7 +160,9 @@ const TASK_FIRST_TOOLS: BrowserToolDef[] = [
     description: "Cancel a delegated task and prevent subsequent actions.",
     inputSchema: {
       type: "object",
-      properties: { task_id: { type: "string", description: "Delegated task id." } },
+      properties: {
+        task_id: { type: "string", description: "Delegated task id." },
+      },
       required: ["task_id"],
     },
   },
@@ -147,7 +184,9 @@ const TASK_FIRST_TOOLS: BrowserToolDef[] = [
     description: "Get the compact redacted trace for a delegated task.",
     inputSchema: {
       type: "object",
-      properties: { task_id: { type: "string", description: "Delegated task id." } },
+      properties: {
+        task_id: { type: "string", description: "Delegated task id." },
+      },
       required: ["task_id"],
     },
   },
@@ -189,7 +228,8 @@ const COMPATIBILITY_TOOLS: BrowserToolDef[] = [
       properties: {
         fullPage: {
           type: "boolean",
-          description: "Capture the full scrollable page instead of the viewport.",
+          description:
+            "Capture the full scrollable page instead of the viewport.",
         },
       },
     },
@@ -202,10 +242,14 @@ const COMPATIBILITY_TOOLS: BrowserToolDef[] = [
     inputSchema: {
       type: "object",
       properties: {
-        url: { type: "string", description: "Optional URL to open before extracting." },
+        url: {
+          type: "string",
+          description: "Optional URL to open before extracting.",
+        },
         schema: {
           type: "object",
-          description: "Shape of the data to extract (field names → descriptions).",
+          description:
+            "Shape of the data to extract (field names → descriptions).",
         },
       },
       required: ["schema"],
@@ -233,8 +277,14 @@ const COMPATIBILITY_TOOLS: BrowserToolDef[] = [
       type: "object",
       properties: {
         url: { type: "string", description: "Job posting / application URL." },
-        resume: { type: "string", description: "Resume text or a profile file alias (e.g. 'cv')." },
-        cover_letter: { type: "string", description: "Cover letter text to use, if any." },
+        resume: {
+          type: "string",
+          description: "Resume text or a profile file alias (e.g. 'cv').",
+        },
+        cover_letter: {
+          type: "string",
+          description: "Cover letter text to use, if any.",
+        },
       },
       required: ["url"],
     },
@@ -247,7 +297,10 @@ const COMPATIBILITY_TOOLS: BrowserToolDef[] = [
     inputSchema: {
       type: "object",
       properties: {
-        instruction: { type: "string", description: "What to accomplish in the browser." },
+        instruction: {
+          type: "string",
+          description: "What to accomplish in the browser.",
+        },
       },
       required: ["instruction"],
     },
@@ -266,7 +319,8 @@ const COMPATIBILITY_TOOLS: BrowserToolDef[] = [
         },
         approved: {
           type: "boolean",
-          description: "true to approve and perform the action, false to refuse it.",
+          description:
+            "true to approve and perform the action, false to refuse it.",
         },
       },
       required: ["approvalId", "approved"],
