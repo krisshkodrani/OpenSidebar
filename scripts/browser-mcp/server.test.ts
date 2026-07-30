@@ -19,9 +19,17 @@ class MockBridge implements BrowserBridge {
 }
 
 describe("BROWSER_TOOLS", () => {
-  it("exposes the thick intent-level tools", () => {
+  it("exposes task-first tools before compatibility tools", () => {
     const names = BROWSER_TOOLS.map((t) => t.name);
     expect(names).toEqual([
+      "delegate_browser_task",
+      "get_browser_task",
+      "continue_browser_task",
+      "approve_browser_checkpoint",
+      "cancel_browser_task",
+      "list_browser_tasks",
+      "get_browser_task_trace",
+      "browser_bridge_status",
       "browser_ping",
       "browser_navigate",
       "browser_screenshot",

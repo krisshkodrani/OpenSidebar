@@ -5,6 +5,7 @@ import {
   type AgentRunOutcome,
   type AgentRunner,
 } from "../../src/background/browser-bridge/handler";
+import { DelegatedTaskService } from "../../src/background/browser-bridge/delegated-task-service";
 
 function runner(outcome: AgentRunOutcome): AgentRunner & { calls: number } {
   return {
@@ -134,6 +135,68 @@ describe("handleBrowserToolRequest", () => {
     );
     expect(res.status).toBe("error");
     expect(res.reason).toBe("runner exploded");
+  });
+});
+
+describe("task-first MCP integration", () => {
+  test("delegates asynchronously, exposes status, and returns verified completion", async () => {
+    let finish!: (outcome: AgentRunOutcome) => void;
+    const pending = new Promise<AgentRunOutcome>((resolve) => {
+      finish = resolve;
+    });
+    const agent: AgentRunner = {
+      async run() {
+        return pending;
+      },
+    };
+    const tasks = new DelegatedTaskService(agent, {
+      createId: () => "task-roomora",
+      now: () => 1,
+    });
+    const accepted = await handleBrowserToolRequest(
+      {
+        tool: "delegate_browser_task",
+        args: {
+          goal: "Fill the local test form and stop before final submission",
+          allowed_domains: ["localhost:4173"],
+          approval_policy: {
+            mode: "mandatory_checkpoints",
+            allow_supervisor_relay: true,
+          },
+        },
+      },
+      agent,
+      undefined,
+      tasks,
+    );
+    expect(accepted).toMatchObject({
+      status: "ok",
+      result: { taskId: "task-roomora", status: "queued" },
+    });
+
+    finish({ status: "completed", summary: "Form state verified" });
+    await vi.waitFor(async () =>
+      expect(
+        await handleBrowserToolRequest(
+          {
+            tool: "get_browser_task",
+            args: { task_id: "task-roomora" },
+          },
+          agent,
+          undefined,
+          tasks,
+        ),
+      ).toMatchObject({
+        status: "ok",
+        result: {
+          status: "completed",
+          finalResult: {
+            status: "completed",
+            summary: "Form state verified",
+          },
+        },
+      }),
+    );
   });
 });
 

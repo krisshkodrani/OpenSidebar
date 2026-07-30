@@ -407,6 +407,10 @@ export function initializeBridge(
         state.applyTaskCompletion(message.payload);
         break;
 
+      case "DELEGATED_BROWSER_TASK_UPDATE":
+        state.setDelegatedBrowserTask(message.payload);
+        break;
+
       case "SESSION_METRICS":
         state.setSessionMetrics(message.payload);
         break;

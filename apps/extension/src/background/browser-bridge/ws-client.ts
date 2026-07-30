@@ -25,6 +25,10 @@ import type {
 } from "@shared-types/browser-bridge";
 
 import { handleBrowserToolRequest, type AgentRunner } from "./handler";
+import {
+  DelegatedTaskService,
+  type DelegatedTaskServiceOptions,
+} from "./delegated-task-service";
 
 type WebSocketCtor = new (url: string) => WebSocket;
 
@@ -34,6 +38,7 @@ export interface BrowserBridgeClientOptions {
   /** Injectable for tests; defaults to the global WebSocket. */
   webSocketImpl?: WebSocketCtor;
   reconnectMs?: number;
+  delegatedTaskOptions?: DelegatedTaskServiceOptions;
 }
 
 interface HostFrame {
@@ -47,8 +52,14 @@ export class BrowserBridgeClient {
   private stopped = false;
   /** One controller per in-flight request frame, so a cancel can target it. */
   private readonly controllers = new Map<string, AbortController>();
+  private readonly delegatedTasks: DelegatedTaskService;
 
-  constructor(private readonly opts: BrowserBridgeClientOptions) {}
+  constructor(private readonly opts: BrowserBridgeClientOptions) {
+    this.delegatedTasks = new DelegatedTaskService(
+      opts.runner,
+      opts.delegatedTaskOptions,
+    );
+  }
 
   start(): void {
     this.stopped = false;
@@ -59,6 +70,19 @@ export class BrowserBridgeClient {
     this.stopped = true;
     this.ws?.close();
     this.ws = null;
+  }
+
+  /** Human Stop path: cancel the currently admitted delegated task, if any. */
+  async stopActiveDelegatedTask(): Promise<void> {
+    const status = (await this.delegatedTasks.handle({
+      tool: "browser_bridge_status",
+      args: {},
+    })) as { activeTaskId: string | null };
+    if (!status.activeTaskId) return;
+    await this.delegatedTasks.handle({
+      tool: "cancel_browser_task",
+      args: { task_id: status.activeTaskId },
+    });
   }
 
   private connect(): void {
@@ -108,6 +132,7 @@ export class BrowserBridgeClient {
         frame.request as BrowserToolRequest,
         this.opts.runner,
         { signal: controller.signal },
+        this.delegatedTasks,
       );
     } catch (error) {
       response = { status: "error", reason: (error as Error).message };

@@ -21,7 +21,119 @@ export interface BrowserToolDef {
   };
 }
 
-export const BROWSER_TOOLS: BrowserToolDef[] = [
+const TASK_FIRST_TOOLS: BrowserToolDef[] = [
+  {
+    name: "delegate_browser_task",
+    kind: "intent",
+    description:
+      "Delegate a complete bounded browser goal to OpenSidebar's autonomous agent runtime. Returns a task_id immediately.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        goal: { type: "string", description: "Complete browser outcome to achieve." },
+        context: { type: "string", description: "Optional trusted task context." },
+        constraints: { type: "array", description: "Explicit behavioral constraints." },
+        preferred_tab_id: { type: "number", description: "Existing tab to prefer." },
+        allowed_domains: {
+          type: "array",
+          description: "Hostnames the task may navigate to.",
+        },
+        approval_policy: {
+          type: "object",
+          description:
+            "Mandatory-checkpoint policy and whether exact approvals may be relayed.",
+        },
+        max_steps: { type: "number", description: "Maximum agent turns." },
+        max_cost_usd: { type: "number", description: "Maximum provider cost in USD." },
+        timeout_seconds: { type: "number", description: "Wall-clock timeout." },
+        allowed_model_roles: {
+          type: "array",
+          description: "Allowed planner/executor/verifier/judge/observation roles.",
+        },
+      },
+      required: ["goal", "allowed_domains", "approval_policy"],
+    },
+  },
+  {
+    name: "get_browser_task",
+    kind: "mechanical",
+    description: "Get lifecycle, plan, pending interaction, evidence, usage, and result.",
+    inputSchema: {
+      type: "object",
+      properties: { task_id: { type: "string", description: "Delegated task id." } },
+      required: ["task_id"],
+    },
+  },
+  {
+    name: "continue_browser_task",
+    kind: "mechanical",
+    description: "Answer the exact clarification a delegated task is waiting on.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        task_id: { type: "string", description: "Delegated task id." },
+        response: { type: "string", description: "Clarification response." },
+      },
+      required: ["task_id", "response"],
+    },
+  },
+  {
+    name: "approve_browser_checkpoint",
+    kind: "mechanical",
+    description:
+      "Approve or deny the exact pending consequential-action checkpoint.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        task_id: { type: "string", description: "Delegated task id." },
+        checkpoint_id: { type: "string", description: "Exact pending checkpoint id." },
+        approved: { type: "boolean", description: "Approve or deny." },
+      },
+      required: ["task_id", "checkpoint_id", "approved"],
+    },
+  },
+  {
+    name: "cancel_browser_task",
+    kind: "mechanical",
+    description: "Cancel a delegated task and prevent subsequent actions.",
+    inputSchema: {
+      type: "object",
+      properties: { task_id: { type: "string", description: "Delegated task id." } },
+      required: ["task_id"],
+    },
+  },
+  {
+    name: "list_browser_tasks",
+    kind: "mechanical",
+    description: "List delegated browser tasks, optionally filtered by status.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        status: { type: "string", description: "Optional lifecycle status." },
+        limit: { type: "number", description: "Maximum summaries, up to 100." },
+      },
+    },
+  },
+  {
+    name: "get_browser_task_trace",
+    kind: "mechanical",
+    description: "Get the compact redacted trace for a delegated task.",
+    inputSchema: {
+      type: "object",
+      properties: { task_id: { type: "string", description: "Delegated task id." } },
+      required: ["task_id"],
+    },
+  },
+  {
+    name: "browser_bridge_status",
+    kind: "mechanical",
+    description:
+      "Report bridge and delegated-task capacity without requiring provider keys.",
+    inputSchema: { type: "object", properties: {} },
+  },
+];
+
+const COMPATIBILITY_TOOLS: BrowserToolDef[] = [
   {
     name: "browser_ping",
     kind: "mechanical",
@@ -133,4 +245,9 @@ export const BROWSER_TOOLS: BrowserToolDef[] = [
       required: ["approvalId", "approved"],
     },
   },
+];
+
+export const BROWSER_TOOLS: BrowserToolDef[] = [
+  ...TASK_FIRST_TOOLS,
+  ...COMPATIBILITY_TOOLS,
 ];

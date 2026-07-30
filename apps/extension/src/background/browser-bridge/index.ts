@@ -7,13 +7,20 @@
  * configured this is a no-op, so the extension is unchanged by default.
  */
 
-import { chromePersistencePort } from "../environment/chrome";
+import {
+  chromePersistencePort,
+  chromeRuntimeEnvironment,
+} from "../environment/chrome";
 import { createDefaultBrowserAgentRunner } from "./orchestrator-driver";
 import { BrowserBridgeClient } from "./ws-client";
+import type { DelegatedTaskPersistence } from "./delegated-task-service";
+import { MessageSource } from "../../types";
 
 export const BROWSER_MCP_WS_PORT_KEY = "opensidebar:browserMcpWsPort";
+const DELEGATED_TASKS_KEY = "opensidebar:delegatedBrowserTasks:v1";
 
 let client: BrowserBridgeClient | null = null;
+let stopListener: (() => void) | null = null;
 
 export async function startBrowserBridge(): Promise<boolean> {
   if (client) return true;
@@ -31,12 +38,52 @@ export async function startBrowserBridge(): Promise<boolean> {
   client = new BrowserBridgeClient({
     url: `ws://127.0.0.1:${port}`,
     runner: createDefaultBrowserAgentRunner(),
+    delegatedTaskOptions: {
+      persistence: {
+        async load() {
+          const stored = await chromePersistencePort.local.get(DELEGATED_TASKS_KEY);
+          const value = stored[DELEGATED_TASKS_KEY];
+          return Array.isArray(value)
+            ? (value as Awaited<ReturnType<DelegatedTaskPersistence["load"]>>)
+            : [];
+        },
+        async save(records) {
+          await chromePersistencePort.local.set({
+            [DELEGATED_TASKS_KEY]: records,
+          });
+        },
+      },
+      onUpdate(task) {
+        chromeRuntimeEnvironment.messaging.broadcast({
+          type: "DELEGATED_BROWSER_TASK_UPDATE",
+          requestId: crypto.randomUUID(),
+          source: MessageSource.BACKGROUND,
+          workspaceId: null,
+          payload: task,
+        });
+      },
+    },
+  });
+  stopListener = chromeRuntimeEnvironment.messaging.onMessage((message) => {
+    const candidate = message as {
+      type?: unknown;
+      payload?: { workspaceId?: unknown };
+    };
+    if (
+      candidate.type === "STOP_AGENT" &&
+      (candidate.payload?.workspaceId === null ||
+        candidate.payload?.workspaceId === undefined)
+    ) {
+      void client?.stopActiveDelegatedTask();
+    }
   });
   client.start();
   return true;
 }
 
 export function stopBrowserBridge(): void {
+  stopListener?.();
+  stopListener = null;
   client?.stop();
   client = null;
 }

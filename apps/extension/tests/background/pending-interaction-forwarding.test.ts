@@ -1,7 +1,11 @@
 import { describe, expect, test } from "vitest";
 
 import { ToolName } from "../../src/types";
-import type { PendingApprovalInteraction } from "../../src/background/agent/loop-types";
+import type {
+  PendingApprovalInteraction,
+  PendingClarificationInteraction,
+  PendingUserInteraction,
+} from "../../src/background/agent/loop-types";
 import {
   buildTaskPausedMessage,
   emitPendingInteractionMessage,
@@ -24,7 +28,7 @@ function approval(
   };
 }
 
-function task(pendingInteraction?: PendingApprovalInteraction) {
+function task(pendingInteraction?: PendingUserInteraction) {
   return { id: "t1", workspaceId: "ws-1", rootTabId: 100, pendingInteraction };
 }
 
@@ -63,6 +67,32 @@ describe("buildTaskPausedMessage", () => {
     expect(
       buildTaskPausedMessage(task(approval({ requestedAt: 0, timeoutMs: 1 }))),
     ).toBeNull();
+  });
+
+  test("forwards a live clarification with its exact correlation id", () => {
+    const requestedAt = Date.now();
+    const clarification: PendingClarificationInteraction = {
+      kind: "clarification",
+      nodeId: "node-1",
+      requestedAt,
+      clarificationId: "c1",
+      question: "Which release track?",
+      suggestions: ["Internal", "Closed"],
+      timeoutMs: 600_000,
+    };
+    expect(buildTaskPausedMessage(task(clarification))).toMatchObject({
+      type: "TASK_PAUSED",
+      workspaceId: "ws-1",
+      payload: {
+        interaction: {
+          kind: "clarification",
+          clarificationId: "c1",
+          question: "Which release track?",
+          suggestions: ["Internal", "Closed"],
+          expiresAt: requestedAt + 600_000,
+        },
+      },
+    });
   });
 });
 

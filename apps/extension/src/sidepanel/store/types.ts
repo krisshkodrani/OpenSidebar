@@ -15,6 +15,7 @@ import type {
   SessionMetrics,
   StagnationState,
   DurableRunStatusMessage,
+  DelegatedBrowserTask,
   TaskCompletionMessage,
   TaskProgressMessage,
   TaskRecoveryState,
@@ -68,6 +69,7 @@ export interface AgentSlice {
   taskCompletion: TaskCompletionMessage["payload"] | null;
   taskRecovery: TaskRecoveryState | null;
   durableRunStatus: DurableRunStatusMessage["payload"] | null;
+  delegatedBrowserTask: DelegatedBrowserTask | null;
   pendingApproval: PendingApproval | null;
   pendingEscalation: PendingEscalation | null;
   pendingPlanConfirmation: PendingPlanConfirmation | null;
@@ -102,6 +104,7 @@ export interface AgentSlice {
     status: DurableRunStatusMessage["payload"] | null,
   ) => void;
   clearDurableRunStatus: () => void;
+  setDelegatedBrowserTask: (task: DelegatedBrowserTask | null) => void;
   setSessionMetrics: (metrics: SessionMetrics) => void;
   clearSessionMetrics: () => void;
   setLaneTelemetry: (telemetry: LaneTelemetrySnapshot | null) => void;

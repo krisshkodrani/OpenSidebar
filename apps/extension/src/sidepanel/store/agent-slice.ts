@@ -73,6 +73,7 @@ export const createAgentSlice: SliceCreator<AgentSlice> = (set, get) => ({
   taskCompletion: null,
   taskRecovery: null,
   durableRunStatus: null,
+  delegatedBrowserTask: null,
   pendingApproval: null,
   pendingEscalation: null,
   pendingPlanConfirmation: null,
@@ -260,6 +261,11 @@ export const createAgentSlice: SliceCreator<AgentSlice> = (set, get) => ({
   clearDurableRunStatus: () =>
     set((state) => {
       state.durableRunStatus = null;
+    }),
+
+  setDelegatedBrowserTask: (delegatedBrowserTask) =>
+    set((state) => {
+      state.delegatedBrowserTask = delegatedBrowserTask;
     }),
 
   setSessionMetrics: (metrics) =>
