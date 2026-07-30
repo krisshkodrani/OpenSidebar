@@ -25,6 +25,7 @@ describe("BROWSER_TOOLS", () => {
   it("exposes task-first tools before compatibility tools", () => {
     const names = BROWSER_TOOLS.map((t) => t.name);
     expect(names).toEqual([
+      "get_active_browser_tab",
       "delegate_browser_task",
       "request_browser_file_upload",
       "get_browser_task",
@@ -52,7 +53,10 @@ describe("BROWSER_TOOLS", () => {
 
 describe("dispatch", () => {
   it("forwards a validated call to the bridge as { tool, args }", async () => {
-    const bridge = new MockBridge({ status: "ok", result: { title: "Example" } });
+    const bridge = new MockBridge({
+      status: "ok",
+      result: { title: "Example" },
+    });
     const res = await dispatch(bridge, "browser_navigate", {
       url: "https://example.com",
     });

@@ -32,6 +32,12 @@ import {
 
 type WebSocketCtor = new (url: string) => WebSocket;
 
+export type BrowserBridgeConnectionState =
+  | "connecting"
+  | "connected"
+  | "reconnecting"
+  | "disconnected";
+
 export interface BrowserBridgeClientOptions {
   url: string;
   /** Shared bridge secret, paired locally and never sent over the wire. */
@@ -41,6 +47,8 @@ export interface BrowserBridgeClientOptions {
   webSocketImpl?: WebSocketCtor;
   reconnectMs?: number;
   delegatedTaskOptions?: DelegatedTaskServiceOptions;
+  onConnectionStateChange?: (state: BrowserBridgeConnectionState) => void;
+  onRequestActivityChange?: (active: boolean) => void;
 }
 
 interface HostFrame {
@@ -68,6 +76,7 @@ export class BrowserBridgeClient {
 
   start(): void {
     this.stopped = false;
+    this.opts.onConnectionStateChange?.("connecting");
     this.connect();
   }
 
@@ -75,6 +84,7 @@ export class BrowserBridgeClient {
     this.stopped = true;
     this.ws?.close();
     this.ws = null;
+    this.opts.onConnectionStateChange?.("disconnected");
   }
 
   /** Human Stop path: cancel the currently admitted delegated task, if any. */
@@ -91,7 +101,8 @@ export class BrowserBridgeClient {
   }
 
   private connect(): void {
-    const Ctor = this.opts.webSocketImpl ?? (WebSocket as unknown as WebSocketCtor);
+    const Ctor =
+      this.opts.webSocketImpl ?? (WebSocket as unknown as WebSocketCtor);
     const ws = new Ctor(this.opts.url);
     this.ws = ws;
     this.authenticated = false;
@@ -112,6 +123,7 @@ export class BrowserBridgeClient {
     ws.onclose = () => {
       if (this.ws === ws) this.ws = null;
       if (!this.stopped) {
+        this.opts.onConnectionStateChange?.("reconnecting");
         setTimeout(() => this.connect(), this.opts.reconnectMs ?? 2000);
       }
     };
@@ -164,6 +176,7 @@ export class BrowserBridgeClient {
       }
       if (authFrame.type === "auth_ok" && this.serverNonce) {
         this.authenticated = true;
+        this.opts.onConnectionStateChange?.("connected");
       }
       return;
     }
@@ -179,6 +192,9 @@ export class BrowserBridgeClient {
 
     const controller = new AbortController();
     this.controllers.set(frame.id, controller);
+    if (this.controllers.size === 1) {
+      this.opts.onRequestActivityChange?.(true);
+    }
     let response: BrowserToolResponse;
     try {
       response = await handleBrowserToolRequest(
@@ -191,6 +207,9 @@ export class BrowserBridgeClient {
       response = { status: "error", reason: (error as Error).message };
     } finally {
       this.controllers.delete(frame.id);
+      if (this.controllers.size === 0) {
+        this.opts.onRequestActivityChange?.(false);
+      }
     }
     ws.send(JSON.stringify({ id: frame.id, response }));
   }

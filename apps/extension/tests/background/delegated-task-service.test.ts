@@ -28,7 +28,10 @@ function request(
   return service.handle({ tool, args });
 }
 
-function delegate(service: DelegatedTaskService, extra: Record<string, unknown> = {}) {
+function delegate(
+  service: DelegatedTaskService,
+  extra: Record<string, unknown> = {},
+) {
   return request(service, "delegate_browser_task", {
     goal: "Fill the local form and stop before submission",
     allowed_domains: ["localhost:4173"],
@@ -53,6 +56,52 @@ function service(
 }
 
 describe("DelegatedTaskService", () => {
+  test("reads the active tab mechanically without invoking the agent", async () => {
+    const run = vi.fn(async () => ({ status: "completed" as const }));
+    const tasks = service(
+      { run },
+      {
+        activeTabReader: async () => ({
+          tabId: 42,
+          url: "https://play.google.com/console",
+          title: "Google Play Console",
+          windowId: 7,
+        }),
+      },
+    );
+
+    await expect(request(tasks, "get_active_browser_tab", {})).resolves.toEqual(
+      {
+        tabId: 42,
+        url: "https://play.google.com/console",
+        title: "Google Play Console",
+        windowId: 7,
+      },
+    );
+    expect(run).not.toHaveBeenCalled();
+  });
+
+  test("holds the active lifecycle until a delegated run settles", async () => {
+    const run = deferred<AgentRunOutcome>();
+    const activeStates: boolean[] = [];
+    const tasks = service(
+      {
+        async run() {
+          return run.promise;
+        },
+      },
+      {
+        onActiveStateChange: (active) => activeStates.push(active),
+      },
+    );
+
+    await delegate(tasks);
+    await vi.waitFor(() => expect(activeStates).toEqual([true]));
+
+    run.resolve({ status: "completed" });
+    await vi.waitFor(() => expect(activeStates).toEqual([true, false]));
+  });
+
   test("accepts asynchronously and runs through the injected agent runtime", async () => {
     const run = deferred<AgentRunOutcome>();
     let seen: AgentTask | undefined;
@@ -69,7 +118,9 @@ describe("DelegatedTaskService", () => {
     };
     expect(accepted).toMatchObject({ taskId: "task-1", status: "queued" });
     await vi.waitFor(() => expect(seen).toBeDefined());
-    expect(seen?.instruction).toContain("Allowed navigation domains: localhost:4173");
+    expect(seen?.instruction).toContain(
+      "Allowed navigation domains: localhost:4173",
+    );
     expect(seen?.maxSteps).toBe(7);
 
     run.resolve({ status: "completed", summary: "Form values verified" });
@@ -419,7 +470,11 @@ describe("DelegatedTaskService", () => {
       },
     };
     const tasks = service(
-      { async run() { return { status: "completed" }; } },
+      {
+        async run() {
+          return { status: "completed" };
+        },
+      },
       { persistence },
     );
     expect(
