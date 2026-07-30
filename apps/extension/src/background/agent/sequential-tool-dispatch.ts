@@ -1343,11 +1343,11 @@ export async function executeSequentialToolCalls(
     // NAVIGATE guard — block navigation to completed step URLs
     if (
       toolName === ToolName.NAVIGATE &&
-      handleNavigateGuardToolCall(
+      (await handleNavigateGuardToolCall(
         this as unknown as AgentLoopToolHandlerHost,
         toolCall.id,
         args,
-      )
+      ))
     ) {
       continue;
     }

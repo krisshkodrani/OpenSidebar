@@ -15,8 +15,11 @@ import { createDefaultBrowserAgentRunner } from "./orchestrator-driver";
 import { BrowserBridgeClient } from "./ws-client";
 import type { DelegatedTaskPersistence } from "./delegated-task-service";
 import { MessageSource } from "../../types";
+import { ToolName } from "../../types";
+import { executeContentTool } from "../tools/bridge";
 
 export const BROWSER_MCP_WS_PORT_KEY = "opensidebar:browserMcpWsPort";
+export const BROWSER_MCP_AUTH_TOKEN_KEY = "opensidebar:browserMcpAuthToken";
 const DELEGATED_TASKS_KEY = "opensidebar:delegatedBrowserTasks:v1";
 
 let client: BrowserBridgeClient | null = null;
@@ -25,18 +28,27 @@ let stopListener: (() => void) | null = null;
 export async function startBrowserBridge(): Promise<boolean> {
   if (client) return true;
   let port: number | undefined;
+  let authToken: string | undefined;
   try {
-    const stored = await chromePersistencePort.local.get(BROWSER_MCP_WS_PORT_KEY);
+    const stored = await chromePersistencePort.local.get([
+      BROWSER_MCP_WS_PORT_KEY,
+      BROWSER_MCP_AUTH_TOKEN_KEY,
+    ]);
     const value = stored[BROWSER_MCP_WS_PORT_KEY];
     if (typeof value === "number") port = value;
     else if (typeof value === "string" && value.trim()) port = Number(value.trim());
+    const tokenValue = stored[BROWSER_MCP_AUTH_TOKEN_KEY];
+    if (typeof tokenValue === "string" && tokenValue.length >= 32) {
+      authToken = tokenValue;
+    }
   } catch {
     return false;
   }
-  if (!port || Number.isNaN(port) || port <= 0) return false;
+  if (!port || Number.isNaN(port) || port <= 0 || !authToken) return false;
 
   client = new BrowserBridgeClient({
     url: `ws://127.0.0.1:${port}`,
+    authToken,
     runner: createDefaultBrowserAgentRunner(),
     delegatedTaskOptions: {
       persistence: {
@@ -61,6 +73,24 @@ export async function startBrowserBridge(): Promise<boolean> {
           workspaceId: null,
           payload: task,
         });
+      },
+      fileUploader: {
+        async getTabUrl(tabId) {
+          const tab = await chrome.tabs.get(tabId);
+          return tab.url ?? tab.pendingUrl ?? "";
+        },
+        async upload(input) {
+          return executeContentTool(
+            ToolName.UPLOAD_FILE,
+            {
+              id: input.inputId,
+              data: input.dataBase64,
+              filename: input.filename,
+              mimeType: input.mimeType,
+            },
+            input.tabId,
+          );
+        },
       },
     },
   });
@@ -96,7 +126,15 @@ export function stopBrowserBridge(): void {
 export function initBrowserBridge(): void {
   try {
     chrome.storage.onChanged.addListener((changes, area) => {
-      if (area !== "local" || !(BROWSER_MCP_WS_PORT_KEY in changes)) return;
+      if (
+        area !== "local" ||
+        !(
+          BROWSER_MCP_WS_PORT_KEY in changes ||
+          BROWSER_MCP_AUTH_TOKEN_KEY in changes
+        )
+      ) {
+        return;
+      }
       stopBrowserBridge();
       void startBrowserBridge();
     });

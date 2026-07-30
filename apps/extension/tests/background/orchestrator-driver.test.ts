@@ -6,6 +6,7 @@ import {
   type CompletionPayload,
 } from "../../src/background/browser-bridge/orchestrator-driver";
 import type { PartialProgressHandoff } from "../../src/types";
+import type { AgentTask } from "../../src/background/browser-bridge/handler";
 
 /** Minimal handoff; only the fields these tests assert on are meaningful. */
 function handoff(
@@ -74,8 +75,15 @@ type PausePayload = Parameters<
 function deps(): BrowserTaskDeps & {
   fire: (ws: string, p: CompletionPayload) => void;
   firePause: (ws: string, p: PausePayload) => void;
+  fireNavigation: (tabId: number, url: string) => void;
+  setTabUrl: (tabId: number, url: string) => void;
   resolveApprovalReturns: (value: boolean) => void;
-  started: Array<{ workspaceId: string; tabId: number }>;
+  started: Array<{
+    workspaceId: string;
+    tabId: number;
+    maxCostUsd?: number;
+    allowedModelRoles?: AgentTask["allowedModelRoles"];
+  }>;
   created: string[];
   navigated: Array<{ tabId: number; url: string }>;
   stopped: string[];
@@ -84,7 +92,13 @@ function deps(): BrowserTaskDeps & {
 } {
   const listeners = new Set<(ws: string, p: CompletionPayload) => void>();
   const pauseListeners = new Set<(ws: string, p: PausePayload) => void>();
-  const started: Array<{ workspaceId: string; tabId: number }> = [];
+  const navigationListeners = new Set<(tabId: number, url: string) => void>();
+  const started: Array<{
+    workspaceId: string;
+    tabId: number;
+    maxCostUsd?: number;
+    allowedModelRoles?: AgentTask["allowedModelRoles"];
+  }> = [];
   const created: string[] = [];
   const navigated: Array<{ tabId: number; url: string }> = [];
   const stopped: string[] = [];
@@ -94,6 +108,7 @@ function deps(): BrowserTaskDeps & {
     approved: boolean;
   }> = [];
   const liveTabs = new Set<number>();
+  const tabUrls = new Map<number, string>();
   let nextTabId = 42;
   let resolveApprovalResult = true;
   return {
@@ -109,6 +124,13 @@ function deps(): BrowserTaskDeps & {
     firePause(ws, p) {
       for (const fn of [...pauseListeners]) fn(ws, p);
     },
+    fireNavigation(tabId, url) {
+      for (const fn of [...navigationListeners]) fn(tabId, url);
+    },
+    setTabUrl(tabId, url) {
+      liveTabs.add(tabId);
+      tabUrls.set(tabId, url);
+    },
     resolveApprovalReturns(value) {
       resolveApprovalResult = value;
     },
@@ -116,6 +138,7 @@ function deps(): BrowserTaskDeps & {
       created.push(url);
       const tabId = nextTabId++;
       liveTabs.add(tabId);
+      tabUrls.set(tabId, url);
       return tabId;
     },
     async tabExists(tabId) {
@@ -123,6 +146,13 @@ function deps(): BrowserTaskDeps & {
     },
     async navigateTab(tabId, url) {
       navigated.push({ tabId, url });
+      tabUrls.set(tabId, url);
+    },
+    async getTabUrl(tabId) {
+      return tabUrls.get(tabId) ?? "about:blank";
+    },
+    async tabBelongsToWorkspace(tabId) {
+      return liveTabs.has(tabId);
     },
     async stopTask(workspaceId) {
       stopped.push(workspaceId);
@@ -132,7 +162,12 @@ function deps(): BrowserTaskDeps & {
       return resolveApprovalResult;
     },
     async startTask(input) {
-      started.push({ workspaceId: input.workspaceId, tabId: input.tabId });
+      started.push({
+        workspaceId: input.workspaceId,
+        tabId: input.tabId,
+        maxCostUsd: input.maxCostUsd,
+        allowedModelRoles: input.allowedModelRoles,
+      });
     },
     addCompletionListener(fn) {
       listeners.add(fn);
@@ -145,6 +180,10 @@ function deps(): BrowserTaskDeps & {
       return () => {
         pauseListeners.delete(fn);
       };
+    },
+    addNavigationListener(fn) {
+      navigationListeners.add(fn);
+      return () => navigationListeners.delete(fn);
     },
   };
 }
@@ -181,6 +220,57 @@ describe("createBrowserAgentRunner", () => {
 
     d.fire(ws, { status: "completed", summary: "bought" });
     expect(await promise).toEqual({ status: "completed", summary: "bought" });
+  });
+
+  test("passes cost and allowed-model-role constraints to the runtime", async () => {
+    const d = deps();
+    const runner = createBrowserAgentRunner(d);
+    const promise = runner.run({
+      instruction: "bounded",
+      maxCostUsd: 0.2,
+      allowedModelRoles: ["planner", "executor", "verifier"],
+    });
+    await tick();
+    expect(d.started[0]).toMatchObject({
+      maxCostUsd: 0.2,
+      allowedModelRoles: ["planner", "executor", "verifier"],
+    });
+    d.fire(d.started[0].workspaceId, { status: "completed" });
+    await promise;
+  });
+
+  test("rejects an existing initial tab outside allowed domains before start", async () => {
+    const d = deps();
+    d.setTabUrl(7, "https://evil.example/path");
+    const runner = createBrowserAgentRunner(d);
+    await expect(
+      runner.run({
+        instruction: "stay bounded",
+        preferredTabId: 7,
+        allowedDomains: ["play.google.com"],
+      }),
+    ).resolves.toMatchObject({
+      status: "error",
+      reason: expect.stringMatching(/initial tab is outside allowed_domains/),
+    });
+    expect(d.started).toHaveLength(0);
+  });
+
+  test("stops when any task-owned tab commits outside allowed domains", async () => {
+    const d = deps();
+    const runner = createBrowserAgentRunner(d);
+    const promise = runner.run({
+      instruction: "stay bounded",
+      allowedDomains: ["play.google.com"],
+    });
+    await tick();
+    d.setTabUrl(99, "https://play.google.com/console");
+    d.fireNavigation(99, "https://evil.example/redirect");
+    await expect(promise).resolves.toMatchObject({
+      status: "error",
+      reason: expect.stringMatching(/navigation blocked/),
+    });
+    expect(d.stopped).toContain(d.started[0].workspaceId);
   });
 
   test("ignores completions for a different workspace", async () => {

@@ -10,18 +10,12 @@ import {
 } from "../types";
 import { loadSettings } from "../utils/settings-storage";
 import { initBrowserBridge } from "./browser-bridge";
-import {
-  formatMissingProviderKeys,
-  getProviderKeyStatus,
-} from "../utils/provider-keys";
+import { formatMissingProviderKeys, getProviderKeyStatus } from "../utils/provider-keys";
 import { storageLogger } from "../utils/storage-logger";
 import { getBlockedRuleForUrl } from "../utils/site-access";
 import { isWorkspaceGroupTitle, workspaceManager } from "./workspaces/manager";
 import { sanitizeUserInput } from "./security";
-import {
-  registerNavigationListeners,
-  setNavigationCallbacks,
-} from "./navigation";
+import { registerNavigationListeners, setNavigationCallbacks } from "./navigation";
 import {
   registerAlarmListener,
   startKeepalive,

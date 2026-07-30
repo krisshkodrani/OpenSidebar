@@ -13,6 +13,7 @@ import { ToolRegistry } from "./registry";
 import { getTabUrl } from "./helpers";
 import {
   getAllowedNavigationOrigins,
+  isNavigationTargetAllowed,
   navigationBoundaryError,
   normalizeOrigin,
 } from "./tab-navigation-helpers";
@@ -23,17 +24,14 @@ export function registerTabTools(toolRegistry: ToolRegistry): void {
     ToolName.CREATE_TAB,
     CREATE_TAB_DEF,
     async (args, sourceTabId) => {
-      const allowedOrigins = await getAllowedNavigationOrigins();
+      const allowedOrigins = await getAllowedNavigationOrigins(sourceTabId);
       if (allowedOrigins.length > 0) {
-        const targetOrigin = normalizeOrigin(args.url as string);
-        const normalizedAllowed = allowedOrigins
-          .map(normalizeOrigin)
-          .filter((origin): origin is string => Boolean(origin));
-        if (!targetOrigin || !normalizedAllowed.includes(targetOrigin)) {
-          return navigationBoundaryError(
-            args.url as string,
-            normalizedAllowed.length > 0 ? normalizedAllowed : allowedOrigins,
-          );
+        const result = await isNavigationTargetAllowed(
+          sourceTabId,
+          args.url as string,
+        );
+        if (!result.allowed) {
+          return navigationBoundaryError(args.url as string, result.boundary);
         }
       }
       const urlResult = sanitizeUrl(args.url as string);

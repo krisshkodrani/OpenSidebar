@@ -774,7 +774,15 @@ export function createProductionDeps(
       // Lazy import keeps `ws` out of test paths that inject fakes.
       const { WebSocketBridge } = await import("../browser-mcp/ws-bridge");
       const port = Number(process.env.OPENSIDEBAR_WS_PORT ?? 8917);
-      const bridge = new WebSocketBridge({ port, timeoutMs: 600_000 });
+      const authToken = process.env.BROWSER_MCP_AUTH_TOKEN;
+      if (!authToken) {
+        throw new Error("BROWSER_MCP_AUTH_TOKEN is required");
+      }
+      const bridge = new WebSocketBridge({
+        port,
+        timeoutMs: 600_000,
+        authToken,
+      });
       await bridge.listening;
       return bridge as unknown as ConsoleBridge;
     },

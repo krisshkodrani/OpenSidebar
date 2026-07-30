@@ -49,6 +49,9 @@ if (enabled) {
 
 /** Must match `background/browser-bridge/index.ts`. */
 const BROWSER_MCP_WS_PORT_KEY = "opensidebar:browserMcpWsPort";
+const BROWSER_MCP_AUTH_TOKEN_KEY = "opensidebar:browserMcpAuthToken";
+const BROWSER_MCP_AUTH_TOKEN =
+  "e2e-browser-bridge-token-32-bytes-minimum";
 
 /** The service worker only reads the port at startup, so it must be set first. */
 async function armBridgePort(
@@ -56,11 +59,16 @@ async function armBridgePort(
   port: number,
 ): Promise<void> {
   await serviceWorker.evaluate(
-    async (key: string, value: number) => {
-      await chrome.storage.local.set({ [key]: value });
+    async (portKey: string, tokenKey: string, value: number, token: string) => {
+      await chrome.storage.local.set({
+        [portKey]: value,
+        [tokenKey]: token,
+      });
     },
     BROWSER_MCP_WS_PORT_KEY,
+    BROWSER_MCP_AUTH_TOKEN_KEY,
     port,
+    BROWSER_MCP_AUTH_TOKEN,
   );
 }
 
@@ -102,7 +110,11 @@ describe.skipIf(!enabled)("E2E: browser bridge", () => {
       await installLocalMockProviderInterceptor(cdp, "partial-handoff-max-turns");
 
       // Port 0 → the OS picks one, so concurrent e2e runs cannot collide on 8787.
-      bridge = await WebSocketBridge.create({ port: 0, timeoutMs: 120_000 });
+      bridge = await WebSocketBridge.create({
+        port: 0,
+        timeoutMs: 120_000,
+        authToken: BROWSER_MCP_AUTH_TOKEN,
+      });
 
       // Setting the key is all it takes: initBrowserBridge() watches
       // chrome.storage.onChanged and connects live — no extension reload.

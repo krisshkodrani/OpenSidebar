@@ -18,6 +18,8 @@ import { WebSocketBridge } from "./ws-bridge";
 
 // Ephemeral port so this never collides with a real bridge on 8787.
 process.env.OPENSIDEBAR_WS_PORT = "0";
+process.env.BROWSER_MCP_AUTH_TOKEN =
+  "test-browser-bridge-token-32-bytes-minimum";
 
 type Registered = {
   name: string;

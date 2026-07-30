@@ -201,6 +201,15 @@ import {
   shouldUseVerifier,
 } from "./lane-topology";
 import {
+  buildLlmModelOverrides,
+  restrictDelegatedWriterModel,
+  restrictDelegatedWriterTool,
+} from "./llm-model-overrides";
+import {
+  cloneStructuredProgress,
+  getFleetTelemetryRuntimeContext,
+} from "./runtime-context";
+import {
   CHECKPOINT_VERSION,
   DEFAULT_MAX_REPLANS,
   DEFAULT_MAX_SESSION_TIME_MS,
@@ -260,47 +269,6 @@ const NAVIGATE_READ_RETURN_SKILL_ID = "navigate-read-return";
 const MULTI_TAB_CHECKLIST_SKILL_ID = "multi-tab-checklist-workflow";
 const EXHAUSTIVE_REVIEW_MIN_NODES_FOR_BUDGET_BUMP = 8;
 const EXHAUSTIVE_REVIEW_MAX_TOTAL_TOKENS = 1_600_000;
-
-function getFleetTelemetryRuntimeContext(): {
-  eventId: string;
-  extensionVersion: string;
-  extensionChannel: "stable" | "dev";
-  browserMajor: number;
-  osFamily: string;
-} {
-  const userAgent = typeof navigator === "undefined" ? "" : navigator.userAgent;
-  const browserMajor = Number(
-    /(?:Chrome|Chromium)\/(\d+)/.exec(userAgent)?.[1] ?? 0,
-  );
-  const lowerUserAgent = userAgent.toLowerCase();
-  const osFamily = lowerUserAgent.includes("windows")
-    ? "windows"
-    : lowerUserAgent.includes("mac os")
-      ? "macos"
-      : lowerUserAgent.includes("cros")
-        ? "chromeos"
-        : lowerUserAgent.includes("linux")
-          ? "linux"
-          : "other";
-  return {
-    eventId: crypto.randomUUID(),
-    extensionVersion: chrome.runtime.getManifest().version,
-    extensionChannel: __DEV__ ? "dev" : "stable",
-    browserMajor,
-    osFamily,
-  };
-}
-
-function cloneStructuredProgress(
-  progress: Record<string, TaskRunProgressInput> | undefined,
-): Record<string, TaskRunProgressInput> | undefined {
-  if (!progress) return undefined;
-  const entries = Object.entries(progress).map(([key, value]) => [
-    key,
-    JSON.parse(JSON.stringify(value)) as TaskRunProgressInput,
-  ]);
-  return Object.fromEntries(entries);
-}
 
 function isLargeExhaustiveReviewGraph(nodes: TaskNode[]): boolean {
   const reviewNodeCount = nodes.filter(
@@ -2026,7 +1994,13 @@ export class Orchestrator {
       budget: {
         maxSessionTimeMs: DEFAULT_MAX_SESSION_TIME_MS,
         maxTotalTokens: clampInteger(DEFAULT_MAX_TOTAL_TOKENS, 1),
-        maxTotalCostUsd: DEFAULT_MAX_TOTAL_COST_USD,
+        maxTotalCostUsd:
+          input.budgetOverrides?.maxTotalCostUsd === undefined
+            ? DEFAULT_MAX_TOTAL_COST_USD
+            : Math.min(
+                DEFAULT_MAX_TOTAL_COST_USD,
+                Math.max(0, input.budgetOverrides.maxTotalCostUsd),
+              ),
       },
       tabCoordination: createTaskTabCoordination(input.tabId),
       laneTopologyMode: laneTopology.mode,
@@ -2034,6 +2008,9 @@ export class Orchestrator {
         ? [...input.settings.enabledSkillPackIds]
         : undefined,
       interactionDelivery: input.interactionDelivery,
+      allowedModelRoles: input.allowedModelRoles
+        ? [...input.allowedModelRoles]
+        : undefined,
     };
     this.fleetTelemetryByTaskId.set(
       task.id,
@@ -2143,23 +2120,7 @@ export class Orchestrator {
           modelTier: plannerContract.modelTier,
           allowedToolCount: plannerContract.allowedTools.length,
         });
-        const modelOverrides = {
-          executorModel: input.settings.executorModel,
-          plannerModel: input.settings.plannerModel,
-          writerModel: input.settings.writerModel,
-          useNitro: input.settings.useNitro,
-          providerMode: input.settings.providerMode,
-          provider: input.settings.provider,
-          openaiApiKey: input.settings.openaiApiKey,
-          groqApiKey: input.settings.groqApiKey,
-          temperature: input.settings.temperature,
-          perceptionMode: input.settings.perceptionMode,
-          fireworksApiKey: input.settings.fireworksApiKey,
-          deepseekApiKey: input.settings.deepseekApiKey,
-          kimiApiKey: input.settings.kimiApiKey,
-          xiaomiApiKey: input.settings.xiaomiApiKey,
-          cerebrasApiKey: input.settings.cerebrasApiKey,
-        };
+        const modelOverrides = buildLlmModelOverrides(input.settings);
         const planner = this.deps.createPlanner(
           input.openRouterApiKey,
           modelOverrides,
@@ -2388,21 +2349,7 @@ export class Orchestrator {
           const tab = await chrome.tabs.get(input.tabId);
           const replanPlanner = this.deps.createPlanner(
             input.openRouterApiKey,
-            {
-              executorModel: input.settings.executorModel,
-              plannerModel: input.settings.plannerModel,
-              useNitro: input.settings.useNitro,
-              providerMode: input.settings.providerMode,
-              provider: input.settings.provider,
-              openaiApiKey: input.settings.openaiApiKey,
-              groqApiKey: input.settings.groqApiKey,
-              temperature: input.settings.temperature,
-              fireworksApiKey: input.settings.fireworksApiKey,
-              deepseekApiKey: input.settings.deepseekApiKey,
-              kimiApiKey: input.settings.kimiApiKey,
-              xiaomiApiKey: input.settings.xiaomiApiKey,
-              cerebrasApiKey: input.settings.cerebrasApiKey,
-            },
+            buildLlmModelOverrides(input.settings),
           );
           this.attachPlannerUsageTrace(
             replanPlanner,
@@ -2487,22 +2434,7 @@ export class Orchestrator {
       modelTier: verifierContract.modelTier,
       allowedToolCount: verifierContract.allowedTools.length,
     });
-    const loopModelOverrides = {
-      executorModel: input.settings.executorModel,
-      plannerModel: input.settings.plannerModel,
-      writerModel: input.settings.writerModel,
-      useNitro: input.settings.useNitro,
-      providerMode: input.settings.providerMode,
-      provider: input.settings.provider,
-      openaiApiKey: input.settings.openaiApiKey,
-      groqApiKey: input.settings.groqApiKey,
-      temperature: input.settings.temperature,
-      fireworksApiKey: input.settings.fireworksApiKey,
-      deepseekApiKey: input.settings.deepseekApiKey,
-      kimiApiKey: input.settings.kimiApiKey,
-      xiaomiApiKey: input.settings.xiaomiApiKey,
-      cerebrasApiKey: input.settings.cerebrasApiKey,
-    };
+    const loopModelOverrides = buildLlmModelOverrides(input.settings);
     const verifier = this.deps.createVerifier(
       input.openRouterApiKey,
       loopModelOverrides,
@@ -2585,8 +2517,8 @@ export class Orchestrator {
       if (task.sessionMetrics.totalTokens > task.budget.maxTotalTokens) {
         return `Global token budget exceeded (${task.sessionMetrics.totalTokens} > ${task.budget.maxTotalTokens})`;
       }
-      if (task.sessionMetrics.totalCost > task.budget.maxTotalCostUsd) {
-        return `Global cost budget exceeded ($${task.sessionMetrics.totalCost.toFixed(4)} > $${task.budget.maxTotalCostUsd.toFixed(4)})`;
+      if (task.sessionMetrics.totalCost >= task.budget.maxTotalCostUsd) {
+        return `Global cost budget exhausted ($${task.sessionMetrics.totalCost.toFixed(4)} >= $${task.budget.maxTotalCostUsd.toFixed(4)})`;
       }
       return null;
     };
@@ -2844,6 +2776,10 @@ export class Orchestrator {
         originalQuery: task.query,
       });
       const nodeToolProfile = getNodeToolProfile(node);
+      const delegatedLoopOverrides = restrictDelegatedWriterModel(
+        loopModelOverrides,
+        task.allowedModelRoles,
+      );
 
       const loop = this.deps.createAgentLoop({
         openRouterApiKey: input.openRouterApiKey,
@@ -2913,7 +2849,10 @@ export class Orchestrator {
             modelTier: executorContract.modelTier,
             allowedTools: executorContract.allowedTools,
           },
-          disabledTools: executorContract.disabledTools,
+          disabledTools: restrictDelegatedWriterTool(
+            executorContract.disabledTools,
+            task.allowedModelRoles,
+          ),
           workspaceId: task.workspaceId,
           workerId,
           taskId: task.id,
@@ -2987,20 +2926,7 @@ export class Orchestrator {
             task.interactionDelivery === "handoff"
               ? HANDOFF_APPROVAL_TIMEOUT_MS
               : undefined,
-          executorModel: input.settings.executorModel,
-          plannerModel: input.settings.plannerModel,
-          writerModel: input.settings.writerModel,
-          useNitro: input.settings.useNitro,
-          providerMode: input.settings.providerMode,
-          provider: input.settings.provider,
-          openaiApiKey: input.settings.openaiApiKey,
-          groqApiKey: input.settings.groqApiKey,
-          fireworksApiKey: input.settings.fireworksApiKey,
-          deepseekApiKey: input.settings.deepseekApiKey,
-          kimiApiKey: input.settings.kimiApiKey,
-          xiaomiApiKey: input.settings.xiaomiApiKey,
-          cerebrasApiKey: input.settings.cerebrasApiKey,
-          temperature: input.settings.temperature,
+          ...delegatedLoopOverrides,
           perceptionMode: input.settings.perceptionMode,
           maxImagePromptTokenEstimate:
             input.settings.maxImagePromptTokenEstimate,

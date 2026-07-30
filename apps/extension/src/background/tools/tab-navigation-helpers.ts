@@ -9,6 +9,10 @@ import { UserSettings } from "../../types";
 import { chromePersistencePort } from "../environment/chrome";
 import { isUsableTabUrl } from "../infrastructure/tab-resolution";
 import { getTabUrl } from "./helpers";
+import {
+  getDelegatedNavigationPolicyForTab,
+  isUrlAllowedByDelegatedPolicy,
+} from "../infrastructure/delegated-navigation-policy";
 
 export function formatControllableTabLines(tabs: chrome.tabs.Tab[]): string[] {
   const controllableTabs = tabs.filter((tab) => isUsableTabUrl(getTabUrl(tab)));
@@ -34,7 +38,11 @@ export function formatControllableTabLines(tabs: chrome.tabs.Tab[]): string[] {
   return lines;
 }
 
-export async function getAllowedNavigationOrigins(): Promise<string[]> {
+export async function getAllowedNavigationOrigins(tabId?: number): Promise<string[]> {
+  if (tabId !== undefined) {
+    const delegated = await getDelegatedNavigationPolicyForTab(tabId);
+    if (delegated) return delegated.allowedDomains;
+  }
   try {
     const stored = await chromePersistencePort.sync.get("userSettings");
     const settings = (stored.userSettings ?? {}) as UserSettings;
@@ -46,6 +54,33 @@ export async function getAllowedNavigationOrigins(): Promise<string[]> {
   } catch {
     return [];
   }
+}
+
+export async function isNavigationTargetAllowed(
+  tabId: number,
+  target: string,
+): Promise<{ allowed: boolean; boundary: string[] }> {
+  const delegated = await getDelegatedNavigationPolicyForTab(tabId);
+  if (delegated) {
+    return {
+      allowed: isUrlAllowedByDelegatedPolicy(target, delegated),
+      boundary: delegated.allowedDomains,
+    };
+  }
+  const allowedOrigins = await getAllowedNavigationOrigins();
+  if (allowedOrigins.length === 0) {
+    return { allowed: true, boundary: [] };
+  }
+  const targetOrigin = normalizeOrigin(target);
+  const normalizedAllowed = allowedOrigins
+    .map(normalizeOrigin)
+    .filter((origin): origin is string => Boolean(origin));
+  return {
+    allowed:
+      targetOrigin !== null && normalizedAllowed.includes(targetOrigin),
+    boundary:
+      normalizedAllowed.length > 0 ? normalizedAllowed : allowedOrigins,
+  };
 }
 
 export function normalizeOrigin(value: string): string | null {

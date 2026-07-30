@@ -12,6 +12,7 @@ import {
 } from "./settings-options";
 import type { SettingsChangeHandler } from "./types";
 import { FleetTelemetrySettings } from "./FleetTelemetrySettings";
+import { BrowserBridgeSettings } from "./BrowserBridgeSettings";
 
 export function GeneralSettingsTab({
   formState,
@@ -221,6 +222,7 @@ export function GeneralSettingsTab({
           </section>
 
           <PresenceSettings formState={formState} onChange={onChange} />
+          <BrowserBridgeSettings />
 
           <section className="space-y-2">
             <div>

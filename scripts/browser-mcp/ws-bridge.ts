@@ -6,9 +6,8 @@
  * tool call is sent with a correlation id and awaits the matching response, so
  * `WebSocketBridge` satisfies the `BrowserBridge` contract over the wire.
  *
- * Loopback-only by default (the LP-8 privacy invariant). The extension-side WS
- * client + the `AgentRunner` hookup that runs a real `AgentLoop` are the
- * remaining live-edit step (they touch the in-flight orchestrator WIP).
+ * The listener is loopback-only and mutually authenticates the extension with
+ * a fresh nonce exchange before accepting request or response frames.
  *
  * Wire frames (JSON):
  *   host → ext:  { id, request: BrowserToolRequest }
@@ -18,6 +17,11 @@
  *   ext → host:  { id, response: BrowserToolResponse }
  */
 
+import {
+  createHmac,
+  randomBytes,
+  timingSafeEqual,
+} from "node:crypto";
 import { WebSocketServer, type WebSocket } from "ws";
 
 import {
@@ -38,6 +42,12 @@ export interface WebSocketBridgeOptions {
   port?: number;
   host?: string;
   timeoutMs?: number;
+  /**
+   * Shared secret paired with the extension. Production callers must provide
+   * at least 32 characters; tests may explicitly opt into a shorter token.
+   */
+  authToken?: string;
+  allowInsecureTestToken?: boolean;
 }
 
 export class WebSocketBridge implements BrowserBridge {
@@ -46,14 +56,28 @@ export class WebSocketBridge implements BrowserBridge {
   private readonly pending = new Map<string, Pending>();
   private seq = 0;
   private readonly timeoutMs: number;
+  private readonly authToken: string;
   /** Resolves once the server is listening (so `port` is known). */
   readonly listening: Promise<void>;
 
   constructor(opts: WebSocketBridgeOptions = {}) {
     this.timeoutMs = opts.timeoutMs ?? 120_000;
+    this.authToken = opts.authToken ?? "";
+    if (
+      !this.authToken ||
+      (!opts.allowInsecureTestToken && this.authToken.length < 32)
+    ) {
+      throw new Error(
+        "BROWSER_MCP_AUTH_TOKEN must be configured with at least 32 characters.",
+      );
+    }
+    const host = opts.host ?? "127.0.0.1";
+    if (!["127.0.0.1", "::1", "localhost"].includes(host.toLowerCase())) {
+      throw new Error("Browser MCP WebSocket must bind to a loopback host.");
+    }
     this.wss = new WebSocketServer({
       port: opts.port ?? 8787,
-      host: opts.host ?? "127.0.0.1",
+      host,
     });
     this.listening = new Promise((resolve) =>
       this.wss.once("listening", () => {
@@ -67,10 +91,61 @@ export class WebSocketBridge implements BrowserBridge {
       }),
     );
     this.wss.on("connection", (socket: WebSocket) => {
-      // Single extension client; a new connection supersedes the old.
-      this.client = socket;
-      socket.on("message", (data) => this.onMessage(data.toString()));
+      let clientNonce = "";
+      let serverNonce = "";
+      let authenticated = false;
+      const authTimer = setTimeout(() => socket.close(4001, "authentication timeout"), 5000);
+      socket.on("message", (data) => {
+        const raw = data.toString();
+        if (authenticated) {
+          this.onMessage(raw);
+          return;
+        }
+        let frame: Record<string, unknown>;
+        try {
+          frame = JSON.parse(raw) as Record<string, unknown>;
+        } catch {
+          socket.close(4001, "authentication required");
+          return;
+        }
+        if (
+          frame.type === "auth_hello" &&
+          typeof frame.clientNonce === "string" &&
+          /^[A-Za-z0-9_-]{32,}$/.test(frame.clientNonce)
+        ) {
+          clientNonce = frame.clientNonce;
+          serverNonce = randomBytes(32).toString("base64url");
+          socket.send(
+            JSON.stringify({
+              type: "auth_challenge",
+              serverNonce,
+              proof: this.sign(`server:${clientNonce}:${serverNonce}`),
+            }),
+          );
+          return;
+        }
+        if (
+          frame.type === "auth_response" &&
+          clientNonce &&
+          serverNonce &&
+          typeof frame.proof === "string" &&
+          this.verify(
+            String(frame.proof),
+            `client:${clientNonce}:${serverNonce}`,
+          )
+        ) {
+          authenticated = true;
+          clearTimeout(authTimer);
+          // Only an authenticated extension may supersede the active client.
+          this.client?.close(4000, "superseded by authenticated extension");
+          this.client = socket;
+          socket.send(JSON.stringify({ type: "auth_ok" }));
+          return;
+        }
+        socket.close(4001, "authentication failed");
+      });
       socket.on("close", () => {
+        clearTimeout(authTimer);
         if (this.client === socket) this.client = null;
       });
     });
@@ -89,6 +164,19 @@ export class WebSocketBridge implements BrowserBridge {
 
   get connected(): boolean {
     return this.client !== null && this.client.readyState === this.client.OPEN;
+  }
+
+  private sign(value: string): string {
+    return createHmac("sha256", this.authToken).update(value).digest("base64url");
+  }
+
+  private verify(proof: string, value: string): boolean {
+    const expected = Buffer.from(this.sign(value));
+    const actual = Buffer.from(proof);
+    return (
+      expected.length === actual.length &&
+      timingSafeEqual(expected, actual)
+    );
   }
 
   private onMessage(raw: string): void {
