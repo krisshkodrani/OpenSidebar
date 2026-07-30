@@ -9,7 +9,10 @@
 import { describe, test, expect } from "vitest";
 import "../setup";
 import { isDoneSummaryAskingClarification } from "../../src/background/agent/loop";
-import { evaluateCompletionTaskContractPreflight } from "../../src/background/agent/completion-kernel";
+import {
+  evaluateCompletionSummaryPreflight,
+  evaluateCompletionTaskContractPreflight,
+} from "../../src/background/agent/completion-kernel";
 import {
   buildFirstTurnTextOnlyNudge,
   buildOverlayRecoveryCompletionSummary,
@@ -93,6 +96,22 @@ describe("isDoneSummaryAskingClarification", () => {
         "Which account should I use for this request?",
       ),
     ).toBe(true);
+  });
+
+  test("rejects clarification-needed reports passed through done", () => {
+    const summary =
+      "## Clarification Needed: Preferred Tab Not Found\nThe requested tab no longer exists. Please choose the current Play Console tab.";
+    expect(isDoneSummaryAskingClarification(summary)).toBe(true);
+    expect(
+      evaluateCompletionSummaryPreflight({
+        summary,
+        taskContext: "Inspect the existing Play Console tab.",
+        turnCount: 8,
+      }),
+    ).toMatchObject({
+      status: "needs_clarification",
+      reason: "done_summary_is_question",
+    });
   });
 });
 

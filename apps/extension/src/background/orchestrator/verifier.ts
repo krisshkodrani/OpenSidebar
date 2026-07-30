@@ -94,6 +94,7 @@ const NEGATIVE_COMPLETION_PATTERNS = [
   /\bhas\s+not\s+been\s+(?:completed|filled|submitted|saved|updated|deleted|confirmed)\b/i,
   /\bnot\s+successfully\s+(?:filled|submitted|saved|updated|deleted|confirmed)\b/i,
   /\brequired\s+value\b[\s\S]{0,120}\b(?:missing|absent|empty|not present)\b/i,
+  /\b(?:(?:unable|failed)\s+to|could\s+not|cannot)\s+(?:inspect|read|extract|find|report|access|open|verify|complete)\b/i,
 ];
 
 /**
@@ -615,6 +616,11 @@ export function programmaticVerify(
     objective: input.objective,
     successCriteria: input.successCriteria,
   });
+  const readOnlyObjective = isReadOnlyObjective(
+    input.taskQuery ?? "",
+    input.objective ?? "",
+    input.successCriteria,
+  );
 
   // Error keywords + no evidence of DOM change → retry. When the executor
   // explicitly completed, the "error" text may be quoted page content from a
@@ -672,8 +678,8 @@ export function programmaticVerify(
   // structural, or LLM verification before acceptance.
   if (
     input.executorOutcome === "completed" &&
-    verificationRisk === "low" &&
-    !hasErrorMarker &&
+    (verificationRisk === "low" || readOnlyObjective) &&
+    (!hasErrorMarker || readOnlyObjective) &&
     hasSubstantiveAlignedOutput(
       input.output,
       input.objective || "",

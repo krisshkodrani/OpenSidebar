@@ -284,7 +284,48 @@ describe("programmaticVerify", () => {
       currentUrl: "https://example.com/support-ticket",
       executorOutcome: "completed",
     });
-    expect(result?.decision).not.toBe("retry");
+    expect(result?.decision).toBe("accept");
+  });
+
+  test("accepts a substantive readiness report whose page state includes errors and locked sections", () => {
+    const result = programmaticVerify({
+      taskQuery:
+        "Audit the Roomora draft and produce an actionable readiness table without changing settings.",
+      output:
+        "Roomora Dashboard Readiness: Internal testing is available. Store listing setup is in progress. Closed, open, and production tracks are locked until initial setup is complete. The production-access questionnaire displays two validation errors. No Play Console settings were changed.",
+      objective: "Navigate to the dashboard and read the requested result there",
+      successCriteria:
+        "Report the dashboard setup, testing, release, and policy readiness state",
+      evidence: [
+        {
+          claim:
+            "Dashboard showed internal testing available, initial setup incomplete, release tracks locked, and two questionnaire errors.",
+          basis: "tool_output",
+          confidence: 1,
+        },
+      ],
+      previousUrl: "https://play.google.com/console/app/app-dashboard",
+      currentUrl: "https://play.google.com/console/app/app-dashboard",
+      executorOutcome: "completed",
+    });
+
+    expect(result).not.toBeNull();
+    expect(result!.decision).toBe("accept");
+    expect(result!.reason).toContain("Low-risk verification budget");
+  });
+
+  test("still rejects a genuine execution failure on a read-only report task", () => {
+    const result = programmaticVerify({
+      taskQuery: "Inspect the dashboard and report its readiness state",
+      output:
+        "Unable to inspect the dashboard because access was denied, so no readiness state could be reported.",
+      objective: "Read the dashboard readiness state",
+      successCriteria: "The visible readiness state is reported",
+      executorOutcome: "completed",
+    });
+
+    expect(result).not.toBeNull();
+    expect(result!.decision).toBe("retry");
   });
 
   test("returns accept for success + URL change", () => {

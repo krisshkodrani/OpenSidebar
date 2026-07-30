@@ -196,6 +196,73 @@ describe("DelegatedTaskService", () => {
     run.resolve({ status: "completed", summary: "done" });
   });
 
+  test("preserves terminal usage for failed and paused outcomes", async () => {
+    const metrics = {
+      totalCost: 0.037,
+      totalCostEstimated: 0.037,
+      totalCostActual: 0,
+      modelBreakdown: {
+        "openai/gpt-5.6-terra": {
+          promptTokens: 120,
+          completionTokens: 40,
+          cost: 0.037,
+          calls: 2,
+        },
+      },
+    };
+    const failed = service({
+      async run() {
+        return {
+          status: "error",
+          reason: "verification failed",
+          metrics,
+        };
+      },
+    });
+    await delegate(failed);
+    await vi.waitFor(async () =>
+      expect(
+        await request(failed, "get_browser_task", { task_id: "task-1" }),
+      ).toMatchObject({
+        status: "failed",
+        providerUsage: {
+          models: ["openai/gpt-5.6-terra"],
+          estimatedCostUsd: 0.037,
+          actualCostUsd: 0,
+        },
+      }),
+    );
+
+    const paused = service({
+      async run() {
+        return {
+          status: "needs_human",
+          reason: "tab choice required",
+          clarification: {
+            clarificationId: "clarify-usage",
+            question: "Which tab?",
+            requestedAt: 1,
+            timeoutMs: 1000,
+            expiresAt: 1001,
+          },
+          metrics,
+        };
+      },
+    });
+    await delegate(paused);
+    await vi.waitFor(async () =>
+      expect(
+        await request(paused, "get_browser_task", { task_id: "task-1" }),
+      ).toMatchObject({
+        status: "waiting_for_clarification",
+        providerUsage: {
+          models: ["openai/gpt-5.6-terra"],
+          estimatedCostUsd: 0.037,
+        },
+      }),
+    );
+  });
+
   test("admits only one active task and starts the next after completion", async () => {
     const first = deferred<AgentRunOutcome>();
     const second = deferred<AgentRunOutcome>();
