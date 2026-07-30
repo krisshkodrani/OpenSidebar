@@ -46,7 +46,7 @@ describe("Orchestrator role contracts", () => {
     expect(verifier.allowedTools).toHaveLength(0);
   });
 
-  test("executor uses executor tier with node-scoped tools", () => {
+  test("executor uses executor tier with node-scoped tools and control exits", () => {
     const node = makeNode([ToolName.READ_PAGE, ToolName.CLICK_ELEMENT]);
     const contract = buildRoleExecutionContract("executor", baseSettings, node);
 
@@ -54,6 +54,8 @@ describe("Orchestrator role contracts", () => {
     expect(contract.allowedTools.includes(ToolName.READ_PAGE)).toBe(true);
     expect(contract.allowedTools.includes(ToolName.CLICK_ELEMENT)).toBe(true);
     expect(contract.allowedTools.includes(ToolName.DONE)).toBe(true);
+    expect(contract.allowedTools.includes(ToolName.CLARIFY)).toBe(true);
+    expect(contract.disabledTools.has(ToolName.CLARIFY)).toBe(false);
     expect(contract.disabledTools.has(ToolName.NAVIGATE)).toBe(true);
   });
 

@@ -71,8 +71,10 @@ export function buildRoleExecutionContract(
   for (const tool of skillToolPolicy?.preferredTools ?? []) {
     allowed.add(tool);
   }
-  // Executor must always be able to finalize a subtask.
+  // Executors must always be able to finish or pause for required user input.
+  // Tool-profile filtering cannot restore a tool removed by this contract.
   allowed.add(ToolName.DONE);
+  allowed.add(ToolName.CLARIFY);
   applySkillToolSuppression(node, allowed);
   applyGlobalToolFlags(settings, allowed);
 
