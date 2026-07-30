@@ -26,6 +26,13 @@ import type {
 
 export function isDoneSummaryAskingClarification(summary: string): boolean {
   const text = summary.trim();
+  if (
+    /^(?:#+\s*)?(?:clarification|user input)\s+(?:needed|required)\b/i.test(
+      text,
+    )
+  ) {
+    return true;
+  }
   if (!text.includes("?")) return false;
 
   const lower = text.toLowerCase();
@@ -53,10 +60,7 @@ export function evaluateCompletionSummaryPreflight(params: {
   rootUserRequest?: string;
   isOrchestratorNode?: boolean;
 }): CompletionSummaryPreflight {
-  if (
-    params.turnCount <= 2 &&
-    isDoneSummaryAskingClarification(params.summary)
-  ) {
+  if (isDoneSummaryAskingClarification(params.summary)) {
     return {
       status: "needs_clarification",
       reason: "done_summary_is_question",

@@ -675,6 +675,7 @@ export class DelegatedTaskService {
     try {
       const outcome = await outcomePromise;
       if (record.snapshot.status === "cancelled") return;
+      this.applyMetrics(record, outcome.metrics);
       if (outcome.status === "needs_human" && outcome.approval) {
         record.snapshot.approval = outcome.approval;
         this.update(record, "waiting_for_approval");
@@ -701,16 +702,6 @@ export class DelegatedTaskService {
         return;
       }
       if (outcome.status === "completed") {
-        if (outcome.metrics) {
-          record.snapshot.providerUsage = {
-            models: Object.keys(outcome.metrics.modelBreakdown),
-            estimatedCostUsd:
-              outcome.metrics.totalCostEstimated ?? outcome.metrics.totalCost,
-            ...(outcome.metrics.totalCostActual === undefined
-              ? {}
-              : { actualCostUsd: outcome.metrics.totalCostActual }),
-          };
-        }
         record.snapshot.currentPlan =
           outcome.subtaskResults?.map((item) => item.description) ?? [];
         record.snapshot.completedSteps =
@@ -815,16 +806,7 @@ export class DelegatedTaskService {
     progress: AgentProgressUpdate,
   ): void {
     if (TERMINAL.has(record.snapshot.status)) return;
-    if (progress.metrics) {
-      record.snapshot.providerUsage = {
-        models: Object.keys(progress.metrics.modelBreakdown),
-        estimatedCostUsd:
-          progress.metrics.totalCostEstimated ?? progress.metrics.totalCost,
-        ...(progress.metrics.totalCostActual === undefined
-          ? {}
-          : { actualCostUsd: progress.metrics.totalCostActual }),
-      };
-    }
+    this.applyMetrics(record, progress.metrics);
     if (progress.subtasks) {
       record.snapshot.currentPlan = progress.subtasks.map(
         (item) => item.description,
@@ -843,6 +825,21 @@ export class DelegatedTaskService {
     }
     record.snapshot.updatedAt = this.now();
     this.notify(record);
+  }
+
+  private applyMetrics(
+    record: TaskRecord,
+    metrics: AgentRunOutcome["metrics"],
+  ): void {
+    if (!metrics) return;
+    record.snapshot.providerUsage = {
+      models: Object.keys(metrics.modelBreakdown),
+      estimatedCostUsd:
+        metrics.totalCostEstimated ?? metrics.totalCost,
+      ...(metrics.totalCostActual === undefined
+        ? {}
+        : { actualCostUsd: metrics.totalCostActual }),
+    };
   }
 
   private async ensureLoaded(): Promise<void> {
