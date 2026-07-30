@@ -5,9 +5,10 @@
  * cut (see build-promo-cut.mjs / build-demo-montage.mjs), so every line has a
  * hard start offset and a max window it must fit.
  *
- *   node scripts/add-voiceover.mjs --video promo|pitch|store|jobs
+ *   node scripts/add-voiceover.mjs --video customer|developer|promo|pitch|store|jobs
  *     [--provider gemini|elevenlabs]    default: gemini
  *     [--voice <voice id/name>]         default: Sulafat (Gemini) / Matilda (EL)
+ *     [--accent <voice direction>]       default: contemporary neutral British English
  *     [--music <file>]                  optional bed, ducked under narration
  *
  * Keys: GEMINI_API_KEY or ELEVENLABS_API_KEY / ELEVENLAB_API_KEY, from the env
@@ -42,6 +43,7 @@ if (!["elevenlabs", "gemini"].includes(PROVIDER)) {
 // EL default "Matilda" — warm narrative female (bake-off winner).
 // Gemini default "Sulafat" — the catalog's warm female, closest to that brief.
 const VOICE = argVal("--voice", PROVIDER === "gemini" ? "Sulafat" : "XrExE9yKIg1WjnnlVkGX");
+const ACCENT = argVal("--accent", "a contemporary neutral British English accent");
 const MUSIC = argVal("--music", "");
 const GEMINI_MODEL = "gemini-3.1-flash-tts-preview";
 
@@ -79,6 +81,107 @@ const SPECS = {
         text: "OpenSidebar. Free, open source, bring your own key.",
         gnote: "The sign-off: slow slightly, warm and definitive, with a small pause between each of the three phrases.",
         gtext: "OpenSidebar. [warmly] Free, open source, bring your own key.",
+      },
+    ],
+  },
+  customer: {
+    in: "opensidebar-promo-60s.mp4",
+    out: "opensidebar-customer-60s-british-female.mp4",
+    direction:
+      `Voice direction: a warm, confident female narrator speaking with ${ACCENT}. ` +
+      "This is a customer film for a useful browser product. Sound natural, clear, and reassuring, never salesy or announcer-like. " +
+      "Use crisp consonants, a relaxed pace, and a slight audible smile.",
+    lines: [
+      {
+        at: 0.6, maxSec: 12.0,
+        text: "Meet OpenSidebar, an AI agent in your browser. Give it a task and it handles the clicks: cart, coupon, checkout. Done.",
+        gnote: "Open brightly and naturally. Build momentum through the three-item list, then land 'Done' with quiet satisfaction.",
+        gtext: "Meet OpenSidebar, an AI agent in your browser. Give it a task and it handles the clicks: cart, coupon, checkout. [satisfied] Done.",
+      },
+      {
+        at: 13.6, maxSec: 13.0,
+        text: "It can read information on one page and use it on another, like turning dashboard numbers into an email reply.",
+        gnote: "Matter-of-fact and effortless, with light emphasis on 'one page' and 'another'.",
+      },
+      {
+        at: 27.4, maxSec: 8.5,
+        text: "Or leave it watching. When this product comes back in stock, it tells you.",
+        gnote: "Start gently, then brighten on the result.",
+      },
+      {
+        at: 36.5, maxSec: 14.0,
+        text: "The same side-panel agent can work through complex business apps, step by step, while you see what it is doing.",
+        gnote: "Grounded and reassuring. Keep the phrasing plain and unhurried.",
+      },
+      {
+        at: 51.5, maxSec: 6.3,
+        text: "OpenSidebar. Free, open source, and powered by your own key.",
+        gnote: "Warm, definitive sign-off. Give each benefit a little space.",
+      },
+    ],
+  },
+  developer: {
+    in: "opensidebar-flagship-v3.mp4",
+    out: "opensidebar-developer-tour-british-female.mp4",
+    direction:
+      `Voice direction: a technically precise female narrator speaking with ${ACCENT}. ` +
+      "This is a developer film for an open-source browser-agent workbench. Sound authoritative, curious, and approachable. " +
+      "Keep numbers deliberate and architecture statements crisp; avoid hype.",
+    lines: [
+      {
+        at: 0.5, maxSec: 5.0,
+        text: "OpenSidebar turns scattered browser evidence into a safe decision.",
+        gnote: "Open with calm conviction and give the first word a clean entrance.",
+      },
+      {
+        at: 5.8, maxSec: 16.2,
+        text: "Here, an invoice asks for twenty-eight thousand eight hundred dollars. The agent checks the contract, usage, and policy: a missing fifteen percent discount, and only seventy-three active seats.",
+        gnote: "Investigative and precise. Keep every number clear.",
+      },
+      {
+        at: 22.8, maxSec: 12.2,
+        text: "The draft is ready, but nothing is sent. Corrected renewal: fourteen thousand eight hundred ninety-two. Savings: thirteen thousand nine hundred eight.",
+        gnote: "Make the safety boundary explicit, then slow slightly for both totals.",
+      },
+      {
+        at: 35.2, maxSec: 16.1,
+        text: "Then a match-day alert moves kickoff to twelve thirty. The current train arrives too late. OpenSidebar checks the rule, compares the replacements, and identifies the safe option.",
+        gnote: "Give the disruption some urgency, then settle into controlled technical clarity.",
+      },
+      {
+        at: 52.3, maxSec: 6.7,
+        text: "One hour forty-eight of buffer, two hundred sixteen euros, and nothing purchased.",
+        gnote: "Deliver the three facts as compact evidence.",
+      },
+      {
+        at: 59.3, maxSec: 6.2,
+        text: "Consequential actions wait for human approval.",
+        gnote: "Slow, calm, and trustworthy.",
+      },
+      {
+        at: 66.2, maxSec: 4.0,
+        text: "One model plans and coordinates.",
+        gnote: "Clear role-card delivery with emphasis on 'plans'.",
+      },
+      {
+        at: 70.7, maxSec: 4.0,
+        text: "Another acts and verifies.",
+        gnote: "Slightly more kinetic, but still precise.",
+      },
+      {
+        at: 75.2, maxSec: 4.0,
+        text: "A judge checks the evidence.",
+        gnote: "Firm and trustworthy.",
+      },
+      {
+        at: 79.8, maxSec: 6.7,
+        text: "The trace keeps each task's cost beside its actions and evidence.",
+        gnote: "Transparent and matter-of-fact.",
+      },
+      {
+        at: 87.4, maxSec: 6.5,
+        text: "Run it, inspect it, and help build what comes next.",
+        gnote: "A direct and inviting developer call to action.",
       },
     ],
   },
@@ -258,9 +361,9 @@ async function tts(key, text) {
 // delivery note (`gnote`), and inline audio tags in `gtext` ([intrigued], …).
 // The transcript is quoted and fenced with "read only" so the direction itself
 // is never spoken.
-const GEMINI_DIRECTION =
-  "Voice direction: a warm, confident female narrator for a polished 60-second " +
-  "product film about a developer tool. Modern tech-keynote energy — intimate " +
+const GEMINI_DIRECTION = spec.direction ||
+  "Voice direction: a warm, confident female narrator for a polished product film. " +
+  `Speak with ${ACCENT}. Modern tech-keynote energy — intimate ` +
   "and self-assured, never salesy or announcer-like. Crisp consonants, relaxed " +
   "unhurried pace, a slight audible smile. Take a short, purposeful beat at " +
   "every em dash.";

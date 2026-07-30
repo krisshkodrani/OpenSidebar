@@ -34,23 +34,11 @@ const SCREENSHOTS = [
     caption: "Reads data on one page, writes it into another",
   },
   {
-    src: "docs/assets/trace-viewer-1.png",
-    caption: "Replay every session turn by turn in the built-in trace viewer",
-  },
-  {
-    src: ".artifacts/e2e/videos/2026-07-08/stills/smoke-runs.png",
-    caption: "Every run with outcome, turns, and cost — traces never leave your machine",
-  },
-  {
-    src: ".artifacts/e2e/videos/2026-07-08/stills/smoke-perception.png",
-    caption: "The agent works from the same screenshot you see",
-  },
-  {
-    src: ".artifacts/e2e/videos/2026-07-08/stills/settings-provider.png",
+    src: ".artifacts/store/src/settings-provider-store.png",
     caption: "Your provider, your models — bring your own key",
   },
   {
-    src: ".artifacts/e2e/videos/2026-07-08/stills/watch-restock.png",
+    src: ".artifacts/store/src/watch-restock.png",
     caption: "Watch Mode: leave it watching, it tells you when the page changes",
   },
 ];
@@ -63,6 +51,11 @@ function sh(bin, a) {
 }
 
 fs.mkdirSync(OUT, { recursive: true });
+for (const name of fs.readdirSync(OUT)) {
+  if (/^screenshot-\d+\.png$/.test(name) || name === "promo-tile.png" || name === "marquee.png") {
+    fs.rmSync(path.join(OUT, name));
+  }
+}
 const tmp = fs.mkdtempSync(path.join(ROOT, ".artifacts", "store-tmp-"));
 const rel = (p) => path.relative(ROOT, p).replace(/\\/g, "/");
 const FONT = rel(path.join(tmp, "font.ttf"));

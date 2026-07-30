@@ -1,61 +1,100 @@
-# Chrome Web Store Listing - OpenSidebar
+# Chrome Web Store listing
 
-Copy-ready reference for the CWS "Store listing" tab. The privacy-tab answers
-(single purpose, permission justifications, data disclosures) live in
-[store-privacy-answers.md](./store-privacy-answers.md).
+Copy-ready customer material for the Chrome Web Store listing. Privacy-tab
+answers live in [store-privacy-answers.md](store-privacy-answers.md).
 
-## Listing Metadata
+The store listing must show the shipping extension only. Developer tooling,
+including the trace viewer, belongs in the repository and developer tour rather
+than in store screenshots.
+
+## Listing metadata
 
 | Field | Value |
 | --- | --- |
 | Name | OpenSidebar |
 | Category | Productivity → Tools |
 | Language | English |
-| Homepage URL | https://github.com/krisshkodrani/OpenSidebar |
+| Homepage URL | https://opensidebar.com |
 | Support URL | https://github.com/krisshkodrani/OpenSidebar/issues |
 | Privacy policy URL | https://github.com/krisshkodrani/OpenSidebar/blob/main/PRIVACY_POLICY.md |
 | Pricing | Free |
-| Graphics | icon 128×128 (shipped in package) · screenshots 1280×800 · small promo tile 440×280 · marquee 1400×560 — generate with `node scripts/build-store-assets.mjs` → `.artifacts/store/` |
 
-## Short Description
+## Short description
 
-Must stay ≤ 132 characters and should match the manifest `description`.
+This must remain at or below 132 characters and match the extension manifest.
 
 ```text
 Open-source AI browser agent. Navigate, click, type, and automate web tasks from a side panel with your own provider key.
 ```
 
-## Full Description
+## Full description
 
 ```text
-Book the meeting, fill out the job application, pull the numbers off one dashboard and type them into a form on another — describe the outcome you want, and OpenSidebar drives your browser to get there while you watch each step.
+Describe the result you want and OpenSidebar works through the browser task from
+your Chrome side panel.
 
-It's an open-source agent that lives in your Chrome side panel and works the page the way you do: reading the live screenshot and the page structure, clicking, typing, scrolling, and carrying multi-step work across tabs. Bring your own API key — no subscription, no telemetry, no servers of ours.
+It can click, type, scroll, read information across pages, complete multi-step
+forms, and watch a page for changes. You see the work as it happens and can pause
+or stop it at any time.
 
 WHAT IT CAN DO
 
-- Complete real tasks end to end: shopping checkouts, job applications, multi-step wizards, reading data on one page to write on another
-- See the page like you do: the agent works from the live screenshot plus the page structure, so it reads charts, zooms into fine print, and handles pages that defeat text-only bots
-- Use 52 browser tools: clicking, typing, and scrolling, but also file upload and download, tab and window management, and structured table, chart, and filter extraction
-- Plan, execute, and verify: a planner breaks hard tasks into steps, an executor drives each one, and a verifier confirms completion before moving on
+- Complete multi-step tasks such as forms, checkouts, and cross-page research
+- Read information on one page and use it on another
+- Work from both the live screenshot and page structure
+- Manage tabs and windows, upload and download files, and extract structured data
+- Plan harder tasks step by step and verify the result
+- Watch a page and tell you when something changes
 
 YOU STAY IN CONTROL
 
-- Four approval modes, from ask-before-every-action to fully autonomous
-- Consequential actions pause for your approval; form submits are dry-run first so you approve the exact field values before anything is sent
-- Pause, guide, or stop the agent at any time
-- See each step, decision, and token usage as the agent works; for developers, the open-source repo adds a full observability workspace
+- Choose how often OpenSidebar asks before acting
+- Require approval for consequential actions
+- Review the agent's progress and guide, pause, or stop it
+- Keep drafts unsent and purchases unconfirmed until you approve
 
-PRIVATE BY DESIGN
+BRING YOUR OWN KEY
 
-- Bring your own key: Fireworks (recommended), OpenRouter, Moonshot/Kimi, or Xiaomi MiMo
-- Your API key stays in Chrome storage; page context goes only to the provider you configure
-- No analytics, no tracking, no hosted relay, no OpenSidebar servers
-- Optional local memory: a personal profile you review yourself, with sensitive fields consent-gated and encrypted
+- Use a supported provider and models you configure
+- Your key stays in Chrome storage
+- Page context goes only to the provider you choose
+- No analytics, tracking, hosted relay, or OpenSidebar backend
 
-SAFETY NOTES
+OpenSidebar is free and open source under the MIT licence.
 
-Browser AI can still make mistakes or misread page state. Start with trusted sites, review sensitive actions, and use the approval modes for anything consequential.
-
-Open source (MIT). Audit every claim: https://github.com/krisshkodrani/OpenSidebar
+Browser agents can make mistakes or misread page state. Start on trusted sites
+and review consequential actions.
 ```
+
+## Customer video
+
+The store video is:
+
+```text
+.artifacts/publish/opensidebar-customer-60s-british-female.mp4
+```
+
+It is a 58-second customer overview with a British female voice. Publish it to
+the project's video channel and add that public video URL to the store listing.
+Do not use the developer tour for the store listing.
+
+## Graphics
+
+Generate the upload-ready images:
+
+```bash
+node scripts/build-store-assets.mjs
+```
+
+Output is written to `.artifacts/store/`:
+
+- `screenshot-1.png` — the side-panel agent completing a task
+- `screenshot-2.png` — reading one page and writing into another
+- `screenshot-3.png` — provider and model settings
+- `screenshot-4.png` — Watch Mode reporting a page change
+- `promo-tile.png` — 440×280
+- `marquee.png` — 1400×560
+
+Each screenshot is 1280×800. Trace-viewer and run-analytics images are
+deliberately excluded because they are developer tooling, not part of the
+shipping store extension.
