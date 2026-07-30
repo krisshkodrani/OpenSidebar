@@ -17,10 +17,7 @@ import {
   type AgentActivitySignalState,
 } from "./agent-cue";
 import { logger } from "../utils";
-import {
-  RuntimeMessage,
-  MessageSource,
-} from "../types";
+import { RuntimeMessage, MessageSource } from "../types";
 import { buildSnapshot } from "./snapshot";
 import { executeAction } from "./actions";
 import {
@@ -54,9 +51,7 @@ import {
   removeAgentBorder,
   type AgentBorderVisualState,
 } from "./in-page-ui/agent-border";
-import {
-  FLOATING_WRAP_ID,
-} from "./in-page-ui/floating-action-hud";
+import { FLOATING_WRAP_ID } from "./in-page-ui/floating-action-hud";
 import {
   removeE2ERail,
   renderE2ERail as renderE2ERailElement,
@@ -78,92 +73,16 @@ export {
 
 logger.info("system", "Content Script Loaded");
 
-
-function runJanitor() {
-  const COMMON_selectors = [
-    // Generic aria-labels (consent-specific only — avoid broad labels like "Close"
-    // which match app UI buttons on sites like LinkedIn)
-    "button[aria-label='Accept all']",
-    "button[aria-label='Reject all']",
-    "button[aria-label='Accept cookies']",
-    "button[aria-label='Accept All Cookies']",
-    // Common cookie/consent platforms
-    "#onetrust-accept-btn-handler", // OneTrust
-    "#onetrust-reject-all-handler",
-    ".fc-cta-consent", // Google Funding Choices
-    "#CybotCookiebotDialogBodyLevelButtonLevelOptinAllowAll", // Cookiebot
-    "[data-cookiefirst-action='accept']", // CookieFirst
-    ".cookie-banner button.primary",
-    // Class-based patterns
-    "[class*='cookie'] button[class*='accept']",
-    "[class*='cookie'] button[class*='close']",
-    "[class*='consent'] button[class*='accept']",
-    "[class*='gdpr'] button[class*='accept']",
-    "[class*='privacy'] button[class*='accept']",
-    // ID-based patterns
-    "[id*='cookie-accept']",
-    "[id*='cookie-close']",
-    "[id*='accept-cookies']",
-    // Additional CMP platforms
-    "#CybotCookiebotDialogBodyButtonAccept", // Cookiebot alternate
-    "[data-tid='banner-accept']", // TrustArc
-    ".cmp-button_button--accept", // Quantcast/CMP
-    ".didomi-continue-without-agreeing", // Didomi
-    "#consent_wall_optin", // Various EU sites
-  ];
-
-  for (const sel of COMMON_selectors) {
-    try {
-      const el = document.querySelector(sel);
-      if (el && isElementVisible(el)) {
-        (el as HTMLElement).click();
-        logger.info("tools", "Auto-clicked cookie banner", { selector: sel });
-      }
-    } catch {
-      // Invalid selector on some pages — skip silently
-    }
-  }
-}
-
-// Prepare Janitor — run on load + MutationObserver re-run for async-injected banners
-if (document.readyState === "complete") {
-  runJanitor();
-} else {
-  window.addEventListener("load", runJanitor);
-}
-
 // LP-24 presence layer: read mode from settings and follow changes.
 initPresence();
-// Watch for late-injected cookie/GDPR banners (no delay — react to DOM mutations)
-let janitorRan = false;
 
-function armJanitorObserver() {
-  janitorRan = false;
-  const obs = new MutationObserver(() => {
-    if (janitorRan) return;
-    janitorRan = true;
-    obs.disconnect();
-    runJanitor();
-  });
-  obs.observe(document.body ?? document.documentElement, {
-    childList: true,
-    subtree: true,
-  });
-  // Self-cleanup: stop observing after 3s regardless (no lingering observers)
-  setTimeout(() => obs.disconnect(), 3000);
-}
-armJanitorObserver();
-
-// Reset stable element IDs + re-arm janitor on SPA navigation
+// Reset stable element IDs when a restored page has navigated.
 let lastHref = window.location.href;
 window.addEventListener("pageshow", () => {
   const currentHref = window.location.href;
   if (currentHref !== lastHref) {
     resetStableIds();
     lastHref = currentHref;
-    // Re-arm janitor for late-injected banners on new SPA page
-    armJanitorObserver();
-    runJanitor();
   }
 });
 
@@ -541,7 +460,6 @@ function unmountE2EOverlay(): { ok: true } {
   return { ok: true };
 }
 
-
 // --- Message Handler ---
 
 if (typeof chrome !== "undefined" && chrome.runtime?.onMessage) {
@@ -582,7 +500,10 @@ if (typeof chrome !== "undefined" && chrome.runtime?.onMessage) {
           message.source !== MessageSource.SIDEPANEL &&
           message.source !== MessageSource.UI
         ) {
-          sendResponse?.({ ok: false, detail: "Invalid overlay control source." });
+          sendResponse?.({
+            ok: false,
+            detail: "Invalid overlay control source.",
+          });
           return true;
         }
         void mountE2EOverlay(
@@ -603,7 +524,10 @@ if (typeof chrome !== "undefined" && chrome.runtime?.onMessage) {
           message.source !== MessageSource.SIDEPANEL &&
           message.source !== MessageSource.UI
         ) {
-          sendResponse?.({ ok: false, detail: "Invalid overlay control source." });
+          sendResponse?.({
+            ok: false,
+            detail: "Invalid overlay control source.",
+          });
           return true;
         }
         sendResponse?.(unmountE2EOverlay());
@@ -650,7 +574,10 @@ if (typeof chrome !== "undefined" && chrome.runtime?.onMessage) {
           !previousSignalState.sessionActive
         ) {
           removeFloatingAgentCue();
-        } else if (previousSignalState.sessionActive && !message.payload.active) {
+        } else if (
+          previousSignalState.sessionActive &&
+          !message.payload.active
+        ) {
           setAgentBorder(false, message.payload.outcome);
         }
         return;
@@ -876,11 +803,10 @@ if (typeof chrome !== "undefined" && chrome.runtime?.onMessage) {
         (async () => {
           const start = performance.now();
 
-          // Auto-dismiss overlays that block the viewport (synchronous — no sleep needed)
-          // Skipped for post-tool refreshes (autoDismiss: false) so agent-triggered
-          // dialogs like confirmation prompts are not destroyed.
+          // Overlay dismissal is destructive and must be explicitly requested.
+          // Passive snapshots (including side-panel warmup) only observe the page.
           let dismissedTexts: string[] = [];
-          const shouldDismiss = message.payload.autoDismiss !== false;
+          const shouldDismiss = message.payload.autoDismiss === true;
           const overlays = detectViewportCoveringOverlays();
           if (overlays.length > 0 && shouldDismiss) {
             const result = autoDismissModals();
@@ -1249,9 +1175,7 @@ function readAgentActivitySignalState(): AgentActivitySignalState {
   };
 }
 
-function applyAgentActivitySignalState(
-  state: AgentActivitySignalState,
-): void {
+function applyAgentActivitySignalState(state: AgentActivitySignalState): void {
   agentSessionActive = state.sessionActive;
   agentPageActivityActive = state.pageActivityActive;
   e2eRailState = {

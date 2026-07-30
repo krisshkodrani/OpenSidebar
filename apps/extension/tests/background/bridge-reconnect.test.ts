@@ -26,9 +26,11 @@ import { ToolName } from "../../src/types";
 describe("Bridge disconnect detection", () => {
   /** Mirror of isBridgeDisconnect from tools/index.ts */
   function isBridgeDisconnect(errorMsg: string): boolean {
-    return errorMsg.includes("Receiving end does not exist")
-      || errorMsg.includes("Could not establish connection")
-      || errorMsg.includes("The message port closed");
+    return (
+      errorMsg.includes("Receiving end does not exist") ||
+      errorMsg.includes("Could not establish connection") ||
+      errorMsg.includes("The message port closed")
+    );
   }
 
   test("recognizes 'Receiving end does not exist'", () => {
@@ -36,15 +38,25 @@ describe("Bridge disconnect detection", () => {
   });
 
   test("recognizes 'Could not establish connection'", () => {
-    expect(isBridgeDisconnect("Could not establish connection. Receiving end does not exist.")).toBe(true);
+    expect(
+      isBridgeDisconnect(
+        "Could not establish connection. Receiving end does not exist.",
+      ),
+    ).toBe(true);
   });
 
   test("recognizes 'The message port closed'", () => {
-    expect(isBridgeDisconnect("The message port closed before a response was received.")).toBe(true);
+    expect(
+      isBridgeDisconnect(
+        "The message port closed before a response was received.",
+      ),
+    ).toBe(true);
   });
 
   test("rejects unrelated errors", () => {
-    expect(isBridgeDisconnect("TypeError: Cannot read properties of null")).toBe(false);
+    expect(
+      isBridgeDisconnect("TypeError: Cannot read properties of null"),
+    ).toBe(false);
     expect(isBridgeDisconnect("NetworkError: Failed to fetch")).toBe(false);
     expect(isBridgeDisconnect("Permission denied")).toBe(false);
   });
@@ -59,14 +71,19 @@ describe("Content script reinjection flow", () => {
     (chrome.scripting as any) = {
       executeScript: vi.fn(() => Promise.resolve()),
     };
-    (chrome.tabs as any).get = vi.fn(() => Promise.resolve({ id: 1, url: "https://example.com" }));
-    (chrome.tabs as any).update = vi.fn((_tabId: number, update: { url?: string }) =>
-      Promise.resolve({ id: 1, url: update.url ?? "https://example.com" }),
+    (chrome.tabs as any).get = vi.fn(() =>
+      Promise.resolve({ id: 1, url: "https://example.com" }),
+    );
+    (chrome.tabs as any).update = vi.fn(
+      (_tabId: number, update: { url?: string }) =>
+        Promise.resolve({ id: 1, url: update.url ?? "https://example.com" }),
     );
     (chrome.tabs as any).reload = vi.fn(() => Promise.resolve());
-    (chrome.tabs as any).sendMessage = vi.fn(() => Promise.resolve({
-      payload: { result: "OK" },
-    }));
+    (chrome.tabs as any).sendMessage = vi.fn(() =>
+      Promise.resolve({
+        payload: { result: "OK" },
+      }),
+    );
   });
 
   test("probeContentScript marks a tab responsive when messaging succeeds", async () => {
@@ -74,38 +91,37 @@ describe("Content script reinjection flow", () => {
   });
 
   test("ensureContentScript revalidates stale ready tabs before trusting cache", async () => {
-    let firstProbe = true;
-    (chrome.tabs as any).sendMessage = vi.fn(() => {
-      if (firstProbe) {
-        firstProbe = false;
-        return Promise.resolve({ payload: { result: "OK" } });
-      }
-      return Promise.reject(new Error("Receiving end does not exist"));
-    });
+    (chrome.tabs as any).sendMessage = vi.fn(() =>
+      Promise.resolve({ payload: { result: "OK" } }),
+    );
 
     await expect(probeContentScript(105, 25)).resolves.toBe(true);
 
-    let recoveryAttempt = 0;
+    let injected = false;
+    (chrome.scripting as any).executeScript = vi.fn(() => {
+      injected = true;
+      return Promise.resolve();
+    });
     (chrome.tabs as any).sendMessage = vi.fn(() => {
-      recoveryAttempt += 1;
-      if (recoveryAttempt === 1) {
-        return Promise.reject(new Error("Receiving end does not exist"));
-      }
-      return Promise.resolve({ payload: { result: "OK" } });
+      return injected
+        ? Promise.resolve({ payload: { result: "OK" } })
+        : Promise.reject(new Error("Receiving end does not exist"));
     });
 
-    await expect(ensureContentScript(105, 10)).resolves.toBe(true);
+    await expect(ensureContentScript(105, 25)).resolves.toBe(true);
     expect(chrome.scripting.executeScript).toHaveBeenCalled();
   });
 
-  test("ensureContentScript falls back to a direct probe after readiness timeout", async () => {
+  test("ensureContentScript probes an existing script before reinjecting", async () => {
     await expect(ensureContentScript(102, 10)).resolves.toBe(true);
-    expect(chrome.scripting.executeScript).toHaveBeenCalled();
+    expect(chrome.scripting.executeScript).not.toHaveBeenCalled();
   });
 
   test("tab-closed scenario returns error without reinject attempt", async () => {
     // Simulate tab closed: chrome.tabs.get throws
-    (chrome.tabs as any).get = vi.fn(() => Promise.reject(new Error("No tab with id: 999")));
+    (chrome.tabs as any).get = vi.fn(() =>
+      Promise.reject(new Error("No tab with id: 999")),
+    );
 
     // The bridge reconnect logic should:
     // 1. Detect bridge disconnect
@@ -180,8 +196,9 @@ describe("Content script reinjection flow", () => {
       return Promise.resolve({ payload: { result: "OK" } });
     });
     (chrome.webNavigation as any).onCompleted = {
-      addListener: (cb: (details: { tabId: number; frameId: number }) => void) =>
-        setTimeout(() => cb({ tabId: 104, frameId: 0 }), 0),
+      addListener: (
+        cb: (details: { tabId: number; frameId: number }) => void,
+      ) => setTimeout(() => cb({ tabId: 104, frameId: 0 }), 0),
       removeListener: () => {},
     };
     (chrome.webNavigation as any).onErrorOccurred = {
@@ -202,7 +219,9 @@ describe("Content script reinjection flow", () => {
       if (attempts === 1) {
         return Promise.reject(new Error("Receiving end does not exist"));
       }
-      return Promise.resolve({ payload: { result: "OK", waitedMs: 25, elementCount: 4 } });
+      return Promise.resolve({
+        payload: { result: "OK", waitedMs: 25, elementCount: 4 },
+      });
     });
 
     await expect(recoverContentScriptBridge(106)).resolves.toBe(true);
@@ -219,7 +238,9 @@ describe("Content script reinjection flow", () => {
       if (attempts === 1) {
         return Promise.reject(new Error("Receiving end does not exist"));
       }
-      return Promise.resolve({ payload: { result: "OK", waitedMs: 25, elementCount: 4 } });
+      return Promise.resolve({
+        payload: { result: "OK", waitedMs: 25, elementCount: 4 },
+      });
     });
 
     await expect(
@@ -253,11 +274,17 @@ describe("Content script reinjection flow", () => {
       if (probeAttempts <= 3) {
         return Promise.reject(new Error("Receiving end does not exist"));
       }
-      return Promise.resolve({ payload: { result: "OK", waitedMs: 25, elementCount: 4 } });
+      return Promise.resolve({
+        payload: { result: "OK", waitedMs: 25, elementCount: 4 },
+      });
     });
 
     await expect(
-      recoverContentScriptBridge(109, { allowReloadFallback: false, ensureTimeoutMs: 50, domReadyTimeoutMs: 25 }),
+      recoverContentScriptBridge(109, {
+        allowReloadFallback: false,
+        ensureTimeoutMs: 50,
+        domReadyTimeoutMs: 25,
+      }),
     ).resolves.toBe(true);
     expect(chrome.scripting.executeScript).toHaveBeenCalled();
     expect(probeAttempts).toBeGreaterThan(3);
@@ -284,7 +311,9 @@ describe("Content script reinjection flow", () => {
       if (!reinjected) {
         return Promise.reject(new Error("Receiving end does not exist"));
       }
-      return Promise.resolve({ payload: { result: "OK", waitedMs: 10, elementCount: 3 } });
+      return Promise.resolve({
+        payload: { result: "OK", waitedMs: 10, elementCount: 3 },
+      });
     });
 
     await expect(
@@ -302,10 +331,14 @@ describe("Content script reinjection flow", () => {
         if (toolAttempts === 1) {
           return Promise.reject(new Error("Receiving end does not exist"));
         }
-        return Promise.resolve({ payload: { result: "clicked-after-transient-probe" } });
+        return Promise.resolve({
+          payload: { result: "clicked-after-transient-probe" },
+        });
       }
       probeAttempts += 1;
-      return Promise.resolve({ payload: { result: "OK", waitedMs: 10, elementCount: 3 } });
+      return Promise.resolve({
+        payload: { result: "OK", waitedMs: 10, elementCount: 3 },
+      });
     });
 
     await expect(
@@ -325,9 +358,13 @@ describe("Content script reinjection flow", () => {
         if (toolAttempts === 1) {
           return Promise.reject(new Error("Receiving end does not exist"));
         }
-        return Promise.resolve({ payload: { result: "clicked-after-transient-probe" } });
+        return Promise.resolve({
+          payload: { result: "clicked-after-transient-probe" },
+        });
       }
-      return Promise.resolve({ payload: { result: "OK", waitedMs: 10, elementCount: 3 } });
+      return Promise.resolve({
+        payload: { result: "OK", waitedMs: 10, elementCount: 3 },
+      });
     });
 
     await expect(
@@ -364,8 +401,9 @@ describe("Content script reinjection flow", () => {
       Promise.reject(new Error("loader unavailable")),
     );
     (chrome.webNavigation as any).onCompleted = {
-      addListener: (cb: (details: { tabId: number; frameId: number }) => void) =>
-        setTimeout(() => cb({ tabId: 108, frameId: 0 }), 0),
+      addListener: (
+        cb: (details: { tabId: number; frameId: number }) => void,
+      ) => setTimeout(() => cb({ tabId: 108, frameId: 0 }), 0),
       removeListener: () => {},
     };
     (chrome.webNavigation as any).onErrorOccurred = {
@@ -378,13 +416,17 @@ describe("Content script reinjection flow", () => {
         if (toolAttempts < 3) {
           return Promise.reject(new Error("Receiving end does not exist"));
         }
-        return Promise.resolve({ payload: { result: "clicked-after-hard-reload" } });
+        return Promise.resolve({
+          payload: { result: "clicked-after-hard-reload" },
+        });
       }
       probeAttempts += 1;
       if (probeAttempts < 3) {
         return Promise.reject(new Error("Receiving end does not exist"));
       }
-      return Promise.resolve({ payload: { result: "OK", waitedMs: 10, elementCount: 3 } });
+      return Promise.resolve({
+        payload: { result: "OK", waitedMs: 10, elementCount: 3 },
+      });
     });
 
     await expect(
