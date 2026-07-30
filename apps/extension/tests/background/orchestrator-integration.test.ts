@@ -437,7 +437,9 @@ describe("Orchestrator integration join tests", () => {
         async getWorkspaces() {
           return [{ id: "ws-1", tabIds: [101], tabGroupId: 1 }];
         },
-        async addTabToWorkspace(_tabId: number, _workspaceId: string) {},
+        async addTabToWorkspace(_tabId: number, _workspaceId: string) {
+          return true;
+        },
       },
       waitForContentScriptReady: async (_tabId: number, _timeoutMs: number) => true,
     };
@@ -3102,6 +3104,7 @@ describe("Orchestrator integration join tests", () => {
           url: rootTabBlank ? "about:blank" : "https://example.com/catalog",
           title: rootTabBlank ? "Blank Page" : "Catalog Page",
           groupId: 1,
+          windowId: 1,
         } as chrome.tabs.Tab;
       }
       if (tabId === 202) {
@@ -3110,6 +3113,7 @@ describe("Orchestrator integration join tests", () => {
           url: "https://example.com/catalog",
           title: "Catalog Page",
           groupId: 1,
+          windowId: 1,
         } as chrome.tabs.Tab;
       }
       throw new Error(`Unknown tab ${tabId}`);
@@ -3154,6 +3158,7 @@ describe("Orchestrator integration join tests", () => {
     expect((chrome.tabs as any).create).toHaveBeenCalledWith({
       url: "https://example.com/catalog",
       active: false,
+      windowId: 1,
     });
 
     const messages = (globalThis as any).__runtimeMessages as Array<{

@@ -148,21 +148,36 @@ is the ~60s cinematic edit for hero slots (Chrome Web Store promo video, YouTube
 ## Voiceover (`scripts/add-voiceover.mjs`)
 
 Narration is mixed onto finished publish videos, never baked into the renders:
-`node scripts/add-voiceover.mjs --video promo|pitch [--voice <id>] [--music <file>]`.
+`node scripts/add-voiceover.mjs --video customer|developer [--voice <id>]
+[--accent <direction>] [--music <file>]`.
 Lines are timed specs (`{at, maxSec, text}`) matching each cut's segment structure;
-audio comes from ElevenLabs (key `ELEVENLABS_API_KEY`/`ELEVENLAB_API_KEY` in `.env`,
-default voice "Rachel", cached by content hash in `.artifacts/vo/`). Lines that
-overrun their window get squeezed up to 1.1× `atempo`, otherwise the script asks you
-to shorten the copy. A `--music` bed is ducked under the voice via sidechain
+audio comes from Gemini TTS by default (`GEMINI_API_KEY`) with ElevenLabs available
+as an alternate (`ELEVENLABS_API_KEY`/`ELEVENLAB_API_KEY`). The canonical customer
+and developer specs use a contemporary neutral British female direction. Generated
+lines are cached by content and direction in `.artifacts/vo/`. Lines that overrun
+their window get squeezed up to 1.1× `atempo`; otherwise the script asks you to
+shorten the copy. A `--music` bed is ducked under the voice via sidechain
 compression. Video frames are stream-copied, so voiced variants are pixel-identical.
 Keep narration factual — the same "never overstate" rule as captions.
 
+## Audience split
+
+Maintain two primary release films rather than a catalogue of overlapping cuts:
+
+- **Customer:** about one minute, shipping extension UI only, plain-language
+  outcomes, safety, and bring-your-own-key positioning. This is the website hero
+  and Chrome Web Store video source.
+- **Developer:** about ninety seconds, real multi-page workflows plus architecture,
+  approval boundaries, trace evidence, and cost. This belongs on the repository
+  and developer section of the website.
+
+Older montage cuts remain useful as source material and internal review evidence,
+but they are not separate public narratives.
+
 ## Store-accurate assets (the dev-only rule)
 
-Anything published on the Chrome Web Store listing (promo video, screenshots) must show
-only what ships in the store package. The trace viewer / observability workspace is
-dev-only — production builds strip it from `dist/` — so it must never appear in store
-assets; pitch it there as "the open-source repo adds a full observability workspace for
-developers" instead. The `store` montage show is the pitch minus the observability
-scenes with an install-flavored outro; `--video store` voices it from the same cached
-lines. The GitHub-facing tour keeps those scenes — right audience, right claim.
+Anything published on the Chrome Web Store listing (customer video, screenshots)
+must show only what ships in the store package. The trace viewer / observability
+workspace is dev-only — production builds strip it from `dist/` — so it must never
+appear in store assets. The developer tour can show trace evidence because that
+audience is being shown the repository workbench, not promised a store feature.
