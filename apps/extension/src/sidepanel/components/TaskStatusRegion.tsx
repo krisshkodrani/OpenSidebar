@@ -1,5 +1,6 @@
 import React from "react";
 import { useTaskUiState } from "../task-ui-state";
+import { useStore } from "../store";
 import { PlanStrip } from "./PlanStrip";
 import { PrimaryTaskRail } from "./PrimaryTaskRail";
 import { RunCard } from "./RunCard";
@@ -18,11 +19,13 @@ export function TaskStatusRegion({
   onSkillRecordingHelp,
 }: TaskStatusRegionProps) {
   const taskUi = useTaskUiState();
+  const delegatedTask = useStore((state) => state.delegatedBrowserTask);
 
   // Status rail and the plan/step timeline share one card: status + controls on
   // top, the step timeline below, separated by a hairline. The stalled-recovery
   // alert stays a sibling — it is an intervention, not part of the run surface.
-  const showRunCard = taskUi.showPrimaryRail || taskUi.showPlanStrip;
+  const showRunCard =
+    taskUi.showPrimaryRail || taskUi.showPlanStrip || delegatedTask != null;
 
   return (
     <section
@@ -31,8 +34,11 @@ export function TaskStatusRegion({
       aria-label="Task status"
     >
       {showRunCard ? (
-        <RunCard running={taskUi.showAmbientActivity} tone={taskUi.rail.tone}>
-          {taskUi.showPrimaryRail ? <PrimaryTaskRail embedded /> : null}
+        <RunCard
+          running={taskUi.showAmbientActivity || delegatedTask != null}
+          tone={taskUi.rail.tone}
+        >
+          <PrimaryTaskRail embedded />
           {taskUi.showPlanStrip ? (
             <PlanStrip
               embedded

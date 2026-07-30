@@ -21,6 +21,7 @@ import { MessageSource } from "../../types";
 import { ToolName } from "../../types";
 import { executeContentTool } from "../tools/bridge";
 import { startKeepalive, stopKeepalive } from "../keepalive";
+import { DelegatedTaskFeedback } from "./delegated-task-feedback";
 
 export const BROWSER_MCP_WS_PORT_KEY = "opensidebar:browserMcpWsPort";
 export const BROWSER_MCP_AUTH_TOKEN_KEY = "opensidebar:browserMcpAuthToken";
@@ -30,6 +31,16 @@ const DELEGATED_TASKS_KEY = "opensidebar:delegatedBrowserTasks:v1";
 
 let client: BrowserBridgeClient | null = null;
 let stopListener: (() => void) | null = null;
+const delegatedTaskFeedback = new DelegatedTaskFeedback((tabId, signal) => {
+  chrome.tabs
+    .sendMessage(tabId, {
+      type: "AGENT_ACTIVITY",
+      requestId: crypto.randomUUID(),
+      source: MessageSource.BACKGROUND,
+      payload: signal,
+    })
+    .catch(() => {});
+});
 
 async function persistConnectionState(
   state: BrowserBridgeConnectionState | "unpaired",
@@ -96,6 +107,7 @@ export async function startBrowserBridge(): Promise<boolean> {
         },
       },
       onUpdate(task) {
+        delegatedTaskFeedback.update(task);
         chromeRuntimeEnvironment.messaging.broadcast({
           type: "DELEGATED_BROWSER_TASK_UPDATE",
           requestId: crypto.randomUUID(),

@@ -112,11 +112,19 @@ describe("DelegatedTaskService", () => {
       },
     };
     const tasks = service(runner);
-    const accepted = (await delegate(tasks, { max_steps: 7 })) as {
+    const accepted = (await delegate(tasks, {
+      max_steps: 7,
+      preferred_tab_id: 77,
+    })) as {
       taskId: string;
       status: string;
+      currentTabId?: number;
     };
-    expect(accepted).toMatchObject({ taskId: "task-1", status: "queued" });
+    expect(accepted).toMatchObject({
+      taskId: "task-1",
+      status: "queued",
+      currentTabId: 77,
+    });
     await vi.waitFor(() => expect(seen).toBeDefined());
     expect(seen?.instruction).toContain(
       "Allowed navigation domains: localhost:4173",
