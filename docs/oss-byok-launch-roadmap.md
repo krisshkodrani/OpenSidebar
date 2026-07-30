@@ -40,15 +40,13 @@ Keep this table aligned with `UserSettings["providerMode"]` and the Settings UI.
 
 | Provider mode | Required key(s) | Role | Launch status | Notes |
 | --- | --- | --- | --- | --- |
-| `fireworks` | `FIREWORKS_API_KEY` / Fireworks key in Settings | Executor and planner | Recommended default | Current docs and E2E default use Fireworks. |
-| `fireworks-deepseek` | Fireworks + `DEEPSEEK_API_KEY` | Fireworks executor, DeepSeek planner/verifier | Advanced | Requires two configured keys. |
-| `openrouter` | `OPENROUTER_API_KEY` / OpenRouter key in Settings | Executor and planner | Supported | Public BYOK option; model availability depends on OpenRouter. |
-| `openrouter-groq` | OpenRouter + Groq key | OpenRouter executor, Groq planner | Advanced | Requires clear setup docs before advertising broadly. |
-| `openai-groq` | OpenAI-compatible key + Groq key | OpenAI-compatible executor, Groq planner | Advanced | Keep documented as advanced unless the setup path is polished. |
-| `moonshot` | `KIMI_API_KEY` | Executor and planner | Supported | Direct Moonshot/Kimi provider mode. |
-| `xiaomi` | `XIAOMI_API_KEY` | Executor and planner | Supported for agent traffic | Xiaomi MiMo support is scoped to the agent provider stack. |
+| `fireworks` | `FIREWORKS_API_KEY` / Fireworks key in Settings | Executor and planner | Supported | Release-verified alternative; internal E2E still defaults to Fireworks. |
+| `openrouter` | `OPENROUTER_API_KEY` / OpenRouter key in Settings | Executor and planner | Recommended default | Public BYOK default with a live, verified model list. |
 
-Launch docs should state that provider behavior, pricing, quotas, retention, and rate limits are governed by the selected provider.
+Experimental and legacy adapters remain available to migrations and internal
+evaluation, but are not offered in the release Settings UI. Launch docs should
+state that provider behavior, pricing, quotas, retention, and rate limits are
+governed by the selected provider.
 
 ## Phase P0: Trust And Installability
 

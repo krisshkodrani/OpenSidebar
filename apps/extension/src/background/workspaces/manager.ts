@@ -102,12 +102,12 @@ export class WorkspaceManager {
 
     let lastError: unknown;
     for (let attempt = 0; attempt < 4; attempt++) {
-    try {
-      const stored = await this.deps.storageLocal.get([
-        STORAGE_KEY_WORKSPACES,
-        STORAGE_KEY_NEXT_NUM,
-      ]);
-      this.workspaces = stored[STORAGE_KEY_WORKSPACES] || [];
+      try {
+        const stored = await this.deps.storageLocal.get([
+          STORAGE_KEY_WORKSPACES,
+          STORAGE_KEY_NEXT_NUM,
+        ]);
+        this.workspaces = stored[STORAGE_KEY_WORKSPACES] || [];
         const highestStoredNumber = this.workspaces.reduce((highest, ws) => {
           const value =
             parseWorkspaceGroupNumber(ws.baseName) ??
@@ -118,18 +118,18 @@ export class WorkspaceManager {
           stored[STORAGE_KEY_NEXT_NUM] || 1,
           highestStoredNumber + 1,
         );
-      this.initialized = true;
-      this.setupListeners();
-      logger.info("workspace", "WorkspaceManager initialized", {
-        count: this.workspaces.length,
-      });
+        this.initialized = true;
+        this.setupListeners();
+        logger.info("workspace", "WorkspaceManager initialized", {
+          count: this.workspaces.length,
+        });
         return;
-    } catch (error) {
+      } catch (error) {
         lastError = error;
-      logger.error("workspace", "Failed to initialize WorkspaceManager", {
-        error,
+        logger.error("workspace", "Failed to initialize WorkspaceManager", {
+          error,
           attempt: attempt + 1,
-      });
+        });
         if (attempt < 3) {
           const delay = 1000 * Math.pow(2, attempt);
           await new Promise((resolve) => setTimeout(resolve, delay));
@@ -185,7 +185,7 @@ export class WorkspaceManager {
       chrome.tabGroups.onRemoved.addListener((group) => {
         this.runChromeEvent("group removal", () =>
           this.handleGroupRemoved(group),
-      );
+        );
       });
     }
 
@@ -203,14 +203,14 @@ export class WorkspaceManager {
           this.handleGroupUpdated(group),
         );
       });
-  }
+    }
 
     if (chrome.tabs?.onUpdated) {
       chrome.tabs.onUpdated.addListener((tabId, changeInfo, tab) => {
         this.runChromeEvent("tab group change", () =>
           this.handleTabGroupChanged(tabId, changeInfo, tab),
         );
-          });
+      });
     }
 
     if (chrome.webNavigation?.onCreatedNavigationTarget) {
@@ -218,7 +218,7 @@ export class WorkspaceManager {
         this.runChromeEvent("page-created navigation target", () =>
           this.handlePageCreatedNavigationTarget(details),
         );
-        });
+      });
     }
 
     this.listenersSetup = true;
@@ -256,12 +256,12 @@ export class WorkspaceManager {
 
     await this.save();
     logger.info("workspace", "Applied user tab-group membership change", {
-        tabId,
+      tabId,
       fromWorkspaceId: currentWorkspace?.id ?? null,
       toWorkspaceId: destinationWorkspace?.id ?? null,
       groupId: changeInfo.groupId,
-      });
-        }
+    });
+  }
 
   private async handleGroupUpdated(group: chrome.tabGroups.TabGroup) {
     const workspace = this.workspaces.find(
@@ -275,7 +275,7 @@ export class WorkspaceManager {
       workspace.name = title;
       workspace.baseName = title;
       changed = true;
-      }
+    }
     if (group.color && group.color !== workspace.color) {
       workspace.color = group.color;
       changed = true;
@@ -500,31 +500,31 @@ export class WorkspaceManager {
         throw new Error("Cannot create a grouped workspace without a tab");
       }
 
-    logger.info("workspace", "Creating workspace started", {
-      name,
-      initialTabId,
-    });
+      logger.info("workspace", "Creating workspace started", {
+        name,
+        initialTabId,
+      });
       await chrome.tabs.get(initialTabId);
       const groupId = await chrome.tabs.group({ tabIds: [initialTabId] });
-        const titled = await this.applyGroupTitle(groupId, name, color);
-        if (!titled) {
+      const titled = await this.applyGroupTitle(groupId, name, color);
+      if (!titled) {
         await chrome.tabs.ungroup(initialTabId).catch(() => undefined);
         throw new Error(`Failed to apply title to workspace group ${groupId}`);
-    }
+      }
 
-    const workspace: Workspace = {
-      id: crypto.randomUUID(),
-      name,
-      baseName: name,
-      color,
-      tabGroupId: groupId,
+      const workspace: Workspace = {
+        id: crypto.randomUUID(),
+        name,
+        baseName: name,
+        color,
+        tabGroupId: groupId,
         tabIds: [initialTabId],
-    };
+      };
       const previousNextWorkspaceNum = this.nextWorkspaceNum;
-    this.workspaces.push(workspace);
-    this.nextWorkspaceNum++;
+      this.workspaces.push(workspace);
+      this.nextWorkspaceNum++;
       try {
-    await this.save();
+        await this.save();
       } catch (error) {
         this.removeWorkspaceRecord(workspace.id);
         this.nextWorkspaceNum = previousNextWorkspaceNum;
@@ -532,12 +532,12 @@ export class WorkspaceManager {
         throw error;
       }
 
-    logger.info("workspace", "Workspace created", {
-      name: workspace.name,
-      id: workspace.id,
-      groupId: workspace.tabGroupId,
-      tabCount: workspace.tabIds.length,
-    });
+      logger.info("workspace", "Workspace created", {
+        name: workspace.name,
+        id: workspace.id,
+        groupId: workspace.tabGroupId,
+        tabCount: workspace.tabIds.length,
+      });
       return { ...workspace, tabIds: [...workspace.tabIds] };
     });
   }
@@ -555,22 +555,22 @@ export class WorkspaceManager {
   ): Promise<void> {
     await this.ensureInitialized();
     await this.withMutationLock(async () => {
-    const ws = this.workspaces.find((w) => w.id === id);
-    if (!ws) return;
+      const ws = this.workspaces.find((w) => w.id === id);
+      if (!ws) return;
       const previous = { ...ws, tabIds: [...ws.tabIds] };
 
-        const groupUpdates: chrome.tabGroups.UpdateProperties = {};
-        if (updates.name !== undefined) groupUpdates.title = updates.name;
-        if (updates.color !== undefined) groupUpdates.color = updates.color;
+      const groupUpdates: chrome.tabGroups.UpdateProperties = {};
+      if (updates.name !== undefined) groupUpdates.title = updates.name;
+      if (updates.color !== undefined) groupUpdates.color = updates.color;
       if (ws.tabGroupId !== null && Object.keys(groupUpdates).length > 0) {
         await chrome.tabGroups.update(ws.tabGroupId, groupUpdates);
-    }
+      }
 
       if (updates.name !== undefined) ws.name = updates.name;
       if (updates.baseName !== undefined) ws.baseName = updates.baseName;
       if (updates.color !== undefined) ws.color = updates.color;
       try {
-    await this.save();
+        await this.save();
       } catch (error) {
         Object.assign(ws, previous);
         if (ws.tabGroupId !== null && Object.keys(groupUpdates).length > 0) {
@@ -595,9 +595,9 @@ export class WorkspaceManager {
   ): Promise<void> {
     await this.ensureInitialized();
     await this.withMutationLock(async () => {
-    const ws = workspaceId
-      ? this.workspaces.find((w) => w.id === workspaceId)
-      : this.getWorkspaceByTabId(tabId);
+      const ws = workspaceId
+        ? this.workspaces.find((w) => w.id === workspaceId)
+        : this.getWorkspaceByTabId(tabId);
       if (!ws || !this.removeTabFromWorkspaceRecord(tabId, ws)) return;
       await this.save();
     });
@@ -642,42 +642,42 @@ export class WorkspaceManager {
       const existing = this.workspaces.find(
         (workspace) => workspace.tabGroupId === group.id,
       );
-    if (existing) {
-      const tabs = await chrome.tabs.query({ groupId: group.id });
+      if (existing) {
+        const tabs = await chrome.tabs.query({ groupId: group.id });
         existing.tabIds = tabs.flatMap((tab) =>
           tab.id === undefined ? [] : [tab.id],
         );
-      await this.save();
+        await this.save();
         return { ...existing, tabIds: [...existing.tabIds] };
-    }
+      }
 
       const workspaceNumber = parseWorkspaceGroupNumber(group.title);
       if (workspaceNumber === null) return null;
-    const tabs = await chrome.tabs.query({ groupId: group.id });
+      const tabs = await chrome.tabs.query({ groupId: group.id });
       const tabIds = tabs.flatMap((tab) =>
         tab.id === undefined ? [] : [tab.id],
       );
       if (tabIds.length === 0) return null;
 
       const baseName = `OS ${workspaceNumber}`;
-    const workspace: Workspace = {
-      id: crypto.randomUUID(),
-      name: group.title || baseName,
-      baseName,
+      const workspace: Workspace = {
+        id: crypto.randomUUID(),
+        name: group.title || baseName,
+        baseName,
         color: group.color || GROUP_COLOR,
-      tabGroupId: group.id,
-      tabIds,
-    };
-    this.workspaces.push(workspace);
+        tabGroupId: group.id,
+        tabIds,
+      };
+      this.workspaces.push(workspace);
       this.nextWorkspaceNum = Math.max(
         this.nextWorkspaceNum,
         workspaceNumber + 1,
       );
-    await this.save();
-    logger.info("workspace", "Workspace restored from tab group", {
-      name: workspace.name,
-      tabCount: tabIds.length,
-    });
+      await this.save();
+      logger.info("workspace", "Workspace restored from tab group", {
+        name: workspace.name,
+        tabCount: tabIds.length,
+      });
       return { ...workspace, tabIds: [...workspace.tabIds] };
     });
   }
@@ -690,10 +690,10 @@ export class WorkspaceManager {
   public async validateWorkspaces(): Promise<void> {
     await this.ensureInitialized();
     await this.withMutationLock(async () => {
-    let changed = false;
+      let changed = false;
       const toDelete = new Set<string>();
 
-    for (const ws of this.workspaces) {
+      for (const ws of this.workspaces) {
         if (ws.tabGroupId === null) {
           const liveTabIds: number[] = [];
           for (const tabId of ws.tabIds) {
@@ -716,9 +716,9 @@ export class WorkspaceManager {
           continue;
         }
 
-      try {
-        const group = await chrome.tabGroups.get(ws.tabGroupId);
-        const tabs = await chrome.tabs.query({ groupId: group.id });
+        try {
+          const group = await chrome.tabGroups.get(ws.tabGroupId);
+          const tabs = await chrome.tabs.query({ groupId: group.id });
           const liveTabIds = tabs.flatMap((tab) =>
             tab.id === undefined ? [] : [tab.id],
           );
@@ -726,43 +726,43 @@ export class WorkspaceManager {
             toDelete.add(ws.id);
             continue;
           }
-        if (
-          liveTabIds.length !== ws.tabIds.length ||
-          !liveTabIds.every((id) => ws.tabIds.includes(id))
-        ) {
-          ws.tabIds = liveTabIds;
-          changed = true;
-        }
-        if (group.title && group.title !== ws.name) {
-          ws.name = group.title;
+          if (
+            liveTabIds.length !== ws.tabIds.length ||
+            !liveTabIds.every((id) => ws.tabIds.includes(id))
+          ) {
+            ws.tabIds = liveTabIds;
+            changed = true;
+          }
+          if (group.title && group.title !== ws.name) {
+            ws.name = group.title;
             ws.baseName = group.title;
-          changed = true;
+            changed = true;
           } else if (!group.title && ws.name) {
             await chrome.tabGroups.update(group.id, {
               title: ws.name,
               color: ws.color,
             });
-        }
-        if (group.color && group.color !== ws.color) {
-          ws.color = group.color;
-          changed = true;
-        }
-      } catch {
+          }
+          if (group.color && group.color !== ws.color) {
+            ws.color = group.color;
+            changed = true;
+          }
+        } catch {
           toDelete.add(ws.id);
+        }
       }
-    }
 
-    for (const id of toDelete) {
+      for (const id of toDelete) {
         changed = this.removeWorkspaceRecord(id) || changed;
-    }
+      }
 
-    if (changed) {
-      await this.save();
-      logger.info("workspace", "Workspace validation complete", {
+      if (changed) {
+        await this.save();
+        logger.info("workspace", "Workspace validation complete", {
           deleted: toDelete.size,
-        remaining: this.workspaces.length,
-      });
-    }
+          remaining: this.workspaces.length,
+        });
+      }
     });
   }
 
@@ -892,41 +892,41 @@ export class WorkspaceManager {
     if (!workspaceId || workspaceId === "default") return;
 
     await this.withMutationLock(async () => {
-    const existing = this.workspaces.find((w) => w.id === workspaceId);
-    if (existing) {
-      if (!existing.tabIds.includes(initialTabId)) {
+      const existing = this.workspaces.find((w) => w.id === workspaceId);
+      if (existing) {
+        if (!existing.tabIds.includes(initialTabId)) {
           if (existing.tabGroupId !== null) {
             await this.addTabToWorkspaceUnlocked(initialTabId, workspaceId);
           } else {
-        existing.tabIds.push(initialTabId);
-        await this.save();
-      }
+            existing.tabIds.push(initialTabId);
+            await this.save();
+          }
         }
-      return;
-    }
+        return;
+      }
 
-    const owner = this.getWorkspaceByTabId(initialTabId);
-    if (owner) {
+      const owner = this.getWorkspaceByTabId(initialTabId);
+      if (owner) {
         logger.warn("workspace", "Tracking workspace skipped - tab has owner", {
+          workspaceId,
+          initialTabId,
+          ownerWorkspaceId: owner.id,
+        });
+        return;
+      }
+
+      this.workspaces.push({
+        id: workspaceId,
+        name: workspaceId,
+        color: GROUP_COLOR,
+        tabGroupId: null,
+        tabIds: [initialTabId],
+      });
+      await this.save();
+      logger.info("workspace", "Created tracking workspace for agent run", {
         workspaceId,
         initialTabId,
-        ownerWorkspaceId: owner.id,
       });
-      return;
-    }
-
-    this.workspaces.push({
-      id: workspaceId,
-      name: workspaceId,
-      color: GROUP_COLOR,
-      tabGroupId: null,
-      tabIds: [initialTabId],
-    });
-    await this.save();
-    logger.info("workspace", "Created tracking workspace for agent run", {
-      workspaceId,
-      initialTabId,
-    });
     });
   }
 
@@ -949,8 +949,8 @@ export class WorkspaceManager {
   public async deleteWorkspace(id: string): Promise<void> {
     await this.ensureInitialized();
     await this.withMutationLock(async () => {
-    const ws = this.workspaces.find((w) => w.id === id);
-    if (!ws) return;
+      const ws = this.workspaces.find((w) => w.id === id);
+      if (!ws) return;
 
       const workspaceIndex = this.workspaces.indexOf(ws);
       const groupedTabIds =
@@ -971,7 +971,7 @@ export class WorkspaceManager {
       }
 
       if (groupedTabIds.length > 0) {
-      try {
+        try {
           await chrome.tabs.ungroup(groupedTabIds);
         } catch (error) {
           const groupStillExists =
@@ -984,11 +984,11 @@ export class WorkspaceManager {
             this.workspaces.splice(workspaceIndex, 0, ws);
             await this.save();
             throw error;
+          }
         }
       }
-    }
 
-    logger.info("workspace", "Workspace deleted", { name: ws.name, id });
+      logger.info("workspace", "Workspace deleted", { name: ws.name, id });
     });
   }
 

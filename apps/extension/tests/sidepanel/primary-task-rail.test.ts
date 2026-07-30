@@ -224,4 +224,46 @@ describe("PrimaryTaskRail label precedence", () => {
       container.remove();
     }
   });
+
+  test("does not repeat the primary task label as secondary text", async () => {
+    const container = document.createElement("div");
+    document.body.appendChild(container);
+    const root = createRoot(container);
+    useStore.setState({
+      agentStatus: AgentStatus.ACTING,
+      statusDetail: "Reviewing invoice",
+      isAgentRunning: true,
+      latestStepLabel: "Reviewing invoice",
+      taskProgress: null,
+      taskCompletion: null,
+      pendingApproval: null,
+      pendingEscalation: null,
+      pendingClarification: null,
+      pendingPlanConfirmation: null,
+      durableRunStatus: null,
+      stagnationState: null,
+      turnProgress: null,
+      sessionMetrics: null,
+      settings: {
+        ...useStore.getState().settings,
+        showSessionMetrics: false,
+      },
+    });
+
+    try {
+      await act(async () => {
+        root.render(React.createElement(PrimaryTaskRail));
+      });
+
+      const labels = [...container.querySelectorAll("span")].filter(
+        (element) => element.textContent === "Reviewing invoice",
+      );
+      expect(labels).toHaveLength(1);
+    } finally {
+      await act(async () => {
+        root.unmount();
+      });
+      container.remove();
+    }
+  });
 });

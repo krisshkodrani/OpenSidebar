@@ -111,13 +111,42 @@ export default function VendorOnboarding() {
   if (submitted) {
     return (
       <main className="fixture-static wizard-app">
-        <section className="wizard-panel wizard-confirmation">
-          <h1>Vendor request submitted</h1>
-          <p>
-            {data.vendorName} was sent for{" "}
-            {requiresDataReview ? "enhanced review" : "standard review"}.
-          </p>
-        </section>
+        <div className="wizard-shell wizard-shell-complete">
+          <section className="wizard-panel wizard-confirmation" aria-labelledby="vendor-complete-title">
+            <div className="wizard-success-mark" aria-hidden="true">✓</div>
+            <p className="wizard-eyebrow wizard-eyebrow-success">REQUEST COMPLETE</p>
+            <h1 id="vendor-complete-title">Vendor request submitted</h1>
+            <p className="wizard-confirmation-lede">
+              {data.vendorName} is now queued for{" "}
+              {requiresDataReview ? "enhanced review" : "standard review"}.
+            </p>
+            <div className="wizard-confirmation-grid">
+              <div>
+                <span>Requester</span>
+                <strong>{data.fullName}</strong>
+              </div>
+              <div>
+                <span>Access scope</span>
+                <strong>{data.dataAccess}</strong>
+              </div>
+              <div>
+                <span>Review path</span>
+                <strong>{requiresDataReview ? "Enhanced review" : "Standard review"}</strong>
+              </div>
+            </div>
+            <p className="wizard-confirmation-footnote">
+              Evidence recorded · confirmation sent to the security queue
+            </p>
+          </section>
+          <aside className="wizard-sidebar wizard-complete-sidebar" aria-label="Request status">
+            <h2>Routing</h2>
+            <dl>
+              <div><dt>Status</dt><dd className="wizard-status-complete">Submitted</dd></div>
+              <div><dt>Request type</dt><dd>{data.requestType}</dd></div>
+              <div><dt>Department</dt><dd>{data.department}</dd></div>
+            </dl>
+          </aside>
+        </div>
       </main>
     );
   }

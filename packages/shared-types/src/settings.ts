@@ -32,11 +32,11 @@ export interface UserSettings {
     | "xiaomi";
   /** @deprecated Use providerMode instead. Kept for migration. */
   provider?: "openrouter" | "openai" | "groq";
-  /** OpenAI API key (required for openai-groq mode) */
+  /** @deprecated Retained for migration; no product-ready OpenAI stack is exposed. */
   openaiApiKey?: string;
   /** Groq API key (required for hybrid modes) */
   groqApiKey?: string;
-  /** Gemini API key (optional) */
+  /** @deprecated Retained for migration; the runtime has no Gemini model seat. */
   geminiApiKey?: string;
   /** Fireworks AI API key (required for fireworks mode) */
   fireworksApiKey?: string;

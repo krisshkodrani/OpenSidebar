@@ -95,12 +95,12 @@ describe("Overlay panel product surfaces", () => {
     await clickOverlayButtonByText(runner, "Save Notes");
     await runner.waitForOverlayText("Notes saved");
 
-    await waitForStoragePath(
+    await waitForStorageStringPrefix(
       runner,
       "local",
       "opensidebar:personalProfile",
       ["notesMarkdown"],
-      notes,
+      "enc:v1:",
     );
     await waitForStoragePath(
       runner,
@@ -111,8 +111,8 @@ describe("Overlay panel product surfaces", () => {
     );
 
     await runner.clickOverlayButton("Close");
-    await runner.waitForOverlayText("Notes on");
-    await clickOverlayButtonByText(runner, "Notes on");
+    await runner.waitForOverlayText("Profile on");
+    await clickOverlayButtonByText(runner, "Profile on");
     await waitForStoragePath(
       runner,
       "local",
@@ -122,10 +122,17 @@ describe("Overlay panel product surfaces", () => {
     );
 
     const snapshot = await runner.readRuntimeSnapshot();
-    expect(snapshot.storage.local["opensidebar:personalProfile"]).toMatchObject({
-      enabled: false,
-      notesMarkdown: notes,
-    });
+    const persistedProfile = snapshot.storage.local[
+      "opensidebar:personalProfile"
+    ] as Record<string, unknown>;
+    expect(persistedProfile).toMatchObject({ enabled: false });
+    expect(persistedProfile.notesMarkdown).toEqual(
+      expect.stringMatching(/^enc:v1:/),
+    );
+    expect(persistedProfile.notesMarkdown).not.toBe(notes);
+    expect(
+      snapshot.storage.local["opensidebar:personalProfile:cek"],
+    ).toEqual(expect.any(String));
     expect(runner.pageErrors).toEqual([]);
   }, 120_000);
 
@@ -161,8 +168,9 @@ describe("Overlay panel product surfaces", () => {
     await runner.waitForOverlayText("Appearance");
     await clickOverlayButtonByText(runner, "dark");
     await clickOverlayButtonByText(runner, "Fast");
+    await clickOverlayText(runner, "Advanced settings");
     await setOverlayCheckboxByLabel(runner, "Allow navigation", false);
-    await setOverlayCheckboxByLabel(runner, "Show session metrics", true);
+    await setOverlayCheckboxByLabel(runner, "Session metrics", true);
     await clickOverlayButtonByText(runner, "Save Changes");
 
     await waitForStoragePath(
@@ -211,7 +219,7 @@ describe("Overlay panel product surfaces", () => {
           local: {
             "opensidebar:savedPrompts": [],
             "opensidebar:savedPromptsSeeded": true,
-            "opensidebar:savedPromptsVersion": 3,
+            "opensidebar:savedPromptsVersion": 4,
           },
         },
       },
@@ -266,7 +274,8 @@ describe("Overlay panel product surfaces", () => {
     const runner = await setupRunner();
     await runner.startMessageCapture();
 
-    await runner.clickOverlayButton("Record Skill");
+    await runner.clickOverlayButton("Website Skills");
+    await clickOverlayButtonByText(runner, "Record Skill");
     await runner.waitForOverlayText("Teach a website workflow");
     await clickOverlayButtonByText(runner, "Start recording");
     await runner.waitForFakeBackgroundHandled("SKILL_RECORDING_START");
@@ -388,7 +397,8 @@ describe("Overlay panel product surfaces", () => {
     const runner = await setupRunner();
     await runner.startMessageCapture();
 
-    await runner.clickOverlayButton("Record Skill");
+    await runner.clickOverlayButton("Website Skills");
+    await clickOverlayButtonByText(runner, "Record Skill");
     await runner.waitForOverlayText("Teach a website workflow");
     await clickOverlayButtonByText(runner, "Start recording");
     await runner.waitForOverlayText("Recording site skill");
@@ -415,7 +425,8 @@ describe("Overlay panel product surfaces", () => {
       },
     });
 
-    await runner.clickOverlayButton("Record Skill");
+    await runner.clickOverlayButton("Website Skills");
+    await clickOverlayButtonByText(runner, "Record Skill");
     await runner.waitForOverlayText("Teach a website workflow");
     await clickOverlayButtonByText(runner, "Start recording");
     await runner.waitForFakeBackgroundHandled("SKILL_RECORDING_START");
@@ -571,6 +582,34 @@ async function waitForStoragePath(
   );
 }
 
+async function waitForStorageStringPrefix(
+  runner: OverlayHarnessRunner,
+  area: "local" | "sync" | "session",
+  key: string,
+  path: string[],
+  prefix: string,
+): Promise<void> {
+  await runner.page.waitForFunction(
+    ({ storageArea, storageKey, valuePath, expectedPrefix }) => {
+      const runtime = window.__opensidebarOverlayRuntime;
+      let current = runtime?.getStorageSnapshot(storageArea)[storageKey];
+      for (const segment of valuePath) {
+        current = (current as Record<string, unknown> | undefined)?.[segment];
+      }
+      return (
+        typeof current === "string" && current.startsWith(expectedPrefix)
+      );
+    },
+    {},
+    {
+      storageArea: area,
+      storageKey: key,
+      valuePath: path,
+      expectedPrefix: prefix,
+    },
+  );
+}
+
 async function waitForStorageKeyMissing(
   runner: OverlayHarnessRunner,
   area: "local" | "sync" | "session",
@@ -688,7 +727,9 @@ async function clickOverlayText(
       const normalize = (value: string | null | undefined) =>
         (value ?? "").replace(/\s+/g, " ").trim();
       return (
-        Array.from(root?.querySelectorAll("button, [role='button'], div") ?? [])
+        Array.from(
+          root?.querySelectorAll("button, summary, [role='button'], div") ?? [],
+        )
           .filter((element) => normalize(element.textContent).includes(expectedText))
           .sort(
             (left, right) =>

@@ -1,6 +1,7 @@
 import { describe, test, expect, beforeEach, vi } from "vitest";
 import "../setup";
 import { useStore } from "../../src/sidepanel/store";
+import { DEFAULT_SETTINGS } from "../../src/sidepanel/store/settings-slice";
 import {
     AgentStatus,
     DEFAULT_ENABLED_SKILL_PACK_IDS,
@@ -441,8 +442,7 @@ describe("SidePanel Store", () => {
     });
 
     test("DEFAULT_SETTINGS includes explicit providerMode", () => {
-        const settings = useStore.getState().settings;
-        expect(settings.providerMode).toBe("fireworks");
+        expect(DEFAULT_SETTINGS.providerMode).toBe("openrouter");
     });
 
     test("addStep pushes step to last assistant message", () => {

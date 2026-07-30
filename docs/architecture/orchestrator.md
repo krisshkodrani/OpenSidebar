@@ -26,6 +26,18 @@ src/background/orchestrator/
   types.ts       — TaskNode, OrchestratorTask, handoff types
 ```
 
+The directory holds ~44 modules in total. Beyond the core files above, the
+scheduler's state maps live behind small **controller classes** (extracted in
+LP-16 Phase 5): `recent-completion-tracker.ts`, `pending-feedback-queue.ts`,
+`completion-waiter-registry.ts`, `pending-interaction-timers.ts`,
+`budget-estimator-registry.ts`, `pending-resolver-registry.ts`,
+`lane-registry.ts`, `workspace-registry.ts` — the orchestrator composes them
+and owns no raw per-workspace `Map` fields. Pure helpers are split out the same
+way (`navigation-goal-heuristics.ts`, `plan-state.ts`,
+`completion-envelope-verification.ts`, `node-heuristics.ts`), lanes live in
+`lane-topology.ts` / `lane-supervisor.ts`, and the skills stack is
+`skills.ts` + `skill-types.ts` + `skill-catalog.ts` + `skill-bodies.ts`.
+
 ## Execution Flow
 
 ```
@@ -50,7 +62,9 @@ User query
 
 ## Task Nodes
 
-Each node is a self-contained sub-task:
+Each node is a self-contained sub-task. Abridged shape (the full interface in
+`orchestrator/types.ts` adds role/labels, skill selection, tool profile,
+verification gate, retries, trajectory, and partial-handoff fields):
 
 ```typescript
 interface TaskNode {
@@ -78,7 +92,8 @@ Focused browser coverage for this contract lives in `apps/extension/tests/e2e/pa
 
 ## Plan Repair
 
-`repairPlanCoverage()` in `task-contract.ts` patches common planner gaps:
+`repairPlanCoverage()` in `agent/task-contract.ts` (note: the `agent/`
+directory, not `orchestrator/`) patches common planner gaps:
 
 - **Missing return leg** — if the query says "go back to X" but no step explicitly returns to X, a return node is added
 - **Missing report targets** — if the query says "report both X and Y" but a target has no read step, one is added
@@ -109,7 +124,12 @@ An optimization that skips the last remaining node when its success criteria are
 
 - Only fires when exactly 1 pending node remains
 - Must pass task contract coverage check
-- Blocked for round-trip tasks
+- Blocked for round-trip and multi-obligation tasks
+
+A separate, earlier **Navigation Goal Gate**
+(`assessNavigationGoalCompletion` + `navigation-goal-heuristics.ts`) can skip
+pure-navigation goals that are already satisfied; it has its own, narrower
+constraints.
 
 ## Sub-Node Scoping
 

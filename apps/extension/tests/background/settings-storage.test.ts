@@ -84,7 +84,7 @@ describe("settings storage", () => {
     });
   });
 
-  test("defaults missing providerMode to Fireworks on load", async () => {
+  test("chooses a provider backed by the available key on load", async () => {
     chrome.storage.sync.get = vi.fn(async () => ({
       userSettings: {
         maxTurns: 30,
@@ -108,6 +108,39 @@ describe("settings storage", () => {
     const settings = await loadSettings();
 
     expect(settings?.providerMode).toBe("fireworks");
+  });
+
+  test("retires a persisted OpenAI-Groq UI stack without a supported fallback", async () => {
+    chrome.storage.sync.get = vi.fn(async () => ({
+      userSettings: {
+        providerMode: "openai-groq",
+        executorModel: "accounts/fireworks/models/minimax-m3",
+        plannerModel: "openai/gpt-oss-120b",
+        maxTurns: 30,
+        theme: "system",
+        showSessionMetrics: true,
+        requireApprovals: true,
+        allowNavigation: true,
+      },
+    })) as any;
+    chrome.storage.local.get = vi.fn(async () => ({
+      openRouterApiKey_local: "",
+      openaiApiKey_local: "sk-openai-test",
+      groqApiKey_local: "gsk-test",
+      geminiApiKey_local: "",
+      fireworksApiKey_local: "",
+      deepseekApiKey_local: "",
+      kimiApiKey_local: "",
+      xiaomiApiKey_local: "",
+      cerebrasApiKey_local: "",
+    })) as any;
+    chrome.storage.session.get = vi.fn(async () => ({})) as any;
+
+    const settings = await loadSettings();
+
+    expect(settings?.providerMode).toBe("openrouter");
+    expect(settings?.executorModel).toBeUndefined();
+    expect(settings?.plannerModel).toBeUndefined();
   });
 
   test("drops text-only executor overrides on load", async () => {
@@ -230,7 +263,7 @@ describe("settings storage", () => {
     chrome.storage.sync.get = vi.fn(async () => ({
       userSettings: {
         providerMode: "fireworks",
-        executorModel: "accounts/fireworks/routers/kimi-k2p6-turbo",
+        executorModel: "accounts/fireworks/models/kimi-k2p6",
         maxTurns: 30,
         theme: "system",
         showSessionMetrics: true,
@@ -245,9 +278,7 @@ describe("settings storage", () => {
 
     const settings = await loadSettings();
 
-    expect(settings?.executorModel).toBe(
-      "accounts/fireworks/routers/kimi-k2p6-turbo",
-    );
+    expect(settings?.executorModel).toBe("accounts/fireworks/models/kimi-k2p6");
   });
 
   test("persists providerMode when saving settings without an explicit mode", async () => {
@@ -339,9 +370,7 @@ describe("settings storage", () => {
 
     const settings = await loadSettings();
 
-    expect(settings?.enabledSkillPackIds).toEqual([
-      "communication-workflows",
-    ]);
+    expect(settings?.enabledSkillPackIds).toEqual(["communication-workflows"]);
   });
 
   test("normalizes invalid image prompt budgets on save and load", async () => {
@@ -447,7 +476,7 @@ describe("settings storage", () => {
 
     const settings = await loadSettings();
 
-    expect(settings?.providerMode).toBe("fireworks-deepseek");
+    expect(settings?.providerMode).toBe("fireworks");
     expect(settings?.deepseekApiKey).toBe("sk-deepseek-test");
   });
 
@@ -476,7 +505,7 @@ describe("settings storage", () => {
 
     const settings = await loadSettings();
 
-    expect(settings?.providerMode).toBe("fireworks-deepseek");
+    expect(settings?.providerMode).toBe("fireworks");
     expect(settings?.deepseekApiKey).toBe("local-deepseek-key");
   });
 

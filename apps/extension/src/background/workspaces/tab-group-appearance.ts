@@ -76,9 +76,9 @@ export async function updateTabGroupAppearance(
   },
 ): Promise<void> {
   return enqueueAppearanceUpdate(workspaceId, async () => {
-  try {
-    const ws = await workspaceManager.getWorkspaceById(workspaceId);
-    if (!ws) return;
+    try {
+      const ws = await workspaceManager.getWorkspaceById(workspaceId);
+      if (!ws) return;
 
       const updates: {
         name?: string;
@@ -86,28 +86,28 @@ export async function updateTabGroupAppearance(
         color?: ColorEnum;
       } = {};
 
-    if (opts.title !== undefined) {
-      if (!ws.baseName) {
+      if (opts.title !== undefined) {
+        if (!ws.baseName) {
           updates.baseName = ws.name;
+        }
+        const truncated = truncateTaskTitle(opts.title);
+        if (truncated) updates.name = truncated;
       }
-      const truncated = truncateTaskTitle(opts.title);
-      if (truncated) updates.name = truncated;
-    }
 
-    if (opts.status !== undefined) {
-      updates.color = colorForStatus(opts.status, opts.completionStatus);
-    }
+      if (opts.status !== undefined) {
+        updates.color = colorForStatus(opts.status, opts.completionStatus);
+      }
 
       if (
         updates.name !== undefined ||
         updates.baseName !== undefined ||
         updates.color !== undefined
       ) {
-      await workspaceManager.updateWorkspace(workspaceId, updates);
-    }
-  } catch {
+        await workspaceManager.updateWorkspace(workspaceId, updates);
+      }
+    } catch {
       // Appearance is best-effort and must not affect task execution.
-  }
+    }
   });
 }
 
@@ -118,16 +118,16 @@ export async function resetTabGroupAppearance(
   workspaceId: string,
 ): Promise<void> {
   return enqueueAppearanceUpdate(workspaceId, async () => {
-  try {
-    const ws = await workspaceManager.getWorkspaceById(workspaceId);
-    if (!ws) return;
-    const originalName = ws.baseName ?? ws.name;
-    await workspaceManager.updateWorkspace(workspaceId, {
-      name: originalName,
-      color: "blue",
-    });
-  } catch {
+    try {
+      const ws = await workspaceManager.getWorkspaceById(workspaceId);
+      if (!ws) return;
+      const originalName = ws.baseName ?? ws.name;
+      await workspaceManager.updateWorkspace(workspaceId, {
+        name: originalName,
+        color: "blue",
+      });
+    } catch {
       // Appearance is best-effort and must not affect task execution.
-  }
+    }
   });
 }

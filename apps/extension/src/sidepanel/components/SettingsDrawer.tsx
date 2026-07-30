@@ -3,7 +3,13 @@ import { Save, X } from "lucide-react";
 import { useStore } from "../store";
 import type { UserSettings } from "../../types";
 import { DEFAULT_ENABLED_SKILL_PACK_IDS } from "../../types";
-import { getProviderKeyStatus } from "../../utils/provider-keys";
+import {
+  clearProviderModelOverrides,
+  getProviderKeyStatus,
+  reconcileProviderSelection,
+  resolveAvailableProviderMode,
+} from "../../utils/provider-keys";
+import { DEFAULT_PROVIDER_MODE } from "../../utils/executor-model-policy";
 import {
   loadSettings,
   normalizeMaxImagePromptTokenEstimate,
@@ -22,6 +28,10 @@ interface Props {
 
 const FOCUSABLE_SELECTOR =
   'button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])';
+const PROVIDER_CREDENTIAL_KEYS: readonly (keyof UserSettings)[] = [
+  "openRouterApiKey",
+  "fireworksApiKey",
+];
 
 export function SettingsDrawer({ isOpen, onClose }: Props) {
   const settings = useStore((s) => s.settings);
@@ -38,14 +48,23 @@ export function SettingsDrawer({ isOpen, onClose }: Props) {
 
   const drawerRef = useRef<HTMLDivElement>(null);
   const closeButtonRef = useRef<HTMLButtonElement>(null);
+  const activeProviderMode = resolveAvailableProviderMode(formState);
+  const openRouterCatalogActive = activeProviderMode === "openrouter";
 
-  const { models, loading: modelsLoading } = useOpenRouterModels(
-    activeTab === "models" ? formState.openRouterApiKey : "",
+  const {
+    error: modelsError,
+    models,
+    loading: modelsLoading,
+  } = useOpenRouterModels(
+    activeTab === "models" && openRouterCatalogActive
+      ? formState.openRouterApiKey
+      : "",
   );
 
   useEffect(() => {
-    setFormState(settings);
-    setIsDirty(false);
+    const nextSettings = reconcileProviderSelection(settings);
+    setFormState(nextSettings);
+    setIsDirty(JSON.stringify(nextSettings) !== JSON.stringify(settings));
     setSiteBlocklistText((settings.siteAccessBlocklist ?? []).join("\n"));
     setSaveStatus(null);
     setIsSaving(false);
@@ -87,7 +106,17 @@ export function SettingsDrawer({ isOpen, onClose }: Props) {
 
   const handleChange: SettingsChangeHandler = (key, value) => {
     setFormState((previous) => {
-      const next = { ...previous, [key]: value };
+      let next = { ...previous, [key]: value };
+      const providerChanged =
+        key === "providerMode" && value !== previous.providerMode;
+      const credentialChanged = PROVIDER_CREDENTIAL_KEYS.includes(key);
+
+      if (credentialChanged) {
+        next = reconcileProviderSelection(next);
+      } else if (providerChanged) {
+        next = clearProviderModelOverrides(next);
+      }
+
       setIsDirty(JSON.stringify(next) !== JSON.stringify(settings));
       return next;
     });
@@ -137,7 +166,10 @@ export function SettingsDrawer({ isOpen, onClose }: Props) {
       .filter(Boolean);
     const nextState: UserSettings = {
       ...formState,
-      providerMode: formState.providerMode ?? "fireworks",
+      providerMode:
+        resolveAvailableProviderMode(formState) ??
+        formState.providerMode ??
+        DEFAULT_PROVIDER_MODE,
       maxImagePromptTokenEstimate: normalizeMaxImagePromptTokenEstimate(
         formState.maxImagePromptTokenEstimate,
       ),
@@ -158,9 +190,11 @@ export function SettingsDrawer({ isOpen, onClose }: Props) {
       }
 
       onClose();
-    } catch (error: any) {
+    } catch (error: unknown) {
       setSaveStatus(
-        `Failed to save settings: ${error?.message ?? String(error)}`,
+        `Failed to save settings: ${
+          error instanceof Error ? error.message : String(error)
+        }`,
       );
     } finally {
       setIsSaving(false);
@@ -193,6 +227,7 @@ export function SettingsDrawer({ isOpen, onClose }: Props) {
             ref={closeButtonRef}
             onClick={onClose}
             disabled={isSaving}
+            aria-label="Close settings"
             className="rounded-full p-2 hover:bg-warm-100 disabled:cursor-not-allowed disabled:opacity-50 dark:hover:bg-warm-800"
           >
             <X size={20} className="text-warm-500" />
@@ -220,11 +255,11 @@ export function SettingsDrawer({ isOpen, onClose }: Props) {
             <ModelsSettingsTab
               formState={formState}
               models={models}
+              modelsError={modelsError}
               modelsLoading={modelsLoading}
               onChange={handleChange}
             />
           ) : null}
-
         </div>
 
         <div className="border-t border-warm-200 bg-warm-100/50 p-4 dark:border-warm-800 dark:bg-warm-900/50">
@@ -255,10 +290,17 @@ function SettingsTabBar({
   onChange: (tab: SettingsTab) => void;
 }) {
   return (
-    <div className="flex border-b border-warm-200 px-4 dark:border-warm-800">
+    <div
+      role="tablist"
+      aria-label="Settings sections"
+      className="flex border-b border-warm-200 px-4 dark:border-warm-800"
+    >
       {(["general", "models"] as const).map((tab) => (
         <button
           key={tab}
+          type="button"
+          role="tab"
+          aria-selected={activeTab === tab}
           className={`border-b-2 px-3 py-2 text-sm font-medium capitalize transition-colors ${
             activeTab === tab
               ? "border-primary-500 text-primary-600 dark:text-primary-400"

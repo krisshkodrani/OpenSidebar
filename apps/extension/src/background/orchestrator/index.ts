@@ -18,8 +18,7 @@ import {
   RunManifest,
   RunTraceWriter,
 } from "../../utils";
-import {
-} from "../../utils/provider-keys";
+import {} from "../../utils/provider-keys";
 import {
   buildPersonalProfilePlannerContext,
   EMPTY_PERSONALIZATION_STATE,
@@ -230,12 +229,20 @@ import {
   sanitizeTurnCheckpoint,
 } from "../agent/checkpoint-types";
 import type { TaskRunProgressInput } from "@shared-types/progress";
-import type {
-  TurnCheckpoint,
-} from "../agent/checkpoint-types";
+import type { TurnCheckpoint } from "../agent/checkpoint-types";
 import type { PendingUserInteraction } from "../agent/loop-types";
 import type { CompletionEnvelope } from "../agent/completion-kernel";
 import { hasUsefulPartialProgressHandoff } from "../agent/partial-progress-handoff";
+import {
+  buildTaskFleetTelemetryProjectionInput,
+  createTaskFleetTelemetryState,
+  recordTaskFleetLoopResult,
+  type TaskFleetTelemetryState,
+} from "./fleet-telemetry";
+import {
+  collectFleetTelemetryLocally,
+  projectFleetTelemetryEnvelope,
+} from "../telemetry";
 
 export * from "./lane-types";
 export * from "./sanitizers";
@@ -253,6 +260,36 @@ const NAVIGATE_READ_RETURN_SKILL_ID = "navigate-read-return";
 const MULTI_TAB_CHECKLIST_SKILL_ID = "multi-tab-checklist-workflow";
 const EXHAUSTIVE_REVIEW_MIN_NODES_FOR_BUDGET_BUMP = 8;
 const EXHAUSTIVE_REVIEW_MAX_TOTAL_TOKENS = 1_600_000;
+
+function getFleetTelemetryRuntimeContext(): {
+  eventId: string;
+  extensionVersion: string;
+  extensionChannel: "stable" | "dev";
+  browserMajor: number;
+  osFamily: string;
+} {
+  const userAgent = typeof navigator === "undefined" ? "" : navigator.userAgent;
+  const browserMajor = Number(
+    /(?:Chrome|Chromium)\/(\d+)/.exec(userAgent)?.[1] ?? 0,
+  );
+  const lowerUserAgent = userAgent.toLowerCase();
+  const osFamily = lowerUserAgent.includes("windows")
+    ? "windows"
+    : lowerUserAgent.includes("mac os")
+      ? "macos"
+      : lowerUserAgent.includes("cros")
+        ? "chromeos"
+        : lowerUserAgent.includes("linux")
+          ? "linux"
+          : "other";
+  return {
+    eventId: crypto.randomUUID(),
+    extensionVersion: chrome.runtime.getManifest().version,
+    extensionChannel: __DEV__ ? "dev" : "stable",
+    browserMajor,
+    osFamily,
+  };
+}
 
 function cloneStructuredProgress(
   progress: Record<string, TaskRunProgressInput> | undefined,
@@ -287,6 +324,7 @@ export class Orchestrator {
     feedback?: string;
   }>();
   private pendingInteractionTimers = new PendingInteractionTimers();
+  private fleetTelemetryByTaskId = new Map<string, TaskFleetTelemetryState>();
   private traceWriter: RunTraceWriter = createHttpRunTraceWriter();
   private traceFallbackWriter = new RunTraceWriter(async (record) => {
     if (record.kind === "manifest") {
@@ -381,7 +419,12 @@ export class Orchestrator {
 
   private emitCompletionScopeTransition(
     task:
-      | { runId?: string; id?: string; workspaceId?: string; nodes?: TaskNode[] }
+      | {
+          runId?: string;
+          id?: string;
+          workspaceId?: string;
+          nodes?: TaskNode[];
+        }
       | null
       | undefined,
     data: {
@@ -451,7 +494,9 @@ export class Orchestrator {
 
     for (const worker of workers?.values() ?? []) {
       if (!skippedNodeIds.has(worker.nodeId)) continue;
-      const node = task.nodes.find((candidate) => candidate.id === worker.nodeId);
+      const node = task.nodes.find(
+        (candidate) => candidate.id === worker.nodeId,
+      );
       this.emitTraceEvent(
         task,
         "worker_cancelled",
@@ -1078,7 +1123,6 @@ export class Orchestrator {
         : {}),
     };
     await saveOrchestratorCheckpoints(checkpoints);
-
   }
 
   private async clearTaskCheckpoint(workspaceId: string): Promise<void> {
@@ -1324,11 +1368,7 @@ export class Orchestrator {
   ): Promise<void> {
     const task = this.tasksByWorkspace.get(workspaceId);
     const interaction = task?.pendingInteraction;
-    if (
-      !task ||
-      !interaction ||
-      isPendingInteractionResolved(interaction)
-    ) {
+    if (!task || !interaction || isPendingInteractionResolved(interaction)) {
       return;
     }
 
@@ -1565,11 +1605,7 @@ export class Orchestrator {
       await this.clearTaskCheckpoint(task.workspaceId);
       this.tasksByWorkspace.delete(task.workspaceId);
       this.cleanupWorkspaceRuntime(task.workspaceId);
-      sendStatus(
-        task.workspaceId,
-        AgentStatus.ERROR,
-        "Recovered task failed",
-      );
+      sendStatus(task.workspaceId, AgentStatus.ERROR, "Recovered task failed");
     });
   }
 
@@ -1747,11 +1783,7 @@ export class Orchestrator {
     this.tasksByWorkspace.set(input.workspaceId, task);
     this.initializeWorkspaceRuntime(input.workspaceId, task.maxWorkers);
     await this.persistTaskCheckpoint(task);
-    sendStatus(
-      input.workspaceId,
-      AgentStatus.PAUSED,
-      "Awaiting user input...",
-    );
+    sendStatus(input.workspaceId, AgentStatus.PAUSED, "Awaiting user input...");
     this.sendProgress(task);
     this.emitPendingInteraction(task);
     this.armPendingInteractionTimeout(task);
@@ -1841,10 +1873,10 @@ export class Orchestrator {
               : hasUsefulPartialProgressHandoff(task.partialHandoff)
                 ? "partial"
                 : task.status === "completed"
-                ? completed === subtaskResults.length
-                  ? "completed"
-                  : "partial"
-                : "failed",
+                  ? completed === subtaskResults.length
+                    ? "completed"
+                    : "partial"
+                  : "failed",
           totalTurnsUsed: 0,
           totalTimeMs:
             (task.finishedAt || Date.now()) -
@@ -2003,6 +2035,10 @@ export class Orchestrator {
         : undefined,
       interactionDelivery: input.interactionDelivery,
     };
+    this.fleetTelemetryByTaskId.set(
+      task.id,
+      createTaskFleetTelemetryState(input.settings),
+    );
     try {
       const rootTab = await chrome.tabs.get(input.tabId);
       task.rootTabUrl = rootTab.url ?? null;
@@ -2030,11 +2066,7 @@ export class Orchestrator {
     );
     this.emitTabCoordinationState(task, "initialized");
 
-    sendStatus(
-      input.workspaceId,
-      AgentStatus.THINKING,
-      "Planning task...",
-    );
+    sendStatus(input.workspaceId, AgentStatus.THINKING, "Planning task...");
     updateTabGroupAppearance(input.workspaceId, {
       title: input.query,
       status: AgentStatus.THINKING,
@@ -2115,13 +2147,18 @@ export class Orchestrator {
           executorModel: input.settings.executorModel,
           plannerModel: input.settings.plannerModel,
           writerModel: input.settings.writerModel,
-          useNitro: input.settings.useNitro, providerMode: input.settings.providerMode,
+          useNitro: input.settings.useNitro,
+          providerMode: input.settings.providerMode,
           provider: input.settings.provider,
-          openaiApiKey: input.settings.openaiApiKey, groqApiKey: input.settings.groqApiKey,
-          temperature: input.settings.temperature, perceptionMode: input.settings.perceptionMode,
-          fireworksApiKey: input.settings.fireworksApiKey, deepseekApiKey: input.settings.deepseekApiKey,
+          openaiApiKey: input.settings.openaiApiKey,
+          groqApiKey: input.settings.groqApiKey,
+          temperature: input.settings.temperature,
+          perceptionMode: input.settings.perceptionMode,
+          fireworksApiKey: input.settings.fireworksApiKey,
+          deepseekApiKey: input.settings.deepseekApiKey,
           kimiApiKey: input.settings.kimiApiKey,
-          xiaomiApiKey: input.settings.xiaomiApiKey, cerebrasApiKey: input.settings.cerebrasApiKey,
+          xiaomiApiKey: input.settings.xiaomiApiKey,
+          cerebrasApiKey: input.settings.cerebrasApiKey,
         };
         const planner = this.deps.createPlanner(
           input.openRouterApiKey,
@@ -2363,7 +2400,8 @@ export class Orchestrator {
               fireworksApiKey: input.settings.fireworksApiKey,
               deepseekApiKey: input.settings.deepseekApiKey,
               kimiApiKey: input.settings.kimiApiKey,
-              xiaomiApiKey: input.settings.xiaomiApiKey, cerebrasApiKey: input.settings.cerebrasApiKey,
+              xiaomiApiKey: input.settings.xiaomiApiKey,
+              cerebrasApiKey: input.settings.cerebrasApiKey,
             },
           );
           this.attachPlannerUsageTrace(
@@ -2405,11 +2443,7 @@ export class Orchestrator {
     await this.persistTaskCheckpoint(task);
 
     this.sendProgress(task);
-    sendStatus(
-      input.workspaceId,
-      AgentStatus.ACTING,
-      "Executing subtasks...",
-    );
+    sendStatus(input.workspaceId, AgentStatus.ACTING, "Executing subtasks...");
 
     try {
       await this.runTask(task, input);
@@ -2466,7 +2500,8 @@ export class Orchestrator {
       fireworksApiKey: input.settings.fireworksApiKey,
       deepseekApiKey: input.settings.deepseekApiKey,
       kimiApiKey: input.settings.kimiApiKey,
-      xiaomiApiKey: input.settings.xiaomiApiKey, cerebrasApiKey: input.settings.cerebrasApiKey,
+      xiaomiApiKey: input.settings.xiaomiApiKey,
+      cerebrasApiKey: input.settings.cerebrasApiKey,
     };
     const verifier = this.deps.createVerifier(
       input.openRouterApiKey,
@@ -2936,7 +2971,9 @@ export class Orchestrator {
                     ...(node.displayLabel ? { label: node.displayLabel } : {}),
                     successCriteria: node.successCriteria,
                     status: "running" as const,
-                    ...(nodeToolProfile ? { toolProfile: nodeToolProfile } : {}),
+                    ...(nodeToolProfile
+                      ? { toolProfile: nodeToolProfile }
+                      : {}),
                   },
                 ],
               },
@@ -2961,7 +2998,8 @@ export class Orchestrator {
           fireworksApiKey: input.settings.fireworksApiKey,
           deepseekApiKey: input.settings.deepseekApiKey,
           kimiApiKey: input.settings.kimiApiKey,
-          xiaomiApiKey: input.settings.xiaomiApiKey, cerebrasApiKey: input.settings.cerebrasApiKey,
+          xiaomiApiKey: input.settings.xiaomiApiKey,
+          cerebrasApiKey: input.settings.cerebrasApiKey,
           temperature: input.settings.temperature,
           perceptionMode: input.settings.perceptionMode,
           maxImagePromptTokenEstimate:
@@ -3127,6 +3165,12 @@ export class Orchestrator {
           task.sessionMetrics,
           result.metrics,
         );
+        let fleetTelemetry = this.fleetTelemetryByTaskId.get(task.id);
+        if (!fleetTelemetry) {
+          fleetTelemetry = createTaskFleetTelemetryState();
+          this.fleetTelemetryByTaskId.set(task.id, fleetTelemetry);
+        }
+        recordTaskFleetLoopResult(fleetTelemetry, result);
         budgetEstimator.recordObservation({
           tokens: result.metrics?.totalTokens ?? 0,
           costUsd: result.metrics?.totalCost ?? 0,
@@ -3384,21 +3428,24 @@ export class Orchestrator {
                   confidence: 0.7,
                 };
               } else {
-                verification = await this.runInLane(task, "verifier", async () =>
-                  verifier.verifyNode({
-                    taskQuery: task.query,
-                    objective: node.description,
-                    successCriteria: node.successCriteria,
-                    output: result.summary,
-                    handoffContext: verifierHandoffContext,
-                    executorOutcome: result.outcome,
-                    evidence: executorEvidence,
-                    requiredEvidenceTypes,
-                    previousUrl: snapshot?.url,
-                    currentUrl,
-                    previousTitle: snapshot?.title,
-                    currentTitle,
-                  }),
+                verification = await this.runInLane(
+                  task,
+                  "verifier",
+                  async () =>
+                    verifier.verifyNode({
+                      taskQuery: task.query,
+                      objective: node.description,
+                      successCriteria: node.successCriteria,
+                      output: result.summary,
+                      handoffContext: verifierHandoffContext,
+                      executorOutcome: result.outcome,
+                      evidence: executorEvidence,
+                      requiredEvidenceTypes,
+                      previousUrl: snapshot?.url,
+                      currentUrl,
+                      previousTitle: snapshot?.title,
+                      currentTitle,
+                    }),
                 );
               }
             }
@@ -3458,11 +3505,7 @@ export class Orchestrator {
               rerouteObjective: verification.rerouteObjective,
               handoffContextChars: verifierHandoffContext.length,
             });
-            emitVerifierStep(
-              task.workspaceId,
-              node.id,
-              verification.reason,
-            );
+            emitVerifierStep(task.workspaceId, node.id, verification.reason);
             this.emitTraceEvent(
               task,
               "node_verified",
@@ -4260,10 +4303,13 @@ export class Orchestrator {
                 remainingNodes: remainingActive.length,
               },
             );
-            const skippedNodeIds = this.ignoreSiblingsAfterRootCompletion(task, {
-              reason: "navigation_goal_already_achieved",
-              result: "Skipped: navigation goal already achieved",
-            });
+            const skippedNodeIds = this.ignoreSiblingsAfterRootCompletion(
+              task,
+              {
+                reason: "navigation_goal_already_achieved",
+                result: "Skipped: navigation goal already achieved",
+              },
+            );
             this.emitCompletionScopeTransition(task, {
               scope: "root",
               status: "sibling_ignored",
@@ -4761,6 +4807,7 @@ export class Orchestrator {
       ...(task.partialHandoff ? { partialHandoff: task.partialHandoff } : {}),
     };
     this.cacheAndPersistCompletion(task.workspaceId, completionPayload);
+    this.queueFleetTelemetry(task, completionPayload.status);
     sendMessage({
       type: "TASK_COMPLETION",
       workspaceId: task.workspaceId,
@@ -5327,6 +5374,29 @@ export class Orchestrator {
     }
   }
 
+  /** Queue a terminal summary without awaiting I/O or retaining raw task data. */
+  private queueFleetTelemetry(
+    task: OrchestratorTask,
+    completionStatus: "completed" | "partial" | "failed" | "stopped",
+  ): void {
+    const state =
+      this.fleetTelemetryByTaskId.get(task.id) ??
+      createTaskFleetTelemetryState();
+    this.fleetTelemetryByTaskId.delete(task.id);
+    void collectFleetTelemetryLocally({
+      storage: chromePersistencePort.local,
+      project: () =>
+        projectFleetTelemetryEnvelope(
+          buildTaskFleetTelemetryProjectionInput({
+            task,
+            state,
+            runtime: getFleetTelemetryRuntimeContext(),
+            completionStatus,
+          }),
+        ),
+    });
+  }
+
   private async sendTerminationCompletion(
     task: OrchestratorTask,
     terminationReason: string,
@@ -5363,6 +5433,7 @@ export class Orchestrator {
       ...(task.partialHandoff ? { partialHandoff: task.partialHandoff } : {}),
     };
     this.cacheAndPersistCompletion(task.workspaceId, completionPayload);
+    this.queueFleetTelemetry(task, completionPayload.status);
     sendMessage({
       type: "TASK_COMPLETION",
       workspaceId: task.workspaceId,
@@ -5546,21 +5617,22 @@ export class Orchestrator {
       this.pendingEscalationResolvers.register(
         packet.escalationId,
         (decision) => {
-        clearTimeout(timeout);
-        this.pendingEscalationResolvers.delete(packet.escalationId);
-        this.emitTraceEvent(
-          task,
-          "escalation_decision_received",
-          {
-            taskId: task.id,
-            nodeId: packet.nodeId,
-            escalationId: packet.escalationId,
-            optionId: decision.optionId,
-          },
-          "system",
-        );
-        resolve(decision);
-      });
+          clearTimeout(timeout);
+          this.pendingEscalationResolvers.delete(packet.escalationId);
+          this.emitTraceEvent(
+            task,
+            "escalation_decision_received",
+            {
+              taskId: task.id,
+              nodeId: packet.nodeId,
+              escalationId: packet.escalationId,
+              optionId: decision.optionId,
+            },
+            "system",
+          );
+          resolve(decision);
+        },
+      );
     });
   }
 
@@ -5720,32 +5792,30 @@ export class Orchestrator {
         this.pendingPlanConfirmationResolvers.register(
           confirmationId,
           (result) => {
-          this.pendingPlanConfirmationResolvers.delete(confirmationId);
-          logger.info("orchestrator", "Plan confirmation received", {
-            taskId: task.id,
-            confirmationId,
-            decision: result.decision,
-            hasFeedback: !!result.feedback,
-          });
-          this.emitTraceEvent(
-            task,
-            "plan_confirmation",
-            {
+            this.pendingPlanConfirmationResolvers.delete(confirmationId);
+            logger.info("orchestrator", "Plan confirmation received", {
               taskId: task.id,
               confirmationId,
               decision: result.decision,
               hasFeedback: !!result.feedback,
-            },
-            "system",
-          );
-          resolve(result);
-        });
+            });
+            this.emitTraceEvent(
+              task,
+              "plan_confirmation",
+              {
+                taskId: task.id,
+                confirmationId,
+                decision: result.decision,
+                hasFeedback: !!result.feedback,
+              },
+              "system",
+            );
+            resolve(result);
+          },
+        );
       },
     );
   }
-
 }
 
 export const orchestrator = new Orchestrator();
-
-

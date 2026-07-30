@@ -1,7 +1,10 @@
 # OpenSidebar — Message Passing Protocol
 
-> **Complete specification** of every message exchanged between extension contexts.
-> All message types are defined in [`types-reference.md`](./types-reference.md).
+> How messages move between extension contexts, and a catalog of the message
+> domains. The **source of truth for payload shapes** is
+> `packages/shared-types/src/messages/` (one module per domain, barrel at
+> `packages/shared-types/src/messages.ts`) — consult the source for exact
+> fields; this doc stays at the name/purpose level so it cannot drift.
 
 ---
 
@@ -81,7 +84,7 @@ const response = await contentBridgePort.sendMessage(tabId, {
   type: "DOM_SNAPSHOT_REQUEST",
   requestId: crypto.randomUUID(),
   source: "background",
-  payload: { includeText: true, refresh: true },
+  payload: { refresh: true },
 });
 ```
 
@@ -111,46 +114,63 @@ Every message carries a `requestId: string` (UUID v4). This enables:
 
 ## Message Catalog
 
-### UI → Service Worker
+`RuntimeMessage` (`packages/shared-types/src/messages.ts`) is a union of **seven
+per-domain sub-unions** — 65 concrete variants in total. Add a new message to
+its domain module, not the barrel; domain-scoped consumers should type against
+the sub-union (e.g. `ContentProtocolMessage`), not `RuntimeMessage`.
 
-| Message Type      | Purpose                     | Payload                                 | Expected Response                                                                             |
-| ----------------- | --------------------------- | --------------------------------------- | --------------------------------------------------------------------------------------------- |
-| `USER_CHAT`       | User sends a chat message   | `{ text, tabId, workspaceId, isFeedback? }` | `AGENT_RESPONSE` (streamed via multiple `STREAM_CHUNK` messages, then final `AGENT_RESPONSE`) |
-| `STOP_AGENT`      | User clicks stop button     | `{ workspaceId? }`                      | `AGENT_STATUS` with `status: IDLE`                                                            |
-| `PAUSE_AGENT`     | User pauses agent execution | `{ workspaceId? }`                      | `AGENT_STATUS` with `status: PAUSED`                                                          |
-| `RESUME_AGENT`    | User resumes paused agent   | `{ workspaceId? }`                      | `AGENT_STATUS` with `status: THINKING`                                                        |
-| `SKIP_SUBTASK`    | User skips current subtask  | `{ taskId }`                            | —                                                                                             |
+Payload shapes are intentionally not duplicated here — read them from the
+domain module. The offscreen `TAB_AUDIO_*` protocol is deliberately excluded
+from the union (see the note at the top of `messages.ts`).
 
-### Service Worker → UI
+### Session — `messages/session.ts` (16 variants)
 
-| Message Type        | Purpose                              | Payload                                                                                          |
-| ------------------- | ------------------------------------ | ------------------------------------------------------------------------------------------------ | ------- | ---------- | --------------------------------------- |
-| `AGENT_STATUS`      | Agent state machine changed          | `{ status: AgentStatus, detail: string }`                                                        |
-| `STREAM_CHUNK`      | Incremental LLM output               | `{ delta: string, done: boolean }`                                                               |
-| `AGENT_RESPONSE`    | Final agent response for a turn      | `{ text, isStreaming, toolCalls }`                                                               |
-| `NAVIGATION_RESUME` | Page load completed after navigation | `{ success, url, error? }`                                                                       |
-| `AGENT_STEP`        | Step timeline update                 | `{ step: AgentStep, update: boolean }`                                                           |
-| `AGENT_STAGNATION`       | Agent stagnation detection signal    | `{ signal: "escalate" \| "resolved", stagnantTurns, url, message }` |
-| `AGENT_TURN`        | Turn progress update                 | `{ turn, maxTurns, provider? }`                                                                  |
-| `TASK_PROGRESS`     | Subtask progress update              | `{ taskId, subtasks, currentIndex, totalTurnsUsed }`                                             |
-| `TASK_COMPLETION`   | Task completion report               | `{ taskId, status, totalTurnsUsed, totalTimeMs, summary, subtaskResults, urlHistory, metrics? }` |
-| `SESSION_METRICS`   | Real-time token/cost tracking        | `{ totalPromptTokens, totalCompletionTokens, totalTokens, totalCost, ... }`                      |
+Chat lifecycle and session control, UI ↔ service worker: `USER_CHAT`,
+`USER_CHAT_ACCEPTED`, `SPEECH_TRANSCRIPTION_REQUEST`, `AGENT_RESPONSE`,
+`AGENT_STATUS`, `STREAM_CHUNK`, `STOP_AGENT`, `PAUSE_AGENT`, `RESUME_AGENT`,
+`SKIP_SUBTASK`, `SIDE_PANEL_OPENED`, `CLOSE_SIDE_PANEL`, `WORKSPACE_SYNC`,
+`SCREENSHOT_CAPTURED`, `DATA_CONTROL_REQUEST`, `DATA_CONTROL_RESULT`.
 
-### Service Worker → Content Script
+Typical flow: `USER_CHAT` → streamed `STREAM_CHUNK`s → final `AGENT_RESPONSE`,
+with `AGENT_STATUS` transitions throughout. UI-sourced messages carry
+`source: UiMessageSource` (sidepanel or overlay `UI`).
 
-| Message Type           | Purpose                     | Payload                               | Expected Response         |
-| ---------------------- | --------------------------- | ------------------------------------- | ------------------------- |
-| `DOM_SNAPSHOT_REQUEST` | Request DOM distillation    | `{ includeText, refresh, showTags? }` | `DOM_SNAPSHOT_RESPONSE`   |
-| `TOOL_EXECUTE`         | Execute a DOM action        | `{ toolName, args, toolCallId }`      | `TOOL_RESULT`             |
-| `DISMISS_MODALS`       | Auto-dismiss modal overlays | `{}`                                  | `DISMISS_MODALS_RESPONSE` |
+### Progress — `messages/progress.ts` (12 variants)
 
-### Content Script → Service Worker
+Service worker → UI progress reporting: `AGENT_STEP`, `AGENT_ACTIVITY`,
+`AGENT_STEP_LABEL`, `AGENT_STAGNATION`, `AGENT_TURN`, `TASK_PROGRESS`,
+`TASK_RECOVERY`, `DURABLE_RUN_STATUS`, `TASK_COMPLETION`, `SESSION_METRICS`,
+`NAVIGATION_RESUME`, `TASK_PAUSED`. Carries the bigger reporting types
+(`SubtaskSummary`, `SessionMetrics`, `PartialProgressHandoff`, lane telemetry).
 
-| Message Type              | Purpose                       | Payload                                                     |
-| ------------------------- | ----------------------------- | ----------------------------------------------------------- |
-| `DOM_SNAPSHOT_RESPONSE`   | Return DOM snapshot           | `{ snapshot: DomSnapshot, durationMs }`                     |
-| `TOOL_RESULT`             | Return tool execution result  | `{ toolCallId, success, result, navigated }`                |
-| `DISMISS_MODALS_RESPONSE` | Report dismissed modals count | `{ dismissed: number, remainingOverlay?, capturedTexts[] }` |
+### Interaction — `messages/interaction.ts` (8 variants)
+
+Request/response pairs that block on the user: `APPROVAL_REQUEST/RESPONSE`
+(high-risk tool gating), `ESCALATION_REQUEST/DECISION` (with
+`EscalationPacket`), `PLAN_CONFIRMATION_REQUEST/RESPONSE`,
+`CLARIFICATION_REQUEST/RESPONSE`.
+
+### Content protocol — `messages/content-protocol.ts` (13 variants)
+
+Service worker ↔ content script: `DOM_SNAPSHOT_REQUEST` (payload
+`{ refresh, autoDismiss? }`) / `DOM_SNAPSHOT_RESPONSE`, `TOOL_EXECUTE` /
+`TOOL_RESULT`, `DISMISS_MODALS` / `DISMISS_MODALS_RESPONSE`,
+`CONTENT_SCRIPT_READY`, `DOM_READY_PROBE` / `DOM_READY_ACK`,
+`SCROLL_TO_POSITION` / `SCROLL_TO_POSITION_RESPONSE`, `PRESENCE_SUSPEND` /
+`PRESENCE_RESUME`.
+
+### Skills — `messages/skills.ts` (9 variants)
+
+Website-skill recording and CRUD: `SKILL_RECORDING_START/STOP/CANCEL/EVENT/STATUS`,
+`USER_SKILL_SAVE/LIST/DELETE/USAGE_STATUS`.
+
+### Watch mode — `messages/watch-mode.ts` (5 variants)
+
+Passive monitoring: `PASSIVE_MONITOR_START/STOP/STATUS/PAGE_ACTIVITY/SUGGESTION`.
+
+### E2E hooks — `messages/e2e.ts` (2 variants)
+
+Test-only seams: `E2E_SEED_PENDING_INTERACTION`, `E2E_RAIL_UPDATE`.
 
 ---
 

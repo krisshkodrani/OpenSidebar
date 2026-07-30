@@ -8,6 +8,8 @@ import {
   MODEL_EXECUTOR_EMPTY_RESPONSE_FALLBACK,
   MODEL_JUDGE,
   MODEL_PLANNER,
+  OPENROUTER_MODEL_PLANNER,
+  FIREWORKS_MODEL_EXECUTOR,
   MOONSHOT_MODEL_EXECUTOR,
   MOONSHOT_MODEL_PLANNER,
   DEEPSEEK_MODEL_PLANNER,
@@ -296,7 +298,7 @@ describe("LLMClient construction & tier switching", () => {
   test("switchToPlanner changes model and isPlannerTier", () => {
     const client = makeClient();
     client.switchToPlanner();
-    expect(client.getCurrentModel()).toBe(MODEL_PLANNER);
+    expect(client.getCurrentModel()).toBe(OPENROUTER_MODEL_PLANNER);
     expect(client.isPlannerTier()).toBe(true);
   });
 
@@ -316,7 +318,7 @@ describe("LLMClient construction & tier switching", () => {
 
     client.switchToPlanner();
     const plannerInfo = client.getActiveProviderInfo();
-    expect(plannerInfo.model).toBe(MODEL_PLANNER);
+    expect(plannerInfo.model).toBe(OPENROUTER_MODEL_PLANNER);
   });
 
   test("hasWriterModel reflects whether a writer model is configured", () => {
@@ -376,7 +378,7 @@ describe("LLMClient construction & tier switching", () => {
     expect(sentModel).toBe(MODEL_JUDGE);
     expect(MODEL_JUDGE).toBe("accounts/fireworks/models/gpt-oss-120b");
     // Tier restored so the next turn routes normally.
-    expect(client.getCurrentModel()).toBe(MODEL_EXECUTOR);
+    expect(client.getCurrentModel()).toBe(FIREWORKS_MODEL_EXECUTOR);
   });
 
   test("judge seat keeps planner-pool reuse on non-Fireworks planner providers", async () => {
@@ -553,7 +555,7 @@ describe("complete() payload & response", () => {
 
     client.switchToPlanner();
     await client.complete(baseRequest());
-    expect(sentModel).toBe(MODEL_PLANNER);
+    expect(sentModel).toBe(OPENROUTER_MODEL_PLANNER);
   });
 
   test("uses executor fallback model after runtime fallback activation", async () => {
@@ -639,7 +641,7 @@ describe("complete() payload & response", () => {
     expect(requests[0].url).toBe(
       "https://api.fireworks.ai/inference/v1/chat/completions",
     );
-    expect(requests[0].payload.model).toBe(MODEL_EXECUTOR);
+    expect(requests[0].payload.model).toBe(FIREWORKS_MODEL_EXECUTOR);
     expect(requests[0].payload.stream).toBe(true);
     expect(requests[1].url).toBe("https://api.deepseek.com/chat/completions");
     expect(requests[1].payload.model).toBe(DEEPSEEK_MODEL_PLANNER);
@@ -677,7 +679,7 @@ describe("complete() payload & response", () => {
     expect(client.getCurrentProvider()).toBe("fireworks");
     expect(client.getActiveProviderInfo()).toEqual({
       providerId: "fireworks",
-      model: MODEL_EXECUTOR,
+      model: FIREWORKS_MODEL_EXECUTOR,
     });
   });
 

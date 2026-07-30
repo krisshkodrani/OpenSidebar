@@ -4,18 +4,18 @@ Use this checklist when preparing a new OpenSidebar release.
 
 ## Current RC Status - 2026-07-30
 
-The version of record is `0.6.1`; `0.6.0` was the previous package.
+The version of record is `0.7.0`; `0.6.0` was the previous published package.
 
 | Gate | Status | Evidence / next action |
 | --- | --- | --- |
-| Code fixes | Pass | Composer-caret and workspace-grouping fixes are merged into `main`, with focused regression coverage. |
-| Listing material | Pass | Customer-only store copy, four screenshots, promo tile, and marquee are generated under `.artifacts/store/`; developer-only viewer images are excluded. |
-| Audience videos | Pass | Customer and developer films are rendered with British female narration under `.artifacts/publish/`. |
-| Manifest/version alignment | Pass | `package.json` and `apps/extension/manifest.json` declare `0.6.1`; confirm `dist/manifest.json` matches after the release build. |
-| Site material | Pass | The built site exposes one customer tour and one developer tour from the cache-immutable `v7` media path. |
-| Full release verification | Pass | Lint, typecheck, 5,231 extension tests, production build, dist validation, and production audit passed on 2026-07-30. |
-| Native task completion | Pass | After rebuilding the generated fixture SPA and fixing the local mock's masked-password sequencing, both deterministic native flows passed together on 2026-07-30: login completed in 5 turns and navigation in 3. Earlier online-shop/cross-page recordings remain excluded from release material. |
-| Release package/preflight | Package pass | The `0.6.1` zip, checksum, notes, and manifest are generated; rebuild on the release commit and run `corepack pnpm run release:preflight` before tagging. |
+| Code and UI | Passed | Compact task rail, OpenRouter default/recommendation, provider migration, local reliability summaries, recovery paths, and the staged composer/workspace fixes are present; focused tests passed. |
+| Listing material | Passed | Rebuilt the four customer-only screenshots, promo tile, and marquee under `.artifacts/store/`; OpenRouter is selected in the provider capture and developer-only viewer images are excluded. |
+| Audience videos | Passed | Revalidated both British-female films under `.artifacts/publish/`; rebuilt the customer film with OpenRouter attribution and retained the already accurate developer film. |
+| Manifest/version alignment | Passed | `package.json`, source manifest, and built `dist/manifest.json` declare `0.7.0`. |
+| Site material | Passed | Rebuilt and verified both tours and posters from the cache-immutable `v8` media path; the production site build passed with no failed media requests. |
+| Full release verification | Passed | RFC validation, lint, typecheck, 5,286 extension tests, production build, dist validation, and production audit passed on the reconciled candidate. |
+| Native task completion | Pending | Re-run deterministic native login/navigation and the native side-panel smoke on the exact release commit. |
+| Release package/preflight | Pending exact commit | Preliminary `0.7.0` zip, checksum, notes, and manifest pass `release:preflight --allow-dirty`; regenerate and run the strict preflight after committing. |
 | Chrome Web Store upload | Pending | Upload the verified zip, four screenshots, promo graphics, listing copy, and the public URL of the customer video. |
 
 ## 1. Freeze The Release Candidate
@@ -102,12 +102,12 @@ For a broad GitHub-first BYOK release, also confirm:
 GitHub CLI draft command after final manual spot-check:
 
 ```bash
-gh release create v0.6.1 \
+gh release create v0.7.0 \
   --draft \
-  --title "OpenSidebar v0.6.1 OSS BYOK Preview" \
-  --notes-file .artifacts/releases/opensidebar-v0.6.1-release-notes.md \
-  .artifacts/releases/opensidebar-v0.6.1.zip \
-  .artifacts/releases/opensidebar-v0.6.1.zip.sha256
+  --title "OpenSidebar v0.7.0 OSS BYOK Preview" \
+  --notes-file .artifacts/releases/opensidebar-v0.7.0-release-notes.md \
+  .artifacts/releases/opensidebar-v0.7.0.zip \
+  .artifacts/releases/opensidebar-v0.7.0.zip.sha256
 ```
 
 ## Current Known Caveat

@@ -169,21 +169,21 @@ export const GENERATED_PROMPTS = {
   }, // prompts/runtime/reflections/text_only_correction.md
   "ui.saved_prompt.extract_links": {
     id: "ui.saved_prompt.extract_links",
-    version: "v1",
+    version: "v2",
     description: "Default sidepanel saved prompt for extracting page links.",
-    template: "Read the current page and collect every link with its text and URL. Return a formatted list via done().",
+    template: "Read the current page and collect every link with its visible text and URL. Present the results as a concise, readable list.",
   }, // prompts/ui/saved-prompts/extract_links.md
   "ui.saved_prompt.fill_form": {
     id: "ui.saved_prompt.fill_form",
-    version: "v1",
+    version: "v2",
     description: "Default sidepanel saved prompt for form completion.",
-    template: "Fill out the form on this page using reasonable placeholder values. For each field, pick a realistic value based on the label. Do not submit until all fields are filled.",
+    template: "Help me complete the form on this page using information already visible or values I have provided. Ask me for any required personal or sensitive information that is missing. Do not invent personal details, and do not submit the form without my approval.",
   }, // prompts/ui/saved-prompts/fill_form.md
   "ui.saved_prompt.summarize_page": {
     id: "ui.saved_prompt.summarize_page",
-    version: "v1",
+    version: "v2",
     description: "Default sidepanel saved prompt for concise page summarization.",
-    template: "Read the current page and provide a concise summary of the main content. Return the summary via done().",
+    template: "Read the current page and provide a concise summary of its main content, key points, and any important caveats.",
   }, // prompts/ui/saved-prompts/summarize_page.md
 } as const satisfies Record<string, PromptDefinition>;
 
@@ -215,7 +215,7 @@ export const GENERATED_PROMPT_DESCRIPTORS = {
   "agent.reflection.handoff": { id: "agent.reflection.handoff", version: "v2", hash: "d066417c" },
   "agent.reflection.pivot": { id: "agent.reflection.pivot", version: "v2", hash: "37b517d3" },
   "agent.reflection.text_only_correction": { id: "agent.reflection.text_only_correction", version: "v2", hash: "839e5e1d" },
-  "ui.saved_prompt.extract_links": { id: "ui.saved_prompt.extract_links", version: "v1", hash: "cca36bed" },
-  "ui.saved_prompt.fill_form": { id: "ui.saved_prompt.fill_form", version: "v1", hash: "ca72357a" },
-  "ui.saved_prompt.summarize_page": { id: "ui.saved_prompt.summarize_page", version: "v1", hash: "c3a7bf4d" },
+  "ui.saved_prompt.extract_links": { id: "ui.saved_prompt.extract_links", version: "v2", hash: "6c2a1dd0" },
+  "ui.saved_prompt.fill_form": { id: "ui.saved_prompt.fill_form", version: "v2", hash: "8de67cd3" },
+  "ui.saved_prompt.summarize_page": { id: "ui.saved_prompt.summarize_page", version: "v2", hash: "4fbf7a70" },
 } as const satisfies Record<string, PromptDescriptor>;

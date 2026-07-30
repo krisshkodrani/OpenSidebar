@@ -19,7 +19,10 @@ import {
 import { CREATE_TAB_DEF, CLOSE_TAB_DEF, SWITCH_TAB_DEF } from "./definitions";
 
 export function registerTabTools(toolRegistry: ToolRegistry): void {
-    toolRegistry.register(ToolName.CREATE_TAB, CREATE_TAB_DEF, async (args, sourceTabId) => {
+  toolRegistry.register(
+    ToolName.CREATE_TAB,
+    CREATE_TAB_DEF,
+    async (args, sourceTabId) => {
       const allowedOrigins = await getAllowedNavigationOrigins();
       if (allowedOrigins.length > 0) {
         const targetOrigin = normalizeOrigin(args.url as string);
@@ -49,51 +52,52 @@ export function registerTabTools(toolRegistry: ToolRegistry): void {
       });
 
       if (sourceWorkspace && tab.id) {
-          logger.info("tools", "create_tab grouped", {
-            tabId: tab.id,
-            workspace: sourceWorkspace.name,
-          });
-          return `Created new tab (ID: ${tab.id}) with URL: ${urlResult.value} (added to ${sourceWorkspace.name})`;
+        logger.info("tools", "create_tab grouped", {
+          tabId: tab.id,
+          workspace: sourceWorkspace.name,
+        });
+        return `Created new tab (ID: ${tab.id}) with URL: ${urlResult.value} (added to ${sourceWorkspace.name})`;
       }
 
       return `Created new tab (ID: ${tab.id}) with URL: ${urlResult.value}`;
-    });
+    },
+  );
 
-    toolRegistry.register(
-      ToolName.CLOSE_TAB,
-      CLOSE_TAB_DEF,
-      async (args, tabId) => {
-        const targetTabId = (args.tabId as number) || tabId;
-        logger.info("tools", "close_tab", {
-          targetTabId,
-          requestedTabId: args.tabId,
-          currentTabId: tabId,
-        });
-        try {
-          await chrome.tabs.remove(targetTabId);
-          return `Closed tab ${targetTabId}`;
-        } catch (e: any) {
-          return `Error closing tab ${targetTabId}: ${e.message}`;
-        }
-      },
-    );
-  
-    toolRegistry.register(ToolName.SWITCH_TAB, SWITCH_TAB_DEF, async (args) => {
-      const targetTabId = args.tabId as number;
-      logger.info("tools", "switch_tab", { targetTabId });
+  toolRegistry.register(
+    ToolName.CLOSE_TAB,
+    CLOSE_TAB_DEF,
+    async (args, tabId) => {
+      const targetTabId = (args.tabId as number) || tabId;
+      logger.info("tools", "close_tab", {
+        targetTabId,
+        requestedTabId: args.tabId,
+        currentTabId: tabId,
+      });
       try {
-        const targetTab = await chrome.tabs.get(targetTabId);
-        const targetUrl = getTabUrl(targetTab);
-        if (!isUsableTabUrl(targetUrl)) {
-          return (
-            `Error: Cannot switch to tab ${targetTabId} (${targetUrl || "about:blank"}) for this web task. ` +
-            "Browser, extension, blank, and internal pages cannot run page tools. Use a controllable web tab from list_tabs or navigate the current page instead."
-          );
-        }
-        await chrome.tabs.update(targetTabId, { active: true });
-        return `Switched to tab ${targetTabId}. Fresh page snapshot is available.`;
+        await chrome.tabs.remove(targetTabId);
+        return `Closed tab ${targetTabId}`;
       } catch (e: any) {
-        return `Error switching to tab ${targetTabId}: ${e.message}`;
+        return `Error closing tab ${targetTabId}: ${e.message}`;
       }
-    });
+    },
+  );
+
+  toolRegistry.register(ToolName.SWITCH_TAB, SWITCH_TAB_DEF, async (args) => {
+    const targetTabId = args.tabId as number;
+    logger.info("tools", "switch_tab", { targetTabId });
+    try {
+      const targetTab = await chrome.tabs.get(targetTabId);
+      const targetUrl = getTabUrl(targetTab);
+      if (!isUsableTabUrl(targetUrl)) {
+        return (
+          `Error: Cannot switch to tab ${targetTabId} (${targetUrl || "about:blank"}) for this web task. ` +
+          "Browser, extension, blank, and internal pages cannot run page tools. Use a controllable web tab from list_tabs or navigate the current page instead."
+        );
+      }
+      await chrome.tabs.update(targetTabId, { active: true });
+      return `Switched to tab ${targetTabId}. Fresh page snapshot is available.`;
+    } catch (e: any) {
+      return `Error switching to tab ${targetTabId}: ${e.message}`;
+    }
+  });
 }

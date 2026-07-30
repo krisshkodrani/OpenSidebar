@@ -43,7 +43,8 @@ describe("Saved Prompts CRUD", () => {
     expect(prompts[0].category).toBe("Research");
     // Seeded flag should be set
     expect(stored[SEEDED_KEY]).toBe(true);
-    expect(stored[VERSION_KEY]).toBe(3);
+    expect(stored[VERSION_KEY]).toBe(4);
+    expect(prompts[0].content).not.toContain("done()");
   });
 
   test("loadSavedPrompts does not re-seed after first load", async () => {
@@ -58,23 +59,61 @@ describe("Saved Prompts CRUD", () => {
     expect(prompts).toEqual([]);
   });
 
-  test("v2->v3 migration removes challenge prompts", async () => {
+  test("v2 migration removes challenge prompts and refreshes untouched defaults", async () => {
     stored[SEEDED_KEY] = true;
     stored[VERSION_KEY] = 2;
     stored[STORAGE_KEY] = [
-      { id: "c1", title: "Browser Navigation Challenge", content: "...", category: "Challenges", createdAt: 1, updatedAt: 1 },
-      { id: "r1", title: "Summarize this page", content: "...", category: "Research", createdAt: 1, updatedAt: 1 },
+      {
+        id: "c1",
+        title: "Browser Navigation Challenge",
+        content: "...",
+        category: "Challenges",
+        createdAt: 1,
+        updatedAt: 1,
+      },
+      {
+        id: "r1",
+        title: "Summarize this page",
+        content:
+          "Read the current page and provide a concise summary of the main content. Return the summary via done().",
+        category: "Research",
+        createdAt: 1,
+        updatedAt: 1,
+      },
     ];
     const prompts = await loadSavedPrompts();
     expect(prompts).toHaveLength(1);
     expect(prompts[0].title).toBe("Summarize this page");
-    expect(stored[VERSION_KEY]).toBe(3);
+    expect(prompts[0].content).not.toContain("done()");
+    expect(stored[VERSION_KEY]).toBe(4);
+  });
+
+  test("v3->v4 migration preserves edited default prompts", async () => {
+    stored[SEEDED_KEY] = true;
+    stored[VERSION_KEY] = 4;
+    stored[STORAGE_KEY] = [
+      {
+        id: "edited",
+        title: "Summarize this page",
+        content: "Summarize this page in exactly five bullets.",
+        category: "Research",
+        createdAt: 1,
+        updatedAt: 2,
+      },
+    ];
+
+    const prompts = await loadSavedPrompts();
+
+    expect(prompts[0].content).toBe(
+      "Summarize this page in exactly five bullets.",
+    );
+    expect(stored[VERSION_KEY]).toBe(4);
   });
 
   test("addSavedPrompt creates a prompt and persists it", async () => {
     // Mark as seeded so defaults don't interfere
     stored[SEEDED_KEY] = true;
-    stored[VERSION_KEY] = 3;
+    stored[VERSION_KEY] = 4;
 
     const prompt = await addSavedPrompt("Test Title", "Test content", "Research");
 
@@ -93,7 +132,7 @@ describe("Saved Prompts CRUD", () => {
 
   test("addSavedPrompt trims whitespace", async () => {
     stored[SEEDED_KEY] = true;
-    stored[VERSION_KEY] = 3;
+    stored[VERSION_KEY] = 4;
     const prompt = await addSavedPrompt("  Title  ", "  Content  ", "  Cat  ");
     expect(prompt.title).toBe("Title");
     expect(prompt.content).toBe("Content");
@@ -102,7 +141,7 @@ describe("Saved Prompts CRUD", () => {
 
   test("addSavedPrompt appends to existing prompts", async () => {
     stored[SEEDED_KEY] = true;
-    stored[VERSION_KEY] = 3;
+    stored[VERSION_KEY] = 4;
     await addSavedPrompt("First", "Content 1", "");
     await addSavedPrompt("Second", "Content 2", "");
 
@@ -114,7 +153,7 @@ describe("Saved Prompts CRUD", () => {
 
   test("addSavedPrompt and updateSavedPrompt do not mutate loaded storage objects", async () => {
     stored[SEEDED_KEY] = true;
-    stored[VERSION_KEY] = 3;
+    stored[VERSION_KEY] = 4;
     stored[STORAGE_KEY] = Object.freeze([
       Object.freeze({
         id: "frozen-prompt",
@@ -147,7 +186,7 @@ describe("Saved Prompts CRUD", () => {
 
   test("updateSavedPrompt updates fields and updatedAt", async () => {
     stored[SEEDED_KEY] = true;
-    stored[VERSION_KEY] = 3;
+    stored[VERSION_KEY] = 4;
     const prompt = await addSavedPrompt("Original", "Original content", "Cat");
     const originalUpdatedAt = prompt.updatedAt;
 
@@ -168,7 +207,7 @@ describe("Saved Prompts CRUD", () => {
 
   test("updateSavedPrompt returns unchanged list for unknown id", async () => {
     stored[SEEDED_KEY] = true;
-    stored[VERSION_KEY] = 3;
+    stored[VERSION_KEY] = 4;
     await addSavedPrompt("Test", "Content", "");
     const result = await updateSavedPrompt("nonexistent-id", { title: "New" });
     expect(result).toHaveLength(1);
@@ -177,7 +216,7 @@ describe("Saved Prompts CRUD", () => {
 
   test("deleteSavedPrompt removes the prompt", async () => {
     stored[SEEDED_KEY] = true;
-    stored[VERSION_KEY] = 3;
+    stored[VERSION_KEY] = 4;
     const p1 = await addSavedPrompt("First", "C1", "");
     await addSavedPrompt("Second", "C2", "");
 
@@ -188,7 +227,7 @@ describe("Saved Prompts CRUD", () => {
 
   test("deleteSavedPrompt with unknown id returns unchanged list", async () => {
     stored[SEEDED_KEY] = true;
-    stored[VERSION_KEY] = 3;
+    stored[VERSION_KEY] = 4;
     await addSavedPrompt("Test", "Content", "");
     const result = await deleteSavedPrompt("nonexistent-id");
     expect(result).toHaveLength(1);

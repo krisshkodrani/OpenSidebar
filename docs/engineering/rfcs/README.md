@@ -146,6 +146,21 @@ stamped 2026-07-24** — all three §10 questions resolved in session (default
 | --- | --- | --- | --- |
 | LP-24 | [The Presence Layer: a visible, natural agent cursor](lp-0024-presence-layer.md) | Pages change with no visible cause during runs and demos; a naive synthetic cursor (teleport + pulse) misleads more than it explains; per-control-type motion grammar, perception cleanliness, and determinism have to be designed, not bolted on | None (builds beside the existing in-page HUD; shares the LP-12 Phase B iframe constraint) |
 
+## Fleet telemetry series (2026-07-27)
+
+RFC prompted by issue #120: trivial published-extension-shaped tasks can
+run until guardrails because no `done()` call occurs, while the current local
+observability stack cannot measure how often that happens across installed
+extensions. The proposal is explicit-opt-in and content-free by construction:
+AWS S3/Athena remains authoritative, and a backend-only Bluebox OTLP projection
+adds natural-language incident queries. **Decision stamped 2026-07-27; Phase 1
+may implement the closed contract and pure projector, but no external collection
+may begin before the RFC's consent and disclosure gates are satisfied.**
+
+| # | RFC | Problem | Depends on |
+| --- | --- | --- | --- |
+| LP-25 | [Optional privacy-preserving fleet telemetry](lp-0025-optional-fleet-telemetry.md) | Published instances have no safe reliability signal; issue #120's missing-`done()` loop cannot be measured by version/model at fleet scale without risking browsing-data collection | LP-7 vocabulary and backend-only OTLP precedent; does not upload LP-7 traces |
+
 ## JobAgent agent-platform series (2026-07-23)
 
 Draft RFC from the 2026-07-23 pivot that deleted the JobAgent web console UI in

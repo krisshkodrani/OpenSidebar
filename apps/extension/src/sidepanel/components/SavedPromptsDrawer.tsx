@@ -7,8 +7,6 @@ interface Props {
   isOpen: boolean;
   onClose: () => void;
   onSelectPrompt: (content: string) => void;
-  /** Pre-fill the form with content (e.g. from "Save current" in picker) */
-  prefillContent?: string;
 }
 
 const FOCUSABLE_SELECTOR =
@@ -18,7 +16,6 @@ export function SavedPromptsDrawer({
   isOpen,
   onClose,
   onSelectPrompt,
-  prefillContent,
 }: Props) {
   const savedPrompts = useStore((s) => s.savedPrompts);
   const addSavedPrompt = useStore((s) => s.addSavedPrompt);
@@ -33,19 +30,12 @@ export function SavedPromptsDrawer({
   const drawerRef = useRef<HTMLDivElement>(null);
   const closeButtonRef = useRef<HTMLButtonElement>(null);
 
-  // Reset form when drawer opens/closes
+  // Reset the form whenever a freshly-mounted drawer opens.
   useEffect(() => {
     if (isOpen) {
-      if (prefillContent) {
-        setIsEditing("new");
-        setFormTitle("");
-        setFormContent(prefillContent);
-        setFormCategory("");
-      } else {
-        setIsEditing(null);
-      }
+      setIsEditing(null);
     }
-  }, [isOpen, prefillContent]);
+  }, [isOpen]);
 
   // Focus trap + Escape
   useEffect(() => {
@@ -251,7 +241,7 @@ export function SavedPromptsDrawer({
                           {prompt.content}
                         </p>
                       </div>
-                      <div className="flex items-center gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity shrink-0">
+                      <div className="flex shrink-0 items-center gap-0.5">
                         <button
                           onClick={(e) => {
                             e.stopPropagation();

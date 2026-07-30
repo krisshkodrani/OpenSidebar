@@ -1,5 +1,20 @@
 # Scaling Skills Across Environments Without Prompt Bloat
 
+> **Status: implemented.** The routing layer described here shipped in
+> `orchestrator/skills.ts` (`resolveEligibleSkillCandidates` inside
+> `selectPrimarySkill`, candidate cap `MAX_ROUTED_SKILL_CANDIDATES = 32`),
+> with types in `skill-types.ts` and the catalog/bodies in
+> `skill-catalog.ts` / `skill-bodies.ts`. The implementation matches this
+> design closely; naming nit: the matcher input field is `query` (in
+> `SkillMatcherInput`), not `taskText` as illustrated below. A runtime
+> ablation switch (`setDisabledSkillIds`) also exists for selection-time
+> skill disabling. Note the current catalog packages things slightly
+> differently than the layer examples: most "enterprise" examples below
+> (list filter/sort, catalog ordering, chart extraction) ship as **core
+> (unpacked) always-eligible skills**; the gated enterprise packs today are
+> `communication-workflows` and `procurement-workflows`, plus the
+> `servicenow-platform` platform pack.
+
 ## Summary
 
 OpenSidebar should scale skill selection with signal-gated environment routing while keeping workflow skills generic by default.

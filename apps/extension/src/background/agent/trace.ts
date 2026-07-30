@@ -26,7 +26,10 @@ import { logger } from "../../utils";
 import { redactTracePayload } from "../../utils/trace-protection";
 import { attachActualPromptTokens } from "./context-economy";
 
-const TRACE_SERVER_URL = "http://127.0.0.1:7589";
+const TRACE_SERVER_URL =
+  typeof __LOCAL_OBSERVABILITY_SERVER_URL__ === "string"
+    ? __LOCAL_OBSERVABILITY_SERVER_URL__
+    : "";
 const FLUSH_TIMEOUT_MS = 2000;
 const FINAL_FLUSH_TIMEOUT_MS = 5000;
 const FINAL_PENDING_DRAIN_ATTEMPTS = 2;

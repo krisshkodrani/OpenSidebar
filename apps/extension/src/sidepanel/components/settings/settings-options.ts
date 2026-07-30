@@ -2,7 +2,6 @@ import type {
   LaneTopologyMode,
   PerceptionRuntimeMode,
   PresenceMode,
-  UserSettings,
 } from "../../../types";
 
 /** LP-24 presence layer modes (visible agent cursor). */
@@ -84,68 +83,7 @@ export const SKILL_PACK_OPTIONS = [
   {
     id: "procurement-workflows",
     label: "Multi-tab workflows",
-    description: "Checklist and source-list tasks that intentionally span tabs.",
+    description:
+      "Checklist and source-list tasks that intentionally span tabs.",
   },
 ];
-
-export function getProviderOneLiner(
-  mode: UserSettings["providerMode"] = "fireworks",
-) {
-  if (mode === "fireworks") return "Executor + Planner via Fireworks AI";
-  if (mode === "fireworks-deepseek") {
-    return "Executor via Fireworks AI, Planner via DeepSeek";
-  }
-  if (mode === "moonshot") return "Executor + Planner via Moonshot AI";
-  if (mode === "xiaomi") return "Executor + Planner via Xiaomi MiMo";
-  if (mode === "openrouter") return "Executor + Planner via OpenRouter";
-  if (mode === "openrouter-groq") {
-    return "Executor via OpenRouter, Planner via Groq";
-  }
-  if (mode === "openai-groq") {
-    return "Executor via a Fireworks-backed OpenAI-compatible endpoint, Planner via Groq";
-  }
-  return "";
-}
-
-export function getKeyUsage(
-  key:
-    | "openRouter"
-    | "fireworks"
-    | "deepseek"
-    | "moonshot"
-    | "xiaomi"
-    | "openai"
-    | "groq"
-    | "gemini",
-  mode: string,
-): string {
-  const uses: string[] = [];
-  if (key === "openRouter") {
-    if (mode === "openrouter" || mode === "openrouter-groq") uses.push("agent");
-  }
-  if (key === "fireworks") {
-    if (mode === "fireworks" || mode === "fireworks-deepseek") {
-      uses.push("agent");
-    }
-  }
-  if (key === "deepseek") {
-    if (mode === "fireworks-deepseek") uses.push("agent");
-  }
-  if (key === "moonshot") {
-    if (mode === "moonshot") uses.push("agent");
-  }
-  if (key === "xiaomi") {
-    if (mode === "xiaomi") uses.push("agent");
-  }
-  if (key === "openai") {
-    if (mode === "openai-groq") uses.push("agent");
-  }
-  if (key === "groq") {
-    if (mode === "openrouter-groq" || mode === "openai-groq") {
-      uses.push("agent");
-    }
-  }
-  return uses.length
-    ? `Used by: ${uses.join(", ")}`
-    : "Not used by current mode";
-}

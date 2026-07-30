@@ -110,26 +110,26 @@ Related surfaces:
 
 The supported public E2E environment surface is intentionally small:
 
-| Env var | Purpose |
-| --- | --- |
-| `E2E_PROFILE` | Selects defaults: `local`, `ci`, `debug`, `video`, or `headed`. |
-| `E2E_PROVIDER` | Selects the agent provider. Default is `fireworks`. |
-| `E2E_MODEL` | Overrides the executor model for focused runs. |
-| `E2E_PERCEPTION_MODE` | Selects perception mode, for example `unified_vl`. |
-| `E2E_SUITE_FLAGS` | Comma-separated optional gates such as `memory-long`, `diagnostic`, or `single-process`. |
-| `E2E_ARTIFACTS` | Comma-separated artifact/browser flags such as `video`, `screenshots`, `panel`, `detached-panel`, `no-panel`, `headed`, or `headless`. |
+| Env var               | Purpose                                                                                                                                |
+| --------------------- | -------------------------------------------------------------------------------------------------------------------------------------- |
+| `E2E_PROFILE`         | Selects defaults: `local`, `ci`, `debug`, `video`, or `headed`.                                                                        |
+| `E2E_PROVIDER`        | Selects the agent provider. Default is `fireworks`.                                                                                    |
+| `E2E_MODEL`           | Overrides the executor model for focused runs.                                                                                         |
+| `E2E_PERCEPTION_MODE` | Selects perception mode, for example `unified_vl`.                                                                                     |
+| `E2E_SUITE_FLAGS`     | Comma-separated optional gates such as `memory-long`, `diagnostic`, or `single-process`.                                               |
+| `E2E_ARTIFACTS`       | Comma-separated artifact/browser flags such as `video`, `screenshots`, `panel`, `detached-panel`, `no-panel`, `headed`, or `headless`. |
 
 Older `E2E_*` names are temporary compatibility aliases and should not be used in new commands.
 
 Routine E2E is divided by purpose rather than difficulty:
 
-| Suite              | Command                                  | Purpose                                                                                          |
-| ------------------ | ---------------------------------------- | ------------------------------------------------------------------------------------------------ |
-| Smoke              | `pnpm run test:e2e:smoke`                 | Cheap confidence for core browser-agent behavior                                                 |
-| Interactions       | `pnpm run test:e2e:interactions`          | Page interaction, navigation, overlays, form, and shopping regressions                           |
-| Runtime            | `pnpm run test:e2e:runtime`               | Planning, continuation, recovery, and durable state regressions                                  |
-| WorkArena setup    | `pnpm exec tsx scripts/workarena-doctor.ts`    | Local WorkArena readiness and gated dataset access checks                                       |
-| WorkArena handoff  | `pnpm exec tsx scripts/workarena-handoff.ts`   | Manual real ServiceNow handoff run; requires explicit reset flag                                |
+| Suite             | Command                                      | Purpose                                                                |
+| ----------------- | -------------------------------------------- | ---------------------------------------------------------------------- |
+| Smoke             | `pnpm run test:e2e:smoke`                    | Cheap confidence for core browser-agent behavior                       |
+| Interactions      | `pnpm run test:e2e:interactions`             | Page interaction, navigation, overlays, form, and shopping regressions |
+| Runtime           | `pnpm run test:e2e:runtime`                  | Planning, continuation, recovery, and durable state regressions        |
+| WorkArena setup   | `pnpm exec tsx scripts/workarena-doctor.ts`  | Local WorkArena readiness and gated dataset access checks              |
+| WorkArena handoff | `pnpm exec tsx scripts/workarena-handoff.ts` | Manual real ServiceNow handoff run; requires explicit reset flag       |
 
 ### Inspect traces and logs
 
@@ -170,23 +170,26 @@ pnpm run traces:compact              # index, then delete old raw files
 
 ## Current Model Defaults
 
-| Role                  | Default                                      |
-| --------------------- | -------------------------------------------- |
-| Provider stack        | `fireworks`                                  |
-| Executor              | `accounts/fireworks/models/kimi-k2p7-code`   |
-| Executor fallback     | `accounts/fireworks/models/kimi-k2p7-code`   |
-| Planner               | `accounts/fireworks/routers/kimi-k2p6-turbo` |
-| Perception            | `unified_vl` by default; structured fallback is provider-specific |
+| Role           | Default                                                           |
+| -------------- | ----------------------------------------------------------------- |
+| Provider stack | `openrouter`                                                      |
+| Executor       | `minimax/minimax-m3`                                              |
+| Planner        | `z-ai/glm-5.2`                                                    |
+| Judge          | `openai/gpt-oss-120b`                                             |
+| Perception     | `unified_vl` by default; structured fallback is provider-specific |
 
-Settings overrides live in `apps/extension/src/types/settings.ts` and are exposed in the settings drawer.
-Xiaomi MiMo is available as `providerMode: "xiaomi"` for agent executor/planner traffic. It uses `XIAOMI_API_KEY`, `mimo-v2-omni` for the multimodal executor, and `mimo-v2-pro` as the default planner.
+Authoritative defaults live in `apps/extension/src/config/model-config.ts` and
+`apps/extension/src/utils/executor-model-policy.ts`. Settings overrides live in
+`apps/extension/src/types/settings.ts` and are exposed in the settings drawer.
+The release UI offers OpenRouter and Fireworks; other adapters remain available
+for internal evaluation.
 
 ## Observation Path
 
 - source of truth setting: `perceptionMode`
 - `auto`: unified VL
 - `unified_vl`: screenshot goes directly to the executor and no separate `Page Interpretation` model runs
-- `structured`: dedicated perception model produces the v6 `LOCATION/CHANGES/BLOCKERS/VISUAL-ONLY/AFFORDANCES` contract
+- `structured`: no screenshot is sent — the executor works from the DOM snapshot and element summary (the dedicated perception model seat was removed; the v6 `Page Interpretation` contract is historical)
 
 When debugging traces, do not assume every screenshot-backed turn used the structured perception layer. Check the recorded perception mode first.
 
@@ -272,66 +275,66 @@ Structured perception uses the unified v6 contract:
 
 ### Local development
 
-| Command         | Use this when                         | Notes                                        |
-| --------------- | ------------------------------------- | -------------------------------------------- |
-| `pnpm run dev`   | you want the main local stack running | starts local services, trace viewer, Vite/CRXJS, and writes `dist-dev/` |
-| `pnpm run dist`  | you need standalone extension assets | writes `dist/` for Chrome Load unpacked    |
-| `pnpm test`      | you want fast local tests             | extension unit/integration tests             |
-| `pnpm run verify` | you want pre-commit confidence       | lint + typecheck + tests + build + dist check |
-| `pnpm run doctor` | you want setup diagnosis             | checks deps, builds, local server, and trace DB |
+| Command           | Use this when                         | Notes                                                                   |
+| ----------------- | ------------------------------------- | ----------------------------------------------------------------------- |
+| `pnpm run dev`    | you want the main local stack running | starts local services, trace viewer, Vite/CRXJS, and writes `dist-dev/` |
+| `pnpm run dist`   | you need standalone extension assets  | writes `dist/` for Chrome Load unpacked                                 |
+| `pnpm test`       | you want fast local tests             | extension unit/integration tests                                        |
+| `pnpm run verify` | you want pre-commit confidence        | lint + typecheck + tests + build + dist check                           |
+| `pnpm run doctor` | you want setup diagnosis              | checks deps, builds, local server, and trace DB                         |
 
 Advanced local commands:
 
-| Command         | Use this when                         | Notes                                        |
-| --------------- | ------------------------------------- | -------------------------------------------- |
-| `pnpm run build` | you want the production build name    | runs the extension production build           |
-| `pnpm run lint`  | you want a lint pass                  | source-focused ESLint run                    |
+| Command              | Use this when                      | Notes                                        |
+| -------------------- | ---------------------------------- | -------------------------------------------- |
+| `pnpm run build`     | you want the production build name | runs the extension production build          |
+| `pnpm run lint`      | you want a lint pass               | source-focused ESLint run                    |
 | `pnpm run typecheck` | you want TypeScript project checks | all typecheck targets                        |
-| `pnpm run fmt`   | you want formatting only              | formats extension source and shared packages |
+| `pnpm run fmt`       | you want formatting only           | formats extension source and shared packages |
 
 The pnpm package scripts are the stable day-to-day entry points. Use direct Nx commands when you need to address a specific project target:
 
-| Command                    | Use this when                              |
-| -------------------------- | ------------------------------------------ |
-| `pnpm exec nx run extension:dev` | you only want the extension dev target     |
-| `pnpm exec nx run extension:build` | you only want the extension production build |
-| `pnpm exec nx run extension:test` | you only want extension unit/integration tests |
-| `pnpm exec nx run-many -t lint`  | you want all lint targets                  |
-| `pnpm exec nx run-many -t typecheck` | you want all typecheck targets          |
+| Command                              | Use this when                                  |
+| ------------------------------------ | ---------------------------------------------- |
+| `pnpm exec nx run extension:dev`     | you only want the extension dev target         |
+| `pnpm exec nx run extension:build`   | you only want the extension production build   |
+| `pnpm exec nx run extension:test`    | you only want extension unit/integration tests |
+| `pnpm exec nx run-many -t lint`      | you want all lint targets                      |
+| `pnpm exec nx run-many -t typecheck` | you want all typecheck targets                 |
 
 ### Tests
 
-| Command                      | Use this when                             | Notes                                          |
-| ---------------------------- | ----------------------------------------- | ---------------------------------------------- |
-| `pnpm test`                   | you want the normal fast test suite       | extension tests; excludes browser E2E             |
-| `pnpm run test:e2e`           | you need the normal budgeted E2E sequence | alias for staged E2E                           |
-| `pnpm run test:e2e:smoke`     | you need cheap real-browser confidence    | uses Fireworks by default                      |
-| `pnpm run test:e2e:staged`    | you need the normal budgeted E2E sequence | smoke + interactions + runtime                 |
-| `pnpm exec tsx scripts/workarena-first-task.ts` | you need a safe first real WorkArena candidate | metadata-only; no reset or LLM calls |
-| `pnpm exec tsx scripts/workarena-category-coverage.ts` | you need to verify local analog coverage for every WorkArena category | metadata-only; writes `.artifacts/e2e/` report |
-| `pnpm exec tsx scripts/workarena-handoff.ts` | you need a manual real WorkArena handoff run | requires `--allow-servicenow-reset`; token-spending |
-| `pnpm exec tsx scripts/workarena-validate-reports.ts` | you need to validate WorkArena JSON reports | no ServiceNow or LLM calls |
-| `pnpm run verify`             | you want the local confidence gate        | lint + typecheck + tests + build + dist check  |
-| `pnpm run ci:local`           | you want the CI-equivalent local gate     | lint + typecheck + tests + build + dist check  |
-| `pnpm run release:verify`     | you want release confidence              | lint + typecheck + tests + build + dist check + production dependency audit |
-| `pnpm run release:package`    | you want release artifacts               | builds `dist/`, then writes `.artifacts/releases/` zip, SHA-256 checksum, notes, and manifest |
-| `pnpm run release:preflight`  | you want to check release artifacts before tagging | validates artifact hash/version/commit consistency, reports native-smoke/tag/GitHub readiness, requires a clean working tree, and prints publication commands |
-| `pnpm run release:smoke:native-panel` | you want the manual Chrome side-panel gate | launches headed Chrome with `dist/`, waits for a toolbar click, and writes evidence under `.artifacts/e2e/native-sidepanel/` |
-| `pnpm exec vitest run <file>`      | you want one focused test file            | useful during iteration                        |
+| Command                                                | Use this when                                                         | Notes                                                                                                                                                         |
+| ------------------------------------------------------ | --------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `pnpm test`                                            | you want the normal fast test suite                                   | extension tests; excludes browser E2E                                                                                                                         |
+| `pnpm run test:e2e`                                    | you need the normal budgeted E2E sequence                             | alias for staged E2E                                                                                                                                          |
+| `pnpm run test:e2e:smoke`                              | you need cheap real-browser confidence                                | uses Fireworks by default                                                                                                                                     |
+| `pnpm run test:e2e:staged`                             | you need the normal budgeted E2E sequence                             | smoke + interactions + runtime                                                                                                                                |
+| `pnpm exec tsx scripts/workarena-first-task.ts`        | you need a safe first real WorkArena candidate                        | metadata-only; no reset or LLM calls                                                                                                                          |
+| `pnpm exec tsx scripts/workarena-category-coverage.ts` | you need to verify local analog coverage for every WorkArena category | metadata-only; writes `.artifacts/e2e/` report                                                                                                                |
+| `pnpm exec tsx scripts/workarena-handoff.ts`           | you need a manual real WorkArena handoff run                          | requires `--allow-servicenow-reset`; token-spending                                                                                                           |
+| `pnpm exec tsx scripts/workarena-validate-reports.ts`  | you need to validate WorkArena JSON reports                           | no ServiceNow or LLM calls                                                                                                                                    |
+| `pnpm run verify`                                      | you want the local confidence gate                                    | lint + typecheck + tests + build + dist check                                                                                                                 |
+| `pnpm run ci:local`                                    | you want the CI-equivalent local gate                                 | lint + typecheck + tests + build + dist check                                                                                                                 |
+| `pnpm run release:verify`                              | you want release confidence                                           | lint + typecheck + tests + build + dist check + production dependency audit                                                                                   |
+| `pnpm run release:package`                             | you want release artifacts                                            | builds `dist/`, then writes `.artifacts/releases/` zip, SHA-256 checksum, notes, and manifest                                                                 |
+| `pnpm run release:preflight`                           | you want to check release artifacts before tagging                    | validates artifact hash/version/commit consistency, reports native-smoke/tag/GitHub readiness, requires a clean working tree, and prints publication commands |
+| `pnpm run release:smoke:native-panel`                  | you want the manual Chrome side-panel gate                            | launches headed Chrome with `dist/`, waits for a toolbar click, and writes evidence under `.artifacts/e2e/native-sidepanel/`                                  |
+| `pnpm exec vitest run <file>`                          | you want one focused test file                                        | useful during iteration                                                                                                                                       |
 
 For the path from guarded WorkArena smoke runs to category-balanced graded evaluation, see [WorkArena Roadmap](./evals/workarena-roadmap.md).
 
 ### Observability
 
-| Command               | Use this when                            | Notes                             |
-| --------------------- | ---------------------------------------- | --------------------------------- |
-| `pnpm run dev`         | you want the log server and trace viewer | viewer at `127.0.0.1:7589/viewer` |
-| `pnpm run logs:tail`   | you want recent logs quickly             | last 50 entries                   |
-| `pnpm run logs:errors` | you only care about errors               | filters by log level              |
-| `pnpm run traces`      | you want trace CLI queries               | session list, turns, stats        |
-| `pnpm run traces:index` | you want to backfill or repair the SQLite trace store | writes `.artifacts/trace-index.sqlite` |
-| `pnpm run traces:delete-old` | you want to preview 7-day raw-file deletion | dry run by default |
-| `pnpm run traces:compact` | you want normal trace maintenance | indexes, then deletes old raw files after coverage checks |
+| Command                      | Use this when                                         | Notes                                                     |
+| ---------------------------- | ----------------------------------------------------- | --------------------------------------------------------- |
+| `pnpm run dev`               | you want the log server and trace viewer              | viewer at `127.0.0.1:7589/viewer`                         |
+| `pnpm run logs:tail`         | you want recent logs quickly                          | last 50 entries                                           |
+| `pnpm run logs:errors`       | you only care about errors                            | filters by log level                                      |
+| `pnpm run traces`            | you want trace CLI queries                            | session list, turns, stats                                |
+| `pnpm run traces:index`      | you want to backfill or repair the SQLite trace store | writes `.artifacts/trace-index.sqlite`                    |
+| `pnpm run traces:delete-old` | you want to preview 7-day raw-file deletion           | dry run by default                                        |
+| `pnpm run traces:compact`    | you want normal trace maintenance                     | indexes, then deletes old raw files after coverage checks |
 
 ## Development Notes
 

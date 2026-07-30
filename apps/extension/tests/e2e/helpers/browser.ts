@@ -14,7 +14,7 @@ import puppeteer, {
 } from "puppeteer";
 import { execFile } from "child_process";
 import fs from "fs";
-import { readFile } from "fs/promises";
+import { readFile, readdir } from "fs/promises";
 import path from "path";
 import { fileURLToPath } from "url";
 import { promisify } from "util";
@@ -88,15 +88,25 @@ export function shouldShowE2EPanel(): boolean {
 
 async function readOverlayBundlePath(): Promise<string> {
   overlayBundlePathPromise ??= readFile(DIST_MANIFEST_PATH, "utf-8").then(
-    (raw) => {
+    async (raw) => {
       const manifest = JSON.parse(raw) as Record<string, { file?: string }>;
       const entry = manifest[OVERLAY_ENTRY];
-      if (!entry?.file) {
-        throw new Error(
-          `Built manifest does not contain ${OVERLAY_ENTRY}. Run npm run build before headed E2E overlay runs.`,
-        );
+      if (entry?.file) {
+        return entry.file;
       }
-      return entry.file;
+
+      // CRX/Vite can emit a named Rollup input without retaining the source
+      // entry in .vite/manifest.json. The hashed bundle is still present and
+      // is the exact artifact the overlay harness needs.
+      const assetsDir = path.join(DIST_PATH, "assets");
+      const fallback = (await readdir(assetsDir)).find((file) =>
+        /^overlay-harness-.*\.js$/.test(file),
+      );
+      if (fallback) return `assets/${fallback}`;
+
+      throw new Error(
+        `Built output does not contain ${OVERLAY_ENTRY}. Run npm run build before headed E2E overlay runs.`,
+      );
     },
   );
   return overlayBundlePathPromise;

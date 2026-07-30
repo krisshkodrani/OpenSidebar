@@ -28,8 +28,8 @@ describe("InputArea", () => {
           onSend={vi.fn()}
           onSendFeedback={vi.fn()}
           onStop={vi.fn()}
-          onOpenSettings={vi.fn()}
           onOpenPersonalProfile={vi.fn()}
+          onOpenSavedPrompts={vi.fn()}
         />,
       );
     });

@@ -1,11 +1,14 @@
 import { describe, expect, test } from "vitest";
 import "../setup";
 import {
+  CEREBRAS_MODELS,
   DEEPSEEK_MODELS,
   FIREWORKS_MODELS,
   GROQ_MODELS,
   MOONSHOT_MODELS,
   XIAOMI_MODELS,
+  formatPrice,
+  formatPricingBadge,
   getProviderModelCatalogNote,
   getProviderModelOptions,
 } from "../../src/sidepanel/hooks/useOpenRouterModels";
@@ -49,9 +52,8 @@ describe("provider-scoped model catalogs", () => {
       FIREWORKS_MODELS.filter(
         (model) =>
           model.id === "accounts/fireworks/models/kimi-k2p7-code" ||
-          model.id === "accounts/fireworks/routers/kimi-k2p6-turbo" ||
-          model.id === "accounts/fireworks/routers/kimi-k2p5-turbo" ||
-          model.id === "qwen/qwen3-vl-30b-a3b-instruct",
+          model.id === "accounts/fireworks/models/kimi-k2p6" ||
+          model.id === "accounts/fireworks/models/qwen3p7-plus",
       ),
     );
   });
@@ -79,7 +81,7 @@ describe("provider-scoped model catalogs", () => {
     ).toBe(true);
     expect(isVLCapable("accounts/fireworks/models/kimi-k2p7-code")).toBe(true);
     expect(getDefaultExecutorModel("fireworks")).toBe(
-      "accounts/fireworks/models/minimax-m3",
+      "accounts/fireworks/models/kimi-k2p7-code",
     );
   });
 
@@ -127,13 +129,13 @@ describe("provider-scoped model catalogs", () => {
     }
   });
 
-  test("fireworks Kimi K2.6 Turbo catalog pricing matches Fireworks serverless pricing", () => {
+  test("fireworks Kimi K2.6 catalog pricing matches Fireworks serverless pricing", () => {
     expect(
       FIREWORKS_MODELS.find(
-        (model) => model.id === "accounts/fireworks/routers/kimi-k2p6-turbo",
+        (model) => model.id === "accounts/fireworks/models/kimi-k2p6",
       ),
     ).toMatchObject({
-      name: "Kimi K2.6 Turbo",
+      name: "Kimi K2.6",
       promptPrice: 2.0 / 1_000_000,
       completionPrice: 8.0 / 1_000_000,
       effectiveDate: "2026-05-29",
@@ -152,6 +154,32 @@ describe("provider-scoped model catalogs", () => {
     ).toEqual(GROQ_MODELS);
   });
 
+  test("hybrid writer choices stay on the executor provider", () => {
+    expect(
+      getProviderModelOptions({
+        providerMode: "openrouter-groq",
+        role: "writer",
+        openRouterModels,
+      }),
+    ).toEqual(openRouterModels);
+
+    expect(
+      getProviderModelOptions({
+        providerMode: "fireworks-deepseek",
+        role: "writer",
+        openRouterModels,
+      }),
+    ).toEqual(FIREWORKS_MODELS);
+
+    expect(
+      getProviderModelOptions({
+        providerMode: "cerebras-fireworks",
+        role: "writer",
+        openRouterModels,
+      }),
+    ).toEqual(CEREBRAS_MODELS);
+  });
+
   test("fireworks-deepseek executor uses multimodal Fireworks models", () => {
     expect(
       getProviderModelOptions({
@@ -163,9 +191,8 @@ describe("provider-scoped model catalogs", () => {
       FIREWORKS_MODELS.filter(
         (model) =>
           model.id === "accounts/fireworks/models/kimi-k2p7-code" ||
-          model.id === "accounts/fireworks/routers/kimi-k2p6-turbo" ||
-          model.id === "accounts/fireworks/routers/kimi-k2p5-turbo" ||
-          model.id === "qwen/qwen3-vl-30b-a3b-instruct",
+          model.id === "accounts/fireworks/models/kimi-k2p6" ||
+          model.id === "accounts/fireworks/models/qwen3p7-plus",
       ),
     );
   });
@@ -228,6 +255,12 @@ describe("provider-scoped model catalogs", () => {
         "xiaomi",
       ),
     ).toBe(false);
+  });
+
+  test("unknown curated pricing is not presented as free", () => {
+    expect(formatPricingBadge(XIAOMI_MODELS[0])).toBe("Pricing unavailable");
+    expect(formatPrice(0)).toBe("$0.00");
+    expect(formatPrice(0.001 / 1_000_000)).toBe("<$0.01");
   });
 
   test("catalog note explains missing OpenRouter key for executor browsing", () => {
