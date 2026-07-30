@@ -3,10 +3,12 @@ import { describe, expect, test, vi } from "vitest";
 import {
   DelegatedTaskService,
   type DelegatedTaskServiceOptions,
+  type PersistedTaskRecord,
 } from "../../src/background/browser-bridge/delegated-task-service";
 import type {
   AgentRunOutcome,
   AgentRunner,
+  AgentProgressUpdate,
   AgentTask,
 } from "../../src/background/browser-bridge/handler";
 
@@ -83,6 +85,56 @@ describe("DelegatedTaskService", () => {
     })) as { finalResult: { summary: string; traceId: string } };
     expect(completed.finalResult.summary).toBe("Form values verified");
     expect(completed.finalResult.traceId).toContain("task-1");
+  });
+
+  test("threads cost/model policy and publishes live progress", async () => {
+    const run = deferred<AgentRunOutcome>();
+    let seen: AgentTask | undefined;
+    let pushProgress: ((update: AgentProgressUpdate) => void) | undefined;
+    const tasks = service({
+      async run(task, options) {
+        seen = task;
+        pushProgress = options?.onProgress;
+        return run.promise;
+      },
+    });
+    await delegate(tasks, {
+      max_cost_usd: 0.25,
+      allowed_model_roles: ["planner", "executor", "verifier"],
+    });
+    await vi.waitFor(() => expect(seen).toBeDefined());
+    expect(seen).toMatchObject({
+      maxCostUsd: 0.25,
+      allowedModelRoles: ["planner", "executor", "verifier"],
+    });
+    pushProgress?.({
+      currentUrl: "http://localhost:4173/form",
+      currentTabId: 44,
+      subtasks: [
+        { description: "Open form", status: "completed", result: "Opened" },
+        { description: "Fill fields", status: "running" },
+      ],
+      currentIndex: 1,
+      metrics: {
+        totalCost: 0.01,
+        totalCostEstimated: 0.01,
+        modelBreakdown: { "test/model": {} },
+      },
+    });
+    const live = await request(tasks, "get_browser_task", {
+      task_id: "task-1",
+    });
+    expect(live).toMatchObject({
+      currentUrl: "http://localhost:4173/form",
+      currentTabId: 44,
+      currentPlan: ["Open form", "Fill fields"],
+      completedSteps: ["Opened"],
+      providerUsage: {
+        models: ["test/model"],
+        estimatedCostUsd: 0.01,
+      },
+    });
+    run.resolve({ status: "completed", summary: "done" });
   });
 
   test("admits only one active task and starts the next after completion", async () => {
@@ -207,6 +259,115 @@ describe("DelegatedTaskService", () => {
     resume.resolve({ status: "completed", summary: "continued" });
   });
 
+  test("uploads a validated local file only after exact one-time approval", async () => {
+    let now = 100;
+    const upload = vi.fn(async () => "File attached");
+    const tasks = service(
+      {
+        async run(_task, options) {
+          options?.onProgress?.({ currentTabId: 44 });
+          return {
+            status: "needs_human",
+            reason: "need the release bundle",
+            clarification: {
+              clarificationId: "clarify-file",
+              question: "Which file should I attach?",
+              requestedAt: 1,
+              timeoutMs: 1000,
+              expiresAt: 1001,
+            },
+          };
+        },
+      },
+      {
+        now: () => now,
+        fileUploader: {
+          async getTabUrl() {
+            return "https://play.google.com/console/app";
+          },
+          upload,
+        },
+      },
+    );
+    await delegate(tasks, { allowed_domains: ["play.google.com"] });
+    await vi.waitFor(async () =>
+      expect(
+        await request(tasks, "get_browser_task", { task_id: "task-1" }),
+      ).toMatchObject({ status: "waiting_for_clarification" }),
+    );
+    const uploadRequest = {
+      task_id: "task-1",
+      tab_id: 44,
+      origin: "https://play.google.com",
+      input_id: 9,
+      _validated_local_file: {
+        filename: "app.aab",
+        size: 5,
+        sha256:
+          "2cf24dba5fb0a30e26e83b2ac5b9e29e1b161e5c1fa7425e73043362938b9824",
+        mimeType: "application/octet-stream",
+        dataBase64: "aGVsbG8=",
+      },
+    };
+    const pending = (await request(
+      tasks,
+      "request_browser_file_upload",
+      uploadRequest,
+    )) as {
+      status: string;
+      approval: { approvalId: string; args: Record<string, unknown> };
+    };
+    expect(pending).toMatchObject({
+      status: "waiting_for_approval",
+      approval: {
+        args: {
+          tabId: 44,
+          origin: "https://play.google.com",
+          inputId: 9,
+          filename: "app.aab",
+        },
+      },
+    });
+    expect(JSON.stringify(pending.approval)).not.toContain("canonicalPath");
+    expect(JSON.stringify(pending.approval)).not.toContain("aGVsbG8");
+
+    const resumed = await request(tasks, "approve_browser_checkpoint", {
+      task_id: "task-1",
+      checkpoint_id: pending.approval.approvalId,
+      approved: true,
+    });
+    expect(resumed).toMatchObject({ status: "waiting_for_clarification" });
+    expect(upload).toHaveBeenCalledWith({
+      tabId: 44,
+      inputId: 9,
+      filename: "app.aab",
+      mimeType: "application/octet-stream",
+      dataBase64: "aGVsbG8=",
+    });
+    await expect(
+      request(tasks, "approve_browser_checkpoint", {
+        task_id: "task-1",
+        checkpoint_id: pending.approval.approvalId,
+        approved: true,
+      }),
+    ).rejects.toThrow(/no pending approval/);
+
+    const expiring = (await request(
+      tasks,
+      "request_browser_file_upload",
+      uploadRequest,
+    )) as { approval: { approvalId: string; expiresAt: number } };
+    now = expiring.approval.expiresAt;
+    await expect(
+      request(tasks, "approve_browser_checkpoint", {
+        task_id: "task-1",
+        checkpoint_id: expiring.approval.approvalId,
+        approved: true,
+      }),
+    ).rejects.toThrow(/approval expired/);
+    expect(upload).toHaveBeenCalledTimes(1);
+  });
+
   test("rejects malformed policy and reports status without provider calls", async () => {
     const run = vi.fn(async () => ({ status: "completed" as const }));
     const tasks = service({ run });
@@ -268,5 +429,36 @@ describe("DelegatedTaskService", () => {
       failureReason: expect.stringMatching(/runtime restart/),
     });
     expect(saved.length).toBeGreaterThan(0);
+  });
+
+  test("redacts and bounds persisted bridge history", async () => {
+    let latest: PersistedTaskRecord[] = [];
+    const tasks = service(
+      {
+        async run() {
+          return { status: "completed", summary: "done" };
+        },
+      },
+      {
+        persistence: {
+          async load() {
+            return [];
+          },
+          async save(records) {
+            latest = records;
+          },
+        },
+      },
+    );
+    await delegate(tasks, {
+      context: "contact person@example.com with Bearer super-secret-token",
+      constraints: ["API key sk-1234567890abcdefghijklmnop"],
+    });
+    await vi.waitFor(() => expect(latest.length).toBe(1));
+    const serialized = JSON.stringify(latest);
+    expect(serialized).not.toContain("person@example.com");
+    expect(serialized).not.toContain("super-secret-token");
+    expect(serialized).not.toContain("1234567890abcdefghijklmnop");
+    expect(serialized).toContain("runtime-only task context");
   });
 });

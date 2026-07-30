@@ -1,4 +1,5 @@
-import { describe, expect, test } from "vitest";
+import { describe, expect, test, vi } from "vitest";
+import { createHmac, randomBytes } from "node:crypto";
 import { BrowserBridgeClient } from "../../src/background/browser-bridge/ws-client";
 import type {
   AgentRunner,
@@ -11,6 +12,7 @@ class FakeWebSocket {
   onmessage: ((e: MessageEvent) => void) | null = null;
   onclose: (() => void) | null = null;
   onerror: (() => void) | null = null;
+  onopen: (() => void) | null = null;
   sent: string[] = [];
   closed = false;
   constructor(public url: string) {
@@ -28,6 +30,29 @@ class FakeWebSocket {
   }
 }
 
+const AUTH_TOKEN = "test-browser-bridge-token-32-bytes-minimum";
+
+function proof(value: string): string {
+  return createHmac("sha256", AUTH_TOKEN).update(value).digest("base64url");
+}
+
+async function authenticate(ws: FakeWebSocket): Promise<void> {
+  ws.onopen?.();
+  const hello = JSON.parse(ws.sent.at(-1)!);
+  const serverNonce = randomBytes(32).toString("base64url");
+  ws.emit({
+    type: "auth_challenge",
+    serverNonce,
+    proof: proof(`server:${hello.clientNonce}:${serverNonce}`),
+  });
+  await vi.waitFor(() =>
+    expect(JSON.parse(ws.sent.at(-1)!).type).toBe("auth_response"),
+  );
+  ws.emit({ type: "auth_ok" });
+  await new Promise((resolve) => setTimeout(resolve, 0));
+  ws.sent = [];
+}
+
 function runner(outcome: AgentRunOutcome): AgentRunner {
   return { async run() { return outcome; } };
 }
@@ -36,11 +61,13 @@ describe("BrowserBridgeClient", () => {
   test("dispatches a request to the handler and replies with the correlated id", async () => {
     const client = new BrowserBridgeClient({
       url: "ws://127.0.0.1:0",
+      authToken: AUTH_TOKEN,
       runner: runner({ status: "completed", data: { ok: true } }),
       webSocketImpl: FakeWebSocket as unknown as new (url: string) => WebSocket,
     });
     client.start();
     const ws = FakeWebSocket.last!;
+    await authenticate(ws);
 
     ws.emit({ id: "7", request: { tool: "browser_navigate", args: { url: "https://x.test" } } });
     await new Promise((r) => setTimeout(r, 0));
@@ -55,11 +82,13 @@ describe("BrowserBridgeClient", () => {
     let runCalls = 0;
     const client = new BrowserBridgeClient({
       url: "ws://127.0.0.1:0",
+      authToken: AUTH_TOKEN,
       runner: { async run() { runCalls += 1; return { status: "completed" }; } },
       webSocketImpl: FakeWebSocket as unknown as new (url: string) => WebSocket,
     });
     client.start();
     const ws = FakeWebSocket.last!;
+    await authenticate(ws);
 
     ws.emit({ id: "1", request: { tool: "browser_ping", args: {} } });
     await new Promise((r) => setTimeout(r, 0));
@@ -71,11 +100,13 @@ describe("BrowserBridgeClient", () => {
   test("ignores malformed frames", async () => {
     const client = new BrowserBridgeClient({
       url: "ws://127.0.0.1:0",
+      authToken: AUTH_TOKEN,
       runner: runner({ status: "completed" }),
       webSocketImpl: FakeWebSocket as unknown as new (url: string) => WebSocket,
     });
     client.start();
     const ws = FakeWebSocket.last!;
+    await authenticate(ws);
     ws.emit({ noId: true });
     await new Promise((r) => setTimeout(r, 0));
     expect(ws.sent).toHaveLength(0);
@@ -97,11 +128,13 @@ describe("BrowserBridgeClient", () => {
     };
     const client = new BrowserBridgeClient({
       url: "ws://127.0.0.1:0",
+      authToken: AUTH_TOKEN,
       runner: abortDriven,
       webSocketImpl: FakeWebSocket as unknown as new (url: string) => WebSocket,
     });
     client.start();
     const ws = FakeWebSocket.last!;
+    await authenticate(ws);
 
     ws.emit({ id: "9", request: { tool: "browser_run_task", args: { instruction: "x" } } });
     await new Promise((r) => setTimeout(r, 0));
@@ -121,11 +154,13 @@ describe("BrowserBridgeClient", () => {
   test("a cancel frame for an unknown id is ignored and gets no reply", async () => {
     const client = new BrowserBridgeClient({
       url: "ws://127.0.0.1:0",
+      authToken: AUTH_TOKEN,
       runner: runner({ status: "completed" }),
       webSocketImpl: FakeWebSocket as unknown as new (url: string) => WebSocket,
     });
     client.start();
     const ws = FakeWebSocket.last!;
+    await authenticate(ws);
 
     ws.emit({ id: "nope", cancel: true });
     await new Promise((r) => setTimeout(r, 0));
@@ -143,11 +178,13 @@ describe("BrowserBridgeClient", () => {
     };
     const client = new BrowserBridgeClient({
       url: "ws://127.0.0.1:0",
+      authToken: AUTH_TOKEN,
       runner: capturing,
       webSocketImpl: FakeWebSocket as unknown as new (url: string) => WebSocket,
     });
     client.start();
     const ws = FakeWebSocket.last!;
+    await authenticate(ws);
 
     ws.emit({ id: "5", request: { tool: "browser_run_task", args: { instruction: "x" } } });
     await new Promise((r) => setTimeout(r, 0));
@@ -159,5 +196,28 @@ describe("BrowserBridgeClient", () => {
 
     expect(signals[0].aborted).toBe(false);
     expect(ws.sent).toHaveLength(1);
+  });
+
+  test("ignores tool frames until mutual authentication completes", async () => {
+    let runCalls = 0;
+    const client = new BrowserBridgeClient({
+      url: "ws://127.0.0.1:0",
+      authToken: AUTH_TOKEN,
+      runner: {
+        async run() {
+          runCalls += 1;
+          return { status: "completed" };
+        },
+      },
+      webSocketImpl: FakeWebSocket as unknown as new (url: string) => WebSocket,
+    });
+    client.start();
+    const ws = FakeWebSocket.last!;
+    ws.onopen?.();
+    ws.emit({ id: "forged", request: { tool: "browser_ping", args: {} } });
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(runCalls).toBe(0);
+    expect(ws.sent).toHaveLength(1);
+    expect(JSON.parse(ws.sent[0]).type).toBe("auth_hello");
   });
 });

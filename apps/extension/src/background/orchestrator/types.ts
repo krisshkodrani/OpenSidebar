@@ -7,6 +7,7 @@ import type {
   PartialProgressHandoff,
   TaskRunProgressInput,
 } from "@shared-types/progress";
+import type { DelegatedModelRole } from "@shared-types/browser-bridge";
 import {
   AgentRole,
   EvidenceEvent,
@@ -241,6 +242,8 @@ export interface OrchestratorTask {
    * the sidepanel path (default 30s).
    */
   interactionDelivery?: "handoff";
+  /** Hard capability boundary for externally delegated tasks. */
+  allowedModelRoles?: DelegatedModelRole[];
 }
 
 export interface OrchestratorCheckpoint {
@@ -266,4 +269,8 @@ export interface OrchestratorStartInput {
   conversationContextBrief?: string;
   /** See OrchestratorTask.interactionDelivery. Set by the browser bridge. */
   interactionDelivery?: "handoff";
+  budgetOverrides?: {
+    maxTotalCostUsd?: number;
+  };
+  allowedModelRoles?: DelegatedModelRole[];
 }

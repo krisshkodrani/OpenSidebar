@@ -12,10 +12,9 @@
  * Two transports to the MCP client:
  *   - stdio (default)              — the client spawns this process as a child.
  *                                    Best for a native, single-machine install.
- *   - streamable-http (network)    — set BROWSER_MCP_HTTP_PORT. The client
- *                                    connects over the network. Required when it
- *                                    runs in its own container (it can't spawn
- *                                    our repo).
+ *   - streamable-http (loopback)   — set BROWSER_MCP_HTTP_PORT and the shared
+ *                                    bearer token. This transport deliberately
+ *                                    refuses non-loopback bind addresses.
  *
  * Transport to the *extension* is independent: a loopback WebSocket on
  * BROWSER_MCP_WS_PORT (the extension connects as a client). Until that is set the
@@ -25,6 +24,9 @@
  */
 
 import { createServer as createHttpServer } from "node:http";
+import { createHash } from "node:crypto";
+import { readFile, realpath, stat } from "node:fs/promises";
+import { basename, extname, isAbsolute } from "node:path";
 import { resolve } from "path";
 import { fileURLToPath } from "url";
 
@@ -81,12 +83,16 @@ export async function dispatch(
   args: Args,
 ): Promise<BrowserToolResponse> {
   validateArgs(name, args);
+  const forwardedArgs =
+    name === "request_browser_file_upload"
+      ? await prepareLocalFileUpload(args)
+      : args;
   return otelTracer.startActiveSpan(
     `browser_tool ${name}`,
     { attributes: { "opensidebar.tool.name": name } },
     async (span) => {
       try {
-        const response = await bridge.call({ tool: name, args });
+        const response = await bridge.call({ tool: name, args: forwardedArgs });
         span.setAttribute("opensidebar.tool.status", response.status);
         toolCallCounter.add(1, { tool: name, status: response.status });
         if (response.status === "error") {
@@ -111,6 +117,54 @@ export async function dispatch(
       }
     },
   );
+}
+
+const MAX_LOCAL_UPLOAD_BYTES = 10 * 1024 * 1024;
+const LOCAL_UPLOAD_MIME: Record<string, string> = {
+  ".csv": "text/csv",
+  ".doc": "application/msword",
+  ".docx":
+    "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+  ".jpeg": "image/jpeg",
+  ".jpg": "image/jpeg",
+  ".json": "application/json",
+  ".pdf": "application/pdf",
+  ".png": "image/png",
+  ".txt": "text/plain",
+  ".zip": "application/zip",
+};
+
+export async function prepareLocalFileUpload(
+  args: Args,
+): Promise<Args> {
+  const requestedPath =
+    typeof args.file_path === "string" ? args.file_path.trim() : "";
+  if (!requestedPath || !isAbsolute(requestedPath)) {
+    throw new Error("file_path must be an absolute local path");
+  }
+  const canonicalPath = await realpath(requestedPath);
+  const info = await stat(canonicalPath);
+  if (!info.isFile()) throw new Error("file_path must refer to a regular file");
+  if (info.size <= 0) throw new Error("file_path must not be empty");
+  if (info.size > MAX_LOCAL_UPLOAD_BYTES) {
+    throw new Error("local file exceeds the 10MB upload limit");
+  }
+  const bytes = await readFile(canonicalPath);
+  const sha256 = createHash("sha256").update(bytes).digest("hex");
+  const extension = extname(canonicalPath).toLowerCase();
+  return {
+    task_id: args.task_id,
+    tab_id: args.tab_id,
+    origin: args.origin,
+    input_id: args.input_id,
+    _validated_local_file: {
+      filename: basename(canonicalPath),
+      size: bytes.byteLength,
+      sha256,
+      mimeType: LOCAL_UPLOAD_MIME[extension] ?? "application/octet-stream",
+      dataBase64: bytes.toString("base64"),
+    },
+  };
 }
 
 /** Build a configured MCP server bound to the given bridge (no transport yet). */
@@ -152,7 +206,7 @@ export function buildBrowserMcpServer(bridge: BrowserBridge): Server {
 
 export type BrowserMcpTransport =
   | { kind: "stdio" }
-  | { kind: "http"; port: number; host?: string };
+  | { kind: "http"; port: number; host?: string; authToken: string };
 
 /** Connect the server over stdio (the MCP client spawns us as a child process). */
 async function startStdio(bridge: BrowserBridge): Promise<void> {
@@ -186,7 +240,16 @@ async function startHttp(
   bridge: BrowserBridge,
   port: number,
   host = "127.0.0.1",
+  authToken: string,
 ): Promise<void> {
+  if (!["127.0.0.1", "::1", "localhost"].includes(host.toLowerCase())) {
+    throw new Error("Browser MCP HTTP transport must bind to a loopback host.");
+  }
+  if (authToken.length < 32) {
+    throw new Error(
+      "Browser MCP HTTP transport needs an auth token of at least 32 characters.",
+    );
+  }
   const httpServer = createHttpServer(async (req, res) => {
     const url = new URL(req.url || "/", `http://${host}:${port}`);
     if (url.pathname !== "/mcp") {
@@ -196,6 +259,10 @@ async function startHttp(
     if (req.method !== "POST") {
       // Stateless mode needs no GET/DELETE session channel.
       res.writeHead(405).end("method not allowed");
+      return;
+    }
+    if (req.headers.authorization !== `Bearer ${authToken}`) {
+      res.writeHead(401, { "WWW-Authenticate": "Bearer" }).end("unauthorized");
       return;
     }
     const body = await readBody(req);
@@ -223,7 +290,12 @@ export async function startBrowserMcpServer(
   transport: BrowserMcpTransport = { kind: "stdio" },
 ): Promise<void> {
   if (transport.kind === "http") {
-    await startHttp(bridge, transport.port, transport.host);
+    await startHttp(
+      bridge,
+      transport.port,
+      transport.host,
+      transport.authToken,
+    );
   } else {
     await startStdio(bridge);
   }
@@ -241,17 +313,23 @@ if (entryPath && entryPath === fileURLToPath(import.meta.url)) {
   const { startOtel } = await import("../otel/sdk.js");
   await startOtel("opensidebar-browser-mcp");
   const wsPort = process.env.BROWSER_MCP_WS_PORT;
+  const authToken = process.env.BROWSER_MCP_AUTH_TOKEN;
   const bridge: BrowserBridge = wsPort
     ? new WebSocketBridge({
         port: Number(wsPort),
-        // In Docker, bind 0.0.0.0 so the published (host-loopback) port routes in.
         host: process.env.BROWSER_MCP_WS_HOST,
+        authToken,
       })
     : new NotConnectedBridge();
 
   const httpPort = process.env.BROWSER_MCP_HTTP_PORT;
   const transport: BrowserMcpTransport = httpPort
-    ? { kind: "http", port: Number(httpPort), host: process.env.BROWSER_MCP_HTTP_HOST }
+    ? {
+        kind: "http",
+        port: Number(httpPort),
+        host: process.env.BROWSER_MCP_HTTP_HOST,
+        authToken: authToken ?? "",
+      }
     : { kind: "stdio" };
 
   startBrowserMcpServer(bridge, transport).catch((error) => {

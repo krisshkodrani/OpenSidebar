@@ -43,6 +43,7 @@ export type DelegatedModelRole =
   | "planner"
   | "executor"
   | "verifier"
+  | "writer"
   | "judge"
   | "observation";
 

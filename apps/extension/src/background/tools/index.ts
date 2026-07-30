@@ -15,6 +15,7 @@ import { registerScriptingDownloadTools } from "./register-scripting-download";
 import { registerMiscAgentTools } from "./register-agent-tools";
 import {
   getAllowedNavigationOrigins,
+  isNavigationTargetAllowed,
   normalizeOrigin,
   navigationBoundaryError,
 } from "./tab-navigation-helpers";
@@ -63,7 +64,7 @@ export function registerTools() {
       const target = url ? url : `search: "${query}"`;
       logger.info("tools", "navigate", { tabId, url, query, target });
 
-      const allowedOrigins = await getAllowedNavigationOrigins();
+      const allowedOrigins = await getAllowedNavigationOrigins(tabId);
       if (allowedOrigins.length > 0) {
         if (query) {
           return (
@@ -72,15 +73,9 @@ export function registerTools() {
             "Use the current application's own navigation or search controls instead."
           );
         }
-        const targetOrigin = normalizeOrigin(url!);
-        const normalizedAllowed = allowedOrigins
-          .map(normalizeOrigin)
-          .filter((origin): origin is string => Boolean(origin));
-        if (!targetOrigin || !normalizedAllowed.includes(targetOrigin)) {
-          return navigationBoundaryError(
-            url!,
-            normalizedAllowed.length > 0 ? normalizedAllowed : allowedOrigins,
-          );
+        const result = await isNavigationTargetAllowed(tabId, url!);
+        if (!result.allowed) {
+          return navigationBoundaryError(url!, result.boundary);
         }
       }
 

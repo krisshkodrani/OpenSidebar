@@ -48,10 +48,37 @@ const TASK_FIRST_TOOLS: BrowserToolDef[] = [
         timeout_seconds: { type: "number", description: "Wall-clock timeout." },
         allowed_model_roles: {
           type: "array",
-          description: "Allowed planner/executor/verifier/judge/observation roles.",
+          description:
+            "Allowed planner/executor/verifier/writer/judge/observation roles.",
         },
       },
       required: ["goal", "allowed_domains", "approval_policy"],
+    },
+  },
+  {
+    name: "request_browser_file_upload",
+    kind: "mechanical",
+    description:
+      "Prepare a local file for a one-time, human-approved attachment to an exact file input. The task must already be paused for clarification.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        task_id: { type: "string", description: "Paused delegated task id." },
+        file_path: {
+          type: "string",
+          description: "Absolute local path. The host validates, hashes, and caps it at 10MB.",
+        },
+        tab_id: { type: "number", description: "Exact destination browser tab id." },
+        origin: {
+          type: "string",
+          description: "Exact expected page origin, for example https://play.google.com.",
+        },
+        input_id: {
+          type: "number",
+          description: "Exact tagged <input type=file> id reported by the browser task.",
+        },
+      },
+      required: ["task_id", "file_path", "tab_id", "origin", "input_id"],
     },
   },
   {

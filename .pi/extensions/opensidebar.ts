@@ -40,6 +40,7 @@ import type { BrowserToolResponse } from "../../scripts/browser-mcp/bridge";
 import { WebSocketBridge } from "../../scripts/browser-mcp/ws-bridge";
 
 const WS_PORT = Number(process.env.OPENSIDEBAR_WS_PORT ?? 8787);
+const AUTH_TOKEN = process.env.BROWSER_MCP_AUTH_TOKEN;
 /** Long ceiling: intent tools wrap a full multi-turn agent run. */
 const CALL_TIMEOUT_MS = 600_000;
 /** One session per pi process: all missions share a workspace + tab. */
@@ -48,10 +49,16 @@ const SESSION = `pi-${Date.now().toString(36)}-${Math.random().toString(36).slic
 let bridge: WebSocketBridge | null = null;
 
 async function getBridge(): Promise<WebSocketBridge> {
+  if (!AUTH_TOKEN) {
+    throw new Error(
+      "BROWSER_MCP_AUTH_TOKEN is required; run the bridge installer or configure a paired token.",
+    );
+  }
   if (!bridge) {
     bridge = await WebSocketBridge.create({
       port: WS_PORT,
       timeoutMs: CALL_TIMEOUT_MS,
+      authToken: AUTH_TOKEN,
     });
   }
   return bridge;

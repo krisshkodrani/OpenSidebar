@@ -96,6 +96,12 @@ export async function runHighRiskJudgeGate(
   evidence: StructuredEvidence[],
   summary: string,
 ): Promise<JudgeGateOutcome | null> {
+  if (
+    task.allowedModelRoles &&
+    !task.allowedModelRoles.includes("judge")
+  ) {
+    return null;
+  }
   if (!verifier.judgeGate) return null;
   try {
     const entries = await getTrustedCorpusStore().load();

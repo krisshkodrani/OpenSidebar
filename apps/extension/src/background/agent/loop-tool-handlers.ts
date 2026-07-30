@@ -25,6 +25,7 @@ import {
   buildTrustedReadAnswerCompletionCandidate,
   type TrustedCompletionCandidate,
 } from "./completion-kernel";
+import { delegatedNavigationError } from "../infrastructure/delegated-navigation-policy";
 
 function getTabUrl(tab: chrome.tabs.Tab): string {
   return tab.url || tab.pendingUrl || "";
@@ -626,12 +627,22 @@ export async function handleWaitToolCall(
   return prevElementCount;
 }
 
-export function handleNavigateGuardToolCall(
+export async function handleNavigateGuardToolCall(
   loop: AgentLoopToolHandlerHost,
   toolCallId: string,
   args: Record<string, unknown>,
-): boolean {
+): Promise<boolean> {
   if (!args.url) return false;
+
+  const delegatedBlock = delegatedNavigationError(loop.workspaceId, String(args.url), "navigate");
+  if (delegatedBlock) {
+    loop.context.addMessage({
+      role: "tool",
+      tool_call_id: toolCallId,
+      content: delegatedBlock,
+    });
+    return true;
+  }
 
   const blockMessage = checkNavigateGuard(
     loop as unknown as NavigateGuardHost,
@@ -767,6 +778,16 @@ export async function handleSwitchTabToolCall(
 
   try {
     const targetTab = await chrome.tabs.get(targetTabId);
+    const targetUrl = getTabUrl(targetTab);
+    const delegatedBlock = delegatedNavigationError(loop.workspaceId, targetUrl, "switch tab");
+    if (delegatedBlock) {
+      loop.context.addMessage({
+        role: "tool",
+        tool_call_id: toolCallId,
+        content: delegatedBlock,
+      });
+      return { tabId, prevElementCount };
+    }
     if (!isControllableTab(targetTab)) {
       const targetUrl = getTabUrl(targetTab) || "about:blank";
       loop.context.addMessage({
@@ -933,6 +954,15 @@ export async function handleCreateTabToolCall(
   }
 
   const url = args.url as string;
+  const delegatedBlock = delegatedNavigationError(loop.workspaceId, url, "create tab");
+  if (delegatedBlock) {
+    loop.context.addMessage({
+      role: "tool",
+      tool_call_id: toolCallId,
+      content: delegatedBlock,
+    });
+    return;
+  }
   const urlResult = sanitizeUrl(url);
   if (!urlResult.ok) {
     loop.context.addMessage({

@@ -34,6 +34,8 @@ type WebSocketCtor = new (url: string) => WebSocket;
 
 export interface BrowserBridgeClientOptions {
   url: string;
+  /** Shared bridge secret, paired locally and never sent over the wire. */
+  authToken: string;
   runner: AgentRunner;
   /** Injectable for tests; defaults to the global WebSocket. */
   webSocketImpl?: WebSocketCtor;
@@ -53,6 +55,9 @@ export class BrowserBridgeClient {
   /** One controller per in-flight request frame, so a cancel can target it. */
   private readonly controllers = new Map<string, AbortController>();
   private readonly delegatedTasks: DelegatedTaskService;
+  private authenticated = false;
+  private clientNonce = "";
+  private serverNonce = "";
 
   constructor(private readonly opts: BrowserBridgeClientOptions) {
     this.delegatedTasks = new DelegatedTaskService(
@@ -89,7 +94,18 @@ export class BrowserBridgeClient {
     const Ctor = this.opts.webSocketImpl ?? (WebSocket as unknown as WebSocketCtor);
     const ws = new Ctor(this.opts.url);
     this.ws = ws;
+    this.authenticated = false;
+    this.clientNonce = randomNonce();
+    this.serverNonce = "";
 
+    ws.onopen = () => {
+      ws.send(
+        JSON.stringify({
+          type: "auth_hello",
+          clientNonce: this.clientNonce,
+        }),
+      );
+    };
     ws.onmessage = (event: MessageEvent) => {
       void this.onMessage(ws, event);
     };
@@ -109,12 +125,49 @@ export class BrowserBridgeClient {
   }
 
   private async onMessage(ws: WebSocket, event: MessageEvent): Promise<void> {
-    let frame: HostFrame;
+    let decoded: unknown;
     try {
-      frame = JSON.parse(typeof event.data === "string" ? event.data : "");
+      decoded = JSON.parse(typeof event.data === "string" ? event.data : "");
     } catch {
       return;
     }
+    const authFrame = decoded as {
+      type?: unknown;
+      serverNonce?: unknown;
+      proof?: unknown;
+    };
+    if (!this.authenticated) {
+      if (
+        authFrame.type === "auth_challenge" &&
+        typeof authFrame.serverNonce === "string" &&
+        typeof authFrame.proof === "string"
+      ) {
+        const expected = await hmac(
+          this.opts.authToken,
+          `server:${this.clientNonce}:${authFrame.serverNonce}`,
+        );
+        if (!constantTimeEqual(expected, authFrame.proof)) {
+          ws.close();
+          return;
+        }
+        this.serverNonce = authFrame.serverNonce;
+        ws.send(
+          JSON.stringify({
+            type: "auth_response",
+            proof: await hmac(
+              this.opts.authToken,
+              `client:${this.clientNonce}:${this.serverNonce}`,
+            ),
+          }),
+        );
+        return;
+      }
+      if (authFrame.type === "auth_ok" && this.serverNonce) {
+        this.authenticated = true;
+      }
+      return;
+    }
+    const frame = decoded as HostFrame;
     if (typeof frame.id !== "string") return;
     if (frame.cancel === true) {
       // Unknown or already-settled ids are silently ignored, mirroring the
@@ -141,4 +194,44 @@ export class BrowserBridgeClient {
     }
     ws.send(JSON.stringify({ id: frame.id, response }));
   }
+}
+
+function randomNonce(): string {
+  const bytes = new Uint8Array(32);
+  crypto.getRandomValues(bytes);
+  return bytesToBase64Url(bytes);
+}
+
+async function hmac(token: string, value: string): Promise<string> {
+  const key = await crypto.subtle.importKey(
+    "raw",
+    new TextEncoder().encode(token),
+    { name: "HMAC", hash: "SHA-256" },
+    false,
+    ["sign"],
+  );
+  const signature = await crypto.subtle.sign(
+    "HMAC",
+    key,
+    new TextEncoder().encode(value),
+  );
+  return bytesToBase64Url(new Uint8Array(signature));
+}
+
+function bytesToBase64Url(bytes: Uint8Array): string {
+  let binary = "";
+  for (const byte of bytes) binary += String.fromCharCode(byte);
+  return btoa(binary)
+    .replace(/\+/g, "-")
+    .replace(/\//g, "_")
+    .replace(/=+$/u, "");
+}
+
+function constantTimeEqual(left: string, right: string): boolean {
+  if (left.length !== right.length) return false;
+  let mismatch = 0;
+  for (let i = 0; i < left.length; i += 1) {
+    mismatch |= left.charCodeAt(i) ^ right.charCodeAt(i);
+  }
+  return mismatch === 0;
 }

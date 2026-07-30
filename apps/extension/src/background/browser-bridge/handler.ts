@@ -20,6 +20,7 @@ import type {
   SessionMetrics,
   SubtaskResult,
 } from "@shared-types/messages/progress";
+import type { DelegatedModelRole } from "@shared-types/browser-bridge";
 import {
   DelegatedTaskService,
   TASK_FIRST_BROWSER_TOOLS,
@@ -31,6 +32,8 @@ export interface AgentTask {
   preferredTabId?: number;
   maxSteps?: number;
   allowedDomains?: string[];
+  maxCostUsd?: number;
+  allowedModelRoles?: DelegatedModelRole[];
   /** Session key: calls sharing it reuse one workspace + tab (see wire contract). */
   session?: string;
 }
@@ -54,6 +57,21 @@ export interface AgentRunOutcome {
 export interface AgentRunOptions {
   /** Aborting requests a stop of the running task; the run settles normally. */
   signal?: AbortSignal;
+  onProgress?: (update: AgentProgressUpdate) => void;
+}
+
+export interface AgentProgressUpdate {
+  metrics?: SessionMetrics;
+  subtasks?: Array<{
+    description: string;
+    status: string;
+    result?: string;
+    completedAtUrl?: string;
+  }>;
+  currentIndex?: number;
+  currentUrl?: string;
+  currentTabId?: number;
+  stepLabel?: string;
 }
 
 /** Runs one internal agent task. Implemented by the orchestrator in Stage 2b. */

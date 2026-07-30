@@ -17,6 +17,11 @@ import { setDisabledSkillIds } from "./orchestrator/skills";
 import type { OrchestratorStartInput } from "./orchestrator/types";
 import type { RuntimeEnvironment } from "./environment/types";
 import type { TaskCompletionMessage, TaskPausedMessage } from "../types";
+import type {
+  AgentStep,
+  SessionMetrics,
+  SubtaskSummary,
+} from "../types";
 
 /**
  * The completion payload exactly as broadcast on TASK_COMPLETION — including
@@ -45,6 +50,23 @@ interface TaskPausedEnvelope {
   workspaceId: string;
   payload?: TaskPausedPayload;
 }
+
+export type TaskRuntimeProgress =
+  | { type: "SESSION_METRICS"; payload: SessionMetrics }
+  | {
+      type: "TASK_PROGRESS";
+      payload: {
+        taskId: string;
+        subtasks: SubtaskSummary[];
+        currentIndex: number;
+        totalTurnsUsed: number;
+      };
+    }
+  | { type: "AGENT_STEP"; payload: { step: AgentStep; update: boolean } }
+  | {
+      type: "NAVIGATION_RESUME";
+      payload: { success: boolean; url: string; error?: string };
+    };
 
 /** A task paused for a user interaction (approval), for bridge forwarding. */
 export type TaskPausedPayload = TaskPausedMessage["payload"];
@@ -77,6 +99,10 @@ export interface AgentRuntime {
       workspaceId: string,
       payload: Partial<TaskCompletionPayload>,
     ) => void,
+  ): () => void;
+  /** Observe live task progress and metrics, correlated by workspaceId. */
+  onTaskProgress(
+    listener: (workspaceId: string, update: TaskRuntimeProgress) => void,
   ): () => void;
   /** Tear down all subscriptions this runtime created. */
   dispose(): void;
@@ -135,6 +161,38 @@ export function createAgentRuntime(
         const m = message as Partial<TaskCompletionEnvelope>;
         if (m?.type === "TASK_COMPLETION" && typeof m.workspaceId === "string") {
           listener(m.workspaceId, m.payload ?? {});
+        }
+      });
+      const wrapped = () => {
+        off();
+        unsubscribers.delete(wrapped);
+      };
+      unsubscribers.add(wrapped);
+      return wrapped;
+    },
+    onTaskProgress(listener) {
+      const accepted = new Set([
+        "SESSION_METRICS",
+        "TASK_PROGRESS",
+        "AGENT_STEP",
+        "NAVIGATION_RESUME",
+      ]);
+      const off = env.messaging.onMessage((message) => {
+        const m = message as {
+          type?: unknown;
+          workspaceId?: unknown;
+          payload?: unknown;
+        };
+        if (
+          typeof m.type === "string" &&
+          accepted.has(m.type) &&
+          typeof m.workspaceId === "string" &&
+          m.payload
+        ) {
+          listener(
+            m.workspaceId,
+            m as unknown as TaskRuntimeProgress,
+          );
         }
       });
       const wrapped = () => {

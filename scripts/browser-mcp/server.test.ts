@@ -1,4 +1,7 @@
 import { describe, expect, it } from "vitest";
+import { mkdtemp, rm, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 
 import {
   NotConnectedBridge,
@@ -6,7 +9,7 @@ import {
   type BrowserToolRequest,
   type BrowserToolResponse,
 } from "./bridge";
-import { dispatch } from "./server";
+import { dispatch, prepareLocalFileUpload } from "./server";
 import { BROWSER_TOOLS } from "./tools";
 
 class MockBridge implements BrowserBridge {
@@ -23,6 +26,7 @@ describe("BROWSER_TOOLS", () => {
     const names = BROWSER_TOOLS.map((t) => t.name);
     expect(names).toEqual([
       "delegate_browser_task",
+      "request_browser_file_upload",
       "get_browser_task",
       "continue_browser_task",
       "approve_browser_checkpoint",
@@ -87,6 +91,43 @@ describe("dispatch", () => {
     const bridge = new MockBridge({ status: "ok", result: "pong" });
     const res = await dispatch(bridge, "browser_ping", {});
     expect(res.result).toBe("pong");
+  });
+
+  it("canonicalizes, hashes, and embeds only a bounded regular local file", async () => {
+    const directory = await mkdtemp(join(tmpdir(), "opensidebar-upload-"));
+    const file = join(directory, "release.txt");
+    try {
+      await writeFile(file, "hello", "utf8");
+      const prepared = await prepareLocalFileUpload({
+        task_id: "task-1",
+        file_path: file,
+        tab_id: 44,
+        origin: "https://play.google.com",
+        input_id: 9,
+      });
+      expect(prepared).toMatchObject({
+        task_id: "task-1",
+        tab_id: 44,
+        origin: "https://play.google.com",
+        input_id: 9,
+        _validated_local_file: {
+          filename: "release.txt",
+          size: 5,
+          sha256:
+            "2cf24dba5fb0a30e26e83b2ac5b9e29e1b161e5c1fa7425e73043362938b9824",
+          mimeType: "text/plain",
+          dataBase64: "aGVsbG8=",
+        },
+      });
+    } finally {
+      await rm(directory, { recursive: true, force: true });
+    }
+  });
+
+  it("rejects relative local file paths before reading", async () => {
+    await expect(
+      prepareLocalFileUpload({ file_path: "relative.txt" }),
+    ).rejects.toThrow(/absolute local path/);
   });
 });
 
