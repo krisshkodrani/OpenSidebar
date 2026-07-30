@@ -29,6 +29,122 @@ export interface BrowserToolRequest {
   session?: string;
 }
 
+export type DelegatedBrowserTaskStatus =
+  | "queued"
+  | "planning"
+  | "running"
+  | "waiting_for_approval"
+  | "waiting_for_clarification"
+  | "completed"
+  | "failed"
+  | "cancelled";
+
+export type DelegatedModelRole =
+  | "planner"
+  | "executor"
+  | "verifier"
+  | "judge"
+  | "observation";
+
+export interface DelegatedBrowserTaskPolicy {
+  allowedDomains: string[];
+  approvalPolicy: {
+    mode: "mandatory_checkpoints";
+    allowSupervisorRelay: boolean;
+  };
+  maxSteps?: number;
+  maxCostUsd?: number;
+  timeoutSeconds?: number;
+  allowedModelRoles?: DelegatedModelRole[];
+}
+
+export interface DelegateBrowserTaskInput {
+  goal: string;
+  context?: string;
+  constraints?: string[];
+  preferredTabId?: number;
+  policy: DelegatedBrowserTaskPolicy;
+}
+
+export interface BrowserTaskEvidence {
+  url?: string;
+  visibleText?: string;
+  screenshotId?: string;
+}
+
+export interface BrowserTaskVerifiedOutcome {
+  claim: string;
+  evidence?: BrowserTaskEvidence;
+}
+
+export interface BrowserTaskProviderUsage {
+  models: string[];
+  estimatedCostUsd: number;
+  actualCostUsd?: number;
+}
+
+export interface BrowserTaskResult {
+  taskId: string;
+  status: "completed";
+  summary: string;
+  verifiedOutcomes: BrowserTaskVerifiedOutcome[];
+  changesMade: string[];
+  approvalsUsed: string[];
+  warnings: string[];
+  providerUsage: BrowserTaskProviderUsage;
+  traceId: string;
+}
+
+export interface BrowserTaskClarification {
+  clarificationId: string;
+  question: string;
+  reason: string;
+  availableOptions: string[];
+}
+
+export interface BrowserTaskTraceEvent {
+  at: number;
+  type:
+    | "delegated"
+    | "started"
+    | "approval_requested"
+    | "approval_answered"
+    | "clarification_requested"
+    | "clarification_answered"
+    | "completed"
+    | "failed"
+    | "cancelled";
+  detail?: string;
+}
+
+export interface DelegatedBrowserTask {
+  taskId: string;
+  status: DelegatedBrowserTaskStatus;
+  goal: string;
+  createdAt: number;
+  updatedAt: number;
+  currentPlan: string[];
+  completedSteps: string[];
+  currentUrl?: string;
+  currentTabId?: number;
+  approval?: ForwardedApprovalRequest;
+  clarification?: BrowserTaskClarification;
+  providerUsage: BrowserTaskProviderUsage;
+  evidence: BrowserTaskEvidence[];
+  finalResult?: BrowserTaskResult;
+  failureReason?: string;
+  traceId: string;
+}
+
+export interface DelegatedBrowserTaskTrace {
+  taskId: string;
+  traceId: string;
+  goal: string;
+  events: BrowserTaskTraceEvent[];
+  providerUsage: BrowserTaskProviderUsage;
+  finalStatus: DelegatedBrowserTaskStatus;
+}
+
 /**
  * Phase 8 form-submit dry-run evidence forwarded with an approval request:
  * the live form state diffed against the values the caller put in the
@@ -65,6 +181,15 @@ export interface ForwardedApprovalRequest {
   timeoutMs: number;
   expiresAt: number;
   dryRun?: ForwardedApprovalDryRun;
+}
+
+export interface ForwardedClarificationRequest {
+  clarificationId: string;
+  question: string;
+  suggestions?: string[];
+  requestedAt: number;
+  timeoutMs: number;
+  expiresAt: number;
 }
 
 export interface BrowserToolResponse {

@@ -137,7 +137,7 @@ export function emitPendingInteractionMessage(
 }
 
 /**
- * Build the TASK_PAUSED broadcast for a task paused on an UNRESOLVED approval,
+ * Build the TASK_PAUSED broadcast for a task paused on an unresolved interaction,
  * or null when there is nothing forwardable (no interaction, already resolved,
  * expired, or a clarification — clarification forwarding is deferred).
  * Emitted AFTER the orchestrator set `task.pendingInteraction`, so a consumer
@@ -148,23 +148,51 @@ export function buildTaskPausedMessage(task: PausedTaskLike): {
   workspaceId: string;
   payload: {
     taskId: string;
-    interaction: {
-      kind: "approval";
-      approvalId: string;
-      toolName: string;
-      args: Record<string, unknown>;
-      context: string;
-      requestedAt: number;
-      timeoutMs: number;
-      expiresAt: number;
-      dryRun?: PendingApprovalInteraction["dryRun"];
-    };
+    interaction:
+      | {
+          kind: "approval";
+          approvalId: string;
+          toolName: string;
+          args: Record<string, unknown>;
+          context: string;
+          requestedAt: number;
+          timeoutMs: number;
+          expiresAt: number;
+          dryRun?: PendingApprovalInteraction["dryRun"];
+        }
+      | {
+          kind: "clarification";
+          clarificationId: string;
+          question: string;
+          suggestions?: string[];
+          requestedAt: number;
+          timeoutMs: number;
+          expiresAt: number;
+        };
   };
 } | null {
   const interaction = task.pendingInteraction;
-  if (!interaction || interaction.kind !== "approval") return null;
+  if (!interaction) return null;
   if (isPendingInteractionResolved(interaction)) return null;
   if (getPendingInteractionRemainingMs(interaction) <= 0) return null;
+  if (interaction.kind === "clarification") {
+    return {
+      type: "TASK_PAUSED",
+      workspaceId: task.workspaceId,
+      payload: {
+        taskId: task.id,
+        interaction: {
+          kind: "clarification",
+          clarificationId: interaction.clarificationId,
+          question: interaction.question,
+          suggestions: interaction.suggestions,
+          requestedAt: interaction.requestedAt,
+          timeoutMs: interaction.timeoutMs,
+          expiresAt: interaction.requestedAt + interaction.timeoutMs,
+        },
+      },
+    };
+  }
   return {
     type: "TASK_PAUSED",
     workspaceId: task.workspaceId,

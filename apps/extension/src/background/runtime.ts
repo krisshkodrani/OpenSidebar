@@ -63,6 +63,10 @@ export interface AgentRuntime {
     workspaceId: string,
     payload: { approvalId: string; approved: boolean },
   ): boolean;
+  resolveClarification(
+    workspaceId: string,
+    payload: { clarificationId: string; answer: string },
+  ): boolean;
   /** Observe task pauses (approvals), correlated by workspaceId. Returns unsubscribe. */
   onTaskPaused(
     listener: (workspaceId: string, payload: TaskPausedPayload) => void,
@@ -81,7 +85,10 @@ export interface AgentRuntime {
 export interface AgentRuntimeDeps {
   orchestrator?: Pick<
     typeof defaultOrchestrator,
-    "startTask" | "stopTask" | "resolveApprovalResponse"
+    | "startTask"
+    | "stopTask"
+    | "resolveApprovalResponse"
+    | "resolveClarificationResponse"
   >;
 }
 
@@ -105,6 +112,9 @@ export function createAgentRuntime(
     },
     resolveApproval(workspaceId, payload) {
       return orchestrator.resolveApprovalResponse(payload, workspaceId);
+    },
+    resolveClarification(workspaceId, payload) {
+      return orchestrator.resolveClarificationResponse(payload, workspaceId);
     },
     onTaskPaused(listener) {
       const off = env.messaging.onMessage((message) => {

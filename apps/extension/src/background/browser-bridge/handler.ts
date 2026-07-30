@@ -13,12 +13,24 @@ import type {
   BrowserToolRequest,
   BrowserToolResponse,
   ForwardedApprovalRequest,
+  ForwardedClarificationRequest,
 } from "@shared-types/browser-bridge";
 import type { PartialProgressHandoff } from "@shared-types/progress";
+import type {
+  SessionMetrics,
+  SubtaskResult,
+} from "@shared-types/messages/progress";
+import {
+  DelegatedTaskService,
+  TASK_FIRST_BROWSER_TOOLS,
+} from "./delegated-task-service";
 
 export interface AgentTask {
   instruction: string;
   url?: string;
+  preferredTabId?: number;
+  maxSteps?: number;
+  allowedDomains?: string[];
   /** Session key: calls sharing it reuse one workspace + tab (see wire contract). */
   session?: string;
 }
@@ -32,6 +44,11 @@ export interface AgentRunOutcome {
   handoff?: PartialProgressHandoff;
   /** Present when `needs_human` because a consequential action awaits approval. */
   approval?: ForwardedApprovalRequest;
+  clarification?: ForwardedClarificationRequest;
+  metrics?: SessionMetrics;
+  subtaskResults?: SubtaskResult[];
+  urlHistory?: string[];
+  runtimeTaskId?: string;
 }
 
 export interface AgentRunOptions {
@@ -42,11 +59,17 @@ export interface AgentRunOptions {
 /** Runs one internal agent task. Implemented by the orchestrator in Stage 2b. */
 export interface AgentRunner {
   run(task: AgentTask, opts?: AgentRunOptions): Promise<AgentRunOutcome>;
+  /** Stop the exact task session, including when it is paused with no live wait. */
+  cancel?(task: AgentTask): Promise<void>;
   /**
    * Answer a forwarded approval (pi-backend Phase 4), resuming the paused
    * mission. Optional so a runner without the capability can decline cleanly.
    */
   respondApproval?(
+    req: BrowserToolRequest,
+    opts?: AgentRunOptions,
+  ): Promise<AgentRunOutcome>;
+  respondClarification?(
     req: BrowserToolRequest,
     opts?: AgentRunOptions,
   ): Promise<AgentRunOutcome>;
@@ -137,7 +160,16 @@ export async function handleBrowserToolRequest(
   req: BrowserToolRequest,
   runner: AgentRunner,
   opts?: AgentRunOptions,
+  delegatedTasks?: DelegatedTaskService,
 ): Promise<BrowserToolResponse> {
+  if (TASK_FIRST_BROWSER_TOOLS.has(req.tool)) {
+    try {
+      const service = delegatedTasks ?? new DelegatedTaskService(runner);
+      return { status: "ok", result: await service.handle(req) };
+    } catch (error) {
+      return { status: "error", reason: (error as Error).message };
+    }
+  }
   // Liveness check never runs a task.
   if (req.tool === "browser_ping") return { status: "ok", result: "pong" };
   // Approval answer: routes to the runner's resume capability, not a new run.

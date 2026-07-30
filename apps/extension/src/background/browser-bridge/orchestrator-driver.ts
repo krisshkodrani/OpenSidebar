@@ -80,13 +80,22 @@ export interface BrowserTaskDeps {
   /** Point an existing tab at a url. Does not await page load (nor does createTab). */
   navigateTab(tabId: number, url: string): Promise<void>;
   /** Start an orchestrator task in the given tab/workspace. */
-  startTask(input: { query: string; tabId: number; workspaceId: string }): Promise<void>;
+  startTask(input: {
+    query: string;
+    tabId: number;
+    workspaceId: string;
+    maxSteps?: number;
+  }): Promise<void>;
   /** Ask the orchestrator to stop the workspace's running task. */
   stopTask(workspaceId: string): Promise<void>;
   /** Answer a forwarded approval; false if no matching pending approval exists. */
   resolveApproval(
     workspaceId: string,
     payload: { approvalId: string; approved: boolean },
+  ): boolean;
+  resolveClarification(
+    workspaceId: string,
+    payload: { clarificationId: string; answer: string },
   ): boolean;
   /** Subscribe to task completions; returns an unsubscribe fn. */
   addCompletionListener(
@@ -95,6 +104,10 @@ export interface BrowserTaskDeps {
   /** Subscribe to task pauses (approvals awaiting an answer); returns unsubscribe. */
   addPauseListener(
     fn: (workspaceId: string, payload: PausePayload) => void,
+  ): () => void;
+  /** Observe committed top-frame navigation for domain-policy enforcement. */
+  addNavigationListener?(
+    fn: (tabId: number, url: string) => void,
   ): () => void;
   /** Overridable for tests. */
   timeoutMs?: number;
@@ -116,14 +129,21 @@ function newWorkspaceId(): string {
  */
 export function mapCompletion(payload: CompletionPayload): AgentRunOutcome {
   const handoff = payload.partialHandoff;
+  const details = {
+    handoff,
+    metrics: payload.metrics,
+    subtaskResults: payload.subtaskResults,
+    urlHistory: payload.urlHistory,
+    runtimeTaskId: payload.taskId,
+  };
   switch (payload.status) {
     case "completed":
-      return { status: "completed", summary: payload.summary, handoff };
+      return { status: "completed", summary: payload.summary, ...details };
     case "partial":
       return {
         status: "needs_human",
         summary: payload.summary,
-        handoff,
+        ...details,
         reason:
           handoff?.uncertainty?.[0]?.text ??
           payload.summary ??
@@ -134,7 +154,7 @@ export function mapCompletion(payload: CompletionPayload): AgentRunOutcome {
       return {
         status: "error",
         summary: payload.summary,
-        handoff,
+        ...details,
         reason:
           payload.terminationReason ??
           payload.summary ??
@@ -159,6 +179,20 @@ interface SessionEntry {
 /** Project a forwarded pause into a `needs_human` outcome carrying the approval. */
 function pauseToOutcome(payload: PausePayload): AgentRunOutcome {
   const i = payload.interaction;
+  if (i.kind === "clarification") {
+    return {
+      status: "needs_human",
+      reason: `clarification required: ${i.question}`,
+      clarification: {
+        clarificationId: i.clarificationId,
+        question: i.question,
+        suggestions: i.suggestions,
+        requestedAt: i.requestedAt,
+        timeoutMs: i.timeoutMs,
+        expiresAt: i.expiresAt,
+      },
+    };
+  }
   return {
     status: "needs_human",
     reason: `approval required: ${i.context}`,
@@ -184,8 +218,14 @@ export function createBrowserAgentRunner(deps: BrowserTaskDeps): AgentRunner {
   // (or SW-restart) respond call can still target it. Never cleared — bounded
   // by the number of approvals a single caller process produces.
   const approvalWorkspaces = new Map<string, string>();
+  const clarificationWorkspaces = new Map<string, string>();
 
   async function resolveTab(task: AgentTask, entry: SessionEntry | null): Promise<number> {
+    if (task.preferredTabId != null && (await deps.tabExists(task.preferredTabId))) {
+      if (entry) entry.tabId = task.preferredTabId;
+      if (task.url) await deps.navigateTab(task.preferredTabId, task.url);
+      return task.preferredTabId;
+    }
     if (entry?.tabId != null && (await deps.tabExists(entry.tabId))) {
       if (task.url) await deps.navigateTab(entry.tabId, task.url);
       return entry.tabId;
@@ -206,6 +246,7 @@ export function createBrowserAgentRunner(deps: BrowserTaskDeps): AgentRunner {
     workspaceId: string,
     signal: AbortSignal | undefined,
     start: () => Promise<void>,
+    navigationPolicy?: { tabId: number; allowedDomains: string[] },
   ): Promise<AgentRunOutcome> {
     return new Promise<AgentRunOutcome>((resolve) => {
       let settled = false;
@@ -215,6 +256,7 @@ export function createBrowserAgentRunner(deps: BrowserTaskDeps): AgentRunner {
         clearTimeout(timer);
         offCompletion();
         offPause();
+        offNavigation();
         signal?.removeEventListener("abort", onAbort);
         resolve(outcome);
       };
@@ -236,9 +278,43 @@ export function createBrowserAgentRunner(deps: BrowserTaskDeps): AgentRunner {
       });
       const offPause = deps.addPauseListener((ws, payload) => {
         if (ws !== workspaceId) return;
-        approvalWorkspaces.set(payload.interaction.approvalId, workspaceId);
+        if (payload.interaction.kind === "approval") {
+          approvalWorkspaces.set(payload.interaction.approvalId, workspaceId);
+        } else {
+          clarificationWorkspaces.set(
+            payload.interaction.clarificationId,
+            workspaceId,
+          );
+        }
         finish(pauseToOutcome(payload));
       });
+      const offNavigation =
+        navigationPolicy && deps.addNavigationListener
+          ? deps.addNavigationListener((tabId, url) => {
+              if (tabId !== navigationPolicy.tabId) return;
+              let hostname: string;
+              try {
+                const parsed = new URL(url);
+                if (!["http:", "https:"].includes(parsed.protocol)) return;
+                hostname = parsed.hostname.toLowerCase();
+              } catch {
+                return;
+              }
+              const allowed = navigationPolicy.allowedDomains.some((domain) => {
+                const host = domain.split(":")[0];
+                return host.startsWith("*.")
+                  ? hostname === host.slice(2) || hostname.endsWith(`.${host.slice(2)}`)
+                  : hostname === host;
+              });
+              if (!allowed) {
+                void deps.stopTask(workspaceId).catch(() => {});
+                finish({
+                  status: "error",
+                  reason: `navigation blocked by allowed_domains: ${hostname}`,
+                });
+              }
+            })
+          : () => {};
       signal?.addEventListener("abort", onAbort);
       start()
         .then(() => {
@@ -250,7 +326,7 @@ export function createBrowserAgentRunner(deps: BrowserTaskDeps): AgentRunner {
     });
   }
 
-  function executeRun(
+  async function executeRun(
     task: AgentTask,
     entry: SessionEntry | null,
     signal: AbortSignal | undefined,
@@ -260,13 +336,24 @@ export function createBrowserAgentRunner(deps: BrowserTaskDeps): AgentRunner {
       return Promise.resolve({ status: "error", reason: CANCELED_REASON });
     }
     const workspaceId = entry?.workspaceId ?? newWorkspaceId();
+    const tabId = await resolveTab(task, entry);
     return waitForOutcome(workspaceId, signal, async () => {
-      const tabId = await resolveTab(task, entry);
-      await deps.startTask({ query: task.instruction, tabId, workspaceId });
-    });
+      await deps.startTask({
+        query: task.instruction,
+        tabId,
+        workspaceId,
+        maxSteps: task.maxSteps,
+      });
+    }, task.allowedDomains?.length ? { tabId, allowedDomains: task.allowedDomains } : undefined);
   }
 
   return {
+    async cancel(task: AgentTask): Promise<void> {
+      const entry = task.session ? sessions.get(task.session) : undefined;
+      if (!entry) return;
+      await deps.stopTask(entry.workspaceId);
+    },
+
     run(task: AgentTask, opts?: AgentRunOptions): Promise<AgentRunOutcome> {
       const signal = opts?.signal;
       if (!task.session) return executeRun(task, null, signal);
@@ -313,6 +400,35 @@ export function createBrowserAgentRunner(deps: BrowserTaskDeps): AgentRunner {
       entry.queue = run.catch(() => {});
       return run;
     },
+
+    respondClarification(
+      req: BrowserToolRequest,
+      opts?: AgentRunOptions,
+    ): Promise<AgentRunOutcome> {
+      const clarificationId = String(req.args.clarificationId);
+      const answer = String(req.args.answer ?? "");
+      const entry = req.session ? sessions.get(req.session) : undefined;
+      const workspaceId =
+        entry?.workspaceId ?? clarificationWorkspaces.get(clarificationId);
+      if (!workspaceId) {
+        return Promise.resolve({
+          status: "error",
+          reason: "no pending clarification for that id",
+        });
+      }
+      const resume = () =>
+        waitForOutcome(workspaceId, opts?.signal, async () => {
+          if (!deps.resolveClarification(workspaceId, { clarificationId, answer })) {
+            throw new Error(
+              "no pending clarification (unknown, expired, or already answered)",
+            );
+          }
+        });
+      if (!entry) return resume();
+      const run = entry.queue.then(resume);
+      entry.queue = run.catch(() => {});
+      return run;
+    },
   };
 }
 
@@ -341,14 +457,20 @@ export function createDefaultBrowserTaskDeps(): BrowserTaskDeps {
     resolveApproval(workspaceId, payload) {
       return browserRuntime.resolveApproval(workspaceId, payload);
     },
-    async startTask({ query, tabId, workspaceId }) {
+    resolveClarification(workspaceId, payload) {
+      return browserRuntime.resolveClarification(workspaceId, payload);
+    },
+    async startTask({ query, tabId, workspaceId, maxSteps }) {
       const settings = (await loadSettings()) ?? ({} as UserSettings);
       const apiKey = await loadApiKey();
       await browserRuntime.startTask({
         query,
         tabId,
         workspaceId,
-        settings,
+        settings:
+          maxSteps === undefined
+            ? settings
+            : { ...settings, maxTurns: Math.min(settings.maxTurns || maxSteps, maxSteps) },
         openRouterApiKey: apiKey || settings.openRouterApiKey || "",
         // Approvals forward over the bridge — there is no sidepanel to answer
         // them; selects the longer approval timeout (pi-backend Phase 4).
@@ -362,6 +484,11 @@ export function createDefaultBrowserTaskDeps(): BrowserTaskDeps {
     },
     addPauseListener(fn) {
       return browserRuntime.onTaskPaused(fn);
+    },
+    addNavigationListener(fn) {
+      return chromeRuntimeEnvironment.navigationEvents.onCommitted((details) => {
+        if (details.frameId === 0) fn(details.tabId, details.url);
+      });
     },
   };
 }

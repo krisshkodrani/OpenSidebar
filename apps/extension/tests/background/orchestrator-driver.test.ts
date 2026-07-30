@@ -31,10 +31,9 @@ function handoff(
 
 describe("mapCompletion", () => {
   test("completed → completed", () => {
-    expect(mapCompletion({ status: "completed", summary: "done" })).toEqual({
+    expect(mapCompletion({ status: "completed", summary: "done" })).toMatchObject({
       status: "completed",
       summary: "done",
-      handoff: undefined,
     });
   });
 

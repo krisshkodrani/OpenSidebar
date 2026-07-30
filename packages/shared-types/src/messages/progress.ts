@@ -9,6 +9,7 @@ import type { AgentStep } from "../agent";
 import type { PartialProgressHandoff } from "../progress";
 import type { BaseMessage } from "./base";
 import type { ForwardedApprovalDryRun } from "../browser-bridge";
+import type { DelegatedBrowserTask } from "../browser-bridge";
 
 /** Background sends a step update to the side panel for the timeline */
 export interface AgentStepMessage extends BaseMessage {
@@ -276,7 +277,7 @@ export interface NavigationResumeMessage extends BaseMessage {
 /** Progress, telemetry, and completion-report messages (background-sourced). */
 /**
  * Background announces a task paused for a user interaction (pi-backend
- * Phase 4 approval forwarding). Emitted AFTER `task.pendingInteraction` is
+ * Phase 4 interaction forwarding). Emitted AFTER `task.pendingInteraction` is
  * set, so any consumer that answers immediately finds resolvable state. The
  * task is alive and checkpointed; it resumes via an approval response, or
  * auto-denies at `expiresAt`. The sidepanel ignores this (it already gets
@@ -288,18 +289,35 @@ export interface TaskPausedMessage extends BaseMessage {
   workspaceId: string;
   payload: {
     taskId: string;
-    interaction: {
-      kind: "approval";
-      approvalId: string;
-      toolName: string;
-      args: Record<string, unknown>;
-      context: string;
-      requestedAt: number;
-      timeoutMs: number;
-      expiresAt: number;
-      dryRun?: ForwardedApprovalDryRun;
-    };
+    interaction:
+      | {
+          kind: "approval";
+          approvalId: string;
+          toolName: string;
+          args: Record<string, unknown>;
+          context: string;
+          requestedAt: number;
+          timeoutMs: number;
+          expiresAt: number;
+          dryRun?: ForwardedApprovalDryRun;
+        }
+      | {
+          kind: "clarification";
+          clarificationId: string;
+          question: string;
+          suggestions?: string[];
+          requestedAt: number;
+          timeoutMs: number;
+          expiresAt: number;
+        };
   };
+}
+
+/** Background projects a delegated MCP task into the human sidepanel. */
+export interface DelegatedBrowserTaskUpdateMessage extends BaseMessage {
+  type: "DELEGATED_BROWSER_TASK_UPDATE";
+  source: MessageSource.BACKGROUND;
+  payload: DelegatedBrowserTask;
 }
 
 export type ProgressMessage =
@@ -313,5 +331,6 @@ export type ProgressMessage =
   | DurableRunStatusMessage
   | TaskCompletionMessage
   | TaskPausedMessage
+  | DelegatedBrowserTaskUpdateMessage
   | SessionMetricsMessage
   | NavigationResumeMessage;

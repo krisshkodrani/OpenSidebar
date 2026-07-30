@@ -110,6 +110,7 @@ function statusDotLabel(tone: TaskRailTone) {
 
 export function PrimaryTaskRail({ embedded = false }: { embedded?: boolean } = {}) {
   const taskUi = useTaskUiState();
+  const delegatedTask = useStore((s) => s.delegatedBrowserTask);
   const showSessionMetrics = useStore((s) => s.settings.showSessionMetrics);
   const hasTaskProgress = useStore((s) => Boolean(s.taskProgress));
   const [pauseRequested, setPauseRequested] = useState(false);
@@ -161,7 +162,46 @@ export function PrimaryTaskRail({ embedded = false }: { embedded?: boolean } = {
     }
   }, []);
 
+  const delegatedTaskActive =
+    delegatedTask != null &&
+    !["completed", "failed", "cancelled"].includes(delegatedTask.status);
+  const delegatedBanner = delegatedTaskActive ? (
+    <section className="mx-3 mt-2 flex items-center gap-2 rounded-lg border border-teal-200 bg-teal-50/80 px-2.5 py-2 dark:border-teal-900 dark:bg-teal-950/30">
+      <span className="inline-flex h-2 w-2 shrink-0 rounded-full bg-teal-500" />
+      <div className="min-w-0 flex-1">
+        <div className="text-[10px] font-semibold uppercase text-teal-700 dark:text-teal-300">
+          Delegated browser task
+        </div>
+        <div className="truncate text-xs text-warm-800 dark:text-warm-100">
+          {delegatedTask.goal}
+        </div>
+        <div className="text-[10px] text-warm-500 dark:text-warm-400">
+          {delegatedTask.status.replaceAll("_", " ")}
+          {delegatedTask.providerUsage.estimatedCostUsd > 0
+            ? ` · $${delegatedTask.providerUsage.estimatedCostUsd.toFixed(4)}`
+            : ""}
+        </div>
+      </div>
+      <button
+        onClick={() =>
+          void uiRuntime.sendMessage({
+            type: "STOP_AGENT",
+            requestId: crypto.randomUUID(),
+            source: uiRuntime.source,
+            payload: { workspaceId: null },
+          })
+        }
+        className="inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-md bg-red-500 text-white transition-colors hover:bg-red-600"
+        aria-label="Stop delegated browser task"
+        title="Stop delegated browser task"
+      >
+        <Square size={11} fill="currentColor" />
+      </button>
+    </section>
+  ) : null;
+
   if (!taskUi.showPrimaryRail) {
+    if (delegatedBanner) return delegatedBanner;
     return null;
   }
 
@@ -173,6 +213,8 @@ export function PrimaryTaskRail({ embedded = false }: { embedded?: boolean } = {
       : rail.secondaryLabel;
 
   return (
+    <>
+      {delegatedBanner}
     <section
       aria-live="polite"
       aria-atomic="true"
@@ -293,5 +335,6 @@ export function PrimaryTaskRail({ embedded = false }: { embedded?: boolean } = {
         </div>
       </div>
     </section>
+    </>
   );
 }

@@ -208,6 +208,12 @@ Suggested sequencing: LP-22 phases 0–1 shipped in PR #106. For LP-23, phases
 3–5 enact the proposed-answers policy change and want the demographic
 carve-out confirmed at stamp time.
 
+## Browser delegation series (2026-07-30)
+
+| # | RFC | Problem | Depends on |
+| --- | --- | --- | --- |
+| LP-26 | [Task-first browser delegation](lp-0026-task-first-browser-delegation.md) | Synchronous bridge calls hide OpenSidebar's durable autonomous task lifecycle and evidence contract | LP-4, LP-7, LP-15, existing browser bridge — **Decision stamped 2026-07-30; implementation in progress** |
+
 ## Post-launch consolidation series
 
 LP-15 was decision-stamped and executed 2026-07-05→07 (all twelve phases'
