@@ -153,9 +153,7 @@ describe("WorkspaceManager page-opened tab adoption", () => {
       url: "http://x/detail",
     } as chrome.webNavigation.WebNavigationSourceCallbackDetails);
     await new Promise((r) => setTimeout(r, 50));
-    expect(
-      (await manager.getWorkspaceById("e2e-run-1"))?.tabIds,
-    ).toContain(72);
+    expect((await manager.getWorkspaceById("e2e-run-1"))?.tabIds).toContain(72);
     expect(manager.drainSpawnedTabs("e2e-run-1")).toHaveLength(1);
   });
 
@@ -191,9 +189,8 @@ describe("surfaceSpawnedTabs", () => {
         ]),
       },
     }));
-    const { surfaceSpawnedTabs } = await import(
-      "../../src/background/agent/spawned-tab-surfacing"
-    );
+    const { surfaceSpawnedTabs } =
+      await import("../../src/background/agent/spawned-tab-surfacing");
 
     const messages: Array<{ role: string; content: string }> = [];
     let latched = false;
@@ -225,9 +222,7 @@ describe("surfaceSpawnedTabs", () => {
     expect(messages[0].content).toContain("opened a NEW browser tab");
     expect(messages[0].content).toContain("Tab 777");
     expect(messages[0].content).toContain("switch_tab");
-    expect(traceEvents.map((e) => e.name)).toContain(
-      "page_opened_tab_adopted",
-    );
+    expect(traceEvents.map((e) => e.name)).toContain("page_opened_tab_adopted");
 
     vi.doUnmock("../../src/background/workspaces/manager");
     vi.resetModules();
@@ -239,9 +234,8 @@ describe("surfaceSpawnedTabs", () => {
     vi.doMock("../../src/background/workspaces/manager", () => ({
       workspaceManager: { drainSpawnedTabs: drain },
     }));
-    const { surfaceSpawnedTabs } = await import(
-      "../../src/background/agent/spawned-tab-surfacing"
-    );
+    const { surfaceSpawnedTabs } =
+      await import("../../src/background/agent/spawned-tab-surfacing");
     const host = {
       turnCount: 1,
       context: {
@@ -285,9 +279,8 @@ describe("tab-management gate spawned-tab unlock", () => {
 
 describe("tool-profile spawned-tab unlock", () => {
   test("switch_tab/list_tabs survive step-profile filtering once a tab was spawned", async () => {
-    const { applyToolProfile } = await import(
-      "../../src/background/agent/loop-skill-tools"
-    );
+    const { applyToolProfile } =
+      await import("../../src/background/agent/loop-skill-tools");
     const def = (name: string) =>
       ({ type: "function", function: { name, parameters: {} } }) as any;
     const tools = [
@@ -317,7 +310,10 @@ describe("tool-profile spawned-tab unlock", () => {
         originalQuery: "fill the form",
         planSteps: [{}],
         planSubtasks: [
-          { description: "Fill the application form", toolProfile: "form_fill" },
+          {
+            description: "Fill the application form",
+            toolProfile: "form_fill",
+          },
         ],
         selectedSkillId: null,
         turnCount: 3,

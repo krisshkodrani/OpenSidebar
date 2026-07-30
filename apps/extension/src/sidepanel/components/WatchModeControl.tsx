@@ -13,6 +13,9 @@ export function WatchModeControl({ disabled }: { disabled?: boolean }) {
   const passiveStatusDetail = useStore((s) => s.passiveStatusDetail);
   const passiveInstructions = useStore((s) => s.passiveInstructions);
   const passiveInputSources = useStore((s) => s.passiveInputSources);
+  const speechAvailable = useStore((s) =>
+    Boolean(s.settings.groqApiKey?.trim()),
+  );
   const setPassiveInstructions = useStore((s) => s.setPassiveInstructions);
   const setPassiveInputSources = useStore((s) => s.setPassiveInputSources);
   const setPassiveMonitorStatus = useStore((s) => s.setPassiveMonitorStatus);
@@ -35,16 +38,18 @@ export function WatchModeControl({ disabled }: { disabled?: boolean }) {
 
   useEffect(() => {
     setScreenEnabled(passiveInputSources.includes("screenshot"));
-    setAudioEnabled(passiveInputSources.includes("tabAudio"));
-  }, [passiveInputSources]);
+    setAudioEnabled(
+      speechAvailable && passiveInputSources.includes("tabAudio"),
+    );
+  }, [passiveInputSources, speechAvailable]);
 
   const inputSources = useMemo<PassiveInputSource[]>(
     () => [
       "page",
       ...(screenEnabled ? (["screenshot"] as const) : []),
-      ...(audioEnabled ? (["tabAudio"] as const) : []),
+      ...(speechAvailable && audioEnabled ? (["tabAudio"] as const) : []),
     ],
-    [audioEnabled, screenEnabled],
+    [audioEnabled, screenEnabled, speechAvailable],
   );
 
   const stop = useCallback(async () => {
@@ -162,7 +167,8 @@ export function WatchModeControl({ disabled }: { disabled?: boolean }) {
           )}
         />
         <span className="min-w-0 flex-1 truncate text-[11px]">
-          {passiveStatusDetail || (active ? "Watching page changes." : "Ready")}
+          {passiveStatusDetail ||
+            (active ? "Watching page changes." : "Monitor page changes")}
         </span>
         {active ? (
           <button
@@ -198,19 +204,21 @@ export function WatchModeControl({ disabled }: { disabled?: boolean }) {
               <Monitor size={12} />
               <span>Screen</span>
             </label>
-            <label
-              className="inline-flex h-7 items-center gap-1.5 rounded-md border border-warm-200 bg-white px-2 text-[11px] text-warm-600 dark:border-warm-700 dark:bg-warm-900 dark:text-warm-300"
-              title="Transcribe audio playing in this tab for Watch Mode"
-            >
-              <input
-                type="checkbox"
-                checked={audioEnabled}
-                onChange={(event) => setAudioEnabled(event.target.checked)}
-                className="h-3 w-3"
-              />
-              <Volume2 size={12} />
-              <span>Audio</span>
-            </label>
+            {speechAvailable ? (
+              <label
+                className="inline-flex h-7 items-center gap-1.5 rounded-md border border-warm-200 bg-white px-2 text-[11px] text-warm-600 dark:border-warm-700 dark:bg-warm-900 dark:text-warm-300"
+                title="Transcribe audio playing in this tab for Watch Mode"
+              >
+                <input
+                  type="checkbox"
+                  checked={audioEnabled}
+                  onChange={(event) => setAudioEnabled(event.target.checked)}
+                  className="h-3 w-3"
+                />
+                <Volume2 size={12} />
+                <span>Audio</span>
+              </label>
+            ) : null}
             <button
               type="button"
               onClick={active ? stop : start}

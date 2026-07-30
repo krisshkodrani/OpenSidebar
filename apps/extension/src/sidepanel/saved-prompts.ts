@@ -5,7 +5,22 @@ import { uiRuntime } from "./runtime";
 const STORAGE_KEY = "opensidebar:savedPrompts";
 const SEEDED_KEY = "opensidebar:savedPromptsSeeded";
 const VERSION_KEY = "opensidebar:savedPromptsVersion";
-const CURRENT_PROMPTS_VERSION = 3;
+const CURRENT_PROMPTS_VERSION = 4;
+
+const LEGACY_DEFAULT_CONTENT = {
+  "Extract all links":
+    "Read the current page and collect every link with its text and URL. Return a formatted list via done().",
+  "Fill out this form":
+    "Fill out the form on this page using reasonable placeholder values. For each field, pick a realistic value based on the label. Do not submit until all fields are filled.",
+  "Summarize this page":
+    "Read the current page and provide a concise summary of the main content. Return the summary via done().",
+} as const;
+
+const DEFAULT_PROMPT_IDS = {
+  "Extract all links": "ui.saved_prompt.extract_links",
+  "Fill out this form": "ui.saved_prompt.fill_form",
+  "Summarize this page": "ui.saved_prompt.summarize_page",
+} as const;
 
 const DEFAULT_PROMPTS: Omit<SavedPrompt, "id" | "createdAt" | "updatedAt">[] = [
   {
@@ -61,6 +76,20 @@ export async function loadSavedPrompts(): Promise<SavedPrompt[]> {
     // v2 -> v3: Remove challenge prompts (no longer part of product)
     if (currentVersion < 3) {
       next = next.filter((p) => p.title !== "Browser Navigation Challenge");
+    }
+
+    // v3 -> v4: Refresh untouched defaults with user-facing, safety-aware copy.
+    // Prompts that users edited are preserved exactly as they are.
+    if (currentVersion < 4) {
+      next = next.map((prompt) => {
+        const title = prompt.title as keyof typeof LEGACY_DEFAULT_CONTENT;
+        if (prompt.content !== LEGACY_DEFAULT_CONTENT[title]) return prompt;
+        return {
+          ...prompt,
+          content: getPromptTemplate(DEFAULT_PROMPT_IDS[title]),
+          updatedAt: Date.now(),
+        };
+      });
     }
 
     await uiRuntime.storage.local.set({

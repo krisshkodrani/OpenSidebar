@@ -1,7 +1,7 @@
 # Privacy Policy
 
 **OpenSidebar** - Chrome Browser Extension
-Last updated: 2026-06-27
+Last updated: 2026-07-29
 
 ---
 
@@ -10,7 +10,8 @@ Last updated: 2026-06-27
 OpenSidebar is an open-source browser extension that runs AI-powered tasks in your browser. It follows a **bring-your-own-key (BYOK)** model: you provide your own model-provider API key, and AI processing happens through the provider account you configure.
 
 - We do **not** collect, store, or transmit your personal data to OpenSidebar servers.
-- We do **not** run analytics, telemetry, tracking, crash reporting, or a hosted model relay.
+- We do **not** run analytics, tracking, crash reporting, or a hosted model relay.
+- This release includes an optional local-only reliability-summary preview. It is off by default, and uploading is not enabled in the published build.
 - Task context is sent directly from the extension to the model provider you configure.
 - Extension settings, keys, and diagnostic data stay in browser storage unless you run the optional local development log server.
 
@@ -45,6 +46,7 @@ Extension data is stored in your browser using Chrome's built-in storage APIs (`
 | Saved prompts | `chrome.storage.local` | Quick-access prompt templates you create |
 | Personal profile | `chrome.storage.local` | Optional profile notes and the digested facts/preferences you write, used to personalize tasks. Never synced. Items you mark **sensitive**, and the raw profile notes, are encrypted at rest (AES-GCM) under a key kept only on this device |
 | Diagnostic logs | `chrome.storage.local` | Local ring buffer of structured log entries for debugging |
+| Optional reliability summaries | `chrome.storage.local` | Coarse, sampled outcome data you can inspect and clear. Off by default; the published build cannot upload it |
 
 Chrome encrypts storage data at rest. Synced settings (`chrome.storage.sync`) follow your Chrome profile sync preferences; you can disable Chrome Sync to keep them local to one browser profile.
 
@@ -71,7 +73,13 @@ Requests may contain:
 
 Requests are sent over HTTPS to the selected provider endpoint. The selected provider's privacy policy governs how that provider handles API traffic.
 
-The extension does **not** send data to any first-party OpenSidebar service. There are no OpenSidebar analytics endpoints, hosted model relays, or crash reporters.
+The published extension does **not** send data to any first-party OpenSidebar
+service. It contains no OpenSidebar telemetry upload endpoint, hosted model
+relay, analytics client, or crash reporter.
+
+OpenSidebar maintains isolated internal infrastructure for controlled
+development testing. Its endpoint is not compiled into the published extension,
+and the released extension has no credentials or route that can send data to it.
 
 ### Optional Local Log Server
 
@@ -83,7 +91,10 @@ If you also expose traces to a local coding agent through the optional observabi
 
 ## What Data We Collect
 
-**None.** We have no hosted database, analytics service, model relay, telemetry endpoint, or crash reporter. We cannot see your API key, browsing data, tasks, conversation history, traces, or logs.
+**None from the published extension.** We do not receive its API keys, browsing
+data, tasks, conversation history, traces, logs, or local reliability summaries.
+The optional reliability-summary preview stores data only in your browser and
+provides controls to inspect and clear it.
 
 ---
 

@@ -167,8 +167,13 @@ class StorageLogger {
    */
   private drainToServer(entries: StorageLogEntry[]): void {
     if (typeof __DEV__ !== "undefined" && !__DEV__) return;
+    const serverUrl =
+      typeof __LOCAL_OBSERVABILITY_SERVER_URL__ === "string"
+        ? __LOCAL_OBSERVABILITY_SERVER_URL__.replace(/\/+$/, "")
+        : "";
+    if (!serverUrl) return;
     try {
-      fetch("http://127.0.0.1:7589/ingest", {
+      fetch(`${serverUrl}/ingest`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(entries),

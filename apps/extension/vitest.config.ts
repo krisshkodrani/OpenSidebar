@@ -3,6 +3,13 @@ import path from "path";
 
 export default defineConfig({
   root: __dirname,
+  define: {
+    __DEV__: JSON.stringify(true),
+    __LOCAL_OBSERVABILITY_SERVER_URL__: JSON.stringify(
+      "http://127.0.0.1:7589",
+    ),
+    __FLEET_TELEMETRY_INTERNAL_ENDPOINT__: JSON.stringify(""),
+  },
   test: {
     environment: "happy-dom",
     setupFiles: ["./tests/setup.ts"],

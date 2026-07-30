@@ -2,6 +2,13 @@
 
 *A deep-dive reference for engineers and AI practitioners on how a generic browser agent solves arbitrary browser tasks.*
 
+> **Historical snapshot (March 2026).** The design philosophy here still
+> holds, but the concrete numbers, thresholds, and model names are frozen at
+> their March 2026 values and several have since changed (e.g. default seats
+> are now minimax-m3 executor / glm-5p2 planner / gpt-oss-120b judge; the
+> element cap is 1000, not 50; the loop is decomposed into a turn state
+> machine). For current facts, trust `docs/architecture/` and the source.
+
 ---
 
 ## 1. Introduction & Design Philosophy

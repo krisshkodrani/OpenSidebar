@@ -8,10 +8,29 @@ import {
 describe("LLM model config", () => {
   test("uses checked-in defaults", () => {
     expect(LLM_MODEL_CONFIG).toEqual(DEFAULT_LLM_MODEL_CONFIG);
-    expect(LLM_MODEL_CONFIG.executor).toBe(
-      "accounts/fireworks/models/minimax-m3",
+    // The top-level executor default tracks the RECOMMENDED provider mode,
+    // which became OpenRouter on 2026-07-26 — hence the catalog-form id. The
+    // Fireworks form still backs the Fireworks-family seats below.
+    expect(LLM_MODEL_CONFIG.executor).toBe("minimax/minimax-m3");
+    expect(LLM_MODEL_CONFIG.fireworks.executor).toBe(
+      "accounts/fireworks/models/kimi-k2p7-code",
     );
     expect(LLM_MODEL_CONFIG.deepseek.planner).toBe("deepseek-v4-flash");
+  });
+
+  test("OpenRouter seats use catalog-form ids and a decoupled judge", () => {
+    // OpenRouter 404s on Fireworks `accounts/...` ids, so this group must never
+    // borrow the top-level Fireworks-form planner/judge defaults.
+    for (const [seat, model] of Object.entries(LLM_MODEL_CONFIG.openrouter)) {
+      expect(
+        model.startsWith("accounts/"),
+        `openrouter.${seat} (${model}) is a Fireworks id; OpenRouter needs the catalog form`,
+      ).toBe(false);
+      expect(model).toContain("/");
+    }
+    expect(LLM_MODEL_CONFIG.openrouter.judge).not.toBe(
+      LLM_MODEL_CONFIG.openrouter.planner,
+    );
   });
 
   test("judge seat defaults to a dedicated fast model, decoupled from the planner", () => {
@@ -26,9 +45,9 @@ describe("LLM model config", () => {
   });
 
   test("accepts a judge model override, else keeps the default", () => {
-    expect(
-      resolveLLMModelConfig({ judge: "custom/judge" }).judge,
-    ).toBe("custom/judge");
+    expect(resolveLLMModelConfig({ judge: "custom/judge" }).judge).toBe(
+      "custom/judge",
+    );
     expect(resolveLLMModelConfig({ judge: "" }).judge).toBe(
       DEFAULT_LLM_MODEL_CONFIG.judge,
     );

@@ -1,15 +1,13 @@
 #!/usr/bin/env node
 /**
- * Record a short demo of the Settings → Models tab, showing that the user picks
- * their own provider (BYOK) and models. Loads the REAL unpacked dev-surface
+ * Record a short demo of the Settings → Models tab, showing the release-
+ * verified provider choices and optional model overrides. Loads the REAL unpacked dev-surface
  * extension (dist-dev) in headed Chrome and drives the actual sidepanel as a
  * detached page — the same trick the e2e harness uses, because the native
  * chrome.sidePanel is not automatable.
  *
- * The provider control is a native <select> whose popup is OS-drawn and does not
- * appear in a screencast, so we cycle its value programmatically: the selected
- * provider and its description line update on camera, which is the honest "you
- * choose your provider" story. The per-seat model overrides are shown too.
+ * Demo credentials are placeholders used only to unlock the provider cards;
+ * the recording does not save them or make an inference request.
  *
  * Prereq: dist-dev built (`pnpm exec nx run extension:build-e2e`).
  * Usage: node scripts/record-settings-demo.mjs [--headed] [--fps 12] [--dark]
@@ -48,15 +46,24 @@ function startRecording(page, frameDir) {
       s.client = client;
       client.on("Page.screencastFrame", (e) => {
         s.last = Buffer.from(e.data, "base64");
-        client.send("Page.screencastFrameAck", { sessionId: e.sessionId }).catch(() => {});
+        client
+          .send("Page.screencastFrameAck", { sessionId: e.sessionId })
+          .catch(() => {});
       });
-      await client.send("Page.startScreencast", { format: "jpeg", quality: 90, everyNthFrame: 1 });
+      await client.send("Page.startScreencast", {
+        format: "jpeg",
+        quality: 90,
+        everyNthFrame: 1,
+      });
       s.timer = setInterval(async () => {
         if (s.writing || !s.last) return;
         s.writing = true;
         try {
           s.count += 1;
-          await writeFile(join(frameDir, `frame-${String(s.count).padStart(6, "0")}.jpg`), s.last);
+          await writeFile(
+            join(frameDir, `frame-${String(s.count).padStart(6, "0")}.jpg`),
+            s.last,
+          );
         } finally {
           s.writing = false;
         }
@@ -72,26 +79,49 @@ function startRecording(page, frameDir) {
 
 function encode(frameDir, outPath) {
   return new Promise((res, rej) => {
-    const p = spawn(FFMPEG, [
-      "-y", "-framerate", String(FPS), "-i", join(frameDir, "frame-%06d.jpg"),
-      "-vf", "pad=ceil(iw/2)*2:ceil(ih/2)*2,format=yuv420p",
-      "-c:v", "libx264", "-preset", "veryfast", "-crf", "23",
-      "-pix_fmt", "yuv420p", "-movflags", "+faststart", "-an", outPath,
-    ], { stdio: ["ignore", "ignore", "pipe"] });
+    const p = spawn(
+      FFMPEG,
+      [
+        "-y",
+        "-framerate",
+        String(FPS),
+        "-i",
+        join(frameDir, "frame-%06d.jpg"),
+        "-vf",
+        "pad=ceil(iw/2)*2:ceil(ih/2)*2,format=yuv420p",
+        "-c:v",
+        "libx264",
+        "-preset",
+        "veryfast",
+        "-crf",
+        "23",
+        "-pix_fmt",
+        "yuv420p",
+        "-movflags",
+        "+faststart",
+        "-an",
+        outPath,
+      ],
+      { stdio: ["ignore", "ignore", "pipe"] },
+    );
     let err = "";
     p.stderr.on("data", (d) => (err += d));
-    p.on("close", (c) => (c === 0 ? res() : rej(new Error(`ffmpeg ${c}: ${err.slice(-500)}`))));
+    p.on("close", (c) =>
+      c === 0 ? res() : rej(new Error(`ffmpeg ${c}: ${err.slice(-500)}`)),
+    );
   });
 }
 
-// Set a controlled <select>/<input> value so React's onChange fires.
+// Set a controlled input value so React's onChange fires.
 async function setReactValue(page, selector, value) {
   await page.evaluate(
     (sel, val) => {
       const el = document.querySelector(sel);
       if (!el) throw new Error(`no element ${sel}`);
-      const proto = el.tagName === "SELECT" ? HTMLSelectElement : HTMLInputElement;
-      const setter = Object.getOwnPropertyDescriptor(proto.prototype, "value").set;
+      const setter = Object.getOwnPropertyDescriptor(
+        HTMLInputElement.prototype,
+        "value",
+      ).set;
       setter.call(el, val);
       el.dispatchEvent(new Event("input", { bubbles: true }));
       el.dispatchEvent(new Event("change", { bubbles: true }));
@@ -101,11 +131,40 @@ async function setReactValue(page, selector, value) {
   );
 }
 
+async function clickProvider(page, label) {
+  const ok = await page.evaluate((want) => {
+    const el = [...document.querySelectorAll("button[aria-pressed]")].find(
+      (candidate) => (candidate.textContent || "").includes(want),
+    );
+    if (!el) return false;
+    el.click();
+    return true;
+  }, label);
+  if (!ok) throw new Error(`no provider button containing "${label}"`);
+}
+
+async function clickContainingText(page, selector, text) {
+  const ok = await page.evaluate(
+    (sel, want) => {
+      const el = [...document.querySelectorAll(sel)].find((candidate) =>
+        (candidate.textContent || "").includes(want),
+      );
+      if (!el) return false;
+      el.click();
+      return true;
+    },
+    selector,
+    text,
+  );
+  if (!ok) throw new Error(`no ${selector} containing "${text}"`);
+}
+
 async function clickByText(page, selector, text) {
   const ok = await page.evaluate(
     (sel, want) => {
       const el = [...document.querySelectorAll(sel)].find(
-        (e) => (e.textContent || "").trim().toLowerCase() === want.toLowerCase(),
+        (e) =>
+          (e.textContent || "").trim().toLowerCase() === want.toLowerCase(),
       );
       if (el) {
         el.click();
@@ -144,7 +203,9 @@ async function main() {
 
   // Extract the extension id from the service-worker target.
   const swTarget = await browser.waitForTarget(
-    (t) => t.type() === "service_worker" && t.url().startsWith("chrome-extension://"),
+    (t) =>
+      t.type() === "service_worker" &&
+      t.url().startsWith("chrome-extension://"),
     { timeout: 30_000 },
   );
   const extId = swTarget.url().match(/chrome-extension:\/\/([a-z]{32})\//)[1];
@@ -184,19 +245,25 @@ async function main() {
   await clickByText(page, "button", "models");
   await sleep(1000);
 
-  // Beat 3: scroll to the provider stack (past the API-key fields).
-  await scrollToText(page, "Provider Stack");
+  // Beat 3: connect the two release providers with non-secret demo values.
+  await setReactValue(page, "#provider-key-fireworksApiKey", "fw_demo");
+  await setReactValue(page, "#provider-key-openRouterApiKey", "sk-or-demo");
+  await page.waitForFunction(
+    () => document.querySelectorAll("button[aria-pressed]").length >= 2,
+  );
+  await scrollToText(page, "Available providers");
   await sleep(1200);
 
-  // Beat 4: cycle the provider — the selection + description line update live.
-  const providers = ["moonshot", "openrouter", "xiaomi", "fireworks"];
-  for (const p of providers) {
-    await setReactValue(page, 'section select', p);
-    await sleep(1400);
-  }
+  // Beat 4: switch between the two verified provider cards, ending on the
+  // recommended default used for fresh installs.
+  await clickProvider(page, "Fireworks AI");
+  await sleep(1400);
+  await clickProvider(page, "OpenRouter");
+  await sleep(1400);
 
-  // Beat 5: show the per-seat model overrides.
-  await scrollToText(page, "Model Overrides");
+  // Beat 5: show the optional per-seat model overrides.
+  await clickContainingText(page, "summary", "Advanced model settings");
+  await scrollToText(page, "Advanced model settings");
   await sleep(1600);
 
   const frames = await rec.stop();
@@ -206,9 +273,9 @@ async function main() {
   await rm(frameDir, { recursive: true, force: true });
   console.log(`[settings-demo] ${frames} frames → ${outPath}`);
 
-  // A clean still with a non-default provider selected, for the store screenshot.
-  await setReactValue(page, 'section select', "openrouter").catch(() => {});
-  await scrollToText(page, "Provider Stack");
+  // A clean still with the recommended default selected, for the store screenshot.
+  await clickProvider(page, "OpenRouter");
+  await scrollToText(page, "Available providers");
   await sleep(600);
   await mkdir(STILL_DIR, { recursive: true });
   const stillPath = join(STILL_DIR, "settings-provider.png");
@@ -218,7 +285,8 @@ async function main() {
   await browser.close();
   if (problems.length) {
     console.log(`[settings-demo] ${problems.length} page error(s):`);
-    for (const p of [...new Set(problems)].slice(0, 10)) console.log(`  - ${p}`);
+    for (const p of [...new Set(problems)].slice(0, 10))
+      console.log(`  - ${p}`);
   }
 }
 

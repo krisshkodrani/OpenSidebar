@@ -94,7 +94,7 @@ function sanitizeUrl(url: string): Result<string> {
 ### Key Usage
 
 - **Direct to providers** - Keys are sent directly to the configured model providers
-- **No intermediaries** - No proxy servers or data collection
+- **No model-traffic intermediaries** - Provider calls go directly to the configured provider; the published build has no OpenSidebar telemetry upload endpoint
 - **HTTPS only** - All API calls encrypted in transit
 
 ### Key Management

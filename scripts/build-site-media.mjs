@@ -31,7 +31,7 @@ const ACCENT = "0x4FC3F7";
 const GREY = "0xB8C4D0";
 const SYS_FONT = "C:/Windows/Fonts/segoeuib.ttf";
 const TAGLINE = "Your browser, driven by AI";
-const SUBLINE = "Bring your own key · No telemetry · Open source";
+const SUBLINE = "Bring your own key · Local by default · Open source";
 
 const args = new Set(process.argv.slice(2));
 const rel = (p) => path.relative(ROOT, p).replace(/\\/g, "/");

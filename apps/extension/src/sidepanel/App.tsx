@@ -8,7 +8,7 @@
  * State: Managed via Zustand store
  */
 
-import React, { useEffect, useRef, useState, useMemo } from "react";
+import React, { useEffect, useState, useMemo } from "react";
 import { createPortal } from "react-dom";
 import { X } from "lucide-react";
 import { useStore } from "./store";
@@ -36,10 +36,7 @@ import { useTranscriptAutoScroll } from "./hooks/useTranscriptAutoScroll";
 import { useComposerActions } from "./hooks/useComposerActions";
 import { useSkillRecordingActions } from "./hooks/useSkillRecordingActions";
 import { useTaskUiState } from "./task-ui-state";
-import {
-  hasReadyProfileDigest,
-  hasUsablePersonalProfile,
-} from "../utils/personal-profile";
+import { getAvailableProviderStacks } from "../utils/provider-keys";
 
 const SUGGESTED_ACTIONS = [
   "Summarize this page",
@@ -82,7 +79,6 @@ export default function App({ themeRoot, activityHudRoot }: AppProps = {}) {
   const skillRecordingStatus = useStore((s) => s.skillRecordingStatus);
   const activeUserWebsiteSkill = useStore((s) => s.activeUserWebsiteSkill);
   const isAgentRunning = useStore((s) => s.isAgentRunning);
-  const personalProfileState = useStore((s) => s.personalProfileState);
   // Avoid re-running filter/map work on every streaming delta.
   const visibleMessages = useMemo(
     () =>
@@ -104,22 +100,14 @@ export default function App({ themeRoot, activityHudRoot }: AppProps = {}) {
   const taskCompletion = useStore((s) => s.taskCompletion);
   const isPlanning = useStore((s) => s.isPlanning);
   const [isPlanExpanded, setIsPlanExpanded] = useState(false);
-  const planExpandedOnceRef = useRef(false);
 
   // Auto-expand on confirmation arrival
   useEffect(() => {
     if (pendingPlanConfirmation) setIsPlanExpanded(true);
   }, [pendingPlanConfirmation]);
 
-  // Auto-expand on first taskProgress arrival
-  useEffect(() => {
-    if (taskProgress && !planExpandedOnceRef.current) {
-      setIsPlanExpanded(true);
-      planExpandedOnceRef.current = true;
-    }
-  }, [taskProgress]);
-
-  // Auto-collapse when all plan data clears; reset ref for next run
+  // Keep execution plans compact by default; confirmations still expand
+  // automatically because they require an explicit user decision.
   useEffect(() => {
     if (
       !pendingPlanConfirmation &&
@@ -128,7 +116,6 @@ export default function App({ themeRoot, activityHudRoot }: AppProps = {}) {
       !isPlanning
     ) {
       setIsPlanExpanded(false);
-      planExpandedOnceRef.current = false;
     }
   }, [pendingPlanConfirmation, taskProgress, taskCompletion, isPlanning]);
 
@@ -141,17 +128,10 @@ export default function App({ themeRoot, activityHudRoot }: AppProps = {}) {
   const [recordIntroDontShowAgain, setRecordIntroDontShowAgain] =
     useState(false);
   const [isSkillChipOpen, setIsSkillChipOpen] = useState(false);
-  const [savedPromptsPrefill, setSavedPromptsPrefill] = useState<
-    string | undefined
-  >(undefined);
   const splashLogoUrl = uiRuntime.getUrl("public/icons/icon-128.png");
-  const hasPersonalProfile = useMemo(
-    () => hasUsablePersonalProfile(personalProfileState),
-    [personalProfileState],
-  );
-  const profileDigestReady = useMemo(
-    () => hasReadyProfileDigest(personalProfileState),
-    [personalProfileState],
+  const hasReleaseProvider = useMemo(
+    () => getAvailableProviderStacks(settings).length > 0,
+    [settings],
   );
 
   useEffect(() => {
@@ -248,16 +228,8 @@ export default function App({ themeRoot, activityHudRoot }: AppProps = {}) {
         )}
         <Header
           onOpenSettings={() => setIsSettingsOpen(true)}
-          onOpenPersonalProfile={() => setIsPersonalProfileOpen(true)}
-          onOpenSavedPrompts={() => {
-            setSavedPromptsPrefill(undefined);
-            setIsSavedPromptsOpen(true);
-          }}
           onOpenWebsiteSkills={() => setIsWebsiteSkillsOpen(true)}
-          onRecordSkill={handleRecordSkill}
-          hasPersonalProfile={hasPersonalProfile}
           modeBadgeLabel={getHeaderModeBadge(settings)}
-          profileEnabled={personalProfileState.enabled}
           recordingActive={skillRecordingStatus === "recording"}
         />
 
@@ -265,10 +237,7 @@ export default function App({ themeRoot, activityHudRoot }: AppProps = {}) {
             subscriptions, grouping, or hashing work. Each resets its draft
             state on open, so nothing meaningful is lost on unmount. */}
         {isSettingsOpen && (
-          <SettingsDrawer
-            isOpen
-            onClose={() => setIsSettingsOpen(false)}
-          />
+          <SettingsDrawer isOpen onClose={() => setIsSettingsOpen(false)} />
         )}
 
         {isPersonalProfileOpen && (
@@ -281,16 +250,11 @@ export default function App({ themeRoot, activityHudRoot }: AppProps = {}) {
         {isSavedPromptsOpen && (
           <SavedPromptsDrawer
             isOpen
-            onClose={() => {
-              setIsSavedPromptsOpen(false);
-              setSavedPromptsPrefill(undefined);
-            }}
+            onClose={() => setIsSavedPromptsOpen(false)}
             onSelectPrompt={(content) => {
               setInputText(content);
               setIsSavedPromptsOpen(false);
-              setSavedPromptsPrefill(undefined);
             }}
-            prefillContent={savedPromptsPrefill}
           />
         )}
 
@@ -345,12 +309,6 @@ export default function App({ themeRoot, activityHudRoot }: AppProps = {}) {
               {blockedSiteWarning}
             </div>
           )}
-          {isAgentRunning &&
-            profileDigestReady && (
-              <div className="mx-4 mt-2 rounded-lg border border-primary-200 bg-primary-50/80 px-3 py-2 text-xs text-primary-800 dark:border-primary-800 dark:bg-primary-900/20 dark:text-primary-200">
-                Profile Digest available for this run.
-              </div>
-            )}
           {error && (
             <div
               role="alert"
@@ -376,14 +334,7 @@ export default function App({ themeRoot, activityHudRoot }: AppProps = {}) {
                       className="w-14 h-14 object-contain"
                     />
                   </div>
-                  {!(
-                    settings.fireworksApiKey ||
-                    settings.deepseekApiKey ||
-                    settings.kimiApiKey ||
-                    settings.xiaomiApiKey ||
-                    settings.openaiApiKey ||
-                    settings.openRouterApiKey
-                  ) ? (
+                  {!hasReleaseProvider ? (
                     <>
                       <h2 className="font-semibold mb-1 text-warm-800 dark:text-warm-100">
                         Welcome to OpenSidebar
@@ -431,8 +382,8 @@ export default function App({ themeRoot, activityHudRoot }: AppProps = {}) {
             onSend={handleSend}
             onSendFeedback={handleSendFeedback}
             onStop={handleStop}
-            onOpenSettings={() => setIsSettingsOpen(true)}
             onOpenPersonalProfile={() => setIsPersonalProfileOpen(true)}
+            onOpenSavedPrompts={() => setIsSavedPromptsOpen(true)}
           />
         </div>
 
@@ -497,8 +448,7 @@ export default function App({ themeRoot, activityHudRoot }: AppProps = {}) {
           </div>
         )}
 
-        {activityHudRoot &&
-          createPortal(<TaskActivityHud />, activityHudRoot)}
+        {activityHudRoot && createPortal(<TaskActivityHud />, activityHudRoot)}
 
         {screenshot && settings.showDebugScreenshots && (
           <div className="fixed bottom-4 right-4 z-50 max-w-md">

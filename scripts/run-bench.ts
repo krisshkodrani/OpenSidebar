@@ -94,9 +94,17 @@ function parseArgs(): CliOptions {
     seed: Number(flagValue(args, "--seed") ?? "0"),
     maxTurns: Number(flagValue(args, "--max-turns") ?? "25"),
     configLabel: flagValue(args, "--config-label") ?? `${provider} / ${model}`,
-    runDir:
+    // Resolve like tasksFile above: the vitest child runs with cwd=apps/extension
+    // while this scoring pass runs from the repo root, so a RELATIVE --run-dir
+    // makes the two halves write and read different directories — the run
+    // succeeds and then scoring reports "No task evidence found". (The default
+    // is already absolute, which is why this only bites an explicit relative
+    // --run-dir. Stray apps/extension/.artifacts/bench/* dirs are its fossils.)
+    runDir: resolve(
+      process.cwd(),
       flagValue(args, "--run-dir") ??
-      resolve(PROJECT_ROOT, ".artifacts/bench", stamp),
+        resolve(PROJECT_ROOT, ".artifacts/bench", stamp),
+    ),
     build: !args.includes("--no-build"),
     judge: !args.includes("--no-judge"),
     judgeOnly: args.includes("--judge-only"),

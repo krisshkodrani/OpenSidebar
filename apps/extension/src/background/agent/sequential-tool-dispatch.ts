@@ -61,10 +61,7 @@ import {
   type GenericSequentialToolCallParams,
 } from "./loop-tool-handlers";
 import { resolveProfileFields } from "../../utils/personal-profile";
-import {
-  isAuthoredProse,
-  isFreeTextField,
-} from "./writer-handoff";
+import { isAuthoredProse, isFreeTextField } from "./writer-handoff";
 import {
   assessProfileLiteralTextRewrite,
   collectProfileRecordSetsFromValues,
@@ -236,10 +233,13 @@ export async function executeSequentialToolCalls(
     params.signalCompletedResult(summary, options);
   };
   if (doneSignaled) {
-    this.traceRecorder?.recordEvent("sequential_tools_skipped_after_completion", {
-      queuedToolCount: params.toolCalls.length,
-      mode: "sequential",
-    });
+    this.traceRecorder?.recordEvent(
+      "sequential_tools_skipped_after_completion",
+      {
+        queuedToolCount: params.toolCalls.length,
+        mode: "sequential",
+      },
+    );
     return params.state;
   }
   const sameResponseClickKeys = new Set<string>();
@@ -359,14 +359,18 @@ export async function executeSequentialToolCalls(
       requestedUrl: typeof args.url === "string" ? args.url : null,
     });
     if (resultPageProgressDecision.action === "navigate") {
-      this.log.info("agent", "Routed result page workflow to ranked candidate", {
-        turn: this.turnCount,
-        fromTool: toolName,
-        toTool: ToolName.NAVIGATE,
-        url: resultPageProgressDecision.url.slice(0, 160),
-        reason: resultPageProgressDecision.reason,
-        selectedSkillId: this.selectedSkillId,
-      });
+      this.log.info(
+        "agent",
+        "Routed result page workflow to ranked candidate",
+        {
+          turn: this.turnCount,
+          fromTool: toolName,
+          toTool: ToolName.NAVIGATE,
+          url: resultPageProgressDecision.url.slice(0, 160),
+          reason: resultPageProgressDecision.reason,
+          selectedSkillId: this.selectedSkillId,
+        },
+      );
       this.traceRecorder?.recordEvent("result_page_candidate_rerouted", {
         turn: this.turnCount,
         fromTool: toolName,
@@ -1384,7 +1388,6 @@ export async function executeSequentialToolCalls(
       continue;
     }
 
-    // CREATE_TAB — workspace-scoped, auto-adds to workspace
     if (toolName === ToolName.CREATE_TAB) {
       await handleCreateTabToolCall(
         this as unknown as AgentLoopToolHandlerHost,

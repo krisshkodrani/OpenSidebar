@@ -18,6 +18,7 @@ than in store screenshots.
 | Support URL | https://github.com/krisshkodrani/OpenSidebar/issues |
 | Privacy policy URL | https://github.com/krisshkodrani/OpenSidebar/blob/main/PRIVACY_POLICY.md |
 | Pricing | Free |
+| Promo video | `.artifacts/publish/opensidebar-customer-60s-british-female.mp4`; upload to YouTube and use its public URL |
 
 ## Short description
 
@@ -55,10 +56,11 @@ YOU STAY IN CONTROL
 
 BRING YOUR OWN KEY
 
-- Use a supported provider and models you configure
-- Your key stays in Chrome storage
-- Page context goes only to the provider you choose
-- No analytics, tracking, hosted relay, or OpenSidebar backend
+- Use OpenRouter (recommended and default), or the supported Fireworks stack
+- Your API key stays in Chrome storage; page context goes only to the provider you configure
+- No analytics or tracking, no hosted model relay, and no first-party telemetry upload endpoint in this release
+- Optional reliability summaries stay local in Chrome, are off by default, and can be inspected and cleared
+- Optional local memory: a personal profile you review yourself, with sensitive fields consent-gated and encrypted
 
 OpenSidebar is free and open source under the MIT licence.
 

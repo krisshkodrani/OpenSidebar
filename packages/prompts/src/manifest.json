@@ -190,22 +190,22 @@
   },
   {
     "id": "ui.saved_prompt.extract_links",
-    "version": "v1",
-    "hash": "cca36bed",
+    "version": "v2",
+    "hash": "6c2a1dd0",
     "description": "Default sidepanel saved prompt for extracting page links.",
     "sourcePath": "prompts/ui/saved-prompts/extract_links.md"
   },
   {
     "id": "ui.saved_prompt.fill_form",
-    "version": "v1",
-    "hash": "ca72357a",
+    "version": "v2",
+    "hash": "8de67cd3",
     "description": "Default sidepanel saved prompt for form completion.",
     "sourcePath": "prompts/ui/saved-prompts/fill_form.md"
   },
   {
     "id": "ui.saved_prompt.summarize_page",
-    "version": "v1",
-    "hash": "c3a7bf4d",
+    "version": "v2",
+    "hash": "4fbf7a70",
     "description": "Default sidepanel saved prompt for concise page summarization.",
     "sourcePath": "prompts/ui/saved-prompts/summarize_page.md"
   }

@@ -13,7 +13,7 @@ const __dirname = fileURLToPath(new URL(".", import.meta.url));
 const PROJECT_ROOT = resolve(__dirname, "../../../..");
 const LOG_SERVER_SCRIPT = resolve(PROJECT_ROOT, "scripts", "log-server.ts");
 const TSX_CLI = resolve(PROJECT_ROOT, "node_modules", "tsx", "dist", "cli.mjs");
-const LOG_SERVER_PORT = 7589;
+const LOG_SERVER_PORT = Number(process.env.E2E_LOG_SERVER_PORT) || 7589;
 const LOG_SERVER_START_TIMEOUT_MS =
   Number(process.env.E2E_LOG_SERVER_START_TIMEOUT_MS) || 30_000;
 
@@ -62,6 +62,11 @@ export async function setup(): Promise<void> {
 
   logServerProcess = spawn(process.execPath, [TSX_CLI, LOG_SERVER_SCRIPT], {
     cwd: PROJECT_ROOT,
+    env: {
+      ...process.env,
+      LOG_SERVER_PORT: String(LOG_SERVER_PORT),
+      LOG_SERVER_SKIP_TRACE_WARMUP: "1",
+    },
     stdio: ["ignore", "pipe", "pipe"],
     shell: false,
     windowsHide: true,

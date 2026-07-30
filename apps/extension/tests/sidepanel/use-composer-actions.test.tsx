@@ -193,7 +193,7 @@ describe("useComposerActions /new command", () => {
 
     expect(useStore.getState().messages).toEqual([]);
     expect(useStore.getState().error).toBe(
-      "Please add your Fireworks AI API key in Settings to get started.",
+      "Please add your OpenRouter API key in Settings to get started.",
     );
     expect(onSendStarted).not.toHaveBeenCalled();
     expect(chrome.runtime.sendMessage).not.toHaveBeenCalled();

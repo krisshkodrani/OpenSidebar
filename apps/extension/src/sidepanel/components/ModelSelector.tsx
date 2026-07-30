@@ -1,9 +1,7 @@
 import React, { useState, useRef, useEffect } from "react";
 import { ChevronDown, Loader2, X } from "lucide-react";
-import {
-  OpenRouterModel,
-  formatPricingBadge,
-} from "../hooks/useOpenRouterModels";
+import type { OpenRouterModel } from "../hooks/useOpenRouterModels";
+import { formatPricingBadge } from "../hooks/useOpenRouterModels";
 
 interface ModelSelectorProps {
   value: string;
@@ -24,7 +22,6 @@ export function ModelSelector({
 }: ModelSelectorProps) {
   const [open, setOpen] = useState(false);
   const [filter, setFilter] = useState("");
-  const [manualInput, setManualInput] = useState("");
   const containerRef = useRef<HTMLDivElement>(null);
   const filterInputRef = useRef<HTMLInputElement>(null);
 
@@ -68,37 +65,29 @@ export function ModelSelector({
 
   const hasModels = models.length > 0;
 
-  // No API key or no models: show manual text input fallback
+  // Keep release settings on verified catalog entries. A catalog outage should
+  // not silently turn the selector into an arbitrary model-id escape hatch.
   if (!hasModels && !loading) {
     return (
-      <div className="space-y-1">
-        <div className="flex items-center gap-2">
-          <input
-            type="text"
-            value={manualInput || value}
-            onChange={(e) => {
-              setManualInput(e.target.value);
-              onChange(e.target.value);
-            }}
-            placeholder={defaultModel}
-            className="flex-1 px-3 py-2 text-sm border border-warm-300 dark:border-warm-700 rounded-md bg-warm-50 dark:bg-warm-900 focus:ring-2 focus:ring-primary-500 outline-none dark:text-warm-100"
-          />
-          {value && (
-            <button
-              onClick={() => {
-                setManualInput("");
-                onChange("");
-              }}
-              className="p-1.5 hover:bg-warm-100 dark:hover:bg-warm-800 rounded"
-              title="Reset to default"
-            >
-              <X size={14} className="text-warm-400" />
-            </button>
-          )}
+      <div className="flex items-center gap-2 rounded-md border border-warm-200 bg-warm-100/70 px-3 py-2 dark:border-warm-700 dark:bg-warm-800/50">
+        <div className="min-w-0 flex-1">
+          <p className="truncate text-sm text-warm-700 dark:text-warm-200">
+            {value || defaultModel}
+          </p>
+          <p className="text-[11px] text-warm-400 dark:text-warm-500">
+            {value ? "Configured override" : "Tested default"}
+          </p>
         </div>
-        <p className="text-xs text-warm-400 dark:text-warm-500">
-          Enter API key to browse models
-        </p>
+        {value ? (
+          <button
+            type="button"
+            onClick={() => onChange("")}
+            className="rounded p-1.5 hover:bg-warm-200 dark:hover:bg-warm-700"
+            aria-label="Reset model to tested default"
+          >
+            <X size={14} className="text-warm-400" />
+          </button>
+        ) : null}
       </div>
     );
   }
@@ -109,6 +98,8 @@ export function ModelSelector({
       <button
         type="button"
         onClick={() => setOpen(!open)}
+        aria-expanded={open}
+        aria-haspopup="listbox"
         className="w-full flex items-center justify-between px-3 py-2 text-sm border border-warm-300 dark:border-warm-700 rounded-md bg-warm-50 dark:bg-warm-900 hover:bg-warm-100 dark:hover:bg-warm-800 outline-none dark:text-warm-100 text-left"
       >
         <span className="truncate">
@@ -133,7 +124,10 @@ export function ModelSelector({
 
       {/* Dropdown */}
       {open && !loading && (
-        <div className="absolute z-50 mt-1 w-full bg-white dark:bg-warm-900 border border-warm-300 dark:border-warm-700 rounded-md shadow-lg max-h-[280px] flex flex-col">
+        <div
+          role="listbox"
+          className="absolute z-50 mt-1 w-full bg-white dark:bg-warm-900 border border-warm-300 dark:border-warm-700 rounded-md shadow-lg max-h-[280px] flex flex-col"
+        >
           {/* Filter input */}
           <div className="p-2 border-b border-warm-200 dark:border-warm-700">
             <input
@@ -151,6 +145,8 @@ export function ModelSelector({
             {/* Default option */}
             <button
               type="button"
+              role="option"
+              aria-selected={!value}
               onClick={() => {
                 onChange("");
                 setOpen(false);
@@ -170,6 +166,8 @@ export function ModelSelector({
               <button
                 key={m.id}
                 type="button"
+                role="option"
+                aria-selected={value === m.id}
                 onClick={() => {
                   onChange(m.id);
                   setOpen(false);

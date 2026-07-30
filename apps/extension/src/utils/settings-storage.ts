@@ -11,9 +11,11 @@ import {
   type UserSettings,
 } from "../types";
 import {
+  DEFAULT_PROVIDER_MODE,
   isExecutorEligible,
   type ProviderMode,
 } from "./executor-model-policy";
+import { resolveAvailableProviderMode } from "./provider-keys";
 import { chromePersistencePort } from "../background/environment/chrome";
 
 const SYNC_KEY = "userSettings";
@@ -68,13 +70,20 @@ export function normalizeMaxImagePromptTokenEstimate(value: unknown): number {
     : DEFAULT_MAX_IMAGE_PROMPT_TOKEN_ESTIMATE;
 }
 
+function normalizeCredential(value: string | undefined): string {
+  return value?.trim() ?? "";
+}
+
 /**
  * Provider modes whose planner/writer seats are served by Fireworks
  * (llm/client.ts builds the Fireworks planner pool for exactly these). Other
  * modes route those seats to Groq/OpenRouter, where the catalog-style ids are
  * the correct ones — so the rewrite below must not touch them.
  */
-const FIREWORKS_SEAT_PROVIDER_MODES = new Set(["fireworks", "cerebras-fireworks"]);
+const FIREWORKS_SEAT_PROVIDER_MODES = new Set([
+  "fireworks",
+  "cerebras-fireworks",
+]);
 
 /**
  * Fireworks addresses models as `accounts/fireworks/models/...`; the
@@ -148,7 +157,12 @@ export async function saveSettings(
 ): Promise<void> {
   const normalized: UserSettings & Record<string, unknown> = {
     ...settings,
-    providerMode: settings.providerMode ?? "fireworks",
+    providerMode:
+      resolveAvailableProviderMode(settings) ??
+      (settings.providerMode === "openai-groq"
+        ? DEFAULT_PROVIDER_MODE
+        : settings.providerMode) ??
+      DEFAULT_PROVIDER_MODE,
     perceptionMode: settings.perceptionMode ?? "auto",
     maxImagePromptTokenEstimate: normalizeMaxImagePromptTokenEstimate(
       settings.maxImagePromptTokenEstimate,
@@ -188,15 +202,15 @@ export async function saveSettings(
   } = normalized;
   await Promise.all([
     storage.local.set({
-      [LOCAL_KEY]: openRouterApiKey,
-      [LOCAL_OPENAI_KEY]: openaiApiKey ?? "",
-      [LOCAL_GROQ_KEY]: groqApiKey ?? "",
-      [LOCAL_GEMINI_KEY]: geminiApiKey ?? "",
-      [LOCAL_FIREWORKS_KEY]: fireworksApiKey ?? "",
-      [LOCAL_DEEPSEEK_KEY]: deepseekApiKey ?? "",
-      [LOCAL_KIMI_KEY]: kimiApiKey ?? "",
-      [LOCAL_XIAOMI_KEY]: xiaomiApiKey ?? "",
-      [LOCAL_CEREBRAS_KEY]: cerebrasApiKey ?? "",
+      [LOCAL_KEY]: normalizeCredential(openRouterApiKey),
+      [LOCAL_OPENAI_KEY]: normalizeCredential(openaiApiKey),
+      [LOCAL_GROQ_KEY]: normalizeCredential(groqApiKey),
+      [LOCAL_GEMINI_KEY]: normalizeCredential(geminiApiKey),
+      [LOCAL_FIREWORKS_KEY]: normalizeCredential(fireworksApiKey),
+      [LOCAL_DEEPSEEK_KEY]: normalizeCredential(deepseekApiKey),
+      [LOCAL_KIMI_KEY]: normalizeCredential(kimiApiKey),
+      [LOCAL_XIAOMI_KEY]: normalizeCredential(xiaomiApiKey),
+      [LOCAL_CEREBRAS_KEY]: normalizeCredential(cerebrasApiKey),
     }),
     storage.sync.set({ [SYNC_KEY]: rest }),
     // Clean up legacy session key if present
@@ -226,7 +240,9 @@ export async function loadSettings(
       LOCAL_CEREBRAS_KEY,
     ]),
     // Check legacy session key for migration
-    storage.session.get(SESSION_KEY).catch(() => ({}) as Record<string, unknown>),
+    storage.session
+      .get(SESSION_KEY)
+      .catch(() => ({}) as Record<string, unknown>),
   ]);
   const syncSettings = syncResult[SYNC_KEY];
   // Prefer local, fall back to legacy session key
@@ -248,7 +264,9 @@ export async function loadSettings(
   const cerebrasApiKey =
     (localResult[LOCAL_CEREBRAS_KEY] as string | undefined) || "";
 
-  void storage.local.remove(LEGACY_LOCAL_JOBAGENT_MCP_TOKEN_KEY).catch(() => {});
+  void storage.local
+    .remove(LEGACY_LOCAL_JOBAGENT_MCP_TOKEN_KEY)
+    .catch(() => {});
 
   if (
     !syncSettings &&
@@ -305,7 +323,7 @@ export async function loadSettings(
     else raw.providerMode = "openrouter";
     delete raw.provider;
   }
-  if (!raw.providerMode) raw.providerMode = "fireworks";
+  if (!raw.providerMode) raw.providerMode = DEFAULT_PROVIDER_MODE;
 
   // Migrate legacy unified-vision toggle to auto mode. The runtime chooses
   // unified VL only when page or task signals indicate vision is useful.
@@ -328,6 +346,31 @@ export async function loadSettings(
   }
 
   if (migrateFireworksSeatModelIds(raw)) {
+    shouldCleanRemovedSettings = true;
+  }
+
+  const availableProviderMode = resolveAvailableProviderMode({
+    providerMode: raw.providerMode as UserSettings["providerMode"],
+    openRouterApiKey: apiKey ?? "",
+    openaiApiKey,
+    groqApiKey,
+    fireworksApiKey,
+    deepseekApiKey,
+    kimiApiKey,
+    xiaomiApiKey,
+    cerebrasApiKey,
+  });
+  if (availableProviderMode && availableProviderMode !== raw.providerMode) {
+    raw.providerMode = availableProviderMode;
+    delete raw.executorModel;
+    delete raw.plannerModel;
+    delete raw.writerModel;
+    shouldCleanRemovedSettings = true;
+  } else if (raw.providerMode === "openai-groq" && !availableProviderMode) {
+    raw.providerMode = DEFAULT_PROVIDER_MODE;
+    delete raw.executorModel;
+    delete raw.plannerModel;
+    delete raw.writerModel;
     shouldCleanRemovedSettings = true;
   }
 

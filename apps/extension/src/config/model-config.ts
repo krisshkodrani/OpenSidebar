@@ -15,6 +15,17 @@ export interface LLMModelDefaults {
   groq: {
     planner: string;
   };
+  /**
+   * OpenRouter seat defaults, in OpenRouter's catalog id form. This group has
+   * to exist separately: the top-level `planner`/`judge` defaults are Fireworks
+   * `accounts/...` ids (a consistency test pins them that way), so the
+   * OpenRouter stack cannot borrow them without 404ing.
+   */
+  openrouter: {
+    executor: string;
+    planner: string;
+    judge: string;
+  };
   fireworks: {
     executor: string;
     planner: string;
@@ -63,6 +74,18 @@ export const DEFAULT_LLM_MODEL_CONFIG: LLMModelDefaults = {
   },
   groq: {
     planner: "openai/gpt-oss-120b",
+  },
+  // The recommended stack (2026-07-26). Executor tracks the shared OpenRouter
+  // default; planner is GLM 5.2, the same model the Fireworks planner seat runs
+  // but ~39% cheaper through OpenRouter's cheapest healthy host; judge is
+  // GPT-OSS-120B, ~63% cheaper there and — more importantly — a SEPARATE seat.
+  // Before this group existed the OpenRouter judge silently shared the planner
+  // pool, which is the arrangement that made ~75% of judge calls time out
+  // behind planner traffic on Fireworks (2026-07-09 telemetry).
+  openrouter: {
+    executor: DEFAULT_MULTIMODAL_EXECUTOR_BY_PROVIDER.openrouter,
+    planner: "z-ai/glm-5.2",
+    judge: "openai/gpt-oss-120b",
   },
   fireworks: {
     executor: DEFAULT_MULTIMODAL_EXECUTOR_BY_PROVIDER.fireworks,
@@ -140,6 +163,11 @@ export function resolveLLMModelConfig(
     judge: readString(record, "judge", DEFAULT_LLM_MODEL_CONFIG.judge),
     openai: readGroup(record, "openai", DEFAULT_LLM_MODEL_CONFIG.openai),
     groq: readGroup(record, "groq", DEFAULT_LLM_MODEL_CONFIG.groq),
+    openrouter: readGroup(
+      record,
+      "openrouter",
+      DEFAULT_LLM_MODEL_CONFIG.openrouter,
+    ),
     fireworks: readGroup(
       record,
       "fireworks",

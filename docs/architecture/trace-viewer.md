@@ -1,6 +1,6 @@
 # Trace Viewer Architecture
 
-Date: 2026-07-10
+Date: 2026-07-24
 
 Scope: How the trace-viewer harness is structured — the dev-only boundary, the
 data pipeline from the extension to disk, the local log server's API surface,
@@ -73,12 +73,15 @@ flowchart LR
   end
   subgraph DISK["disk"]
     SJ["traces/*.jsonl<br/>index.jsonl + screenshots/"]
-    RJ["run-traces/*.jsonl<br/>index.jsonl"]
+    RJ["traces/runs/*.jsonl<br/>index.jsonl"]
+    SP["traces/spans/ (span spine)"]
     SQL[".artifacts/trace-index.sqlite"]
     EV["evals/annotations.jsonl<br/>evals/golden/"]
   end
   LOOP --> T --> SJ
   ORCH --> R --> RJ
+  T --> SP
+  R --> SP
   SJ -- "traces:index" --> SQL
   V["viewer app"] -- "GET /api/*" --> SRV
   V -- "verdicts / exports" --> EV
@@ -87,8 +90,19 @@ flowchart LR
 Two parallel stores: **session traces** are the executor's turn-by-turn record
 (one JSONL per session, plus an `index.jsonl` of session summaries), and
 **run traces** are the orchestrator's event stream (plan decomposition, node
-lifecycle, `judge_call`, completion) keyed by `runId`. The Story view joins the
-two: run events give the skeleton, session turns fill the segments.
+lifecycle, `judge_call`, completion) keyed by `runId`, stored under
+`traces/runs/` (the POST route is still `/run-traces`). The Story view joins
+the two: run events give the skeleton, session turns fill the segments.
+
+### The span spine
+
+Every trace write is **dual-written to the span spine** under `traces/spans/`
+(`scripts/obs/span-store.ts`, schema in `packages/observability-schema/`). The
+spine is now the **authoritative read source** for turn entries and run events
+— SQLite/JSONL are derived fallbacks (`OBS_DISABLE_SPINE_READS=1` reverts).
+The spine also feeds the OTLP export path (see
+[OTel Mapping](trace-viewer-otel-mapping.md)): the log server initializes
+spine OTel export on boot and emits spans on every trace write.
 
 ## Storage Tiers
 
@@ -116,7 +130,7 @@ two: run events give the skeleton, session turns fill the segments.
 | `GET /api/trace-insights` | Aggregate metrics for Insights/Metrics |
 | `GET /api/trace-index/status` | SQLite index coverage/status |
 | `GET /api/skills` | Skill activation events |
-| `GET /api/harness-ratchet` | E2E flaky/ratchet telemetry for the Attention inbox |
+| `GET /api/harness-ratchet` | E2E flaky/ratchet telemetry for the needs-review filter |
 | `GET/POST /api/annotations` | Read / append human adjudications |
 | `POST /golden` | Export an adjudicated EvalCase to `evals/golden/` |
 | `GET /health` | Liveness |
@@ -151,22 +165,27 @@ shareable URL.
 
 ### Views
 
-| Top-level tab | Component | Purpose |
+The viewer has **two top-level views** (`TopLevelView` in `store/types.ts`):
+
+| Top-level view | Component | Purpose |
 | --- | --- | --- |
-| **Attention** (default) | `AttentionTab` | Adjudication inbox: unreviewed failures/stops plus harness-ratchet flags |
-| Runs | `RunsTableView` | Orchestrator runs |
-| Traces | `UnifiedSessionsTableView` | All sessions, filter bar, comparison queue |
-| Insights | `InsightsTab` | Fleet aggregates, failure clusters |
-| Metrics | `MetricsTab` | Token/cost/latency roll-ups |
+| **Runs** (default) | `RunsTableView` | All runs/sessions with the filter bar; a **needs-review chip** filters to unreviewed failures/stops plus harness-ratchet flags (the former Attention inbox) |
+| Analytics | `AnalyticsTab` | Fleet aggregates, failure clusters, token/cost/latency roll-ups (the former Insights + Metrics tabs) |
+
+The old Attention / Sessions / Insights / Metrics tabs were collapsed into
+these two in the trace-viewer-simplify refactor; legacy hash URLs migrate
+automatically (`App.tsx`).
 
 <p align="center">
-  <img src="../assets/trace-viewer-attention.png" alt="The Attention inbox: unreviewed runs queued for adjudication, with outcome chips and filters for outcome, adjudication state, day, model, skill, and website" width="900" />
+  <img src="../assets/trace-viewer-attention.png" alt="Unreviewed runs queued for adjudication, with outcome chips and filters for outcome, adjudication state, day, model, skill, and website" width="900" />
 </p>
 
-<p align="center"><sub>The Attention inbox — the default landing. Every unreviewed failure, stop, or flagged run queues here until a human records a verdict.</sub></p>
+<p align="center"><sub>The needs-review filter on Runs. Every unreviewed failure, stop, or flagged run queues here until a human records a verdict.</sub></p>
 
-Opening a trace lands on the **Story** subview; the others are Overview, Plan,
-Trajectory (turns), Perception, Prompts, Skills, and Logs.
+Opening a trace lands on the **Story** subview; the full set is **seven**
+subviews (`Subview` in `store/types.ts`): Story, Plan, Turns, Perception,
+Prompts, Skills, and Logs. (Legacy `overview` and `trajectory` hashes migrate
+to `story` and `turns`.)
 
 ## Run Story and Adjudication
 

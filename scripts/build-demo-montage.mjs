@@ -41,8 +41,17 @@ const BG = "0x0B1F33"; // deep navy card background
 const ACCENT = "0x4FC3F7";
 const GREY = "0xB8C4D0";
 const X264 = [
-  "-c:v", "libx264", "-preset", "veryfast", "-crf", "23",
-  "-pix_fmt", "yuv420p", "-movflags", "+faststart", "-an",
+  "-c:v",
+  "libx264",
+  "-preset",
+  "veryfast",
+  "-crf",
+  "23",
+  "-pix_fmt",
+  "yuv420p",
+  "-movflags",
+  "+faststart",
+  "-an",
 ];
 
 // Persistent brand + model credit, pinned to the bottom band of every scene.
@@ -64,13 +73,48 @@ const SERVICENOW = {
     note: MODEL_LINE,
   },
   scenes: [
-    { task: "order-developer-laptop", title: "Order from the service catalog", subtitle: "Browses the catalog, configures the item, and places the order", caption: 'Ordering 8× "Developer Laptop (Mac)" with a custom software config' },
-    { task: "single-chart-value-retrieval", title: "Read a dashboard chart", subtitle: "Sees the chart and answers a quantitative question", caption: 'Reading a pie chart -> "Unsuccessful" = 1.06%' },
-    { task: "filter-incident-list", title: "Filter a list with a structured query", subtitle: "Builds native ServiceNow filter conditions, not keyword guesses", caption: "Filtering incidents: Caller = System Administrator  OR  Priority = 4 – Low" },
-    { task: "knowledge-base-search", title: "Search the knowledge base", subtitle: "Finds the right article and extracts the answer", caption: "Searching the knowledge base: how many floors is the main office?" },
-    { task: "sort-incident-list", title: "Sort a list the way you need it", subtitle: "Applies a structured, native sort — not a manual click-through", caption: "Sorting the incident list by Priority (ascending)" },
+    {
+      task: "order-developer-laptop",
+      title: "Order from the service catalog",
+      subtitle:
+        "Browses the catalog, configures the item, and places the order",
+      caption:
+        'Ordering 8× "Developer Laptop (Mac)" with a custom software config',
+    },
+    {
+      task: "single-chart-value-retrieval",
+      title: "Read a dashboard chart",
+      subtitle: "Sees the chart and answers a quantitative question",
+      caption: 'Reading a pie chart -> "Unsuccessful" = 1.06%',
+    },
+    {
+      task: "filter-incident-list",
+      title: "Filter a list with a structured query",
+      subtitle:
+        "Builds native ServiceNow filter conditions, not keyword guesses",
+      caption:
+        "Filtering incidents: Caller = System Administrator  OR  Priority = 4 – Low",
+    },
+    {
+      task: "knowledge-base-search",
+      title: "Search the knowledge base",
+      subtitle: "Finds the right article and extracts the answer",
+      caption:
+        "Searching the knowledge base: how many floors is the main office?",
+    },
+    {
+      task: "sort-incident-list",
+      title: "Sort a list the way you need it",
+      subtitle:
+        "Applies a structured, native sort — not a manual click-through",
+      caption: "Sorting the incident list by Priority (ascending)",
+    },
   ],
-  outro: { title: "One agent. Every ServiceNow workflow.", subtitle: "OpenSidebar", note: "Kimi K2.7 Code + GLM 5.2   ·   Fireworks AI" },
+  outro: {
+    title: "One agent. Every ServiceNow workflow.",
+    subtitle: "OpenSidebar",
+    note: "Kimi K2.7 Code + GLM 5.2   ·   Fireworks AI",
+  },
 };
 
 const FIXTURES = {
@@ -81,16 +125,70 @@ const FIXTURES = {
     note: MODEL_LINE,
   },
   scenes: [
-    { task: "settings-provider", title: "Bring your own provider", subtitle: "Pick your provider stack and models — your key, your choice", caption: "Choosing the provider stack: Fireworks · Moonshot · OpenRouter · Xiaomi" },
-    { task: "online-shop", title: "Shop and check out", subtitle: "Adds to cart, applies a coupon, and completes the order", caption: "Add Air Zoom Pegasus 41 to cart · apply coupon SAVE10 · express shipping · checkout" },
-    { task: "showcase-ashby-application", title: "Apply for a job", subtitle: "Fills a real recruiting application, field by field", caption: "Filling an Ashby job application from the candidate's details (stops before submit)" },
-    { task: "job-board", title: "Take on a long research task", subtitle: "Reviews a whole job board and recommends grounded matches — no hand-holding", caption: "Reviewing 11 listings and recommending the best matches for a senior React profile" },
-    { task: "release-coordination", title: "Checks its own work", subtitle: "A GPT-OSS 120B judge re-verifies high-risk results before they're accepted", caption: "Posts a release update — then a GPT-OSS 120B judge re-checks the reply before it's marked done" },
-    { task: "cross-page-compose", title: "Read here, act there", subtitle: "Carries data across pages to finish the job", caption: "Reading the dashboard's Total Users, then drafting an email that reports it" },
-    { task: "fine-print-margin", title: "Reads the fine print", subtitle: "Zooms into 8-pixel canvas text no text-only bot can reach", caption: "Magnifying the chart's fine print on a canvas to read the Q3 net margin — 4.7%" },
-    { task: "information-extraction", title: "Find and extract", subtitle: "Pages through a directory and pulls the requested fields", caption: "Finding Diana Chen in the directory and reporting her department and salary" },
+    {
+      task: "settings-provider",
+      title: "Bring your own provider",
+      subtitle:
+        "Pick a release-verified provider and optional models — your key, your choice",
+      caption: "Choosing a verified provider: OpenRouter or Fireworks",
+    },
+    {
+      task: "online-shop",
+      title: "Shop and check out",
+      subtitle: "Adds to cart, applies a coupon, and completes the order",
+      caption:
+        "Add Air Zoom Pegasus 41 to cart · apply coupon SAVE10 · express shipping · checkout",
+    },
+    {
+      task: "showcase-ashby-application",
+      title: "Apply for a job",
+      subtitle: "Fills a real recruiting application, field by field",
+      caption:
+        "Filling an Ashby job application from the candidate's details (stops before submit)",
+    },
+    {
+      task: "job-board",
+      title: "Take on a long research task",
+      subtitle:
+        "Reviews a whole job board and recommends grounded matches — no hand-holding",
+      caption:
+        "Reviewing 11 listings and recommending the best matches for a senior React profile",
+    },
+    {
+      task: "release-coordination",
+      title: "Checks its own work",
+      subtitle:
+        "A GPT-OSS 120B judge re-verifies high-risk results before they're accepted",
+      caption:
+        "Posts a release update — then a GPT-OSS 120B judge re-checks the reply before it's marked done",
+    },
+    {
+      task: "cross-page-compose",
+      title: "Read here, act there",
+      subtitle: "Carries data across pages to finish the job",
+      caption:
+        "Reading the dashboard's Total Users, then drafting an email that reports it",
+    },
+    {
+      task: "fine-print-margin",
+      title: "Reads the fine print",
+      subtitle: "Zooms into 8-pixel canvas text no text-only bot can reach",
+      caption:
+        "Magnifying the chart's fine print on a canvas to read the Q3 net margin — 4.7%",
+    },
+    {
+      task: "information-extraction",
+      title: "Find and extract",
+      subtitle: "Pages through a directory and pulls the requested fields",
+      caption:
+        "Finding Diana Chen in the directory and reporting her department and salary",
+    },
   ],
-  outro: { title: "Any website today. Your enterprise apps next.", subtitle: "OpenSidebar", note: "Kimi K2.7 Code + GLM 5.2 + GPT-OSS 120B judge   ·   Fireworks AI" },
+  outro: {
+    title: "Any website today. Your enterprise apps next.",
+    subtitle: "OpenSidebar",
+    note: "Kimi K2.7 Code + GLM 5.2 + GPT-OSS 120B judge   ·   Fireworks AI",
+  },
 };
 
 const TRACEVIEWER = {
@@ -104,11 +202,34 @@ const TRACEVIEWER = {
     note: "Every agent session, fully inspectable: replays, costs, screenshots",
   },
   scenes: [
-    { task: "traceviewer-fleet", title: "Your fleet at a glance", subtitle: "Every run with outcome, turns, cost, and failure clusters", caption: "Reviewing 260 runs · 82% success · per-run cost and failure clusters" },
-    { task: "traceviewer-session", title: "Replay any session, turn by turn", subtitle: "Scorecards, tool calls, and evidence for every decision", caption: 'Replaying "Find Diana Chen": 6 turns, 5/5 trajectory score, $0.062 total' },
-    { task: "traceviewer-perception", title: "See what the agent saw", subtitle: "Each turn's screenshot and page affordances, then the cost roll-up", caption: "The agent's own screenshot + page affordances, then token & cost metrics" },
+    {
+      task: "traceviewer-fleet",
+      title: "Your fleet at a glance",
+      subtitle: "Every run with outcome, turns, cost, and failure clusters",
+      caption:
+        "Reviewing 260 runs · 82% success · per-run cost and failure clusters",
+    },
+    {
+      task: "traceviewer-session",
+      title: "Replay any session, turn by turn",
+      subtitle: "Scorecards, tool calls, and evidence for every decision",
+      caption:
+        'Replaying "Find Diana Chen": 6 turns, 5/5 trajectory score, $0.062 total',
+    },
+    {
+      task: "traceviewer-perception",
+      title: "See what the agent saw",
+      subtitle:
+        "Each turn's screenshot and page affordances, then the cost roll-up",
+      caption:
+        "The agent's own screenshot + page affordances, then token & cost metrics",
+    },
   ],
-  outro: { title: "Trust, but verify — locally.", subtitle: "OpenSidebar", note: "Traces never leave your machine · no telemetry" },
+  outro: {
+    title: "Trust, but verify — locally.",
+    subtitle: "OpenSidebar",
+    note: "Traces never leave your machine · no telemetry",
+  },
 };
 
 const SETTINGS = {
@@ -119,9 +240,20 @@ const SETTINGS = {
     note: "Fireworks · OpenRouter · Moonshot · Xiaomi — BYOK, no subscription",
   },
   scenes: [
-    { task: "settings-provider", title: "Choose your provider stack", subtitle: "Swap providers and per-seat models in Settings — nothing hardcoded", caption: "Provider stack: Fireworks · Moonshot · OpenRouter · Xiaomi, with per-seat model overrides" },
+    {
+      task: "settings-provider",
+      title: "Choose your provider",
+      subtitle:
+        "Swap between verified providers and optional per-seat models in Settings",
+      caption:
+        "Provider: OpenRouter or Fireworks, with optional per-seat model overrides",
+    },
   ],
-  outro: { title: "Your key. Your models. Your browser.", subtitle: "OpenSidebar", note: "No subscription · No telemetry · Open source" },
+  outro: {
+    title: "Your key. Your models. Your browser.",
+    subtitle: "OpenSidebar",
+    note: "No subscription · No telemetry · Open source",
+  },
 };
 
 const WATCH = {
@@ -132,9 +264,20 @@ const WATCH = {
     note: "Leave it watching · it speaks up the moment something changes",
   },
   scenes: [
-    { task: "watch-restock", title: "Watch a page, get told when it changes", subtitle: "Set a standing instruction; the agent watches passively and flags the moment it happens", caption: 'Watching a product page — flagged "back in stock" the instant it flipped' },
+    {
+      task: "watch-restock",
+      title: "Watch a page, get told when it changes",
+      subtitle:
+        "Set a standing instruction; the agent watches passively and flags the moment it happens",
+      caption:
+        'Watching a product page — flagged "back in stock" the instant it flipped',
+    },
   ],
-  outro: { title: "Set it and forget it.", subtitle: "OpenSidebar Watch Mode", note: "Kimi K2.7 Code + GLM 5.2 · Fireworks AI" },
+  outro: {
+    title: "Set it and forget it.",
+    subtitle: "OpenSidebar Watch Mode",
+    note: "Kimi K2.7 Code + GLM 5.2 · Fireworks AI",
+  },
 };
 
 // The full pitch: one presentation across every capability, in three acts,
@@ -147,21 +290,113 @@ const PITCH = {
     note: MODEL_LINE,
   },
   scenes: [
-    { section: "On the open web", task: "online-shop", title: "Shop and check out", subtitle: "Adds to cart, applies a coupon, and completes the order", caption: "Add Air Zoom Pegasus 41 to cart · apply coupon SAVE10 · express shipping · checkout" },
-    { task: "cross-page-compose", title: "Read here, act there", subtitle: "Carries data across pages to finish the job", caption: "Reading the dashboard's Total Users, then drafting an email that reports it" },
-    { task: "vendor-onboarding-wizard", title: "Complete a multi-step wizard", subtitle: "Works a conditional form across steps, then reviews before submit", caption: "Completing a multi-step vendor-onboarding wizard, then submitting after review" },
-    { task: "showcase-ashby-application", title: "Apply for a job", subtitle: "Fills a real recruiting application — and pauses before the final submit", caption: "Filling an Ashby job application from the candidate's details (stops before submit)" },
-    { task: "fine-print-margin", title: "Reads the fine print", subtitle: "Zooms into 8-pixel canvas text no text-only bot can reach", caption: "Magnifying the chart's fine print on a canvas to read the Q3 net margin — 4.7%" },
-    { task: "information-extraction", title: "Find and extract", subtitle: "Pages through a directory and pulls the requested fields", caption: "Finding Diana Chen in the directory and reporting her department and salary" },
-    { section: "You stay in control", task: "settings-provider", title: "Bring your own provider", subtitle: "Swap providers and per-seat models — your key, nothing hardcoded", caption: "Provider stack: Fireworks · Moonshot · OpenRouter · Xiaomi, with per-seat model overrides" },
-    { task: "watch-restock", title: "Watch Mode", subtitle: "Leave it watching; it speaks up the moment the page changes", caption: 'Watching a product page — flagged "back in stock" within seconds of the flip' },
-    { task: "release-coordination", title: "Checks its own work", subtitle: "A GPT-OSS 120B judge re-verifies high-risk results before they're accepted", caption: "Posts a release update — then a GPT-OSS 120B judge re-checks the reply before it's marked done" },
-    { task: "traceviewer-session", title: "Built-in observability", subtitle: "An observability workspace records every run — decisions, screenshots, exact cost", caption: 'Inspecting a run in the observability workspace: 6 turns, 5/5 score, $0.062 total' },
-    { task: "traceviewer-fleet", title: "Your fleet at a glance", subtitle: "Success rates, failure clusters, and spend across hundreds of runs", caption: "Reviewing 260 runs · 82% success · all stored locally, nothing leaves your machine" },
-    { section: "Extendable — ServiceNow", task: "order-developer-laptop", title: "Built to be extended", subtitle: "ServiceNow support is an adapter — the same pattern fits your own enterprise apps", caption: 'Ordering 8× "Developer Laptop (Mac)" from the service catalog, end to end', sceneSec: 18 },
-    { task: "knowledge-base-search", title: "One adapter, many workflows", subtitle: "Search, filters, native sorting — copy the pattern for your own apps", caption: "Searching the knowledge base and extracting the answer" },
+    {
+      section: "On the open web",
+      task: "online-shop",
+      title: "Shop and check out",
+      subtitle: "Adds to cart, applies a coupon, and completes the order",
+      caption:
+        "Add Air Zoom Pegasus 41 to cart · apply coupon SAVE10 · express shipping · checkout",
+    },
+    {
+      task: "cross-page-compose",
+      title: "Read here, act there",
+      subtitle: "Carries data across pages to finish the job",
+      caption:
+        "Reading the dashboard's Total Users, then drafting an email that reports it",
+    },
+    {
+      task: "vendor-onboarding-wizard",
+      title: "Complete a multi-step wizard",
+      subtitle:
+        "Works a conditional form across steps, then reviews before submit",
+      caption:
+        "Completing a multi-step vendor-onboarding wizard, then submitting after review",
+    },
+    {
+      task: "showcase-ashby-application",
+      title: "Apply for a job",
+      subtitle:
+        "Fills a real recruiting application — and pauses before the final submit",
+      caption:
+        "Filling an Ashby job application from the candidate's details (stops before submit)",
+    },
+    {
+      task: "fine-print-margin",
+      title: "Reads the fine print",
+      subtitle: "Zooms into 8-pixel canvas text no text-only bot can reach",
+      caption:
+        "Magnifying the chart's fine print on a canvas to read the Q3 net margin — 4.7%",
+    },
+    {
+      task: "information-extraction",
+      title: "Find and extract",
+      subtitle: "Pages through a directory and pulls the requested fields",
+      caption:
+        "Finding Diana Chen in the directory and reporting her department and salary",
+    },
+    {
+      section: "You stay in control",
+      task: "settings-provider",
+      title: "Bring your own provider",
+      subtitle: "Swap verified providers and optional per-seat models",
+      caption:
+        "Provider: OpenRouter or Fireworks, with optional per-seat model overrides",
+    },
+    {
+      task: "watch-restock",
+      title: "Watch Mode",
+      subtitle: "Leave it watching; it speaks up the moment the page changes",
+      caption:
+        'Watching a product page — flagged "back in stock" within seconds of the flip',
+    },
+    {
+      task: "release-coordination",
+      title: "Checks its own work",
+      subtitle:
+        "A GPT-OSS 120B judge re-verifies high-risk results before they're accepted",
+      caption:
+        "Posts a release update — then a GPT-OSS 120B judge re-checks the reply before it's marked done",
+    },
+    {
+      task: "traceviewer-session",
+      title: "Built-in observability",
+      subtitle:
+        "An observability workspace records every run — decisions, screenshots, exact cost",
+      caption:
+        "Inspecting a run in the observability workspace: 6 turns, 5/5 score, $0.062 total",
+    },
+    {
+      task: "traceviewer-fleet",
+      title: "Your fleet at a glance",
+      subtitle:
+        "Success rates, failure clusters, and spend across hundreds of runs",
+      caption:
+        "Reviewing 260 runs · 82% success · all stored locally, nothing leaves your machine",
+    },
+    {
+      section: "Extendable — ServiceNow",
+      task: "order-developer-laptop",
+      title: "Built to be extended",
+      subtitle:
+        "ServiceNow support is an adapter — the same pattern fits your own enterprise apps",
+      caption:
+        'Ordering 8× "Developer Laptop (Mac)" from the service catalog, end to end',
+      sceneSec: 18,
+    },
+    {
+      task: "knowledge-base-search",
+      title: "One adapter, many workflows",
+      subtitle:
+        "Search, filters, native sorting — copy the pattern for your own apps",
+      caption: "Searching the knowledge base and extracting the answer",
+    },
   ],
-  outro: { title: "Any website today. Your enterprise apps next.", subtitle: "OpenSidebar", note: "Bring your own key · No telemetry · Open source (MIT) · Fork it on GitHub" },
+  outro: {
+    title: "Any website today. Your enterprise apps next.",
+    subtitle: "OpenSidebar",
+    note: "Bring your own key · No telemetry · Open source (MIT) · Fork it on GitHub",
+  },
 };
 
 // The job-pipeline voiced story: ONE filmed showcase run, cut into narrative
@@ -176,34 +411,83 @@ const JOBS = {
     note: MODEL_LINE,
   },
   scenes: [
-    { task: "showcase-job-pipeline", title: "Read the board like a recruiter", subtitle: "Ten listings screened against the candidate's profile", caption: "Reading 10 listings against the profile: senior frontend · React/TS · remote · $120K–$160K", sceneSec: 14 },
-    { task: "showcase-job-pipeline", title: "Two best matches, two tabs", subtitle: "Each application opened in its own tab", caption: "Opening the two best-match applications, each in its own tab", sceneSec: 12 },
-    { task: "showcase-job-pipeline", title: "Every field, filled and grounded", subtitle: "Details from the prompt; the 'why' written from each posting", caption: "Filling both applications — every field except the CV upload", sceneSec: 16 },
-    { task: "showcase-job-pipeline", title: "Staged — not sent", subtitle: "The agent stops short of submitting, by instruction", caption: "Both applications ready to send — the CV and the click stay yours", sceneSec: 12 },
+    {
+      task: "showcase-job-pipeline",
+      title: "Read the board like a recruiter",
+      subtitle: "Ten listings screened against the candidate's profile",
+      caption:
+        "Reading 10 listings against the profile: senior frontend · React/TS · remote · $120K–$160K",
+      sceneSec: 14,
+    },
+    {
+      task: "showcase-job-pipeline",
+      title: "Two best matches, two tabs",
+      subtitle: "Each application opened in its own tab",
+      caption: "Opening the two best-match applications, each in its own tab",
+      sceneSec: 12,
+    },
+    {
+      task: "showcase-job-pipeline",
+      title: "Every field, filled and grounded",
+      subtitle: "Details from the prompt; the 'why' written from each posting",
+      caption: "Filling both applications — every field except the CV upload",
+      sceneSec: 16,
+    },
+    {
+      task: "showcase-job-pipeline",
+      title: "Staged — not sent",
+      subtitle: "The agent stops short of submitting, by instruction",
+      caption:
+        "Both applications ready to send — the CV and the click stay yours",
+      sceneSec: 12,
+    },
   ],
-  outro: { title: "Ready to send. The click stays yours.", subtitle: "OpenSidebar", note: "Kimi K2.7 Code + GLM 5.2 · Fireworks AI" },
+  outro: {
+    title: "Ready to send. The click stays yours.",
+    subtitle: "OpenSidebar",
+    note: "Kimi K2.7 Code + GLM 5.2 · Fireworks AI",
+  },
 };
 
 // Store-accurate tour: the PITCH minus the observability scenes. The trace
 // viewer is dev-only (stripped from the production dist), so store assets must
 // never show it — a Chrome Web Store installer does not get that surface.
-// The fine-print and release-coordination scenes are pitch-only for now: they
-// were added to the site's full tour but the store tour's voiceover
-// (SPECS.store in add-voiceover.mjs) is timed to the prior scene set, so we
-// hold them out until the store cut is retimed (follow-up).
-const STORE_ONLY_EXCLUDED = new Set(["fine-print-margin", "release-coordination"]);
+// The fine-print and release-coordination scenes are pitch-only for now. The
+// store cut has a stable 15-second timing contract with SPECS.store in
+// add-voiceover.mjs, independent of the default montage scene length.
+const STORE_ONLY_EXCLUDED = new Set([
+  "fine-print-margin",
+  "release-coordination",
+]);
 const STORE = {
   out: "opensidebar-store-tour.mp4",
   intro: PITCH.intro,
   scenes: PITCH.scenes
-    .filter((s) => !s.task.startsWith("traceviewer-") && !STORE_ONLY_EXCLUDED.has(s.task))
-    .map((s) => ({ ...s })),
-  outro: { title: "Any website today. Your enterprise apps next.", subtitle: "OpenSidebar", note: "Install free · Bring your own key · Source on GitHub (MIT)" },
+    .filter(
+      (s) =>
+        !s.task.startsWith("traceviewer-") && !STORE_ONLY_EXCLUDED.has(s.task),
+    )
+    .map((s) => ({ ...s, sceneSec: s.sceneSec ?? 15 })),
+  outro: {
+    title: "Any website today. Your enterprise apps next.",
+    subtitle: "OpenSidebar",
+    note: "Install free · Bring your own key · Source on GitHub (MIT)",
+  },
 };
 // (Section markers survive the filter: they live on online-shop, settings-provider,
 // and order-developer-laptop — all kept.)
 
-const SHOW = { servicenow: SERVICENOW, fixtures: FIXTURES, traceviewer: TRACEVIEWER, settings: SETTINGS, watch: WATCH, pitch: PITCH, store: STORE, jobs: JOBS }[argVal("--show", "servicenow")] || SERVICENOW;
+const SHOW =
+  {
+    servicenow: SERVICENOW,
+    fixtures: FIXTURES,
+    traceviewer: TRACEVIEWER,
+    settings: SETTINGS,
+    watch: WATCH,
+    pitch: PITCH,
+    store: STORE,
+    jobs: JOBS,
+  }[argVal("--show", "servicenow")] || SERVICENOW;
 const INTRO = SHOW.intro;
 const SCENES = SHOW.scenes;
 const OUTRO = SHOW.outro;
@@ -216,8 +500,13 @@ function sh(bin, a) {
 }
 function ffprobeDuration(file) {
   const out = sh("ffprobe", [
-    "-v", "error", "-show_entries", "format=duration",
-    "-of", "default=noprint_wrappers=1:nokey=1", file,
+    "-v",
+    "error",
+    "-show_entries",
+    "format=duration",
+    "-of",
+    "default=noprint_wrappers=1:nokey=1",
+    file,
   ]);
   const d = parseFloat(out);
   return Number.isFinite(d) && d > 0 ? d : SCENE_SEC;
@@ -231,7 +520,9 @@ const PINS = fs.existsSync(PIN_FILE)
 
 function newestClipForTask(task) {
   if (PINS[task]) {
-    const p = path.isAbsolute(PINS[task]) ? PINS[task] : path.join(ROOT, PINS[task]);
+    const p = path.isAbsolute(PINS[task])
+      ? PINS[task]
+      : path.join(ROOT, PINS[task]);
     if (fs.existsSync(p)) return p;
     console.log(`  !! pinned clip for ${task} not found: ${PINS[task]}`);
   }
@@ -281,7 +572,8 @@ function cardParts(card) {
     dt(textfile(card.title), "white", 68, "(w-text_w)/2", "(h/2)-90"),
     dt(textfile(card.subtitle), ACCENT, 34, "(w-text_w)/2", "(h/2)+10"),
   ];
-  if (card.note) parts.push(dt(textfile(card.note), GREY, 26, "(w-text_w)/2", "(h/2)+92"));
+  if (card.note)
+    parts.push(dt(textfile(card.note), GREY, 26, "(w-text_w)/2", "(h/2)+92"));
   return parts;
 }
 
@@ -304,8 +596,15 @@ function makeSectionCard(title, partIndex, name) {
     `fade=t=out:st=${(SECTION_CARD_SEC - FADE).toFixed(2)}:d=${FADE}`,
   ].join(",");
   sh("ffmpeg", [
-    "-y", "-f", "lavfi", "-i", `color=c=${BG}:s=${W}x${H}:d=${SECTION_CARD_SEC}:r=${FPS}`,
-    "-vf", vf, ...X264, out,
+    "-y",
+    "-f",
+    "lavfi",
+    "-i",
+    `color=c=${BG}:s=${W}x${H}:d=${SECTION_CARD_SEC}:r=${FPS}`,
+    "-vf",
+    vf,
+    ...X264,
+    out,
   ]);
   segments.push(out);
   console.log(`  section: ${title}`);
@@ -336,7 +635,9 @@ function sceneBase(clip, caption, sceneSec = SCENE_SEC, clipStart, clipEnd) {
     `setpts=PTS/${speed.toFixed(4)}`,
     `scale=${W}:${H}:force_original_aspect_ratio=decrease`,
     `pad=${W}:${H}:(ow-iw)/2:(oh-ih)/2`,
-    `fps=${FPS}`, "setsar=1", "format=yuv420p",
+    `fps=${FPS}`,
+    "setsar=1",
+    "format=yuv420p",
     ...overlayBand(caption),
   ];
   return { base, speed, dur };
@@ -346,34 +647,81 @@ function makeCard(card, name) {
   const out = path.join(tmp, `${name}.mp4`);
   const vf = [...cardParts(card), ...fades(CARD_SEC)].join(",");
   sh("ffmpeg", [
-    "-y", "-f", "lavfi", "-i", `color=c=${BG}:s=${W}x${H}:d=${CARD_SEC}:r=${FPS}`,
-    "-vf", vf, ...X264, out,
+    "-y",
+    "-f",
+    "lavfi",
+    "-i",
+    `color=c=${BG}:s=${W}x${H}:d=${CARD_SEC}:r=${FPS}`,
+    "-vf",
+    vf,
+    ...X264,
+    out,
   ]);
   segments.push(out);
   console.log(`  card: ${card.title}`);
 }
-function makeScene(clip, name, caption, sceneSec = SCENE_SEC, clipStart, clipEnd) {
-  const { base, speed, dur } = sceneBase(clip, caption, sceneSec, clipStart, clipEnd);
+function makeScene(
+  clip,
+  name,
+  caption,
+  sceneSec = SCENE_SEC,
+  clipStart,
+  clipEnd,
+) {
+  const { base, speed, dur } = sceneBase(
+    clip,
+    caption,
+    sceneSec,
+    clipStart,
+    clipEnd,
+  );
   const out = path.join(tmp, `${name}.mp4`);
   const vf = [...base, ...fades(sceneSec)].join(",");
   const inputWindow = [
     ...(Number.isFinite(clipStart) ? ["-ss", String(clipStart)] : []),
     ...(Number.isFinite(clipEnd) ? ["-to", String(clipEnd)] : []),
   ];
-  sh("ffmpeg", ["-y", ...inputWindow, "-i", clip, "-vf", vf, "-t", String(sceneSec), ...X264, out]);
+  sh("ffmpeg", [
+    "-y",
+    ...inputWindow,
+    "-i",
+    clip,
+    "-vf",
+    vf,
+    "-t",
+    String(sceneSec),
+    ...X264,
+    out,
+  ]);
   segments.push(out);
-  const windowNote = inputWindow.length ? ` [${clipStart ?? 0}s–${clipEnd ?? "end"}s]` : "";
-  console.log(`  scene: ${clip}${windowNote}  (${dur.toFixed(0)}s -> ${sceneSec}s, ${speed.toFixed(1)}x)`);
+  const windowNote = inputWindow.length
+    ? ` [${clipStart ?? 0}s–${clipEnd ?? "end"}s]`
+    : "";
+  console.log(
+    `  scene: ${clip}${windowNote}  (${dur.toFixed(0)}s -> ${sceneSec}s, ${speed.toFixed(1)}x)`,
+  );
 }
 
 // ---- stills mode (design sign-off before the full build) ------------------
 if (args.includes("--stills")) {
-  const outDir = path.join(VIDEOS_DIR, new Date().toISOString().slice(0, 10), "mockups");
+  const outDir = path.join(
+    VIDEOS_DIR,
+    new Date().toISOString().slice(0, 10),
+    "mockups",
+  );
   fs.mkdirSync(outDir, { recursive: true });
   const cardStill = (card, file) =>
     sh("ffmpeg", [
-      "-y", "-f", "lavfi", "-i", `color=c=${BG}:s=${W}x${H}:d=1:r=1`,
-      "-vf", cardParts(card).join(","), "-frames:v", "1", path.join(outDir, file),
+      "-y",
+      "-f",
+      "lavfi",
+      "-i",
+      `color=c=${BG}:s=${W}x${H}:d=1:r=1`,
+      "-vf",
+      cardParts(card).join(","),
+      "-frames:v",
+      "1",
+      path.join(outDir, file),
     ]);
   cardStill(INTRO, "01-intro-card.png");
   cardStill(SCENES[0], "02-title-card.png");
@@ -381,9 +729,16 @@ if (args.includes("--stills")) {
   const firstSection = SCENES.find((x) => x.section)?.section;
   if (firstSection) {
     sh("ffmpeg", [
-      "-y", "-f", "lavfi", "-i", `color=c=${BG}:s=${W}x${H}:d=1:r=1`,
-      "-vf", sectionCardParts(firstSection, 0).join(","),
-      "-frames:v", "1", path.join(outDir, "05-section-card.png"),
+      "-y",
+      "-f",
+      "lavfi",
+      "-i",
+      `color=c=${BG}:s=${W}x${H}:d=1:r=1`,
+      "-vf",
+      sectionCardParts(firstSection, 0).join(","),
+      "-frames:v",
+      "1",
+      path.join(outDir, "05-section-card.png"),
     ]);
   }
   const s = SCENES.find((x) => newestClipForTask(x.task)) || SCENES[0];
@@ -391,8 +746,16 @@ if (args.includes("--stills")) {
   if (clip) {
     const seek = (ffprobeDuration(clip) * 0.85).toFixed(1); // late frame = real content
     sh("ffmpeg", [
-      "-y", "-ss", seek, "-i", clip, "-vf", sceneBase(clip, s.caption).base.join(","),
-      "-frames:v", "1", path.join(outDir, "03-scene-frame.png"),
+      "-y",
+      "-ss",
+      seek,
+      "-i",
+      clip,
+      "-vf",
+      sceneBase(clip, s.caption).base.join(","),
+      "-frames:v",
+      "1",
+      path.join(outDir, "03-scene-frame.png"),
     ]);
   }
   console.log("Mockup stills written to:", outDir);
@@ -418,7 +781,14 @@ SCENES.forEach((s, i) => {
     makeSectionCard(s.section, partIndex, `section${i}`);
   }
   makeCard(s, `card${i}`);
-  makeScene(clip, `scene${i}`, s.caption, s.sceneSec ?? SCENE_SEC, s.clipStart, s.clipEnd);
+  makeScene(
+    clip,
+    `scene${i}`,
+    s.caption,
+    s.sceneSec ?? SCENE_SEC,
+    s.clipStart,
+    s.clipEnd,
+  );
 });
 makeCard(OUTRO, "outro");
 
@@ -439,9 +809,20 @@ fs.writeFileSync(
 const outDir = path.join(ROOT, ".artifacts", "publish");
 fs.mkdirSync(outDir, { recursive: true });
 const outFile = path.join(outDir, SHOW.out);
-sh("ffmpeg", ["-y", "-f", "concat", "-safe", "0", "-i", listFile, ...X264, outFile]);
+sh("ffmpeg", [
+  "-y",
+  "-f",
+  "concat",
+  "-safe",
+  "0",
+  "-i",
+  listFile,
+  ...X264,
+  outFile,
+]);
 
 const finalDur = ffprobeDuration(outFile);
 console.log(`\nDone: ${outFile}`);
 console.log(`Duration: ${finalDur.toFixed(1)}s, ${W}x${H} @ ${FPS}fps`);
-if (missing.length) console.log(`Missing clips (excluded): ${missing.join(", ")}`);
+if (missing.length)
+  console.log(`Missing clips (excluded): ${missing.join(", ")}`);

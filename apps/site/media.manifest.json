@@ -1,5 +1,5 @@
 {
-  "version": "v7",
+  "version": "v8",
   "note": "Maps site video slots to finished cuts in .artifacts/publish/ (git-ignored). build-site-media.mjs stages these into apps/site/public/media/<version>/ as <key> + <key>.poster.jpg. Bump version on content change so /media/* stays cache-immutable.",
   "items": [
     {
