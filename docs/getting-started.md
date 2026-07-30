@@ -29,20 +29,18 @@ corepack pnpm run dist
 
 1. Open the side panel
 2. Open **Settings**
-3. Add the provider key you want to use
-4. Close Settings
+3. Add the provider key or key combination you want to use
+4. Choose one of the provider stacks unlocked by those keys
+5. Save changes
 
-Supported agent provider modes include Fireworks AI, OpenRouter, Moonshot/Kimi, Xiaomi MiMo, and advanced mixed-provider modes such as Fireworks+DeepSeek or OpenRouter+Groq. For Xiaomi MiMo E2E runs, set `E2E_PROVIDER=xiaomi` and provide `XIAOMI_API_KEY` in your shell or repo-local `.env`.
+Settings exposes the two release-verified provider modes: OpenRouter and
+Fireworks AI. Experimental adapters may still be used by internal evaluation
+commands, but are not part of the supported setup surface.
 
-| Provider mode | Required key(s) | Notes |
-| --- | --- | --- |
-| Fireworks | `FIREWORKS_API_KEY` or Fireworks key in Settings | Recommended default |
-| OpenRouter | `OPENROUTER_API_KEY` or OpenRouter key in Settings | Public BYOK option |
-| Moonshot/Kimi | `KIMI_API_KEY` or Kimi key in Settings | Direct Moonshot provider mode |
-| Xiaomi MiMo | `XIAOMI_API_KEY` or Xiaomi key in Settings | Agent traffic only |
-| Fireworks + DeepSeek | Fireworks key plus `DEEPSEEK_API_KEY` or both keys in Settings | Fireworks executor, DeepSeek planner/verifier |
-| OpenRouter + Groq | OpenRouter key plus Groq key in Settings | OpenRouter executor, Groq planner |
-| OpenAI-compatible + Groq | OpenAI-compatible key plus Groq key in Settings | Advanced executor/planner split |
+| Provider mode | Required key(s)                         | Notes                                    |
+| ------------- | --------------------------------------- | ---------------------------------------- |
+| OpenRouter    | `OPENROUTER_API_KEY` or key in Settings | Recommended; live verified model list    |
+| Fireworks     | `FIREWORKS_API_KEY` or key in Settings  | Curated compatibility-checked model list |
 
 Provider pricing, quotas, data handling, and rate limits are governed by the provider you configure.
 
@@ -60,11 +58,11 @@ websites.
 
 Common provider setup failures:
 
-| Symptom | Likely cause |
-| --- | --- |
-| Authentication error | Missing, invalid, or revoked provider key |
-| Rate-limit or quota error | Provider account limit, billing state, or model quota |
-| Model unavailable | Provider routing issue or unsupported configured model |
+| Symptom                     | Likely cause                                                                      |
+| --------------------------- | --------------------------------------------------------------------------------- |
+| Authentication error        | Missing, invalid, or revoked provider key                                         |
+| Rate-limit or quota error   | Provider account limit, billing state, or model quota                             |
+| Model unavailable           | Provider routing issue or unsupported configured model                            |
 | Empty or degraded responses | Temporary provider outage or a model that does not support the requested modality |
 
 ## Development Mode

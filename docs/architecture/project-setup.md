@@ -4,6 +4,7 @@ This document describes the active build, test, and runtime setup for OpenSideba
 
 ## Stack
 
+- Nx + pnpm monorepo (pnpm@11, Node 22+; scripts run on `tsx` — no Bun)
 - Chrome Manifest V3 extension
 - Vite 5 with `@crxjs/vite-plugin`
 - React 18 for the side panel
@@ -19,12 +20,11 @@ opensidebar/
 |  |- extension/
 |  |  |- src/        # service worker, content script, side panel, trace viewer
 |  |  `- tests/      # extension unit, integration, and E2E tests
-|  `- backend/
-|     |- src/        # backend routes, services, persistence
-|     `- tests/      # backend tests
+|  `- site/          # marketing site
 |- packages/
 |  |- prompts/       # prompt runtime and generated prompt bundle
-|  `- shared-types/  # shared TypeScript contracts
+|  |- shared-types/  # shared TypeScript contracts
+|  `- observability-schema/  # span-spine schema for traces/observability
 |- scripts/          # build and maintenance scripts
 |- prompts/          # prompt source templates
 |- docs/             # product and architecture documentation

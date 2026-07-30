@@ -44,7 +44,7 @@ const SCREENSHOTS = [
 ];
 
 const TAGLINE = "Your browser, driven by AI";
-const SUBLINE = "Bring your own key · No telemetry · Open source";
+const SUBLINE = "Bring your own key · Local by default · Open source";
 
 function sh(bin, a) {
   return execFileSync(bin, a, { stdio: ["ignore", "pipe", "pipe"] }).toString().trim();

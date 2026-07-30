@@ -1,79 +1,109 @@
 # Tool System
 
-OpenSidebar implements **52 tools** across four categories. Tools are defined in `apps/extension/src/background/tools/index.ts` with metadata in `apps/extension/src/background/tools/metadata.ts`.
+OpenSidebar exposes **52 tools** to the model. The **source of truth** is
+`packages/shared-types/src/enums.ts` (`ToolName`) plus the definition/register
+modules below — consult those for exact parameter schemas rather than any list
+in prose.
 
-## Tool Categories
+## Module structure
 
-### DOM Tools (Content Script)
+`apps/extension/src/background/tools/index.ts` is a ~130-line **barrel**: it
+re-exports submodules and wires registration via `registerTools()`. The bulk
+lives in:
 
-These tools operate in the page context and manipulate the DOM directly.
+| Module | Contents |
+| --- | --- |
+| `definitions.ts` | LLM-facing `ToolDefinition` schemas for generic tools |
+| `registry.ts` | `ToolRegistry` — `execute(toolCall, tabId, signal)`, site-access blocking, structured results |
+| `metadata.ts` | `TOOL_METADATA`, risk levels, tool profiles, node-concurrency metadata |
+| `register-interaction.ts` | click / type / scroll / read / hover / find / select / press / drag / hide / dismiss |
+| `register-core-actions.ts` | core page actions |
+| `register-tabs.ts` | navigate-adjacent tab management (`create_tab`, `close_tab`, `switch_tab`, `list_tabs`, `go_back`, `wait`, `create_window`) |
+| `register-cookies.ts` / `register-history.ts` | cookies, history search |
+| `register-inspection.ts` | `inspect_hidden`, `inspect_chart`, `inspect_table`, `inspect_filter_state`, `inspect_region`, `extract_form_state`, `xray_page` |
+| `register-scripting-download.ts` | `execute_js`, `upload_file`, `download_file` |
+| `register-agent-control.ts` / `register-agent-tools.ts` | `done`, `escalate`, `clarify`, `update_notes`, `update_plan`, `compose_text`, `get_profile_fields` |
+| `main-world-bridge.ts` | Serialized MAIN-world injection scripts |
+| `download-helpers.ts`, `tab-navigation-helpers.ts`, `page-inspector.ts` | Shared helpers |
+| `servicenow/` | Quarantined ServiceNow adapter (see below) |
 
-| Tool                | Description                       | Arguments                                                                    |
-| ------------------- | --------------------------------- | ---------------------------------------------------------------------------- |
-| `click_element`     | Click an element by tag ID        | `{ id: number }`                                                             |
-| `type_text`         | Type text into an input field     | `{ id: number, text: string, pressEnter?: boolean }`                         |
-| `scroll_page`       | Scroll the page or container      | `{ direction: "up" \| "down" \| "top" \| "bottom", id?: number }`            |
-| `read_page`         | Get a fresh DOM snapshot          | `{}`                                                                         |
-| `hover_element`     | Hover over an element             | `{ id: number }`                                                             |
-| `find_element`      | Find element by visible text      | `{ text: string }`                                                           |
-| `select_option`     | Select a dropdown option          | `{ id: number, value: string }`                                              |
-| `press_key`         | Press a keyboard key              | `{ key: string, modifiers?: string[] }`                                      |
-| `drag_and_drop`     | Drag an element to a target       | `{ sourceId: number, targetId: number }`                                     |
-| `hide_element`      | Hide an element by ID             | `{ id: number }`                                                             |
-| `read_element`      | Read specific attribute or text   | `{ id: number, attribute?: string }`                                         |
-| `execute_js`        | Run JavaScript in page context    | `{ code: string }`                                                           |
-| `upload_file`       | Upload a file to a file input     | `{ id: number, url?: string, profileFile?: "cv" }`                           |
-| `right_click`       | Right-click on an element         | `{ id: number }`                                                             |
-| `set_checkbox`      | Set checkbox/radio state          | `{ id: number, checked: boolean }`                                           |
-| `click_coordinates` | Click at viewport X/Y coordinates | `{ x: number, y: number, description?: string }`                             |
-| `inspect_hidden`    | Scan for hidden DOM elements      | `{ pattern?: string, maxResults?: number }`                                  |
+`navigate` itself is registered inline in `index.ts` because it enforces the
+allowed-origins navigation boundary via `tab-navigation-helpers.ts`.
 
-### Page Assist Tools (Service Worker → MAIN world)
+**Registration order is the catalog order presented to the model** — comments
+in `index.ts` warn against regrouping the calls.
 
-These tools inject scripts into the page's MAIN world via `chrome.scripting.executeScript` to modify page behavior. Toggle — call once to enable, again to disable.
+## ServiceNow adapter (one-way rule)
 
-| Tool           | Description                                     | Arguments |
-| -------------- | ----------------------------------------------- | --------- |
-| `xray_page`    | Force all hidden elements visible (CSS override) | `{}`      |
+`tools/servicenow/` owns the SN tool schemas and handlers:
+`open_servicenow_module`, `configure_servicenow_form` (`register.ts`),
+`search_knowledge_base` (`register-knowledge-base.ts`),
+`apply_list_filter/_sort/_action` (`register-list-actions.ts`),
+`inspect_catalog_item` / `configure_catalog_item` (`register-catalog.ts`).
 
-**`xray_page`** injects a `<style data-osb-xray>` that overrides `display:none`, `opacity:0`, `visibility:hidden`, and `aria-hidden`. Marked `domModifying: true` so the agent loop refreshes the DOM snapshot after toggling, allowing newly revealed elements to get tagged. Does not persist across navigations.
+Import direction is one-way: adapter modules must **never** import
+`tools/index.ts` or the tools barrel — only `helpers` and concrete siblings.
+The generic layer reaches SN behavior solely through the `servicenow/register*`
+entry points and the `tool-hooks.ts` façade (reference-resolution hooks that
+no-op off ServiceNow). See CLAUDE.md for what is and isn't quarantined.
 
-### Tab Tools (Service Worker)
+## Conventions
 
-These tools use Chrome APIs to manage tabs and navigation.
+- **Param names must match across three layers**: the `ToolDefinition` schema,
+  the TypeScript args type (`packages/shared-types/src/tools.ts`), and the
+  implementation in `content/actions/`. Use `id` (integer) for element tag
+  IDs — never `tag`.
+- Executors return a string (`"Success..."` / `"Error: ..."`) or a structured
+  `ToolExecutionResult`; the registry normalizes for the model.
+- Content-script tools travel as `TOOL_EXECUTE` / `TOOL_RESULT` messages;
+  service-worker tools call Chrome APIs directly; a few inject MAIN-world
+  scripts via `chrome.scripting` (`main-world-bridge.ts` — the scripts are
+  self-contained serialized functions).
 
-| Tool              | Description                     | Arguments                                             |
-| ----------------- | ------------------------------- | ----------------------------------------------------- |
-| `navigate`        | Navigate to URL or search query | `{ url?: string, query?: string }`                    |
-| `create_tab`      | Open a new tab                  | `{ url: string }`                                     |
-| `close_tab`       | Close a tab                     | `{ tabId?: number }`                                  |
-| `switch_tab`      | Switch to a tab by ID           | `{ tabId: number }`                                   |
-| `list_tabs`       | List open tabs in workspace     | `{}`                                                  |
-| `go_back`         | Go back in browser history      | `{}`                                                  |
-| `wait`            | Wait for dynamic content        | `{ seconds: number, reason?: string }`                |
+## Tool metadata
 
-### Browser API Tools
+`metadata.ts` centralizes per-tool flags in a single
+`TOOL_METADATA: Record<ToolName, ToolMeta>` map. The convenience sets
+(`DOM_MODIFYING_TOOLS`, `SEQUENTIAL_TOOLS`, `CACHEABLE_TOOLS`,
+`MUTATION_SENSITIVE_TOOLS`) are **derived** by filtering that map — to change
+a tool's behavior, edit its `ToolMeta` entry, don't `.add()` to a set.
 
-These tools interact with browser features like cookies, history, bookmarks, and downloads.
+`ToolMeta` fields:
 
-| Tool                | Description                    | Arguments                                                                      |
-| ------------------- | ------------------------------ | ------------------------------------------------------------------------------ |
-| `get_cookies`       | Get cookies for a URL          | `{ url?: string }`                                                             |
-| `set_cookie`        | Set a cookie                   | `{ url: string, name: string, value: string, domain?: string, path?: string }` |
-| `delete_cookie`     | Delete a cookie                | `{ url: string, name: string }`                                                |
-| `search_history`    | Search browser history         | `{ query: string, maxResults?: number }`                                       |
-| `download_file`     | Start a file download          | `{ url: string, filename?: string }`                                           |
+- `domModifying` — triggers a batch DOM-snapshot refresh after the turn's
+  tools complete. Note: `navigate` and `go_back` are **not** DOM-modifying
+  (navigation has its own refresh path), while `read_page`, `execute_js`,
+  `upload_file`, and `dismiss_overlays` are.
+- `sequential` — must run alone, never in a parallel batch. This is a wide
+  set (~22 tools): navigation/tab tools, `execute_js`, `upload_file`, agent
+  control (`done`, `clarify`, `update_plan`, `compose_text`), and the SN
+  configure/apply tools.
+- `riskLevel` — LOW / MEDIUM / HIGH.
+- `cacheable` (`"dom" | "static" | false`) and `mutationSensitive` — drive
+  result caching and cache invalidation.
 
-### Special Tools
+`metadata.ts` also defines **tool profiles** (`TOOL_PROFILES` — `full`,
+`read_only`, `form_fill`, `edit_surface`, `navigate`, `enter_code`,
+`submit_form`, `inspect_hidden_state`, `recover_from_stuck`,
+`navigation_only`) with `resolveToolProfile` / `buildDomAwareProfile`, which
+restrict the tool set the model sees per node, and **node-concurrency
+metadata** (`TOOL_NODE_CONCURRENCY` with `scope`/`access`) used by the
+orchestrator's parallel scheduler.
 
-These tools control the agent itself.
+## Risk classification — enforced
 
-| Tool            | Description             | Arguments                                                                               |
-| --------------- | ----------------------- | --------------------------------------------------------------------------------------- |
-| `done`          | Mark task as complete   | `{ summary: string }`                                                                   |
-| `escalate`      | Switch to smarter model | `{ reason: string }`                                                                    |
+Risk is **not informational**: HIGH-risk tools are gated behind explicit user
+approval (`agent/approval-policy.ts` — "high-risk tool requires explicit user
+approval"). Notable placements that differ from intuition:
 
-## Tool Execution Flow
+- `get_cookies` and `search_history` are **HIGH** (they read sensitive data).
+- `escalate` is **LOW** (a model switch, not a page action).
+- Navigation/tab management (`navigate`, `create_tab`, `close_tab`,
+  `switch_tab`, `download_file`) is HIGH.
+
+Check `TOOL_METADATA` for any specific tool.
+
+## Tool execution flow
 
 ```mermaid
 sequenceDiagram
@@ -83,150 +113,60 @@ sequenceDiagram
     participant ContentScript
     participant DOM
 
-    LLM->>AgentLoop: Tool call
-    AgentLoop->>ToolRegistry: execute(toolCall, tabId)
+    LLM->>AgentLoop: Tool call(s)
+    AgentLoop->>ToolRegistry: execute(toolCall, tabId, signal)
+    Note over ToolRegistry: site-access block check first
 
-    alt DOM Tool
-        ToolRegistry->>ContentScript: chrome.tabs.sendMessage(TOOL_EXECUTE)
+    alt Content-script tool
+        ToolRegistry->>ContentScript: TOOL_EXECUTE
         ContentScript->>DOM: Perform action
-        DOM-->>ContentScript: Result
         ContentScript-->>ToolRegistry: TOOL_RESULT
-    else Tab Tool / Browser API Tool
-        ToolRegistry->>Chrome: chrome.tabs.* / chrome.* API
+    else Service-worker tool
+        ToolRegistry->>Chrome: chrome.* API / MAIN-world injection
         Chrome-->>ToolRegistry: Result
     end
 
-    ToolRegistry-->>AgentLoop: Result string
+    ToolRegistry-->>AgentLoop: string | ToolExecutionResult
     AgentLoop->>ContextManager: Add tool result
 ```
 
-## Adding a New Tool
+Parallel vs sequential batching, batch snapshot refresh, and circuit breakers
+are the agent loop's job — see [Agent Loop](./agent-loop.md).
 
-### Step 1: Define the Tool Schema
+## Adding a new tool
 
-In `apps/extension/src/background/tools/index.ts`:
+1. Add the name to `ToolName` (`packages/shared-types/src/enums.ts`) and an
+   args type in `packages/shared-types/src/tools.ts`.
+2. Add the `ToolDefinition` schema to `definitions.ts` (or the SN adapter's
+   `servicenow/definitions.ts`).
+3. Register the executor in the appropriate `register-*.ts` module (create the
+   grouping that fits; keep registration order deliberate).
+4. Add a `ToolMeta` entry to `TOOL_METADATA` in `metadata.ts` (risk,
+   domModifying, sequential, cacheable) and, if the orchestrator may schedule
+   it in parallel work, a `TOOL_NODE_CONCURRENCY` entry.
+5. If it's a content-script tool, implement the action in
+   `content/actions/` with matching param names.
 
-```typescript
-const MY_NEW_TOOL_DEF: ToolDefinition = {
-  type: "function",
-  function: {
-    name: ToolName.MY_NEW_TOOL,
-    description: "Description of what the tool does",
-    parameters: {
-      type: "object",
-      properties: {
-        param1: {
-          type: "string",
-          description: "What this parameter does",
-        },
-        param2: {
-          type: "number",
-          description: "Another parameter",
-        },
-      },
-      required: ["param1"],
-    },
-  },
-};
-```
+## Tool recovery
 
-### Step 2: Register the Executor
+If the LLM emits tool calls as plain text instead of structured JSON,
+`recoverToolCallsFromText()` (`agent/tool-recovery.ts`) attempts recovery
+before the turn is treated as text-only.
 
-In the same file, register the tool:
-
-```typescript
-toolRegistry.register(
-  ToolName.MY_NEW_TOOL,
-  MY_NEW_TOOL_DEF,
-  async (args, tabId, signal) => {
-    // Implementation
-    return "Result string";
-  },
-);
-```
-
-### Step 3: Add Metadata (Optional)
-
-In `apps/extension/src/background/tools/metadata.ts`:
-
-```typescript
-// If tool modifies DOM (triggers snapshot refresh)
-DOM_MODIFYING_TOOLS.add("my_new_tool");
-
-// If tool must run alone (not in parallel)
-SEQUENTIAL_TOOLS.add("my_new_tool");
-
-// Add to risk classification if needed
-```
-
-## Tool Metadata
-
-### DOM_MODIFYING_TOOLS
-
-Tools that modify the DOM and trigger a snapshot refresh after execution:
-
-- `click_element`
-- `type_text`
-- `scroll_page`
-- `hover_element`
-- `select_option`
-- `drag_and_drop`
-- `hide_element`
-- `xray_page`
-- `navigate`
-- `go_back`
-
-### SEQUENTIAL_TOOLS
-
-Tools that must execute alone (not in parallel with others):
-
-- `navigate` - Changes page context
-- `done` - Ends the agent loop
-
-- `escalate` - Changes model
-- `go_back` - Changes page context
-
-## Risk Classification
-
-Tools are classified by risk level (informational, not enforced):
-
-- **LOW**: Read-only operations or reversible toggles
-  - `read_page`, `scroll_page`, `list_tabs`, `get_cookies`, `search_history`, `read_element`, `inspect_hidden`, `xray_page`
-- **MEDIUM**: Mutates page state
-  - `click_element`, `type_text`, `hover_element`, `hide_element`, `select_option`, `set_checkbox`, `right_click`, `click_coordinates`
-  - `set_cookie`, `delete_cookie`, `upload_file`
-- **HIGH**: Navigation and browser management
-  - `navigate`, `create_tab`, `close_tab`, `switch_tab`, `download_file`, `escalate`
-
-## Tool Result Format
-
-All tools return a string result:
-
-- Success: Descriptive result (e.g., "Clicked element [5]", "Navigated to https://...")
-- Error: `"Error: {description}"` (e.g., "Error: No element with tag 5")
-
-## Tool Recovery
-
-If the LLM returns tool calls as plain text instead of structured JSON, the system attempts to recover them:
-
-See `apps/extension/src/background/agent/tool-recovery.ts` for the `recoverToolCallsFromText()` function.
-
-## Testing Tools
+## Testing
 
 ```bash
-# Run tool-related tests
-pnpm exec vitest run --grep "tool"
-
-# Test specific tool execution
 pnpm exec vitest run --config apps/extension/vitest.config.ts apps/extension/tests/background/tools.test.ts
 ```
 
-## Key Files
+## Key files
 
-| File                               | Purpose                        |
-| ---------------------------------- | ------------------------------ |
-| `apps/extension/src/background/tools/index.ts`    | Tool definitions and executors |
-| `apps/extension/src/background/tools/registry.ts` | ToolRegistry class             |
-| `apps/extension/src/background/tools/metadata.ts` | Tool metadata (risk, flags)    |
-| `apps/extension/src/content/actions/`             | DOM tool implementations       |
-| `apps/extension/src/background/agent/loop.ts`     | Tool execution orchestration   |
+| File | Purpose |
+| --- | --- |
+| `apps/extension/src/background/tools/index.ts` | Barrel + `registerTools()` wiring + `navigate` |
+| `apps/extension/src/background/tools/definitions.ts` | Generic tool schemas |
+| `apps/extension/src/background/tools/registry.ts` | `ToolRegistry` |
+| `apps/extension/src/background/tools/metadata.ts` | Metadata, risk, profiles, concurrency |
+| `apps/extension/src/background/tools/servicenow/` | Quarantined SN adapter |
+| `apps/extension/src/content/actions/` | DOM tool implementations |
+| `apps/extension/src/background/agent/loop.ts` | Dispatch orchestration |

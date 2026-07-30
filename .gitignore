@@ -70,6 +70,10 @@ OpenSidebar-deck.md
 
 # Local artifacts
 .artifacts/
+.promptfoo/
+/outputs/
+infra/telemetry/cdk.out/
+infra/telemetry/synth-output.txt
 # Real seed PII lives OUTSIDE the repo (~/.opensidebar/seed via OPENSIDEBAR_SEED_DIR).
 # Belt-and-braces against a stray local recreation under the old in-tree path —
 # the committed synthetic kit at tests/e2e/fixtures/live-app-kit/ is fake and safe.

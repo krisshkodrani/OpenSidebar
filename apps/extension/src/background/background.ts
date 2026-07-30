@@ -62,6 +62,9 @@ import {
   saveUserWebsiteSkill,
 } from "../utils/website-skills";
 import { shouldShowPageActivityCue } from "./page-activity-cue";
+import { chromePersistencePort } from "./environment/chrome";
+import { drainInternalFleetTelemetry } from "./telemetry";
+import { NoWebPageTaskRecovery } from "./no-web-page-task-recovery";
 
 /** Cached settings — populated on side panel open, invalidated on storage change. */
 let cachedSettings: UserSettings | null = null;
@@ -87,6 +90,10 @@ void chrome.storage.local
   .catch(() => {});
 
 logger.info("system", "Service Worker Initialized");
+// Internal builds can recover a bounded consented queue after an MV3 worker
+// restart. This is intentionally detached from agent execution and is a no-op
+// in published builds because no endpoint is compiled in.
+void drainInternalFleetTelemetry(chromePersistencePort.local).catch(() => {});
 
 const passiveMonitor = new PassiveMonitorController({
   isWorkspaceActive: (workspaceId) => orchestrator.hasActiveTask(workspaceId),
@@ -167,7 +174,10 @@ chrome.sidePanel.setPanelBehavior({
 // 5. State — per-workspace agent loops
 const pendingSidePanelOpens = new Set<number>();
 const pendingUserChat = new Set<string>(); // per-workspace guard against concurrent USER_CHAT
-type UserChatPayload = Extract<RuntimeMessage, { type: "USER_CHAT" }>["payload"];
+type UserChatPayload = Extract<
+  RuntimeMessage,
+  { type: "USER_CHAT" }
+>["payload"];
 const queuedUserChat = new Map<string, UserChatPayload>(); // latest follow-up per workspace
 const e2eOverlayTabsByWorkspace = new Map<string, number>();
 const MAX_WORKSPACE_CONTEXT_MESSAGES = 8;
@@ -183,17 +193,45 @@ const skillRecordingSessions = new Map<
   }
 >();
 
-const originalRuntimeSendMessage =
-  chrome.runtime.sendMessage.bind(chrome.runtime);
+const originalRuntimeSendMessage = chrome.runtime.sendMessage.bind(
+  chrome.runtime,
+);
+const noWebPageTaskRecovery = new NoWebPageTaskRecovery({
+  getActiveTabId: async () => {
+    const [tab] = await chrome.tabs.query({
+      active: true,
+      lastFocusedWindow: true,
+    });
+    return tab?.id ?? null;
+  },
+  resumeTask: handleUserChat,
+  searchWeb: (query) =>
+    chrome.search.query({ text: query, disposition: "NEW_TAB" }),
+  sendClarification: ({ workspaceId, ...payload }) => {
+    chrome.runtime.sendMessage({
+      type: "CLARIFICATION_REQUEST",
+      requestId: crypto.randomUUID(),
+      source: MessageSource.BACKGROUND,
+      workspaceId,
+      payload,
+    });
+  },
+  sendStatus: (workspaceId, status, detail) => {
+    chrome.runtime.sendMessage({
+      type: "AGENT_STATUS",
+      requestId: crypto.randomUUID(),
+      source: MessageSource.BACKGROUND,
+      workspaceId,
+      payload: { status, detail },
+    });
+  },
+});
 
 function isE2EWorkspaceId(workspaceId: string | null | undefined): boolean {
   return typeof workspaceId === "string" && workspaceId.startsWith("e2e-");
 }
 
-function rememberE2EOverlayTarget(
-  workspaceId: string,
-  tabId: number,
-): void {
+function rememberE2EOverlayTarget(workspaceId: string, tabId: number): void {
   if (!isE2EWorkspaceId(workspaceId)) return;
   if (!tabId || tabId === chrome.tabs.TAB_ID_NONE) return;
   e2eOverlayTabsByWorkspace.set(workspaceId, tabId);
@@ -213,8 +251,7 @@ function mirrorRuntimeMessageToE2EOverlay(message: unknown): void {
   if (!workspaceId || !isE2EWorkspaceId(workspaceId)) return;
 
   const tabId =
-    e2eOverlayTabsByWorkspace.get(workspaceId) ??
-    runtimeMessage.payload?.tabId;
+    e2eOverlayTabsByWorkspace.get(workspaceId) ?? runtimeMessage.payload?.tabId;
   if (!tabId || tabId === chrome.tabs.TAB_ID_NONE) return;
 
   chrome.tabs.sendMessage(tabId, message).catch(() => {});
@@ -775,8 +812,9 @@ chrome.runtime.onMessage.addListener(
           maxSuggestionsPerMinute: message.payload.maxSuggestionsPerMinute,
         });
         if (result.ok && message.payload.inputSources.includes("tabAudio")) {
-          await tabAudioCapture.start({ workspaceId: resolvedWsId, tabId }).catch(
-            (error: any) => {
+          await tabAudioCapture
+            .start({ workspaceId: resolvedWsId, tabId })
+            .catch((error: any) => {
               logger.warn("recording", "Failed to start tab audio capture", {
                 workspaceId: resolvedWsId,
                 tabId,
@@ -788,8 +826,7 @@ chrome.runtime.onMessage.addListener(
                   ? `Audio unavailable: ${error.message}`
                   : "Audio transcription is unavailable.",
               );
-            },
-          );
+            });
         }
         sendResponse(result);
       })().catch((error: any) => {
@@ -946,6 +983,9 @@ chrome.runtime.onMessage.addListener(
       isUiMessageSource(message.source) &&
       message.type === "CLARIFICATION_RESPONSE"
     ) {
+      if (noWebPageTaskRecovery.resolve(message.payload, message.workspaceId)) {
+        return false;
+      }
       orchestrator.resolveClarificationResponse(
         message.payload,
         message.workspaceId,
@@ -1083,7 +1123,8 @@ async function handleSkillRecordingStart(tabId: number) {
     broadcastSkillRecordingStatus({
       status: "paused",
       timeline: [],
-      detail: "Recording paused on restricted page. Resume when you return to the original site.",
+      detail:
+        "Recording paused on restricted page. Resume when you return to the original site.",
     });
     return {
       ok: false,
@@ -1168,7 +1209,10 @@ function broadcastSkillRecordingStatus(
 }
 
 function broadcastUserSkillList(
-  skills: Extract<RuntimeMessage, { type: "USER_SKILL_LIST" }>["payload"]["skills"],
+  skills: Extract<
+    RuntimeMessage,
+    { type: "USER_SKILL_LIST" }
+  >["payload"]["skills"],
 ) {
   chrome.runtime
     .sendMessage({
@@ -1243,10 +1287,7 @@ async function buildWorkspaceConversationContext(
   }
 }
 
-async function handleUserChat(
-  payload: UserChatPayload,
-  workspaceId: string,
-) {
+async function handleUserChat(payload: UserChatPayload, workspaceId: string) {
   // Per-workspace guard: serialize concurrent requests instead of dropping them.
   if (pendingUserChat.has(workspaceId)) {
     queuedUserChat.set(workspaceId, payload);
@@ -1271,17 +1312,7 @@ async function handleUserChat(
         workspaceManager,
       );
       if (tabId === null) {
-        chrome.runtime.sendMessage({
-          type: "AGENT_STATUS",
-          requestId: crypto.randomUUID(),
-          source: MessageSource.BACKGROUND,
-          workspaceId,
-          payload: {
-            status: AgentStatus.ERROR,
-            detail:
-              "No active web page found. Please open a web page and try again.",
-          },
-        });
+        noWebPageTaskRecovery.request(currentPayload, workspaceId);
         return;
       }
 

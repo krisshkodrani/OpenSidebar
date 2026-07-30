@@ -5,12 +5,13 @@ import {
 } from "../../types";
 import { logger } from "../../utils";
 import { loadSettings } from "../../utils/settings-storage";
+import { DEFAULT_PROVIDER_MODE } from "../../utils/executor-model-policy";
 import { uiRuntime } from "../runtime";
 import type { SettingsSlice, SliceCreator } from "./types";
 
 export const DEFAULT_SETTINGS: UserSettings = {
   openRouterApiKey: "",
-  providerMode: "fireworks",
+  providerMode: DEFAULT_PROVIDER_MODE,
   perceptionMode: "auto",
   maxImagePromptTokenEstimate: DEFAULT_MAX_IMAGE_PROMPT_TOKEN_ESTIMATE,
   enabledSkillPackIds: [...DEFAULT_ENABLED_SKILL_PACK_IDS],

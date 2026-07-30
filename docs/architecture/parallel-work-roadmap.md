@@ -1,8 +1,15 @@
 # First-Class Parallel Work Roadmap
 
-Last updated: 2026-05-15
+Last updated: 2026-07-24 (roadmap authored 2026-05-15)
 
-This roadmap defines the path from the current functional parallel runtime to first-class parallel work support across the extension, overlay harness, and future headless/mock environments.
+> **Status: completed roadmap, kept as historical rationale.** The staged plan
+> below has shipped — the "Current Stage" section and the Stage 1 contract
+> match the code (`orchestrator/types.ts`, `lane-topology.ts`). Current
+> shipped behavior is documented in [Orchestrator](./orchestrator.md); per the
+> [docs policy](../docs-policy.md), the staged-planning scaffolding here is a
+> candidate for relocation to Notion.
+
+This roadmap defined the path from the earlier functional parallel runtime to first-class parallel work support across the extension, overlay harness, and future headless/mock environments.
 
 ## Scope
 
@@ -214,7 +221,7 @@ Deliverables:
 Acceptance criteria:
 
 - All release gates above are covered by tests, trace assertions, or documented manual checks.
-- The default rollout mode is conservative until E2E and trace viewer support are stable.
+- ~~The default rollout mode is conservative until E2E and trace viewer support are stable.~~ Superseded: with the release gates green, `resolveLaneTopology` now defaults to `full` (resource-aware node parallelism ON) when no mode is set (`lane-topology.ts`); `simple`/`standard` remain the serialized fallbacks and the kill switch stays available.
 
 ## Test Coverage Matrix
 

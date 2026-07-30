@@ -19,10 +19,7 @@ import {
 } from "./knowledge-search-routing";
 import { assessMissingToolEscalation } from "./tool-capabilities";
 import { applyFieldReReadTracking } from "./fill-checklist-policy";
-import {
-  checkNavigateGuard,
-  type NavigateGuardHost,
-} from "./navigate-guard";
+import { checkNavigateGuard, type NavigateGuardHost } from "./navigate-guard";
 import { runWriterHandoff } from "./writer-handoff";
 import {
   buildTrustedReadAnswerCompletionCandidate,
@@ -175,9 +172,7 @@ export interface AgentLoopToolHandlerHost {
  * task multi-tab, and blocking switch_tab would strand the agent's own work in
  * unreachable tabs. The context latch flips permanently for the session.
  */
-export function tabManagementBlocked(
-  loop: AgentLoopToolHandlerHost,
-): boolean {
+export function tabManagementBlocked(loop: AgentLoopToolHandlerHost): boolean {
   if (loop.context?.hasSpawnedTabs?.()) return false;
   return loop.shouldBlockTabManagementTools();
 }

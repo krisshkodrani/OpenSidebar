@@ -2,7 +2,6 @@ export * from "./Header";
 export * from "./MessageBubble";
 export * from "./InputArea";
 export * from "./PrimaryTaskRail";
-export * from "./StatusLine";
 export * from "./StalledRecoveryCard";
 export * from "./StepTimeline";
 export * from "./ApprovalOverlay";

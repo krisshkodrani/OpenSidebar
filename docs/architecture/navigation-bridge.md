@@ -1,10 +1,15 @@
 # Navigation Bridge
 
-The Navigation Bridge enables the agent loop to survive page navigations by persisting state and resuming after the new page loads.
+The Navigation Bridge enables the agent loop to survive page navigations by
+persisting state and resuming after the new page loads.
+
+**Implementation:** `apps/extension/src/background/infrastructure/navigation.ts`
+(`src/background/navigation.ts` is just a re-export barrel). Read the source
+for exact signatures — this doc describes the model, not line-accurate code.
 
 ## Problem
 
-When the agent navigates to a new page:
+When the agent navigates:
 
 1. The content script is destroyed
 2. The service worker may terminate during page load
@@ -13,245 +18,92 @@ When the agent navigates to a new page:
 ## Solution
 
 1. **Save** full agent state before navigation
-2. **Detect** when new page loads via `webNavigation.onCompleted`
-3. **Resume** agent loop with preserved state
-
-## Architecture
-
-### State Machine
+2. **Detect** the new page load via `webNavigation.onCompleted`
+3. **Resume** the agent loop with preserved state
 
 ```
-┌─────────┐     User message      ┌───────────┐
-│  IDLE   │──────────────────────→│ THINKING  │
-└─────────┘                       └─────┬─────┘
-    ↑                                   │
-    │                                   │ LLM returns
-    │                                   │ tool calls
-    │                                   ▼
-    │                             ┌───────────┐
-    │                             │   ACTING  │
-    │                             └─────┬─────┘
-    │                                   │
-    │                    ┌──────────────┴──────────────┐
-    │               No nav                    Navigation
-    │                    │                    detected
-    │                    │                          │
-    │                    │                          ▼
-    │                    │               ┌──────────────────┐
-    │                    │               │ WAITING_FOR_PAGE │
-    │                    │               │      _LOAD       │
-    │                    │               └────────┬─────────┘
-    │                    │                        │
-    │                    │   webNavigation        │
-    │                    │   .onCompleted         │
-    │                    │                        │
-    └────────────────────┴────────────────────────┘
-                         Resume with saved state
+IDLE → THINKING → ACTING → (navigation detected) → WAITING_FOR_PAGE_LOAD
+  ↑                                                        │
+  └──────────────── resume with saved state ←──────────────┘
 ```
 
-## Storage Schema
+## Storage schema
 
 ```typescript
 interface NavigationState {
-  agentState: AgentLoopState; // Full conversation history
-  fromUrl: string; // URL before navigation
-  toUrl: string | null; // Expected destination
-  navigationStartTs: number; // Timestamp
-  timeoutMs: number; // Default: 30000ms
-}
-
-// Stored at key: "opensidebar:agentState"
-```
-
-## Implementation
-
-### Saving State Before Navigation
-
-Called when `navigate()` tool is invoked or `click_element` triggers navigation:
-
-```typescript
-async function saveNavigationState(state: AgentLoopState): Promise<void> {
-  const navState: NavigationState = {
-    agentState: state,
-    fromUrl: currentUrl,
-    toUrl: state.pendingToolCall?.expectedUrl ?? null,
-    navigationStartTs: Date.now(),
-    timeoutMs: NAVIGATION_TIMEOUT_MS,
-  };
-
-  await chrome.storage.local.set({
-    "opensidebar:agentState": navState,
-  });
+  agentState: AgentLoopState; // full conversation history
+  fromUrl: string;
+  toUrl: string | null;       // expected destination
+  navigationStartTs: number;
+  timeoutMs: number;          // NAVIGATION_TIMEOUT_MS = 30_000
 }
 ```
 
-### Detecting Page Load
+State is stored in `chrome.storage.local` under **workspace/worker-scoped
+keys**: `opensidebar:agentState:<workspaceId>:<workerId>` (via
+`storageKey()`); the bare prefix is only the no-workspace fallback. This
+scoping is what lets multiple orchestrator workers navigate concurrently
+without clobbering each other — lookups (`loadNavigationStateForTab`) iterate
+all prefix-matching keys and match on the tab.
 
-```typescript
-chrome.webNavigation.onCompleted.addListener(async (details) => {
-  // Only main frame (not iframes)
-  if (details.frameId !== 0) return;
+## Flow
 
-  // Check for pending navigation state
-  const stored = await chrome.storage.local.get("opensidebar:agentState");
-  const navState = stored["opensidebar:agentState"];
-  if (!navState) return;
+1. **Save** — `saveNavigationState(state, fromUrl, expectedUrl)` writes the
+   keyed `NavigationState` and sets status to `WAITING_FOR_PAGE_LOAD`.
+2. **Detect** — the `webNavigation.onCompleted` handler ignores subframes
+   (`frameId !== 0`), requires status `WAITING_FOR_PAGE_LOAD`, resolves the
+   saved state for the tab, and enforces the 30s timeout (timeout → clear
+   state, status `ERROR`).
+3. **Wait for the content script** — `ensureContentScript(tabId, 3000)` waits
+   for the new page's content script to be responsive before resuming.
+4. **Resume** — the bridge is **decoupled from the agent loop by callbacks**:
+   `setNavigationCallbacks()` registers a `ResumeCallback` / `StatusCallback`
+   pair; the handler invokes the resume callback (which ends up in
+   `AgentLoop.resumeFromNavigation`). The pending tool call is answered with a
+   tool message ("Page has loaded. Fresh page snapshot is available."), and a
+   `NAVIGATION_RESUME` runtime message is broadcast to the side panel on both
+   success and error.
 
-  // Validate this is our tab
-  if (details.tabId !== navState.agentState.activeTabId) return;
+## Service worker resilience
 
-  // Check timeout
-  const elapsed = Date.now() - navState.navigationStartTs;
-  if (elapsed > navState.timeoutMs) {
-    await chrome.storage.local.remove("opensidebar:agentState");
-    broadcastStatus(AgentStatus.ERROR, "Navigation timed out");
-    return;
-  }
+- State persists in `chrome.storage.local` (survives SW termination).
+- Listeners are registered top-level (`registerNavigationListeners()`), so
+  Chrome re-instantiates the worker to deliver `onCompleted`.
+- `chrome.runtime.onStartup` runs `checkStaleNavigationState()`, which
+  iterates all navigation-state keys and clears expired entries.
 
-  // Clear stored state
-  await chrome.storage.local.remove("opensidebar:agentState");
+## Edge cases
 
-  // Resume agent loop
-  await resumeAgentLoop(navState.agentState, details.url);
-});
-```
+- **Back/forward** — `onCompleted` resumes regardless of which URL loads;
+  the expected-URL comparison tells the agent where it actually landed.
+- **Redirects** — `onCompleted` fires only for the final page; resume happens
+  at the true destination.
+- **SPA navigation (pushState)** — does not fire `onCompleted`; the content
+  script survives, so the bridge isn't involved. An explicit `navigate()` to
+  an SPA route forces a full load, which does fire it.
+- **Tab closed mid-navigation** — `tabs.onRemoved` clears the matching
+  state and reports the error.
+- **Network errors** — `onErrorOccurred` resumes the loop with an error tool
+  message (and broadcasts `NAVIGATION_RESUME` with the failure) instead of
+  hanging until timeout.
+- **Rapid successive navigations** — the last save wins for a given
+  workspace/worker key.
 
-### Resuming the Loop
+## Key files
 
-```typescript
-async function resumeAgentLoop(
-  savedState: AgentLoopState,
-  newUrl: string,
-): Promise<void> {
-  // Add navigation result as tool message
-  if (savedState.pendingToolCall) {
-    savedState.messages.push({
-      role: "tool",
-      tool_call_id: savedState.pendingToolCall.toolCallId,
-      content: `Navigated to ${newUrl}. Call read_page to see the new content.`,
-    });
-    savedState.pendingToolCall = null;
-  }
-
-  savedState.status = AgentStatus.THINKING;
-
-  // Restart keepalive
-  await startKeepalive();
-
-  // Continue agent loop
-  try {
-    await agentLoop.continue(savedState);
-  } catch (err) {
-    broadcastStatus(AgentStatus.ERROR, err.message);
-  } finally {
-    await stopKeepalive();
-  }
-}
-```
-
-## Service Worker Resilience
-
-The service worker may terminate between navigation start and completion. This is handled because:
-
-1. **State persists** in `chrome.storage.local` (survives termination)
-2. **Listener re-registration** - Chrome re-instantiates the service worker to deliver `onCompleted` events
-3. **Top-level listeners** are re-registered on every service worker start
-
-```typescript
-// Top-level registration (runs on every SW start)
-chrome.webNavigation.onCompleted.addListener(handleNavigationComplete);
-
-// Check for stale state on startup
-chrome.runtime.onStartup.addListener(async () => {
-  const stored = await chrome.storage.local.get("opensidebar:agentState");
-  if (stored["opensidebar:agentState"]) {
-    const elapsed = Date.now() - stored.navigationStartTs;
-    if (elapsed > stored.timeoutMs) {
-      // Clean up stale state
-      await chrome.storage.local.remove("opensidebar:agentState");
-    }
-  }
-});
-```
-
-## Edge Cases
-
-### Back/Forward Navigation
-
-User may click back/forward during agent operation. The `onCompleted` handler resumes regardless of which URL loads. The `isExpectedUrl` flag indicates if we arrived at the expected destination.
-
-### Redirects
-
-HTTP redirects trigger intermediate `onCommitted` events, but `onCompleted` only fires once the final page loads. Correct behavior — we resume after the final destination.
-
-### SPA Navigation (pushState)
-
-Client-side routing does NOT trigger `onCompleted`. Content script survives, so Navigation Bridge isn't needed. If agent calls `navigate()` to a SPA route, Chrome forces full page load which DOES trigger `onCompleted`.
-
-### Tab Closed During Navigation
-
-```typescript
-chrome.tabs.onRemoved.addListener(async (tabId) => {
-  const stored = await chrome.storage.local.get("opensidebar:agentState");
-  if (stored["opensidebar:agentState"]?.agentState?.activeTabId === tabId) {
-    await chrome.storage.local.remove("opensidebar:agentState");
-    broadcastStatus(AgentStatus.ERROR, "Tab closed during navigation");
-    stopKeepalive();
-  }
-});
-```
-
-### Multiple Rapid Navigations
-
-If agent triggers two navigations rapidly, only the last state is saved. The `onCompleted` handler picks up whichever page loads.
-
-### Network Errors
-
-```typescript
-chrome.webNavigation.onErrorOccurred.addListener(async (details) => {
-  if (details.frameId !== 0) return;
-
-  const stored = await chrome.storage.local.get("opensidebar:agentState");
-  if (!stored["opensidebar:agentState"]) return;
-  if (details.tabId !== stored.agentState.activeTabId) return;
-
-  await chrome.storage.local.remove("opensidebar:agentState");
-
-  // Resume with error
-  const state = stored.agentState;
-  if (state.pendingToolCall) {
-    state.messages.push({
-      role: "tool",
-      tool_call_id: state.pendingToolCall.toolCallId,
-      content: `Navigation failed: ${details.error}`,
-    });
-    state.pendingToolCall = null;
-  }
-  await resumeAgentLoop(state, details.url);
-});
-```
-
-## Key Files
-
-| File                           | Purpose                                   |
-| ------------------------------ | ----------------------------------------- |
-| `src/background/navigation.ts` | Navigation bridge implementation          |
-| `src/types/index.ts`           | `NavigationState`, `AgentLoopState` types |
+| File | Purpose |
+| --- | --- |
+| `apps/extension/src/background/infrastructure/navigation.ts` | Bridge implementation |
+| `packages/shared-types/src/settings.ts` | `NavigationState` |
+| `packages/shared-types/src/agent.ts` | `AgentLoopState` |
 
 ## Testing
 
-**tests/background/navigation.test.ts**
-
-- State save/restore
-- Timeout detection
-- Edge cases (redirects, errors, tab close)
+`apps/extension/tests/background/navigation.test.ts` — state save/restore,
+timeout detection, redirects/errors/tab-close edge cases.
 
 ## Integration
 
-The Navigation Bridge is tightly coupled with the Agent Loop:
-
-1. Agent Loop calls `saveNavigationState()` before `navigate()`
-2. Navigation Bridge calls `agentLoop.resume()` after page load
-3. Both share `AgentLoopState` interface
-
-See [Agent Loop](./agent-loop.md) for the complete orchestration flow.
+The agent loop saves state before `navigate()` completes; the bridge resumes
+via the registered callback into `AgentLoop.resumeFromNavigation`. See
+[Agent Loop](./agent-loop.md).

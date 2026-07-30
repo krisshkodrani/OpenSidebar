@@ -208,7 +208,7 @@ describe("MessageBubble final answer rendering", () => {
     expect(container.textContent).not.toContain("Thinking");
   });
 
-  test("constrains long user prompts so they cannot consume the panel", async () => {
+  test("leaves long user prompts in the transcript scroll container", async () => {
     const longPrompt = Array.from(
       { length: 60 },
       (_, index) => `Line ${index + 1}: keep this visible but scrollable.`,
@@ -225,8 +225,9 @@ describe("MessageBubble final answer rendering", () => {
     ) as HTMLDivElement | undefined;
 
     expect(bubble).toBeTruthy();
-    expect(bubble!.className).toContain("max-h-[30vh]");
-    expect(bubble!.className).toContain("overflow-y-auto");
+    expect(bubble!.className).not.toContain("max-h-[30vh]");
+    expect(bubble!.className).not.toContain("overflow-y-auto");
+    expect(bubble!.className).not.toContain("overscroll-contain");
     expect(bubble!.className).toContain("break-words");
   });
 

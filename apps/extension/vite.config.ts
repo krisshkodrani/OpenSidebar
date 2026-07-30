@@ -6,7 +6,18 @@ import path from "path";
 
 export default defineConfig(({ mode }) => {
   const env = loadEnv(mode, process.cwd(), "");
+  const fleetTelemetryInternalEndpoint =
+    mode === "internal"
+      ? (env.FLEET_TELEMETRY_INTERNAL_ENDPOINT || "").trim()
+      : "";
   const isProduction = mode === "production";
+  const localObservabilityServerUrl = isProduction
+    ? ""
+    : (
+        process.env.LOCAL_OBSERVABILITY_SERVER_URL ||
+        env.LOCAL_OBSERVABILITY_SERVER_URL ||
+        "http://127.0.0.1:7589"
+      ).trim();
   const outDir =
     isProduction
       ? path.resolve(__dirname, "../../dist")
@@ -21,6 +32,12 @@ export default defineConfig(({ mode }) => {
     root: __dirname,
     define: {
       __DEV__: JSON.stringify(mode !== "production"),
+      __FLEET_TELEMETRY_INTERNAL_ENDPOINT__: JSON.stringify(
+        fleetTelemetryInternalEndpoint,
+      ),
+      __LOCAL_OBSERVABILITY_SERVER_URL__: JSON.stringify(
+        localObservabilityServerUrl,
+      ),
     },
     plugins: [react(), crx({ manifest: buildManifest })],
     resolve: {

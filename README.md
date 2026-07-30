@@ -36,11 +36,13 @@ OpenSidebar can:
 - read information on one page and use it on another;
 - watch a page and report when something changes;
 - pause before consequential actions so you can review them;
-- use the provider and role-specific models you configure.
+- use OpenRouter by default, or the supported Fireworks stack.
 
-It is bring-your-own-key software: there is no OpenSidebar subscription, hosted
-relay, analytics, or telemetry. Page context goes only to the model providers
-you configure. See [Privacy](PRIVACY_POLICY.md), [Security](SECURITY.md), and
+It is bring-your-own-key software: there is no OpenSidebar subscription,
+hosted model relay, analytics client, or first-party telemetry upload endpoint
+in the published build. Optional reliability summaries stay local in Chrome.
+Page context goes only to the model provider you configure. See
+[Privacy](PRIVACY_POLICY.md), [Security](SECURITY.md), and
 [Known limitations](docs/known-limitations.md) before using it on sensitive
 sites.
 
@@ -59,9 +61,9 @@ corepack pnpm run dist
 ```
 
 Then open `chrome://extensions`, enable **Developer mode**, choose **Load
-unpacked**, and select `dist/`. Open the side panel and add a supported provider
-key in Settings. The current provider matrix is maintained in
-[docs/providers.md](docs/providers.md).
+unpacked**, and select `dist/`. Open the side panel and add an OpenRouter key
+in Settings (recommended), or use the supported Fireworks stack. The current
+provider matrix is maintained in [docs/providers.md](docs/providers.md).
 
 ## For developers
 
@@ -81,6 +83,9 @@ remain attached to the task. Watch the
 [developer tour](https://opensidebar.com/#developers), then read the
 [architecture overview](docs/architecture/overview.md) and
 [runtime boundaries](docs/architecture/runtime-boundaries.md).
+
+The release-verified BYOK modes are OpenRouter (recommended and default) and
+Fireworks.
 
 ### Development
 

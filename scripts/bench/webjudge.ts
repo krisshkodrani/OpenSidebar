@@ -26,7 +26,13 @@ export interface WebJudgePrompt {
   user: string;
 }
 
-const TRAJECTORY_LINE_LIMIT = 60;
+// Raised 60 -> 180 on 2026-07-26: the renderer now emits narration and tool
+// RESULTS as their own lines (roughly 2-3 lines per turn instead of 1), so at
+// the 25-turn cap a full run needs ~75-100 lines. At 60 the observations would
+// be clipped away again — reintroducing the very blindness that fix addressed.
+// Overflow drops the TAIL, but the final answer is passed separately as
+// AGENT FINAL ANSWER, so the verdict never loses the conclusion.
+const TRAJECTORY_LINE_LIMIT = 180;
 const DONE_SUMMARY_CHAR_LIMIT = 4000;
 
 const JUDGE_SYSTEM_PROMPT = [
