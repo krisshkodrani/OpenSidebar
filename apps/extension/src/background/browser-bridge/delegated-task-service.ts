@@ -282,6 +282,9 @@ export class DelegatedTaskService {
         providerUsage: { models: [], estimatedCostUsd: 0 },
         evidence: [],
         traceId,
+        ...(input.preferredTabId === undefined
+          ? {}
+          : { currentTabId: input.preferredTabId }),
       },
     };
     this.records.set(taskId, record);
