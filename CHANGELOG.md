@@ -7,6 +7,29 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.6.1] - 2026-07-29
+
+### Fixed
+
+- **The composer keeps a valid caret through run-state transitions.** Switching
+  between active and idle task states no longer leaves the content-editable
+  input with a stale selection or inserts new text at the wrong position.
+- **Workspace grouping now follows the complete tab lifecycle.** New and spawned
+  tabs are adopted into the correct workspace group, group appearance is kept
+  in sync, and reopen/cleanup paths no longer leave grouping state behind.
+- **DOMPurify is updated to the patched `3.4.12` release.** The obsolete
+  `@types/dompurify` stub is removed because DOMPurify ships its own types.
+
+### Changed
+
+- **Release material now has one customer story and one developer story.** The
+  website, repository overview, Chrome Web Store copy, screenshots, and narrated
+  films are split by audience. Store assets show only the shipping extension;
+  trace and observability material stays in the developer path.
+- **The canonical customer and developer films use a British female voice.**
+  Their timed narration specs and reproducible site/store staging are maintained
+  in the repository.
+
 ## [0.6.0] - 2026-07-22
 
 ### Fixed
