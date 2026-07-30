@@ -206,6 +206,16 @@ export async function ensureContentScript(
     readyTabs.delete(tabId);
   }
 
+  // A service-worker restart clears the in-memory ready set while existing
+  // content scripts remain alive. Probe before injecting to avoid installing
+  // duplicate listeners and page observers in those tabs.
+  const alreadyResponsive = await probeContentScript(
+    tabId,
+    Math.min(150, timeoutMs),
+    bridgePort,
+  );
+  if (alreadyResponsive) return true;
+
   // Attempt to re-inject the content script
   try {
     const contentScriptFiles = bridgePort.getContentScriptFiles();

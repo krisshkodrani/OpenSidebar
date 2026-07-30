@@ -135,7 +135,7 @@ class PerceptionWarmup {
         type: "DOM_SNAPSHOT_REQUEST",
         requestId: crypto.randomUUID(),
         source: MessageSource.BACKGROUND,
-        payload: { refresh: true },
+        payload: { refresh: true, autoDismiss: false },
       });
 
       const snapshot: DomSnapshot | undefined = snapResponse?.payload?.snapshot;
@@ -146,28 +146,13 @@ class PerceptionWarmup {
 
       const fingerprint = computeSnapshotFingerprint(snapshot);
 
-      // 3. Take screenshot (only if the tab is active — avoids black frames)
-      //    Scroll to top first so the VLM sees the page beginning, not wherever
-      //    the user happened to be scrolled. This matches refreshPerception() behavior.
+      // 3. Take a screenshot only if the tab is active (avoids black frames).
+      // Warmup must remain observational: scrolling here can trigger lazy loads,
+      // focus changes, and SPA side effects before the user starts a task.
       let screenshotUrl: string | null = null;
-      const originalScrollY = snapshot.scroll?.y ?? 0;
       try {
         const tab = await chrome.tabs.get(tabId);
         if (tab.active) {
-          // Scroll to top if not already there
-          if (originalScrollY > 0) {
-            await chrome.tabs.sendMessage(tabId, {
-              type: "TOOL_EXECUTE",
-              requestId: crypto.randomUUID(),
-              source: MessageSource.BACKGROUND,
-              payload: {
-                tool: "scroll_page",
-                args: { y: 0 },
-              },
-            });
-            await new Promise((r) => setTimeout(r, 150));
-          }
-
           // LP-9: same owned pipeline as refreshPerception — q90 capture,
           // then transform (resolution/format/scale) before anything
           // downstream (perceive or the loop's warmup fast path) sees it.
@@ -176,19 +161,6 @@ class PerceptionWarmup {
             quality: 90,
           });
           screenshotUrl = (await transformScreenshot(captured)).dataUrl;
-
-          // Restore original scroll position
-          if (originalScrollY > 0) {
-            await chrome.tabs.sendMessage(tabId, {
-              type: "TOOL_EXECUTE",
-              requestId: crypto.randomUUID(),
-              source: MessageSource.BACKGROUND,
-              payload: {
-                tool: "scroll_page",
-                args: { y: originalScrollY },
-              },
-            });
-          }
         }
       } catch (e: any) {
         logger.warn("warmup", "Screenshot capture failed (non-fatal)", {

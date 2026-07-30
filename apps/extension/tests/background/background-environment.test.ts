@@ -99,7 +99,7 @@ describe("background environment ports", () => {
     expect(port.captureVisibleTab).not.toHaveBeenCalled();
   });
 
-  test("content readiness can use an injected content bridge port", async () => {
+  test("content readiness reuses a responsive injected bridge port", async () => {
     const port = bridgePort({
       getContentScriptFiles: vi.fn(() => ["content.js"]),
       executeContentScripts: vi.fn(async () => undefined),
@@ -114,7 +114,7 @@ describe("background environment ports", () => {
       waitForDomReady(901, { timeoutMs: 25, waitForElements: true }, port),
     ).resolves.toEqual({ waitedMs: 12, elementCount: 3 });
 
-    expect(port.executeContentScripts).toHaveBeenCalledWith(901, ["content.js"]);
+    expect(port.executeContentScripts).not.toHaveBeenCalled();
     expect(port.sendMessage).toHaveBeenCalled();
   });
 });
