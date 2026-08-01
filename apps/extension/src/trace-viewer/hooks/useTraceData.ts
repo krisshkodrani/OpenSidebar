@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import * as api from "../api";
 import { useStore } from "../store";
 import { isDefaultTraceWindow } from "../utils";
@@ -34,6 +34,7 @@ export function useTraceData() {
   const loadMoreAbortRef = useRef<AbortController | null>(null);
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const filtersRef = useRef(filters);
+  const [sessionsPageLoading, setSessionsPageLoading] = useState(false);
 
   // The selected session's runId, derived separately so the detail-loading
   // effect can depend on it instead of the whole sessions array. A plain
@@ -58,6 +59,8 @@ export function useTraceData() {
 
   const refreshSessions = useCallback(async () => {
     // Cancel any in-flight request
+    loadMoreAbortRef.current?.abort();
+    setSessionsPageLoading(false);
     if (abortRef.current) {
       abortRef.current.abort();
     }
@@ -139,6 +142,7 @@ export function useTraceData() {
     loadMoreAbortRef.current?.abort();
     const controller = new AbortController();
     loadMoreAbortRef.current = controller;
+    setSessionsPageLoading(true);
     try {
       const page = await api.fetchTraceSessionsPage(filtersRef.current, {
         cursor: sessionsNextCursor,
@@ -149,6 +153,10 @@ export function useTraceData() {
       setSessionsPage(page);
     } catch (err) {
       if (!controller.signal.aborted) setTracesError(String(err));
+    } finally {
+      if (loadMoreAbortRef.current === controller) {
+        setSessionsPageLoading(false);
+      }
     }
   }, [
     appendSessions,
@@ -279,5 +287,6 @@ export function useTraceData() {
     currentSessionId,
     refreshSessions,
     loadMoreSessions,
+    sessionsPageLoading,
   };
 }

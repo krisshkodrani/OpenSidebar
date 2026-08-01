@@ -27,16 +27,11 @@ import SkillDetail from "./components/traces/SkillDetail";
 import { TRACE_SESSION_SEARCH_LIMIT } from "./api";
 import type { Subview, TopLevelView } from "./store/types";
 import { formatCount } from "./utils";
-import {
-  parseViewerHash,
-  serializeViewerHash,
-} from "@observability-schema";
+import { parseViewerHash, serializeViewerHash } from "@observability-schema";
 
 const AnalyticsTab = lazy(() => import("./components/traces/AnalyticsTab"));
 const LogList = lazy(() => import("./components/traces/LogList"));
-const PerceptionList = lazy(
-  () => import("./components/traces/PerceptionList"),
-);
+const PerceptionList = lazy(() => import("./components/traces/PerceptionList"));
 const PlanTab = lazy(() => import("./components/traces/PlanTab"));
 const PromptsTab = lazy(() => import("./components/traces/PromptsTab"));
 const SkillsTab = lazy(() => import("./components/traces/SkillsTab"));
@@ -186,12 +181,11 @@ export default function App() {
       runId: !currentSessionId ? focusedRunId || undefined : undefined,
       view: currentSessionId ? activeSubview : undefined,
       top: !currentSessionId ? activeTopLevelView : undefined,
-      review:
-        !currentSessionId && needsReview === "on" ? "needs" : undefined,
+      review: !currentSessionId && needsReview === "on" ? "needs" : undefined,
       turn:
         currentSessionId &&
         (activeSubview === "turns" || activeSubview === "perception")
-          ? focusedTurn ?? undefined
+          ? (focusedTurn ?? undefined)
           : activeSubview === "prompts"
             ? modelIOFocus?.turnNumber
             : undefined,
@@ -230,9 +224,7 @@ export default function App() {
         {currentSkillId ? (
           <SkillDetail skillId={currentSkillId} onBack={closeSkill} />
         ) : (
-          <Suspense fallback={<LoadingSpinner message="Loading viewer..." />}>
-            <ViewerBody setShowShortcuts={setShowShortcuts} />
-          </Suspense>
+          <ViewerBody setShowShortcuts={setShowShortcuts} />
         )}
       </ViewerErrorBoundary>
       {showShortcuts && (
@@ -268,7 +260,8 @@ function ViewerBody({
   const setActiveTopLevelView = useStore((s) => s.setActiveTopLevelView);
   const setFilter = useStore((s) => s.setFilter);
   const saveScrollPosition = useStore((s) => s.saveScrollPosition);
-  const { sessions, refreshSessions, loadMoreSessions } = useTraceData();
+  const { sessions, refreshSessions, loadMoreSessions, sessionsPageLoading } =
+    useTraceData();
 
   const scrollContainerRef = useRef<HTMLDivElement>(null);
   // Live scroll position lives in a ref so scrolling never triggers a render.
@@ -411,26 +404,23 @@ function ViewerBody({
   // once per animation frame. The store write no longer re-renders anything
   // (nothing subscribes to scrollPositions reactively), and throttling keeps
   // the writes off the hot scroll path.
-  const handleScroll = useCallback(
-    (e: React.UIEvent<HTMLDivElement>) => {
-      liveScrollTopRef.current = e.currentTarget.scrollTop;
-      scrollSessionRef.current = useStore.getState().currentSessionId;
-      if (scrollRafRef.current != null) return;
-      scrollRafRef.current = requestAnimationFrame(() => {
-        scrollRafRef.current = null;
-        const state = useStore.getState();
-        // Skip if the session changed since this scroll was captured —
-        // saveScrollPosition keys off the live currentSessionId.
-        if (
-          state.currentSessionId &&
-          state.currentSessionId === scrollSessionRef.current
-        ) {
-          state.saveScrollPosition(state.activeSubview, liveScrollTopRef.current);
-        }
-      });
-    },
-    [],
-  );
+  const handleScroll = useCallback((e: React.UIEvent<HTMLDivElement>) => {
+    liveScrollTopRef.current = e.currentTarget.scrollTop;
+    scrollSessionRef.current = useStore.getState().currentSessionId;
+    if (scrollRafRef.current != null) return;
+    scrollRafRef.current = requestAnimationFrame(() => {
+      scrollRafRef.current = null;
+      const state = useStore.getState();
+      // Skip if the session changed since this scroll was captured —
+      // saveScrollPosition keys off the live currentSessionId.
+      if (
+        state.currentSessionId &&
+        state.currentSessionId === scrollSessionRef.current
+      ) {
+        state.saveScrollPosition(state.activeSubview, liveScrollTopRef.current);
+      }
+    });
+  }, []);
 
   // Restore the saved scroll position when the tab/session changes, and flush
   // the final position for the tab/session we are leaving. Read positions
@@ -540,7 +530,11 @@ function ViewerBody({
             </div>
           ) : activeSubview === "perception" ? (
             <div className="px-5 py-4">
-              <PerceptionList />
+              <Suspense
+                fallback={<LoadingSpinner message="Loading perception..." />}
+              >
+                <PerceptionList />
+              </Suspense>
             </div>
           ) : activeSubview === "logs" ? (
             <div className="flex flex-col">
@@ -551,19 +545,31 @@ function ViewerBody({
                   </div>
                 </div>
               )}
-              <LogList />
+              <Suspense fallback={<LoadingSpinner message="Loading logs..." />}>
+                <LogList />
+              </Suspense>
             </div>
           ) : activeSubview === "plan" ? (
             <div className="px-5 py-4">
-              <PlanTab session={currentSession} />
+              <Suspense fallback={<LoadingSpinner message="Loading plan..." />}>
+                <PlanTab session={currentSession} />
+              </Suspense>
             </div>
           ) : activeSubview === "skills" ? (
             <div className="px-5 py-4">
-              <SkillsTab session={currentSession} entries={currentEntries} />
+              <Suspense
+                fallback={<LoadingSpinner message="Loading skills..." />}
+              >
+                <SkillsTab session={currentSession} entries={currentEntries} />
+              </Suspense>
             </div>
           ) : activeSubview === "prompts" ? (
             <div className="px-5 py-4">
-              <PromptsTab session={currentSession} entries={currentEntries} />
+              <Suspense
+                fallback={<LoadingSpinner message="Loading model I/O..." />}
+              >
+                <PromptsTab session={currentSession} entries={currentEntries} />
+              </Suspense>
             </div>
           ) : (
             <div className="px-5 py-4">
@@ -582,7 +588,9 @@ function ViewerBody({
     <div className="flex-1 min-h-0 flex flex-col overflow-hidden">
       <FilterBar onFiltersChanged={refreshSessions} />
       {activeTopLevelView === "analytics" ? (
-        <AnalyticsTab onSelectSession={selectSession} onFocusRun={focusRun} />
+        <Suspense fallback={<LoadingSpinner message="Loading analytics..." />}>
+          <AnalyticsTab onSelectSession={selectSession} onFocusRun={focusRun} />
+        </Suspense>
       ) : tracesError ? (
         <div className="px-5 py-4">
           <ErrorBanner
@@ -595,6 +603,7 @@ function ViewerBody({
         <RunsTableView
           onSelectSession={selectSession}
           onLoadMore={loadMoreSessions}
+          loadMorePending={sessionsPageLoading}
         />
       )}
     </div>

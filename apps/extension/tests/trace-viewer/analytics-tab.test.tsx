@@ -29,7 +29,7 @@ const mockInsights = {
     estimatedInputCost: 0.8,
     estimatedCachedInputCost: 0.1,
     estimatedOutputCost: 0.35,
-    estimatedRequestCost: 1.25,
+    recordedCost: 1.25,
     outputTokenShare: 0.05,
     outputCostShare: 0.28,
     unpricedRequests: 0,

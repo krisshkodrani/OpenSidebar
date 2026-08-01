@@ -9,6 +9,8 @@ import type {
   NewAnnotationInput,
 } from "./store/types";
 import type { EvalCase } from "./analysis/adjudication-export";
+import type { TraceTrendPoint } from "@observability-schema";
+export type { TraceTrendPoint } from "@observability-schema";
 
 async function fetchJson<T>(url: string, init?: RequestInit): Promise<T> {
   const r = await fetch(url, init);
@@ -275,15 +277,6 @@ export async function fetchTraceInsights(
     `/api/trace-insights${query ? `?${query}` : ""}`,
     signal ? { signal } : undefined,
   );
-}
-
-export interface TraceTrendPoint {
-  day: string;
-  totalSessions: number;
-  completedSessions: number;
-  successRate: number;
-  estimatedRequestCost: number;
-  averageTurns: number;
 }
 
 export async function fetchTraceTrends(
