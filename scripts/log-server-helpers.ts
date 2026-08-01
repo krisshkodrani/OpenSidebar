@@ -19,6 +19,7 @@ export interface TraceSessionLike extends Record<string, unknown> {
   metrics?: {
     modelBreakdown?: Record<string, unknown>;
   } | null;
+  skillToolMetrics?: { skillId?: string } | null;
   _entries?: TraceEntryLike[];
 }
 
@@ -253,6 +254,7 @@ export function matchesTraceFilters(
   const domain = (filters.domain || "").toLowerCase().trim();
   const q = (filters.q || "").toLowerCase().trim();
   const model = normalizeTraceModelId((filters.model || "").trim());
+  const skill = (filters.skill || "").trim();
   const mode = (filters.mode || "").trim();
   const runId = (filters.runId || "").trim();
   const tier = (filters.tier || "").trim();
@@ -281,6 +283,13 @@ export function matchesTraceFilters(
     if (mode === "agent" && (hasRecording || hasManual)) return false;
   }
   if (model && model !== "all" && !getSessionModels(session).includes(model)) {
+    return false;
+  }
+  if (
+    skill &&
+    skill !== "all" &&
+    session.skillToolMetrics?.skillId !== skill
+  ) {
     return false;
   }
   if (

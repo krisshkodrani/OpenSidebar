@@ -236,7 +236,9 @@ export default function TurnCard({
             </span>
           }
           className="mb-2.5"
-          defaultOpen={toolExecutions.some((execution) => !execution.success)}
+          defaultOpen={toolExecutions.some(
+            (execution) => execution.success === false,
+          )}
         >
           <TurnToolResultsSection toolExecutions={toolExecutions} />
         </CollapsibleSection>

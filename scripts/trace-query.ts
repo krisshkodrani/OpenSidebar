@@ -223,8 +223,8 @@ function dedupeTraceEntries<T extends { turnId?: string; turnNumber?: number }>(
 function synthesizeSessionFromTraceFile(
   sessionId: string,
 ): TraceSessionRecord | null {
-  const entries = readTrace(sessionId);
-  if (entries.length === 0) return null;
+  const entries = tryReadTrace(sessionId) as TraceEntryRecord[] | null;
+  if (!entries || entries.length === 0) return null;
   const first = entries[0] as TraceEntryRecord & Record<string, unknown>;
   const last = entries[entries.length - 1] as TraceEntryRecord &
     Record<string, unknown>;

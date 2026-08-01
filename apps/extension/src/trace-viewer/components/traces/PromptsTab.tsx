@@ -525,7 +525,7 @@ function RequestPreview({ messages }: { messages: TraceLLMMessage[] }) {
         ))}
       </div>
       <LazyDisclosure
-        label={`Full request (${messages.length} messages)`}
+        label={`Full request (${messages.length} message${messages.length === 1 ? "" : "s"})`}
         className="mt-2"
       >
         <div className="mt-2 space-y-2">

@@ -17,6 +17,7 @@ import {
 } from "./log-server-helpers";
 import { estimateCostBreakdownUsd } from "../apps/extension/src/background/llm/pricing";
 import type { ProviderConfig } from "../apps/extension/src/background/llm/types";
+import type { TraceTrendPoint } from "@observability-schema";
 
 const DEFAULT_DB_PATH = ".artifacts/trace-index.sqlite";
 const HOT_TRACE_DAYS = 7;
@@ -1705,15 +1706,6 @@ export function buildTraceInsightsFromSqlite(
   }
 }
 
-export interface TraceTrendPoint {
-  day: string;
-  totalSessions: number;
-  completedSessions: number;
-  successRate: number;
-  estimatedRequestCost: number;
-  averageTurns: number;
-}
-
 export interface TraceSessionSearchPage {
   items: TraceSessionLike[];
   total: number;
@@ -1843,7 +1835,7 @@ export function buildTraceTrendsFromSqlite(
         completedSessions,
         successRate:
           totalSessions > 0 ? completedSessions / totalSessions : 0,
-        estimatedRequestCost: asNumber(row.total_cost),
+        recordedCost: asNumber(row.total_cost),
         averageTurns: asNumber(row.average_turns),
       };
     });

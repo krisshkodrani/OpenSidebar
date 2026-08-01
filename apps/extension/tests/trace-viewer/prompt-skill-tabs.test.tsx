@@ -145,7 +145,7 @@ describe("trace-viewer prompt and skill tabs", () => {
 
     expect(container.textContent).toContain("Thinking: The user wants");
     const fullRequest = Array.from(container.querySelectorAll("button")).find(
-      (button) => button.textContent?.includes("Full request (1 messages)"),
+      (button) => button.textContent?.includes("Full request (1 message)"),
     );
     await act(async () => {
       fullRequest!.click();
@@ -258,7 +258,7 @@ describe("trace-viewer prompt and skill tabs", () => {
 
     expect(container.textContent).not.toContain("UNIQUE_PROMPT_TAIL");
     const fullRequest = Array.from(container.querySelectorAll("button")).find(
-      (button) => button.textContent?.includes("Full request (1 messages)"),
+      (button) => button.textContent?.includes("Full request (1 message)"),
     );
     expect(fullRequest).toBeTruthy();
 

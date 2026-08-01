@@ -91,6 +91,7 @@ describe("trace-viewer api", () => {
     expect(url).toContain("failure=tool_execution");
     expect(url).toContain("eventType=circuit_breaker");
     expect(url).not.toContain("model=all");
+    expect(url).not.toContain("day=");
   });
 
   test("fetchTraceInsights preserves server error body", async () => {

@@ -23,6 +23,7 @@ import {
 interface RunsTableViewProps {
   onSelectSession: (sessionId: string) => void;
   onLoadMore?: () => void;
+  loadMorePending?: boolean;
 }
 
 // One row of the merged Runs list: either a run group (expandable) or a
@@ -61,6 +62,7 @@ function matchesQuery(session: TraceSession, q: string): boolean {
 export default function RunsTableView({
   onSelectSession,
   onLoadMore,
+  loadMorePending = false,
 }: RunsTableViewProps) {
   const runGroups = useStore((s) => s.runGroups);
   const tracesLoading = useStore((s) => s.tracesLoading);
@@ -252,9 +254,10 @@ export default function RunsTableView({
           <button
             type="button"
             onClick={onLoadMore}
-            className="rounded border border-trace-border px-3 py-1 text-[11px] text-trace-muted hover:border-trace-accent/40 hover:text-trace-text"
+            disabled={loadMorePending}
+            className="rounded border border-trace-border px-3 py-1 text-[11px] text-trace-muted hover:border-trace-accent/40 hover:text-trace-text disabled:cursor-wait disabled:opacity-50"
           >
-            Load more traces
+            {loadMorePending ? "Loading traces..." : "Load more traces"}
           </button>
         </div>
       )}

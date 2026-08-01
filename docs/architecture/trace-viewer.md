@@ -106,7 +106,7 @@ spine OTel export on boot and emits spans on every trace write.
 
 ## Storage Tiers
 
-OpenSidebar uses both SQLite and OpenTelemetry, for different jobs:
+The trace-viewer stack uses both SQLite and OpenTelemetry, for different jobs:
 
 - **OpenTelemetry** is the instrumentation/export contract. Runtime events are
   mapped to spans, written to the local span spine, and can be exported over

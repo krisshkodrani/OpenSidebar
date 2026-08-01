@@ -219,6 +219,7 @@ describe("trace sqlite store", () => {
         day: "2026-05-11",
         totalSessions: 1,
         completedSessions: 0,
+        recordedCost: expect.any(Number),
         averageTurns: 1,
       }),
     ]);

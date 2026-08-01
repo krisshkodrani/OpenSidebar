@@ -142,7 +142,15 @@ describe("useTraceData", () => {
       currentSessionId: "missing-session",
       currentEntries: [{ turnNumber: 1 }],
       currentRunEvents: [{ runId: "run-old", type: "old" }],
-      sessionLogs: [{ ts: "2026-04-15T10:00:00.000Z", lvl: "INFO", src: "background", cat: "trace", msg: "old" }],
+      sessionLogs: [
+        {
+          ts: "2026-04-15T10:00:00.000Z",
+          lvl: "INFO",
+          src: "background",
+          cat: "trace",
+          msg: "old",
+        },
+      ],
     } as any);
     vi.mocked(api.fetchTraceSessions).mockResolvedValue([
       {
@@ -315,7 +323,9 @@ describe("useTraceData", () => {
         : sessionTwoEntries.promise,
     );
     vi.mocked(api.fetchSessionLogs).mockImplementation((sessionId) =>
-      sessionId === "session-1" ? sessionOneLogs.promise : sessionTwoLogs.promise,
+      sessionId === "session-1"
+        ? sessionOneLogs.promise
+        : sessionTwoLogs.promise,
     );
 
     useStore.getState().setActiveSubview("logs");
@@ -457,8 +467,8 @@ describe("useTraceData", () => {
     });
 
     const entriesBefore = vi.mocked(api.fetchTraceEntries).mock.calls.length;
-    const runEventsBefore =
-      vi.mocked(api.fetchRunTraceEvents).mock.calls.length;
+    const runEventsBefore = vi.mocked(api.fetchRunTraceEvents).mock.calls
+      .length;
     const sessionsBefore = vi.mocked(api.fetchTraceSessions).mock.calls.length;
 
     await act(async () => {
@@ -467,9 +477,9 @@ describe("useTraceData", () => {
     await flushAsyncWork();
 
     // The refresh happened (sessions array identity changed)...
-    expect(
-      vi.mocked(api.fetchTraceSessions).mock.calls.length,
-    ).toBeGreaterThan(sessionsBefore);
+    expect(vi.mocked(api.fetchTraceSessions).mock.calls.length).toBeGreaterThan(
+      sessionsBefore,
+    );
     // ...but the open trace was neither blanked nor refetched.
     expect(vi.mocked(api.fetchTraceEntries).mock.calls.length).toBe(
       entriesBefore,
@@ -541,6 +551,61 @@ describe("useTraceData", () => {
     expect(useStore.getState().filters.from).toBe(fromBefore);
   });
 
+  test("does not append a stale page after a refresh starts", async () => {
+    const stalePage = deferred<any>();
+    let refresh: () => Promise<void> = async () => {};
+    let loadMore: () => Promise<void> = async () => {};
+    let unpagedCalls = 0;
+    vi.mocked(api.fetchTraceSessionsPage).mockImplementation(
+      async (_filters, options = {}) => {
+        if (options.cursor === "cursor-1") return stalePage.promise;
+        unpagedCalls += 1;
+        const sessionId = unpagedCalls === 1 ? "initial" : "fresh";
+        return {
+          items: [{ sessionId, startTime: 100 } as any],
+          total: 2,
+          returned: 1,
+          hasMore: unpagedCalls === 1,
+          nextCursor: unpagedCalls === 1 ? "cursor-1" : null,
+        };
+      },
+    );
+
+    function PaginationHarness() {
+      const data = useTraceData();
+      refresh = data.refreshSessions;
+      loadMore = data.loadMoreSessions;
+      return null;
+    }
+
+    await act(async () => {
+      root.render(<PaginationHarness />);
+    });
+    await waitFor(() => {
+      expect(useStore.getState().sessions[0]?.sessionId).toBe("initial");
+    });
+
+    let loadPromise!: Promise<void>;
+    await act(async () => {
+      loadPromise = loadMore();
+      await refresh();
+    });
+    stalePage.resolve({
+      items: [{ sessionId: "stale", startTime: 50 }],
+      total: 2,
+      returned: 1,
+      hasMore: false,
+      nextCursor: null,
+    });
+    await act(async () => {
+      await loadPromise;
+    });
+
+    expect(
+      useStore.getState().sessions.map((session) => session.sessionId),
+    ).toEqual(["fresh"]);
+  });
+
   test("refetches the open trace when a session refresh changes its runId", async () => {
     useStore.setState({ currentSessionId: "session-1" });
     let currentRunId = "run-1";
@@ -596,8 +661,8 @@ describe("useTraceData", () => {
       );
     });
 
-    expect(
-      vi.mocked(api.fetchTraceEntries).mock.calls.length,
-    ).toBeGreaterThan(entriesBefore);
+    expect(vi.mocked(api.fetchTraceEntries).mock.calls.length).toBeGreaterThan(
+      entriesBefore,
+    );
   });
 });
