@@ -192,7 +192,7 @@ for (const page of CLEAN_URL_PAGES) {
       ? path.join(DIST, "ideas", "index.html")
       : path.join(DIST, `${page}.html`);
   if (!fs.existsSync(src))
-    fail(`Expected ${page}.html in dist for clean-URL copy.`);
+    fail(`Expected ${path.relative(DIST, src)} in dist for clean-URL copy.`);
   console.log(`\n== Clean URL: /${page} ==`);
   run("aws", [
     "s3",
