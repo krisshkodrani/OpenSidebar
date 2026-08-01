@@ -59,6 +59,7 @@ import type {
   TraceEntry,
   TraceSession,
 } from "../apps/extension/src/types/traces";
+import { createTraceRepository } from "./obs/repository";
 
 const PROJECT_ROOT = join(dirname(fileURLToPath(import.meta.url)), "..");
 const TRACE_DIR = join(PROJECT_ROOT, "traces");
@@ -68,6 +69,7 @@ const RUN_INDEX_FILE = join(RUN_TRACE_DIR, "index.jsonl");
 const SCREENSHOT_DIR = join(TRACE_DIR, "screenshots");
 const LOG_DIR = join(PROJECT_ROOT, "logs");
 const PINS_FILE = join(TRACE_DIR, "pins.json");
+const traceRepository = createTraceRepository(PROJECT_ROOT);
 
 // ANSI colors
 const c = {
@@ -142,7 +144,7 @@ interface TraceEntryRecord {
   };
 }
 
-function readIndex(): TraceSessionRecord[] {
+function readRawIndex(): TraceSessionRecord[] {
   const indexed = readJsonlFile<TraceSessionRecord>(INDEX_FILE);
   const sessionsById = new Map<string, TraceSessionRecord>();
   for (const session of indexed) {
@@ -164,19 +166,40 @@ function readIndex(): TraceSessionRecord[] {
   );
 }
 
+function readIndex(): TraceSessionRecord[] {
+  const sessionsById = new Map<string, TraceSessionRecord>();
+  for (const session of traceRepository.loadSessions()) {
+    if (session.sessionId) {
+      sessionsById.set(
+        session.sessionId,
+        session as unknown as TraceSessionRecord,
+      );
+    }
+  }
+  for (const session of readRawIndex()) {
+    if (!sessionsById.has(session.sessionId)) {
+      sessionsById.set(session.sessionId, session);
+    }
+  }
+  return [...sessionsById.values()].sort(
+    (a, b) => (a.startTime ?? 0) - (b.startTime ?? 0),
+  );
+}
+
 function readTrace(sessionId: string): TraceEntryRecord[] {
-  const file = join(TRACE_DIR, `${sessionId}.jsonl`);
-  if (!existsSync(file)) {
-    console.error(`${c.red}Trace file not found: ${file}${c.reset}`);
+  const entries = traceRepository.loadEntries(sessionId);
+  if (entries.length === 0) {
+    console.error(`${c.red}Trace not found: ${sessionId}${c.reset}`);
     process.exit(1);
   }
-  return dedupeTraceEntries(readJsonlFile<TraceEntryRecord>(file));
+  return dedupeTraceEntries(entries as unknown as TraceEntryRecord[]);
 }
 
 function tryReadTrace(sessionId: string): TraceEntry[] | null {
-  const file = join(TRACE_DIR, `${sessionId}.jsonl`);
-  if (!existsSync(file)) return null;
-  return dedupeTraceEntries(readJsonlFile<TraceEntry>(file));
+  const entries = traceRepository.loadEntries(sessionId);
+  return entries.length > 0
+    ? dedupeTraceEntries(entries as unknown as TraceEntry[])
+    : null;
 }
 
 function dedupeTraceEntries<T extends { turnId?: string; turnNumber?: number }>(
@@ -370,7 +393,7 @@ function resolveSession(prefix: string): TraceSessionRecord | null {
 }
 
 function readRunTrace(runId: string): RunTraceEvent[] {
-  return readJsonlFile<RunTraceEvent>(join(RUN_TRACE_DIR, `${runId}.jsonl`));
+  return traceRepository.loadRunEvents(runId) as unknown as RunTraceEvent[];
 }
 
 function readSessionLogs(sessionId: string) {
@@ -1377,7 +1400,7 @@ function cmdCleanup(args: string[]) {
   const dryRun = args.includes("--dry-run");
   const includePinned = args.includes("--all");
   const pins = readPins();
-  const sessions = readIndex();
+  const sessions = readRawIndex();
   const pinnedSessions = includePinned ? new Set<string>() : pins;
   const keptSessions = sessions.filter((session) =>
     pinnedSessions.has(session.sessionId),

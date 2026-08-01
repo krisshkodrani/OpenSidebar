@@ -260,9 +260,7 @@ export default function TraceDetailHeader({ session }: TraceDetailHeaderProps) {
   };
 
   const handleCopyLink = () => {
-    const url = new URL(window.location.href);
-    url.hash = `session=${session.sessionId}`;
-    navigator.clipboard.writeText(url.toString());
+    navigator.clipboard.writeText(window.location.href);
     setLinkCopied(true);
     setTimeout(() => setLinkCopied(false), 1200);
   };
@@ -317,42 +315,7 @@ export default function TraceDetailHeader({ session }: TraceDetailHeaderProps) {
 
   return (
     <div className="px-5 py-3.5">
-      <div className="flex items-center gap-3 mb-1.5 min-w-0 flex-wrap">
-        <span className="min-w-0 flex-1 text-xs text-trace-muted font-mono truncate">
-          {session.sessionId}
-        </span>
-        <button
-          className="text-trace-muted hover:text-trace-text transition-colors p-0.5 -ml-1.5"
-          title="Copy trace ID"
-          onClick={handleCopy}
-        >
-          {copied ? (
-            <svg
-              width="14"
-              height="14"
-              viewBox="0 0 24 24"
-              fill="none"
-              stroke="currentColor"
-              strokeWidth="2"
-            >
-              <polyline points="20 6 9 17 4 12" />
-            </svg>
-          ) : (
-            <svg
-              width="14"
-              height="14"
-              viewBox="0 0 24 24"
-              fill="none"
-              stroke="currentColor"
-              strokeWidth="2"
-              strokeLinecap="round"
-              strokeLinejoin="round"
-            >
-              <rect x="9" y="9" width="13" height="13" rx="2" ry="2" />
-              <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1" />
-            </svg>
-          )}
-        </button>
+      <div className="flex min-w-0 items-start gap-2.5">
         <Badge
           variant={
             outcomeClass(outcome) as
@@ -364,32 +327,19 @@ export default function TraceDetailHeader({ session }: TraceDetailHeaderProps) {
         >
           {outcome}
         </Badge>
-        <div className="flex items-center gap-1.5 ml-auto shrink-0">
-          <button
-            className="text-[11px] text-trace-muted hover:text-trace-text border border-trace-border rounded px-2 py-0.5 transition-colors"
-            title="Copy shareable link"
-            onClick={handleCopyLink}
-          >
-            {linkCopied ? "Copied!" : "Copy Link"}
-          </button>
-          <button
-            className="text-[11px] text-trace-muted hover:text-trace-text border border-trace-border rounded px-2 py-0.5 transition-colors"
-            title="Export trace as JSONL"
-            onClick={handleExport}
-          >
-            Export JSONL
-          </button>
-          <button
-            className="text-[11px] text-trace-muted hover:text-trace-text border border-trace-border rounded px-2 py-0.5 transition-colors"
-            title="Freeze this trace as a permanent JSON bundle"
-            onClick={handleFreezeExport}
-          >
-            {frozenExported ? "Frozen" : "Freeze Bundle"}
-          </button>
+        <div className="min-w-0 flex-1">
+          <QueryTitle query={session.query || ""} />
         </div>
+        <button
+          className="shrink-0 rounded border border-trace-border px-2 py-1 text-[11px] text-trace-muted transition-colors hover:text-trace-text"
+          title="Copy shareable evidence link"
+          onClick={handleCopyLink}
+        >
+          {linkCopied ? "Copied" : "Copy link"}
+        </button>
       </div>
-      <QueryTitle query={session.query || ""} />
-      <div className="flex gap-4 text-[11px] text-trace-muted mt-1.5 flex-wrap">
+
+      <div className="mt-2 flex flex-wrap items-center gap-x-4 gap-y-1 text-[11px] text-trace-muted">
         <span>{session.turnCount || 0} turns</span>
         <span>{duration}</span>
         <span>
@@ -397,7 +347,6 @@ export default function TraceDetailHeader({ session }: TraceDetailHeaderProps) {
         </span>
         {tokens && <span>{tokens}</span>}
         {cost && <span>{cost}</span>}
-        {session.startUrl && <span>{truncate(session.startUrl, 50)}</span>}
         <button
           type="button"
           onClick={() => setDetailsExpanded((value) => !value)}
@@ -414,6 +363,42 @@ export default function TraceDetailHeader({ session }: TraceDetailHeaderProps) {
 
       {detailsExpanded && (
         <>
+          <div className="mt-2 flex flex-wrap items-center gap-2 border-t border-trace-border/50 pt-2 text-[10px] text-trace-muted">
+            <span className="min-w-0 max-w-full truncate font-mono">
+              {session.sessionId}
+            </span>
+            <button
+              type="button"
+              onClick={handleCopy}
+              className="rounded border border-trace-border px-1.5 py-0.5 hover:text-trace-text"
+            >
+              {copied ? "Copied" : "Copy ID"}
+            </button>
+            {session.startUrl && (
+              <span className="min-w-0 truncate" title={session.startUrl}>
+                {truncate(session.startUrl, 70)}
+              </span>
+            )}
+            <div className="ml-auto flex gap-1.5">
+              <button
+                type="button"
+                className="rounded border border-trace-border px-2 py-0.5 hover:text-trace-text"
+                title="Export trace as JSONL"
+                onClick={handleExport}
+              >
+                Export JSONL
+              </button>
+              <button
+                type="button"
+                className="rounded border border-trace-border px-2 py-0.5 hover:text-trace-text"
+                title="Freeze this trace as a permanent JSON bundle"
+                onClick={handleFreezeExport}
+              >
+                {frozenExported ? "Frozen" : "Freeze bundle"}
+              </button>
+            </div>
+          </div>
+
           {/* Latency stats strip */}
           {latencyStats && (
             <div className="flex items-center gap-3 mt-2 pt-2 border-t border-trace-border/50 text-[10px] font-mono text-trace-muted">

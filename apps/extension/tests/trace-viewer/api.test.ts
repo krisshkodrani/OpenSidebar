@@ -8,6 +8,7 @@ import {
   fetchSessionLogs,
   fetchTraceIndexStatus,
   fetchTraceInsights,
+  fetchTraceTrends,
   fetchTraceSessions,
   screenshotUrl,
 } from "../../src/trace-viewer/api";
@@ -104,6 +105,17 @@ describe("trace-viewer api", () => {
     await expect(fetchTraceInsights({})).rejects.toThrow(
       "Rebuild the trace index. (HTTP 500)",
     );
+  });
+
+  test("fetchTraceTrends uses one grouped endpoint", async () => {
+    await fetchTraceTrends({ from: "2026-04-10", model: "all" }, 14);
+
+    expect(global.fetch).toHaveBeenCalledTimes(1);
+    const [url] = (global.fetch as any).mock.calls[0];
+    expect(url).toContain("/api/trace-trends?");
+    expect(url).toContain("from=2026-04-10");
+    expect(url).toContain("limit=14");
+    expect(url).not.toContain("model=all");
   });
 
   test("fetchTraceIndexStatus reads index status endpoint", async () => {

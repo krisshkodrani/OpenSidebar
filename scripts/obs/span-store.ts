@@ -31,7 +31,7 @@ import { join } from "path";
 import { traceEntryToSpans } from "../../packages/observability-schema/src/map-trace-entry";
 import type { ObsSpan } from "../../packages/observability-schema/src/spans";
 import type { TraceEntry } from "../../apps/extension/src/types/traces";
-import { PROJECT_ROOT } from "./core";
+import { PROJECT_ROOT } from "./paths";
 
 export const SPAN_DIR = join(PROJECT_ROOT, "traces", "spans");
 export const BLOB_DIR = join(PROJECT_ROOT, "traces", "obs", "blobs");

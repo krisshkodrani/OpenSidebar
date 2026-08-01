@@ -7,6 +7,8 @@ import App from "../../src/trace-viewer/App";
 import { useStore } from "../../src/trace-viewer/store";
 
 const mockFetchTraceSessions = vi.fn();
+const mockFetchTraceSessionsPage = vi.fn();
+const mockFetchTraceSessionSummary = vi.fn();
 const mockFetchTraceDays = vi.fn();
 const mockFetchTraceModels = vi.fn();
 const mockFetchTraceEntries = vi.fn();
@@ -31,6 +33,10 @@ vi.mock("@tanstack/react-virtual", () => ({
 vi.mock("../../src/trace-viewer/api", () => ({
   TRACE_SESSION_SEARCH_LIMIT: 1000,
   fetchTraceSessions: (...args: unknown[]) => mockFetchTraceSessions(...args),
+  fetchTraceSessionsPage: (...args: unknown[]) =>
+    mockFetchTraceSessionsPage(...args),
+  fetchTraceSessionSummary: (...args: unknown[]) =>
+    mockFetchTraceSessionSummary(...args),
   fetchTraceDays: (...args: unknown[]) => mockFetchTraceDays(...args),
   fetchTraceModels: (...args: unknown[]) => mockFetchTraceModels(...args),
   fetchTraceEntries: (...args: unknown[]) => mockFetchTraceEntries(...args),
@@ -210,6 +216,8 @@ describe("trace-viewer App regression flows", () => {
   beforeEach(() => {
     resetStore();
     mockFetchTraceSessions.mockReset();
+    mockFetchTraceSessionsPage.mockReset();
+    mockFetchTraceSessionSummary.mockReset();
     mockFetchTraceDays.mockReset();
     mockFetchTraceModels.mockReset();
     mockFetchTraceEntries.mockReset();
@@ -218,6 +226,17 @@ describe("trace-viewer App regression flows", () => {
     mockScrollToIndex.mockReset();
 
     mockFetchTraceSessions.mockResolvedValue(sessions);
+    mockFetchTraceSessionsPage.mockResolvedValue({
+      items: sessions,
+      total: sessions.length,
+      nextCursor: null,
+      hasMore: false,
+    });
+    mockFetchTraceSessionSummary.mockImplementation((sessionId: string) =>
+      Promise.resolve(
+        sessions.find((session) => session.sessionId === sessionId) ?? null,
+      ),
+    );
     mockFetchTraceDays.mockResolvedValue([{ day: "2026-04-20", count: 2 }]);
     mockFetchTraceModels.mockResolvedValue([
       { model: "openai/gpt-5.4-mini:nitro", count: 2 },
@@ -265,19 +284,20 @@ describe("trace-viewer App regression flows", () => {
       row!.dispatchEvent(new MouseEvent("click", { bubbles: true }));
     });
 
-    // A trace opens on the Story subview with the simplified 4-tab strip.
+    // A trace opens on Evidence, with Model I/O promoted to a first-class tab.
     await waitFor(() => {
       const tabLabels = Array.from(container.querySelectorAll("button")).map(
         (button) => button.textContent ?? "",
       );
-      expect(tabLabels).toContain("Story");
+      expect(tabLabels).toContain("Evidence");
       expect(tabLabels).toContain("Plan");
-      expect(tabLabels.some((label) => label.startsWith("Turns"))).toBe(true);
-      expect(tabLabels).toContain("Debug");
+      expect(tabLabels.some((label) => label.startsWith("Timeline"))).toBe(true);
+      expect(tabLabels).toContain("Model I/O");
+      expect(tabLabels).toContain("Raw");
     });
 
     const turnsTab = Array.from(container.querySelectorAll("button")).find(
-      (button) => button.textContent?.startsWith("Turns"),
+      (button) => button.textContent?.startsWith("Timeline"),
     );
     expect(turnsTab).toBeTruthy();
 
@@ -305,6 +325,23 @@ describe("trace-viewer App regression flows", () => {
     await waitFor(() => {
       expect(mockScrollToIndex).toHaveBeenCalledWith(1, { align: "start" });
     });
+
+    const modelIOTab = Array.from(container.querySelectorAll("button")).find(
+      (button) => button.textContent === "Model I/O",
+    );
+    expect(modelIOTab).toBeTruthy();
+
+    await act(async () => {
+      modelIOTab!.click();
+      await Promise.resolve();
+    });
+
+    await waitFor(() => {
+      expect(container.textContent).toContain("Recorded effective messages");
+      expect(container.textContent).toContain("Open the viewer trace.");
+      expect(container.textContent).toContain("I can see the viewer trace list.");
+      expect(container.textContent).toContain("Recorded tool outcomes");
+    });
   });
 
   test("defaults to the runs list and can open a second trace", async () => {
@@ -330,14 +367,15 @@ describe("trace-viewer App regression flows", () => {
       row!.dispatchEvent(new MouseEvent("click", { bubbles: true }));
     });
 
-    // Opens on the Story subview with the simplified 4-tab strip.
+    // Opens on the evidence-first subview with Model I/O directly reachable.
     await waitFor(() => {
       expect(container.textContent).toContain("Compare viewer trace output");
       const tabLabels = Array.from(container.querySelectorAll("button")).map(
         (button) => button.textContent ?? "",
       );
-      expect(tabLabels).toContain("Story");
-      expect(tabLabels).toContain("Debug");
+      expect(tabLabels).toContain("Evidence");
+      expect(tabLabels).toContain("Model I/O");
+      expect(tabLabels).toContain("Raw");
     });
   });
 });

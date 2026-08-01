@@ -1,10 +1,10 @@
-import React, { useMemo, useState } from "react";
+import React, { useMemo, useRef, useState } from "react";
+import { useVirtualizer } from "@tanstack/react-virtual";
 import { ChevronRight } from "lucide-react";
 import type { TraceSession } from "../../../types/traces";
 import type { RunGroup, RunAnnotation } from "../../store/types";
 import { annotationKeyFor } from "../../store/types";
 import { useStore } from "../../store";
-import { TRACE_SESSION_SEARCH_LIMIT } from "../../api";
 import Badge from "../Badge";
 import AdjudicationBadge from "./AdjudicationBadge";
 import {
@@ -22,6 +22,7 @@ import {
 
 interface RunsTableViewProps {
   onSelectSession: (sessionId: string) => void;
+  onLoadMore?: () => void;
 }
 
 // One row of the merged Runs list: either a run group (expandable) or a
@@ -57,10 +58,15 @@ function matchesQuery(session: TraceSession, q: string): boolean {
   );
 }
 
-export default function RunsTableView({ onSelectSession }: RunsTableViewProps) {
+export default function RunsTableView({
+  onSelectSession,
+  onLoadMore,
+}: RunsTableViewProps) {
   const runGroups = useStore((s) => s.runGroups);
   const tracesLoading = useStore((s) => s.tracesLoading);
   const sessions = useStore((s) => s.sessions);
+  const sessionsTotal = useStore((s) => s.sessionsTotal);
+  const sessionsHasMore = useStore((s) => s.sessionsHasMore);
   const annotations = useStore((s) => s.annotations);
   const adjudicationFilter = useStore((s) => s.filters.adjudication);
   const needsReviewOn = useStore((s) => s.filters.needsReview === "on");
@@ -68,7 +74,7 @@ export default function RunsTableView({ onSelectSession }: RunsTableViewProps) {
   const collapseAllRunGroups = useStore((s) => s.collapseAllRunGroups);
   const toggleRunGroup = useStore((s) => s.toggleRunGroup);
   const [query, setQuery] = useState("");
-  const sessionsLimitReached = sessions.length >= TRACE_SESSION_SEARCH_LIMIT;
+  const listRef = useRef<HTMLDivElement>(null);
 
   // Merge run groups and standalone sessions into one newest-first list, then
   // apply the client-side filters (adjudication select, needs-review chip,
@@ -121,6 +127,35 @@ export default function RunsTableView({ onSelectSession }: RunsTableViewProps) {
     );
   }, [runGroups, sessions, annotations, adjudicationFilter, needsReviewOn, query]);
 
+  const virtualizer = useVirtualizer({
+    count: items.length,
+    getScrollElement: () => listRef.current,
+    estimateSize: () => 72,
+    overscan: 8,
+    initialRect: { width: 1024, height: 800 },
+    getItemKey: (index) => {
+      const item = items[index];
+      return item.kind === "group"
+        ? `run-${item.group.runId}`
+        : `session-${item.session.sessionId}`;
+    },
+  });
+  const virtualRows = virtualizer.getVirtualItems();
+
+  const renderItem = (item: DisplayItem) =>
+    item.kind === "group" ? (
+      <RunGroupRow
+        group={item.group}
+        onToggle={() => toggleRunGroup(item.group.runId)}
+        onSelectSession={onSelectSession}
+      />
+    ) : (
+      <StandaloneSessionRow
+        session={item.session}
+        onSelect={() => onSelectSession(item.session.sessionId)}
+      />
+    );
+
   if (tracesLoading) {
     return (
       <div className="flex-1 flex items-center justify-center text-trace-muted text-sm">
@@ -165,28 +200,64 @@ export default function RunsTableView({ onSelectSession }: RunsTableViewProps) {
           className="w-44 bg-trace-surface text-trace-text border border-trace-border rounded px-2 py-1 text-[11px] outline-none transition-colors focus:border-trace-accent placeholder:text-trace-dim"
         />
         <span className="ml-auto text-[10px] text-trace-dim">
-          {formatCount(items.length)}
-          {sessionsLimitReached ? "+" : ""} rows from loaded traces
+          {formatCount(items.length)} rows from {formatCount(sessions.length)}
+          {sessionsTotal > sessions.length
+            ? ` / ${formatCount(sessionsTotal)}`
+            : ""} traces
         </span>
       </div>
-      <div className="flex-1 overflow-y-auto scrollbar-thin">
-        {items.map((item) =>
-          item.kind === "group" ? (
-            <RunGroupRow
-              key={`run-${item.group.runId}`}
-              group={item.group}
-              onToggle={() => toggleRunGroup(item.group.runId)}
-              onSelectSession={onSelectSession}
-            />
-          ) : (
-            <StandaloneSessionRow
-              key={`session-${item.session.sessionId}`}
-              session={item.session}
-              onSelect={() => onSelectSession(item.session.sessionId)}
-            />
-          ),
-        )}
+      <div ref={listRef} className="flex-1 overflow-y-auto scrollbar-thin">
+        <div
+          style={{
+            height: `${virtualizer.getTotalSize()}px`,
+            position: "relative",
+            width: "100%",
+          }}
+        >
+          {virtualRows.map((virtualRow) => {
+            const item = items[virtualRow.index];
+            return (
+              <div
+                key={virtualRow.key}
+                ref={virtualizer.measureElement}
+                data-index={virtualRow.index}
+                style={{
+                  position: "absolute",
+                  top: 0,
+                  left: 0,
+                  width: "100%",
+                  transform: `translateY(${virtualRow.start}px)`,
+                }}
+              >
+                {renderItem(item)}
+              </div>
+            );
+          })}
+          {virtualRows.length === 0 &&
+            items.map((item) => (
+              <div
+                key={
+                  item.kind === "group"
+                    ? `run-${item.group.runId}`
+                    : `session-${item.session.sessionId}`
+                }
+              >
+                {renderItem(item)}
+              </div>
+            ))}
+        </div>
       </div>
+      {sessionsHasMore && onLoadMore && (
+        <div className="shrink-0 border-t border-trace-border px-5 py-2 text-center">
+          <button
+            type="button"
+            onClick={onLoadMore}
+            className="rounded border border-trace-border px-3 py-1 text-[11px] text-trace-muted hover:border-trace-accent/40 hover:text-trace-text"
+          >
+            Load more traces
+          </button>
+        </div>
+      )}
     </div>
   );
 }

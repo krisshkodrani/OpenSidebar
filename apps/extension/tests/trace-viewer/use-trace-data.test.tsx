@@ -11,6 +11,8 @@ vi.mock("../../src/trace-viewer/api", async () => {
   return {
     ...actual,
     fetchTraceSessions: vi.fn(),
+    fetchTraceSessionsPage: vi.fn(),
+    fetchTraceSessionSummary: vi.fn(),
     fetchTraceDays: vi.fn(),
     fetchTraceModels: vi.fn(),
     fetchTraceEntries: vi.fn(),
@@ -72,6 +74,19 @@ describe("useTraceData", () => {
     root = createRoot(container);
 
     vi.mocked(api.fetchTraceSessions).mockResolvedValue([]);
+    vi.mocked(api.fetchTraceSessionsPage).mockImplementation(
+      async (filters) => {
+        const items = await api.fetchTraceSessions(filters);
+        return {
+          items,
+          total: items.length,
+          returned: items.length,
+          hasMore: false,
+          nextCursor: null,
+        };
+      },
+    );
+    vi.mocked(api.fetchTraceSessionSummary).mockResolvedValue(null);
     vi.mocked(api.fetchTraceDays).mockResolvedValue([]);
     vi.mocked(api.fetchTraceModels).mockResolvedValue([]);
     vi.mocked(api.fetchTraceEntries).mockResolvedValue([]);
@@ -155,7 +170,7 @@ describe("useTraceData", () => {
   });
 
   test("loads entries and reports log-load failures as warnings", async () => {
-    useStore.setState({ currentSessionId: "session-1" });
+    useStore.setState({ currentSessionId: "session-1", activeSubview: "logs" });
     vi.mocked(api.fetchTraceSessions).mockResolvedValue([
       {
         sessionId: "session-1",
@@ -302,6 +317,8 @@ describe("useTraceData", () => {
     vi.mocked(api.fetchSessionLogs).mockImplementation((sessionId) =>
       sessionId === "session-1" ? sessionOneLogs.promise : sessionTwoLogs.promise,
     );
+
+    useStore.getState().setActiveSubview("logs");
     vi.mocked(api.fetchRunTraceEvents).mockImplementation((runId) =>
       runId === "run-1"
         ? sessionOneRunEvents.promise
