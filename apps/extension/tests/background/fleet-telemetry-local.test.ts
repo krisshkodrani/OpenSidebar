@@ -202,4 +202,34 @@ describe("fleet telemetry local consent and collection", () => {
     ).toEqual({ attempted: 1, delivered: 1, dropped: 0, remaining: 0 });
     expect(transport.send).toHaveBeenCalledWith(envelope(1));
   });
+
+  test("delivers eligible records behind a deferred queue entry", async () => {
+    const storage = createFakeStorageArea();
+    await saveFleetTelemetryConsent(storage, true, 100);
+    await storage.set({
+      [FLEET_TELEMETRY_QUEUE_STORAGE_KEY]: [
+        {
+          envelope: envelope(1),
+          queuedAt: 100,
+          attemptCount: 1,
+          nextAttemptAt: 1_000,
+        },
+        {
+          envelope: envelope(2),
+          queuedAt: 101,
+          attemptCount: 0,
+          nextAttemptAt: 200,
+        },
+      ],
+    });
+    const transport = { send: vi.fn(async () => {}) };
+
+    expect(
+      await drainFleetTelemetryToTransport(storage, transport, { now: 500 }),
+    ).toEqual({ attempted: 1, delivered: 1, dropped: 0, remaining: 1 });
+    expect(transport.send).toHaveBeenCalledWith(envelope(2));
+    expect((await loadFleetTelemetryQueue(storage, 500))[0].envelope).toEqual(
+      envelope(1),
+    );
+  });
 });
