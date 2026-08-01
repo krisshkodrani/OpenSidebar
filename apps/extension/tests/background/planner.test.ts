@@ -1240,6 +1240,9 @@ Execution policy:
 
         expect(usageCb).toHaveBeenCalledTimes(1);
         expect(usageCb.mock.calls[0][0].prompt_tokens).toBe(200);
+        expect(usageCb.mock.calls[0][3]).toBe(
+            '{"isMultiStep": true, "subtasks": ["Step 1", "Step 2", "Step 3"]}',
+        );
     });
 
     test("sends response_format: json_object in decompose request", async () => {

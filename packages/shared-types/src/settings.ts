@@ -86,6 +86,8 @@ export interface UserSettings {
   executorModel?: string;
   /** Override planner model. */
   plannerModel?: string;
+  /** Override the verification judge model. */
+  judgeModel?: string;
   /**
    * Optional specialist Writer model for composing free-text/prose answers
    * (e.g. job-application questions, message bodies). When set, the agent

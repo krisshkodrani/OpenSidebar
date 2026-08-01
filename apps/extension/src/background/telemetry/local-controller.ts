@@ -2,10 +2,11 @@ import type { FleetTelemetryEnvelopeV1 } from "@observability-schema";
 import {
   clearLocalFleetTelemetry,
   enqueueFleetTelemetry,
-  FLEET_TELEMETRY_QUEUE_STORAGE_KEY,
   loadFleetTelemetryConsent,
   loadFleetTelemetryQueue,
   loadLastFleetTelemetryPayload,
+  recordFleetTelemetryDeliveryFailure,
+  removeFleetTelemetryRecords,
   saveFleetTelemetryConsent,
   type FleetTelemetryStorageArea,
 } from "../../utils/fleet-telemetry";
@@ -42,11 +43,7 @@ export async function collectFleetTelemetryLocally({
     if (consent.status !== "enabled") {
       await clearLocalFleetTelemetry(storage);
     }
-    const decision = decideFleetTelemetrySampling(
-      consent,
-      random,
-      sampleRate,
-    );
+    const decision = decideFleetTelemetrySampling(consent, random, sampleRate);
     if (!decision.collect) return decision;
 
     const queued = await enqueueFleetTelemetry(storage, project(), now);
@@ -87,27 +84,130 @@ export async function getFleetTelemetryInspectorSnapshot(
   };
 }
 
-/**
- * Transport boundary for Phase 2 tests. There is intentionally no production
- * implementation and no runtime caller until a later, separately gated phase.
- */
 export interface FleetTelemetryTransport {
-  send(envelopes: readonly FleetTelemetryEnvelopeV1[]): Promise<void>;
+  send(envelope: FleetTelemetryEnvelopeV1): Promise<void>;
+}
+
+export interface FleetTelemetryRetryPolicy {
+  maxAttempts: number;
+  baseDelayMs: number;
+  maxDelayMs: number;
+}
+
+export const DEFAULT_FLEET_TELEMETRY_RETRY_POLICY: FleetTelemetryRetryPolicy = {
+  maxAttempts: 6,
+  baseDelayMs: 60_000,
+  maxDelayMs: 60 * 60_000,
+};
+
+export interface FleetTelemetryDrainResult {
+  attempted: number;
+  delivered: number;
+  dropped: number;
+  remaining: number;
+}
+
+export function getFleetTelemetryRetryDelayMs(
+  failedAttemptCount: number,
+  random = Math.random,
+  policy = DEFAULT_FLEET_TELEMETRY_RETRY_POLICY,
+): number {
+  const exponent = Math.min(30, Math.max(0, failedAttemptCount - 1));
+  const baseDelayMs = finiteNonNegative(
+    policy.baseDelayMs,
+    DEFAULT_FLEET_TELEMETRY_RETRY_POLICY.baseDelayMs,
+  );
+  const maxDelayMs = finiteNonNegative(
+    policy.maxDelayMs,
+    DEFAULT_FLEET_TELEMETRY_RETRY_POLICY.maxDelayMs,
+  );
+  const backoffMs = Math.min(maxDelayMs, baseDelayMs * 2 ** exponent);
+  const randomValue = random();
+  const boundedRandom = Number.isFinite(randomValue)
+    ? Math.min(1, Math.max(0, randomValue))
+    : 0.5;
+  const jitter = 0.5 + 0.5 * boundedRandom;
+  return Math.floor(backoffMs * jitter);
 }
 
 export async function drainFleetTelemetryToTransport(
   storage: FleetTelemetryStorageArea,
   transport: FleetTelemetryTransport,
-  now = Date.now(),
-): Promise<number> {
-  const consent = await loadFleetTelemetryConsent(storage);
-  if (consent.status !== "enabled") {
-    await clearLocalFleetTelemetry(storage);
-    return 0;
+  options: {
+    now?: number;
+    random?: () => number;
+    retryPolicy?: FleetTelemetryRetryPolicy;
+  } = {},
+): Promise<FleetTelemetryDrainResult> {
+  const now = options.now ?? Date.now();
+  const random = options.random ?? Math.random;
+  const retryPolicy =
+    options.retryPolicy ?? DEFAULT_FLEET_TELEMETRY_RETRY_POLICY;
+  const result: FleetTelemetryDrainResult = {
+    attempted: 0,
+    delivered: 0,
+    dropped: 0,
+    remaining: 0,
+  };
+
+  try {
+    const consent = await loadFleetTelemetryConsent(storage);
+    if (consent.status !== "enabled") {
+      await clearLocalFleetTelemetry(storage);
+      return result;
+    }
+
+    let queue = await loadFleetTelemetryQueue(storage, now);
+    result.remaining = queue.length;
+    while (queue.length > 0) {
+      result.remaining = queue.length;
+      const record = queue[0];
+      if (record.nextAttemptAt > now) return result;
+
+      result.attempted += 1;
+      try {
+        await transport.send(record.envelope);
+        result.delivered += 1;
+        await removeFleetTelemetryRecords(
+          storage,
+          [record.envelope.eventId],
+          now,
+        );
+      } catch {
+        const failedAttemptCount = record.attemptCount + 1;
+        const delayMs = getFleetTelemetryRetryDelayMs(
+          failedAttemptCount,
+          random,
+          retryPolicy,
+        );
+        const failure = await recordFleetTelemetryDeliveryFailure(
+          storage,
+          record.envelope.eventId,
+          now + delayMs,
+          finitePositiveInteger(
+            retryPolicy.maxAttempts,
+            DEFAULT_FLEET_TELEMETRY_RETRY_POLICY.maxAttempts,
+          ),
+          now,
+        );
+        if (failure.outcome === "dropped") result.dropped += 1;
+        result.remaining = failure.remaining;
+        return result;
+      }
+
+      queue = await loadFleetTelemetryQueue(storage, now);
+    }
+    result.remaining = 0;
+    return result;
+  } catch {
+    return result;
   }
-  const queue = await loadFleetTelemetryQueue(storage, now);
-  if (queue.length === 0) return 0;
-  await transport.send(queue.map((record) => record.envelope));
-  await storage.set({ [FLEET_TELEMETRY_QUEUE_STORAGE_KEY]: [] });
-  return queue.length;
+}
+
+function finiteNonNegative(value: number, fallback: number): number {
+  return Number.isFinite(value) ? Math.max(0, value) : fallback;
+}
+
+function finitePositiveInteger(value: number, fallback: number): number {
+  return Number.isFinite(value) ? Math.max(1, Math.floor(value)) : fallback;
 }

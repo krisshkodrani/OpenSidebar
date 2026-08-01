@@ -494,12 +494,12 @@ export class Orchestrator {
   ): void {
     const maybePlanner = planner as {
       setUsageCallback?: (
-        cb: ((usage: TokenUsage, llmMs: number, model: string) => void) | null,
+        cb: ((usage: TokenUsage, llmMs: number, model: string, rawResponse?: string) => void) | null,
       ) => void;
     };
     if (typeof maybePlanner.setUsageCallback !== "function") return;
 
-    maybePlanner.setUsageCallback((usage, llmMs, model) => {
+    maybePlanner.setUsageCallback((usage, llmMs, model, rawResponse) => {
       this.emitTraceEvent(
         task,
         "planner_llm_call",
@@ -513,12 +513,12 @@ export class Orchestrator {
             total_tokens: usage.total_tokens,
             cost: usage.cost,
           },
+          ...(rawResponse === undefined ? {} : { rawResponse }),
         },
         "planner",
       );
     });
   }
-
   private emitNodeFailureAttribution(
     task: OrchestratorTask,
     node: TaskNode,

@@ -50,9 +50,7 @@ const BASE_ENVELOPE: FleetTelemetryEnvelopeV1 = {
 function envelope(sequence: number): FleetTelemetryEnvelopeV1 {
   return {
     ...BASE_ENVELOPE,
-    eventId: `00000000-0000-4000-8000-${sequence
-      .toString()
-      .padStart(12, "0")}`,
+    eventId: `00000000-0000-4000-8000-${sequence.toString().padStart(12, "0")}`,
   };
 }
 
@@ -192,16 +190,16 @@ describe("fleet telemetry local consent and collection", () => {
     const transport = { send: vi.fn(async () => {}) };
 
     expect(
-      await drainFleetTelemetryToTransport(storage, transport, 100),
-    ).toBe(0);
+      await drainFleetTelemetryToTransport(storage, transport, { now: 100 }),
+    ).toEqual({ attempted: 0, delivered: 0, dropped: 0, remaining: 0 });
     expect(transport.send).not.toHaveBeenCalled();
     expect(await loadFleetTelemetryQueue(storage, 100)).toEqual([]);
 
     await saveFleetTelemetryConsent(storage, true, 101);
     await enqueueFleetTelemetry(storage, envelope(1), 101);
     expect(
-      await drainFleetTelemetryToTransport(storage, transport, 101),
-    ).toBe(1);
-    expect(transport.send).toHaveBeenCalledWith([envelope(1)]);
+      await drainFleetTelemetryToTransport(storage, transport, { now: 101 }),
+    ).toEqual({ attempted: 1, delivered: 1, dropped: 0, remaining: 0 });
+    expect(transport.send).toHaveBeenCalledWith(envelope(1));
   });
 });

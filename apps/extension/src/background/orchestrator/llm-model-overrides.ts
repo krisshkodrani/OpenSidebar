@@ -9,6 +9,7 @@ export function buildLlmModelOverrides(
   return {
     executorModel: settings.executorModel,
     plannerModel: settings.plannerModel,
+    judgeModel: settings.judgeModel,
     writerModel: settings.writerModel,
     useNitro: settings.useNitro,
     providerMode: settings.providerMode,

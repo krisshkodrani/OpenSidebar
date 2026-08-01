@@ -6,6 +6,7 @@ the extension bundle and contains no client credentials or Bluebox token.
 The stack creates:
 
 - API Gateway HTTP API `POST /v1/telemetry`;
+- browser-extension CORS preflight for anonymous JSON `POST` requests;
 - a validator Lambda with five reserved concurrent executions;
 - a closed-schema validation gate and 32 KiB request limit;
 - direct Firehose delivery to a private KMS-encrypted S3 bucket;
@@ -26,15 +27,17 @@ npx cdk synth
 npx cdk diff
 ```
 
-The stack defaults to `eu-central-1`, independent of the AWS profile's default
-region. Override it only through `TELEMETRY_AWS_REGION` after an approved region
-change. Set `BUDGET_EMAIL` only after an approved recipient is recorded. No
-deploy command belongs in the extension release workflow.
+The internal stack is deployed in `eu-central-1`, independent of the AWS
+profile's default region. Override it only through `TELEMETRY_AWS_REGION` after
+an approved region change. Set `BUDGET_EMAIL` only after an approved recipient
+is recorded; the current deployment has no notification subscriber. No deploy
+command belongs in the extension release workflow.
 Athena operators must receive explicit read access to the curated bucket and
 write access to the Athena result prefix through a separate named IAM role.
 
 Phase 3 does not create a Bluebox exporter, SQS queue, Secrets Manager token, or
-extension upload path. Those remain Phase 5/Phase 4 controls respectively.
+extension upload path. The exporter remains Phase 5; the Phase 4 uploader lives
+in the extension and receives its endpoint only in an explicit internal build.
 
 ## Internal extension upload (Phase 4)
 
@@ -47,5 +50,8 @@ pnpm exec vite build --config apps/extension/vite.config.ts --mode internal
 ```
 
 The uploader sends only consented, sampled, schema-validated summaries. It is
-best-effort: a non-`202` response leaves the bounded local queue intact for a
-later MV3 worker restart. It never changes or waits on an agent task.
+best-effort: accepted records are removed individually, while a non-`202`,
+timeout, or network failure persists an equal-jitter exponential backoff for a
+later natural MV3 worker wake. A record is dropped after six failed deliveries
+or seven days in the bounded queue. Upload never adds an alarm or keepalive and
+never changes or waits on an agent task.

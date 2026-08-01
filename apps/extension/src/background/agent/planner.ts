@@ -757,7 +757,7 @@ export class TaskPlanner {
   private modelOverrides?: LLMClientOptions;
   private executorLlm: LLMClient | null = null;
   private usageCallback:
-    | ((usage: TokenUsage, llmMs: number, model: string) => void)
+    | ((usage: TokenUsage, llmMs: number, model: string, rawResponse?: string) => void)
     | null = null;
   /**
    * Transient holder for the LLM's structured multi-tab-intent signal, captured
@@ -788,11 +788,10 @@ export class TaskPlanner {
   }
 
   setUsageCallback(
-    cb: ((usage: TokenUsage, llmMs: number, model: string) => void) | null,
+    cb: ((usage: TokenUsage, llmMs: number, model: string, rawResponse?: string) => void) | null,
   ) {
     this.usageCallback = cb;
   }
-
   /**
    * Public entry point. Delegates to {@link decomposeInternal} and injects the
    * LLM's structured multi-tab-intent signal (captured during parse) onto the
@@ -855,6 +854,7 @@ export class TaskPlanner {
           response.usage,
           llmMs,
           response.actualModel ?? this.llm.getCurrentModel(),
+          response.content ?? "",
         );
       if (response.finish_reason === "length") {
         // Truncated decompose JSON silently degrades to fallback nodes —

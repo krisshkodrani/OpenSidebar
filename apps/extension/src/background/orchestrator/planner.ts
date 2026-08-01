@@ -1284,7 +1284,7 @@ export class OrchestratorPlanner {
   }
 
   setUsageCallback(
-    cb: ((usage: TokenUsage, llmMs: number, model: string) => void) | null,
+    cb: ((usage: TokenUsage, llmMs: number, model: string, rawResponse?: string) => void) | null,
   ): void {
     this.planner.setUsageCallback(cb);
   }
