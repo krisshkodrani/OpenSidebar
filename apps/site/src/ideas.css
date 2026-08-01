@@ -300,7 +300,7 @@
 }
 
 .idea-article a:hover {
-  text-decoration-color: currentColor;
+  text-decoration-color: currentcolor;
 }
 
 .idea-opening {
@@ -419,7 +419,7 @@
   top: -22px;
   right: 28px;
   color: rgba(58, 110, 165, 0.14);
-  font-family: Georgia, serif;
+  font-family: georgia, serif;
   font-size: 8rem;
   line-height: 1;
 }
@@ -1053,7 +1053,7 @@
   content: "";
   width: 24px;
   height: 1px;
-  background: currentColor;
+  background: currentcolor;
 }
 
 .ideas-index-hero h1 {
