@@ -935,6 +935,7 @@ export function createE2EHarness(options: HarnessOptions = {}): E2EHarness {
       const e2eConfig = readE2EConfig();
       const executorModel = e2eConfig.model;
       const plannerModel = e2eConfig.plannerModel;
+      const judgeModel = e2eConfig.judgeModel;
       const temperature = e2eConfig.runtime.temperature;
       const perceptionMode = e2eConfig.perceptionMode;
       const presenceMode = e2eConfig.presenceMode;
@@ -958,6 +959,7 @@ export function createE2EHarness(options: HarnessOptions = {}): E2EHarness {
           cerebrasKey: string | null,
           execModel: string | null,
           plannerModelOverride: string | null,
+          judgeModelOverride: string | null,
           temp: number | null,
           perceptionMode: string | null,
           presenceMode: string | null,
@@ -982,6 +984,7 @@ export function createE2EHarness(options: HarnessOptions = {}): E2EHarness {
           };
           if (execModel) settings.executorModel = execModel;
           if (plannerModelOverride) settings.plannerModel = plannerModelOverride;
+          if (judgeModelOverride) settings.judgeModel = judgeModelOverride;
           if (temp !== null) settings.temperature = temp;
           if (perceptionMode) settings.perceptionMode = perceptionMode;
           if (presenceMode) settings.presenceMode = presenceMode;
@@ -1004,6 +1007,7 @@ export function createE2EHarness(options: HarnessOptions = {}): E2EHarness {
         cerebrasKey ?? null,
         executorModel ?? null,
         plannerModel ?? null,
+        judgeModel ?? null,
         temperature ?? null,
         perceptionMode ?? null,
         presenceMode ?? null,

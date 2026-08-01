@@ -86,6 +86,10 @@ const OPENROUTER_EXECUTOR_MODELS = new Set([
   "qwen/qwen3.7-plus",
   "qwen/qwen3-vl-30b-a3b-instruct",
   "openai/gpt-5.4-mini",
+  // Evaluation candidate added 2026-08-01: the live OpenRouter catalog reports
+  // image input and tool support. Keep it opt-in until task-completion runs
+  // establish whether it clears the executor reliability floor.
+  "openai/gpt-5.6-luna",
   "x-ai/grok-4.5",
 ]);
 

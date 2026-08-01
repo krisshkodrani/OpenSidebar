@@ -13,6 +13,7 @@ describe("orchestrator fleet telemetry terminal adapter", () => {
       providerMode: "fireworks-deepseek",
       executorModel: "z-ai/glm-5.2",
       plannerModel: "qwen/qwen3.7-plus",
+      judgeModel: "deepseek/deepseek-v4-flash-0731",
     });
     recordTaskFleetLoopResult(state, {
       outcome: "completed",
@@ -58,6 +59,7 @@ describe("orchestrator fleet telemetry terminal adapter", () => {
         provider: "fireworks",
         executorModel: "glm_5_2",
         plannerModel: "qwen_3_7",
+        judgeModel: "deepseek_v4",
       },
       execution: { plannerStepCount: 1, turnCount: 2 },
       completion: {

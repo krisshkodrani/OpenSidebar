@@ -27,7 +27,13 @@ export interface FleetTelemetryQueueRecord {
   envelope: FleetTelemetryEnvelopeV1;
   queuedAt: number;
   attemptCount: number;
+  nextAttemptAt: number;
 }
+
+export type FleetTelemetryDeliveryFailureResult =
+  | { outcome: "missing"; remaining: number }
+  | { outcome: "deferred"; remaining: number }
+  | { outcome: "dropped"; remaining: number };
 
 export interface FleetTelemetryLastPayload {
   envelope: FleetTelemetryEnvelopeV1;
@@ -46,7 +52,13 @@ export async function loadFleetTelemetryQueue(
     await storage.set({ [FLEET_TELEMETRY_QUEUE_STORAGE_KEY]: [] });
     return [];
   }
-  const queue = boundQueue(value.filter(isQueueRecord), now, limits);
+  const queue = boundQueue(
+    value
+      .map(normalizeQueueRecord)
+      .filter((record): record is FleetTelemetryQueueRecord => record !== null),
+    now,
+    limits,
+  );
   if (JSON.stringify(queue) !== JSON.stringify(value)) {
     await storage.set({ [FLEET_TELEMETRY_QUEUE_STORAGE_KEY]: queue });
   }
@@ -73,7 +85,7 @@ export async function enqueueFleetTelemetry(
   const queue = boundQueue(
     [
       ...withoutDuplicate,
-      { envelope, queuedAt: now, attemptCount: 0 },
+      { envelope, queuedAt: now, attemptCount: 0, nextAttemptAt: now },
     ],
     now,
     limits,
@@ -123,6 +135,41 @@ export async function removeFleetTelemetryRecords(
   await storage.set({ [FLEET_TELEMETRY_QUEUE_STORAGE_KEY]: queue });
 }
 
+export async function recordFleetTelemetryDeliveryFailure(
+  storage: FleetTelemetryStorageArea,
+  eventId: string,
+  nextAttemptAt: number,
+  maxAttempts: number,
+  now = Date.now(),
+): Promise<FleetTelemetryDeliveryFailureResult> {
+  const queue = await loadFleetTelemetryQueue(storage, now);
+  const index = queue.findIndex(
+    (record) => record.envelope.eventId === eventId,
+  );
+  if (index < 0) return { outcome: "missing", remaining: queue.length };
+
+  const failedAttemptCount = queue[index].attemptCount + 1;
+  const attemptCap = Number.isFinite(maxAttempts)
+    ? Math.max(1, Math.floor(maxAttempts))
+    : 1;
+  if (failedAttemptCount >= attemptCap) {
+    queue.splice(index, 1);
+    await storage.set({ [FLEET_TELEMETRY_QUEUE_STORAGE_KEY]: queue });
+    return { outcome: "dropped", remaining: queue.length };
+  }
+
+  queue[index] = {
+    ...queue[index],
+    attemptCount: failedAttemptCount,
+    nextAttemptAt:
+      Number.isFinite(nextAttemptAt) && nextAttemptAt >= now
+        ? nextAttemptAt
+        : now,
+  };
+  await storage.set({ [FLEET_TELEMETRY_QUEUE_STORAGE_KEY]: queue });
+  return { outcome: "deferred", remaining: queue.length };
+}
+
 export async function clearLocalFleetTelemetry(
   storage: FleetTelemetryStorageArea,
 ): Promise<void> {
@@ -141,8 +188,7 @@ function boundQueue(
   const maxBytes = Math.max(0, Math.floor(limits.maxBytes));
   const maxAgeMs = Math.max(0, limits.maxAgeMs);
   const fresh = records.filter(
-    (record) =>
-      record.queuedAt <= now && now - record.queuedAt <= maxAgeMs,
+    (record) => record.queuedAt <= now && now - record.queuedAt <= maxAgeMs,
   );
   const bounded = maxRecords === 0 ? [] : fresh.slice(-maxRecords);
 
@@ -156,18 +202,44 @@ function serializedBytes(value: unknown): number {
   return new TextEncoder().encode(JSON.stringify(value)).byteLength;
 }
 
-function isQueueRecord(value: unknown): value is FleetTelemetryQueueRecord {
-  if (!value || typeof value !== "object" || Array.isArray(value)) return false;
+function normalizeQueueRecord(
+  value: unknown,
+): FleetTelemetryQueueRecord | null {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return null;
   const record = value as Record<string, unknown>;
-  return (
-    Object.keys(record).length === 3 &&
-    isFleetTelemetryEnvelopeV1(record.envelope) &&
-    typeof record.queuedAt === "number" &&
-    Number.isFinite(record.queuedAt) &&
-    record.queuedAt >= 0 &&
-    Number.isInteger(record.attemptCount) &&
-    (record.attemptCount as number) >= 0
-  );
+  const keys = Object.keys(record);
+  if (
+    (keys.length !== 3 && keys.length !== 4) ||
+    keys.some(
+      (key) =>
+        key !== "envelope" &&
+        key !== "queuedAt" &&
+        key !== "attemptCount" &&
+        key !== "nextAttemptAt",
+    ) ||
+    !isFleetTelemetryEnvelopeV1(record.envelope) ||
+    typeof record.queuedAt !== "number" ||
+    !Number.isFinite(record.queuedAt) ||
+    record.queuedAt < 0 ||
+    !Number.isInteger(record.attemptCount) ||
+    (record.attemptCount as number) < 0
+  ) {
+    return null;
+  }
+  const nextAttemptAt = record.nextAttemptAt ?? record.queuedAt;
+  if (
+    typeof nextAttemptAt !== "number" ||
+    !Number.isFinite(nextAttemptAt) ||
+    nextAttemptAt < 0
+  ) {
+    return null;
+  }
+  return {
+    envelope: record.envelope,
+    queuedAt: record.queuedAt,
+    attemptCount: record.attemptCount as number,
+    nextAttemptAt,
+  };
 }
 
 function isLastPayload(value: unknown): value is FleetTelemetryLastPayload {

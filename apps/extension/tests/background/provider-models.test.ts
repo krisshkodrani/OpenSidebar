@@ -104,6 +104,11 @@ describe("provider-scoped model catalogs", () => {
     }
   });
 
+  test("allows GPT-5.6 Luna as an opt-in OpenRouter executor candidate", () => {
+    expect(isExecutorEligible("openai/gpt-5.6-luna", "openrouter")).toBe(true);
+    expect(isVLCapable("openai/gpt-5.6-luna")).toBe(true);
+  });
+
   test("executor picker never offers a text-only model in any provider mode", () => {
     const providerModes = [
       "openrouter",

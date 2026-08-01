@@ -746,7 +746,7 @@ export class AgentLoop {
       bypassApprovals?: boolean;
       approvalTimeoutMs?: number;
       executorModel?: string;
-      plannerModel?: string;
+      plannerModel?: string; judgeModel?: string;
       writerModel?: string;
       useNitro?: boolean;
       providerMode?:
@@ -831,7 +831,7 @@ export class AgentLoop {
     });
     const modelOverrides: import("../llm").LLMClientOptions = {
       executorModel: options?.executorModel,
-      plannerModel: options?.plannerModel,
+      plannerModel: options?.plannerModel, judgeModel: options?.judgeModel,
       writerModel: options?.writerModel,
       useNitro: options?.useNitro,
       providerMode: options?.providerMode,

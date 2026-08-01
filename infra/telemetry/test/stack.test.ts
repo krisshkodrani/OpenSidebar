@@ -108,3 +108,15 @@ test("sets the account-wide monthly budget alarm at USD 40", () => {
     },
   });
 });
+
+test("allows anonymous browser-extension telemetry posts through CORS", () => {
+  const template = synthesize();
+
+  template.hasResourceProperties("AWS::ApiGatewayV2::Api", {
+    CorsConfiguration: {
+      AllowHeaders: ["content-type"],
+      AllowMethods: ["POST"],
+      AllowOrigins: ["*"],
+    },
+  });
+});

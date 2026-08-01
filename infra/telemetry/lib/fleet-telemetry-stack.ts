@@ -217,6 +217,11 @@ export class FleetTelemetryStack extends cdk.Stack {
 
     const api = new apigwv2.HttpApi(this, "TelemetryApi", {
       createDefaultStage: false,
+      corsPreflight: {
+        allowHeaders: ["content-type"],
+        allowMethods: [apigwv2.CorsHttpMethod.POST],
+        allowOrigins: ["*"],
+      },
     });
     const integration = new integrations.HttpLambdaIntegration("ValidatorIntegration", validator);
     api.addRoutes({ path: "/v1/telemetry", methods: [apigwv2.HttpMethod.POST], integration });

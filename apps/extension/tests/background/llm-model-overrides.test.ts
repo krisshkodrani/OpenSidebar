@@ -1,12 +1,21 @@
 import { describe, expect, test } from "vitest";
 
-import { ToolName } from "../../src/types";
+import { ToolName, type UserSettings } from "../../src/types";
 import {
+  buildLlmModelOverrides,
   restrictDelegatedWriterModel,
   restrictDelegatedWriterTool,
 } from "../../src/background/orchestrator/llm-model-overrides";
 
 describe("delegated model-role restrictions", () => {
+  test("forwards the verification judge override", () => {
+    expect(
+      buildLlmModelOverrides({
+        judgeModel: "deepseek/deepseek-v4-flash-0731",
+      } as UserSettings),
+    ).toMatchObject({ judgeModel: "deepseek/deepseek-v4-flash-0731" });
+  });
+
   test("removes the Writer model and compose tool when Writer is not allowed", () => {
     expect(
       restrictDelegatedWriterModel(

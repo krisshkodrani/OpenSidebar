@@ -27,13 +27,14 @@ export interface TaskFleetTelemetryState {
 export function createTaskFleetTelemetryState(
   settings?: Pick<
     UserSettings,
-    "providerMode" | "provider" | "executorModel" | "plannerModel"
+    "providerMode" | "provider" | "executorModel" | "plannerModel" | "judgeModel"
   >,
 ): TaskFleetTelemetryState {
   return {
     providerId: normalizeProviderMode(settings?.providerMode ?? settings?.provider),
     executorModel: settings?.executorModel,
     plannerModel: settings?.plannerModel,
+    judgeModel: settings?.judgeModel,
     turnCount: 0,
     completionDecisions: [],
     evidence: [],

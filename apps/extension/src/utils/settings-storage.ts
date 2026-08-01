@@ -364,12 +364,14 @@ export async function loadSettings(
     raw.providerMode = availableProviderMode;
     delete raw.executorModel;
     delete raw.plannerModel;
+    delete raw.judgeModel;
     delete raw.writerModel;
     shouldCleanRemovedSettings = true;
   } else if (raw.providerMode === "openai-groq" && !availableProviderMode) {
     raw.providerMode = DEFAULT_PROVIDER_MODE;
     delete raw.executorModel;
     delete raw.plannerModel;
+    delete raw.judgeModel;
     delete raw.writerModel;
     shouldCleanRemovedSettings = true;
   }
