@@ -161,8 +161,8 @@ export async function drainFleetTelemetryToTransport(
     result.remaining = queue.length;
     while (queue.length > 0) {
       result.remaining = queue.length;
-      const record = queue[0];
-      if (record.nextAttemptAt > now) return result;
+      const record = queue.find((candidate) => candidate.nextAttemptAt <= now);
+      if (!record) return result;
 
       result.attempted += 1;
       try {

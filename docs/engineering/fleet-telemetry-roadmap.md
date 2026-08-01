@@ -72,7 +72,7 @@ investigative layer.
 | ------------ | ---------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------- |
 | 5            | Build S3 → SQS → Bluebox exporter with Secrets Manager, DLQ, kill switch, bounded backfill, and Athena parity queries. | Vendor gate recorded; issue-#120 answers match the fixture's Athena result within agreed lag.                          |
 | 6            | Privacy, store listing, disclosure, release-checklist, and data-practice consistency pass; internal dogfood.           | Privacy/data-practice review signed off.                                                                               |
-| 7            | Explicit-opt-in 5% beta under the USD 20 AWS budget.                                                                   | Two weeks within privacy, reliability, data-quality, and cost limits.                                                  |
+| 7            | Explicit-opt-in 5% beta under the USD 40 account-wide AWS budget.                                                      | Two weeks within privacy, reliability, data-quality, and cost limits.                                                  |
 | 8            | Small stable canary and controlled expansion.                                                                          | Owner reviews evidence and authorizes every expansion.                                                                 |
 
 ## Required decisions before Phase 5 / external beta

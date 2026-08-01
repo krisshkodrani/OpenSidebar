@@ -18,7 +18,6 @@ import {
   RunManifest,
   RunTraceWriter,
 } from "../../utils";
-import {} from "../../utils/provider-keys";
 import {
   buildPersonalProfilePlannerContext,
   EMPTY_PERSONALIZATION_STATE,
@@ -39,6 +38,7 @@ import {
   OrchestratorPlanner,
   qualifiesForDirectSingleNode,
 } from "./planner";
+import { protectPlannerTraceResponse } from "./planner-usage-trace";
 
 import type { TokenUsage } from "../llm/types";
 import {
@@ -513,7 +513,9 @@ export class Orchestrator {
             total_tokens: usage.total_tokens,
             cost: usage.cost,
           },
-          ...(rawResponse === undefined ? {} : { rawResponse }),
+          ...(rawResponse === undefined
+            ? {}
+            : { rawResponse: protectPlannerTraceResponse(rawResponse) }),
         },
         "planner",
       );
