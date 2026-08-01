@@ -53,19 +53,19 @@ import {
 import {
   buildHarnessRatchetCandidates,
   buildTraceInsightsFromSqlite,
+  buildTraceTrendsFromSqlite,
   getTraceIndexStatus,
   insertRunTraceEventToSqlite,
   insertTraceTurnToSqlite,
   readRunRawJsonlFromSqlite,
-  readRunTraceEventsFromSqlite,
-  readTraceEntriesFromSqlite,
   readTraceRawJsonlFromSqlite,
-  readTraceSessionsFromSqlite,
+  searchTraceSessionsFromSqlite,
   recordTraceArtifactInSqlite,
   upsertRunTraceManifestToSqlite,
   upsertTraceSessionToSqlite,
 } from "./trace-sqlite-store";
-import { createDiskStore, getRlTrajectory } from "./obs/core";
+import { getRlTrajectory } from "./obs/core";
+import { createTraceRepository } from "./obs/repository";
 import {
   emitObsSpans,
   emitSessionRoots,
@@ -73,9 +73,6 @@ import {
   initSpineOtelExport,
 } from "./obs/otel-emit";
 import {
-  readSessionEntries,
-  readSpineRunEvents,
-  readSpineSessions,
   recordEntrySpansSafe,
   recordRunEventSafe,
   recordSessionSafe,
@@ -113,6 +110,7 @@ const PORT = Number(process.env.LOG_SERVER_PORT) || 7589;
 const HOST = process.env.LOG_SERVER_HOST || "127.0.0.1";
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const PROJECT_ROOT = join(__dirname, "..");
+const traceRepository = createTraceRepository(PROJECT_ROOT);
 const LOG_DIR = join(PROJECT_ROOT, "logs");
 const LOG_FILE = join(LOG_DIR, "opensidebar.jsonl");
 const TRACE_DIR = join(PROJECT_ROOT, "traces");
@@ -289,32 +287,7 @@ function sendFile(
 /* ── Normalization helpers ─────────────────────────────────── */
 
 async function loadAllTraceSessions(): Promise<TraceSessionLike[]> {
-  if (process.env.OBS_SPINE_READS === "1") {
-    const spineSessions = readSpineSessions();
-    if (spineSessions.length > 0) {
-      return spineSessions as unknown as TraceSessionLike[];
-    }
-  }
-
-  const sqliteSessions = readTraceSessionsFromSqlite(PROJECT_ROOT);
-  if (sqliteSessions && sqliteSessions.length > 0) return sqliteSessions;
-
-  if (!existsSync(TRACE_INDEX)) return [];
-  const raw = await readFile(TRACE_INDEX, "utf-8");
-  return raw
-    .trim()
-    .split("\n")
-    .filter(Boolean)
-    .map((line) => {
-      try {
-        return normalizeAgentSessionRecord(
-          JSON.parse(line),
-        ) as TraceSessionLike;
-      } catch {
-        return null;
-      }
-    })
-    .filter(Boolean) as TraceSessionLike[];
+  return traceRepository.loadSessions();
 }
 
 async function readAllTraceSessions(): Promise<TraceSessionLike[]> {
@@ -390,57 +363,13 @@ async function readTraceEntries(sessionId: string): Promise<TraceEntryLike[]> {
   // legacy JSONL entry — parity-verified, 0 mismatches), so reading from it is
   // not a lossy projection: it returns the same bytes. The legacy JSONL/SQLite
   // store is kept as a derived fallback. Set OBS_DISABLE_SPINE_READS=1 to revert.
-  if (process.env.OBS_DISABLE_SPINE_READS !== "1") {
-    const spineEntries = readSessionEntries(sessionId);
-    if (spineEntries.length > 0) return spineEntries as unknown as TraceEntryLike[];
-  }
-
-  const sqliteEntries = readTraceEntriesFromSqlite(PROJECT_ROOT, sessionId);
-  if (sqliteEntries && sqliteEntries.length > 0) return sqliteEntries;
-
-  const traceFile = join(TRACE_DIR, `${sessionId}.jsonl`);
-  if (!existsSync(traceFile)) return [];
-  const raw = await readFile(traceFile, "utf-8");
-  return raw
-    .trim()
-    .split("\n")
-    .filter(Boolean)
-    .map((line) => {
-      try {
-        return normalizeAgentTurnRecord(JSON.parse(line)) as TraceEntryLike;
-      } catch {
-        return null;
-      }
-    })
-    .filter(Boolean) as TraceEntryLike[];
+  return traceRepository.loadEntries(sessionId);
 }
 
 async function readRunTraceEvents(runId: string): Promise<TraceEntryLike[]> {
   // Spine is authoritative for run events too (stored verbatim). Reversible via
   // OBS_DISABLE_SPINE_READS=1; legacy store is the derived fallback.
-  if (process.env.OBS_DISABLE_SPINE_READS !== "1") {
-    const spineEvents = readSpineRunEvents(runId);
-    if (spineEvents.length > 0) return spineEvents as unknown as TraceEntryLike[];
-  }
-
-  const sqliteEvents = readRunTraceEventsFromSqlite(PROJECT_ROOT, runId);
-  if (sqliteEvents && sqliteEvents.length > 0) return sqliteEvents;
-
-  const traceFile = join(RUN_TRACE_DIR, `${runId}.jsonl`);
-  if (!existsSync(traceFile)) return [];
-  const raw = await readFile(traceFile, "utf-8");
-  return raw
-    .trim()
-    .split("\n")
-    .filter(Boolean)
-    .map((line) => {
-      try {
-        return normalizeRunEventRecord(JSON.parse(line)) as TraceEntryLike;
-      } catch {
-        return null;
-      }
-    })
-    .filter(Boolean) as TraceEntryLike[];
+  return traceRepository.loadRunEvents(runId);
 }
 
 function traceInsightsFilters(searchParams: URLSearchParams): TraceInsightsFilters {
@@ -997,6 +926,29 @@ const server = createServer(
     }
 
     // GET /api/trace-index/status — SQLite observability index health and coverage
+    if (url.pathname === "/api/trace-trends" && req.method === "GET") {
+      try {
+        const requestedLimit = Number(url.searchParams.get("limit") || "30");
+        const trends = buildTraceTrendsFromSqlite(
+          PROJECT_ROOT,
+          traceInsightsFilters(url.searchParams),
+          Number.isFinite(requestedLimit) ? requestedLimit : 30,
+        );
+        if (!trends) {
+          sendText(
+            res,
+            "Trace trends require the SQLite index. Run pnpm traces:index.",
+            503,
+          );
+          return;
+        }
+        sendJson(res, trends);
+      } catch (err) {
+        sendText(res, `Error reading trace trends: ${err}`, 500);
+      }
+      return;
+    }
+
     if (url.pathname === "/api/trace-index/status" && req.method === "GET") {
       try {
         sendJson(res, getTraceIndexStatus(PROJECT_ROOT));
@@ -1035,6 +987,7 @@ const server = createServer(
         ).trim();
         const mode = (url.searchParams.get("mode") || "").trim();
         const model = (url.searchParams.get("model") || "").trim();
+        const skill = (url.searchParams.get("skill") || "").trim();
         const tier = (url.searchParams.get("tier") || "").trim();
         const q = (url.searchParams.get("q") || "").toLowerCase().trim();
         const runId = (url.searchParams.get("runId") || "").trim();
@@ -1045,7 +998,6 @@ const server = createServer(
           ? Math.max(1, Math.min(5000, Math.floor(limitRaw)))
           : 200;
 
-        let sessions = await readAllTraceSessions();
         const baseFilters: TraceSearchFiltersLike = {
           day,
           from,
@@ -1055,10 +1007,34 @@ const server = createServer(
           sessionPrefix,
           mode,
           model,
+          skill,
+          tier,
           q,
           runId,
         };
 
+        const sqlitePage = searchTraceSessionsFromSqlite(
+          PROJECT_ROOT,
+          baseFilters,
+          { limit, cursor },
+        );
+        if (sqlitePage) {
+          const items = sqlitePage.items.map(serializeTraceSearchSession);
+          if (withMeta) {
+            sendJson(res, {
+              items,
+              total: sqlitePage.total,
+              returned: items.length,
+              hasMore: sqlitePage.hasMore,
+              nextCursor: sqlitePage.nextCursor,
+            });
+          } else {
+            sendJson(res, items);
+          }
+          return;
+        }
+
+        let sessions = await readAllTraceSessions();
         sessions = sessions.filter((s) => matchesTraceFilters(s, baseFilters));
 
         if (tier && tier !== "all") {
@@ -1214,7 +1190,7 @@ const server = createServer(
     if (rlTrajectoryMatch && req.method === "GET") {
       try {
         const sessionId = rlTrajectoryMatch[1];
-        const trajectory = getRlTrajectory(createDiskStore(), sessionId);
+        const trajectory = getRlTrajectory(traceRepository, sessionId);
         if (!trajectory) {
           sendText(res, `No trajectory for session ${sessionId}`, 404);
           return;

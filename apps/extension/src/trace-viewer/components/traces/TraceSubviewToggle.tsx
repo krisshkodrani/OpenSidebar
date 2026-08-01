@@ -3,12 +3,11 @@ import { useStore } from "../../store";
 import type { Subview } from "../../store/types";
 import { Tabs, TabsList, TabsTrigger } from "@/ui/tabs";
 
-// The four diagnostic panes grouped behind the single "Debug" top tab. They
+// The three specialist panes grouped behind the single "Raw" top tab. They
 // stay first-class Subview values (deep links like #view=perception and the
 // 4-7 keyboard shortcuts keep working); only their tab presentation is grouped.
 const DEBUG_PANES: readonly Subview[] = [
   "perception",
-  "prompts",
   "logs",
   "skills",
 ];
@@ -27,15 +26,15 @@ export default function TraceSubviewToggle() {
   const isDebugActive = DEBUG_PANES.includes(activeSubview);
 
   const topTabs: { key: string; label: string }[] = [
-    { key: "story", label: "Story" },
+    { key: "story", label: "Evidence" },
+    { key: "turns", label: `Timeline (${turnCount})` },
+    { key: "prompts", label: "Model I/O" },
     { key: "plan", label: "Plan" },
-    { key: "turns", label: `Turns (${turnCount})` },
-    { key: "debug", label: "Debug" },
+    { key: "debug", label: "Raw" },
   ];
 
   const debugPanes: { key: Subview; label: string }[] = [
-    { key: "perception", label: `Perception (${perceptionCount})` },
-    { key: "prompts", label: "Prompts" },
+    { key: "perception", label: `Page state (${perceptionCount})` },
     { key: "logs", label: "Logs" },
     { key: "skills", label: "Skills" },
   ];

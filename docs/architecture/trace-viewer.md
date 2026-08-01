@@ -20,10 +20,10 @@ traces: every model call, tool call, screenshot, verification event, judge
 verdict, token count, and cost. It is a development tool — it never ships.
 
 <p align="center">
-  <img src="../assets/trace-viewer-story.png" alt="The Story subview: a run replayed as plan nodes with verifier confidence, a judge ACCEPT card with per-criterion reasoning and cost, and the completion event chain" width="900" />
+  <img src="../assets/trace-viewer-story.png" alt="The run narrative inside Evidence: plan nodes with verifier confidence, a judge ACCEPT card, and the completion event chain" width="900" />
 </p>
 
-<p align="center"><sub>The Story subview: one run replayed as its plan — each node with its verifier confidence, the judge's verdict card (model, confidence, tokens, cost, per-criterion reasoning), and the completion event chain.</sub></p>
+<p align="center"><sub>The run narrative inside Evidence: one run replayed as its plan — each node with verifier confidence, judge rationale, and the completion event chain.</sub></p>
 
 ### Reading Path
 
@@ -91,7 +91,7 @@ Two parallel stores: **session traces** are the executor's turn-by-turn record
 (one JSONL per session, plus an `index.jsonl` of session summaries), and
 **run traces** are the orchestrator's event stream (plan decomposition, node
 lifecycle, `judge_call`, completion) keyed by `runId`, stored under
-`traces/runs/` (the POST route is still `/run-traces`). The Story view joins
+`traces/runs/` (the POST route is still `/run-traces`). The Evidence view joins
 the two: run events give the skeleton, session turns fill the segments.
 
 ### The span spine
@@ -105,6 +105,16 @@ The spine also feeds the OTLP export path (see
 spine OTel export on boot and emits spans on every trace write.
 
 ## Storage Tiers
+
+OpenSidebar uses both SQLite and OpenTelemetry, for different jobs:
+
+- **OpenTelemetry** is the instrumentation/export contract. Runtime events are
+  mapped to spans, written to the local span spine, and can be exported over
+  OTLP.
+- **SQLite** is the rebuildable local query projection. The Viewer and Codex
+  use it for indexed session search, filters, aggregates, and daily trends.
+- **JSONL** remains the compatibility and recovery fallback for existing trace
+  files.
 
 - **Hot JSONL** — `traces/` and `run-traces/`, kept ~7 days for raw debugging.
 - **SQLite index** — `.artifacts/trace-index.sqlite`, the long-lived store
@@ -125,9 +135,10 @@ spine OTel export on boot and emits spans on every trace write.
 | `POST /ingest` | Structured dev logs from the extension |
 | `POST /traces`, `/traces/screenshot`, `/traces/session` | Session-trace writes (above) |
 | `POST /run-traces`, `/run-traces/session` | Run-trace writes (above) |
-| `GET /api/traces/search`, `/days`, `/models` | Session list, day buckets, model facets (viewer startup calls all three) |
+| `GET /api/traces/search`, `/days`, `/models` | Cursor-paginated session search plus day and model facets |
 | `GET /api/traces/:id`, screenshots | One session's entries + images |
 | `GET /api/trace-insights` | Aggregate metrics for Insights/Metrics |
+| `GET /api/trace-trends` | Daily success/cost/turn trends from one grouped SQLite query |
 | `GET /api/trace-index/status` | SQLite index coverage/status |
 | `GET /api/skills` | Skill activation events |
 | `GET /api/harness-ratchet` | E2E flaky/ratchet telemetry for the needs-review filter |
@@ -152,7 +163,7 @@ analysis/                  pure, side-effect-free computation:
   adjudication-export.ts     annotation → EvalCase for /golden
   analyze.ts, trajectory.ts, fleet.ts, timeline-diff.ts, …
 components/traces/         tabs and panels (one file per surface)
-components/traces/story/   the Story subview (see below)
+components/traces/story/   evidence board, run narrative, adjudication
 ```
 
 State flows one way: `api.ts` fetch → store slice → components. The
@@ -160,8 +171,24 @@ State flows one way: `api.ts` fetch → store slice → components. The
 structures, so it is unit-tested directly
 (`apps/extension/tests/trace-viewer/`).
 
-Navigation is hash-based (`#session=…&view=…&top=…`), so any viewer state is a
-shareable URL.
+Navigation is hash-based (`#session=…&view=…&turn=…`, `#run=…`, or
+`#top=…`), so the active evidence location is a shareable URL. Route parsing,
+serialization, and link construction share the pure contract in
+`packages/observability-schema/src/viewer-link.ts`; the Viewer and MCP therefore
+cannot drift on URL shape.
+
+### Codex integration
+
+The stdio observability MCP exposes trace search, compact investigation,
+comparison, trajectory, and detail tools. Install it into Codex with
+`pnpm run mcp:install`, verify registration with `pnpm run mcp:doctor`, and run
+the protocol/data smoke test with `pnpm run mcp:smoke`. Restart Codex after
+installation.
+
+Agent-facing session and investigation results include a `viewerUrl`.
+`investigate_trace` is the preferred first triage tool because it returns a
+bounded diagnosis and a turn-specific Viewer link; `get_trace` remains
+available when full raw context is actually required.
 
 ### Views
 
@@ -182,10 +209,25 @@ automatically (`App.tsx`).
 
 <p align="center"><sub>The needs-review filter on Runs. Every unreviewed failure, stop, or flagged run queues here until a human records a verdict.</sub></p>
 
-Opening a trace lands on the **Story** subview; the full set is **seven**
-subviews (`Subview` in `store/types.ts`): Story, Plan, Turns, Perception,
-Prompts, Skills, and Logs. (Legacy `overview` and `trajectory` hashes migrate
-to `story` and `turns`.)
+Opening a trace lands on the evidence-first `story` route. The UI presents five
+clear choices: **Evidence**, **Timeline**, **Model I/O**, **Plan**, and **Raw**.
+Model I/O is first-class because exact effective messages, responses, tool
+calls, and tool outcomes are core investigation evidence. Raw groups Page state,
+Logs, and Skills while retaining their first-class deep-link routes. Legacy
+`overview` and `trajectory` hashes still migrate to `story` and `turns`.
+
+The Model I/O route pairs each recorded request with its response and resulting
+tool executions. Capture badges distinguish recorded, truncated, redacted, and
+unavailable data; the viewer does not reconstruct provider envelopes or tool
+schemas that were not retained. Request- and response-specific links use
+`#session=...&view=prompts&turn=...&section=request|response`, allowing Codex to
+point at the exact artifact without copying a large prompt into conversation.
+
+`story/EvidenceBoard.tsx` selects at most five high-signal turns and renders the
+artifacts that are expensive to reconstruct in an agent conversation:
+screenshots, exact URLs, tool outcomes, failure excerpts, and correlated trace
+signals. Codex remains the query and synthesis surface; the Viewer is the cheap
+human evidence surface.
 
 ## Run Story and Adjudication
 

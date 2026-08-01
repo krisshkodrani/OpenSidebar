@@ -31,6 +31,7 @@ export interface TraceSearchFiltersLike {
   sessionPrefix?: string;
   mode?: string;
   model?: string;
+  skill?: string;
   q?: string;
   runId?: string;
   tier?: string;

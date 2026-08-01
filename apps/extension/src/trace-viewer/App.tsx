@@ -1,9 +1,11 @@
 import React, {
   useCallback,
   useEffect,
+  lazy,
   useMemo,
   useRef,
   useState,
+  Suspense,
 } from "react";
 import { useStore } from "./store";
 import { useTraceData } from "./hooks/useTraceData";
@@ -19,42 +21,25 @@ import TurnSearchBar from "./components/traces/TurnSearchBar";
 import TurnList from "./components/traces/TurnList";
 import TurnTimeline from "./components/traces/TurnTimeline";
 import TrajectoryScorecard from "./components/traces/TrajectoryScorecard";
-import PerceptionList from "./components/traces/PerceptionList";
-import LogList from "./components/traces/LogList";
 import StoryTab from "./components/traces/story/StoryTab";
-import PlanTab from "./components/traces/PlanTab";
-import SkillsTab from "./components/traces/SkillsTab";
-import PromptsTab from "./components/traces/PromptsTab";
 import RunsTableView from "./components/traces/RunsTableView";
-import AnalyticsTab from "./components/traces/AnalyticsTab";
 import SkillDetail from "./components/traces/SkillDetail";
 import { TRACE_SESSION_SEARCH_LIMIT } from "./api";
 import type { Subview, TopLevelView } from "./store/types";
 import { formatCount } from "./utils";
+import {
+  parseViewerHash,
+  serializeViewerHash,
+} from "@observability-schema";
 
-// URL hash helpers
-
-function parseHash(): {
-  session?: string;
-  view?: string;
-  top?: string;
-  turn?: number;
-  skill?: string;
-  review?: string;
-} {
-  const hash = window.location.hash.slice(1);
-  if (!hash) return {};
-  const params = new URLSearchParams(hash);
-  const turnStr = params.get("turn");
-  return {
-    session: params.get("session") || undefined,
-    view: params.get("view") || undefined,
-    top: params.get("top") || undefined,
-    turn: turnStr ? parseInt(turnStr, 10) : undefined,
-    skill: params.get("skill") || undefined,
-    review: params.get("review") || undefined,
-  };
-}
+const AnalyticsTab = lazy(() => import("./components/traces/AnalyticsTab"));
+const LogList = lazy(() => import("./components/traces/LogList"));
+const PerceptionList = lazy(
+  () => import("./components/traces/PerceptionList"),
+);
+const PlanTab = lazy(() => import("./components/traces/PlanTab"));
+const PromptsTab = lazy(() => import("./components/traces/PromptsTab"));
+const SkillsTab = lazy(() => import("./components/traces/SkillsTab"));
 
 const VALID_SUBVIEWS = new Set([
   "story",
@@ -98,10 +83,17 @@ export default function App() {
   const setActiveTopLevelView = useStore((s) => s.setActiveTopLevelView);
   const setFilter = useStore((s) => s.setFilter);
   const needsReview = useStore((s) => s.filters.needsReview);
+  const focusedTurn = useStore((s) => s.focusTurnNumber);
+  const focusedRunId = useStore((s) => s.filters.runId);
   const navigateToTurn = useStore((s) => s.navigateToTurn);
+  const navigateToPerception = useStore((s) => s.navigateToPerception);
+  const navigateToModelIO = useStore((s) => s.navigateToModelIO);
+  const modelIOFocus = useStore((s) => s.modelIOFocus);
   const viewerTheme = useStore((s) => s.viewerTheme);
   const [currentSkillId, setCurrentSkillId] = useState<string | null>(null);
   const [showShortcuts, setShowShortcuts] = useState<boolean>(false);
+  const [routeHydrated, setRouteHydrated] = useState(false);
+  const routeHydratedRef = useRef(false);
 
   // Apply viewer theme
   useEffect(() => {
@@ -124,60 +116,90 @@ export default function App() {
     return () => mq.removeEventListener("change", listener);
   }, [viewerTheme]);
 
-  useEffect(() => {
-    const { session, view, top, turn, skill, review } = parseHash();
-    if (skill) setCurrentSkillId(skill);
-    if (session) setCurrentSessionId(session);
-    if (view) {
-      const migrated = SUBVIEW_MIGRATIONS[view] ?? view;
+  const applyHashRoute = useCallback(() => {
+    const route = parseViewerHash(window.location.hash);
+    const replacesCurrentRoute =
+      routeHydratedRef.current || window.location.hash.length > 1;
+    setCurrentSkillId(route.skillId ?? null);
+    if (route.sessionId) {
+      setCurrentSessionId(route.sessionId);
+      setFilter("runId", "");
+      const migrated = route.view
+        ? (SUBVIEW_MIGRATIONS[route.view] ?? route.view)
+        : "story";
       if (VALID_SUBVIEWS.has(migrated)) {
         setActiveSubview(migrated as Subview);
       }
+    } else if (!route.skillId && replacesCurrentRoute) {
+      setCurrentSessionId(null);
     }
-    if (top) {
-      const migrated = TOP_LEVEL_MIGRATIONS[top] ?? top;
+    if (route.top) {
+      const migrated = TOP_LEVEL_MIGRATIONS[route.top] ?? route.top;
       if (VALID_TOP_LEVEL_VIEWS.has(migrated)) {
         setActiveTopLevelView(migrated as TopLevelView);
       }
+    } else if (!route.sessionId && !route.skillId && replacesCurrentRoute) {
+      setActiveTopLevelView("runs");
     }
-    // The old Attention inbox = Runs filtered to the adjudication queue, so
-    // legacy #top=attention links (and shared review=needs links) restore the
-    // needs-review chip.
-    if (review === "needs" || top === "attention") {
-      setFilter("needsReview", "on");
+    setFilter(
+      "needsReview",
+      route.review === "needs" || route.top === ("attention" as TopLevelView)
+        ? "on"
+        : "off",
+    );
+    if (route.runId) setFilter("runId", route.runId);
+    else if (replacesCurrentRoute) setFilter("runId", "");
+    if (route.turn && route.view === "prompts") {
+      navigateToModelIO(route.turn, route.section);
+    } else if (
+      route.turn &&
+      (route.view === "turns" || route.view === "perception")
+    ) {
+      requestAnimationFrame(() => {
+        if (route.view === "perception") navigateToPerception(route.turn!);
+        else navigateToTurn(route.turn!);
+      });
     }
-    if (turn && !isNaN(turn)) {
-      requestAnimationFrame(() => navigateToTurn(turn));
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+    routeHydratedRef.current = true;
+    setRouteHydrated(true);
+  }, [
+    navigateToPerception,
+    navigateToModelIO,
+    navigateToTurn,
+    setActiveSubview,
+    setActiveTopLevelView,
+    setCurrentSessionId,
+    setFilter,
+  ]);
 
   useEffect(() => {
-    const onHashChange = () => {
-      const { skill } = parseHash();
-      setCurrentSkillId(skill || null);
-    };
-    window.addEventListener("hashchange", onHashChange);
-    return () => window.removeEventListener("hashchange", onHashChange);
-  }, []);
+    applyHashRoute();
+    window.addEventListener("hashchange", applyHashRoute);
+    return () => window.removeEventListener("hashchange", applyHashRoute);
+  }, [applyHashRoute]);
 
   useEffect(() => {
-    const parts: string[] = [];
-    if (currentSkillId) {
-      parts.push(`skill=${currentSkillId}`);
-    } else {
-      if (currentSessionId) parts.push(`session=${currentSessionId}`);
-      else {
-        if (activeTopLevelView !== "runs")
-          parts.push(`top=${activeTopLevelView}`);
-        // Keep the adjudication-queue chip shareable/restorable via URL.
-        if (needsReview === "on" && activeTopLevelView === "runs")
-          parts.push("review=needs");
-      }
-      if (currentSessionId && activeSubview && activeSubview !== "story")
-        parts.push(`view=${activeSubview}`);
-    }
-    const newHash = parts.length > 0 ? `#${parts.join("&")}` : "";
+    if (!routeHydrated) return;
+    const newHash = serializeViewerHash({
+      skillId: currentSkillId ?? undefined,
+      sessionId: currentSessionId ?? undefined,
+      runId: !currentSessionId ? focusedRunId || undefined : undefined,
+      view: currentSessionId ? activeSubview : undefined,
+      top: !currentSessionId ? activeTopLevelView : undefined,
+      review:
+        !currentSessionId && needsReview === "on" ? "needs" : undefined,
+      turn:
+        currentSessionId &&
+        (activeSubview === "turns" || activeSubview === "perception")
+          ? focusedTurn ?? undefined
+          : activeSubview === "prompts"
+            ? modelIOFocus?.turnNumber
+            : undefined,
+      section:
+        currentSessionId && activeSubview === "prompts"
+          ? modelIOFocus?.section
+          : undefined,
+    });
     if (window.location.hash !== newHash) {
       window.history.replaceState(
         null,
@@ -190,7 +212,11 @@ export default function App() {
     activeSubview,
     activeTopLevelView,
     currentSkillId,
+    focusedRunId,
+    focusedTurn,
+    modelIOFocus,
     needsReview,
+    routeHydrated,
   ]);
 
   const closeSkill = useCallback(() => {
@@ -204,7 +230,9 @@ export default function App() {
         {currentSkillId ? (
           <SkillDetail skillId={currentSkillId} onBack={closeSkill} />
         ) : (
-          <ViewerBody setShowShortcuts={setShowShortcuts} />
+          <Suspense fallback={<LoadingSpinner message="Loading viewer..." />}>
+            <ViewerBody setShowShortcuts={setShowShortcuts} />
+          </Suspense>
         )}
       </ViewerErrorBoundary>
       {showShortcuts && (
@@ -213,7 +241,7 @@ export default function App() {
           <div>? toggle help</div>
           <div>Esc back to traces</div>
           <div>[ / ] previous / next trace</div>
-          <div>1-7 switch detail tabs</div>
+          <div>1-7 switch detail tabs · m Model I/O</div>
         </div>
       )}
     </div>
@@ -240,7 +268,7 @@ function ViewerBody({
   const setActiveTopLevelView = useStore((s) => s.setActiveTopLevelView);
   const setFilter = useStore((s) => s.setFilter);
   const saveScrollPosition = useStore((s) => s.saveScrollPosition);
-  const { sessions, refreshSessions } = useTraceData();
+  const { sessions, refreshSessions, loadMoreSessions } = useTraceData();
 
   const scrollContainerRef = useRef<HTMLDivElement>(null);
   // Live scroll position lives in a ref so scrolling never triggers a render.
@@ -335,22 +363,22 @@ function ViewerBody({
           setActiveSubview("story");
         } else if (e.key === "2") {
           e.preventDefault();
-          setActiveSubview("plan");
+          setActiveSubview("turns");
         } else if (e.key === "3") {
           e.preventDefault();
-          setActiveSubview("turns");
+          setActiveSubview("prompts");
         } else if (e.key === "4") {
           e.preventDefault();
-          setActiveSubview("perception");
+          setActiveSubview("plan");
         } else if (e.key === "5") {
           e.preventDefault();
-          setActiveSubview("prompts");
+          setActiveSubview("perception");
         } else if (e.key === "6") {
           e.preventDefault();
-          setActiveSubview("skills");
+          setActiveSubview("logs");
         } else if (e.key === "7") {
           e.preventDefault();
-          setActiveSubview("logs");
+          setActiveSubview("skills");
         } else if (e.key === "p" || e.key === "P") {
           e.preventDefault();
           setActiveSubview("plan");
@@ -360,6 +388,9 @@ function ViewerBody({
         } else if (e.key === "s" || e.key === "S") {
           e.preventDefault();
           setActiveSubview("skills");
+        } else if (e.key === "m" || e.key === "M") {
+          e.preventDefault();
+          setActiveSubview("prompts");
         }
       }
     };
@@ -471,7 +502,7 @@ function ViewerBody({
               &#8250;
             </button>
           </div>
-          <Tooltip content="Keyboard: 1-7 tabs, p=plan, t=turns, s=skills, Esc=back, [ ]=traces">
+          <Tooltip content="Keyboard: 1-7 tabs, m=Model I/O, p=plan, t=timeline, s=skills, Esc=back, [ ]=traces">
             <span className="ml-auto text-[9px] text-trace-muted font-mono cursor-help">
               Esc · [ ] · 1-7
             </span>
@@ -561,9 +592,11 @@ function ViewerBody({
           />
         </div>
       ) : (
-        <RunsTableView onSelectSession={selectSession} />
+        <RunsTableView
+          onSelectSession={selectSession}
+          onLoadMore={loadMoreSessions}
+        />
       )}
     </div>
   );
 }
-

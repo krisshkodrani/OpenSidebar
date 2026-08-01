@@ -236,13 +236,17 @@ export default function TurnCard({
             </span>
           }
           className="mb-2.5"
+          defaultOpen={toolExecutions.some((execution) => !execution.success)}
         >
           <TurnToolResultsSection toolExecutions={toolExecutions} />
         </CollapsibleSection>
 
         <CollapsibleSection
-          label={<span className="text-[11px]">Page Evidence</span>}
+          label={<span className="text-[11px]">Page evidence</span>}
           className="mb-2.5"
+          defaultOpen={evidenceSignals.some(
+            (signal) => signal.severity !== "info",
+          )}
         >
           <TurnSnapshotSection
             snapshot={snapshot}
