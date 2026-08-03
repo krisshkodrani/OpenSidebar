@@ -16,8 +16,8 @@ For sensitive security reports, use GitHub private vulnerability reporting for t
 
 ### API Key Storage
 
-- API keys are stored in Chrome extension storage.
-- Chrome encrypts this data at rest.
+- API keys are stored locally in `chrome.storage.local` and are not synced by OpenSidebar.
+- Treat the browser profile and operating-system account as part of the trust boundary; extension storage is not a dedicated secrets vault.
 - Keys are only sent to configured model providers over HTTPS for authentication.
 - OpenSidebar does not operate a hosted relay, telemetry endpoint, or crash reporter.
 
