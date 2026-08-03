@@ -21,7 +21,7 @@
   <a href="https://opensidebar.com/#developers"><b>Developer tour</b></a> ·
   <a href="#install-from-source">Install</a> ·
   <a href="docs/getting-started.md">Docs</a> ·
-  <a href="#development">Contribute</a>
+  <a href="CONTRIBUTING.md">Contribute</a>
 </p>
 
 <p align="center">
@@ -126,6 +126,22 @@ pnpm run test:e2e
 Generated reports and release media belong under `.artifacts/`; stable product
 and engineering documentation belongs under `docs/`.
 
+## Contributing
+
+Start with the [contributing guide](CONTRIBUTING.md). It explains the preferred
+change seams, owner- and RFC-gated areas, testing expectations, and pull request
+template. Before opening a PR, run:
+
+```bash
+pnpm run verify
+```
+
+Normal CI runs on pull requests with read-only repository permissions and no
+provider API keys. AI review is never automatic; only a maintainer can request
+it. For vulnerabilities, follow the private-reporting guidance in
+[SECURITY.md](SECURITY.md) rather than publishing sensitive details in an issue
+or pull request.
+
 ## Observability
 
 Every agent session can be inspected locally:
@@ -142,6 +158,7 @@ retention, adjudication, and maintenance commands.
 ## Documentation
 
 - [Getting started](docs/getting-started.md)
+- [Contributing](CONTRIBUTING.md)
 - [Developer guide](docs/developer-guide.md)
 - [Architecture overview](docs/architecture/overview.md)
 - [Runtime boundaries](docs/architecture/runtime-boundaries.md)
@@ -152,6 +169,8 @@ retention, adjudication, and maintenance commands.
 - [Release checklist](docs/release-checklist.md)
 - [Roadmap](docs/roadmap.md)
 - [Engineering RFCs](docs/engineering/rfcs/README.md)
+- [Security policy](SECURITY.md)
+- [Code of Conduct](CODE_OF_CONDUCT.md)
 
 ## License
 

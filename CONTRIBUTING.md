@@ -12,7 +12,7 @@ work doesn't fail review for a reason no document told you about.
 ## Quick Start
 
 1. Fork and clone the repository.
-2. Use Node.js 22+ and pnpm 11 (`corepack enable` gives you the pinned pnpm).
+2. Use Node.js 22+ and the repository-pinned pnpm 11.1.0 through Corepack.
 3. Run `corepack pnpm install`.
 4. Copy `.env.example` to `.env` if you want local provider-backed runs (BYOK —
    bring your own API key).
@@ -30,15 +30,28 @@ pnpm run verify
 
 `verify` runs RFC decision checks, lint, typecheck, the full unit/integration
 test suite, the production build, and a dist sanity check. **A green `verify` is
-the bar for every PR.** If it passes locally, review will not bounce you on
-mechanics — only on substance.
+the bar for every PR.** CI repeats the core checks; environment differences or
+the substance of the change may still require follow-up.
 
 E2E tests are separate (they need a real browser and an API key) and are not
-required for most PRs:
+required for most PRs. Run the narrowest relevant E2E test when changing browser
+interaction or runtime behavior:
 
 ```bash
 pnpm run test:e2e        # build + real-browser E2E
 ```
+
+## Pull Request Automation
+
+- Pull requests run normal CI: lint, typecheck, tests, build, and distribution
+  validation. The workflow has read-only repository permissions and receives no
+  model-provider API keys.
+- AI review and security review are not automatic. An AI review runs only when
+  a maintainer explicitly requests it; outside contributors cannot trigger
+  provider-backed review jobs.
+- Never put credentials, cookies, private page data, or unredacted traces in a
+  commit, issue, or pull request. Report vulnerabilities using
+  [`SECURITY.md`](SECURITY.md).
 
 ## Where Contributions Land Cleanly — The Seam Map
 
