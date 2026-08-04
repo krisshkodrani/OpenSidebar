@@ -935,7 +935,7 @@ Do NOT call done() until every planned step is complete.
         // LP-17: replace a byte-identical block with a truthful marker —
         // unchanged page text was measured at ~7% of a long run's input.
         const emission = decidePageContentEmission({
-          fullBlock: truncated,
+          fullBlock: sanitizeForPrompt(truncated),
           state: this.pageContentEmission,
           turn: this.turnCount,
           url: this.snapshot.url || "",
