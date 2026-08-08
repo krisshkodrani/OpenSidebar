@@ -17,6 +17,7 @@ import {
 } from "./log-server-helpers";
 import { estimateCostBreakdownUsd } from "../apps/extension/src/background/llm/pricing";
 import type { ProviderConfig } from "../apps/extension/src/background/llm/types";
+import type { TraceTrendPoint } from "@observability-schema";
 
 const DEFAULT_DB_PATH = ".artifacts/trace-index.sqlite";
 const HOT_TRACE_DAYS = 7;
@@ -1700,6 +1701,144 @@ export function buildTraceInsightsFromSqlite(
   if (!db) return null;
   try {
     return buildInsightsSql(db, filters);
+  } finally {
+    db.close();
+  }
+}
+
+export interface TraceSessionSearchPage {
+  items: TraceSessionLike[];
+  total: number;
+  hasMore: boolean;
+  nextCursor: string | null;
+}
+
+/** Indexed, cursor-based session search used by the Viewer list. */
+export function searchTraceSessionsFromSqlite(
+  projectRoot: string,
+  filters: TraceInsightsFilters,
+  options: { limit: number; cursor?: string; path?: string },
+): TraceSessionSearchPage | null {
+  const pathToDb = dbPath(projectRoot, options.path);
+  const db = openReadonly(pathToDb);
+  if (!db) return null;
+  try {
+    const { whereSql, params } = buildSessionCteFilter(filters);
+    const baseCondition = whereSql.replace(/^WHERE\s+/i, "");
+    const cursor = options.cursor ?? "";
+    const separator = cursor.indexOf("|");
+    const cursorStart = separator > 0 ? Number(cursor.slice(0, separator)) : NaN;
+    const cursorSession = separator > 0 ? cursor.slice(separator + 1) : "";
+    const cursorCondition = Number.isFinite(cursorStart)
+      ? "(s.start_time < @_cursorStart OR (s.start_time = @_cursorStart AND s.session_id > @_cursorSession))"
+      : "";
+    const pageWhere = [baseCondition, cursorCondition]
+      .filter(Boolean)
+      .join(" AND ");
+    const boundedLimit = Math.max(1, Math.min(500, Math.floor(options.limit)));
+    const queryParams = {
+      ...params,
+      _cursorStart: Number.isFinite(cursorStart) ? cursorStart : 0,
+      _cursorSession: cursorSession,
+      _pageLimit: boundedLimit + 1,
+    };
+    const rows = db
+      .prepare(
+        `SELECT session_id, raw_json, run_id, source, start_time, end_time,
+          outcome, query, start_url, turn_count, total_cost
+        FROM trace_sessions s
+        ${pageWhere ? `WHERE ${pageWhere}` : ""}
+        ORDER BY start_time DESC, session_id ASC
+        LIMIT @_pageLimit`,
+      )
+      .all(queryParams) as Array<Record<string, unknown>>;
+    const totalRow = db
+      .prepare(
+        `SELECT COUNT(*) AS count FROM trace_sessions s ${whereSql}`,
+      )
+      .get(params) as { count?: unknown };
+    const hasMore = rows.length > boundedLimit;
+    const pageRows = rows.slice(0, boundedLimit);
+    const items = pageRows.map((row) => ({
+      sessionId: asString(row.session_id),
+      runId: asString(row.run_id),
+      source: asString(row.source),
+      startTime: asNumber(row.start_time),
+      endTime: asNumber(row.end_time),
+      outcome: asString(row.outcome),
+      query: asString(row.query),
+      startUrl: asString(row.start_url),
+      turnCount: asNumber(row.turn_count),
+      metrics: { totalCost: asNumber(row.total_cost) },
+      ...parseJson<Record<string, unknown>>(row.raw_json, {}),
+    })) as TraceSessionLike[];
+    const last = items.at(-1);
+    return {
+      items,
+      total: asNumber(totalRow.count),
+      hasMore,
+      nextCursor:
+        hasMore && last
+          ? `${last.startTime ?? 0}|${last.sessionId ?? ""}`
+          : null,
+    };
+  } finally {
+    db.close();
+  }
+}
+
+/** Build the Analytics time series in one indexed SQL query. */
+export function buildTraceTrendsFromSqlite(
+  projectRoot: string,
+  filters: TraceInsightsFilters,
+  limit = 30,
+  path?: string,
+): TraceTrendPoint[] | null {
+  const pathToDb = dbPath(projectRoot, path);
+  const db = openReadonly(pathToDb);
+  if (!db) return null;
+  try {
+    const { whereSql, params } = buildSessionCteFilter({
+      ...filters,
+      day: undefined,
+    });
+    const boundedLimit = Math.max(1, Math.min(365, Math.floor(limit)));
+    const rows = db
+      .prepare(
+        `WITH filtered AS (
+          SELECT s.* FROM trace_sessions s ${whereSql}
+        ), recent_days AS (
+          SELECT
+            day,
+            COUNT(*) AS total_sessions,
+            SUM(CASE WHEN outcome IN ('completed', 'success') THEN 1 ELSE 0 END)
+              AS completed_sessions,
+            SUM(COALESCE(total_cost, 0)) AS total_cost,
+            AVG(COALESCE(turn_count, 0)) AS average_turns
+          FROM filtered
+          WHERE day IS NOT NULL AND day != ''
+          GROUP BY day
+          ORDER BY day DESC
+          LIMIT @_trendLimit
+        )
+        SELECT * FROM recent_days ORDER BY day ASC`,
+      )
+      .all({ ...params, _trendLimit: boundedLimit }) as Array<
+      Record<string, unknown>
+    >;
+    return rows.map((row) => {
+      const totalSessions = asNumber(row.total_sessions);
+      const completedSessions = asNumber(row.completed_sessions);
+      return {
+        day: asString(row.day),
+        totalSessions,
+        completedSessions,
+        successRate:
+          totalSessions > 0 ? completedSessions / totalSessions : 0,
+        recordedCost: asNumber(row.total_cost),
+        averageTurns: asNumber(row.average_turns),
+      };
+    });
   } finally {
     db.close();
   }

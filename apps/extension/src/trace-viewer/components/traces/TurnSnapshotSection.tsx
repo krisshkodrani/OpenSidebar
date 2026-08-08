@@ -96,50 +96,48 @@ export default function TurnSnapshotSection({
         </div>
       )}
       {screenshotSrc && (
-        <CollapsibleSection label="Screenshot" className="mt-1">
-          <div className="p-2">
-            {imgError || perception?.screenshotStatus === "pruned" ? (
-              <div className="rounded border border-dashed border-trace-border bg-trace-bg px-3 py-6 text-center text-xs text-trace-muted">
-                {screenshotUnavailableMessage(
-                  perception?.screenshotStatus,
-                  imgError,
-                )}
-              </div>
-            ) : (
-              <img
-                src={screenshotSrc}
-                alt="Turn screenshot"
-                className="max-w-full rounded border border-trace-border"
-                loading="lazy"
-                onError={() => setImgError(true)}
-              />
-            )}
-            {!imgError && perception?.screenshotStatus !== "pruned" ? (
-              panoramicShots.length > 0 ? (
-                <PanoramicThumbnails shots={panoramicShots} />
-              ) : legacyPanoramicShots.length > 0 ? (
-                <PanoramicThumbnails shots={legacyPanoramicShots} />
-              ) : null
-            ) : null}
-            {capture?.domDistillation && (
-              <CollapsibleSection label="DOM distillation" className="mt-2">
-                <pre className="p-2 text-[11px] font-mono text-trace-subtle whitespace-pre-wrap break-words max-h-[260px] overflow-y-auto scrollbar-thin bg-trace-accent/[0.04] rounded">
-                  {capture.domDistillation}
-                </pre>
-              </CollapsibleSection>
-            )}
-            {perception && (
-              <button
-                type="button"
-                className="inline-block mt-2 text-[11px] text-trace-accent-light hover:underline cursor-pointer"
-                onClick={() => navigateToPerception(turnNumber)}
-                title="View full perception details"
-              >
-                View perception observation &rarr;
-              </button>
-            )}
-          </div>
-        </CollapsibleSection>
+        <div className="mt-1 rounded border border-trace-border bg-trace-bg p-2">
+          {imgError || perception?.screenshotStatus === "pruned" ? (
+            <div className="rounded border border-dashed border-trace-border px-3 py-6 text-center text-xs text-trace-muted">
+              {screenshotUnavailableMessage(
+                perception?.screenshotStatus,
+                imgError,
+              )}
+            </div>
+          ) : (
+            <img
+              src={screenshotSrc}
+              alt="Turn screenshot"
+              className="max-w-full rounded border border-trace-border"
+              loading="lazy"
+              onError={() => setImgError(true)}
+            />
+          )}
+          {!imgError && perception?.screenshotStatus !== "pruned" ? (
+            panoramicShots.length > 0 ? (
+              <PanoramicThumbnails shots={panoramicShots} />
+            ) : legacyPanoramicShots.length > 0 ? (
+              <PanoramicThumbnails shots={legacyPanoramicShots} />
+            ) : null
+          ) : null}
+          {capture?.domDistillation && (
+            <CollapsibleSection label="DOM distillation" className="mt-2">
+              <pre className="p-2 text-[11px] font-mono text-trace-subtle whitespace-pre-wrap break-words max-h-[260px] overflow-y-auto scrollbar-thin bg-trace-accent/[0.04] rounded">
+                {capture.domDistillation}
+              </pre>
+            </CollapsibleSection>
+          )}
+          {perception && (
+            <button
+              type="button"
+              className="inline-block mt-2 text-[11px] text-trace-accent-light hover:underline cursor-pointer"
+              onClick={() => navigateToPerception(turnNumber)}
+              title="View full page-state details"
+            >
+              Inspect full page state &rarr;
+            </button>
+          )}
+        </div>
       )}
     </div>
   );

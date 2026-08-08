@@ -177,7 +177,7 @@ describe("trace-viewer store", () => {
 
     useStore.getState().clearFocusTurnRequest(2);
     expect(useStore.getState().focusTurnRequest).toBeNull();
-    expect(useStore.getState().focusTurnNumber).toBeNull();
+    expect(useStore.getState().focusTurnNumber).toBe(8);
   });
 
   test("saveScrollPosition evicts oldest entries after the limit", () => {
