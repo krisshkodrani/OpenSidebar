@@ -20,9 +20,13 @@
   --radius-sm: 10px;
   --maxw: 1120px;
   --pad: clamp(20px, 5vw, 40px);
-  --shadow-card: 0 1px 2px rgba(20, 21, 35, 0.05), 0 6px 24px -8px rgba(20, 21, 35, 0.1);
-  --font: "Segoe UI", system-ui, -apple-system, "Helvetica Neue", Arial,
-    sans-serif;
+  --shadow-card:
+    0 1px 2px rgba(20, 21, 35, 0.05), 0 6px 24px -8px rgba(20, 21, 35, 0.1);
+  --font:
+    "Segoe UI", system-ui, -apple-system, "Helvetica Neue", arial, sans-serif;
+  --serif:
+    "Iowan Old Style", "Palatino Linotype", "Book Antiqua", palatino, georgia,
+    serif;
   --mono: "SFMono-Regular", "Consolas", "Liberation Mono", Menlo, monospace;
 }
 
@@ -78,10 +82,11 @@ a:hover {
 h1,
 h2,
 h3 {
-  line-height: 1.12;
-  letter-spacing: -0.02em;
+  font-family: var(--serif);
+  line-height: 1.08;
+  letter-spacing: -0.035em;
   margin: 0;
-  font-weight: 700;
+  font-weight: 500;
 }
 
 img,
@@ -231,11 +236,14 @@ section {
 }
 .section-head h2 {
   font-size: clamp(1.7rem, 3.4vw, 2.5rem);
+  line-height: 1.04;
   margin-top: 12px;
 }
 .section-head p {
   color: var(--grey);
-  font-size: 1.06rem;
+  font-family: var(--serif);
+  font-size: 1.12rem;
+  line-height: 1.55;
   margin: 14px 0 0;
 }
 .section-center {
@@ -254,7 +262,9 @@ section {
   align-items: center;
 }
 .hero h1 {
-  font-size: clamp(2.4rem, 5.4vw, 4rem);
+  font-size: clamp(2.75rem, 5.9vw, 4.6rem);
+  line-height: 0.98;
+  letter-spacing: -0.055em;
   margin: 16px 0 0;
 }
 .hero h1 .grad {
@@ -262,10 +272,14 @@ section {
   -webkit-background-clip: text;
   background-clip: text;
   color: transparent;
+  font-style: italic;
+  font-weight: 400;
 }
 .hero-sub {
   color: var(--grey);
-  font-size: clamp(1.02rem, 1.6vw, 1.2rem);
+  font-family: var(--serif);
+  font-size: clamp(1.1rem, 1.8vw, 1.3rem);
+  line-height: 1.55;
   margin: 20px 0 0;
   max-width: 46ch;
 }
@@ -393,6 +407,9 @@ section {
   grid-template-columns: 1fr 1.4fr;
   gap: 20px;
 }
+.qs-grid > * {
+  min-width: 0;
+}
 .card {
   background: var(--navy-2);
   border: 1px solid var(--line);
@@ -447,7 +464,7 @@ pre.code .p {
 }
 @media (max-width: 820px) {
   .qs-grid {
-    grid-template-columns: 1fr;
+    grid-template-columns: minmax(0, 1fr);
   }
 }
 
@@ -548,7 +565,8 @@ pre.code .p {
   border: 1px solid var(--line);
   border-radius: 4px 14px 14px 14px;
   padding: 12px 16px;
-  font-size: 0.92rem;
+  font-family: var(--serif);
+  font-size: 1rem;
   color: var(--grey);
   font-style: italic;
 }
@@ -692,9 +710,11 @@ pre.code .p {
 }
 .byok .note {
   color: var(--grey);
+  font-family: var(--serif);
   max-width: 60ch;
   margin: 0 auto;
-  font-size: 0.98rem;
+  font-size: 1.06rem;
+  line-height: 1.55;
 }
 
 /* ---------- developers ---------- */

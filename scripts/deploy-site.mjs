@@ -47,7 +47,9 @@ try {
 }
 if (!BUCKET) fail("SITE_S3_BUCKET is required.");
 if (!DIST_ID && !args.has("--skip-invalidate")) {
-  fail("SITE_CLOUDFRONT_DISTRIBUTION_ID is required (or pass --skip-invalidate).");
+  fail(
+    "SITE_CLOUDFRONT_DISTRIBUTION_ID is required (or pass --skip-invalidate).",
+  );
 }
 
 function run(cmd, cmdArgs, opts = {}) {
@@ -81,6 +83,40 @@ if (!args.has("--skip-build")) {
 }
 if (!fs.existsSync(DIST)) fail(`Build output not found at ${DIST}.`);
 
+function validateReferencedMedia() {
+  const htmlFiles = [];
+  const pending = [DIST];
+  while (pending.length > 0) {
+    const dir = pending.pop();
+    for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
+      const entryPath = path.join(dir, entry.name);
+      if (entry.isDirectory()) pending.push(entryPath);
+      else if (entry.name.endsWith(".html")) htmlFiles.push(entryPath);
+    }
+  }
+
+  const missing = new Set();
+  for (const htmlFile of htmlFiles) {
+    const html = fs.readFileSync(htmlFile, "utf8");
+    for (const match of html.matchAll(
+      /(?:data-src|poster|src)=["'](\/media\/[^"'?#]+)["']/g,
+    )) {
+      const mediaPath = path.join(DIST, ...match[1].split("/").filter(Boolean));
+      if (!fs.existsSync(mediaPath)) missing.add(match[1]);
+    }
+  }
+
+  if (missing.size > 0) {
+    fail(
+      "Built HTML references missing media:\n     " +
+        [...missing].join("\n     ") +
+        "\n  Stage the current media manifest or deploy without --skip-media.",
+    );
+  }
+}
+
+validateReferencedMedia();
+
 const s3 = (p) => `s3://${BUCKET}${p}`;
 const IMMUTABLE = "public,max-age=31536000,immutable";
 const SHORT = "public,max-age=300,must-revalidate";
@@ -88,48 +124,85 @@ const SHORT = "public,max-age=300,must-revalidate";
 // ---------- 3. tiered sync ----------
 console.log("\n== Sync: immutable assets ==");
 run("aws", [
-  "s3", "sync", path.join(DIST, "assets"), s3("/assets"),
-  "--cache-control", IMMUTABLE, "--delete",
+  "s3",
+  "sync",
+  path.join(DIST, "assets"),
+  s3("/assets"),
+  "--cache-control",
+  IMMUTABLE,
+  "--delete",
   ...(DRY ? ["--dryrun"] : []),
 ]);
 
 console.log("\n== Sync: immutable media (mp4) ==");
 run("aws", [
-  "s3", "sync", path.join(DIST, "media"), s3("/media"),
-  "--cache-control", IMMUTABLE,
-  "--exclude", "*", "--include", "*.mp4",
-  "--content-type", "video/mp4",
+  "s3",
+  "sync",
+  path.join(DIST, "media"),
+  s3("/media"),
+  "--cache-control",
+  IMMUTABLE,
+  "--exclude",
+  "*",
+  "--include",
+  "*.mp4",
+  "--content-type",
+  "video/mp4",
   ...(DRY ? ["--dryrun"] : []),
 ]);
 console.log("\n== Sync: immutable media (posters) ==");
 run("aws", [
-  "s3", "sync", path.join(DIST, "media"), s3("/media"),
-  "--cache-control", IMMUTABLE,
-  "--exclude", "*", "--include", "*.jpg",
-  "--content-type", "image/jpeg",
+  "s3",
+  "sync",
+  path.join(DIST, "media"),
+  s3("/media"),
+  "--cache-control",
+  IMMUTABLE,
+  "--exclude",
+  "*",
+  "--include",
+  "*.jpg",
+  "--content-type",
+  "image/jpeg",
   ...(DRY ? ["--dryrun"] : []),
 ]);
 
 console.log("\n== Sync: short-cache root (html, robots, icons, og) ==");
 run("aws", [
-  "s3", "sync", DIST, s3("/"),
-  "--cache-control", SHORT,
-  "--exclude", "assets/*", "--exclude", "media/*",
+  "s3",
+  "sync",
+  DIST,
+  s3("/"),
+  "--cache-control",
+  SHORT,
+  "--exclude",
+  "assets/*",
+  "--exclude",
+  "media/*",
   ...(DRY ? ["--dryrun"] : []),
 ]);
 
 // Extensionless copies for subpages. CloudFront maps 403 (missing key) to
-// /index.html, so /walkthrough would silently serve the landing page unless
-// an object exists at that exact key.
-const CLEAN_URL_PAGES = ["walkthrough"];
+// /index.html, so a clean subpage URL would silently serve the landing page
+// unless an object exists at that exact key.
+const CLEAN_URL_PAGES = ["walkthrough", "ideas", "ideas/done-means-verified"];
 for (const page of CLEAN_URL_PAGES) {
-  const src = path.join(DIST, `${page}.html`);
-  if (!fs.existsSync(src)) fail(`Expected ${page}.html in dist for clean-URL copy.`);
+  const src =
+    page === "ideas"
+      ? path.join(DIST, "ideas", "index.html")
+      : path.join(DIST, `${page}.html`);
+  if (!fs.existsSync(src))
+    fail(`Expected ${path.relative(DIST, src)} in dist for clean-URL copy.`);
   console.log(`\n== Clean URL: /${page} ==`);
   run("aws", [
-    "s3", "cp", src, s3(`/${page}`),
-    "--cache-control", SHORT,
-    "--content-type", "text/html",
+    "s3",
+    "cp",
+    src,
+    s3(`/${page}`),
+    "--cache-control",
+    SHORT,
+    "--content-type",
+    "text/html",
     ...(DRY ? ["--dryrun"] : []),
   ]);
 }
@@ -138,9 +211,17 @@ for (const page of CLEAN_URL_PAGES) {
 if (!args.has("--skip-invalidate")) {
   console.log("\n== CloudFront invalidation (short-cache paths) ==");
   run("aws", [
-    "cloudfront", "create-invalidation",
-    "--distribution-id", DIST_ID,
-    "--paths", "/", "/index.html", "/robots.txt", "/og.png", "/favicon.png", "/logo.png",
+    "cloudfront",
+    "create-invalidation",
+    "--distribution-id",
+    DIST_ID,
+    "--paths",
+    "/",
+    "/index.html",
+    "/robots.txt",
+    "/og.png",
+    "/favicon.png",
+    "/logo.png",
     ...CLEAN_URL_PAGES.flatMap((p) => [`/${p}`, `/${p}.html`]),
   ]);
 }
