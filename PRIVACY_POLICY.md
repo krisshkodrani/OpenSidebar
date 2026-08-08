@@ -1,7 +1,7 @@
 # Privacy Policy
 
 **OpenSidebar** - Chrome Browser Extension
-Last updated: 2026-07-29
+Last updated: 2026-08-08
 
 ---
 
@@ -9,11 +9,16 @@ Last updated: 2026-07-29
 
 OpenSidebar is an open-source browser extension that runs AI-powered tasks in your browser. It follows a **bring-your-own-key (BYOK)** model: you provide your own model-provider API key, and AI processing happens through the provider account you configure.
 
-- We do **not** collect, store, or transmit your personal data to OpenSidebar servers.
-- We do **not** run analytics, tracking, crash reporting, or a hosted model relay.
+- Local mode remains available and sends model requests directly to the provider you configure.
+- Account-linked Cloud mode is optional and requires explicit sign-in and activation. It stores your provider credential as KMS-backed encrypted ciphertext and relays model requests without retaining their content.
+- The separate public **OpenSidebar Playground** service is optional. When you choose
+  to sign in there, it processes your email address, a secure session record,
+  minimal quota counters, and Playground run state; it does not receive extension
+  prompts, answers, traces, screenshots, or page content unless you explicitly use Cloud mode for an extension task.
+- We do **not** run advertising analytics, behavioral tracking, or crash reporting. The optional Cloud relay processes task content only while forwarding a request to your selected provider.
 - This release includes an optional local-only reliability-summary preview. It is off by default, and uploading is not enabled in the published build.
-- Task context is sent directly from the extension to the model provider you configure.
-- Extension settings, keys, and diagnostic data stay in browser storage unless you run the optional local development log server.
+- Task context is sent directly to the configured provider in Local mode, or through the OpenSidebar relay to that provider in explicitly activated Cloud mode.
+- Device-local safety settings, traces, authentication tokens, and diagnostics remain local. Only the closed safe-preference schema is eligible for Cloud synchronization.
 
 ---
 
@@ -39,8 +44,9 @@ Extension data is stored in your browser using Chrome's built-in storage APIs (`
 
 | Data | Storage | Purpose |
 | --- | --- | --- |
-| Provider API keys | `chrome.storage.local` | Authenticating with configured model-provider APIs |
-| User settings | `chrome.storage.sync` | Preferences such as max turns, theme, provider mode, model choices, and safety settings |
+| Provider API keys | `chrome.storage.local` in Local mode | Authenticating directly with configured model-provider APIs. Explicit Cloud migration removes a local key only after the encrypted cloud copy is verified and you activate it |
+| User settings | `chrome.storage.sync` | Local settings. A closed subset of non-safety preferences may also sync to your OpenSidebar account after sign-in |
+| OpenSidebar device session | `chrome.storage.local` | Revocable opaque access/refresh material for optional Cloud sign-in; never a provider credential |
 | Agent session state | `chrome.storage.session` | Temporary state during active tasks |
 | Workspace data | `chrome.storage.local` | Tab group organization |
 | Saved prompts | `chrome.storage.local` | Quick-access prompt templates you create |
@@ -71,15 +77,9 @@ Requests may contain:
 
 **Personal profile and sensitive data.** When the personal-profile feature is enabled, the digested facts and preferences relevant to a task are included in the request to your configured model provider as task context. Items you mark **sensitive** are **excluded by default** and are sent only when you give explicit, per-task consent for the specific field that needs them. Sensitive items and your raw profile notes are stored encrypted at rest on your device (see the storage table above).
 
-Requests are sent over HTTPS to the selected provider endpoint. The selected provider's privacy policy governs how that provider handles API traffic.
+In Local mode, requests are sent over HTTPS directly to the selected provider. In Cloud mode, they are sent over HTTPS to `opensidebar.com`, decrypted only as needed to authenticate the provider call, and streamed to the same selected provider. The relay does not persist prompts, messages, screenshots, tool schemas/results, responses, or reasoning. It retains only coarse operational metadata such as provider/model identifier, status class, token counts, latency bucket, and monthly quota totals. The selected provider's privacy policy governs how that provider handles API traffic in both modes.
 
-The published extension does **not** send data to any first-party OpenSidebar
-service. It contains no OpenSidebar telemetry upload endpoint, hosted model
-relay, analytics client, or crash reporter.
-
-OpenSidebar maintains isolated internal infrastructure for controlled
-development testing. Its endpoint is not compiled into the published extension,
-and the released extension has no credentials or route that can send data to it.
+Cloud mode supports OpenRouter and Fireworks during limited testing. It does not silently fall back to a local key when the Cloud service is unavailable.
 
 ### Optional Local Log Server
 
@@ -91,10 +91,25 @@ If you also expose traces to a local coding agent through the optional observabi
 
 ## What Data We Collect
 
-**None from the published extension.** We do not receive its API keys, browsing
-data, tasks, conversation history, traces, logs, or local reliability summaries.
-The optional reliability-summary preview stores data only in your browser and
-provides controls to inspect and clear it.
+Without Cloud mode, we do not receive extension API keys, browsing data, tasks, conversation history, traces, logs, or local reliability summaries. The optional reliability-summary preview stores data only in your browser and provides controls to inspect and clear it.
+
+When you opt into Cloud mode, the account service stores your Cognito subject, email address, registered-device metadata, revocable session hashes, safe preferences, encrypted provider credentials, and coarse relay usage metadata. Relay content is processed transiently and is not stored. Credential records remain until you delete them; device sessions can be individually revoked or revoked together. Full account deletion is handled manually during the limited test while the self-service account lifecycle is completed.
+
+### Optional OpenSidebar Playground
+
+The public Playground at `opensidebar.com/playground` is a distinct, opt-in web
+service. It uses passwordless email sign-in and maintains a secure, host-only
+session cookie for up to 90 days. It stores the Cognito account subject, session
+revocation and expiry metadata, bounded per-account quota counters, and
+the minimal state needed to run a selected simulated scenario. A target page at
+`play.opensidebar.com` receives a separate short-lived target-session cookie;
+it never receives the apex sign-in cookie.
+
+Playground state is retained only for its short run lifetime, except for limited
+session and quota records needed for security and abuse prevention. We do not
+use Playground data for advertising, do not sell it, and do not collect agent task
+text, agent answers, browser DOM, screenshots, traces, browsing history,
+provider credentials, or unrelated page content through this service.
 
 ---
 
@@ -115,13 +130,14 @@ provides controls to inspect and clear it.
 | `downloads` | Agent tool: downloading files when requested |
 | `cookies` | Agent tool: reading or setting cookies when requested |
 | `history` | Agent tool: searching browser history when requested |
+| `identity` | Opening the optional Cognito PKCE sign-in flow and returning its authorization result to the extension |
 | `<all_urls>` | The agent can interact with websites you choose to automate |
 
 ---
 
 ## Third-Party Services
 
-The extension communicates with the model provider endpoints you configure, using your own API keys. We have no affiliation with those providers beyond using their public APIs. Your relationship with each provider is governed by that provider's terms of service and privacy policy.
+The extension communicates with the model provider endpoints you configure, either directly in Local mode or through the optional OpenSidebar Cloud relay, using your own API keys. Account authentication uses Amazon Cognito and credential envelope encryption uses AWS KMS. We have no affiliation with model providers beyond using their public APIs. Your relationship with each provider is governed by that provider's terms and privacy policy.
 
 ---
 
