@@ -70,6 +70,7 @@ OpenSidebar-deck.md
 
 # Local artifacts
 .artifacts/
+.worktrees/
 .promptfoo/
 /outputs/
 infra/telemetry/cdk.out/

@@ -1,0 +1,14 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "composite": true,
+    "noEmit": true,
+    "types": [],
+    "moduleResolution": "Bundler"
+  },
+  "include": ["src/**/*", "vite.config.ts"],
+  "references": [
+    { "path": "../../packages/sandbox-contracts" },
+    { "path": "../../packages/trace-sync" }
+  ]
+}

@@ -582,13 +582,27 @@ function extractExhaustiveScope(text: string): {
     "matter",
   ]);
   const patterns = [
-    /\b(?:review|inspect|check|open|browse|read|visit|compare|analyze)\s+(?:all|every|each(?:\s+of)?)\s+(?:(\d{1,3})\s+)?([a-z][a-z0-9\s-]{2,40}?)(?=\s+(?:on|in|for|from|with|then|and)\b|[,.]|$)/i,
-    /\b(?:all|every|each(?:\s+of)?)\s+(?:(\d{1,3})\s+)?([a-z][a-z0-9\s-]{2,40}?)(?=\s+(?:on|in|for|from|with|then|and)\b|[,.]|$)/i,
+    {
+      pattern:
+        /\b(?:review|inspect|check|open|browse|read|visit|compare|analyze)\s+(?:all|every|each(?:\s+of)?)\s+(?:(\d{1,3})\s+)?([a-z][a-z0-9\s-]{2,40}?)(?=\s+(?:on|in|for|from|with|then|and)\b|[,.]|$)/i,
+      rejectBeneficiaryPhrase: false,
+    },
+    {
+      pattern:
+        /\b(?:all|every|each(?:\s+of)?)\s+(?:(\d{1,3})\s+)?([a-z][a-z0-9\s-]{2,40}?)(?=\s+(?:on|in|for|from|with|then|and)\b|[,.]|$)/i,
+      rejectBeneficiaryPhrase: true,
+    },
   ];
 
-  for (const pattern of patterns) {
+  for (const { pattern, rejectBeneficiaryPhrase } of patterns) {
     const match = text.match(pattern);
     if (!match) continue;
+    if (
+      rejectBeneficiaryPhrase &&
+      /\b(?:for|to)\s*$/i.test(text.slice(0, match.index ?? 0))
+    ) {
+      continue;
+    }
     const rawLabel = normalize(match[2] || "");
     if (!rawLabel) continue;
     const label = rawLabel

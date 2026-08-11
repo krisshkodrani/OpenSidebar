@@ -126,6 +126,11 @@
       // on a timer (no user action), which changes the DOM fingerprint and gives
       // the passive monitor a real change to observe and report.
       window.__restockState = "out";
+      window.__cartCount = 0;
+      document.getElementById("add").addEventListener("click", () => {
+        window.__cartCount += 1;
+        document.getElementById("add").textContent = `Added to cart (${window.__cartCount})`;
+      });
       const RESTOCK_DELAY_MS = Number(
         new URLSearchParams(location.search).get("delayMs") || 4000,
       );

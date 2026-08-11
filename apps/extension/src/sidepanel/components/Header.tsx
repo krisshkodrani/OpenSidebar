@@ -6,6 +6,7 @@ interface Props {
   onOpenWebsiteSkills: () => void;
   modeBadgeLabel?: string | null;
   recordingActive?: boolean;
+  connectionLabel?: string;
 }
 
 export function Header({
@@ -13,6 +14,7 @@ export function Header({
   onOpenWebsiteSkills,
   modeBadgeLabel,
   recordingActive,
+  connectionLabel,
 }: Props) {
   return (
     <header className="sticky top-0 z-10 grid grid-cols-[1fr_auto_1fr] items-center border-b border-warm-100 bg-warm-50 px-3 py-1.5 dark:border-warm-800 dark:bg-warm-900">
@@ -29,6 +31,18 @@ export function Header({
       </span>
 
       <div className="flex items-center gap-0.5 justify-self-end">
+        {connectionLabel ? (
+          <button
+            type="button"
+            onClick={onOpenSettings}
+            className="mr-1 inline-flex max-w-24 items-center gap-1 truncate rounded-full bg-warm-100 px-2 py-1 text-[10px] font-medium text-warm-600 dark:bg-warm-800 dark:text-warm-300"
+            title={connectionLabel}
+            aria-label={`Account status: ${connectionLabel}`}
+          >
+            <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-current" />
+            <span className="truncate">{connectionLabel}</span>
+          </button>
+        ) : null}
         <button
           type="button"
           onClick={onOpenWebsiteSkills}

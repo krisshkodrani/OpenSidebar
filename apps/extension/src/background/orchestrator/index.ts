@@ -12,12 +12,7 @@ import {
   TaskCompletionMessage,
   ToolName,
 } from "../../types";
-import {
-  createHttpRunTraceWriter,
-  logger,
-  RunManifest,
-  RunTraceWriter,
-} from "../../utils";
+import { logger, RunManifest } from "../../utils";
 import {} from "../../utils/provider-keys";
 import {
   buildPersonalProfilePlannerContext,
@@ -40,7 +35,6 @@ import {
   qualifiesForDirectSingleNode,
 } from "./planner";
 
-import type { TokenUsage } from "../llm/types";
 import {
   assessTaskContractCoverage,
   buildTaskContract,
@@ -114,7 +108,7 @@ import {
   selectResumeOwnedTab,
   touchTaskTab,
 } from "./tab-coordination";
-import { buildTabCoordinationTraceData as buildTaskTabCoordinationTraceData } from "./tab-coordination-trace";
+import { OrchestratorTraceEmitter } from "./trace-emitter";
 import {
   classifyVerificationRisk,
   NodeVerificationResult,
@@ -142,9 +136,14 @@ import {
 import {
   summaryOfCompletedNodes,
   isUnpenalizedGoalShortcutSkip,
-  isActionOrMutationNode,
   appendRecentSideEffects,
 } from "./node-heuristics";
+import {
+  classifyNodeEffect,
+  isMutationEffect,
+  isSafeToSuppressAfterRootCompletion,
+} from "./node-effect-policy";
+import { reconcileRootCompletion } from "./root-reconciliation";
 import {
   buildTaskCompletedEventPayload,
   deriveCompletionStatus,
@@ -325,26 +324,7 @@ export class Orchestrator {
   }>();
   private pendingInteractionTimers = new PendingInteractionTimers();
   private fleetTelemetryByTaskId = new Map<string, TaskFleetTelemetryState>();
-  private traceWriter: RunTraceWriter = createHttpRunTraceWriter();
-  private traceFallbackWriter = new RunTraceWriter(async (record) => {
-    if (record.kind === "manifest") {
-      logger.debug("trace", "Run trace manifest", {
-        runId: record.manifest.runId,
-        source: record.manifest.source,
-        environment: record.manifest.environment,
-        promptCount: record.manifest.promptSet.length,
-        taskId: record.manifest.taskId,
-        workspaceId: record.manifest.workspaceId,
-      });
-      return;
-    }
-    logger.debug("trace", "Run trace event", {
-      runId: record.event.runId,
-      type: record.event.type,
-      role: record.event.role,
-      turn: record.event.turn,
-    });
-  });
+  private trace = new OrchestratorTraceEmitter();
   private deps: Required<OrchestratorDeps>;
 
   constructor(deps: OrchestratorDeps = {}) {
@@ -373,14 +353,7 @@ export class Orchestrator {
   }
 
   private async emitTraceManifest(manifest: RunManifest): Promise<void> {
-    try {
-      await this.traceWriter.emitManifest(manifest);
-    } catch (error) {
-      logger.debug("trace", "Failed to emit orchestrator trace manifest", {
-        error: error instanceof Error ? error.message : String(error),
-      });
-      await this.traceFallbackWriter.emitManifest(manifest);
-    }
+    await this.trace.emitManifest(manifest);
   }
 
   private emitTraceEvent(
@@ -392,29 +365,7 @@ export class Orchestrator {
     data?: Record<string, unknown>,
     role?: "planner" | "executor" | "verifier" | "system",
   ): void {
-    if (!task?.runId) return;
-    void this.traceWriter
-      .emitEvent({
-        runId: task.runId,
-        correlationId: task.runId,
-        type,
-        role,
-        data,
-      })
-      .catch((error) => {
-        logger.debug("trace", "Failed to emit orchestrator trace event", {
-          runId: task.runId,
-          type,
-          error: error instanceof Error ? error.message : String(error),
-        });
-        void this.traceFallbackWriter.emitEvent({
-          runId: task.runId!,
-          correlationId: task.runId,
-          type,
-          role,
-          data,
-        });
-      });
+    this.trace.emitEvent(task, type, data, role);
   }
 
   private emitCompletionScopeTransition(
@@ -436,40 +387,7 @@ export class Orchestrator {
       skippedNodeIds?: string[];
     },
   ): void {
-    this.emitTraceEvent(
-      task,
-      "completion_scope_transition",
-      {
-        taskId: task?.id,
-        scope: data.scope,
-        status: data.status,
-        nodeId: data.nodeId,
-        reason: data.reason,
-        ...(data.envelope
-          ? {
-              resultId: data.envelope.resultId,
-              source: data.envelope.source,
-              contractKind: data.envelope.contractKind,
-              evidenceKeys: data.envelope.evidenceKeys,
-            }
-          : {}),
-        ...(data.skippedNodeIds ? { skippedNodeIds: data.skippedNodeIds } : {}),
-        ...(task?.nodes
-          ? {
-              pendingNodes: task.nodes.filter(
-                (node) => node.status === "pending",
-              ).length,
-              runningNodes: task.nodes.filter(
-                (node) => node.status === "running",
-              ).length,
-              completedNodes: task.nodes.filter(
-                (node) => node.status === "completed",
-              ).length,
-            }
-          : {}),
-      },
-      "system",
-    );
+    this.trace.emitCompletionScopeTransition(task, data);
   }
 
   private ignoreSiblingsAfterRootCompletion(
@@ -524,31 +442,7 @@ export class Orchestrator {
       | undefined,
     phase: () => string,
   ): void {
-    const maybePlanner = planner as {
-      setUsageCallback?: (
-        cb: ((usage: TokenUsage, llmMs: number, model: string) => void) | null,
-      ) => void;
-    };
-    if (typeof maybePlanner.setUsageCallback !== "function") return;
-
-    maybePlanner.setUsageCallback((usage, llmMs, model) => {
-      this.emitTraceEvent(
-        task,
-        "planner_llm_call",
-        {
-          phase: phase(),
-          model,
-          durationMs: llmMs,
-          usage: {
-            prompt_tokens: usage.prompt_tokens,
-            completion_tokens: usage.completion_tokens,
-            total_tokens: usage.total_tokens,
-            cost: usage.cost,
-          },
-        },
-        "planner",
-      );
-    });
+    this.trace.attachPlannerUsage(planner, task, phase);
   }
 
   private emitNodeFailureAttribution(
@@ -557,24 +451,7 @@ export class Orchestrator {
     reason: string,
     detail?: Record<string, unknown>,
   ): void {
-    this.emitTraceEvent(
-      task,
-      "node_failure_attribution",
-      {
-        taskId: task.id,
-        nodeId: node.id,
-        reason,
-        ...(detail ?? {}),
-      },
-      "system",
-    );
-  }
-
-  private buildTabCoordinationTraceData(
-    task: OrchestratorTask,
-    detail: Record<string, unknown> = {},
-  ): Record<string, unknown> {
-    return buildTaskTabCoordinationTraceData(task, detail);
+    this.trace.emitNodeFailure(task, node, reason, detail);
   }
 
   private emitTabCoordinationState(
@@ -582,12 +459,7 @@ export class Orchestrator {
     action: string,
     detail: Record<string, unknown> = {},
   ): void {
-    this.emitTraceEvent(
-      task,
-      "tab_coordination_state",
-      this.buildTabCoordinationTraceData(task, { action, ...detail }),
-      "system",
-    );
+    this.trace.emitTabCoordinationState(task, action, detail);
   }
 
   private createWorkspaceLanePools(): WorkspaceLanePools {
@@ -2001,7 +1873,7 @@ export class Orchestrator {
     const taskId = crypto.randomUUID();
     const laneTopology = resolveLaneTopologyFromSettings(input.settings);
     const task: OrchestratorTask = {
-      runId: crypto.randomUUID(),
+      runId: input.runId ?? crypto.randomUUID(),
       id: taskId,
       workspaceId: input.workspaceId,
       rootTabId: input.tabId,
@@ -2146,6 +2018,10 @@ export class Orchestrator {
         const modelOverrides = {
           executorModel: input.settings.executorModel,
           plannerModel: input.settings.plannerModel,
+          judgeModel: input.settings.judgeModel,
+          executorProviderPin: input.settings.executorProviderPin,
+          plannerProviderPin: input.settings.plannerProviderPin,
+          judgeProviderPin: input.settings.judgeProviderPin,
           writerModel: input.settings.writerModel,
           useNitro: input.settings.useNitro,
           providerMode: input.settings.providerMode,
@@ -2391,6 +2267,10 @@ export class Orchestrator {
             {
               executorModel: input.settings.executorModel,
               plannerModel: input.settings.plannerModel,
+              judgeModel: input.settings.judgeModel,
+              executorProviderPin: input.settings.executorProviderPin,
+              plannerProviderPin: input.settings.plannerProviderPin,
+              judgeProviderPin: input.settings.judgeProviderPin,
               useNitro: input.settings.useNitro,
               providerMode: input.settings.providerMode,
               provider: input.settings.provider,
@@ -2490,6 +2370,10 @@ export class Orchestrator {
     const loopModelOverrides = {
       executorModel: input.settings.executorModel,
       plannerModel: input.settings.plannerModel,
+      judgeModel: input.settings.judgeModel,
+      executorProviderPin: input.settings.executorProviderPin,
+      plannerProviderPin: input.settings.plannerProviderPin,
+      judgeProviderPin: input.settings.judgeProviderPin,
       writerModel: input.settings.writerModel,
       useNitro: input.settings.useNitro,
       providerMode: input.settings.providerMode,
@@ -2989,6 +2873,10 @@ export class Orchestrator {
               : undefined,
           executorModel: input.settings.executorModel,
           plannerModel: input.settings.plannerModel,
+          judgeModel: input.settings.judgeModel,
+          executorProviderPin: input.settings.executorProviderPin,
+          plannerProviderPin: input.settings.plannerProviderPin,
+          judgeProviderPin: input.settings.judgeProviderPin,
           writerModel: input.settings.writerModel,
           useNitro: input.settings.useNitro,
           providerMode: input.settings.providerMode,
@@ -3585,11 +3473,11 @@ export class Orchestrator {
             // itself stays human-gated by the consequential-action approval.
             if (
               verification.decision === "accept" &&
-              classifyVerificationRisk({
-                taskQuery: task.query,
-                objective: node.description,
-                successCriteria: node.successCriteria,
-              }) === "high"
+              (classifyNodeEffect(node) === "consequential_write" ||
+                classifyVerificationRisk({
+                  objective: node.description,
+                  successCriteria: node.successCriteria,
+                }) === "high")
             ) {
               const gate = await runHighRiskJudgeGate(
                 task,
@@ -4345,6 +4233,79 @@ export class Orchestrator {
           });
         }
       }
+
+      // Reconcile the complete user objective before scheduling a redundant
+      // final report/reverification node. Unlike the older shortcut below,
+      // this accepts multiple obligations and numbers, but only suppresses
+      // read-only work and preserves explicit prepare-only prohibitions.
+      if (
+        remainingActive.length > 0 &&
+        completedNodes.length > 0 &&
+        !hasUnresolvedAttemptedPendingNode &&
+        remainingActive.every((node) =>
+          isSafeToSuppressAfterRootCompletion(classifyNodeEffect(node)),
+        )
+      ) {
+        try {
+          const goalSnap = await this.getSnapshot(input.tabId);
+          if (goalSnap) {
+            const reconciliation = reconcileRootCompletion({
+              query: task.query,
+              completedNodes,
+              remainingNodes: remainingActive,
+              snapshotText: [
+                goalSnap.title,
+                goalSnap.url,
+                goalSnap.visibleContent,
+                goalSnap.pageContent,
+              ]
+                .filter(Boolean)
+                .join("\n"),
+              hasUnresolvedAttempt: hasUnresolvedAttemptedPendingNode,
+            });
+            this.emitTraceEvent(
+              task,
+              "root_reconciliation",
+              {
+                decision: reconciliation.decision,
+                reason: reconciliation.reason,
+                remainingNodeIds: remainingActive.map((node) => node.id),
+                remainingEffects: remainingActive.map((node) => ({
+                  nodeId: node.id,
+                  effect: classifyNodeEffect(node),
+                })),
+              },
+              "system",
+            );
+            if (reconciliation.decision === "complete") {
+              const skippedNodeIds = this.ignoreSiblingsAfterRootCompletion(
+                task,
+                {
+                  reason: reconciliation.reason,
+                  result: "Skipped: grounded root objective already achieved",
+                },
+              );
+              this.emitCompletionScopeTransition(task, {
+                scope: "root",
+                status: "sibling_ignored",
+                reason: reconciliation.reason,
+                skippedNodeIds,
+              });
+              rootGoalSatisfied = true;
+              if (running.size > 0) {
+                await Promise.race(running);
+                continue;
+              }
+              break;
+            }
+          }
+        } catch (err) {
+          logger.debug("orchestrator", "Root reconciliation snapshot failed", {
+            taskId: task.id,
+            error: err instanceof Error ? err.message : String(err),
+          });
+        }
+      }
       // Only allow skipping when at most 1 node remains pending or running.
       // Prevents premature skipping after early steps when most work is still ahead.
       if (
@@ -4385,7 +4346,9 @@ export class Orchestrator {
                 contract.reportTargets.length <= 1 &&
                 contract.requiredEntities.length <= 1 &&
                 contract.requiredNumbers.length === 0 &&
-                !remainingActive.some((node) => isActionOrMutationNode(node));
+                !remainingActive.some((node) =>
+                  isMutationEffect(classifyNodeEffect(node)),
+                );
               if (
                 allowGlobalShortcut &&
                 goalCheck.satisfied &&

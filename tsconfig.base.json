@@ -20,12 +20,12 @@
       "@/*": ["./apps/extension/src/*"],
       "@shared-types": ["./packages/shared-types/src/index.ts"],
       "@shared-types/*": ["./packages/shared-types/src/*"],
-      "@observability-schema": [
-        "./packages/observability-schema/src/index.ts"
-      ],
+      "@observability-schema": ["./packages/observability-schema/src/index.ts"],
       "@observability-schema/*": ["./packages/observability-schema/src/*"],
       "@prompts": ["./packages/prompts/src/index.ts"],
-      "@prompts/*": ["./packages/prompts/src/*"]
+      "@prompts/*": ["./packages/prompts/src/*"],
+      "@sandbox-contracts": ["./packages/sandbox-contracts/src/index.ts"],
+      "@trace-sync": ["./packages/trace-sync/src/index.ts"]
     },
     "types": ["chrome"]
   }

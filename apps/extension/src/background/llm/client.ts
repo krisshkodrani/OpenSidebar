@@ -33,6 +33,7 @@ import {
   XIAOMI_MODEL_PLANNER,
 } from "./seat-models";
 import { estimateCostUsd } from "./pricing";
+import { cloudRelayFetch } from "./cloud-relay";
 import {
   buildJsonHeaders,
   getProviderCreditsUrl,
@@ -270,6 +271,10 @@ export interface LLMClientOptions {
    * judge pool transparently reuses the planner pool.
    */
   judgeModel?: string;
+  /** OpenRouter upstream provider pins, applied independently per model seat. */
+  executorProviderPin?: string;
+  plannerProviderPin?: string;
+  judgeProviderPin?: string;
   /** Append :nitro routing suffix to all model IDs (OpenRouter only) */
   useNitro?: boolean;
   /** Provider mode: how executor and planner providers are combined */
@@ -319,8 +324,6 @@ function openRouterProvider(apiKey: string): ProviderConfig {
     providerId: "openrouter",
   };
 }
-
-
 function shapePayloadForProvider(
   providerId: ProviderConfig["providerId"],
   payload: Record<string, unknown>,
@@ -565,7 +568,6 @@ function sanitizeToolCallMessages(
  * LLM Client for OpenSidebar
  * Handles communication with LLM APIs via priority-based provider failover
  */
-
 export class LLMClient {
   private provider: ProviderConfig;
   private model: string;
@@ -587,6 +589,9 @@ export class LLMClient {
   private judgePool: ProviderPool;
   /** Which model role is currently active for completion routing */
   private _activeTier: "executor" | "planner" | "writer" | "judge" = "executor";
+  private readonly providerPins: Partial<
+    Record<"executor" | "planner" | "writer" | "judge", string>
+  >;
   private executorModelOverride: string | null = null;
   private defaultTemperature: number = 0.0;
   private executorFallbackModel: string | null = null;
@@ -599,6 +604,11 @@ export class LLMClient {
   constructor(openRouterApiKey: string, options?: LLMClientOptions) {
     this.openRouterApiKey = openRouterApiKey;
     this.defaultTemperature = options?.temperature ?? 0.0;
+    this.providerPins = {
+      executor: options?.executorProviderPin,
+      planner: options?.plannerProviderPin,
+      judge: options?.judgeProviderPin,
+    };
 
     // Resolve providerMode (supports legacy `provider` field for backward compat)
     let mode: ProviderMode = options?.providerMode ?? "openrouter";
@@ -613,7 +623,7 @@ export class LLMClient {
     const nitro = options?.useNitro;
     const hasGroq = !!options?.groqApiKey;
     const hasOpenAI = !!options?.openaiApiKey;
-    const hasFireworks = !!options?.fireworksApiKey;
+    const hasFireworks = openRouterApiKey === "__opensidebar_cloud__" || !!options?.fireworksApiKey;
     const hasMoonshot = !!options?.kimiApiKey;
     const hasXiaomi = !!options?.xiaomiApiKey;
 
@@ -671,7 +681,7 @@ export class LLMClient {
         executorFallbackModel: options?.executorFallbackModel,
       });
     } else if (mode === "fireworks" && hasFireworks) {
-      const fwKey = options!.fireworksApiKey!;
+      const fwKey = openRouterApiKey === "__opensidebar_cloud__" ? openRouterApiKey : options!.fireworksApiKey!;
       const fwProv = fireworksProvider(fwKey);
       const executorModel = normalizeExecutorModel({
         providerMode: "fireworks",
@@ -1036,7 +1046,10 @@ export class LLMClient {
     const body = JSON.parse(init.body as string);
     body.model = slot.model;
     delete body.provider;
-    const shapedBody = shapePayloadForProvider(slot.provider.providerId, body);
+    const shapedBody = this.shapePayloadForActiveTier(
+      slot.provider.providerId,
+      body,
+    );
     return {
       url: slot.provider.baseUrl,
       init: {
@@ -1045,6 +1058,18 @@ export class LLMClient {
         body: JSON.stringify(shapedBody),
       },
     };
+  }
+
+  private shapePayloadForActiveTier(
+    providerId: ProviderConfig["providerId"],
+    payload: Record<string, unknown>,
+  ): Record<string, unknown> {
+    const shaped = shapePayloadForProvider(providerId, payload);
+    const pin = this.providerPins[this._activeTier]?.trim();
+    if (providerId === "openrouter" && pin) {
+      shaped.provider = { only: [pin] };
+    }
+    return shaped;
   }
 
   private async fetchWithRetry(
@@ -1059,6 +1084,7 @@ export class LLMClient {
     actualProviderId: ProviderConfig["providerId"];
     actualModel: string;
   }> {
+    if (this.openRouterApiKey === "__opensidebar_cloud__") return { response: await cloudRelayFetch(JSON.parse(String(init.body ?? "{}")) as Record<string, unknown>, providerId, this._activeTier, signal), actualProviderId: providerId, actualModel: model };
     const RETRYABLE = new Set([429, 502, 503, 504]);
     let lastError: Error | null = null;
 
@@ -1171,7 +1197,7 @@ export class LLMClient {
     // Fireworks routers require streaming — force it and collect the response
     const forceStream = provider.providerId === "fireworks";
 
-    const payload = shapePayloadForProvider(provider.providerId, {
+    const payload = this.shapePayloadForActiveTier(provider.providerId, {
       model: request.model || activeModel,
       messages: sanitizeToolCallMessages(
         annotateCacheControl(request.messages, provider.providerId),
@@ -1233,7 +1259,7 @@ export class LLMClient {
           isImageUrlUnsupported(response.status, errorText)
         ) {
           imageFallbackRetried = true;
-          activePayload = shapePayloadForProvider(provider.providerId, {
+          activePayload = this.shapePayloadForActiveTier(provider.providerId, {
             ...activePayload,
             messages: toTextOnlyMessages(request.messages),
           });
@@ -1266,7 +1292,7 @@ export class LLMClient {
             );
             provider = fallback.provider;
             activeModel = fallback.model;
-            activePayload = shapePayloadForProvider(provider.providerId, {
+            activePayload = this.shapePayloadForActiveTier(provider.providerId, {
               ...activePayload,
               model: activeModel,
             });
@@ -1433,7 +1459,7 @@ export class LLMClient {
       );
     }
 
-    const payload = shapePayloadForProvider(provider.providerId, {
+    const payload = this.shapePayloadForActiveTier(provider.providerId, {
       model: request.model || activeModel,
       messages: sanitizeToolCallMessages(
         annotateCacheControl(request.messages, provider.providerId),
@@ -1494,7 +1520,7 @@ export class LLMClient {
           isImageUrlUnsupported(response.status, errorText)
         ) {
           imageFallbackRetried = true;
-          activePayload = shapePayloadForProvider(provider.providerId, {
+          activePayload = this.shapePayloadForActiveTier(provider.providerId, {
             ...activePayload,
             messages: toTextOnlyMessages(request.messages),
           });
@@ -1527,7 +1553,7 @@ export class LLMClient {
             );
             provider = fallback.provider;
             activeModel = fallback.model;
-            activePayload = shapePayloadForProvider(provider.providerId, {
+            activePayload = this.shapePayloadForActiveTier(provider.providerId, {
               ...activePayload,
               model: activeModel,
             });

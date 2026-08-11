@@ -31,8 +31,10 @@ describe("removed voice and JobAgent MCP surfaces", () => {
       root.render(<SettingsDrawer isOpen onClose={() => {}} />);
     });
 
-    expect(container.textContent).toContain("general");
-    expect(container.textContent).toContain("models");
+    expect(container.textContent).toContain("account");
+    expect(container.textContent).toContain("agent");
+    expect(container.textContent).toContain("browser");
+    expect(container.textContent).toContain("advanced");
     expect(container.textContent).not.toContain("voice");
     expect(container.textContent).not.toContain("JobAgent MCP");
     expect(container.textContent).not.toContain("MCP URL");
@@ -40,6 +42,9 @@ describe("removed voice and JobAgent MCP surfaces", () => {
     expect(container.textContent).not.toContain("Clear Local Logs");
     expect(container.textContent).not.toContain("Clear All Local Data");
     expect(container.textContent).not.toContain("Export Logs");
+    expect(container.textContent).not.toContain("named tester");
+    expect(container.textContent).not.toContain("trace recovery");
+    expect(container.textContent).not.toContain("upload queue");
   });
 
   test("composer renders without mic or Realtime controls", async () => {

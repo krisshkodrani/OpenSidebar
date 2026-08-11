@@ -1,0 +1,232 @@
+import { useEffect, useState } from "react";
+import { CheckCircle2, ExternalLink, Link2, LogOut } from "lucide-react";
+import type { UserSettings } from "../../../types";
+import {
+  cloudSession,
+  importCloudPreferences,
+  credentialStatuses,
+  linkCloudAccount,
+  signInCloudWithPkce,
+  signOutCloud,
+  syncCloudPreferences,
+} from "../../cloud-client";
+import type { SettingsChangeHandler } from "./types";
+
+type AccountState = {
+  email: string | null;
+  providers: Set<string>;
+};
+
+const EMPTY_ACCOUNT: AccountState = { email: null, providers: new Set() };
+
+export function CloudAccountSettings({
+  formState,
+  onChange,
+}: {
+  formState: UserSettings;
+  onChange: SettingsChangeHandler;
+}) {
+  const [account, setAccount] = useState<AccountState>(EMPTY_ACCOUNT);
+  const [busy, setBusy] = useState(false);
+  const [message, setMessage] = useState("");
+  const [showLinkCode, setShowLinkCode] = useState(false);
+  const [linkCode, setLinkCode] = useState("");
+
+  const reload = async () => {
+    const session = await cloudSession();
+    if (!session) {
+      setAccount(EMPTY_ACCOUNT);
+      return;
+    }
+    const statuses = await credentialStatuses().catch(() => []);
+    setAccount({
+      email: session.account.email,
+      providers: new Set(
+        statuses
+          .filter((item) => item.configured && item.verification === "valid")
+          .map((item) => item.provider),
+      ),
+    });
+  };
+
+  useEffect(() => {
+    void reload().catch(() => undefined);
+  }, []);
+
+  const perform = async (action: () => Promise<unknown>, success: string) => {
+    setBusy(true);
+    setMessage("");
+    try {
+      await action();
+      await reload();
+      setMessage(success);
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : String(error));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const connectAccount = async (action: () => Promise<unknown>) => {
+    await action();
+    const preferences = await importCloudPreferences();
+    if (preferences) {
+      for (const [key, value] of Object.entries(preferences))
+        if (key !== "schemaVersion" && key !== "revision")
+          onChange(key as keyof UserSettings, value as never);
+    } else {
+      await syncCloudPreferences(formState);
+    }
+  };
+
+  if (!account.email)
+    return (
+      <section className="space-y-3 rounded-xl border border-primary-200 bg-primary-50/60 p-4 dark:border-primary-900 dark:bg-primary-950/20">
+        <div>
+          <p className="text-[11px] font-semibold uppercase tracking-wider text-primary-600 dark:text-primary-300">
+            OpenSidebar account
+          </p>
+          <h3 className="mt-1 text-base font-semibold text-warm-900 dark:text-warm-100">
+            Securely connect your AI provider
+          </h3>
+          <p className="mt-1 text-xs leading-5 text-warm-600 dark:text-warm-300">
+            Sign in once, store a supported provider key encrypted on your
+            account, and use it without keeping the key in extension storage.
+          </p>
+        </div>
+        <button
+          type="button"
+          disabled={busy}
+          onClick={() =>
+            void perform(
+              () => connectAccount(signInCloudWithPkce),
+              "Account connected and preferences synced.",
+            )
+          }
+          className="w-full rounded-lg bg-primary-600 px-3 py-2.5 text-sm font-semibold text-white shadow-sm hover:bg-primary-700 disabled:opacity-50"
+        >
+          Sign in to OpenSidebar
+        </button>
+        <button
+          type="button"
+          className="flex items-center gap-1 text-xs font-medium text-warm-500 hover:text-warm-700 dark:text-warm-400"
+          onClick={() => setShowLinkCode((value) => !value)}
+        >
+          <Link2 size={13} /> Use a link code instead
+        </button>
+        {showLinkCode ? (
+          <div className="flex gap-2">
+            <input
+              aria-label="Account link code"
+              value={linkCode}
+              onChange={(event) =>
+                setLinkCode(event.target.value.toUpperCase())
+              }
+              maxLength={8}
+              placeholder="8-character code"
+              className="min-w-0 flex-1 rounded-lg border border-warm-300 bg-white px-2 py-2 text-xs uppercase dark:border-warm-700 dark:bg-warm-900"
+            />
+            <button
+              type="button"
+              disabled={busy || linkCode.length !== 8}
+              onClick={() =>
+                void perform(
+                  () => connectAccount(() => linkCloudAccount(linkCode)),
+                  "Account connected and preferences synced.",
+                )
+              }
+              className="rounded-lg border border-warm-300 px-3 text-xs font-medium disabled:opacity-50 dark:border-warm-700"
+            >
+              Link
+            </button>
+          </div>
+        ) : null}
+        <p aria-live="polite" className="text-xs text-warm-500">
+          {message}
+        </p>
+      </section>
+    );
+
+  const provider =
+    formState.providerMode === "fireworks" ? "fireworks" : "openrouter";
+  const ready = account.providers.has(provider);
+  return (
+    <section className="space-y-4">
+      <div className="rounded-xl border border-warm-200 bg-white p-4 dark:border-warm-700 dark:bg-warm-850">
+        <div className="flex items-start justify-between gap-3">
+          <div className="min-w-0">
+            <p className="text-[11px] font-semibold uppercase tracking-wider text-warm-400">
+              OpenSidebar account
+            </p>
+            <p className="mt-1 truncate text-sm font-semibold text-warm-900 dark:text-warm-100">
+              {account.email}
+            </p>
+          </div>
+          <span className="inline-flex items-center gap-1 rounded-full bg-green-100 px-2 py-1 text-[10px] font-semibold text-green-700 dark:bg-green-900/30 dark:text-green-300">
+            <CheckCircle2 size={12} /> Connected
+          </span>
+        </div>
+        <div className="mt-4 rounded-lg bg-warm-50 p-3 dark:bg-warm-900">
+          <p className="text-xs text-warm-500">Active provider</p>
+          <p className="mt-1 text-sm font-semibold capitalize">
+            {provider === "openrouter" ? "OpenRouter" : "Fireworks AI"}
+          </p>
+          <p
+            className={`mt-1 text-xs ${ready ? "text-green-700 dark:text-green-300" : "text-amber-700 dark:text-amber-300"}`}
+          >
+            {ready ? "Ready through your account" : "Connection required"}
+          </p>
+        </div>
+        <div className="mt-4 flex flex-wrap gap-3">
+          <button
+            type="button"
+            onClick={() =>
+              window.open(
+                "https://opensidebar.com/app/settings",
+                "_blank",
+                "noopener",
+              )
+            }
+            className="inline-flex items-center gap-1 text-xs font-semibold text-primary-600"
+          >
+            Manage account <ExternalLink size={12} />
+          </button>
+          <button
+            type="button"
+            disabled={busy}
+            onClick={() =>
+              void perform(signOutCloud, "Signed out on this browser.")
+            }
+            className="inline-flex items-center gap-1 text-xs font-medium text-warm-500"
+          >
+            <LogOut size={12} /> Sign out
+          </button>
+        </div>
+      </div>
+      <div className="rounded-lg border border-warm-200 p-3 dark:border-warm-700">
+        <p className="text-sm font-medium">Connection method</p>
+        <div className="mt-2 grid grid-cols-2 gap-2">
+          <button
+            type="button"
+            aria-pressed={formState.inferenceMode === "cloud"}
+            onClick={() => onChange("inferenceMode", "cloud")}
+            className={`rounded-lg border p-2 text-xs font-medium ${formState.inferenceMode === "cloud" ? "border-primary-500 bg-primary-50 text-primary-700 dark:bg-primary-900/20" : "border-warm-200 dark:border-warm-700"}`}
+          >
+            Use account connection
+          </button>
+          <button
+            type="button"
+            aria-pressed={formState.inferenceMode === "local"}
+            onClick={() => onChange("inferenceMode", "local")}
+            className={`rounded-lg border p-2 text-xs font-medium ${formState.inferenceMode === "local" ? "border-primary-500 bg-primary-50 text-primary-700 dark:bg-primary-900/20" : "border-warm-200 dark:border-warm-700"}`}
+          >
+            Direct from this browser
+          </button>
+        </div>
+      </div>
+      <p aria-live="polite" className="text-xs text-warm-500">
+        {message}
+      </p>
+    </section>
+  );
+}

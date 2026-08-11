@@ -1,0 +1,167 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>The Sandbox Needs Two Rooms — OpenSidebar Ideas</title>
+    <meta name="description" content="Why a safe public playground for browser agents needs a separate control room and target site." />
+    <meta name="author" content="Kris Shkodrani and Sol (gpt-5.6-sol)" />
+    <meta name="theme-color" content="#F7F7F9" />
+    <link rel="icon" type="image/png" href="/favicon.png" />
+    <link rel="canonical" href="https://opensidebar.com/ideas/the-sandbox-needs-two-rooms" />
+    <meta property="og:type" content="article" />
+    <meta property="og:site_name" content="OpenSidebar" />
+    <meta property="og:title" content="The Sandbox Needs Two Rooms" />
+    <meta property="og:description" content="Why a safe browser-agent playground separates the human control room from the site the agent sees." />
+    <meta property="og:url" content="https://opensidebar.com/ideas/the-sandbox-needs-two-rooms" />
+    <meta property="og:image" content="https://opensidebar.com/og.png" />
+    <meta name="twitter:card" content="summary_large_image" />
+    <meta name="twitter:title" content="The Sandbox Needs Two Rooms" />
+    <meta name="twitter:description" content="A safe browser-agent playground needs two rooms: one for human control, one where the agent earns its conclusions." />
+    <meta name="twitter:image" content="https://opensidebar.com/og.png" />
+  </head>
+  <body class="idea-page">
+    <header class="nav">
+      <div class="wrap nav-inner">
+        <a class="brand" href="/" aria-label="OpenSidebar home">
+          <img src="/logo.png" alt="" width="28" height="28" />
+          <span>OpenSidebar</span>
+        </a>
+        <nav class="nav-links" aria-label="Primary">
+          <a href="/walkthrough">How it works</a>
+          <a href="/ideas" aria-current="page">Ideas</a>
+          <a href="/#features">Features</a>
+          <a href="/#developers">Developers</a>
+          <a href="https://github.com/krisshkodrani/OpenSidebar">GitHub</a>
+          <a class="btn btn-primary nav-cta" href="/#quickstart">Install</a>
+        </nav>
+      </div>
+      <div class="idea-progress" aria-hidden="true"><div class="idea-progress-fill" id="reading-progress"></div></div>
+    </header>
+
+    <main>
+      <header class="idea-hero">
+        <div class="idea-hero-orbit idea-hero-orbit-one" aria-hidden="true"></div>
+        <div class="idea-hero-orbit idea-hero-orbit-two" aria-hidden="true"></div>
+        <div class="idea-hero-inner">
+          <a class="idea-series" href="/ideas"><span>OpenSidebar Ideas</span><span class="idea-series-separator">/</span><span>Trust</span></a>
+          <h1>The sandbox needs<br /><em>two rooms.</em></h1>
+          <p class="idea-deck">A public place to try an agent must be safe enough to control—and ordinary enough that the agent cannot see the controls.</p>
+          <div class="idea-meta" aria-label="Article details">
+            <span class="idea-byline">By <strong>Kris Shkodrani</strong> &amp; <strong>Sol</strong> <span class="idea-model">gpt-5.6-sol</span></span>
+            <span aria-hidden="true">·</span><time datetime="2026-08-03">August 2026</time><span aria-hidden="true">·</span><span>5 minute read</span>
+          </div>
+        </div>
+        <div class="idea-hero-rule" aria-hidden="true"><span></span><i></i><span></span></div>
+      </header>
+
+      <div class="idea-layout">
+        <aside class="idea-toc" aria-label="In this essay">
+          <p>In this essay</p>
+          <ol>
+            <li><a href="#playground">A real playground</a></li>
+            <li><a href="#two-rooms">Two rooms, not one page</a></li>
+            <li><a href="#one-run">One run in motion</a></li>
+            <li><a href="#hidden-controls">Controls that stay hidden</a></li>
+            <li><a href="#watch">Why watch needs variation</a></li>
+            <li><a href="#honest">A useful kind of failure</a></li>
+            <li><a href="#invitation">An invitation to try</a></li>
+          </ol>
+        </aside>
+
+        <article class="idea-article" id="article">
+          <p class="idea-opening">The easiest demo of a browser agent is also the least revealing: put it on a page designed to make it succeed.</p>
+
+          <p>That proves that the model can click. It does not show whether the system can notice a change, distinguish a meaningful signal from decorative movement, or stop when a task has become impossible. It certainly does not show what the experience feels like when a person, rather than a benchmark, is in charge.</p>
+
+          <p>We want OpenSidebar to have a public Sandbox: a place where someone can open the sidebar, give it a task, and watch it work in a safe environment. The tempting implementation is a single page with a demo site on the left and a developer panel on the right.</p>
+
+          <p>That is useful for us. It is not a faithful environment for the agent.</p>
+
+          <h2 id="playground">A real playground</h2>
+
+          <p>A good playground is not a toy. It has constraints, changing state, and outcomes that matter inside its small world. A shoe can come back in stock. A price can fall below a number. A support feed can receive a priority-one incident. A registration can open. A record can be ready to update, or not.</p>
+
+          <p>These are modest tasks, but they carry the shapes that make browser work hard: waiting, relevance, ambiguity, an action that may be unavailable, and a result that needs evidence.</p>
+
+          <blockquote><p>The Sandbox should be synthetic in consequence, not synthetic in behavior.</p></blockquote>
+
+          <p>No order is placed. No customer is emailed. No production record changes. But the page should still feel like the sort of page an agent would meet in the wild. The job is not to create a riddle for the model. It is to make ordinary browser work inspectable and safe.</p>
+
+          <h2 id="two-rooms">Two rooms, not one page</h2>
+
+          <p>The central architectural decision is simple: the person and the agent do not use the same room.</p>
+
+          <p>The Control Center lives at <strong>opensidebar.com/playground</strong>. It is where a person creates a run, selects a scenario, opens the target, copies a suggested task, and changes the hidden conditions of the exercise.</p>
+
+          <p>The target is designed to live at <strong>play.opensidebar.com</strong>. It is the store, inbox, dashboard, registration page, table, or article that OpenSidebar actually sees. To the browser agent, it is simply a website.</p>
+
+          <p>This is more than tidy information architecture. A host boundary gives us a hard line between control and observation. The Control Center session remains on the main site. The target receives its own short-lived, host-only session. The agent can inspect the target page, but it cannot read the controller state that decides what will happen next.</p>
+
+          <p>Put both surfaces on one origin and it becomes easy to accidentally leak the answer: a hidden element, a shared storage key, a debug endpoint, a cookie that carries too much meaning. Separate hosts make the safer path the natural one.</p>
+
+          <h2 id="one-run">One run in motion</h2>
+
+          <p>Consider the Restock Alert. The target begins with the Nimbus Running Shoe out of stock. The person opens that page, asks OpenSidebar to report when the shoe returns, and starts Watch. In the other room, the Control Center can trigger a real restock after thirty seconds—or make a decorative promotion appear while inventory remains at zero.</p>
+
+          <p>The agent sees only the product page changing. If inventory appears, it has evidence for an alert. If only the promotion changes, the correct behavior is silence. The person can see which condition was selected, but the agent cannot use that private state as a shortcut.</p>
+
+          <p>This small sequence contains the whole design: a person controls the experiment, the target exposes ordinary page facts, and the harness evaluates the agent against what actually happened.</p>
+
+          <h2 id="hidden-controls">Controls that stay hidden</h2>
+
+          <p>Every Sandbox scenario has two kinds of state.</p>
+
+          <p><strong>Visible state</strong> is what a person would see on the target page: the current price, the current incident count, an incoming message, available seats, a button that is disabled. This is all the agent gets.</p>
+
+          <p><strong>Control state</strong> is what the person can change from the Control Center: a countdown, a manual trigger, whether an event is feasible, whether the evidence is available, or whether an update is allowed. This is not “hidden text” in the page. It is omitted from the target API response entirely.</p>
+
+          <p>That distinction lets the same scenario teach several things. A price watch can become a genuine alert. It can also remain quiet because the price never crosses the threshold. An article can contain enough evidence to answer well, or withhold the key finding so that a grounded agent has to say what it cannot establish.</p>
+
+          <p>The goal is not to trick the agent. It is to test whether it can keep its claims proportional to what the page actually supports.</p>
+
+          <h2 id="watch">Why watch needs variation</h2>
+
+          <p>Watching is a particularly good test of the difference between automation and agency. A watcher should not announce every change. It should notice the relevant change, ignore unrelated activity, avoid repeating itself, and remain quiet when its condition has not arrived.</p>
+
+          <p>That means a useful watch demo needs more than a timer. It needs variations: a relevant restock, a decorative change, a price that moves but misses the threshold, a message that arrives but is not a priority-one incident, a condition that is permanently unavailable.</p>
+
+          <p>These variations are controlled privately, so the person can see the reason for the outcome without handing that reason to the agent. The agent still has to ground itself in the page.</p>
+
+          <h2 id="honest">A useful kind of failure</h2>
+
+          <p>A Sandbox should not be a machine for producing green checkmarks. Some of its most useful runs are the ones where the correct response is a clarification, a stop, or an honest statement that the evidence is missing.</p>
+
+          <p>For example, an email-reply scenario can remove the recipient. A data-table scenario can make updates unavailable. A purchase can make checkout unavailable. In each case, improvising around the constraint would be worse than recognizing it.</p>
+
+          <p>That is why the harness records more than “pass” and “fail.” It can distinguish success, a correct clarification, a correct block, a false success, and an unsafe workaround. A browser agent earns trust not by acting at all costs, but by knowing when the world has not given it permission to continue.</p>
+
+          <h2 id="invitation">An invitation to try</h2>
+
+          <p>The Sandbox is not a claim that the problem is solved. It is a place to make the problem visible.</p>
+
+          <p>People should be able to try a restock alert, a threshold watch, a new-incident watch, a registration, a simulated checkout, an email reply, a table update, or grounded article research—and then change the conditions themselves. The result should be understandable: not magic, not a benchmark score, but an observable interaction between an agent and a small world.</p>
+
+          <p>That is the promise of two rooms. One is where the person is in control. The other is where the agent has to earn its conclusions.</p>
+        </article>
+      </div>
+      <aside class="idea-next">
+        <div class="wrap idea-next-inner">
+          <div><span class="idea-next-kicker">Try the principle</span><h2>Give OpenSidebar a task in a world you control.</h2></div>
+          <a class="btn btn-primary" href="/playground">Open the Playground <span aria-hidden="true">→</span></a>
+        </div>
+      </aside>
+    </main>
+
+    <footer class="footer">
+      <div class="wrap">
+        <div class="footer-top">
+          <a class="brand" href="/"><img src="/logo.png" alt="" width="28" height="28" /><span>OpenSidebar</span></a>
+          <nav class="footer-links" aria-label="Footer"><a href="/walkthrough">How it works</a><a href="/ideas">Ideas</a><a href="https://github.com/krisshkodrani/OpenSidebar">GitHub</a><a href="https://github.com/krisshkodrani/OpenSidebar/tree/main/docs">Docs</a><a href="https://github.com/krisshkodrani/OpenSidebar/blob/main/PRIVACY_POLICY.md">Privacy</a></nav>
+        </div>
+        <div class="footer-note"><span>© <span id="year">2026</span> OpenSidebar</span><span>Free and open source · MIT License</span></div>
+      </div>
+    </footer>
+    <script type="module" src="/src/ideas.ts"></script>
+  </body>
+</html>

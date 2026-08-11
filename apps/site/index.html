@@ -20,7 +20,7 @@
     />
     <meta
       property="og:description"
-      content="An open-source Chrome extension that puts an autonomous AI agent in your side panel. Bring your own key. Local by default, with no hosted relay."
+      content="An open-source Chrome extension that puts an autonomous AI agent in your side panel. Bring your own key, with local-direct or optional account-linked cloud mode."
     />
     <meta property="og:url" content="https://opensidebar.com/" />
     <meta property="og:image" content="https://opensidebar.com/og.png" />
@@ -59,8 +59,7 @@
           <a href="#showcase">Demos</a>
           <a href="#features">Features</a>
           <a href="#developers">Developers</a>
-          <a
-            href="https://github.com/krisshkodrani/OpenSidebar/tree/main/docs"
+          <a href="https://github.com/krisshkodrani/OpenSidebar/tree/main/docs"
             >Docs</a
           >
           <a href="https://github.com/krisshkodrani/OpenSidebar">GitHub</a>
@@ -86,10 +85,11 @@
               multi-step work across tabs to done.
             </p>
             <p class="hero-promise">
-              Bring your own API key. No subscription or hosted relay — the
-              extension runs in your browser and talks only to the model
-              providers you configure. Optional reliability summaries stay
-              local, off by default, and under your control.
+              Bring your own API key. The recommended account connection stores
+              supported keys encrypted and relays without retaining task
+              content. Direct from this browser remains available as an advanced
+              option. Optional reliability summaries stay local, off by default,
+              and under your control.
             </p>
             <div class="hero-cta">
               <a class="btn btn-primary" href="#quickstart">
@@ -158,9 +158,8 @@
             <span class="eyebrow">Quick start</span>
             <h2>From clone to first task</h2>
             <p>
-              The Chrome Web Store listing is on the way. Until then, build from
-              source and load the unpacked extension — the steps below are the
-              entire process.
+              Install the signed release from the Chrome Web Store, or build
+              from source and load the unpacked extension for development.
             </p>
           </div>
           <div class="qs-grid reveal">
@@ -168,10 +167,15 @@
               <div class="kicker">Chrome Web Store</div>
               <h3>One-click install</h3>
               <p class="muted" style="margin-top: 8px">
-                A signed listing so anyone can add OpenSidebar straight from
-                Chrome.
+                Add the signed OpenSidebar release straight from Chrome.
               </p>
-              <span class="soon">Coming soon</span>
+              <a
+                class="btn btn-primary"
+                style="margin-top: 18px"
+                href="https://chromewebstore.google.com/detail/opensidebar/hakbnbbkiehiofnafdkcibbnkbdmjiha"
+                rel="noopener"
+                >Add to Chrome</a
+              >
             </div>
             <div class="card">
               <div class="kicker">From source</div>
@@ -220,15 +224,26 @@ Load unpacked <span class="c">→</span> select <span class="p">dist/</span></pr
                   alt="Agent completing a checkout on a shopping site"
                   loading="lazy"
                 />
-                <button class="play" type="button" aria-label="Play customer overview">
-                  <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M8 5v14l11-7z" /></svg>
+                <button
+                  class="play"
+                  type="button"
+                  aria-label="Play customer overview"
+                >
+                  <svg
+                    viewBox="0 0 24 24"
+                    fill="currentColor"
+                    aria-hidden="true"
+                  >
+                    <path d="M8 5v14l11-7z" />
+                  </svg>
                 </button>
               </figure>
               <div class="body">
                 <h3>What OpenSidebar does for you</h3>
                 <p>
-                  See the side-panel agent complete a checkout, carry information
-                  between pages, watch for a change, and operate a business app.
+                  See the side-panel agent complete a checkout, carry
+                  information between pages, watch for a change, and operate a
+                  business app.
                 </p>
               </div>
             </article>
@@ -246,8 +261,18 @@ Load unpacked <span class="c">→</span> select <span class="p">dist/</span></pr
                   alt="OpenSidebar investigating a multi-page workflow with its side panel visible"
                   loading="lazy"
                 />
-                <button class="play" type="button" aria-label="Play developer tour">
-                  <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M8 5v14l11-7z" /></svg>
+                <button
+                  class="play"
+                  type="button"
+                  aria-label="Play developer tour"
+                >
+                  <svg
+                    viewBox="0 0 24 24"
+                    fill="currentColor"
+                    aria-hidden="true"
+                  >
+                    <path d="M8 5v14l11-7z" />
+                  </svg>
                 </button>
               </figure>
               <div class="body">
@@ -276,8 +301,8 @@ Load unpacked <span class="c">→</span> select <span class="p">dist/</span></pr
               <span class="eyebrow">Under the hood</span>
               <h2>See the plan, not just the run.</h2>
               <p class="muted" style="margin: 14px 0 0">
-                Every demo above is a recorded run — and every run starts with
-                a plan. The walkthrough page replays four real traces click by
+                Every demo above is a recorded run — and every run starts with a
+                plan. The walkthrough page replays four real traces click by
                 click: the prompt, the planner's subtask chain, the executor's
                 actual page actions, and the verifier's verdict on each step,
                 with the model named at every stage.
@@ -290,9 +315,12 @@ Load unpacked <span class="c">→</span> select <span class="p">dist/</span></pr
               <p class="decomp-links">
                 Four recorded runs:
                 <a href="/walkthrough#checkout">a checkout order</a> ·
-                <a href="/walkthrough#inventory">a cross-page inventory lookup</a>
-                · <a href="/walkthrough#settings">a guarded settings cleanup</a>
-                · <a href="/walkthrough#servicenow">a ServiceNow incident</a>
+                <a href="/walkthrough#inventory"
+                  >a cross-page inventory lookup</a
+                >
+                ·
+                <a href="/walkthrough#settings">a guarded settings cleanup</a> ·
+                <a href="/walkthrough#servicenow">a ServiceNow incident</a>
               </p>
             </div>
             <div class="decomp-chain" aria-hidden="true">
@@ -301,10 +329,18 @@ Load unpacked <span class="c">→</span> select <span class="p">dist/</span></pr
                 shoes. Use coupon SAVE10…”
               </div>
               <div class="decomp-arrow"></div>
-              <div class="decomp-chip"><span>1</span> Add Pegasus 41 to cart <b>✓</b></div>
-              <div class="decomp-chip"><span>2</span> Add Novablast 4 to cart <b>✓</b></div>
-              <div class="decomp-chip"><span>3</span> Open cart, go to checkout <b>✓</b></div>
-              <div class="decomp-more">+ 4 more verified steps → order NS-01001</div>
+              <div class="decomp-chip">
+                <span>1</span> Add Pegasus 41 to cart <b>✓</b>
+              </div>
+              <div class="decomp-chip">
+                <span>2</span> Add Novablast 4 to cart <b>✓</b>
+              </div>
+              <div class="decomp-chip">
+                <span>3</span> Open cart, go to checkout <b>✓</b>
+              </div>
+              <div class="decomp-more">
+                + 4 more verified steps → order NS-01001
+              </div>
             </div>
           </div>
         </div>
@@ -319,44 +355,216 @@ Load unpacked <span class="c">→</span> select <span class="p">dist/</span></pr
           </div>
           <div class="feat-grid">
             <div class="feat reveal">
-              <div class="ic"><svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7-10-7-10-7Z" stroke="currentColor" stroke-width="1.8"/><circle cx="12" cy="12" r="3" stroke="currentColor" stroke-width="1.8"/></svg></div>
+              <div class="ic">
+                <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                  <path
+                    d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7-10-7-10-7Z"
+                    stroke="currentColor"
+                    stroke-width="1.8"
+                  />
+                  <circle
+                    cx="12"
+                    cy="12"
+                    r="3"
+                    stroke="currentColor"
+                    stroke-width="1.8"
+                  />
+                </svg>
+              </div>
               <h3>Sees the page like you do</h3>
-              <p>A vision model works from the live screenshot and DOM — reads charts, zooms into fine print, and handles pages that defeat text-only bots.</p>
+              <p>
+                A vision model works from the live screenshot and DOM — reads
+                charts, zooms into fine print, and handles pages that defeat
+                text-only bots.
+              </p>
             </div>
             <div class="feat reveal">
-              <div class="ic"><svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M4 7h16M4 12h16M4 17h10" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg></div>
+              <div class="ic">
+                <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                  <path
+                    d="M4 7h16M4 12h16M4 17h10"
+                    stroke="currentColor"
+                    stroke-width="1.8"
+                    stroke-linecap="round"
+                  />
+                </svg>
+              </div>
               <h3>50+ browser tools</h3>
-              <p>Clicking, typing, and scrolling, plus file upload and download, tab and window management, and structured read-outs of tables, chart labels, and active filters — the agent gets data out of pages, not just actions into them.</p>
+              <p>
+                Clicking, typing, and scrolling, plus file upload and download,
+                tab and window management, and structured read-outs of tables,
+                chart labels, and active filters — the agent gets data out of
+                pages, not just actions into them.
+              </p>
             </div>
             <div class="feat reveal">
-              <div class="ic"><svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M12 3 4 6v6c0 5 3.5 7.5 8 9 4.5-1.5 8-4 8-9V6l-8-3Z" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"/><path d="m9 12 2 2 4-4" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg></div>
+              <div class="ic">
+                <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                  <path
+                    d="M12 3 4 6v6c0 5 3.5 7.5 8 9 4.5-1.5 8-4 8-9V6l-8-3Z"
+                    stroke="currentColor"
+                    stroke-width="1.8"
+                    stroke-linejoin="round"
+                  />
+                  <path
+                    d="m9 12 2 2 4-4"
+                    stroke="currentColor"
+                    stroke-width="1.8"
+                    stroke-linecap="round"
+                    stroke-linejoin="round"
+                  />
+                </svg>
+              </div>
               <h3>Safe by default</h3>
-              <p>Approvals are on by default, and consequential actions — submitting a job application, sending a message — always pause for you. When the agent works from a draft you approved, the final submit is checked field-by-field against that draft; any mismatch stops and shows you the difference before anything is sent.</p>
+              <p>
+                Approvals are on by default, and consequential actions —
+                submitting a job application, sending a message — always pause
+                for you. When the agent works from a draft you approved, the
+                final submit is checked field-by-field against that draft; any
+                mismatch stops and shows you the difference before anything is
+                sent.
+              </p>
             </div>
             <div class="feat reveal">
-              <div class="ic"><svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><circle cx="6" cy="6" r="2.4" stroke="currentColor" stroke-width="1.8"/><circle cx="6" cy="18" r="2.4" stroke="currentColor" stroke-width="1.8"/><circle cx="18" cy="12" r="2.4" stroke="currentColor" stroke-width="1.8"/><path d="M8.2 7.2 15.8 11M8.2 16.8 15.8 13" stroke="currentColor" stroke-width="1.8"/></svg></div>
+              <div class="ic">
+                <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                  <circle
+                    cx="6"
+                    cy="6"
+                    r="2.4"
+                    stroke="currentColor"
+                    stroke-width="1.8"
+                  />
+                  <circle
+                    cx="6"
+                    cy="18"
+                    r="2.4"
+                    stroke="currentColor"
+                    stroke-width="1.8"
+                  />
+                  <circle
+                    cx="18"
+                    cy="12"
+                    r="2.4"
+                    stroke="currentColor"
+                    stroke-width="1.8"
+                  />
+                  <path
+                    d="M8.2 7.2 15.8 11M8.2 16.8 15.8 13"
+                    stroke="currentColor"
+                    stroke-width="1.8"
+                  />
+                </svg>
+              </div>
               <h3>Plans, executes, verifies</h3>
-              <p>A planner decomposes the task, an executor drives it, and a verifier confirms the result — high-risk completions get a second opinion from a dedicated judge model. Stuck runs escalate to a stronger model instead of burning turns.</p>
+              <p>
+                A planner decomposes the task, an executor drives it, and a
+                verifier confirms the result — high-risk completions get a
+                second opinion from a dedicated judge model. Stuck runs escalate
+                to a stronger model instead of burning turns.
+              </p>
             </div>
             <div class="feat reveal">
-              <div class="ic"><svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><rect x="4" y="4" width="16" height="16" rx="3" stroke="currentColor" stroke-width="1.8"/><path d="M8 9h8M8 13h5" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg></div>
+              <div class="ic">
+                <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                  <rect
+                    x="4"
+                    y="4"
+                    width="16"
+                    height="16"
+                    rx="3"
+                    stroke="currentColor"
+                    stroke-width="1.8"
+                  />
+                  <path
+                    d="M8 9h8M8 13h5"
+                    stroke="currentColor"
+                    stroke-width="1.8"
+                    stroke-linecap="round"
+                  />
+                </svg>
+              </div>
               <h3>Remembers what matters</h3>
-              <p>A local profile you review yourself, per-site skills you record once and reuse, and checkpoints that survive restarts (kept for 24 hours). Sensitive fields are consent-gated per task and encrypted with a key that never leaves your machine.</p>
+              <p>
+                A local profile you review yourself, per-site skills you record
+                once and reuse, and checkpoints that survive restarts (kept for
+                24 hours). Sensitive fields are consent-gated per task and
+                encrypted with a key that never leaves your machine.
+              </p>
             </div>
             <div class="feat reveal">
-              <div class="ic"><svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><circle cx="12" cy="12" r="8.5" stroke="currentColor" stroke-width="1.8"/><path d="M12 7v5l3 2" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg></div>
+              <div class="ic">
+                <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                  <circle
+                    cx="12"
+                    cy="12"
+                    r="8.5"
+                    stroke="currentColor"
+                    stroke-width="1.8"
+                  />
+                  <path
+                    d="M12 7v5l3 2"
+                    stroke="currentColor"
+                    stroke-width="1.8"
+                    stroke-linecap="round"
+                    stroke-linejoin="round"
+                  />
+                </svg>
+              </div>
               <h3>Watch Mode</h3>
-              <p>Point it at a page and it re-checks every few seconds, comparing what actually rendered — then tells you when a price, a status, or a listing changes.</p>
+              <p>
+                Point it at a page and it re-checks every few seconds, comparing
+                what actually rendered — then tells you when a price, a status,
+                or a listing changes.
+              </p>
             </div>
             <div class="feat reveal">
-              <div class="ic"><svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><rect x="9" y="3" width="6" height="12" rx="3" stroke="currentColor" stroke-width="1.8"/><path d="M5 11a7 7 0 0 0 14 0M12 18v3" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg></div>
+              <div class="ic">
+                <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                  <rect
+                    x="9"
+                    y="3"
+                    width="6"
+                    height="12"
+                    rx="3"
+                    stroke="currentColor"
+                    stroke-width="1.8"
+                  />
+                  <path
+                    d="M5 11a7 7 0 0 0 14 0M12 18v3"
+                    stroke="currentColor"
+                    stroke-width="1.8"
+                    stroke-linecap="round"
+                  />
+                </svg>
+              </div>
               <h3>Speak or type</h3>
-              <p>Add a Groq API key in settings and voice input transcribes your words straight into the composer (Whisper large-v3-turbo) — describe the task out loud and let it run.</p>
+              <p>
+                Add a Groq API key in settings and voice input transcribes your
+                words straight into the composer (Whisper large-v3-turbo) —
+                describe the task out loud and let it run.
+              </p>
             </div>
             <div class="feat reveal">
-              <div class="ic"><svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M9 7 4 12l5 5M15 7l5 5-5 5" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg></div>
+              <div class="ic">
+                <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                  <path
+                    d="M9 7 4 12l5 5M15 7l5 5-5 5"
+                    stroke="currentColor"
+                    stroke-width="1.8"
+                    stroke-linecap="round"
+                    stroke-linejoin="round"
+                  />
+                </svg>
+              </div>
               <h3>Yours to inspect</h3>
-              <p>Every session produces a full-fidelity local trace. Keys live in Chrome storage, and traffic goes from your browser to the providers you configure — your LLM provider, plus Groq if you enable voice — and nowhere else.</p>
+              <p>
+                Every session produces detailed local run diagnostics. Direct
+                from this browser keeps keys in Chrome storage and connects
+                directly to your providers. An account connection stores
+                supported keys encrypted and relays requests without retaining
+                task content.
+              </p>
             </div>
           </div>
         </div>
@@ -380,10 +588,11 @@ Load unpacked <span class="c">→</span> select <span class="p">dist/</span></pr
             </div>
             <p class="note">
               OpenRouter is the recommended default; Fireworks is the supported
-              alternative. Your API keys stay in Chrome storage, and page context
-              goes only to the providers you configure. This release has no
-              analytics client, hosted model relay, or first-party telemetry
-              upload endpoint.
+              alternative. Direct from this browser keeps API keys in Chrome
+              storage and sends page context directly to your provider. The
+              recommended account connection supports encrypted OpenRouter and
+              Fireworks credentials with a non-retaining relay. This release has
+              no advertising analytics client or crash reporter.
             </p>
           </div>
         </div>
@@ -394,34 +603,75 @@ Load unpacked <span class="c">→</span> select <span class="p">dist/</span></pr
         <div class="wrap">
           <div class="dev-grid">
             <div class="reveal">
-              <span class="dev-tag">In the open-source repo · developer builds</span>
+              <span class="dev-tag"
+                >In the open-source repo · developer builds</span
+              >
               <h2 style="font-size: clamp(1.6rem, 3vw, 2.3rem)">
                 Every run leaves evidence.
               </h2>
               <p class="muted" style="margin-top: 16px; font-size: 1.04rem">
-                The repo ships a full observability workspace: replay any run as a
-                story — plan, nodes, turns, verification — with the judge model's
-                per-criterion reasoning and cost on high-risk completions, then
-                record whether the outcome was actually right. Traces never leave
-                your machine.
+                The repo ships a full observability workspace: replay any run as
+                a story — plan, nodes, turns, verification — with the judge
+                model's per-criterion reasoning and cost on high-risk
+                completions, then record whether the outcome was actually right.
+                Traces never leave your machine.
               </p>
               <ul class="dev-points">
                 <li>
-                  <svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="m5 12 4 4 10-10" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+                  <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                    <path
+                      d="m5 12 4 4 10-10"
+                      stroke="currentColor"
+                      stroke-width="2"
+                      stroke-linecap="round"
+                      stroke-linejoin="round"
+                    />
+                  </svg>
                   <span><b>MIT licensed.</b> Audit every claim on GitHub.</span>
                 </li>
                 <li>
-                  <svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="m5 12 4 4 10-10" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
-                  <span><b>Nx + pnpm monorepo.</b> Manifest V3, Vitest, staged e2e harness.</span>
+                  <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                    <path
+                      d="m5 12 4 4 10-10"
+                      stroke="currentColor"
+                      stroke-width="2"
+                      stroke-linecap="round"
+                      stroke-linejoin="round"
+                    />
+                  </svg>
+                  <span
+                    ><b>Nx + pnpm monorepo.</b> Manifest V3, Vitest, staged e2e
+                    harness.</span
+                  >
                 </li>
                 <li>
-                  <svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="m5 12 4 4 10-10" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
-                  <span><b>Local trace viewer.</b> Replay plans, actions, verification, approvals, and cost without sending traces elsewhere.</span>
+                  <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                    <path
+                      d="m5 12 4 4 10-10"
+                      stroke="currentColor"
+                      stroke-width="2"
+                      stroke-linecap="round"
+                      stroke-linejoin="round"
+                    />
+                  </svg>
+                  <span
+                    ><b>Local trace viewer.</b> Replay plans, actions,
+                    verification, approvals, and cost without sending traces
+                    elsewhere.</span
+                  >
                 </li>
               </ul>
               <div class="hero-cta" style="margin-top: 26px">
-                <a class="btn btn-primary" href="https://github.com/krisshkodrani/OpenSidebar">Explore the repo</a>
-                <a class="btn btn-ghost" href="https://github.com/krisshkodrani/OpenSidebar/tree/main/docs">Read the docs</a>
+                <a
+                  class="btn btn-primary"
+                  href="https://github.com/krisshkodrani/OpenSidebar"
+                  >Explore the repo</a
+                >
+                <a
+                  class="btn btn-ghost"
+                  href="https://github.com/krisshkodrani/OpenSidebar/tree/main/docs"
+                  >Read the docs</a
+                >
               </div>
             </div>
             <div class="reveal">
@@ -437,8 +687,18 @@ Load unpacked <span class="c">→</span> select <span class="p">dist/</span></pr
                   alt="OpenSidebar investigating a multi-page workflow with its side panel visible"
                   loading="lazy"
                 />
-                <button class="play" type="button" aria-label="Play developer tour">
-                  <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M8 5v14l11-7z" /></svg>
+                <button
+                  class="play"
+                  type="button"
+                  aria-label="Play developer tour"
+                >
+                  <svg
+                    viewBox="0 0 24 24"
+                    fill="currentColor"
+                    aria-hidden="true"
+                  >
+                    <path d="M8 5v14l11-7z" />
+                  </svg>
                 </button>
               </figure>
             </div>
@@ -459,10 +719,21 @@ Load unpacked <span class="c">→</span> select <span class="p">dist/</span></pr
             <a href="/walkthrough">How it works</a>
             <a href="/ideas">Ideas</a>
             <a href="https://github.com/krisshkodrani/OpenSidebar">GitHub</a>
-            <a href="https://github.com/krisshkodrani/OpenSidebar/issues">Issues</a>
-            <a href="https://github.com/krisshkodrani/OpenSidebar/tree/main/docs">Docs</a>
-            <a href="https://github.com/krisshkodrani/OpenSidebar/blob/main/PRIVACY_POLICY.md">Privacy</a>
-            <a href="https://github.com/krisshkodrani/OpenSidebar/blob/main/LICENSE">MIT License</a>
+            <a href="https://github.com/krisshkodrani/OpenSidebar/issues"
+              >Issues</a
+            >
+            <a
+              href="https://github.com/krisshkodrani/OpenSidebar/tree/main/docs"
+              >Docs</a
+            >
+            <a
+              href="https://github.com/krisshkodrani/OpenSidebar/blob/main/PRIVACY_POLICY.md"
+              >Privacy</a
+            >
+            <a
+              href="https://github.com/krisshkodrani/OpenSidebar/blob/main/LICENSE"
+              >MIT License</a
+            >
           </nav>
         </div>
         <div class="footer-note">
@@ -471,8 +742,9 @@ Load unpacked <span class="c">→</span> select <span class="p">dist/</span></pr
             Bring your own provider key</span
           >
           <span
-            >This site sets no cookies and loads no trackers; the extension has
-            no analytics client or first-party telemetry upload endpoint.</span
+            >Marketing pages set no cookies and load no trackers. OpenSidebar
+            Playground uses essential secure session cookies for signed-in
+            runs.</span
           >
         </div>
       </div>

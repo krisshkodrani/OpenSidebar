@@ -59,6 +59,9 @@ export interface UiRuntimePort {
   ): () => void;
   createTab(url: string, options?: { active?: boolean }): Promise<UiRuntimeTab>;
   requestPermissions(permissions: string[]): Promise<boolean>;
+  launchWebAuthFlow?(url: string, interactive: boolean): Promise<string | null>;
+  getIdentityRedirectUrl?(path: string): string;
+  getExtensionVersion?(): string;
   storage: UiRuntimeStorage;
 }
 
@@ -267,6 +270,13 @@ export const chromeUiRuntimePort: UiRuntimePort = {
       }
     });
   },
+
+  async launchWebAuthFlow(url, interactive) {
+    return (await chrome.identity.launchWebAuthFlow({ url, interactive })) ?? null;
+  },
+
+  getIdentityRedirectUrl(path) { return chrome.identity.getRedirectURL(path); },
+  getExtensionVersion() { return chrome.runtime.getManifest().version; },
 
   storage: {
     local: chromeStorageArea("local"),

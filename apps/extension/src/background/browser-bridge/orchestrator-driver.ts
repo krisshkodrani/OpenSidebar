@@ -236,7 +236,9 @@ export function createBrowserAgentRunner(deps: BrowserTaskDeps): AgentRunner {
       });
       const offPause = deps.addPauseListener((ws, payload) => {
         if (ws !== workspaceId) return;
-        approvalWorkspaces.set(payload.interaction.approvalId, workspaceId);
+        if (payload.interaction.kind === "approval") {
+          approvalWorkspaces.set(payload.interaction.approvalId, workspaceId);
+        }
         finish(pauseToOutcome(payload));
       });
       signal?.addEventListener("abort", onAbort);

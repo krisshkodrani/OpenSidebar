@@ -21,6 +21,7 @@ import type { ContentProtocolMessage } from "./messages/content-protocol";
 import type { SkillMessage } from "./messages/skills";
 import type { WatchModeMessage } from "./messages/watch-mode";
 import type { E2eHookMessage } from "./messages/e2e";
+import type { CloudTraceMessage } from "./messages/cloud-traces";
 
 export * from "./messages/base";
 export * from "./messages/session";
@@ -30,6 +31,7 @@ export * from "./messages/content-protocol";
 export * from "./messages/skills";
 export * from "./messages/watch-mode";
 export * from "./messages/e2e";
+export * from "./messages/cloud-traces";
 
 /**
  * Discriminated union of all message types.
@@ -42,4 +44,5 @@ export type RuntimeMessage =
   | ContentProtocolMessage
   | SkillMessage
   | WatchModeMessage
+  | CloudTraceMessage
   | E2eHookMessage;

@@ -37,6 +37,7 @@ import { useComposerActions } from "./hooks/useComposerActions";
 import { useSkillRecordingActions } from "./hooks/useSkillRecordingActions";
 import { useTaskUiState } from "./task-ui-state";
 import { getAvailableProviderStacks } from "../utils/provider-keys";
+import { cloudSession, credentialStatuses } from "./cloud-client";
 
 const SUGGESTED_ACTIONS = [
   "Summarize this page",
@@ -129,9 +130,44 @@ export default function App({ themeRoot, activityHudRoot }: AppProps = {}) {
     useState(false);
   const [isSkillChipOpen, setIsSkillChipOpen] = useState(false);
   const splashLogoUrl = uiRuntime.getUrl("public/icons/icon-128.png");
+  const [accountEmail, setAccountEmail] = useState<string | null>(null);
+  const [accountProviderReady, setAccountProviderReady] = useState(false);
+  useEffect(() => {
+    let active = true;
+    void cloudSession()
+      .then(async (session) => {
+        if (!active) return;
+        setAccountEmail(session?.account.email ?? null);
+        if (!session) return setAccountProviderReady(false);
+        const provider =
+          settings.providerMode === "fireworks" ? "fireworks" : "openrouter";
+        const statuses = await credentialStatuses().catch(() => []);
+        if (active)
+          setAccountProviderReady(
+            statuses.some(
+              (item) =>
+                item.provider === provider &&
+                item.configured &&
+                item.verification === "valid",
+            ),
+          );
+      })
+      .catch(() => {
+        if (active) {
+          setAccountEmail(null);
+          setAccountProviderReady(false);
+        }
+      });
+    return () => {
+      active = false;
+    };
+  }, [settings.inferenceMode, settings.providerMode, isSettingsOpen]);
   const hasReleaseProvider = useMemo(
-    () => getAvailableProviderStacks(settings).length > 0,
-    [settings],
+    () =>
+      settings.inferenceMode === "cloud"
+        ? Boolean(accountEmail && accountProviderReady)
+        : getAvailableProviderStacks(settings).length > 0,
+    [accountEmail, accountProviderReady, settings],
   );
 
   useEffect(() => {
@@ -230,6 +266,15 @@ export default function App({ themeRoot, activityHudRoot }: AppProps = {}) {
           onOpenSettings={() => setIsSettingsOpen(true)}
           onOpenWebsiteSkills={() => setIsWebsiteSkillsOpen(true)}
           modeBadgeLabel={getHeaderModeBadge(settings)}
+          connectionLabel={
+            hasReleaseProvider
+              ? settings.inferenceMode === "cloud"
+                ? "Account ready"
+                : "Direct ready"
+              : accountEmail
+                ? "Setup needed"
+                : "Sign in"
+          }
           recordingActive={skillRecordingStatus === "recording"}
         />
 
@@ -336,17 +381,58 @@ export default function App({ themeRoot, activityHudRoot }: AppProps = {}) {
                   </div>
                   {!hasReleaseProvider ? (
                     <>
-                      <h2 className="font-semibold mb-1 text-warm-800 dark:text-warm-100">
+                      <p className="text-[10px] font-semibold uppercase tracking-[0.14em] text-primary-600 dark:text-primary-300">
+                        Get started
+                      </p>
+                      <h2 className="mt-1 font-semibold text-warm-800 dark:text-warm-100">
                         Welcome to OpenSidebar
                       </h2>
-                      <p className="text-xs text-warm-500 dark:text-warm-400 mt-1 mb-4">
-                        Add an API key in Settings to get started.
-                      </p>
+                      <ol className="my-4 space-y-2 text-left text-xs text-warm-600 dark:text-warm-300">
+                        <li className="flex gap-2">
+                          <span className="font-semibold text-primary-600">
+                            1
+                          </span>
+                          <span>
+                            {accountEmail
+                              ? "Signed in to your OpenSidebar account"
+                              : "Sign in to your OpenSidebar account"}
+                          </span>
+                        </li>
+                        <li className="flex gap-2">
+                          <span className="font-semibold text-primary-600">
+                            2
+                          </span>
+                          <span>
+                            {accountProviderReady
+                              ? "AI provider connected securely"
+                              : "Connect OpenRouter or Fireworks"}
+                          </span>
+                        </li>
+                        <li className="flex gap-2">
+                          <span className="font-semibold text-warm-400">3</span>
+                          <span>Run a safe first task</span>
+                        </li>
+                      </ol>
                       <button
                         onClick={() => setIsSettingsOpen(true)}
                         className="px-4 py-2 rounded-lg bg-primary-600 text-white text-sm font-medium hover:bg-primary-700 transition-colors shadow-sm shadow-primary-600/20"
                       >
-                        Open Settings
+                        {!accountEmail
+                          ? "Sign in and set up"
+                          : "Connect a provider"}
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() =>
+                          window.open(
+                            "https://opensidebar.com/app/playground",
+                            "_blank",
+                            "noopener",
+                          )
+                        }
+                        className="mt-3 block w-full text-xs font-medium text-primary-600 hover:underline"
+                      >
+                        Try the safe Playground
                       </button>
                     </>
                   ) : (

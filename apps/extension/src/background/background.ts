@@ -5,7 +5,6 @@ import {
   MessageSource,
   AgentStatus,
   UserSettings,
-  ChatEntry,
   SkillRecordingEvent,
 } from "../types";
 import { loadSettings } from "../utils/settings-storage";
@@ -40,6 +39,8 @@ import { agentNotifications } from "./notifications";
 import {
   isE2ESeedPendingInteractionMessage,
   isE2ETestApiEnabled,
+  isE2EExecuteCloudCommandMessage,
+  executeE2ECloudCommand,
 } from "./e2e-test-api";
 import {
   RECORD_COMPLETION_DECISIONS_STORAGE_KEY,
@@ -65,6 +66,8 @@ import { shouldShowPageActivityCue } from "./page-activity-cue";
 import { chromePersistencePort } from "./environment/chrome";
 import { drainInternalFleetTelemetry } from "./telemetry";
 import { NoWebPageTaskRecovery } from "./no-web-page-task-recovery";
+import { routeCloudRuntimeMessage } from "./cloud-message-router";
+import { buildWorkspaceConversationContext } from "./workspace-conversation-context";
 
 /** Cached settings — populated on side panel open, invalidated on storage change. */
 let cachedSettings: UserSettings | null = null;
@@ -97,6 +100,25 @@ void drainInternalFleetTelemetry(chromePersistencePort.local).catch(() => {});
 
 const passiveMonitor = new PassiveMonitorController({
   isWorkspaceActive: (workspaceId) => orchestrator.hasActiveTask(workspaceId),
+  executeAction: async ({ action, tabId, workspaceId }) => {
+    const requestId = crypto.randomUUID();
+    const text = `Watch trigger matched. Execute this pre-confirmed action now: ${action}`;
+    const message: Extract<RuntimeMessage, { type: "USER_CHAT" }> = {
+      type: "USER_CHAT",
+      requestId,
+      source: MessageSource.SIDEPANEL,
+      workspaceId,
+      payload: {
+        text,
+        tabId,
+        workspaceId,
+        messageId: requestId,
+        timestamp: Date.now(),
+      },
+    };
+    broadcastUserChatAccepted(message, workspaceId);
+    await handleUserChat(message.payload, workspaceId);
+  },
   pageActivity: (event) => {
     chrome.tabs
       .sendMessage(event.tabId, {
@@ -180,9 +202,6 @@ type UserChatPayload = Extract<
 >["payload"];
 const queuedUserChat = new Map<string, UserChatPayload>(); // latest follow-up per workspace
 const e2eOverlayTabsByWorkspace = new Map<string, number>();
-const MAX_WORKSPACE_CONTEXT_MESSAGES = 8;
-const MAX_WORKSPACE_CONTEXT_CHARS = 1600;
-const MAX_WORKSPACE_CONTEXT_LINE_CHARS = 260;
 const skillRecordingSessions = new Map<
   number,
   {
@@ -618,6 +637,14 @@ chrome.runtime.onMessage.addListener(
       return false;
     }
 
+    const cloudRoute = routeCloudRuntimeMessage(message, sendResponse);
+    if (cloudRoute) return cloudRoute === "async";
+
+    if (isE2EExecuteCloudCommandMessage(message)) {
+      void executeE2ECloudCommand(message).then(sendResponse);
+      return true;
+    }
+
     if (isE2ESeedPendingInteractionMessage(message)) {
       const payload = message.payload;
       (async () => {
@@ -839,6 +866,17 @@ chrome.runtime.onMessage.addListener(
     }
 
     if (
+      message.source === MessageSource.CONTENT &&
+      message.type === "PASSIVE_MONITOR_PAGE_CHANGED"
+    ) {
+      const accepted = sender.tab?.id != null
+        ? passiveMonitor.notifyPageChanged(sender.tab.id, message.payload.sessionId)
+        : false;
+      sendResponse({ ok: accepted });
+      return false;
+    }
+
+    if (
       isUiMessageSource(message.source) &&
       message.type === "PASSIVE_MONITOR_STOP"
     ) {
@@ -847,7 +885,8 @@ chrome.runtime.onMessage.addListener(
           message.workspaceId ??
           message.payload.workspaceId ??
           (message.payload.workspaceId === null ? null : undefined);
-        const stopped = passiveMonitor.stopSession(wsId);
+        const stopped = passiveMonitor.stopSessionById(message.payload.sessionId) ||
+          passiveMonitor.stopSession(wsId);
         await tabAudioCapture.stop(wsId);
         await maybeStopKeepalive();
         sendResponse({ ok: true, stopped });
@@ -1224,69 +1263,6 @@ function broadcastUserSkillList(
     .catch(() => {});
 }
 
-function normalizeWorkspaceContextText(text: unknown): string {
-  return typeof text === "string" ? text.replace(/\s+/g, " ").trim() : "";
-}
-
-function getStoredChatEntryText(entry: Partial<ChatEntry>): string {
-  const completionSummary =
-    typeof entry.completionData?.summary === "string"
-      ? entry.completionData.summary
-      : "";
-  return normalizeWorkspaceContextText(entry.content || completionSummary);
-}
-
-async function buildWorkspaceConversationContext(
-  workspaceId: string,
-  currentPayload: UserChatPayload,
-): Promise<string> {
-  const storageKey = `chatMessages:${workspaceId}`;
-  try {
-    const result = await chrome.storage.local.get(storageKey);
-    const stored = result[storageKey];
-    if (!Array.isArray(stored)) return "";
-
-    const currentText = normalizeWorkspaceContextText(currentPayload.text);
-    const priorMessages = (stored as Partial<ChatEntry>[])
-      .filter((entry) => {
-        if (entry.isStreaming) return false;
-        if (entry.role !== "user" && entry.role !== "assistant") return false;
-        if (currentPayload.messageId && entry.id === currentPayload.messageId) {
-          return false;
-        }
-        if (
-          entry.role === "user" &&
-          currentPayload.timestamp &&
-          typeof entry.timestamp === "number" &&
-          entry.timestamp >= currentPayload.timestamp &&
-          getStoredChatEntryText(entry) === currentText
-        ) {
-          return false;
-        }
-        return getStoredChatEntryText(entry).length > 0;
-      })
-      .slice(-MAX_WORKSPACE_CONTEXT_MESSAGES);
-
-    return priorMessages
-      .map((entry) => {
-        const role = entry.role === "user" ? "User" : "Assistant";
-        const text = getStoredChatEntryText(entry).slice(
-          0,
-          MAX_WORKSPACE_CONTEXT_LINE_CHARS,
-        );
-        return `- ${role}: ${text}`;
-      })
-      .join("\n")
-      .slice(0, MAX_WORKSPACE_CONTEXT_CHARS);
-  } catch (error) {
-    logger.debug("agent", "Failed to load workspace conversation context", {
-      workspaceId,
-      error,
-    });
-    return "";
-  }
-}
-
 async function handleUserChat(payload: UserChatPayload, workspaceId: string) {
   // Per-workspace guard: serialize concurrent requests instead of dropping them.
   if (pendingUserChat.has(workspaceId)) {
@@ -1324,9 +1300,16 @@ async function handleUserChat(payload: UserChatPayload, workspaceId: string) {
 
       logger.debug("agent", "User message", { text, tabId, workspaceId });
       const conversationContextBrief = await buildWorkspaceConversationContext(
+        chromePersistencePort.local,
         workspaceId,
         currentPayload,
-      );
+      ).catch((error) => {
+        logger.debug("agent", "Failed to load workspace conversation context", {
+          workspaceId,
+          error,
+        });
+        return "";
+      });
 
       // 1. Get Settings (API Keys) — use cache if populated, else load fresh
       const settings =

@@ -18,10 +18,9 @@ export default defineConfig(({ mode }) => {
         env.LOCAL_OBSERVABILITY_SERVER_URL ||
         "http://127.0.0.1:7589"
       ).trim();
-  const outDir =
-    isProduction
-      ? path.resolve(__dirname, "../../dist")
-      : path.resolve(__dirname, "../../dist-dev");
+  const outDir = isProduction
+    ? path.resolve(__dirname, "../../dist")
+    : path.resolve(__dirname, "../../dist-dev");
   // Dev builds are HMR-tethered to the local Vite server and load from
   // dist-dev/. Suffix the name so the build is identifiable in Chrome.
   const buildManifest = isProduction
@@ -52,6 +51,7 @@ export default defineConfig(({ mode }) => {
           "../../packages/observability-schema/src",
         ),
         "@prompts": path.resolve(__dirname, "../../packages/prompts/src"),
+        "@trace-sync": path.resolve(__dirname, "../../packages/trace-sync/src"),
       },
     },
     build: {

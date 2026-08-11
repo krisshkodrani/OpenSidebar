@@ -1,0 +1,22 @@
+{
+  "$schema": "../../node_modules/nx/schemas/project-schema.json",
+  "name": "cloud-service",
+  "projectType": "application",
+  "sourceRoot": "apps/cloud-service/src",
+  "tags": ["scope:cloud", "type:app"],
+  "targets": {
+    "build": {
+      "executor": "nx:run-commands",
+      "outputs": ["{projectRoot}/dist"],
+      "options": { "cwd": "{workspaceRoot}", "command": "corepack pnpm --filter opensidebar-cloud-service build" }
+    },
+    "typecheck": {
+      "executor": "nx:run-commands",
+      "options": { "cwd": "{workspaceRoot}", "command": "node node_modules/typescript/bin/tsc -p apps/cloud-service/tsconfig.json" }
+    },
+    "test": {
+      "executor": "nx:run-commands",
+      "options": { "cwd": "{workspaceRoot}", "command": "node node_modules/tsx/dist/cli.mjs --test apps/cloud-service/test/**/*.test.ts" }
+    }
+  }
+}

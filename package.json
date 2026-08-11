@@ -1,6 +1,6 @@
 {
   "name": "opensidebar",
-  "version": "0.7.0",
+  "version": "0.7.3",
   "type": "module",
   "packageManager": "pnpm@11.1.0",
   "description": "AI-powered browser agent that can see, click, and navigate the web",
@@ -26,9 +26,13 @@
     "node": ">=22"
   },
   "workspaces": [
+    "apps/cloud-service",
+    "apps/sandbox",
     "apps/extension",
     "apps/extension/tests/e2e/fixtures/online-shop-pro",
+    "infra/sandbox",
     "packages/prompts",
+    "packages/sandbox-contracts",
     "packages/shared-types",
     "packages/observability-schema"
   ],
@@ -43,6 +47,22 @@
     "site:media": "node scripts/build-site-media.mjs",
     "site:provision": "node scripts/provision-site-infra.mjs",
     "site:deploy": "node scripts/deploy-site.mjs",
+    "sandbox:build": "node node_modules/vite/bin/vite.js build --config apps/sandbox/vite.config.ts",
+    "sandbox:typecheck": "node node_modules/typescript/bin/tsc -b packages/sandbox-contracts/tsconfig.json apps/sandbox/tsconfig.json && node node_modules/typescript/bin/tsc -p infra/sandbox/tsconfig.json",
+    "playground:boundaries": "node scripts/verify-playground-boundaries.mjs",
+    "sandbox:synth": "corepack pnpm --dir infra/sandbox synth",
+    "sandbox:deploy": "node scripts/deploy-sandbox.mjs",
+    "sandbox:attach-apex-api": "node scripts/attach-sandbox-api-origin.mjs",
+    "playground:attach-lightsail": "node scripts/attach-lightsail-origin.mjs",
+    "playground:security-headers": "node scripts/configure-playground-security-headers.mjs",
+    "lightsail:provision": "node scripts/provision-lightsail.mjs",
+    "playground:provision-cognito": "node scripts/provision-playground-cognito.mjs",
+    "cloud:provision-kms": "node scripts/provision-cloud-kms.mjs",
+    "cloud:dev": "node node_modules/tsx/dist/cli.mjs apps/cloud-service/src/server.ts",
+    "cloud:typecheck": "node node_modules/typescript/bin/tsc -p apps/cloud-service/tsconfig.json",
+    "cloud:test": "node node_modules/tsx/dist/cli.mjs --test apps/cloud-service/test/**/*.test.ts",
+    "temporal:host-reboot": "node scripts/run-temporal-host-reboot.mjs",
+    "temporal:isolated:provision": "node scripts/provision-temporal-isolated.mjs",
     "test": "nx run-many -t test --projects=extension",
     "verify": "tsx scripts/validate-rfc-decisions.ts && node scripts/loop-ratchet.mjs && node scripts/skill-lint.mjs && tsx scripts/run-e2e-staged.ts --list && nx run-many -t lint && nx run-many -t typecheck && nx run-many -t test --projects=extension && nx run extension:build && node scripts/check-dist.js",
     "doctor": "tsx scripts/doctor.ts",
@@ -79,6 +99,7 @@
     "release:verify": "tsx scripts/validate-rfc-decisions.ts && nx run-many -t lint && nx run-many -t typecheck && nx run-many -t test --projects=extension && nx run extension:build && node scripts/check-dist.js && corepack pnpm audit --prod",
     "release:package": "node scripts/package-release.js",
     "release:preflight": "node scripts/check-release.js",
+    "extension:pin-identity": "node scripts/pin-extension-identity.mjs",
     "release:smoke:native-panel": "tsx scripts/run-native-sidepanel-smoke.ts",
     "fmt": "prettier --write apps/extension/src/ packages/",
     "fixtures": "nx run tools:fixtures",
@@ -106,7 +127,8 @@
     "redteam:page-content:generate": "promptfoo redteam generate -c scripts/redteam/page-content.promptfooconfig.yaml -o .artifacts/redteam/page-content.generated.yaml --env-file .env --remote --force --strict",
     "prompts:build": "nx run prompts-package:build",
     "prompts:check": "nx run prompts-package:check",
-    "rfcs:check": "tsx scripts/validate-rfc-decisions.ts"
+    "rfcs:check": "tsx scripts/validate-rfc-decisions.ts",
+    "trace-sync:provision": "node scripts/provision-trace-sync.mjs"
   },
   "dependencies": {
     "@floating-ui/react": "^0.27.19",

@@ -1,0 +1,70 @@
+name: opensidebar
+services:
+  postgres:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: opensidebar
+      POSTGRES_USER: opensidebar_owner
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD}
+      PLAYGROUND_DB_PASSWORD: ${PLAYGROUND_DB_PASSWORD:?set PLAYGROUND_DB_PASSWORD}
+    command: ["postgres", "-c", "shared_buffers=128MB", "-c", "work_mem=4MB", "-c", "max_connections=30"]
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+      - ./initdb:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U opensidebar_owner -d opensidebar"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+    mem_limit: 550m
+    cpus: 0.75
+    security_opt: ["no-new-privileges:true"]
+
+  api:
+    build:
+      context: ../..
+      dockerfile: apps/cloud-service/Dockerfile
+    restart: unless-stopped
+    environment:
+      PORT: "8787"
+      DATABASE_URL: postgresql://playground_service:${PLAYGROUND_DB_PASSWORD}@postgres:5432/opensidebar
+      CONTROL_ORIGIN: ${CONTROL_ORIGIN:-https://opensidebar.com}
+      TARGET_ORIGIN: ${TARGET_ORIGIN:-https://play.opensidebar.com}
+      COOKIE_SECURE: "true"
+      COGNITO_DOMAIN: ${COGNITO_DOMAIN:?set COGNITO_DOMAIN}
+      COGNITO_CLIENT_ID: ${COGNITO_CLIENT_ID:?set COGNITO_CLIENT_ID}
+      AWS_REGION: ${AWS_REGION:-eu-central-1}
+      AUTH_QUOTA_HMAC_KEY: ${AUTH_QUOTA_HMAC_KEY:?set AUTH_QUOTA_HMAC_KEY}
+    depends_on:
+      postgres: { condition: service_healthy }
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:8787/health/ready').then(r=>{if(!r.ok)process.exit(1)})"]
+      interval: 15s
+      timeout: 5s
+      retries: 10
+    mem_limit: 400m
+    cpus: 0.75
+    read_only: true
+    tmpfs: ["/tmp:size=32m"]
+    security_opt: ["no-new-privileges:true"]
+
+  caddy:
+    image: caddy:2.10.2-alpine
+    restart: unless-stopped
+    ports: ["80:80", "443:443"]
+    environment:
+      ACME_EMAIL: ${ACME_EMAIL:-ops@opensidebar.com}
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy-data:/data
+      - caddy-config:/config
+    depends_on: { api: { condition: service_healthy } }
+    mem_limit: 100m
+    cpus: 0.25
+    security_opt: ["no-new-privileges:true"]
+
+volumes:
+  postgres-data:
+  caddy-data:
+  caddy-config:

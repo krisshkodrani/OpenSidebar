@@ -3396,11 +3396,22 @@ describe("selectPrimarySkill", () => {
     test("matches cross-tab compare workflows", () => {
         expect(
             selectPrimarySkill({
-                query: "Read Overview; read Reports; compare both tabs",
-                objective: "Compare both tabs",
-                successCriteria: "Answer based on both tabs",
+                query: "Compare the two separate browser tabs that are already open",
+                objective: "Switch across the separate tabs and compare their values",
+                successCriteria: "Answer based on both browser tabs",
             })?.id,
         ).toBe("cross-tab-compare");
+    });
+
+    test("does not treat in-page dashboard tabs as browser tabs", () => {
+        expect(
+            selectPrimarySkill({
+                query: "Read Overview; read Reports; compare both tabs",
+                objective: "Compare the Overview and Reports views",
+                successCriteria: "Answer based on both in-page views",
+                pageTitle: "Admin Dashboard",
+            })?.id,
+        ).not.toBe("cross-tab-compare");
     });
 
     test("does not use cross-tab compare for single-page report navigation", () => {
@@ -3649,6 +3660,19 @@ describe("selectPrimarySkill", () => {
                 pageTitle: "Frontend Engineer Application",
             })?.id,
         ).toBe("consequential-action-consent");
+    });
+
+    test("keeps prepare-only reporting out of consent routing", () => {
+        expect(
+            selectPrimarySkill({
+                query:
+                    "Prepare the safest ticket change, but do not purchase or confirm it. Then report the times and fee.",
+                objective: "Report the prepared departure, arrival, buffer, and fee",
+                successCriteria:
+                    "All prepared values are reported and the purchase remains unconfirmed",
+                pageTitle: "Change Review",
+            })?.id,
+        ).not.toBe("consequential-action-consent");
     });
 
     test("keeps cart-modify-checkout for earlier cart step even when query mentions saved profile", () => {

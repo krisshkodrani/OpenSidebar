@@ -261,6 +261,8 @@ export interface OrchestratorStartInput {
   query: string;
   tabId: number;
   workspaceId: string;
+  /** Preallocated only by validated restore flows; normal tasks mint their own. */
+  runId?: string;
   settings: UserSettings;
   openRouterApiKey: string;
   conversationContextBrief?: string;

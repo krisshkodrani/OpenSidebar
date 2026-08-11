@@ -13,7 +13,7 @@
       "fileLines": 132
     },
     "apps/extension/src/background/orchestrator/index.ts": {
-      "fileLines": 5752
+      "fileLines": 5689
     },
     "apps/extension/src/background/orchestrator/skills.ts": {
       "fileLines": 1182
