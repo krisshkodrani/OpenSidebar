@@ -12,11 +12,11 @@ until the owner records a Decision Stamp. When ratified, copy the recommended
 stamp into a `## Decision` section (editing as needed) and validate with
 `pnpm rfcs:check -- <path>`.
 
-| # | RFC | P0 issue | Depends on |
-| --- | --- | --- | --- |
-| LP-1 | [Public benchmark adapter & published numbers](lp-0001-public-benchmark-adapter.md) | Launch has no externally verifiable performance floor | None |
-| LP-2 | [Escalation rescue: converge or escalate](lp-0002-escalation-rescue.md) | Stuck runs never recover; ~19% of runs hit max_turns | None (LP-1 harness helps measurement) — **Approved 2026-06-10, in implementation** |
-| LP-3 | [Contributor surface for public launch](lp-0003-contributor-surface.md) | Core is contributor-hostile; no on-ramp for collaborators | None |
+| #    | RFC                                                                                 | P0 issue                                                  | Depends on                                                                         |
+| ---- | ----------------------------------------------------------------------------------- | --------------------------------------------------------- | ---------------------------------------------------------------------------------- |
+| LP-1 | [Public benchmark adapter & published numbers](lp-0001-public-benchmark-adapter.md) | Launch has no externally verifiable performance floor     | None                                                                               |
+| LP-2 | [Escalation rescue: converge or escalate](lp-0002-escalation-rescue.md)             | Stuck runs never recover; ~19% of runs hit max_turns      | None (LP-1 harness helps measurement) — **Approved 2026-06-10, in implementation** |
+| LP-3 | [Contributor surface for public launch](lp-0003-contributor-surface.md)             | Core is contributor-hostile; no on-ramp for collaborators | None                                                                               |
 
 Suggested sequencing: LP-3 (cheap, unblocks collaborators) in parallel with
 LP-2 (biggest live-performance lever), then LP-1 (largest; benefits from LP-2
@@ -26,7 +26,7 @@ landing first so published numbers reflect the rescued agent).
 
 Draft RFCs inspired by the **OpenClaw RL Guidelines v5** (2026-06-11,
 `.artifacts/`) — a single-model data-generation/eval spec whose core ideas
-(grade the final *state* not the trajectory narration; treat LLM judges as
+(grade the final _state_ not the trajectory narration; treat LLM judges as
 assistive not authoritative; capture a corrected "silver" trajectory as the data
 unit; enforce disciplined, citeable failure justifications; cover adversarial
 Scenario Types) map directly onto OpenSidebar's harness, bench, and trace-viewer.
@@ -34,11 +34,11 @@ Same status rules as above: **not stamped**, each ends with a "Recommended
 Decision" (agent recommendation, not an owner Decision Stamp). No implementation
 until the owner records a Decision Stamp.
 
-| # | RFC | Item it implements | Depends on |
-| --- | --- | --- | --- |
-| LP-4 | [Deterministic state verifiers & advisory judge](lp-0004-deterministic-state-verifiers.md) | Grade bench on final state; demote WebJudge to advisory; add `finalStateSnapshot` | None |
-| LP-5 | [Adversarial & safety E2E suite](lp-0005-adversarial-safety-e2e-suite.md) | Prompt-injection / destructive-action / credential-leak coverage | None |
-| LP-6 | [Silver-trajectory repair & failure justifications](lp-0006-silver-trajectory-repair.md) | Golden model↔silver pairs + 3-area citeable failure notes | LP-4 (`finalStateSnapshot`) |
+| #    | RFC                                                                                        | Item it implements                                                                | Depends on                  |
+| ---- | ------------------------------------------------------------------------------------------ | --------------------------------------------------------------------------------- | --------------------------- |
+| LP-4 | [Deterministic state verifiers & advisory judge](lp-0004-deterministic-state-verifiers.md) | Grade bench on final state; demote WebJudge to advisory; add `finalStateSnapshot` | None                        |
+| LP-5 | [Adversarial & safety E2E suite](lp-0005-adversarial-safety-e2e-suite.md)                  | Prompt-injection / destructive-action / credential-leak coverage                  | None                        |
+| LP-6 | [Silver-trajectory repair & failure justifications](lp-0006-silver-trajectory-repair.md)   | Golden model↔silver pairs + 3-area citeable failure notes                         | LP-4 (`finalStateSnapshot`) |
 
 Suggested sequencing: LP-4 first (its `finalStateSnapshot` is the shared
 substrate LP-6 reuses), LP-5 in parallel (independent, harness-only), then LP-6.
@@ -51,8 +51,8 @@ collapsing the dual JSONL+SQLite store + duplicated aggregation into one canonic
 span spine. Same status rules: **not stamped**, ends with a "Recommended
 Decision". No implementation until the owner records a Decision Stamp.
 
-| # | RFC | Item it implements | Depends on |
-| --- | --- | --- | --- |
+| #    | RFC                                                                                                   | Item it implements                                                                                                                                | Depends on                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                  |
+| ---- | ----------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | LP-7 | [Unified observability engine (agent-callable trace search)](lp-0007-unified-observability-engine.md) | MCP-first agent trace search; OTel-GenAI span spine as single source of truth; DuckDB analytics; RL `(state,action,reward)` trajectory projection | None for Stage A; reuses LP-4 (`finalStateSnapshot`/verifier reward), complements LP-6 (silver pairs) — **Decision stamped 2026-06-27; Stages A (stdio MCP, 12 tools, `scripts/obs/`), B0 (`packages/observability-schema`), B3 (RL trajectory + export), B4 (viewer RL Trajectory tab), B1 (full-fidelity spine; **spine authoritative-by-default for record reads** with SQLite as a derived index for aggregates; dual-read parity verified; kill-switch `OBS_DISABLE_SPINE_READS`) implemented; only the optional physical delete of the derived legacy store (gated on e2e + DuckDB/B2 for aggregate perf if SQLite retired) pending** |
 
 Suggested sequencing: ship Stage A (the MCP server over the existing store)
@@ -66,14 +66,14 @@ orthogonal) and LP-9 items 1–3 first; LP-11's default flip gates on an A/B
 that should run after LP-9; LP-13 depends on LP-9's scale factor; LP-12
 Phase A anytime, Phase B behind a flag until CWS clears; LP-14 parked.
 
-| # | RFC | Problem | Depends on |
-| --- | --- | --- | --- |
-| LP-9 | [Screenshot pipeline engineering](lp-0009-screenshot-pipeline-engineering.md) | Unowned native-res JPEG q70 screenshots; no scale factor; dead panoramic code | None |
-| LP-10 | [New-element diff marking](lp-0010-new-element-diff-marking.md) | Executor can't see what changed since its last action | None (stable IDs shipped) |
-| LP-11 | [unified_vl as default perception mode](lp-0011-unified-vl-default.md) | Separate observation model is non-standard; field grounds vision in the executor | LP-9 (for fair A/B) |
-| LP-12 | [Extension-native reach](lp-0012-extension-native-reach.md) | Closed shadow roots + cross-origin iframes invisible; extension APIs unused | None |
-| LP-13 | [Region zoom tool](lp-0013-region-zoom-tool.md) | Small text/canvas targets unreadable; no zoom action | LP-9 (scale factor) |
-| LP-14 | [In-browser PDF handling](lp-0014-pdf-handling.md) | PDF tabs are opaque; no text extraction | None (recommend parked) |
+| #     | RFC                                                                           | Problem                                                                          | Depends on                |
+| ----- | ----------------------------------------------------------------------------- | -------------------------------------------------------------------------------- | ------------------------- |
+| LP-9  | [Screenshot pipeline engineering](lp-0009-screenshot-pipeline-engineering.md) | Unowned native-res JPEG q70 screenshots; no scale factor; dead panoramic code    | None                      |
+| LP-10 | [New-element diff marking](lp-0010-new-element-diff-marking.md)               | Executor can't see what changed since its last action                            | None (stable IDs shipped) |
+| LP-11 | [unified_vl as default perception mode](lp-0011-unified-vl-default.md)        | Separate observation model is non-standard; field grounds vision in the executor | LP-9 (for fair A/B)       |
+| LP-12 | [Extension-native reach](lp-0012-extension-native-reach.md)                   | Closed shadow roots + cross-origin iframes invisible; extension APIs unused      | None                      |
+| LP-13 | [Region zoom tool](lp-0013-region-zoom-tool.md)                               | Small text/canvas targets unreadable; no zoom action                             | LP-9 (scale factor)       |
+| LP-14 | [In-browser PDF handling](lp-0014-pdf-handling.md)                            | PDF tabs are opaque; no text extraction                                          | None (recommend parked)   |
 
 ## JobAgent autonomy series (2026-07-20)
 
@@ -84,11 +84,11 @@ workstream (no RFC file), so this series starts at LP-18. Same status rules:
 **not stamped**, each ends with a "Recommended Decision". No implementation
 until the owner records a Decision Stamp.
 
-| # | RFC | Gap it closes | Depends on |
-| --- | --- | --- | --- |
-| LP-18 | [JobAgent queue scheduler & notification channel](lp-0018-jobagent-scheduler-notifications.md) | Every pipeline stage is hand-cranked; approvals invisible without the console open; no submission pacing | None |
-| LP-19 | [JobAgent graduated autonomy (auto-approve policy)](lp-0019-jobagent-graduated-autonomy.md) | Both human gates unconditionally manual; no path to earned selective autonomy; no post-submission error response | LP-18 §4 (approval-decision log) |
-| LP-20 | [JobAgent free-text answer drafting](lp-0020-jobagent-freetext-drafting.md) | Bespoke questions/cover letters dead-end as hand-written TODOs | None (owns vocabulary LP-18/LP-19 import) |
+| #     | RFC                                                                                            | Gap it closes                                                                                                    | Depends on                                |
+| ----- | ---------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------- | ----------------------------------------- |
+| LP-18 | [JobAgent queue scheduler & notification channel](lp-0018-jobagent-scheduler-notifications.md) | Every pipeline stage is hand-cranked; approvals invisible without the console open; no submission pacing         | None                                      |
+| LP-19 | [JobAgent graduated autonomy (auto-approve policy)](lp-0019-jobagent-graduated-autonomy.md)    | Both human gates unconditionally manual; no path to earned selective autonomy; no post-submission error response | LP-18 §4 (approval-decision log)          |
+| LP-20 | [JobAgent free-text answer drafting](lp-0020-jobagent-freetext-drafting.md)                    | Bespoke questions/cover letters dead-end as hand-written TODOs                                                   | None (owns vocabulary LP-18/LP-19 import) |
 
 Suggested sequencing: LP-18 first (compounds everything and generates the
 approval-decision log), LP-20 in parallel (independent surface), LP-19 last —
@@ -115,8 +115,8 @@ first divergence lands **inside the system message in 2,531 of 2,531 turn-pairs
 stamped**, ends with a "Recommended Decision". No implementation until the owner
 records a Decision Stamp.
 
-| # | RFC | Problem | Depends on |
-| --- | --- | --- | --- |
+| #     | RFC                                                         | Problem                                                                                                                                                                                                            | Depends on                            |
+| ----- | ----------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ------------------------------------- |
 | LP-21 | [Prompt-cache stability](lp-0021-prompt-cache-stability.md) | Volatile page state lives in the system message, so message 0 changes every turn and the prefix dies mid-prompt; the stable-prefix invariant is enforced only by a code comment, so the regression class is silent | None (reuses LP-16's ratchet pattern) |
 
 Suggested sequencing: phase 1 (the `String.replace` collision fix plus a
@@ -142,8 +142,8 @@ it), presentation-only (real event dispatch is untouched). **Decision
 stamped 2026-07-24** — all three §10 questions resolved in session (default
 `subtle`, no captions, error shake in all modes).
 
-| # | RFC | Problem | Depends on |
-| --- | --- | --- | --- |
+| #     | RFC                                                                              | Problem                                                                                                                                                                                                                                           | Depends on                                                                                |
+| ----- | -------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------- |
 | LP-24 | [The Presence Layer: a visible, natural agent cursor](lp-0024-presence-layer.md) | Pages change with no visible cause during runs and demos; a naive synthetic cursor (teleport + pulse) misleads more than it explains; per-control-type motion grammar, perception cleanliness, and determinism have to be designed, not bolted on | None (builds beside the existing in-page HUD; shares the LP-12 Phase B iframe constraint) |
 
 ## Fleet telemetry series (2026-07-27)
@@ -157,9 +157,44 @@ adds natural-language incident queries. **Decision stamped 2026-07-27; Phase 1
 may implement the closed contract and pure projector, but no external collection
 may begin before the RFC's consent and disclosure gates are satisfied.**
 
-| # | RFC | Problem | Depends on |
-| --- | --- | --- | --- |
+| #     | RFC                                                                                | Problem                                                                                                                                                                             | Depends on                                                                   |
+| ----- | ---------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------- |
 | LP-25 | [Optional privacy-preserving fleet telemetry](lp-0025-optional-fleet-telemetry.md) | Published instances have no safe reliability signal; issue #120's missing-`done()` loop cannot be measured by version/model at fleet scale without risking browsing-data collection | LP-7 vocabulary and backend-only OTLP precedent; does not upload LP-7 traces |
+
+## Cloud platform and durable-session series (2026-08-07)
+
+The [cloud platform roadmap](../cloud-platform-roadmap.md) sequences account-backed
+BYOK, the public Playground, and restorable sessions on one $12 Lightsail host
+with local PostgreSQL. LP-28 is the approved foundation and LP-26 is
+the approved-with-edits Playground contract. LP-29 through LP-32 remain drafts
+and must be decision-stamped independently. Open-source Temporal is intentionally
+the final decision after storage, restore, and device protocols are proven.
+
+| #     | RFC                                                                                             | Problem                                                                                                                                                                       | Depends on                                                                                                                 |
+| ----- | ----------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------- |
+| LP-28 | [Lightsail cloud control plane, BYOK vault, and LLM relay](lp-0028-cloud-byok-control-plane.md) | Extension-held provider credentials cannot be protected as cloud-only secrets; account identity, vaulting, safe settings, quotas, and a non-retaining relay need one boundary | LP-26 integration — **Approved; account/auth stage live for one tester, 0.7.2 Web Store update and write/relay acceptance pending** |
+| LP-29 | [Cloud session privacy and storage](lp-0029-cloud-session-privacy-storage.md)                   | Restorable sessions require explicit retention, encryption, deletion, export, and consent semantics separate from relay and telemetry                                         | LP-28 — **Draft; recommends Approved with edits**                                                                          |
+| LP-30 | [Portable checkpoint and restore contract](lp-0030-portable-checkpoint-restore.md)              | Current runtime state contains environment-specific and stale browser references that cannot safely resume on another process or device                                       | LP-29 — **Draft; recommends Approved**                                                                                     |
+| LP-31 | [Device reconnect and browser-command protocol](lp-0031-device-command-protocol.md)             | MV3 suspension, reconnect, duplicate delivery, and cross-device takeover need exactly-once authorized browser effects                                                         | LP-30 — **Draft; recommends SSE/HTTPS on Lightsail with measured fallback**                                                |
+| LP-32 | [Open-source Temporal on Lightsail spike](lp-0032-temporal-orchestration-spike.md)              | Durable timers, approvals, retries, and recovery may justify Temporal only if it fits the same 2-GB host and remains removable                                                | LP-29–31 — **Draft; recommends Needs more research / exact-host spike only**                                               |
+| LP-33 | [Isolated Temporal OSS evaluation](lp-0033-isolated-temporal-evaluation.md)                     | The isolated 1-GB host passed correctness but failed latency and available-memory gates; retain evidence without operating Temporal                                          | LP-32 — **Parked; host deleted, PostgreSQL remains authoritative**                                                              |
+
+## Public Playground series (2026-08-03; amended 2026-08-07)
+
+Approved-with-edits RFC for promoting the curated E2E fixture experience into a
+public Playground on opensidebar.com. The design separates one authenticated
+human Control Center from agent-visible target pages, uses passwordless email OTP
+with a revocable 90-day session and per-email quotas, and treats honest handling
+of impossible tasks as a valid outcome rather than forcing every run to complete.
+Its Decision Stamp now selects `opensidebar.com/playground` plus the shared
+Lightsail/PostgreSQL backend; the earlier serverless infrastructure is retained
+only until parity is proven. Every Playground-owned surface follows the existing opensidebar.com warm-light visual
+system through shared brand tokens; fictional target sites retain independent,
+realistic identities.
+
+| #     | RFC                                                        | Problem                                                                                                                                                                                                                    | Depends on                                                              |
+| ----- | ---------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------- |
+| LP-26 | [Public OpenSidebar Playground](lp-0026-public-sandbox.md) | Strong internal fixtures and a Restock Watch demo exist, but there is no curated public product, hidden human control plane, authentication/quota boundary, mutable scenario service, or fair infeasible-task result model | LP-28 shared host; **Decision amended 2026-08-07, Approved with edits** |
 
 ## JobAgent agent-platform series (2026-07-23)
 
@@ -174,11 +209,11 @@ automates only the three mechanical steps. At **revision 3**: the three
 questions it opened (ingest naming, Codex skill location, whether `assess`
 caches) were decided by the owner on 2026-07-23 and folded in, with the
 rejected alternatives recorded. **Decision stamped 2026-07-23** — and unlike
-LP-18/19/20 it was implemented *ahead of* that stamp, on owner instruction:
+LP-18/19/20 it was implemented _ahead of_ that stamp, on owner instruction:
 phases 0–1 shipped as PR #106 and the full loop was live-proven the same day,
 both gates exercised. The RFC records the inverted sequence plainly so it is not
 read as precedent for the stamp-then-build rule. Two defects surfaced that its risk table did not
-predict — both in the seams *between* stages — and the RFC now carries that
+predict — both in the seams _between_ stages — and the RFC now carries that
 lesson for the remaining phases.
 
 LP-23 is the follow-on, drafted the same day from the first real-employer run
@@ -198,10 +233,10 @@ library entries only — owner decision at the stamp). **Decision stamped
 restored; phases 0–4 implemented the same day with phase-0 findings recorded
 in the RFC.
 
-| # | RFC | Problem | Depends on |
-| --- | --- | --- | --- |
-| LP-22 | [JobAgent as an agent-platform skill](lp-0022-jobagent-agent-platform-skills.md) | The CLI has no driver: no single-URL ingest, no host-side form-question extraction, and no skill on Claude Code / pi / Codex | None (LP-19 and LP-20 stay parked; §6 explains why this does not need them) |
-| LP-23 | [Parse-first discovery and tentative kits](lp-0023-jobagent-parse-first-tentative-kits.md) | Discovery is minutes of model-dependent browser work per posting; select options drop between stages; a complete tentative table is impossible while drafting may never propose | LP-22 (amends its §6 boundary); supersedes LP-20's scope with containment |
+| #     | RFC                                                                                        | Problem                                                                                                                                                                         | Depends on                                                                  |
+| ----- | ------------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------- |
+| LP-22 | [JobAgent as an agent-platform skill](lp-0022-jobagent-agent-platform-skills.md)           | The CLI has no driver: no single-URL ingest, no host-side form-question extraction, and no skill on Claude Code / pi / Codex                                                    | None (LP-19 and LP-20 stay parked; §6 explains why this does not need them) |
+| LP-23 | [Parse-first discovery and tentative kits](lp-0023-jobagent-parse-first-tentative-kits.md) | Discovery is minutes of model-dependent browser work per posting; select options drop between stages; a complete tentative table is impossible while drafting may never propose | LP-22 (amends its §6 boundary); supersedes LP-20's scope with containment   |
 
 Suggested sequencing: LP-22 phases 0–1 shipped in PR #106. For LP-23, phases
 0–2 (ATS spike, adapters, schema+verbs) are policy-free engineering; phases
@@ -215,7 +250,7 @@ first passes merged); LP-16 picks up its deferred decomposition follow-ups
 and extends them to every oversized file. LP-16 is **not stamped** — same
 status rules as above.
 
-| # | RFC | Problem | Depends on |
-| --- | --- | --- | --- |
-| LP-15 | [Three consolidations: runtime library, verification subsystem, loop decomposition](lp-0015-three-consolidations.md) | Split completion authority; no headless runtime; AgentLoop god object | None — **Decision stamped 2026-07-05; first passes of all phases merged 2026-07-07** |
-| LP-16 | [Landmine decomposition](lp-0016-landmine-decomposition.md) · [remainder plan](lp-0016-remainder-plan.md) | Four files (kernel 14.4K, loop 10.3K, tools 6.8K, orchestrator 6.7K) are the largest *and* most-churned surfaces; only loop.ts is ratchet-guarded. Phases 0/1/2/4/5 landed (PR #76); Phase 3 partial — remainder plan tracks the e2e-gated driver-flip | LP-15 (turn-machine, pipeline authority, golden gate — all landed) |
+| #     | RFC                                                                                                                  | Problem                                                                                                                                                                                                                                                | Depends on                                                                           |
+| ----- | -------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------ |
+| LP-15 | [Three consolidations: runtime library, verification subsystem, loop decomposition](lp-0015-three-consolidations.md) | Split completion authority; no headless runtime; AgentLoop god object                                                                                                                                                                                  | None — **Decision stamped 2026-07-05; first passes of all phases merged 2026-07-07** |
+| LP-16 | [Landmine decomposition](lp-0016-landmine-decomposition.md) · [remainder plan](lp-0016-remainder-plan.md)            | Four files (kernel 14.4K, loop 10.3K, tools 6.8K, orchestrator 6.7K) are the largest _and_ most-churned surfaces; only loop.ts is ratchet-guarded. Phases 0/1/2/4/5 landed (PR #76); Phase 3 partial — remainder plan tracks the e2e-gated driver-flip | LP-15 (turn-machine, pipeline authority, golden gate — all landed)                   |
