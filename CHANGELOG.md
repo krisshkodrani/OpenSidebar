@@ -1,11 +1,53 @@
 # Changelog
 
+## [0.7.3] - 2026-08-11
+
+### Changed
+
+- Introduced an account-first three-step setup with clear provider readiness.
+- Reorganized extension settings into Account, Agent, Browser, and Advanced.
+- Normalized product language around account connections, Direct from this browser, Activity, and Run Viewer.
+- Unified extension and website styling through shared semantic design tokens.
+- Consolidated account, provider, preference, device, Playground, and Run Viewer experiences under the opensidebar.com application shell.
+
+### Fixed
+
+- Browser settings now save even when account preference synchronization fails.
+- Preference revision conflicts refresh and retry once, with an explicit retry action if synchronization still fails.
+- Unfinished sessions, checkpoints, device coordination, and encrypted run sync remain hidden while their production flags are disabled.
+
 All notable changes to OpenSidebar will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
+
+## [0.7.2] - 2026-08-08
+
+### Added
+
+- **Optional OpenSidebar Cloud accounts.** Allowlisted testers can sign in with
+  the published extension identity, link/revoke devices, and manage the account
+  from `opensidebar.com/account`.
+- **Encrypted cloud BYOK.** OpenRouter and Fireworks credentials can be verified
+  and envelope-encrypted with a dedicated AWS KMS key. Migration is explicitly
+  two-stage and never removes the local key until cloud storage succeeds and the
+  user activates cloud mode.
+- **Non-retaining model relay.** Cloud mode streams allowlisted provider requests
+  without retaining prompts, page content, screenshots, or responses. Account
+  quotas, cancellation, timeouts, concurrency limits, and circuit breaking are
+  enforced by the relay.
+- **Safe preference sync.** Users explicitly import or save revisioned cloud
+  preferences. Approval, navigation, site-access, and telemetry-consent safety
+  settings remain device-local.
+
+### Changed
+
+- The provider settings distinguish local/direct inference from optional cloud
+  inference and expose account, credential-migration, and preference controls.
+- The Chrome Web Store `identity` permission supports direct Cognito PKCE; a
+  website-generated single-use link code remains available as a fallback.
 
 ## [0.7.0] - 2026-07-30
 
@@ -124,7 +166,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 
 - **Optional agent-backend bridge — experimental reference integration.** The
-  browser can be exposed as thick tools to an *external* agent runtime over the
+  browser can be exposed as thick tools to an _external_ agent runtime over the
   existing default-off loopback WebSocket bridge; a local [pi](https://pi.dev)
   session is the reference driver (`.pi/extensions/opensidebar.ts` registers the
   seven browser tools with their JSON schemas passed through verbatim), and any
@@ -186,7 +228,7 @@ start of decomposing the agent loop into named phases behind a size ratchet.
   completions are re-checked by a model judge against known facts before they are
   accepted; a pure, zero-model entailment pre-filter resolves claims the trusted
   corpus already entails so the (paid) judge is skipped on the common path. The
-  judge only ever makes completion *stricter* (accept → reroute on a failed or
+  judge only ever makes completion _stricter_ (accept → reroute on a failed or
   contradicted verdict) and fails open to human approval on timeout/error. New
   `judge` model seat (defaults to GLM-5.2).
 - **Form-submit dry-run (RFC LP-15 Phase 8).** Before a consequential form
