@@ -46,6 +46,19 @@ export interface DeliveredRemoteMissionV1 {
   payload: RemoteMissionPayloadV1;
 }
 
+export interface RemoteMissionApprovalV1 {
+  approvalId: string;
+  question: string;
+  expiresAt: string;
+  actionDigest?: string;
+}
+
+export type RemoteMissionRunResultV1 =
+  | { state: "succeeded"; summary?: string }
+  | { state: "approval_required"; summary?: string; approval: RemoteMissionApprovalV1 }
+  | { state: "failed"; summary?: string }
+  | { state: "outcome_unknown"; summary?: string };
+
 export interface RemoteMissionTransitionV1 {
   schemaVersion: typeof REMOTE_MISSION_SCHEMA_VERSION;
   to: Exclude<RemoteMissionState, "queued">;
