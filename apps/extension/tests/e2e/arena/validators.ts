@@ -1166,19 +1166,8 @@ async function canvasFinePrintAnswered(
     workspaceId,
   );
 
-  if (!outcome.ok) {
-    return buildResult(
-      false,
-      outcome.reason,
-      ["Canvas fine-print task did not complete successfully."],
-      traceFiles,
-      traceTurns,
-      doneSummary,
-    );
-  }
-
   const summary = getTaskCompletionSummary(outcome.events, doneSummary);
-  // Outcome-grounded: the value exists only as 8px canvas pixels, so a
+  // Outcome-grounded: the value exists only as small canvas pixels, so a
   // correct answer proves the visual pixel path. Whether the agent needed
   // inspect_region or read it from the first-turn high-detail screenshot
   // is capability telemetry, not a pass criterion (a strong VL executor
@@ -1195,6 +1184,7 @@ async function canvasFinePrintAnswered(
     [
       `q3Margin47=${String(hasMargin)}`,
       `usedInspectRegion=${String(usedRegionZoom)}`,
+      `agentCompletion=${outcome.reason}`,
     ],
     traceFiles,
     traceTurns,

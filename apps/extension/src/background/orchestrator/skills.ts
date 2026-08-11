@@ -18,6 +18,7 @@ import type {
   SkillMatcher,
   LoadedSkillContract,
 } from "./skill-types";
+import { classifyNodeEffect } from "./node-effect-policy";
 export * from "./skill-types";
 
 
@@ -111,8 +112,6 @@ const conditionalFormPattern =
   /\b(?:conditional|depends on|reveals?|appears?|hidden|required if|only if)\b[\s\S]{0,120}\b(?:field|fields|section|question|checkbox|dropdown|radio|select)\b|\b(?:field|fields|section|question)\b[\s\S]{0,120}\b(?:appears?|reveals?|required if|only if)\b/i;
 const consequentialActionConsentPattern =
   /\b(?:wait for|ask for|request|get)\s+(?:my\s+|user\s+)?(?:approval|confirmation|permission|go-ahead)\b|\b(?:prepare|fill|draft|stage|review)\b[\s\S]{0,100}\b(?:but\s+)?(?:do not|don't|without)\s+(?:submit|send|post|publish|buy|purchase|place|delete|confirm|approve)\b|\b(?:final approval|required approval|approval required|ask before)\b/i;
-const finalConsequentialActionPattern =
-  /\b(?:submit|send|post|publish|buy|purchase|place order|delete|confirm|approve|apply)\b/i;
 const jobApplicationPattern =
   /\b(?:job|career|position|vacancy|resume|cv)\b[\s\S]{0,160}\b(?:apply|application|submit|form|cover letter|resume|cv)\b|\b(?:apply|application|submit)\b[\s\S]{0,160}\b(?:job|career|position|vacancy|resume|cv)\b/i;
 const jobApplicationPageUrlPattern =
@@ -842,7 +841,11 @@ function selectPrimarySkillWithKeywordMatcher(
 
   if (
     consequentialActionConsentPattern.test(corpus) &&
-    finalConsequentialActionPattern.test(stepCorpus)
+    classifyNodeEffect({
+      description: input.objective ?? "",
+      successCriteria: input.successCriteria ?? "",
+      allowedTools: [],
+    }) === "consequential_write"
   ) {
     const selection = selectEnabledSkill(
       input,
@@ -1078,7 +1081,7 @@ function selectPrimarySkillWithKeywordMatcher(
     if (selection) return selection;
   }
 
-  if (comparePattern.test(corpus)) {
+  if (comparePattern.test(corpus) && explicitTabIntentPattern.test(corpus)) {
     const selection = selectEnabledSkill(
       input,
       "cross-tab-compare",

@@ -22,8 +22,9 @@ import { getBlockedRuleForUrl } from "../../utils/site-access";
 import { getProviderKeyStatus } from "../../utils/provider-keys";
 import { logger } from "../../utils";
 
-const DEFAULT_MIN_INTERVAL_MS = 4_000;
+const DEFAULT_MIN_INTERVAL_MS = 30_000;
 const MIN_INTERVAL_MS = 1_500;
+const DOM_CHANGE_DEBOUNCE_MS = 750;
 const DEFAULT_MAX_SUGGESTIONS_PER_MINUTE = 6;
 const OBSERVATION_WINDOW_MS = 60_000;
 const UNCHANGED_OBSERVATION_REEVALUATE_MS = 60_000;
@@ -68,6 +69,8 @@ export interface PassiveEvaluationResult {
   answer?: string;
   confidence?: "low" | "medium" | "high";
   evidence?: string[];
+  /** Exact follow-up requested by the user, executed only after a match. */
+  action?: string;
 }
 
 export interface PassiveMonitorPageActivityEvent {
@@ -100,6 +103,7 @@ interface PassiveMonitorSession {
   abortController: AbortController | null;
   suggestionTimestamps: number[];
   evaluating: boolean;
+  pendingPageChange: boolean;
 }
 
 export interface PassiveMonitorControllerDeps {
@@ -113,6 +117,12 @@ export interface PassiveMonitorControllerDeps {
   pageActivity?: (
     event: PassiveMonitorPageActivityEvent,
   ) => void | Promise<void>;
+  executeAction?: (input: {
+    action: string;
+    tabId: number;
+    workspaceId: string;
+    sessionId: string;
+  }) => void | Promise<void>;
   isWorkspaceActive?: (workspaceId: string) => boolean;
   autoSchedule?: boolean;
   now?: () => number;
@@ -226,6 +236,10 @@ function parsePassiveEvaluation(text: string | null): PassiveEvaluationResult {
       typeof parsed.answer === "string" ? parsed.answer.trim() : undefined,
     confidence: normalizeConfidence(parsed.confidence),
     evidence,
+    action:
+      typeof parsed.action === "string" && parsed.action.trim()
+        ? parsed.action.trim().slice(0, MAX_INSTRUCTIONS_CHARS)
+        : undefined,
   };
 }
 
@@ -275,10 +289,16 @@ export async function evaluatePassiveSuggestion(
     "If transcript text conflicts with visible page evidence, prefer visible page evidence.",
     "Never claim to have clicked, typed, selected, submitted, navigated, or changed the page.",
     "If there is no meaningful new item to report, return shouldPost false.",
+    "Treat the watch instruction as a precise condition, not a topic hint.",
+    "Preserve numeric thresholds and comparisons exactly (for example, 10 or more means >= 10).",
+    "For multiple subjects or conditions, evaluate every clause and respect explicit all/and versus any/or logic.",
+    "Do not post when only a subset of an all/and condition is satisfied, and do not confuse item count with inventory quantity.",
     "Keep answer short and directly useful: one sentence or up to three compact bullets.",
     "Put only the user-visible answer or hint in answer. Do not include confidence, evidence labels, reasoning preamble, or meta commentary in answer.",
     "If the page appears to be a proctored, graded, certification, or restricted exam, do not provide direct answers; provide allowed study or explanation guidance instead.",
-    "Return JSON only with keys: shouldPost, reason, answer, confidence, evidence.",
+    "If the instruction requests an action after the condition is met, put only that exact action in action. Do not invent an action.",
+    "For notification-only instructions, omit action.",
+    "Return JSON only with keys: shouldPost, reason, answer, confidence, evidence, action.",
   ].join("\n");
   const user = [
     `Watch instructions:\n${trimText(input.instructions, MAX_INSTRUCTIONS_CHARS)}`,
@@ -308,7 +328,7 @@ export async function evaluatePassiveSuggestion(
       ? `Visible elements:\n${elementList}`
       : "Visible elements: [none]",
     "",
-    'JSON shape: {"shouldPost": true|false, "reason": "new_question|changed_dashboard|no_change|...", "answer": "chat text to show user", "confidence": "low|medium|high", "evidence": ["short grounded evidence"]}',
+    'JSON shape: {"shouldPost": true|false, "reason": "new_question|changed_dashboard|no_change|...", "answer": "chat text to show user", "confidence": "low|medium|high", "evidence": ["short grounded evidence"], "action": "exact pre-confirmed action to execute, or omit"}',
   ]
     .filter(Boolean)
     .join("\n");
@@ -354,6 +374,9 @@ export class PassiveMonitorController {
     event: PassiveMonitorPageActivityEvent,
   ) => void | Promise<void>;
   private readonly isWorkspaceActiveFn: (workspaceId: string) => boolean;
+  private readonly executeActionFn: NonNullable<
+    PassiveMonitorControllerDeps["executeAction"]
+  >;
   private readonly autoSchedule: boolean;
   private readonly now: () => number;
   private readonly setTimeoutFn: typeof setTimeout;
@@ -368,6 +391,7 @@ export class PassiveMonitorController {
       deps.broadcast ??
       ((message) => chromeRuntimeMessagingPort.broadcast(message));
     this.pageActivityFn = deps.pageActivity ?? (() => {});
+    this.executeActionFn = deps.executeAction ?? (() => {});
     this.isWorkspaceActiveFn = deps.isWorkspaceActive ?? (() => false);
     this.autoSchedule = deps.autoSchedule ?? true;
     this.now = deps.now ?? (() => Date.now());
@@ -387,6 +411,17 @@ export class PassiveMonitorController {
 
   hasSession(workspaceId: string | null | undefined): boolean {
     return this.sessions.has(workspaceKey(workspaceId));
+  }
+
+  notifyPageChanged(tabId: number, sessionId: string): boolean {
+    const session = [...this.sessions.values()].find(
+      (candidate) => candidate.tabId === tabId && candidate.sessionId === sessionId,
+    );
+    if (!session || session.status !== "watching") return false;
+    this.broadcastStatus(session, "watching", "Page change detected. Checking the Watch trigger…");
+    if (session.evaluating) session.pendingPageChange = true;
+    else if (this.autoSchedule) this.scheduleNext(session, DOM_CHANGE_DEBOUNCE_MS);
+    return true;
   }
 
   async startSession(options: PassiveMonitorStartOptions): Promise<{
@@ -419,9 +454,14 @@ export class PassiveMonitorController {
       abortController: null,
       suggestionTimestamps: [],
       evaluating: false,
+      pendingPageChange: false,
     };
     this.sessions.set(key, session);
-    this.broadcastStatus(session, "watching", "Watching page changes.");
+    this.broadcastStatus(
+      session,
+      "watching",
+      `Trigger set. Listening for page changes; safety check every ${Math.round(session.minIntervalMs / 1000)} seconds.`,
+    );
     if (this.autoSchedule) this.scheduleNext(session, 0);
     return { ok: true, sessionId: session.sessionId };
   }
@@ -443,6 +483,14 @@ export class PassiveMonitorController {
       this.broadcastStatus(session, "stopped", "Watch mode stopped.");
     }
     return true;
+  }
+
+  stopSessionById(sessionId: string | null | undefined): boolean {
+    if (!sessionId) return false;
+    const session = [...this.sessions.values()].find(
+      (candidate) => candidate.sessionId === sessionId,
+    );
+    return session ? this.stopSession(session.workspaceId) : false;
   }
 
   stopSessionsForTab(tabId: number): void {
@@ -544,6 +592,16 @@ export class PassiveMonitorController {
       }
 
       await this.waitForDomReady(session.tabId);
+      // The initial page-activity message may have been sent before a content
+      // script was available (especially just after an extension reload).
+      // Reassert it after bridge readiness so the per-page listener is always
+      // installed on the live content script.
+      this.notifyPageActivity(
+        session,
+        true,
+        "watching",
+        session.statusDetail,
+      );
       const snapshot = await this.captureSnapshot(session.tabId);
       const fingerprint = computeSnapshotFingerprint(snapshot);
       let screenshotDataUrl = "";
@@ -579,6 +637,12 @@ export class PassiveMonitorController {
           lastEvaluatedAt: session.lastEvaluatedAt,
           ttlMs: UNCHANGED_OBSERVATION_REEVALUATE_MS,
         });
+        this.broadcastStatus(
+          session,
+          "watching",
+          `No relevant change yet. Listener active; safety check every ${Math.round(session.minIntervalMs / 1000)} seconds.`,
+          now,
+        );
         return;
       }
 
@@ -609,6 +673,12 @@ export class PassiveMonitorController {
           workspaceId: session.workspaceId,
           reason: result.reason,
         });
+        this.broadcastStatus(
+          session,
+          "watching",
+          `Condition not met. Listener active; safety check every ${Math.round(session.minIntervalMs / 1000)} seconds.`,
+          this.now(),
+        );
         return;
       }
       if (
@@ -636,6 +706,27 @@ export class PassiveMonitorController {
         fingerprint,
         reason: result.reason,
       });
+      const action = result.action?.trim();
+      if (action) {
+        const actionInput = {
+          action,
+          tabId: session.tabId,
+          workspaceId: session.workspaceId,
+          sessionId: session.sessionId,
+        };
+        // A matched action is one-shot. Remove the Watch session before handing
+        // control to the normal agent runtime so it cannot fire twice while the
+        // page is changing under the action.
+        this.stopSession(session.workspaceId, { silent: true });
+        this.broadcastStatus(
+          session,
+          "stopped",
+          `Trigger matched. Starting pre-confirmed action: ${action}`,
+          this.now(),
+        );
+        await this.executeActionFn(actionInput);
+        return;
+      }
       this.broadcastStatus(
         session,
         "watching",
@@ -660,7 +751,12 @@ export class PassiveMonitorController {
         this.sessions.has(session.workspaceId) &&
         session.status !== "paused"
       ) {
-        this.scheduleNext(session);
+        if (session.pendingPageChange) {
+          session.pendingPageChange = false;
+          this.scheduleNext(session, DOM_CHANGE_DEBOUNCE_MS);
+        } else {
+          this.scheduleNext(session);
+        }
       }
     }
   }
@@ -731,7 +827,13 @@ export class PassiveMonitorController {
     detail?: string,
     observedAt?: number,
   ): void {
-    if (session.status === status && session.statusDetail === detail) return;
+    // Repeated observation results still carry a fresh observedAt timestamp;
+    // broadcast those so the UI can prove the monitor is alive.
+    if (
+      observedAt == null &&
+      session.status === status &&
+      session.statusDetail === detail
+    ) return;
     session.status = status;
     session.statusDetail = detail;
     this.notifyPageActivity(session, status === "watching", status, detail);

@@ -9,12 +9,16 @@ import {
 } from "../e2e/helpers/e2e-config";
 
 describe("E2E config", () => {
-  test("keeps the supported public env surface at eight vars", () => {
+  test("keeps the supported public env surface explicit", () => {
     expect(PUBLIC_E2E_ENV_VARS).toEqual([
       "E2E_PROFILE",
       "E2E_PROVIDER",
       "E2E_MODEL",
       "E2E_PLANNER_MODEL",
+      "E2E_JUDGE_MODEL",
+      "E2E_EXECUTOR_PROVIDER_PIN",
+      "E2E_PLANNER_PROVIDER_PIN",
+      "E2E_JUDGE_PROVIDER_PIN",
       "E2E_PERCEPTION_MODE",
       "E2E_PRESENCE_MODE",
       "E2E_SUITE_FLAGS",
@@ -99,6 +103,11 @@ describe("E2E config", () => {
         E2E_PROFILE: "video",
         E2E_PROVIDER: "fireworks",
         E2E_MODEL: "test-model",
+        E2E_PLANNER_MODEL: "test-planner",
+        E2E_JUDGE_MODEL: "test-judge",
+        E2E_EXECUTOR_PROVIDER_PIN: "Groq",
+        E2E_PLANNER_PROVIDER_PIN: "OpenAI",
+        E2E_JUDGE_PROVIDER_PIN: "OpenAI",
         E2E_PERCEPTION_MODE: "unified_vl",
         E2E_SUITE_FLAGS: "diagnostic",
       },
@@ -108,6 +117,11 @@ describe("E2E config", () => {
     expect(childEnv.E2E_PROFILE).toBe("video");
     expect(childEnv.E2E_PROVIDER).toBe("fireworks");
     expect(childEnv.E2E_MODEL).toBe("test-model");
+    expect(childEnv.E2E_PLANNER_MODEL).toBe("test-planner");
+    expect(childEnv.E2E_JUDGE_MODEL).toBe("test-judge");
+    expect(childEnv.E2E_EXECUTOR_PROVIDER_PIN).toBe("Groq");
+    expect(childEnv.E2E_PLANNER_PROVIDER_PIN).toBe("OpenAI");
+    expect(childEnv.E2E_JUDGE_PROVIDER_PIN).toBe("OpenAI");
     expect(childEnv.E2E_PERCEPTION_MODE).toBe("unified_vl");
     expect(childEnv.E2E_SUITE_FLAGS).toBe("diagnostic");
     expect(childEnv.E2E_ARTIFACTS).toContain("video");

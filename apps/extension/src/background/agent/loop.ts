@@ -747,6 +747,10 @@ export class AgentLoop {
       approvalTimeoutMs?: number;
       executorModel?: string;
       plannerModel?: string;
+      judgeModel?: string;
+      executorProviderPin?: string;
+      plannerProviderPin?: string;
+      judgeProviderPin?: string;
       writerModel?: string;
       useNitro?: boolean;
       providerMode?:
@@ -832,6 +836,10 @@ export class AgentLoop {
     const modelOverrides: import("../llm").LLMClientOptions = {
       executorModel: options?.executorModel,
       plannerModel: options?.plannerModel,
+      judgeModel: options?.judgeModel,
+      executorProviderPin: options?.executorProviderPin,
+      plannerProviderPin: options?.plannerProviderPin,
+      judgeProviderPin: options?.judgeProviderPin,
       writerModel: options?.writerModel,
       useNitro: options?.useNitro,
       providerMode: options?.providerMode,

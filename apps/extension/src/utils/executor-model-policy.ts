@@ -80,6 +80,7 @@ const CEREBRAS_EXECUTOR_MODELS = new Set(["gemma-4-31b"]);
  */
 const OPENROUTER_EXECUTOR_MODELS = new Set([
   "minimax/minimax-m3",
+  "minimax/minimax-m2.7",
   "moonshotai/kimi-k2.7-code",
   "moonshotai/kimi-k2.6",
   "moonshotai/kimi-k2.5",
@@ -136,10 +137,14 @@ export function getExecutorEligibleModelIds(
  * a VL model below the reliability floor would be added here without being
  * granted the executor seat.
  */
-const VL_CAPABLE_MODELS: ReadonlySet<string> = EXECUTOR_ELIGIBLE_MODELS;
+const VL_CAPABLE_MODELS: ReadonlySet<string> = new Set(
+  [...EXECUTOR_ELIGIBLE_MODELS].filter(
+    (model) => model !== "minimax/minimax-m2.7",
+  ),
+);
 
 function stripRoutingSuffix(model: string): string {
-  return model.replace(/:nitro$/, "");
+  return model.replace(/:(?:nitro|floor)$/, "");
 }
 
 export function getDefaultExecutorModel(

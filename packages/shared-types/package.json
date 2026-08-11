@@ -1,5 +1,8 @@
 {
   "name": "@opensidebar/shared-types",
   "private": true,
-  "type": "module"
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  }
 }

@@ -3,6 +3,10 @@ export const PUBLIC_E2E_ENV_VARS = [
   "E2E_PROVIDER",
   "E2E_MODEL",
   "E2E_PLANNER_MODEL",
+  "E2E_JUDGE_MODEL",
+  "E2E_EXECUTOR_PROVIDER_PIN",
+  "E2E_PLANNER_PROVIDER_PIN",
+  "E2E_JUDGE_PROVIDER_PIN",
   "E2E_PERCEPTION_MODE",
   "E2E_PRESENCE_MODE",
   "E2E_SUITE_FLAGS",
@@ -19,6 +23,10 @@ export interface E2EConfig {
   model: string | undefined;
   /** Planner-seat model override (planner sweeps, e.g. GLM-5.2 eval). */
   plannerModel: string | undefined;
+  judgeModel: string | undefined;
+  executorProviderPin: string | undefined;
+  plannerProviderPin: string | undefined;
+  judgeProviderPin: string | undefined;
   perceptionMode: string | undefined;
   /** LP-24 presence cursor: "off" everywhere except the video profile
    *  (cinematic) so timing assertions stay presence-free by default. */
@@ -289,6 +297,10 @@ function buildConfigFromDefaults(profile: E2EProfileName): E2EConfig {
     provider: defaults.provider,
     model: undefined,
     plannerModel: undefined,
+    judgeModel: undefined,
+    executorProviderPin: undefined,
+    plannerProviderPin: undefined,
+    judgeProviderPin: undefined,
     perceptionMode: undefined,
     presenceMode: profile === "video" ? "cinematic" : "off",
     suiteFlags: new Set(),
@@ -329,6 +341,10 @@ export function readE2EConfig(
     envValue(env, "E2E_MODEL") ??
     warnDeprecated(warnings, env, "E2E_EXECUTOR_MODEL");
   config.plannerModel = envValue(env, "E2E_PLANNER_MODEL");
+  config.judgeModel = envValue(env, "E2E_JUDGE_MODEL");
+  config.executorProviderPin = envValue(env, "E2E_EXECUTOR_PROVIDER_PIN");
+  config.plannerProviderPin = envValue(env, "E2E_PLANNER_PROVIDER_PIN");
+  config.judgeProviderPin = envValue(env, "E2E_JUDGE_PROVIDER_PIN");
   config.perceptionMode = envValue(env, "E2E_PERCEPTION_MODE");
   config.presenceMode =
     envValue(env, "E2E_PRESENCE_MODE") ?? config.presenceMode;
@@ -479,6 +495,16 @@ export function withE2EConfigEnv(
     ...(config.model ? { E2E_MODEL: config.model } : {}),
     ...(config.plannerModel
       ? { E2E_PLANNER_MODEL: config.plannerModel }
+      : {}),
+    ...(config.judgeModel ? { E2E_JUDGE_MODEL: config.judgeModel } : {}),
+    ...(config.executorProviderPin
+      ? { E2E_EXECUTOR_PROVIDER_PIN: config.executorProviderPin }
+      : {}),
+    ...(config.plannerProviderPin
+      ? { E2E_PLANNER_PROVIDER_PIN: config.plannerProviderPin }
+      : {}),
+    ...(config.judgeProviderPin
+      ? { E2E_JUDGE_PROVIDER_PIN: config.judgeProviderPin }
       : {}),
     ...(config.perceptionMode
       ? { E2E_PERCEPTION_MODE: config.perceptionMode }

@@ -1,0 +1,168 @@
+import { serve } from "@hono/node-server";
+import { createApp } from "./app.js";
+import { loadConfig } from "./config.js";
+import { PostgresPlaygroundRepository } from "./postgres-repository.js";
+import { CognitoPasswordlessAuthProvider } from "./passwordless-auth.js";
+import { ControlAuthService } from "./control-auth.js";
+import { CredentialVault } from "./credential-vault.js";
+import { PostgresControlRepository } from "./postgres-control-repository.js";
+import { RelayService } from "./relay-service.js";
+import { PostgresSessionRepository } from "./postgres-session-repository.js";
+import { PostgresDeviceCoordinationRepository } from "./postgres-device-coordination-repository.js";
+import {
+  CheckpointVault,
+  S3CheckpointObjectStore,
+} from "./checkpoint-vault.js";
+import { CommandVault } from "./command-vault.js";
+import { PostgresDeviceCommandRepository } from "./postgres-device-command-repository.js";
+import { SessionJobWorker } from "./session-job-worker.js";
+import { PostgresTraceRepository } from "./postgres-trace-repository.js";
+import { TraceObjectStore } from "./trace-object-store.js";
+
+const config = loadConfig();
+const repository = new PostgresPlaygroundRepository(config.databaseUrl);
+const passwordlessAuth = config.cognitoClientId
+  ? new CognitoPasswordlessAuthProvider(
+      config.awsRegion,
+      config.cognitoClientId,
+    )
+  : undefined;
+await repository.migrate();
+await repository.cleanupExpired();
+const controlRepository = new PostgresControlRepository(
+  config.controlDatabaseUrl,
+);
+await controlRepository.migrate();
+await controlRepository.cleanupExpired();
+const interruptedRelayCutoff = () => new Date(Date.now() - 16 * 60_000);
+const recoveredRelayRequests =
+  await controlRepository.recoverInterruptedRelayRequests(
+    interruptedRelayCutoff(),
+  );
+if (recoveredRelayRequests > 0)
+  console.warn(
+    `Recovered ${recoveredRelayRequests} interrupted relay request(s).`,
+  );
+const sessionRepository = new PostgresSessionRepository(
+  config.controlDatabaseUrl,
+  config.temporalShadowEnabled && config.temporalShadowHashKey
+    ? {
+        hashKey: config.temporalShadowHashKey,
+        accounts: config.cloudTesterSubjects,
+      }
+    : undefined,
+);
+const coordinationRepository = new PostgresDeviceCoordinationRepository(
+  sessionRepository.pool,
+);
+const commandRepository = new PostgresDeviceCommandRepository(
+  sessionRepository.pool,
+);
+await sessionRepository.migrate();
+await sessionRepository.cleanupExpired();
+const traceRepository = new PostgresTraceRepository(config.controlDatabaseUrl);
+await traceRepository.migrate();
+const traceObjectStore = config.traceBucketName
+  ? new TraceObjectStore(config.traceBucketName)
+  : undefined;
+const temporalShadowOutbox = sessionRepository.temporalShadowOutbox;
+const vault = config.credentialKmsKeyId
+  ? new CredentialVault(controlRepository, config.credentialKmsKeyId)
+  : undefined;
+const sessionObjectStore = config.sessionBucketName
+  ? new S3CheckpointObjectStore(config.sessionBucketName)
+  : undefined;
+const checkpointVault =
+  config.sessionKmsKeyId && config.sessionBucketName
+    ? new CheckpointVault(sessionObjectStore!, config.sessionKmsKeyId)
+    : undefined;
+const commandVault =
+  config.sessionKmsKeyId && config.sessionBucketName
+    ? new CommandVault(sessionObjectStore!, config.sessionKmsKeyId)
+    : undefined;
+const sessionJobs = sessionObjectStore
+  ? new SessionJobWorker(sessionRepository.pool, sessionObjectStore)
+  : undefined;
+const control = {
+  repository: controlRepository,
+  auth: new ControlAuthService(controlRepository, config),
+  vault,
+  relay: vault ? new RelayService(controlRepository, vault) : undefined,
+  sessionRepository,
+  coordinationRepository,
+  checkpointVault,
+  commandVault,
+  commandRepository,
+  traceRepository,
+  traceObjectStore,
+};
+const server = serve(
+  {
+    fetch: createApp(
+      repository,
+      config,
+      passwordlessAuth,
+      control,
+      temporalShadowOutbox,
+    ).fetch,
+    port: config.port,
+  },
+  ({ port }) => {
+    console.log(`OpenSidebar cloud service listening on :${port}`);
+  },
+);
+const cleanupTimer = setInterval(
+  () => {
+    void repository
+      .cleanupExpired()
+      .catch((error) => console.error("expired-record cleanup failed", error));
+    void controlRepository
+      .cleanupExpired()
+      .catch((error) => console.error("control-record cleanup failed", error));
+    void sessionRepository
+      .cleanupExpired()
+      .catch((error) => console.error("session-record cleanup failed", error));
+    void sessionJobs
+      ?.cleanupExpiredArtifacts()
+      .catch((error) =>
+        console.error("session-artifact cleanup failed", error),
+      );
+    void traceRepository
+      .cleanupExpired()
+      .then(async (expired) => {
+        for (const trace of expired) {
+          if (traceObjectStore) await traceObjectStore.delete(trace.objectKey);
+          await traceRepository.remove(trace.accountId, trace.traceId);
+        }
+      })
+      .catch((error) => console.error("trace cleanup failed", error));
+  },
+  60 * 60 * 1000,
+);
+cleanupTimer.unref();
+const relayRecoveryTimer = setInterval(() => {
+  void controlRepository
+    .recoverInterruptedRelayRequests(interruptedRelayCutoff())
+    .catch((error) => console.error("relay recovery failed", error));
+}, 60_000);
+relayRecoveryTimer.unref();
+const sessionJobTimer = setInterval(() => {
+  void sessionJobs
+    ?.runOnce()
+    .catch((error) => console.error("session-job execution failed", error));
+}, 5_000);
+sessionJobTimer.unref();
+const stop = async () => {
+  clearInterval(cleanupTimer);
+  clearInterval(relayRecoveryTimer);
+  clearInterval(sessionJobTimer);
+  server.close();
+  await Promise.all([
+    repository.close(),
+    controlRepository.close(),
+    sessionRepository.close(),
+    traceRepository.close(),
+  ]);
+};
+process.on("SIGINT", stop);
+process.on("SIGTERM", stop);

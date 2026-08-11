@@ -7,9 +7,16 @@ import { logger } from "../../utils";
 import { loadSettings } from "../../utils/settings-storage";
 import { DEFAULT_PROVIDER_MODE } from "../../utils/executor-model-policy";
 import { uiRuntime } from "../runtime";
+import {
+  cloudPreferences,
+  cloudPreferencesLinked,
+  cloudSession,
+} from "../cloud-client";
 import type { SettingsSlice, SliceCreator } from "./types";
 
 export const DEFAULT_SETTINGS: UserSettings = {
+  inferenceMode: "local",
+  traceSyncEnabled: false,
   openRouterApiKey: "",
   providerMode: DEFAULT_PROVIDER_MODE,
   perceptionMode: "auto",
@@ -41,8 +48,23 @@ export const createSettingsSlice: SliceCreator<SettingsSlice> = (set) => ({
     try {
       const loaded = await loadSettings(uiRuntime.storage);
       if (loaded) {
+        const cloud = await Promise.all([
+          cloudSession(),
+          cloudPreferencesLinked(),
+        ])
+          .then(([session, linked]) =>
+            session && linked ? cloudPreferences() : null,
+          )
+          .catch(() => null);
+        const cloudValues = cloud
+          ? Object.fromEntries(
+              Object.entries(cloud).filter(
+                ([key]) => key !== "schemaVersion" && key !== "revision",
+              ),
+            )
+          : {};
         set((state) => {
-          state.settings = { ...DEFAULT_SETTINGS, ...loaded };
+          state.settings = { ...DEFAULT_SETTINGS, ...loaded, ...cloudValues };
         });
         logger.debug("ui", "Settings loaded from storage");
       }

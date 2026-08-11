@@ -20,6 +20,7 @@ import {
   E2E_TEST_API_ENABLED_STORAGE_KEY,
 } from "../../../src/background/e2e-test-api";
 import { readE2EConfig } from "./e2e-config";
+import { hasSettledSuccessfulOutcome } from "./outcome-policy";
 
 type TaskCompletionState =
   | "completed"
@@ -989,7 +990,7 @@ export async function startPassiveMonitor(
   tabId: number,
   workspaceId: string,
   options: StartPassiveMonitorOptions,
-): Promise<void> {
+): Promise<{ sessionId?: string }> {
   await ensureE2EPanel(ctx, tabId, workspaceId);
   const helperPage = await openHelperPage(ctx);
   const result = (await helperPage.evaluate(
@@ -1012,10 +1013,11 @@ export async function startPassiveMonitor(
     tabId,
     workspaceId,
     options,
-  )) as { ok?: boolean; detail?: string } | undefined;
+  )) as { ok?: boolean; detail?: string; sessionId?: string } | undefined;
   if (result && result.ok === false) {
     throw new Error(`PASSIVE_MONITOR_START failed: ${result.detail}`);
   }
+  return { sessionId: result?.sessionId };
 }
 
 /**
@@ -1045,17 +1047,18 @@ export async function armPassiveSuggestionCollector(
 export async function stopPassiveMonitor(
   ctx: ExtensionContext,
   workspaceId: string,
+  sessionId?: string,
 ): Promise<void> {
   const helperPage = await openHelperPage(ctx);
-  await helperPage.evaluate(async (wsId: string) => {
+  await helperPage.evaluate(async (wsId: string, sid?: string) => {
     await chrome.runtime.sendMessage({
       type: "PASSIVE_MONITOR_STOP",
       requestId: crypto.randomUUID(),
       source: "sidepanel",
       workspaceId: wsId,
-      payload: { workspaceId: wsId },
+      payload: { workspaceId: wsId, sessionId: sid },
     });
-  }, workspaceId);
+  }, workspaceId, sessionId);
 }
 
 export interface PassiveSuggestion {
@@ -1832,7 +1835,10 @@ export async function waitForOutcome<T>(
       .reverse()
       .find((e: any) => e.type === "AGENT_STATUS");
 
-    if (lastTaskCompletion?.status === "partial") {
+    // Page state is execution truth. Do not let a model's conservative
+    // terminal self-assessment overwrite a fixture state that already proves
+    // the user objective succeeded.
+    if (!lastResult && lastTaskCompletion?.status === "partial") {
       return {
         ok: false,
         reason: "task_partial",
@@ -1841,7 +1847,7 @@ export async function waitForOutcome<T>(
       };
     }
 
-    if (lastTaskCompletion?.status === "failed") {
+    if (!lastResult && lastTaskCompletion?.status === "failed") {
       return {
         ok: false,
         reason: `task_failed:${lastTaskCompletion.detail || lastTaskCompletion.payload?.summary || "unknown"}`,
@@ -1849,7 +1855,7 @@ export async function waitForOutcome<T>(
         events,
       };
     }
-    if (lastTaskCompletion?.status === "stopped") {
+    if (!lastResult && lastTaskCompletion?.status === "stopped") {
       return {
         ok: false,
         reason: `task_stopped:${lastTaskCompletion.detail || lastTaskCompletion.payload?.summary || "unknown"}`,
@@ -1858,12 +1864,20 @@ export async function waitForOutcome<T>(
       };
     }
 
-    if (successfulResult) {
-      const taskCompleted = lastTaskCompletion?.status === "completed";
+    if (lastResult) {
+      const taskCompleted = hasSettledSuccessfulOutcome({
+        hasSuccessfulResult: true,
+        completionStatus: lastTaskCompletion?.status,
+      });
       const agentIdle = lastStatus?.status === "IDLE";
 
       if (taskCompleted) {
-        return { ok: true, reason: "done", result: successfulResult, events };
+        return {
+          ok: true,
+          reason: `${String(lastTaskCompletion.status)}_with_successful_result`,
+          result: lastResult,
+          events,
+        };
       }
 
       if (agentIdle) {
@@ -1872,7 +1886,7 @@ export async function waitForOutcome<T>(
         return {
           ok: true,
           reason: "idle_with_successful_result",
-          result: successfulResult,
+          result: lastResult,
           events,
         };
       }

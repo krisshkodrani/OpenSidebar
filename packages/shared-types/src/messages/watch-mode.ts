@@ -35,6 +35,7 @@ export interface PassiveMonitorStopMessage extends BaseMessage {
   source: UiMessageSource;
   payload: {
     workspaceId?: string | null;
+    sessionId?: string | null;
   };
 }
 
@@ -61,6 +62,13 @@ export interface PassiveMonitorPageActivityMessage extends BaseMessage {
   };
 }
 
+/** Watched content reports a debounced DOM change to wake the monitor. */
+export interface PassiveMonitorPageChangedMessage extends BaseMessage {
+  type: "PASSIVE_MONITOR_PAGE_CHANGED";
+  source: MessageSource.CONTENT;
+  payload: { sessionId: string };
+}
+
 /** Background posts a passive suggestion to the side panel chat. */
 export interface PassiveMonitorSuggestionMessage extends BaseMessage {
   type: "PASSIVE_MONITOR_SUGGESTION";
@@ -83,4 +91,5 @@ export type WatchModeMessage =
   | PassiveMonitorStopMessage
   | PassiveMonitorStatusMessage
   | PassiveMonitorPageActivityMessage
+  | PassiveMonitorPageChangedMessage
   | PassiveMonitorSuggestionMessage;

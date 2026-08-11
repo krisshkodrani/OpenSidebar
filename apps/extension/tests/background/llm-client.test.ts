@@ -440,6 +440,43 @@ describe("LLMClient construction & tier switching", () => {
     expect(sentModel).toBe("custom/judge");
   });
 
+  test("applies independent OpenRouter upstream pins per model seat", async () => {
+    const client = new LLMClient("test-api-key", {
+      providerMode: "openrouter",
+      executorModel: "minimax/minimax-m2.7",
+      plannerModel: "openai/gpt-5.6-terra",
+      judgeModel: "openai/gpt-5.6-luna",
+      executorProviderPin: "Groq",
+      plannerProviderPin: "OpenAI",
+      judgeProviderPin: "OpenAI",
+    });
+    const sent: Array<Record<string, unknown>> = [];
+    mockFetch((_url, init) => {
+      sent.push(JSON.parse(init!.body as string));
+      return jsonApiResponse('{"pass": true}');
+    });
+
+    await client.complete(baseRequest());
+    client.switchToPlanner();
+    await client.complete(baseRequest());
+    await client.runJudge({ systemPrompt: "s", userPrompt: "u" });
+
+    expect(sent.map(({ model, provider }) => ({ model, provider }))).toEqual([
+      {
+        model: "minimax/minimax-m2.7",
+        provider: { only: ["Groq"] },
+      },
+      {
+        model: "openai/gpt-5.6-terra",
+        provider: { only: ["OpenAI"] },
+      },
+      {
+        model: "openai/gpt-5.6-luna",
+        provider: { only: ["OpenAI"] },
+      },
+    ]);
+  });
+
   test("composeText strips think tags from the writer output", async () => {
     const client = makeClient({ writerModel: "custom/writer" });
     mockFetch(() => jsonApiResponse("<think>plan</think>Final text."));

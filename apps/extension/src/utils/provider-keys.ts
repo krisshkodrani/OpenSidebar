@@ -7,6 +7,7 @@ export type StableProviderMode = "openrouter" | "fireworks";
 export type ProviderCredentialSettings = Pick<
   UserSettings,
   | "providerMode"
+  | "inferenceMode"
   | "openRouterApiKey"
   | "openaiApiKey"
   | "groqApiKey"
@@ -19,7 +20,7 @@ export type ProviderCredentialSettings = Pick<
 
 type ProviderKeyField = Exclude<
   keyof ProviderCredentialSettings,
-  "providerMode"
+  "providerMode" | "inferenceMode"
 >;
 
 export interface ProviderStackOption {
@@ -61,6 +62,7 @@ function configuredKey(value: string | undefined): string | undefined {
 export function getAvailableProviderStacks(
   settings: ProviderCredentialSettings,
 ): ProviderStackOption[] {
+  if (settings.inferenceMode === "cloud") return [...PROVIDER_STACK_OPTIONS];
   return PROVIDER_STACK_OPTIONS.filter((option) =>
     option.requiredKeys.every((key) => configuredKey(settings[key])),
   );
@@ -129,6 +131,10 @@ export function getProviderKeyStatus(
   settings: ProviderCredentialSettings,
 ): ProviderKeyStatus {
   const mode = settings.providerMode ?? DEFAULT_PROVIDER_MODE;
+
+  if (settings.inferenceMode === "cloud" && (mode === "openrouter" || mode === "fireworks")) {
+    return { mode, activeKey: "__opensidebar_cloud__", activeKeyName: "OpenSidebar Cloud", missingKeyNames: [], hasRequiredKeys: true };
+  }
 
   if (mode === "cerebras-fireworks") {
     const missingKeyNames: string[] = [];

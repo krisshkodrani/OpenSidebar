@@ -38,6 +38,20 @@ export function notifyTaskCompletion(
     tabId: task.rootTabId,
     payload,
   });
+  // Sandbox reporting is opt-in by origin: the target page holds the host-only
+  // capability cookie and translates this generic completion outcome into its
+  // own result schema. No run id or sandbox state enters the agent runtime.
+  if (typeof chrome !== "undefined" && chrome.tabs?.sendMessage) {
+    void chrome.tabs
+      .sendMessage(task.rootTabId, {
+        type: "SANDBOX_TASK_COMPLETION",
+        payload: {
+          status: payload.status,
+          terminationReason: payload.terminationReason,
+        },
+      })
+      .catch(() => undefined);
+  }
 }
 
 /**

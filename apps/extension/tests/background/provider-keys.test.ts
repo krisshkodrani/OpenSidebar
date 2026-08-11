@@ -8,6 +8,57 @@ import {
 } from "../../src/utils/provider-keys";
 
 describe("provider key status", () => {
+  test("cloud mode supports only the stable relay providers without a local key", () => {
+    expect(
+      getProviderKeyStatus({
+        inferenceMode: "cloud",
+        providerMode: "openrouter",
+        openRouterApiKey: "",
+      }),
+    ).toMatchObject({
+      activeKey: "__opensidebar_cloud__",
+      hasRequiredKeys: true,
+    });
+    expect(
+      getProviderKeyStatus({
+        inferenceMode: "cloud",
+        providerMode: "fireworks",
+        openRouterApiKey: "",
+        fireworksApiKey: "",
+      }),
+    ).toMatchObject({
+      activeKey: "__opensidebar_cloud__",
+      hasRequiredKeys: true,
+    });
+    expect(
+      getProviderKeyStatus({
+        inferenceMode: "cloud",
+        providerMode: "moonshot",
+        openRouterApiKey: "",
+        kimiApiKey: "",
+      }).hasRequiredKeys,
+    ).toBe(false);
+  });
+  test("switching explicitly to local mode never retains the cloud sentinel", () => {
+    expect(
+      getProviderKeyStatus({
+        inferenceMode: "local",
+        providerMode: "openrouter",
+        openRouterApiKey: "local-key",
+      }),
+    ).toMatchObject({
+      activeKey: "local-key",
+      activeKeyName: "OpenRouter",
+      hasRequiredKeys: true,
+    });
+    expect(
+      getProviderKeyStatus({
+        inferenceMode: "local",
+        providerMode: "openrouter",
+        openRouterApiKey: "",
+      }),
+    ).toMatchObject({ hasRequiredKeys: false });
+  });
   test("requires both executor and planner keys for OpenRouter + Groq mode", () => {
     expect(
       getProviderKeyStatus({

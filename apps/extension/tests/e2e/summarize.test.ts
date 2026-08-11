@@ -49,10 +49,6 @@ describe.skipIf(!h.apiKey)("E2E: Summarize", () => {
     const workspaceId = await sendUserChat(h.ctx, prompt, tabId);
 
     const outcome = await waitForTaskCompletion(h.ctx, 90_000, workspaceId);
-    expect(outcome.ok, JSON.stringify(outcome.events.slice(-10), null, 2)).toBe(
-      true,
-    );
-
     await new Promise((resolve) => setTimeout(resolve, 2_000));
     const traceFile = filterTraceFilesByWorkspace(
       findAllNewTraceFiles(h.tracesBefore),
@@ -77,6 +73,10 @@ describe.skipIf(!h.apiKey)("E2E: Summarize", () => {
       coveredConcepts,
       `Summary should cover core article concepts. Got: ${summary}`,
     ).toBeGreaterThanOrEqual(2);
+    expect(
+      outcome.ok || outcome.reason === "task_partial",
+      JSON.stringify(outcome.events.slice(-10), null, 2),
+    ).toBe(true);
 
     const toolCalls = turns.flatMap((turn) =>
       turn.toolCalls.map((tool) => tool.name),

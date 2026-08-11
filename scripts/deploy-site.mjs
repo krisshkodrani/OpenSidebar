@@ -185,7 +185,12 @@ run("aws", [
 // Extensionless copies for subpages. CloudFront maps 403 (missing key) to
 // /index.html, so a clean subpage URL would silently serve the landing page
 // unless an object exists at that exact key.
-const CLEAN_URL_PAGES = ["walkthrough", "ideas", "ideas/done-means-verified"];
+const CLEAN_URL_PAGES = [
+  "walkthrough",
+  "ideas",
+  "ideas/done-means-verified",
+  "ideas/the-sandbox-needs-two-rooms",
+];
 for (const page of CLEAN_URL_PAGES) {
   const src =
     page === "ideas"

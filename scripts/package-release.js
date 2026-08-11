@@ -17,7 +17,14 @@ const distPath = resolve(rootPath, "dist");
 const artifactDir = resolve(rootPath, ".artifacts", "releases");
 const fixedDosTime = 0;
 const fixedDosDate = (1 << 5) | 1; // 1980-01-01
-const nxCliPath = resolve(rootPath, "node_modules", "nx", "dist", "bin", "nx.js");
+const nxCliPath = resolve(
+  rootPath,
+  "node_modules",
+  "nx",
+  "dist",
+  "bin",
+  "nx.js",
+);
 
 const packageJson = JSON.parse(
   readFileSync(resolve(rootPath, "package.json"), "utf-8"),
@@ -32,10 +39,14 @@ execFileSync(process.execPath, [nxCliPath, "run", "extension:build"], {
   stdio: "inherit",
 });
 
-execFileSync(process.execPath, [resolve(rootPath, "scripts", "check-dist.js")], {
-  cwd: rootPath,
-  stdio: "inherit",
-});
+execFileSync(
+  process.execPath,
+  [resolve(rootPath, "scripts", "check-dist.js")],
+  {
+    cwd: rootPath,
+    stdio: "inherit",
+  },
+);
 
 const outputName = `opensidebar-v${version}.zip`;
 const outputPath = resolve(artifactDir, outputName);
@@ -157,7 +168,11 @@ function makeZip(files) {
     writeUInt16(0),
   ]);
 
-  return Buffer.concat([...localParts, centralDirectory, endOfCentralDirectory]);
+  return Buffer.concat([
+    ...localParts,
+    centralDirectory,
+    endOfCentralDirectory,
+  ]);
 }
 
 function readJson(path) {
@@ -177,17 +192,20 @@ function readGitCommit() {
 }
 
 function writeReleaseNotes({ commit, distManifest, hash }) {
-  const notes = `# OpenSidebar v${version} OSS BYOK Preview
+  const notes = `# OpenSidebar v${version}
 
-OpenSidebar v${version} is the GitHub-first OSS BYOK preview release candidate. It ships as source plus a reproducible unpacked-extension zip for manual Chrome installation.
+OpenSidebar v${version} presents one account-first setup across the extension and opensidebar.com while preserving Direct from this browser as an advanced option. It ships as a reproducible Chrome Web Store update candidate and unpacked-extension zip.
 
 ## Highlights
 
-- OpenRouter is the recommended default BYOK provider, with Fireworks retained as the supported alternative.
-- A compact unified task timeline keeps planner-authored steps readable without repeating the primary task label.
-- A visible in-page agent cursor makes active browser work easier to follow.
-- Optional reliability summaries stay local, off by default, inspectable, and clearable; the public build contains no telemetry upload endpoint.
-- Workspace grouping, no-page recovery, composer focus, and duplicate-action handling are more durable.
+- Account-first onboarding guides users through sign-in, secure provider connection, and a safe first task.
+- OpenRouter is the recommended BYOK provider, with Fireworks retained as the supported alternative.
+- Account connections use Cognito PKCE, revocable device sessions, KMS-envelope-encrypted credentials, and a non-retaining streaming relay.
+- Direct from this browser keeps provider keys in Chrome and sends requests directly to the provider.
+- Settings are organized into Account, Agent, Browser, and Advanced; safety controls remain device-local.
+- Synced preference conflicts refresh and retry without blocking browser-only settings from saving.
+- The normalized Chakra application shell manages providers, preferences, devices, Playground, and the Run Viewer.
+- Sessions, checkpoints, device coordination, and encrypted run sync remain hidden behind disabled production flags.
 - Release package builds \`dist/\` and writes a SHA-256 checksum.
 - Manifest/package version alignment enforced by \`ci:dist\`.
 - Public install docs use Corepack-managed pnpm and a safe read-only first task.
@@ -223,12 +241,9 @@ ${hash}  ${outputName}
 
 ## Install
 
-1. Download and unzip \`${outputName}\`.
-2. Open \`chrome://extensions/\`.
-3. Enable Developer mode.
-4. Click Load unpacked.
-5. Select the unzipped extension folder.
-6. Open the side panel and add your provider key in Settings.
+1. Upload \`${outputName}\` as an update to the existing OpenSidebar Chrome Web Store item, or unzip it for local review.
+2. For unpacked review, open \`chrome://extensions/\`, enable Developer mode, click Load unpacked, and select the unzipped folder.
+3. Open the side panel, sign in to your OpenSidebar account, and connect a supported provider. Direct from this browser remains available under Advanced.
 
 Start with a read-only task such as "Summarize this page" on a non-sensitive page.
 
@@ -334,4 +349,6 @@ writeReleaseManifest({
 console.log(`[release:package] Wrote ${relative(rootPath, outputPath)}`);
 console.log(`[release:package] Wrote ${relative(rootPath, checksumPath)}`);
 console.log(`[release:package] Wrote ${relative(rootPath, releaseNotesPath)}`);
-console.log(`[release:package] Wrote ${relative(rootPath, releaseManifestPath)}`);
+console.log(
+  `[release:package] Wrote ${relative(rootPath, releaseManifestPath)}`,
+);

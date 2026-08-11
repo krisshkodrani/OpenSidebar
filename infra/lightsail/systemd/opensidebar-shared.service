@@ -1,0 +1,18 @@
+[Unit]
+Description=OpenSidebar API on the shared PlayScenario Lightsail host
+Requires=docker.service
+After=docker.service network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+WorkingDirectory=/opt/opensidebar
+EnvironmentFile=/etc/opensidebar/playground.env
+ExecStart=/usr/bin/docker compose -f infra/lightsail/compose.shared.yaml up -d --remove-orphans
+ExecStop=/usr/bin/docker compose -f infra/lightsail/compose.shared.yaml down
+TimeoutStartSec=0
+TimeoutStopSec=120
+
+[Install]
+WantedBy=multi-user.target

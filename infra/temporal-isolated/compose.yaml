@@ -1,0 +1,98 @@
+name: opensidebar-temporal-isolated
+services:
+  db:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: temporal_service
+      POSTGRES_PASSWORD: ${TEMPORAL_DB_PASSWORD:?set TEMPORAL_DB_PASSWORD}
+      POSTGRES_DB: temporal
+    command: ["postgres", "-c", "shared_buffers=32MB", "-c", "work_mem=2MB", "-c", "maintenance_work_mem=16MB", "-c", "max_connections=30"]
+    volumes: ["temporal-db:/var/lib/postgresql/data", "./init-visibility.sql:/docker-entrypoint-initdb.d/01-visibility.sql:ro"]
+    mem_limit: 192m
+    cpus: 0.35
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U temporal_service -d temporal"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+    security_opt: ["no-new-privileges:true"]
+    logging: { driver: json-file, options: { max-size: "10m", max-file: "2" } }
+    networks: [isolated]
+
+  schema:
+    image: temporalio/admin-tools:1.30.4@sha256:0e5da5cb6714e457b10e4015d4b2091f3d822a21912de733a512832ae3baadb5
+    restart: "no"
+    depends_on: { db: { condition: service_healthy } }
+    entrypoint: ["/bin/sh", "-ec"]
+    command:
+      - >-
+        ( temporal-sql-tool --plugin postgres12 --ep db -p 5432 -u temporal_service
+        -pw "$${TEMPORAL_DB_PASSWORD}" --db temporal setup-schema -v 0.0 || true;
+        ) &&
+        temporal-sql-tool --plugin postgres12 --ep db -p 5432 -u temporal_service
+        -pw "$${TEMPORAL_DB_PASSWORD}" --db temporal update-schema
+        -d /etc/temporal/schema/postgresql/v12/temporal/versioned &&
+        ( temporal-sql-tool --plugin postgres12 --ep db -p 5432 -u temporal_service
+        -pw "$${TEMPORAL_DB_PASSWORD}" --db temporal_visibility setup-schema -v 0.0 || true;
+        ) &&
+        temporal-sql-tool --plugin postgres12 --ep db -p 5432 -u temporal_service
+        -pw "$${TEMPORAL_DB_PASSWORD}" --db temporal_visibility update-schema
+        -d /etc/temporal/schema/postgresql/v12/visibility/versioned
+    environment: { TEMPORAL_DB_PASSWORD: "${TEMPORAL_DB_PASSWORD:?set TEMPORAL_DB_PASSWORD}" }
+    mem_limit: 80m
+    cpus: 0.15
+    networks: [isolated]
+
+  temporal:
+    image: temporalio/server:1.30.4@sha256:a8b99ed4d48b01604f1ed05318f14457dd84bf5fda2bd2bb3992e7297c48baa1
+    restart: unless-stopped
+    depends_on: { schema: { condition: service_completed_successfully } }
+    environment:
+      DB: postgres12
+      DB_PORT: "5432"
+      POSTGRES_SEEDS: db
+      POSTGRES_USER: temporal_service
+      POSTGRES_PWD: ${TEMPORAL_DB_PASSWORD:?set TEMPORAL_DB_PASSWORD}
+      DBNAME: temporal
+      VISIBILITY_DBNAME: temporal_visibility
+      SKIP_SCHEMA_SETUP: "true"
+    volumes: ["./temporal-dynamicconfig.yaml:/etc/temporal/config/dynamicconfig/docker.yaml:ro"]
+    expose: ["7233"]
+    mem_limit: 400m
+    cpus: 0.75
+    security_opt: ["no-new-privileges:true"]
+    logging: { driver: json-file, options: { max-size: "10m", max-file: "2" } }
+    networks: [isolated]
+
+  namespace:
+    image: temporalio/admin-tools:1.30.4@sha256:0e5da5cb6714e457b10e4015d4b2091f3d822a21912de733a512832ae3baadb5
+    restart: "no"
+    depends_on: { temporal: { condition: service_started } }
+    entrypoint: ["/bin/sh", "-ec"]
+    command: ["until temporal operator namespace describe --address temporal:7233 opensidebar-shadow >/dev/null 2>&1; do temporal operator namespace create --address temporal:7233 --retention 24h opensidebar-shadow && break; sleep 2; done"]
+    mem_limit: 48m
+    cpus: 0.1
+    networks: [isolated]
+
+  worker:
+    image: ${OPENSIDEBAR_TEMPORAL_WORKER_IMAGE:-opensidebar-temporal-spike:isolated}
+    restart: unless-stopped
+    depends_on: { namespace: { condition: service_completed_successfully } }
+    environment:
+      NODE_OPTIONS: --max-old-space-size=112
+      TEMPORAL_ADDRESS: temporal:7233
+      TEMPORAL_NAMESPACE: opensidebar-shadow
+      TEMPORAL_TASK_QUEUE: opensidebar-shadow-v1
+      TEMPORAL_SHADOW_API_URL: ${TEMPORAL_SHADOW_API_URL:?set TEMPORAL_SHADOW_API_URL}
+      TEMPORAL_SHADOW_TOKEN: ${TEMPORAL_SHADOW_TOKEN:?set TEMPORAL_SHADOW_TOKEN}
+    mem_limit: 160m
+    cpus: 0.35
+    read_only: true
+    tmpfs: ["/tmp:size=24m"]
+    security_opt: ["no-new-privileges:true"]
+    logging: { driver: json-file, options: { max-size: "10m", max-file: "2" } }
+    networks: [isolated]
+
+volumes: { temporal-db: {} }
+networks: { isolated: { internal: false } }

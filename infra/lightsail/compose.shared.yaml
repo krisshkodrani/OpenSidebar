@@ -1,0 +1,77 @@
+name: opensidebar
+services:
+  api:
+    image: ${OPENSIDEBAR_API_IMAGE:-opensidebar-cloud-service:goal1}
+    container_name: opensidebar-cloud-api
+    restart: unless-stopped
+    environment:
+      PORT: "8787"
+      NODE_OPTIONS: "--max-old-space-size=192"
+      DATABASE_URL: postgresql://playground_service:${PLAYGROUND_DB_PASSWORD}@db:5432/opensidebar
+      CONTROL_DATABASE_URL: postgresql://opensidebar_service:${CONTROL_DB_PASSWORD:?set CONTROL_DB_PASSWORD}@db:5432/opensidebar
+      CONTROL_ORIGIN: ${CONTROL_ORIGIN:-https://opensidebar.com}
+      TARGET_ORIGIN: ${TARGET_ORIGIN:-https://play.opensidebar.com}
+      COOKIE_SECURE: "true"
+      COGNITO_DOMAIN: ${COGNITO_DOMAIN:?set COGNITO_DOMAIN}
+      COGNITO_CLIENT_ID: ${COGNITO_CLIENT_ID:?set COGNITO_CLIENT_ID}
+      AWS_REGION: ${AWS_REGION:-eu-central-1}
+      AWS_ACCESS_KEY_ID: ${OPENSIDEBAR_KMS_ACCESS_KEY_ID:-}
+      AWS_SECRET_ACCESS_KEY: ${OPENSIDEBAR_KMS_SECRET_ACCESS_KEY:-}
+      AUTH_QUOTA_HMAC_KEY: ${AUTH_QUOTA_HMAC_KEY:?set AUTH_QUOTA_HMAC_KEY}
+      CLOUD_CONTROL_ENABLED: ${CLOUD_CONTROL_ENABLED:-false}
+      EXTENSION_AUTH_ENABLED: ${EXTENSION_AUTH_ENABLED:-false}
+      CREDENTIAL_WRITES_ENABLED: ${CREDENTIAL_WRITES_ENABLED:-false}
+      RELAY_ENABLED: ${RELAY_ENABLED:-false}
+      PREFERENCE_WRITES_ENABLED: ${PREFERENCE_WRITES_ENABLED:-false}
+      CLOUD_SESSIONS_ENABLED: ${CLOUD_SESSIONS_ENABLED:-false}
+      CLOUD_SESSION_TESTER_SUBJECTS: ${CLOUD_SESSION_TESTER_SUBJECTS:-}
+      CLOUD_OPERATOR_SUBJECTS: ${CLOUD_OPERATOR_SUBJECTS:-}
+      CHECKPOINT_WRITES_ENABLED: ${CHECKPOINT_WRITES_ENABLED:-false}
+      CHECKPOINT_RESTORE_ENABLED: ${CHECKPOINT_RESTORE_ENABLED:-false}
+      SESSION_EXPORTS_ENABLED: ${SESSION_EXPORTS_ENABLED:-false}
+      DEVICE_COMMANDS_ENABLED: ${DEVICE_COMMANDS_ENABLED:-false}
+      DEVICE_TAKEOVER_ENABLED: ${DEVICE_TAKEOVER_ENABLED:-false}
+      TEMPORAL_SHADOW_ENABLED: ${TEMPORAL_SHADOW_ENABLED:-false}
+      TEMPORAL_COORDINATION_ENABLED: ${TEMPORAL_COORDINATION_ENABLED:-false}
+      TEMPORAL_SHADOW_TOKEN: ${TEMPORAL_SHADOW_TOKEN:-}
+      TEMPORAL_SHADOW_HASH_KEY: ${TEMPORAL_SHADOW_HASH_KEY:-}
+      COGNITO_EXTENSION_CLIENT_ID: ${COGNITO_EXTENSION_CLIENT_ID:-}
+      OPENSIDEBAR_EXTENSION_ID: ${OPENSIDEBAR_EXTENSION_ID:-}
+      CREDENTIAL_KMS_KEY_ID: ${CREDENTIAL_KMS_KEY_ID:-}
+      SESSION_KMS_KEY_ID: ${SESSION_KMS_KEY_ID:-}
+      SESSION_BUCKET_NAME: ${SESSION_BUCKET_NAME:-}
+      TRACE_SYNC_ENABLED: ${TRACE_SYNC_ENABLED:-false}
+      TRACE_UPLOADS_ENABLED: ${TRACE_UPLOADS_ENABLED:-false}
+      TRACE_DOWNLOADS_ENABLED: ${TRACE_DOWNLOADS_ENABLED:-false}
+      TRACE_TESTER_SUBJECTS: ${TRACE_TESTER_SUBJECTS:-}
+      TRACE_BUCKET_NAME: ${TRACE_BUCKET_NAME:-}
+      CLOUD_TESTER_SUBJECTS: ${CLOUD_TESTER_SUBJECTS:-}
+      RELAY_MODEL_ALLOWLIST: ${RELAY_MODEL_ALLOWLIST:-}
+    expose: ["8787"]
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "node",
+          "-e",
+          "fetch('http://127.0.0.1:8787/health/ready').then(r=>{if(!r.ok)process.exit(1)})",
+        ]
+      interval: 15s
+      timeout: 5s
+      retries: 10
+    mem_limit: 256m
+    cpus: 0.5
+    read_only: true
+    tmpfs: ["/tmp:size=32m"]
+    security_opt: ["no-new-privileges:true"]
+    logging:
+      driver: json-file
+      options: { max-size: "10m", max-file: "3" }
+    networks:
+      playscenario:
+        aliases: ["opensidebar-cloud-api"]
+
+networks:
+  playscenario:
+    external: true
+    name: playscenario_default

@@ -13,3 +13,8 @@ export * from "./agent";
 export * from "./messages";
 export * from "./progress";
 export * from "./browser-bridge";
+export * from "./cloud-control";
+export * from "./cloud-sessions";
+export * from "./cloud-session-policy";
+export * from "./portable-checkpoint-policy";
+export * from "./cloud-traces";

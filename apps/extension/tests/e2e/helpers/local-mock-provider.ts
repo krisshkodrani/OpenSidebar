@@ -222,6 +222,7 @@ function passiveWatchJson(text: string): string {
       evidence: [],
     });
   }
+  const requestedCartAction = /Watch instructions:[\s\S]{0,500}add (?:it|one|the .*?) to (?:the |your )?cart/i.test(text);
   return JSON.stringify({
     shouldPost: true,
     reason: "changed_availability",
@@ -232,6 +233,9 @@ function passiveWatchJson(text: string): string {
       'Availability changed from "Out of stock" to "In stock"',
       '"Add to cart" is now enabled',
     ],
+    ...(requestedCartAction
+      ? { action: "Add one Nimbus Running Shoe to the cart." }
+      : {}),
   });
 }
 
@@ -529,6 +533,13 @@ function executorToolCalls(
   scenarioName: LocalMockProviderScenarioName,
   state: LocalMockProviderState,
 ): ToolCallSpec[] {
+  if (scenarioName === "watch-restock") {
+    if (/cartCount|Added to cart/i.test(text)) {
+      return [{ name: "done", args: { summary: "Added one Nimbus Running Shoe to the cart." } }];
+    }
+    const addId = parseTaggedId(text, /Add to cart/i) ?? 1;
+    return [{ name: "click_element", args: { id: addId } }];
+  }
   if (scenarioName === "partial-handoff-max-turns") {
     state.partialHandoffReadReturned = true;
     return [{ name: "read_page", args: {} }];

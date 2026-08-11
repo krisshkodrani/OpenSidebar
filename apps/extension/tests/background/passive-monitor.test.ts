@@ -60,6 +60,7 @@ function createHarness(
   const snapshots = [...(options.snapshots ?? [snapshot("Question A")])];
   const broadcasts: RuntimeMessage[] = [];
   const pageActivity = vi.fn();
+  const executeAction = vi.fn(async () => {});
   const captureVisibleTab = vi.fn(async () => "data:image/jpeg;base64,screen");
   const pagePort: BrowserPagePort = {
     getTab: vi.fn(async () => ({
@@ -121,6 +122,7 @@ function createHarness(
       broadcasts.push(message);
     },
     pageActivity,
+    executeAction,
     isWorkspaceActive: () => options.activeWorkspace ?? false,
     autoSchedule: options.autoSchedule ?? false,
     now: options.now ?? (() => 1000 + broadcasts.length),
@@ -132,6 +134,7 @@ function createHarness(
     controller,
     broadcasts,
     pageActivity,
+    executeAction,
     evaluate,
     contentPort,
     pagePort,
@@ -189,6 +192,21 @@ describe("PassiveMonitorController", () => {
     );
   });
 
+  test("stops the exact session even when the UI workspace is stale", async () => {
+    const { controller, pageActivity } = createHarness();
+    const result = await start(controller);
+
+    expect(controller.stopSessionById(result.sessionId)).toBe(true);
+    expect(controller.hasSession("ws-1")).toBe(false);
+    expect(pageActivity).toHaveBeenLastCalledWith(
+      expect.objectContaining({
+        sessionId: result.sessionId,
+        active: false,
+        status: "stopped",
+      }),
+    );
+  });
+
   test("starts its immediate scheduled observation without unbound timer invocation", async () => {
     let timerCalls = 0;
     const setTimeoutFn = vi.fn(function (
@@ -215,8 +233,51 @@ describe("PassiveMonitorController", () => {
     await vi.waitFor(() => expect(evaluate).toHaveBeenCalledTimes(1));
   });
 
+  test("debounces a DOM change only for the matching tab and session", async () => {
+    const scheduled: number[] = [];
+    const setTimeoutFn = vi.fn((_callback: () => void, delay?: number) => {
+      scheduled.push(delay ?? 0);
+      return scheduled.length as unknown as ReturnType<typeof setTimeout>;
+    }) as unknown as typeof setTimeout;
+    const { controller } = createHarness({ autoSchedule: true, setTimeoutFn });
+    const result = await start(controller);
+
+    expect(controller.notifyPageChanged(999, result.sessionId!)).toBe(false);
+    expect(controller.notifyPageChanged(123, "wrong-session")).toBe(false);
+    expect(controller.notifyPageChanged(123, result.sessionId!)).toBe(true);
+    expect(scheduled).toEqual([0, 750]);
+  });
+
+  test("runs the safety observation after the configured interval", async () => {
+    vi.useFakeTimers();
+    try {
+      const { controller, evaluate } = createHarness({
+        autoSchedule: true,
+        snapshots: [snapshot("Question A"), snapshot("Question B")],
+        now: () => Date.now(),
+      });
+      await controller.startSession({
+        tabId: 123,
+        workspaceId: "ws-1",
+        instructions: "Tell me when Question B appears.",
+        inputSources: ["page"],
+        minIntervalMs: 30_000,
+      });
+
+      await vi.advanceTimersByTimeAsync(0);
+      expect(evaluate).toHaveBeenCalledTimes(1);
+      await vi.advanceTimersByTimeAsync(29_999);
+      expect(evaluate).toHaveBeenCalledTimes(1);
+      await vi.advanceTimersByTimeAsync(1);
+      expect(evaluate).toHaveBeenCalledTimes(2);
+      controller.stopSession("ws-1");
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   test("does not evaluate again when the page fingerprint is unchanged", async () => {
-    const { controller, evaluate, broadcasts } = createHarness({
+    const { controller, evaluate, broadcasts, pageActivity } = createHarness({
       snapshots: [snapshot("Question A"), snapshot("Question A")],
     });
     await start(controller);
@@ -225,6 +286,13 @@ describe("PassiveMonitorController", () => {
     await controller.evaluateNow("ws-1");
 
     expect(evaluate).toHaveBeenCalledTimes(1);
+    expect(pageActivity).toHaveBeenCalledWith(
+      expect.objectContaining({ active: true, tabId: 123 }),
+    );
+    expect(broadcasts.at(-1)).toMatchObject({
+      type: "PASSIVE_MONITOR_STATUS",
+      payload: { detail: expect.stringContaining("No relevant change yet") },
+    });
     expect(
       broadcasts.filter(
         (message) => message.type === "PASSIVE_MONITOR_SUGGESTION",
@@ -273,6 +341,52 @@ describe("PassiveMonitorController", () => {
         (message) => message.type === "PASSIVE_MONITOR_SUGGESTION",
       ),
     ).toHaveLength(2);
+  });
+
+  test("executes a matched pre-confirmed action once and stops watching", async () => {
+    const { controller, evaluate, executeAction, broadcasts, pageActivity } =
+      createHarness();
+    evaluate.mockResolvedValueOnce({
+      shouldPost: true,
+      answer: "The Nimbus Running Shoe is back in stock. Starting your action.",
+      confidence: "high" as const,
+      evidence: ["In stock"],
+      reason: "restocked",
+      action: "Add one pair of Nimbus Running Shoes in size 42 to the cart.",
+    });
+    await controller.startSession({
+      tabId: 123,
+      workspaceId: "ws-1",
+      instructions:
+        "When the Nimbus Running Shoe is back in stock, add one pair in size 42 to the cart.",
+      inputSources: ["page"],
+      minIntervalMs: 1500,
+    });
+
+    await controller.evaluateNow("ws-1");
+
+    expect(executeAction).toHaveBeenCalledTimes(1);
+    expect(executeAction).toHaveBeenCalledWith(
+      expect.objectContaining({
+        action: "Add one pair of Nimbus Running Shoes in size 42 to the cart.",
+        tabId: 123,
+        workspaceId: "ws-1",
+      }),
+    );
+    expect(controller.hasSession("ws-1")).toBe(false);
+    expect(pageActivity).toHaveBeenLastCalledWith(
+      expect.objectContaining({ active: false, status: "stopped" }),
+    );
+    expect(broadcasts.at(-1)).toMatchObject({
+      type: "PASSIVE_MONITOR_STATUS",
+      payload: {
+        status: "stopped",
+        detail: expect.stringContaining("Starting pre-confirmed action"),
+      },
+    });
+
+    await controller.evaluateNow("ws-1");
+    expect(executeAction).toHaveBeenCalledTimes(1);
   });
 
   test("blocks observations on URLs denied by site access settings", async () => {

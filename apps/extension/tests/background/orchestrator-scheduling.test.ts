@@ -5,7 +5,10 @@ import {
   getResourceBlockedPendingNodes,
   getRunnablePendingNodes,
 } from "../../src/background/orchestrator/scheduling";
-import { annotateParallelContracts } from "../../src/background/orchestrator/parallel-contract";
+import {
+  annotateParallelContracts,
+  inferNodeParallelContract,
+} from "../../src/background/orchestrator/parallel-contract";
 import { TaskNode } from "../../src/background/orchestrator/types";
 import { ToolName } from "../../src/types";
 
@@ -31,6 +34,77 @@ function node(
 }
 
 describe("Orchestrator dependency scheduling", () => {
+  test("repairs empty resource contracts to a conservative root-tab hint", () => {
+    const pending = node("empty-contract", "pending");
+    pending.description = "Report the prepared result";
+    pending.successCriteria = "The result is reported";
+    pending.parallelContract = {
+      parallelism: "serialized",
+      resourceHints: [],
+      siblingAwareness: "coordination_required",
+    };
+
+    annotateParallelContracts([pending]);
+
+    expect(pending.parallelContract?.resourceHints).toEqual([
+      expect.objectContaining({ kind: "tab", key: "root", access: "read" }),
+    ]);
+  });
+
+  test("adds root-tab ownership when planner semantic hints omit browser state", () => {
+    const contract = inferNodeParallelContract({
+      description: "Open Options and select the safest replacement",
+      successCriteria: "The replacement is selected",
+      dependencies: [],
+      parallelContract: {
+        parallelism: "resource_bound",
+        resourceHints: [
+          {
+            kind: "record",
+            key: "replacement",
+            access: "write",
+            confidence: 0.9,
+            source: "planner",
+          },
+        ],
+        siblingAwareness: "summary",
+      },
+    });
+
+    expect(contract.resourceHints).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ kind: "tab", key: "root" }),
+      ]),
+    );
+  });
+
+  test("preserves explicit separate-tab ownership", () => {
+    const contract = inferNodeParallelContract({
+      description: "Inspect the comparison in its assigned tab",
+      successCriteria: "Comparison recorded",
+      dependencies: [],
+      parallelContract: {
+        parallelism: "independent",
+        resourceHints: [
+          {
+            kind: "tab",
+            key: "comparison-b",
+            access: "read",
+            confidence: 0.9,
+            source: "planner",
+          },
+        ],
+        siblingAwareness: "summary",
+      },
+    });
+
+    expect(contract.resourceHints).toHaveLength(1);
+    expect(contract.resourceHints[0]).toMatchObject({
+      kind: "tab",
+      key: "comparison-b",
+    });
+  });
+
   test("returns only pending nodes with satisfied dependencies", () => {
     const nodes: TaskNode[] = [
       node("a", "completed"),

@@ -276,7 +276,8 @@ export async function launchWithExtension(): Promise<ExtensionContext> {
     swTarget = await browser.waitForTarget(
       (t) =>
         t.type() === "service_worker" &&
-        t.url().startsWith("chrome-extension://"),
+        t.url().startsWith("chrome-extension://") &&
+        t.url().endsWith("/service-worker-loader.js"),
       { timeout: SERVICE_WORKER_TARGET_TIMEOUT_MS },
     );
   } catch (error) {

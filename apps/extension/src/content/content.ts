@@ -23,6 +23,7 @@ import {
 } from "../types";
 import { buildSnapshot } from "./snapshot";
 import { executeAction } from "./actions";
+import { reportSandboxTaskCompletion } from "./sandbox-completion";
 import {
   initPresence,
   resumePresence,
@@ -548,6 +549,11 @@ if (typeof chrome !== "undefined" && chrome.runtime?.onMessage) {
   chrome.runtime.onMessage.addListener(
     (message: RuntimeMessage, _sender, sendResponse) => {
       const messageType = message.type as string;
+      if (messageType === "SANDBOX_TASK_COMPLETION" && window.location.hostname === "play.opensidebar.com") {
+        const payload = (message as unknown as { payload?: { status?: string; terminationReason?: string } }).payload;
+        void reportSandboxTaskCompletion(payload).catch(() => undefined);
+        return false;
+      }
       if (messageType === "E2E_CONTENT_READY_PING") {
         sendResponse?.({
           ok: true,
@@ -658,6 +664,7 @@ if (typeof chrome !== "undefined" && chrome.runtime?.onMessage) {
 
       if (message.type === "PASSIVE_MONITOR_PAGE_ACTIVITY") {
         applyWatchPageActivity(message.payload.active);
+        configurePassivePageListener(message.payload.active, message.payload.sessionId);
         return;
       }
 
@@ -1349,6 +1356,53 @@ function removeFloatingHudOnly() {
 function removeFloatingAgentCue() {
   removeFloatingHudOnly();
   removeAgentBorder();
+}
+
+let passivePageObserver: MutationObserver | null = null;
+let passivePageChangeTimer: ReturnType<typeof setTimeout> | null = null;
+let passivePageSessionId: string | null = null;
+
+function configurePassivePageListener(active: boolean, sessionId: string): void {
+  passivePageObserver?.disconnect();
+  passivePageObserver = null;
+  passivePageSessionId = active ? sessionId : null;
+  if (passivePageChangeTimer) clearTimeout(passivePageChangeTimer);
+  passivePageChangeTimer = null;
+  if (!active || !document.documentElement) return;
+
+  passivePageObserver = new MutationObserver((records) => {
+    const meaningful = records.some((record) => {
+      const element = record.target instanceof Element
+        ? record.target
+        : record.target.parentElement;
+      if (element && isOwnElement(element)) return false;
+      if (record.type !== "childList") return true;
+      const changedNodes = [...record.addedNodes, ...record.removedNodes];
+      return changedNodes.length === 0 || changedNodes.some((node) => {
+        const changedElement = node instanceof Element ? node : node.parentElement;
+        return !changedElement || !isOwnElement(changedElement);
+      });
+    });
+    if (!meaningful || passivePageChangeTimer) return;
+    passivePageChangeTimer = setTimeout(() => {
+      passivePageChangeTimer = null;
+      const currentSessionId = passivePageSessionId;
+      if (!currentSessionId) return;
+      void chrome.runtime.sendMessage({
+        type: "PASSIVE_MONITOR_PAGE_CHANGED",
+        source: MessageSource.CONTENT,
+        requestId: crypto.randomUUID(),
+        payload: { sessionId: currentSessionId },
+      } satisfies RuntimeMessage).catch(() => undefined);
+    }, 250);
+  });
+  passivePageObserver.observe(document.documentElement, {
+    subtree: true,
+    childList: true,
+    characterData: true,
+    attributes: true,
+    attributeFilter: ["aria-disabled", "aria-label", "class", "disabled", "hidden", "style", "value"],
+  });
 }
 
 function applyWatchPageActivity(active: boolean): void {

@@ -1,8 +1,14 @@
 packages:
+  - apps/cloud-service
+  - apps/sandbox
+  - apps/temporal-spike
   - apps/extension
   - apps/extension/tests/e2e/fixtures/online-shop-pro
   - infra/telemetry
+  - infra/control-plane
+  - infra/sandbox
   - packages/prompts
+  - packages/sandbox-contracts
   - packages/shared-types
 
 minimumReleaseAge: 10080
@@ -14,6 +20,8 @@ resolutionMode: highest
 blockExoticSubdeps: true
 
 allowBuilds:
+  "@temporalio/core-bridge": true
+  "@swc/core": true
   better-sqlite3: true
   esbuild: true
   nx: true

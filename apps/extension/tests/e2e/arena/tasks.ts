@@ -356,7 +356,7 @@ export const ARENA_TASKS: readonly ArenaTask[] = [
     title: "Read Canvas Fine Print",
     tier: "medium",
     sourceFile: "fixtures/online-shop-pro/src/routes/visual-canvas-small.tsx",
-    sourceCase: "agent magnifies 8px canvas fine print to read a metric",
+    sourceCase: "agent magnifies canvas fine print to read a metric",
     startRoute: "/visual-canvas-small",
     prompt:
       "Read the fine print under the chart and tell me the Q3 net margin.",
@@ -366,7 +366,7 @@ export const ARENA_TASKS: readonly ArenaTask[] = [
     validator: "canvasFinePrintAnswered",
     validatorKind: "final-answer",
     description:
-      "The value exists only as 8px canvas pixels (no DOM/aria text) — requires inspect_region magnification.",
+      "The value exists only as small canvas pixels (no DOM/aria text), rewarding inspect_region without depending on unstable glyph rasterization.",
   },
   {
     id: "job-pipeline.stage-two-applications",

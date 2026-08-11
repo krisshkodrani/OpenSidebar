@@ -1,0 +1,31 @@
+{
+  "name": "opensidebar-cloud-service",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "scripts": {
+    "dev": "tsx src/server.ts",
+    "start": "node dist/server.js",
+    "build": "esbuild src/server.ts src/postgres-durability-drill.ts --bundle --platform=node --format=esm --target=node22 --outdir=dist --external:pg --external:hono --external:hono/* --external:@hono/node-server --external:@aws-sdk/client-cognito-identity-provider --external:@aws-sdk/client-kms --external:@aws-sdk/client-s3",
+    "build:postgres-comparison": "esbuild src/postgres-comparison-runner.ts --bundle --platform=node --format=esm --target=node22 --outfile=dist/postgres-comparison-runner.js --external:pg",
+    "typecheck": "tsc -p tsconfig.json",
+    "test": "tsx --test test/**/*.test.ts"
+  },
+  "dependencies": {
+    "@aws-sdk/client-cognito-identity-provider": "^3.859.0",
+    "@aws-sdk/client-kms": "^3.859.0",
+    "@aws-sdk/client-s3": "3.859.0",
+    "@hono/node-server": "^2.0.5",
+    "@opensidebar/sandbox-contracts": "workspace:*",
+    "@opensidebar/shared-types": "workspace:*",
+    "hono": "^4.12.31",
+    "pg": "^8.16.3"
+  },
+  "devDependencies": {
+    "@types/node": "22.13.14",
+    "@types/pg": "^8.15.5",
+    "esbuild": "^0.27.7",
+    "tsx": "^4.19.0",
+    "typescript": "^5.5.3"
+  }
+}

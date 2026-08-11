@@ -1,0 +1,28 @@
+{
+  "name": "opensidebar-temporal-spike",
+  "private": true,
+  "version": "0.0.0-spike",
+  "type": "module",
+  "scripts": {
+    "build": "esbuild src/worker.ts src/workflows.ts src/run-fixtures.ts src/run-worker-restart-drill.ts src/run-load-fixtures.ts src/run-stuck-operation-drill.ts src/run-sustained-load.ts --bundle --platform=node --format=esm --target=node22 --outdir=dist --external:@temporalio/*",
+    "fixtures": "tsx src/run-fixtures.ts",
+    "typecheck": "tsc -p tsconfig.json",
+    "test": "tsx --test test/*.test.ts"
+  },
+  "dependencies": {
+    "@temporalio/activity": "1.21.1",
+    "@temporalio/client": "1.21.1",
+    "@temporalio/common": "1.21.1",
+    "@temporalio/worker": "1.21.1",
+    "@temporalio/workflow": "1.21.1"
+  },
+  "devDependencies": {
+    "@types/node": "22.13.14",
+    "esbuild": "^0.27.7",
+    "tsx": "^4.19.0",
+    "typescript": "^5.5.3"
+  },
+  "optionalDependencies": {
+    "@esbuild/linux-x64": "0.27.7"
+  }
+}

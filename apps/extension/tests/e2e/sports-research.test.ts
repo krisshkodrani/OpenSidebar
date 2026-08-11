@@ -44,7 +44,7 @@ describe.skipIf(!h.apiKey)("E2E: Sports Disruption Research", () => {
     expect(tabId).toBeGreaterThan(0);
 
     const prompt =
-      "Treat this as one end-to-end browser workflow: investigate Northstar FC's Saturday kickoff by moving through Alert, Official, Booking, Options, then Review without revisiting completed evidence. Verify the official kickoff and 90-minute arrival rule, compare the current booking, and review all replacement options. Select and prepare the safest compliant change for all 18 travelers, but do not confirm the ticket purchase. Report the new train times, arrival buffer, and total change fee.";
+      "Northstar FC's Saturday kickoff has changed. Verify the official kickoff time and arrival requirement, check whether the current booking still works, and compare the available replacements for all 18 travelers. Prepare the safest compliant change, but do not purchase or confirm it. Then report the new departure and arrival times, arrival buffer, and total change fee.";
     const workspaceId = await sendUserChat(h.ctx, prompt, tabId);
 
     const outcome = await waitForOutcome(

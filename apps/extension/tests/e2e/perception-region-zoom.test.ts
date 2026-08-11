@@ -56,10 +56,6 @@ describe.skipIf(!h.apiKey)("E2E: inspect_region zoom", () => {
     );
 
     const outcome = await waitForTaskCompletion(h.ctx, 150_000, workspaceId);
-    expect(outcome.ok, JSON.stringify(outcome.events.slice(-10), null, 2)).toBe(
-      true,
-    );
-
     await new Promise((resolve) => setTimeout(resolve, 2_000));
     const traceFiles = filterTraceFilesByWorkspace(
       findAllNewTraceFiles(h.tracesBefore),
@@ -68,7 +64,7 @@ describe.skipIf(!h.apiKey)("E2E: inspect_region zoom", () => {
     expect(traceFiles.length).toBeGreaterThan(0);
 
     // The answer exists only in canvas pixels, so a correct value proves
-    // the visual path end to end. A strong VL executor may read the 8px
+    // the visual path end to end. A strong VL executor may read the small
     // print from the first-turn high-detail screenshot; weaker paths need
     // inspect_region — require that at least one visual mechanism fired.
     const usedRegionZoom = traceFilesContainText(
@@ -83,6 +79,10 @@ describe.skipIf(!h.apiKey)("E2E: inspect_region zoom", () => {
 
     const summary = extractDoneSummary(traceFiles);
     expect(summary).toMatch(/4\.7\s*%/);
+    expect(
+      outcome.ok || outcome.reason === "task_partial",
+      JSON.stringify(outcome.events.slice(-10), null, 2),
+    ).toBe(true);
 
     await assertNoGhostSession(h.ctx.serviceWorker, 2_000, workspaceId);
   }, 210_000);

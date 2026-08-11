@@ -19,6 +19,10 @@ export const DEFAULT_ENABLED_SKILL_PACK_IDS = [
 ];
 
 export interface UserSettings {
+  /** Explicit opt-in for E2EE trace upload after a run. Disabled by default. */
+  traceSyncEnabled?: boolean;
+  /** Provider calls use a local key or the account-scoped encrypted cloud relay. */
+  inferenceMode?: "local" | "cloud";
   openRouterApiKey: string;
   /** Provider mode: how LLM providers are combined across roles */
   providerMode?:
@@ -86,6 +90,12 @@ export interface UserSettings {
   executorModel?: string;
   /** Override planner model. */
   plannerModel?: string;
+  /** Override verification judge model. */
+  judgeModel?: string;
+  /** OpenRouter upstream provider pins, applied independently per model seat. */
+  executorProviderPin?: string;
+  plannerProviderPin?: string;
+  judgeProviderPin?: string;
   /**
    * Optional specialist Writer model for composing free-text/prose answers
    * (e.g. job-application questions, message bodies). When set, the agent

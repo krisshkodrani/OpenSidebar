@@ -493,6 +493,7 @@ export class WorkspaceManager {
     name: string,
     color: chrome.tabGroups.ColorEnum = GROUP_COLOR,
     initialTabId?: number,
+    workspaceId?: string,
   ): Promise<Workspace> {
     await this.ensureInitialized();
     return this.withMutationLock(async () => {
@@ -513,7 +514,7 @@ export class WorkspaceManager {
       }
 
       const workspace: Workspace = {
-        id: crypto.randomUUID(),
+        id: workspaceId ?? crypto.randomUUID(),
         name,
         baseName: name,
         color,
