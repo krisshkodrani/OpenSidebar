@@ -21,6 +21,7 @@ export type CloudConfig = {
   sessionExportsEnabled?: boolean;
   deviceCommandsEnabled: boolean;
   deviceTakeoverEnabled: boolean;
+  remoteMissionsEnabled?: boolean;
   temporalShadowEnabled: boolean;
   temporalCoordinationEnabled: boolean;
   temporalShadowToken?: string;
@@ -247,6 +248,8 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): CloudConfig {
     deviceCommandsEnabled,
     deviceTakeoverEnabled:
       deviceCommandsEnabled && enabled("DEVICE_TAKEOVER_ENABLED"),
+    remoteMissionsEnabled:
+      cloudSessionsEnabled && enabled("REMOTE_MISSIONS_ENABLED"),
     temporalShadowEnabled,
     temporalShadowToken,
     temporalShadowHashKey,

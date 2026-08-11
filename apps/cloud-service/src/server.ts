@@ -18,6 +18,8 @@ import { PostgresDeviceCommandRepository } from "./postgres-device-command-repos
 import { SessionJobWorker } from "./session-job-worker.js";
 import { PostgresTraceRepository } from "./postgres-trace-repository.js";
 import { TraceObjectStore } from "./trace-object-store.js";
+import { PostgresRemoteMissionRepository } from "./postgres-remote-mission-repository.js";
+import { RemoteMissionVault } from "./remote-mission-vault.js";
 
 const config = loadConfig();
 const repository = new PostgresPlaygroundRepository(config.databaseUrl);
@@ -58,6 +60,9 @@ const coordinationRepository = new PostgresDeviceCoordinationRepository(
 const commandRepository = new PostgresDeviceCommandRepository(
   sessionRepository.pool,
 );
+const remoteMissionRepository = new PostgresRemoteMissionRepository(
+  sessionRepository.pool,
+);
 await sessionRepository.migrate();
 await sessionRepository.cleanupExpired();
 const traceRepository = new PostgresTraceRepository(config.controlDatabaseUrl);
@@ -80,6 +85,10 @@ const commandVault =
   config.sessionKmsKeyId && config.sessionBucketName
     ? new CommandVault(sessionObjectStore!, config.sessionKmsKeyId)
     : undefined;
+const remoteMissionVault =
+  config.sessionKmsKeyId && sessionObjectStore
+    ? new RemoteMissionVault(sessionObjectStore, config.sessionKmsKeyId)
+    : undefined;
 const sessionJobs = sessionObjectStore
   ? new SessionJobWorker(sessionRepository.pool, sessionObjectStore)
   : undefined;
@@ -93,6 +102,8 @@ const control = {
   checkpointVault,
   commandVault,
   commandRepository,
+  remoteMissionRepository,
+  remoteMissionVault,
   traceRepository,
   traceObjectStore,
 };

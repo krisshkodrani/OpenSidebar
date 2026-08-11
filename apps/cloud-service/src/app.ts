@@ -21,6 +21,9 @@ import type { PasswordlessAuthProvider } from "./passwordless-auth.js";
 import type { OwnedRun, PlaygroundRepository } from "./repository.js";
 import { createTemporalShadowApi } from "./temporal-shadow-api.js";
 import type { TemporalShadowOutbox } from "./temporal-shadow-outbox.js";
+import { createRemoteMissionApi } from "./remote-mission-api.js";
+import type { RemoteMissionRepository } from "./remote-mission-repository.js";
+import type { RemoteMissionVault } from "./remote-mission-vault.js";
 
 type Variables = { accountId: string; email: string; csrfHash: string };
 const noStore = (c: Context) => c.header("Cache-Control", "no-store");
@@ -145,7 +148,10 @@ export function createApp(
   repository: PlaygroundRepository,
   config: CloudConfig,
   passwordlessAuth?: PasswordlessAuthProvider,
-  control?: Omit<ControlApiDependencies, "config" | "playgroundRepository">,
+  control?: Omit<ControlApiDependencies, "config" | "playgroundRepository"> & {
+    remoteMissionRepository?: RemoteMissionRepository;
+    remoteMissionVault?: RemoteMissionVault;
+  },
   temporalShadowOutbox?: TemporalShadowOutbox,
 ) {
   const app = new Hono<{ Variables: Variables }>();
@@ -201,6 +207,16 @@ export function createApp(
         ...control,
         config,
         playgroundRepository: repository,
+      }),
+    );
+  if (control?.remoteMissionRepository && control.remoteMissionVault)
+    app.route(
+      "/api/v1",
+      createRemoteMissionApi({
+        config,
+        accounts: control.repository,
+        missions: control.remoteMissionRepository,
+        vault: control.remoteMissionVault,
       }),
     );
   if (temporalShadowOutbox)
