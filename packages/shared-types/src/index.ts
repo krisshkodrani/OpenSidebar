@@ -18,3 +18,4 @@ export * from "./cloud-sessions";
 export * from "./cloud-session-policy";
 export * from "./portable-checkpoint-policy";
 export * from "./cloud-traces";
+export * from "./remote-missions";
