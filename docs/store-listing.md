@@ -9,16 +9,16 @@ than in store screenshots.
 
 ## Listing metadata
 
-| Field | Value |
-| --- | --- |
-| Name | OpenSidebar |
-| Category | Productivity → Tools |
-| Language | English |
-| Homepage URL | https://opensidebar.com |
-| Support URL | https://github.com/krisshkodrani/OpenSidebar/issues |
-| Privacy policy URL | https://github.com/krisshkodrani/OpenSidebar/blob/main/PRIVACY_POLICY.md |
-| Pricing | Free |
-| Promo video | `.artifacts/publish/opensidebar-customer-60s-british-female.mp4`; upload to YouTube and use its public URL |
+| Field              | Value                                                                                                      |
+| ------------------ | ---------------------------------------------------------------------------------------------------------- |
+| Name               | OpenSidebar                                                                                                |
+| Category           | Productivity → Tools                                                                                       |
+| Language           | English                                                                                                    |
+| Homepage URL       | https://opensidebar.com                                                                                    |
+| Support URL        | https://github.com/krisshkodrani/OpenSidebar/issues                                                        |
+| Privacy policy URL | https://github.com/krisshkodrani/OpenSidebar/blob/main/PRIVACY_POLICY.md                                   |
+| Pricing            | Free                                                                                                       |
+| Promo video        | `.artifacts/publish/opensidebar-customer-60s-british-female.mp4`; upload to YouTube and use its public URL |
 
 ## Short description
 
@@ -57,8 +57,10 @@ YOU STAY IN CONTROL
 BRING YOUR OWN KEY
 
 - Use OpenRouter (recommended and default), or the supported Fireworks stack
-- Your API key stays in Chrome storage; page context goes only to the provider you configure
-- No analytics or tracking, no hosted model relay, and no first-party telemetry upload endpoint in this release
+- Use the recommended account connection, where your verified key is KMS-encrypted and a non-retaining relay streams requests to your provider
+- Or choose Direct from this browser, where your key stays in Chrome and requests go directly to your provider
+- Account connections are revocable, quota-limited, and never return the provider key to the extension
+- Relay prompts, page content, screenshots, and responses are processed transiently and are not retained by OpenSidebar
 - Optional reliability summaries stay local in Chrome, are off by default, and can be inspected and cleared
 - Optional local memory: a personal profile you review yourself, with sensitive fields consent-gated and encrypted
 

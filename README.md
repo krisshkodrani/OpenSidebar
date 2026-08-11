@@ -48,9 +48,11 @@ sites.
 
 Watch the concise [customer tour](https://opensidebar.com/#showcase).
 
-## Install from source
+## Install
 
-The Chrome Web Store release is being prepared. To use the current build:
+Install the signed release from the
+[Chrome Web Store](https://chromewebstore.google.com/detail/opensidebar/hakbnbbkiehiofnafdkcibbnkbdmjiha),
+or build the current source locally:
 
 ```bash
 git clone https://github.com/krisshkodrani/OpenSidebar.git

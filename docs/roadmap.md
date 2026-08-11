@@ -8,11 +8,26 @@ to pick one of these up, open an issue first — see
 
 ## Near-term (weeks)
 
+- **PostgreSQL cloud sessions** ([LP-29 through LP-31](./engineering/cloud-platform-roadmap.md))
+  — retention/export/deletion, portable restore, and device coordination pass
+  published-client reconnect/takeover UX, local and real two-profile Chrome,
+  and exact-host PostgreSQL acceptance behind disabled flags. Bounded text and
+  locally approved, postcondition-verified clicks now pass; staged activation
+  and any future non-click sensitive actions remain.
+  Default-off stage controls and a dedicated Cognito-subject tester allowlist
+  are implemented; no tester account is enabled yet.
+  Temporal is parked research.
+
+- **Authenticated cloud UX normalization**
+  ([cloud platform Phase 10](./engineering/cloud-platform-roadmap.md#phase-10--authenticated-cloud-ux-normalization))
+  — unify the signed-in Account, Dashboard, Sessions, Settings, and Playground
+  experience after named-tester acceptance. Normalize navigation and capability
+  language, remove contradictory cached-auth states, and make Local key, cloud
+  credential, relay, and cloud-session status clearly distinct.
+
 - **Published benchmark numbers** ([RFC LP-1](./engineering/rfcs/lp-0001-public-benchmark-adapter.md))
   — first full Online-Mind2Web sweep with per-task receipts, published in the
   README's Measured Performance section.
-- **Chrome Web Store listing** — submission is in review; GitHub releases stay
-  the primary channel until it clears.
 
 ## Code health (ongoing decomposition series)
 
@@ -33,6 +48,7 @@ below drift).
 Done: `tools/index.ts` is now a ~130-line barrel (`registerTools()` split per
 tool family, ServiceNow handlers in the adapter), and the agent-side ServiceNow
 controllers have left `loop.ts` for `agent/servicenow/`.
+
 - **`any` burndown** — `no-explicit-any` is now a lint warning; burn down the
   ~240 occurrences starting with typed shims for chrome-API gaps.
 
