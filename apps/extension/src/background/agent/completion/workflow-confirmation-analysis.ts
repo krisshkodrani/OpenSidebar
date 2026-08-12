@@ -13,7 +13,13 @@ import {
   type WorkflowConfirmationAction,
 } from "./workflow-confirmation-types";
 import type { ControlStateWorkflowAction } from "./workflow-control-state";
-import { cleanLabel, normalizeText, tokenizeCompletionText } from "./text-utils";
+import {
+  cleanLabel,
+  isModalDismissalWorkflowRequest,
+  normalizeText,
+  stripProhibitedWorkflowClauses,
+  tokenizeCompletionText,
+} from "./text-utils";
 import { valueTokenCoveredBySummary } from "./label-value-types";
 
 type WorkflowConfirmationTextMode = "summary" | "visible";
@@ -24,7 +30,7 @@ const TARGET_AWARE_VISIBLE_WORKFLOW_ACTION_SET: ReadonlySet<WorkflowConfirmation
 export function inferWorkflowConfirmationAction(
   value: string,
 ): WorkflowConfirmationAction | null {
-  const text = normalizeText(value);
+  const text = stripProhibitedWorkflowClauses(value);
   if (isModalDismissalWorkflowRequest(text)) return "dismiss";
   if (/\b(?:delete|deleted|deletion|remove|removed|removal)\b/i.test(text)) {
     return "delete";
@@ -1541,17 +1547,6 @@ function normalizeWorkflowTargetTokenSlice(
   });
 }
 
-function isModalDismissalWorkflowRequest(value: string): boolean {
-  return (
-    /\b(?:modal|dialog|popup|pop-up|overlay|banner|toast|notice|alert)\b/i.test(
-      value,
-    ) &&
-    /\b(?:dismiss|dismissed|close|closed|cancel|canceled|cancelled|hide|hidden|remove|removed|clear|cleared)\b/i.test(
-      value,
-    )
-  );
-}
-
 function isCompleteWorkflowRequest(value: string): boolean {
   const text = normalizeText(value);
   return (
@@ -2721,7 +2716,9 @@ function workflowActionTextIsNegated(
   return failureAfterAction.test(text);
 }
 
-export function workflowActionTermPattern(action: WorkflowConfirmationAction): string {
+export function workflowActionTermPattern(
+  action: WorkflowConfirmationAction,
+): string {
   switch (action) {
     case "delete":
       return "(?:deleted|removed|deletion|removal|delete|remove)";
@@ -2964,7 +2961,9 @@ function workflowTargetHasSpecificTransactionalToken(
   return workflowTargetSpecificTransactionalTokens(targetLabel).length > 0;
 }
 
-export function extractTransactionalConfirmationSnippet(value: string): string | null {
+export function extractTransactionalConfirmationSnippet(
+  value: string,
+): string | null {
   const text = cleanLabel(value);
   if (!text) return null;
   if (/\b(?:cart|basket|bag)\s+(?:is\s+)?empty\b/i.test(text)) return null;

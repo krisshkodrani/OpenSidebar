@@ -3,12 +3,15 @@ import { CheckCircle2, ExternalLink, Link2, LogOut } from "lucide-react";
 import type { UserSettings } from "../../../types";
 import {
   cloudSession,
+  clearPendingCloudEmailAuth,
   importCloudPreferences,
+  pendingCloudEmailAuth,
   credentialStatuses,
   linkCloudAccount,
-  signInCloudWithPkce,
+  requestCloudEmailCode,
   signOutCloud,
   syncCloudPreferences,
+  verifyCloudEmailCode,
 } from "../../cloud-client";
 import type { SettingsChangeHandler } from "./types";
 
@@ -31,6 +34,9 @@ export function CloudAccountSettings({
   const [message, setMessage] = useState("");
   const [showLinkCode, setShowLinkCode] = useState(false);
   const [linkCode, setLinkCode] = useState("");
+  const [email, setEmail] = useState("");
+  const [emailCode, setEmailCode] = useState("");
+  const [challengeId, setChallengeId] = useState("");
 
   const reload = async () => {
     const session = await cloudSession();
@@ -51,6 +57,12 @@ export function CloudAccountSettings({
 
   useEffect(() => {
     void reload().catch(() => undefined);
+    void pendingCloudEmailAuth().then((pending) => {
+      if (!pending) return;
+      setEmail(pending.email);
+      setChallengeId(pending.challengeId);
+      setMessage("Enter the sign-in code sent to your email.");
+    });
   }, []);
 
   const perform = async (action: () => Promise<unknown>, success: string) => {
@@ -94,19 +106,81 @@ export function CloudAccountSettings({
             account, and use it without keeping the key in extension storage.
           </p>
         </div>
-        <button
-          type="button"
-          disabled={busy}
-          onClick={() =>
-            void perform(
-              () => connectAccount(signInCloudWithPkce),
-              "Account connected and preferences synced.",
-            )
-          }
-          className="w-full rounded-lg bg-primary-600 px-3 py-2.5 text-sm font-semibold text-white shadow-sm hover:bg-primary-700 disabled:opacity-50"
-        >
-          Sign in to OpenSidebar
-        </button>
+        <input
+          type="email"
+          aria-label="OpenSidebar account email"
+          value={email}
+          onChange={(event) => setEmail(event.target.value)}
+          placeholder="you@example.com"
+          className="w-full rounded-lg border border-warm-300 bg-white px-3 py-2.5 text-sm dark:border-warm-700 dark:bg-warm-900"
+        />
+        {challengeId ? (
+          <div className="space-y-2">
+            <p className="text-xs text-warm-600 dark:text-warm-300">
+              We sent a one-time code to <strong>{email}</strong>. Check spam if
+              it is not in your inbox.
+            </p>
+            <div className="flex gap-2">
+              <input
+                autoFocus
+                autoComplete="one-time-code"
+                inputMode="numeric"
+                aria-label="Email sign-in code"
+                value={emailCode}
+                onChange={(event) =>
+                  setEmailCode(event.target.value.replace(/\D/g, ""))
+                }
+                maxLength={8}
+                placeholder="6-digit code"
+                className="min-w-0 flex-1 rounded-lg border border-warm-300 bg-white px-3 py-2.5 text-center text-base font-semibold tracking-[0.2em] dark:border-warm-700 dark:bg-warm-900"
+              />
+              <button
+                type="button"
+                disabled={busy || emailCode.length < 6}
+                onClick={() =>
+                  void perform(
+                    () =>
+                      connectAccount(() =>
+                        verifyCloudEmailCode(email, emailCode, challengeId),
+                      ),
+                    "Account connected and preferences synced.",
+                  )
+                }
+                className="rounded-lg bg-primary-600 px-4 text-sm font-semibold text-white disabled:opacity-50"
+              >
+                Verify
+              </button>
+            </div>
+            <button
+              type="button"
+              disabled={busy}
+              className="text-xs font-medium text-primary-600 hover:underline disabled:opacity-50"
+              onClick={() =>
+                void perform(async () => {
+                  await clearPendingCloudEmailAuth();
+                  setChallengeId("");
+                  setEmailCode("");
+                }, "Enter your email to request a new code.")
+              }
+            >
+              Use a different email or request a new code
+            </button>
+          </div>
+        ) : (
+          <button
+            type="button"
+            disabled={busy || !email.includes("@")}
+            onClick={() =>
+              void perform(async () => {
+                const challenge = await requestCloudEmailCode(email);
+                setChallengeId(challenge.challengeId);
+              }, "Check your email for the sign-in code.")
+            }
+            className="w-full rounded-lg bg-primary-600 px-3 py-2.5 text-sm font-semibold text-white shadow-sm hover:bg-primary-700 disabled:opacity-50"
+          >
+            Email me a sign-in code
+          </button>
+        )}
         <button
           type="button"
           className="flex items-center gap-1 text-xs font-medium text-warm-500 hover:text-warm-700 dark:text-warm-400"

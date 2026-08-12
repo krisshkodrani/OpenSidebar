@@ -26,9 +26,7 @@ import {
   tokenizeCompletionText,
   importantLabelTokens,
 } from "./completion/text-utils";
-import {
-  valueTokenCoveredBySummary,
-} from "./completion/label-value-types";
+import { valueTokenCoveredBySummary } from "./completion/label-value-types";
 import type { FormFieldObservation } from "./completion/kernel-types";
 import {
   extractFormFieldObservations,
@@ -128,6 +126,7 @@ import type {
   ReadAnswerSuperlativeMetricCandidate,
 } from "./completion/read-answer-analysis";
 import type { StatusChangeWorkflowAction } from "./completion/workflow-confirmation-analysis";
+import { formFillFieldsMentionedInObjective } from "./completion/form-fill-relevance";
 import {
   WORKFLOW_CONFIRMATION_ACTIONS,
   workflowConfirmationActionCompletionLabel,
@@ -243,7 +242,11 @@ export function generateCompletionContract(params: {
 
 function isContractRelevantToObjective(
   generated: GeneratedCompletionContract,
-  params: { activeObjective?: string; userRequest: string },
+  params: {
+    activeObjective?: string;
+    successCriteria?: string;
+    userRequest: string;
+  },
 ): boolean {
   // Judge against the focused objective AND the original request: either may
   // hold the vocabulary (a distilled objective can drop the verb, the raw
@@ -275,31 +278,23 @@ function isContractRelevantToObjective(
         generated.contract.requiredFields,
       );
 
+    case "workflow_confirmation": {
+      // A root request can mention later or explicitly prohibited mutations.
+      // When a focused node exists, only its own objective may authorize a
+      // workflow-confirmation contract for that node.
+      if (!params.activeObjective) return true;
+      const focusedText = [params.activeObjective, params.successCriteria]
+        .filter(Boolean)
+        .join("\n");
+      return (
+        inferWorkflowConfirmationAction(focusedText) ===
+        generated.contract.action
+      );
+    }
+
     default:
       return true;
   }
-}
-
-function formFillFieldsMentionedInObjective(
-  objective: string,
-  requiredFields: FormFillFieldExpectation[],
-): boolean {
-  const haystack = objective.toLowerCase();
-  return requiredFields.some((field) => {
-    const label = field.label.trim().toLowerCase();
-    const value = field.value.trim().toLowerCase();
-    if (label.length >= 3 && haystack.includes(label)) return true;
-    // Skip boolean-ish values: "true"/"false" match nothing meaningful.
-    if (
-      value.length >= 3 &&
-      value !== "true" &&
-      value !== "false" &&
-      haystack.includes(value)
-    ) {
-      return true;
-    }
-    return false;
-  });
 }
 
 function generateDraftOnlyContract(params: {
@@ -5887,5 +5882,3 @@ function takeUntilFirstMarker(value: string, markers: RegExp[]): string {
 function evidenceConfidenceRank(event: CompletionEvidence): number {
   return event.confidence === "high" ? 2 : 1;
 }
-
-

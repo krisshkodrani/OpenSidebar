@@ -219,6 +219,7 @@ import {
 } from "./turn-controller";
 import {
   getActiveSubtaskDescription,
+  captureRecentSubtaskResult,
   getMatchingApprovalInteraction,
   getMatchingClarificationInteraction,
   getWorkspaceTabs,
@@ -228,10 +229,8 @@ import {
   type LoopQueriesHost,
 } from "./loop-queries";
 import type { MoneyTableAggregate } from "./money-table-aggregate";
-import {
-  isTextLikeInputElement,
-  normalizeGuardText,
-} from "./text-entry-guards";
+import { normalizeGuardText } from "./text-entry-guards";
+import { getUncommittedInlineEditDoneRejection } from "./inline-edit-policy";
 import { assessRepeatedAddItemClick } from "./repeated-add-item-policy";
 export {
   rewriteAutocompleteTextEntry,
@@ -514,7 +513,8 @@ export class AgentLoop {
     | "openrouter-groq"
     | "openai-groq"
     | "fireworks"
-    | "fireworks-deepseek" | "cerebras-fireworks"
+    | "fireworks-deepseek"
+    | "cerebras-fireworks"
     | "moonshot"
     | "xiaomi";
   /** When true, mutation replay guard persists across turns (set after done() rejection) */
@@ -758,7 +758,8 @@ export class AgentLoop {
         | "openrouter-groq"
         | "openai-groq"
         | "fireworks"
-        | "fireworks-deepseek" | "cerebras-fireworks"
+        | "fireworks-deepseek"
+        | "cerebras-fireworks"
         | "moonshot"
         | "xiaomi";
       provider?: "openrouter" | "openai" | "groq"; // legacy compat
@@ -767,7 +768,8 @@ export class AgentLoop {
       fireworksApiKey?: string;
       deepseekApiKey?: string;
       kimiApiKey?: string;
-      xiaomiApiKey?: string; cerebrasApiKey?: string;
+      xiaomiApiKey?: string;
+      cerebrasApiKey?: string;
       temperature?: number;
       perceptionMode?: PerceptionRuntimeMode;
       maxImagePromptTokenEstimate?: number;
@@ -849,7 +851,8 @@ export class AgentLoop {
       fireworksApiKey: options?.fireworksApiKey,
       deepseekApiKey: options?.deepseekApiKey,
       kimiApiKey: options?.kimiApiKey,
-      xiaomiApiKey: options?.xiaomiApiKey, cerebrasApiKey: options?.cerebrasApiKey,
+      xiaomiApiKey: options?.xiaomiApiKey,
+      cerebrasApiKey: options?.cerebrasApiKey,
       temperature: options?.temperature,
     };
     this.llm = new LLMClient(openRouterApiKey, modelOverrides);
@@ -2517,7 +2520,12 @@ export class AgentLoop {
       return true;
     }
     const context = formatStepLabel(toolName, args, this.elementResolver);
-    const approved = await this.requestApproval(toolName, args, context, dryRun);
+    const approved = await this.requestApproval(
+      toolName,
+      args,
+      context,
+      dryRun,
+    );
     if (!approved) {
       this.log.warn("policy", "High-risk tool denied or timed out", {
         turn: this.turnCount,
@@ -5078,32 +5086,11 @@ export class AgentLoop {
   private getUncommittedInlineEditDoneRejection(
     currentStepIndex: number,
   ): string | null {
-    if (this.getActiveToolProfileForStep(currentStepIndex) !== "edit_surface") {
-      return null;
-    }
-
-    const snapshot = this.context.getSnapshot();
-    if (!snapshot?.elements?.length) return null;
-
-    const hasVisibleTextInput = snapshot.elements.some(
-      (element) =>
-        element.isVisible !== false && isTextLikeInputElement(element),
-    );
-    if (!hasVisibleTextInput) return null;
-
-    const pageText = `${snapshot.visibleContent || ""}\n${snapshot.pageContent || ""}`;
-    const inlineEditTask =
-      /\b(spreadsheet|grid|cell|row|column|rename|filename|file name|document|inline)\b/i.test(
-        `${this.originalQuery}\n${this.planSubtasks[currentStepIndex]?.description || ""}\n${this.planSteps[currentStepIndex]?.successCriteria || ""}`,
-      );
-    if (!inlineEditTask && !/\(editing\)/i.test(pageText)) {
-      return null;
-    }
-
-    return (
-      "An inline edit field is still active on the page. Commit the edit " +
-      "(for example with Enter or by applying the rename) before calling done()."
-    );
+    return getUncommittedInlineEditDoneRejection({
+      toolProfile: this.getActiveToolProfileForStep(currentStepIndex),
+      snapshot: this.context.getSnapshot(),
+      taskText: `${this.originalQuery}\n${this.planSubtasks[currentStepIndex]?.description || ""}\n${this.planSteps[currentStepIndex]?.successCriteria || ""}`,
+    });
   }
 
   private getPendingInlineEditVerificationBlock(
@@ -5143,18 +5130,7 @@ export class AgentLoop {
    * as a subtask result string.
    */
   private captureSubtaskResult(): string {
-    const history = this.context.getMessages();
-    for (let i = history.length - 1; i >= 0; i--) {
-      const msg = history[i];
-      if (
-        msg.role === "tool" &&
-        typeof msg.content === "string" &&
-        msg.content.length > 0
-      ) {
-        return msg.content.slice(0, 200);
-      }
-    }
-    return "Completed";
+    return captureRecentSubtaskResult(this.context.getMessages());
   }
 
   /**

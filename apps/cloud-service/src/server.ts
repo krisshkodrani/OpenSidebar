@@ -106,6 +106,7 @@ const control = {
   remoteMissionVault,
   traceRepository,
   traceObjectStore,
+  passwordlessAuth,
 };
 const server = serve(
   {

@@ -39,6 +39,20 @@ execFileSync(process.execPath, [nxCliPath, "run", "extension:build"], {
   stdio: "inherit",
 });
 
+const builtJavaScript = readdirSync(resolve(distPath, "assets"))
+  .filter((name) => name.endsWith(".js"))
+  .map((name) => readFileSync(resolve(distPath, "assets", name), "utf8"))
+  .join("\n");
+for (const marker of [
+  "https://opensidebar.com",
+  "/api/v1/extension/auth/code",
+  "/api/v1/extension/auth/verify",
+])
+  if (!builtJavaScript.includes(marker))
+    throw new Error(
+      `Passwordless account sign-in marker is missing: ${marker}`,
+    );
+
 execFileSync(
   process.execPath,
   [resolve(rootPath, "scripts", "check-dist.js")],
@@ -200,7 +214,7 @@ OpenSidebar v${version} presents one account-first setup across the extension an
 
 - Account-first onboarding guides users through sign-in, secure provider connection, and a safe first task.
 - OpenRouter is the recommended BYOK provider, with Fireworks retained as the supported alternative.
-- Account connections use Cognito PKCE, revocable device sessions, KMS-envelope-encrypted credentials, and a non-retaining streaming relay.
+- Account connections use Cognito email OTP, revocable device sessions, KMS-envelope-encrypted credentials, and a non-retaining streaming relay.
 - Direct from this browser keeps provider keys in Chrome and sends requests directly to the provider.
 - Settings are organized into Account, Agent, Browser, and Advanced; safety controls remain device-local.
 - Synced preference conflicts refresh and retry without blocking browser-only settings from saving.

@@ -98,6 +98,30 @@ export class ControlAuthService {
       device,
     };
   }
+  async passwordless(
+    identity: { accountId: string; email: string },
+    body: Record<string, unknown>,
+  ): Promise<ExtensionSessionV1> {
+    const installationId = uuid(body.installationId),
+      displayName = bounded(body.displayName, 80),
+      extensionVersion = bounded(body.extensionVersion, 32);
+    if (!installationId || !displayName || !extensionVersion)
+      throw new ControlAuthError("invalid_auth_request");
+    if (!this.config.cloudTesterSubjects.has(identity.accountId))
+      throw new ControlAuthError("cloud_access_not_enabled");
+    const account = await this.repository.upsertAccount(
+      identity.accountId,
+      identity.email.toLowerCase(),
+      true,
+    );
+    const device = await this.repository.upsertDevice(
+      account.accountId,
+      installationId,
+      displayName,
+      extensionVersion,
+    );
+    return this.response(account, device);
+  }
   async exchange(body: Record<string, unknown>): Promise<ExtensionSessionV1> {
     if (
       !this.config.extensionClientId ||

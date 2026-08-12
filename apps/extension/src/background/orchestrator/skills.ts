@@ -19,8 +19,8 @@ import type {
   LoadedSkillContract,
 } from "./skill-types";
 import { classifyNodeEffect } from "./node-effect-policy";
+import { buildCorpus, buildRoutingCorpus } from "./skill-routing-corpus";
 export * from "./skill-types";
-
 
 const MAX_ROUTED_SKILL_CANDIDATES = 32;
 
@@ -53,7 +53,6 @@ const BUILT_IN_SKILL_PACKS: SkillPack[] = [
     skillIds: ["servicenow-module-navigation", "servicenow-record-form"],
   },
 ];
-
 
 const comparePattern =
   /\b(compare|based on both|across both|both tabs?|two tabs?|multiple tabs?|two pages?|multiple pages?|support dashboard.*marketing dashboard|marketing dashboard.*support dashboard)\b/i;
@@ -153,26 +152,6 @@ const repeatedItemPattern =
 const overlayRecoveryPattern =
   /\b(close .* (?:banner|popup|modal|overlay|dialog)|dismiss .* (?:popup|modal|overlay|banner)|cookie (?:banner|consent|popup)|newsletter (?:popup|modal)|can'?t see the page|blocking (?:modal|overlay|popup)|popups? (?:blocking|covering|obscuring)|clear (?:the )?(?:popup|modal|overlay)s?)\b/i;
 
-function buildCorpus(parts: Array<string | undefined>): string {
-  return parts
-    .filter(
-      (part): part is string => typeof part === "string" && part.length > 0,
-    )
-    .join("\n")
-    .toLowerCase();
-}
-
-function buildRoutingCorpus(input: SkillMatcherInput): string {
-  return buildCorpus([
-    input.query,
-    input.objective,
-    input.successCriteria,
-    input.pageTitle,
-    ...(input.pageMarkers ?? []),
-    ...(input.runtimeContext ?? []),
-  ]);
-}
-
 function hasJobApplicationSignal(
   input: SkillMatcherInput,
   corpus: string,
@@ -230,9 +209,7 @@ function hasServiceNowUrlSignal(pageUrl?: string): boolean {
       return true;
     }
     // Custom-hosted ServiceNow: recognize the platform by its URL fingerprints.
-    return SERVICENOW_URL_PATH_FINGERPRINT.test(
-      `${url.pathname}${url.search}`,
-    );
+    return SERVICENOW_URL_PATH_FINGERPRINT.test(`${url.pathname}${url.search}`);
   } catch {
     return (
       /\b(?:service-now|servicenow)\.com\b/i.test(pageUrl) ||
@@ -426,10 +403,7 @@ export function setDisabledSkillIds(ids?: readonly string[]): void {
   runtimeDisabledSkillIds = new Set(ids ?? []);
 }
 
-function isSkillDisabled(
-  id: string,
-  options?: SkillCatalogOptions,
-): boolean {
+function isSkillDisabled(id: string, options?: SkillCatalogOptions): boolean {
   if (runtimeDisabledSkillIds.has(id)) return true;
   return options?.disabledSkillIds?.includes(id) ?? false;
 }
@@ -650,7 +624,6 @@ export function resolveSkillToolProfile(
 
   return currentProfile;
 }
-
 
 export function getSkillToolSuppressionPolicy(
   id?: string,

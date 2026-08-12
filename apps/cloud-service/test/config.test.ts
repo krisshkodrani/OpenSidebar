@@ -24,6 +24,25 @@ test("all session and orchestration capabilities default disabled", () => {
   assert.equal(config.traceDownloadsEnabled, false);
 });
 
+test("extension test origins accept only explicit Chrome extension ids", () => {
+  assert.throws(
+    () =>
+      loadConfig({
+        ...baseEnv(),
+        OPENSIDEBAR_EXTENSION_TEST_IDS: "https://example.com",
+      }),
+    /OPENSIDEBAR_EXTENSION_TEST_IDS/,
+  );
+  const config = loadConfig({
+    ...baseEnv(),
+    OPENSIDEBAR_EXTENSION_TEST_IDS: "bcdefghijklmnopabcdefghijklmnopa",
+  });
+  assert.deepEqual(
+    [...(config.extensionTestIds ?? [])],
+    ["bcdefghijklmnopabcdefghijklmnopa"],
+  );
+});
+
 test("trace sync requires an isolated bucket and named-tester subset", () => {
   const enabled = {
     ...baseEnv(),

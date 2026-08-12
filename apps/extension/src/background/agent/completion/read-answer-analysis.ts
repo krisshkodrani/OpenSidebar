@@ -8,6 +8,7 @@
  */
 import type { DomSnapshot, TaggedElement } from "../../../types";
 import type { CompletionEvidence } from "./kernel-types";
+import { hasDecomposedReadAnswerIntent } from "./read-answer-intent";
 import {
   cleanLabel,
   escapeRegExp,
@@ -193,6 +194,7 @@ export function hasPageReadAnswerIntent(
     /\b(?:on|in|according to) (?:this|the) (?:page|article|document|post|readme)\b.{0,140}\b(?:what(?:'s| is)|who(?:'s| is)|when|where|which|how many|how much)\b/,
     /\bread (?:this|the) page\b/,
     /\bfrom (?:this|the) page\b/,
+    /\b(?:compare|review|evaluate|assess)\b.{0,120}\b(?:options?|alternatives?|results?|items?|records?|plans?|choices?)\b/,
     /\b(article|post|document|readme|page content)\b.+\b(summarize|summary|describe|report|extract)\b/,
   ];
 
@@ -200,22 +202,6 @@ export function hasPageReadAnswerIntent(
   if (hasDecomposedReadAnswerIntent(normalized)) return true;
 
   return hasGroundedDirectPageQuestion(normalized, snapshot);
-}
-
-function hasDecomposedReadAnswerIntent(normalized: string): boolean {
-  const requestedResult =
-    /\b(?:requested|target|matching|found|located)\s+(?:result|results|answer|answers|value|values|code|token|key|identifier|id)s?\b/;
-  const answerNoun =
-    /\b(?:answer|answers|result|results|value|values|code|token|key|identifier|id)s?\b/;
-  const readOrReportVerb =
-    /\b(?:read|report|extract|identify|tell me|return|provide|find|locate)\b/;
-  const navigationVerb = /\b(?:navigate to|open|go to|visit|scroll to)\b/;
-
-  return (
-    readOrReportVerb.test(normalized) &&
-    (requestedResult.test(normalized) ||
-      (navigationVerb.test(normalized) && answerNoun.test(normalized)))
-  );
 }
 
 const DIRECT_PAGE_QUESTION_STOPWORDS = new Set([
@@ -2358,7 +2344,9 @@ function cleanSentenceScopedLocationAnswerText(value: string): string {
   return answer;
 }
 
-export function sentenceScopedEventDatePatternForLabel(label: string): string | null {
+export function sentenceScopedEventDatePatternForLabel(
+  label: string,
+): string | null {
   const normalizedLabel = normalizeText(label);
   if (normalizedLabel === "launched date") return "launch(?:ed)?";
   if (normalizedLabel === "released date") return "release(?:d)?";
@@ -2714,7 +2702,9 @@ function extractCurrentRoleRelationNounAnswer(
   return cleanActiveSentenceScopedAnswerText(match?.[1] ?? "", target);
 }
 
-export function sentenceScopedByRelationPatternForLabel(label: string): string | null {
+export function sentenceScopedByRelationPatternForLabel(
+  label: string,
+): string | null {
   return (
     SENTENCE_SCOPED_BY_RELATIONS.find(
       (relation) => relation.label === normalizeText(label),
@@ -2799,7 +2789,9 @@ function canonicalSentenceScopedAttributeLabel(label: string): string | null {
   return null;
 }
 
-export function sentenceScopedAttributePatternForLabel(label: string): string | null {
+export function sentenceScopedAttributePatternForLabel(
+  label: string,
+): string | null {
   const attributeLabel = canonicalSentenceScopedAttributeLabel(label);
   if (attributeLabel === "contact") {
     return "(?:point\\s+of\\s+contact|contact|poc)";

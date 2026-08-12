@@ -25,11 +25,6 @@ const runtime = vi.hoisted(() => {
     port: {
       storage: { local: storage },
       getExtensionVersion: vi.fn(() => "0.7.0"),
-      getIdentityRedirectUrl: vi.fn(
-        (path: string) =>
-          `https://abcdefghijklmnopabcdefghijklmnop.chromiumapp.org/${path}`,
-      ),
-      launchWebAuthFlow: vi.fn(),
     },
   };
 });
@@ -40,8 +35,10 @@ import {
   cloudPreferencesLinked,
   importCloudPreferences,
   linkCloudAccount,
-  signInCloudWithPkce,
+  pendingCloudEmailAuth,
+  requestCloudEmailCode,
   syncCloudPreferences,
+  verifyCloudEmailCode,
 } from "../../src/sidepanel/cloud-client";
 
 const session = {
@@ -74,7 +71,6 @@ describe("cloud account client", () => {
     runtime.storage.get.mockClear();
     runtime.storage.set.mockClear();
     runtime.storage.remove.mockClear();
-    runtime.port.launchWebAuthFlow.mockReset();
     vi.unstubAllEnvs();
     vi.restoreAllMocks();
   });
@@ -94,6 +90,48 @@ describe("cloud account client", () => {
       accessToken: "access-token",
       refreshToken: "refresh-token",
     });
+  });
+
+  it("persists an email challenge across side-panel remounts and clears it after verification", async () => {
+    vi.spyOn(globalThis, "fetch")
+      .mockResolvedValueOnce(
+        new Response(
+          JSON.stringify({ challengeId: "challenge-1", expiresInSeconds: 600 }),
+          {
+            status: 202,
+            headers: { "content-type": "application/json" },
+          },
+        ),
+      )
+      .mockResolvedValueOnce(
+        new Response(JSON.stringify(session), {
+          status: 201,
+          headers: { "content-type": "application/json" },
+        }),
+      );
+
+    await requestCloudEmailCode(" Tester@Example.com ");
+    expect(await pendingCloudEmailAuth()).toMatchObject({
+      email: "tester@example.com",
+      challengeId: "challenge-1",
+    });
+
+    await verifyCloudEmailCode("tester@example.com", "123456", "challenge-1");
+    expect(await pendingCloudEmailAuth()).toBeNull();
+    expect(runtime.values.get("cloudExtensionSessionV1")).toMatchObject({
+      accessToken: "access-token",
+    });
+  });
+
+  it("removes an expired email challenge instead of reopening stale sign-in", async () => {
+    runtime.values.set("cloudPendingEmailAuthV1", {
+      email: "tester@example.com",
+      challengeId: "expired",
+      expiresAt: Date.now() - 1,
+    });
+
+    expect(await pendingCloudEmailAuth()).toBeNull();
+    expect(runtime.values.has("cloudPendingEmailAuthV1")).toBe(false);
   });
 
   it("syncs only allowlisted preferences and links them after a successful save", async () => {
@@ -196,53 +234,5 @@ describe("cloud account client", () => {
 
     expect(fetchMock).toHaveBeenCalledTimes(4);
     expect(await cloudPreferencesLinked()).toBe(true);
-  });
-
-  it("uses the exact identity redirect and verifies OAuth state before exchange", async () => {
-    vi.stubEnv("VITE_OPENSIDEBAR_COGNITO_DOMAIN", "https://auth.example.com");
-    vi.stubEnv("VITE_OPENSIDEBAR_COGNITO_EXTENSION_CLIENT_ID", "client-id");
-    runtime.port.launchWebAuthFlow.mockImplementation(
-      async (authorize: string) => {
-        const url = new URL(authorize);
-        expect(url.origin).toBe("https://auth.example.com");
-        expect(url.searchParams.get("redirect_uri")).toBe(
-          "https://abcdefghijklmnopabcdefghijklmnop.chromiumapp.org/opensidebar",
-        );
-        expect(url.searchParams.get("code_challenge_method")).toBe("S256");
-        return `https://abcdefghijklmnopabcdefghijklmnop.chromiumapp.org/opensidebar?code=oauth-code&state=${url.searchParams.get("state")}`;
-      },
-    );
-    const fetchMock = vi.spyOn(globalThis, "fetch").mockResolvedValue(
-      new Response(JSON.stringify(session), {
-        status: 201,
-        headers: { "content-type": "application/json" },
-      }),
-    );
-
-    await signInCloudWithPkce();
-
-    const exchange = JSON.parse(
-      String(fetchMock.mock.calls[0]?.[1]?.body),
-    ) as Record<string, unknown>;
-    expect(exchange).toMatchObject({
-      code: "oauth-code",
-      redirectUri:
-        "https://abcdefghijklmnopabcdefghijklmnop.chromiumapp.org/opensidebar",
-    });
-    expect(exchange.codeVerifier).toEqual(expect.any(String));
-  });
-
-  it("rejects a PKCE callback with the wrong OAuth state before exchange", async () => {
-    vi.stubEnv("VITE_OPENSIDEBAR_COGNITO_DOMAIN", "https://auth.example.com");
-    vi.stubEnv("VITE_OPENSIDEBAR_COGNITO_EXTENSION_CLIENT_ID", "client-id");
-    runtime.port.launchWebAuthFlow.mockResolvedValue(
-      "https://abcdefghijklmnopabcdefghijklmnop.chromiumapp.org/opensidebar?code=oauth-code&state=wrong",
-    );
-    const fetchMock = vi.spyOn(globalThis, "fetch");
-
-    await expect(signInCloudWithPkce()).rejects.toThrow(
-      "Sign-in state did not match.",
-    );
-    expect(fetchMock).not.toHaveBeenCalled();
   });
 });

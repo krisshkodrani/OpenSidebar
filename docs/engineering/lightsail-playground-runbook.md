@@ -89,23 +89,15 @@ Production must never set `DEV_ACCOUNT_ID` or `COOKIE_SECURE=false`.
 ## LP-28 cloud-control prerequisites
 
 1. Verify the published Chrome Web Store item ID. The OpenSidebar production ID
-   is `hakbnbbkiehiofnafdkcibbnkbdmjiha`. Web Store updates retain that identity
-   without a source-manifest `key`. For unpacked parity testing, export the
-   item's public manifest key from the developer dashboard, set
-   `OPENSIDEBAR_EXTENSION_ID` and `OPENSIDEBAR_EXTENSION_PUBLIC_KEY`, then run
-   `pnpm extension:pin-identity`; the command derives the ID from the key and
-   refuses a mismatch. A downloaded CRX cannot supply this key because Google
-   re-signs published packages.
-2. Set `OPENSIDEBAR_EXTENSION_ID` and converge Cognito with
-   `pnpm playground:provision-cognito -- --apply`. Record the emitted public
-   `COGNITO_EXTENSION_CLIENT_ID`; the callback must be exactly
-   `https://<extension-id>.chromiumapp.org/opensidebar`.
-   Build the release extension with `VITE_OPENSIDEBAR_COGNITO_DOMAIN` set to
-   the provisioned Cognito hosted-UI domain and
-   `VITE_OPENSIDEBAR_COGNITO_EXTENSION_CLIENT_ID` set to that public client ID.
-   These values are public OAuth client configuration, not secrets. A build
-   without them may use website link-code authentication but cannot start the
-   primary direct-PKCE flow.
+   is `hakbnbbkiehiofnafdkcibbnkbdmjiha`. Set it as
+   `OPENSIDEBAR_EXTENSION_ID`; the API uses that exact origin for CORS.
+   Unpacked acceptance IDs may be added temporarily through the validated
+   comma-separated `OPENSIDEBAR_EXTENSION_TEST_IDS` allowlist. Remove them after
+   acceptance. They never replace the published identity.
+2. Converge Cognito with `pnpm playground:provision-cognito -- --apply`.
+   Extension sign-in uses the cloud service's bounded email-code and verify
+   endpoints; Cognito remains the email-OTP authority. The extension does not
+   embed Cognito configuration or request Chrome's `identity` permission.
 3. Preview `pnpm cloud:provision-kms`, then apply it. If a new access key is
    required, use the explicit `--create-access-key --access-key-output` option,
    move the one-time values into `/etc/opensidebar/playground.env`, set that

@@ -17,8 +17,7 @@
     "search",
     "downloads",
     "cookies",
-    "history",
-    "identity"
+    "history"
   ],
   "optional_permissions": ["notifications"],
   "host_permissions": ["<all_urls>"],
