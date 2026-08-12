@@ -28,6 +28,7 @@ export type CloudConfig = {
   temporalShadowHashKey?: string;
   extensionClientId?: string;
   extensionId?: string;
+  extensionTestIds?: ReadonlySet<string>;
   credentialKmsKeyId?: string;
   sessionKmsKeyId?: string;
   sessionBucketName?: string;
@@ -128,6 +129,16 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): CloudConfig {
       "TEMPORAL_SHADOW_TOKEN and TEMPORAL_SHADOW_HASH_KEY must each contain at least 32 characters",
     );
   const extensionId = env.OPENSIDEBAR_EXTENSION_ID?.trim();
+  const extensionTestIds = new Set(
+    (env.OPENSIDEBAR_EXTENSION_TEST_IDS ?? "")
+      .split(",")
+      .map((value) => value.trim())
+      .filter(Boolean),
+  );
+  if ([...extensionTestIds].some((id) => !/^[a-p]{32}$/.test(id)))
+    throw new Error(
+      "OPENSIDEBAR_EXTENSION_TEST_IDS must contain comma-separated Chrome extension ids",
+    );
   const extensionClientId = env.COGNITO_EXTENSION_CLIENT_ID?.trim();
   const credentialKmsKeyId = env.CREDENTIAL_KMS_KEY_ID?.trim();
   const sessionKmsKeyId = env.SESSION_KMS_KEY_ID?.trim();
@@ -259,6 +270,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): CloudConfig {
       enabled("TEMPORAL_COORDINATION_ENABLED"),
     extensionClientId,
     extensionId,
+    extensionTestIds,
     credentialKmsKeyId,
     sessionKmsKeyId,
     sessionBucketName,

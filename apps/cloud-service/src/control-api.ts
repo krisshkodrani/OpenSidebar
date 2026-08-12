@@ -18,12 +18,13 @@ import type {
   ControlPrincipal,
   ControlRepository,
 } from "./control-repository.js";
-import { keyedHash, tokenHash } from "./crypto.js";
+import { keyedHash, opaqueToken, tokenHash } from "./crypto.js";
 import type { CredentialVault } from "./credential-vault.js";
 import type { CheckpointVault } from "./checkpoint-vault.js";
 import type { CommandVault } from "./command-vault.js";
 import type { DeviceCommandRepository } from "./device-command-repository.js";
 import type { PlaygroundRepository } from "./repository.js";
+import type { PasswordlessAuthProvider } from "./passwordless-auth.js";
 import type { RelayService } from "./relay-service.js";
 import type { SessionRepository } from "./session-repository.js";
 import type { DeviceCoordinationRepository } from "./device-coordination-repository.js";
@@ -65,6 +66,7 @@ export type ControlApiDependencies = {
   commandRepository?: DeviceCommandRepository;
   traceRepository?: TraceRepository;
   traceObjectStore?: TraceObjectStore;
+  passwordlessAuth?: PasswordlessAuthProvider;
 };
 
 const noStore = (c: Context) => c.header("Cache-Control", "no-store");
@@ -88,6 +90,12 @@ const uuid = (value: string) =>
   /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(
     value,
   );
+const normalizedEmail = (value: unknown) => {
+  const email = typeof value === "string" ? value.trim().toLowerCase() : "";
+  return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email) && email.length <= 320
+    ? email
+    : null;
+};
 const isControlRequest = (c: Context) => {
   const path = c.req.path.replace(/^\/api\/v1/, "");
   return (
@@ -158,6 +166,7 @@ export function createControlApi(deps: ControlApiDependencies) {
     commandVault,
     commandRepository,
     traceRepository,
+    passwordlessAuth,
     traceObjectStore,
   } = deps;
   const api = new Hono<{ Variables: Variables }>();
@@ -212,12 +221,18 @@ export function createControlApi(deps: ControlApiDependencies) {
         "Cloud account features are not enabled.",
       );
     const origin = c.req.header("origin");
-    const extensionOrigin = config.extensionId
-      ? `chrome-extension://${config.extensionId}`
-      : undefined;
-    if (origin && origin !== config.controlOrigin && origin !== extensionOrigin)
+    const extensionOrigins = new Set(
+      [config.extensionId, ...(config.extensionTestIds ?? [])]
+        .filter((id): id is string => Boolean(id))
+        .map((id) => `chrome-extension://${id}`),
+    );
+    if (
+      origin &&
+      origin !== config.controlOrigin &&
+      !extensionOrigins.has(origin)
+    )
       return problem(c, 403, "origin_failed", "Origin is not allowed.");
-    if (origin === extensionOrigin) {
+    if (origin && extensionOrigins.has(origin)) {
       c.header("Access-Control-Allow-Origin", origin);
       c.header(
         "Access-Control-Allow-Headers",
@@ -266,6 +281,70 @@ export function createControlApi(deps: ControlApiDependencies) {
       throw error;
     }
   };
+  api.post("/extension/auth/code", async (c) => {
+    if (!config.extensionAuthEnabled || !passwordlessAuth)
+      return problem(
+        c,
+        503,
+        "extension_auth_disabled",
+        "Extension sign-in is not enabled.",
+      );
+    return attempt(c, async () => {
+      await authQuota(c, "email-code", 3_600, 10);
+      const body = (await jsonBody(c)) ?? {};
+      const email = normalizedEmail(body.email);
+      if (!email) throw new ControlAuthError("invalid_auth_request");
+      const emailHash = keyedHash(config.authQuotaHmacKey, `email:${email}`);
+      await playgroundRepository.consumeAuthQuota(
+        `extension-email:${emailHash}`,
+        3_600,
+        5,
+      );
+      const providerChallenge = await passwordlessAuth.requestCode(email);
+      const challengeId = opaqueToken(24);
+      await playgroundRepository.createEmailChallenge(
+        tokenHash(challengeId),
+        emailHash,
+        providerChallenge,
+        new Date(Date.now() + 600_000),
+      );
+      return c.json({ challengeId, expiresInSeconds: 600 }, 202);
+    });
+  });
+  api.post("/extension/auth/verify", async (c) => {
+    if (!config.extensionAuthEnabled || !passwordlessAuth)
+      return problem(
+        c,
+        503,
+        "extension_auth_disabled",
+        "Extension sign-in is not enabled.",
+      );
+    return attempt(c, async () => {
+      await authQuota(c, "email-verify", 3_600, 30);
+      const body = (await jsonBody(c)) ?? {};
+      const email = normalizedEmail(body.email);
+      const challengeId =
+        typeof body.challengeId === "string" ? body.challengeId : "";
+      const code =
+        typeof body.code === "string" ? body.code.replace(/\s/g, "") : "";
+      if (!email || !challengeId || !/^\d{6,8}$/.test(code))
+        throw new ControlAuthError("invalid_auth_request");
+      const challengeHash = tokenHash(challengeId);
+      const challenge = await playgroundRepository.beginEmailChallenge(
+        challengeHash,
+        keyedHash(config.authQuotaHmacKey, `email:${email}`),
+      );
+      if (!challenge) throw new ControlAuthError("signin_failed");
+      const identity = await passwordlessAuth.verifyCode(
+        email,
+        code,
+        challenge,
+      );
+      if (!(await playgroundRepository.consumeEmailChallenge(challengeHash)))
+        throw new ControlAuthError("signin_failed");
+      return c.json(await auth.passwordless(identity, body), 201);
+    });
+  });
   api.post("/extension/auth/exchange", async (c) => {
     if (!config.extensionAuthEnabled)
       return problem(

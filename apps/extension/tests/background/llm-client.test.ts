@@ -443,7 +443,7 @@ describe("LLMClient construction & tier switching", () => {
   test("applies independent OpenRouter upstream pins per model seat", async () => {
     const client = new LLMClient("test-api-key", {
       providerMode: "openrouter",
-      executorModel: "minimax/minimax-m2.7",
+      executorModel: "minimax/minimax-m3",
       plannerModel: "openai/gpt-5.6-terra",
       judgeModel: "openai/gpt-5.6-luna",
       executorProviderPin: "Groq",
@@ -463,7 +463,7 @@ describe("LLMClient construction & tier switching", () => {
 
     expect(sent.map(({ model, provider }) => ({ model, provider }))).toEqual([
       {
-        model: "minimax/minimax-m2.7",
+        model: "minimax/minimax-m3",
         provider: { only: ["Groq"] },
       },
       {

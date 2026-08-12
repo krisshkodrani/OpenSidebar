@@ -37,7 +37,11 @@ import { useComposerActions } from "./hooks/useComposerActions";
 import { useSkillRecordingActions } from "./hooks/useSkillRecordingActions";
 import { useTaskUiState } from "./task-ui-state";
 import { getAvailableProviderStacks } from "../utils/provider-keys";
-import { cloudSession, credentialStatuses } from "./cloud-client";
+import {
+  cloudSession,
+  credentialStatuses,
+  pendingCloudEmailAuth,
+} from "./cloud-client";
 
 const SUGGESTED_ACTIONS = [
   "Summarize this page",
@@ -132,6 +136,11 @@ export default function App({ themeRoot, activityHudRoot }: AppProps = {}) {
   const splashLogoUrl = uiRuntime.getUrl("public/icons/icon-128.png");
   const [accountEmail, setAccountEmail] = useState<string | null>(null);
   const [accountProviderReady, setAccountProviderReady] = useState(false);
+  useEffect(() => {
+    void pendingCloudEmailAuth().then((pending) => {
+      if (pending) setIsSettingsOpen(true);
+    });
+  }, []);
   useEffect(() => {
     let active = true;
     void cloudSession()

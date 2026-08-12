@@ -59,8 +59,6 @@ export interface UiRuntimePort {
   ): () => void;
   createTab(url: string, options?: { active?: boolean }): Promise<UiRuntimeTab>;
   requestPermissions(permissions: string[]): Promise<boolean>;
-  launchWebAuthFlow?(url: string, interactive: boolean): Promise<string | null>;
-  getIdentityRedirectUrl?(path: string): string;
   getExtensionVersion?(): string;
   storage: UiRuntimeStorage;
 }
@@ -99,8 +97,9 @@ export function getE2EPanelConfig(): E2EPanelConfig | null {
 
 function getOverlayExtensionBaseUrl(): string | null {
   if (typeof document === "undefined") return null;
-  const raw = document.getElementById("opensidebar-overlay-config")
-    ?.textContent;
+  const raw = document.getElementById(
+    "opensidebar-overlay-config",
+  )?.textContent;
   if (!raw) return null;
   try {
     const config = JSON.parse(raw) as {
@@ -124,7 +123,9 @@ function resolveFromExtensionBase(baseUrl: string, path: string): string {
   return new URL(path.replace(/^\/+/, ""), baseUrl).toString();
 }
 
-function normalizeTab(tab: chrome.tabs.Tab | null | undefined): UiRuntimeTab | null {
+function normalizeTab(
+  tab: chrome.tabs.Tab | null | undefined,
+): UiRuntimeTab | null {
   if (!tab) return null;
   return {
     id: tab.id,
@@ -271,12 +272,9 @@ export const chromeUiRuntimePort: UiRuntimePort = {
     });
   },
 
-  async launchWebAuthFlow(url, interactive) {
-    return (await chrome.identity.launchWebAuthFlow({ url, interactive })) ?? null;
+  getExtensionVersion() {
+    return chrome.runtime.getManifest().version;
   },
-
-  getIdentityRedirectUrl(path) { return chrome.identity.getRedirectURL(path); },
-  getExtensionVersion() { return chrome.runtime.getManifest().version; },
 
   storage: {
     local: chromeStorageArea("local"),

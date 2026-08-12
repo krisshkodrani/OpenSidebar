@@ -68,6 +68,39 @@ function workflowSnapshot(overrides: Partial<DomSnapshot> = {}): DomSnapshot {
 }
 
 describe("completion kernel read-answer completion", () => {
+  test("keeps option comparison read-only despite a prohibited root purchase", () => {
+    const snap = workflowSnapshot({
+      title: "Replacement options",
+      visibleContent:
+        "Early train 06:10 10:42 EUR 216 Compliant. Later train 07:20 12:05 EUR 576 Too late. Charter coach 05:30 11:35 EUR 810 Too late.",
+      pageContent:
+        "Replacement options for 18 travelers. Choose the safest policy-compliant option.",
+    });
+    const generated = generateCompletionContract({
+      userRequest:
+        "Compare the available replacements for all 18 travelers. Prepare the safest compliant change, but do not purchase or confirm it.",
+      activeObjective: "Compare the available replacement travel options.",
+      successCriteria:
+        "All replacement options are compared and the safest compliant option is identified.",
+      snapshot: snap,
+    });
+
+    expect(generated?.contract).toMatchObject({ kind: "read_answer" });
+  });
+
+  test("does not infer a workflow action from an explicitly prohibited purchase", () => {
+    const generated = generateCompletionContract({
+      userRequest: "Do not purchase or confirm it.",
+      activeObjective: "Compare the available replacement options.",
+      successCriteria: "The options and fees are reported.",
+      snapshot: workflowSnapshot(),
+    });
+
+    expect(generated?.contract).not.toMatchObject({
+      kind: "workflow_confirmation",
+    });
+  });
+
   test("requires page evidence before read-answer completion", () => {
     const snap = workflowSnapshot({
       title: "Sparse",

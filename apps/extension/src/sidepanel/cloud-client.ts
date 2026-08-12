@@ -15,6 +15,7 @@ const SESSION_KEY = CLOUD_EXTENSION_SESSION_KEY;
 const INSTALLATION_KEY = "cloudInstallationIdV1";
 const PREFERENCES_LINKED_KEY = "cloudPreferencesLinkedV1";
 const TRACE_RECOVERY_KEY = "cloudTraceRecoveryKeyV1";
+const PENDING_EMAIL_AUTH_KEY = "cloudPendingEmailAuthV1";
 
 type StoredSession = Pick<
   ExtensionSessionV1,
@@ -102,6 +103,79 @@ export async function linkCloudAccount(code: string) {
   });
   if (!response.ok) throw await responseError(response);
   return writeSession((await response.json()) as ExtensionSessionV1);
+}
+
+const extensionDevice = async () => ({
+  installationId: await installationId(),
+  displayName: "Chrome",
+  extensionVersion: uiRuntime.getExtensionVersion?.() ?? "development",
+});
+
+export async function requestCloudEmailCode(email: string) {
+  const response = await fetch(`${API_ORIGIN}/api/v1/extension/auth/code`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ email }),
+  });
+  if (!response.ok) throw await responseError(response);
+  const challenge = (await response.json()) as {
+    challengeId: string;
+    expiresInSeconds: number;
+  };
+  await uiRuntime.storage.local.set({
+    [PENDING_EMAIL_AUTH_KEY]: {
+      email: email.trim().toLowerCase(),
+      challengeId: challenge.challengeId,
+      expiresAt: Date.now() + challenge.expiresInSeconds * 1_000,
+    },
+  });
+  return challenge;
+}
+
+export async function pendingCloudEmailAuth() {
+  const value = (await uiRuntime.storage.local.get(PENDING_EMAIL_AUTH_KEY))[
+    PENDING_EMAIL_AUTH_KEY
+  ] as
+    | { email?: unknown; challengeId?: unknown; expiresAt?: unknown }
+    | undefined;
+  if (
+    !value ||
+    typeof value.email !== "string" ||
+    typeof value.challengeId !== "string" ||
+    typeof value.expiresAt !== "number" ||
+    value.expiresAt <= Date.now()
+  ) {
+    await uiRuntime.storage.local.remove(PENDING_EMAIL_AUTH_KEY);
+    return null;
+  }
+  return value as { email: string; challengeId: string; expiresAt: number };
+}
+
+export async function clearPendingCloudEmailAuth() {
+  await uiRuntime.storage.local.remove(PENDING_EMAIL_AUTH_KEY);
+}
+
+export async function verifyCloudEmailCode(
+  email: string,
+  code: string,
+  challengeId: string,
+) {
+  const response = await fetch(`${API_ORIGIN}/api/v1/extension/auth/verify`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({
+      email,
+      code,
+      challengeId,
+      ...(await extensionDevice()),
+    }),
+  });
+  if (!response.ok) throw await responseError(response);
+  const session = await writeSession(
+    (await response.json()) as ExtensionSessionV1,
+  );
+  await uiRuntime.storage.local.remove(PENDING_EMAIL_AUTH_KEY);
+  return session;
 }
 
 const authenticatedCloud = new CloudAuthenticatedFetch(
@@ -220,68 +294,4 @@ export async function syncCloudPreferences(settings: UserSettings) {
   const saved = (await response.json()) as CloudPreferencesV1;
   await uiRuntime.storage.local.set({ [PREFERENCES_LINKED_KEY]: true });
   return saved;
-}
-
-export async function signInCloudWithPkce() {
-  const domain = import.meta.env.VITE_OPENSIDEBAR_COGNITO_DOMAIN as
-    | string
-    | undefined;
-  const clientId = import.meta.env
-    .VITE_OPENSIDEBAR_COGNITO_EXTENSION_CLIENT_ID as string | undefined;
-  if (
-    !domain ||
-    !clientId ||
-    !uiRuntime.launchWebAuthFlow ||
-    !uiRuntime.getIdentityRedirectUrl
-  )
-    throw new Error(
-      "Direct sign-in is not configured in this build. Use a link code from opensidebar.com/account.",
-    );
-  const verifier = [...crypto.getRandomValues(new Uint8Array(32))]
-    .map((byte) => byte.toString(16).padStart(2, "0"))
-    .join("");
-  const digest = await crypto.subtle.digest(
-    "SHA-256",
-    new TextEncoder().encode(verifier),
-  );
-  const challenge = btoa(String.fromCharCode(...new Uint8Array(digest)))
-    .replaceAll("+", "-")
-    .replaceAll("/", "_")
-    .replace(/=+$/, "");
-  const state = crypto.randomUUID();
-  const redirectUri = uiRuntime.getIdentityRedirectUrl("opensidebar");
-  const authorize = new URL("/oauth2/authorize", domain);
-  authorize.search = new URLSearchParams({
-    response_type: "code",
-    client_id: clientId,
-    redirect_uri: redirectUri,
-    scope: "openid email",
-    code_challenge_method: "S256",
-    code_challenge: challenge,
-    state,
-  }).toString();
-  const callback = await uiRuntime.launchWebAuthFlow(
-    authorize.toString(),
-    true,
-  );
-  if (!callback) throw new Error("Sign-in was cancelled.");
-  const result = new URL(callback);
-  if (result.searchParams.get("state") !== state)
-    throw new Error("Sign-in state did not match.");
-  const code = result.searchParams.get("code");
-  if (!code) throw new Error("Sign-in did not return an authorization code.");
-  const response = await fetch(`${API_ORIGIN}/api/v1/extension/auth/exchange`, {
-    method: "POST",
-    headers: { "content-type": "application/json" },
-    body: JSON.stringify({
-      code,
-      codeVerifier: verifier,
-      redirectUri,
-      installationId: await installationId(),
-      displayName: "Chrome",
-      extensionVersion: uiRuntime.getExtensionVersion?.() ?? "development",
-    }),
-  });
-  if (!response.ok) throw await responseError(response);
-  return writeSession((await response.json()) as ExtensionSessionV1);
 }

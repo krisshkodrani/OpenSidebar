@@ -3,7 +3,9 @@ export function cleanLabel(value: string): string {
 }
 
 export function compactKey(value: string): string {
-  return normalizeText(value).replace(/[^a-z0-9]+/g, "-").slice(0, 120);
+  return normalizeText(value)
+    .replace(/[^a-z0-9]+/g, "-")
+    .slice(0, 120);
 }
 
 export function escapeRegExp(value: string): string {
@@ -53,4 +55,22 @@ export function importantLabelTokens(label: string): string[] {
         .slice(0, 12) ?? [],
     ),
   ];
+}
+
+export function stripProhibitedWorkflowClauses(value: string): string {
+  return normalizeText(value).replace(
+    /\b(?:do not|don't|never|without)\b[^.;\n]*/gi,
+    " ",
+  );
+}
+
+export function isModalDismissalWorkflowRequest(value: string): boolean {
+  return (
+    /\b(?:modal|dialog|popup|pop-up|overlay|banner|toast|notice|alert)\b/i.test(
+      value,
+    ) &&
+    /\b(?:dismiss|dismissed|close|closed|cancel|canceled|cancelled|hide|hidden|remove|removed|clear|cleared)\b/i.test(
+      value,
+    )
+  );
 }

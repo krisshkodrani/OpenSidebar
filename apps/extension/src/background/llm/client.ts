@@ -17,10 +17,14 @@ import {
   CompletionResponse,
   LLMMessage,
   LLMToolCall,
-  PromptCacheTelemetry,
   ProviderConfig,
   TokenUsage,
 } from "./types";
+import {
+  mergeCacheTelemetry,
+  readProviderCacheTelemetry,
+  withUsageCacheTelemetry,
+} from "./cache-telemetry";
 import {
   DEEPSEEK_MODEL_PLANNER,
   FIREWORKS_MODEL_PLANNER,
@@ -60,7 +64,9 @@ function toJudgeUsage(
     promptTokens: usage.prompt_tokens ?? 0,
     completionTokens: usage.completion_tokens ?? 0,
     totalTokens: usage.total_tokens ?? 0,
-    ...(usage.cached_tokens != null ? { cachedTokens: usage.cached_tokens } : {}),
+    ...(usage.cached_tokens != null
+      ? { cachedTokens: usage.cached_tokens }
+      : {}),
     ...(costUsd != null ? { costUsd } : {}),
   };
 }
@@ -93,86 +99,6 @@ const OPENAI_BASE_URL =
 
 /** Groq direct API */
 const GROQ_BASE_URL = "https://api.groq.com/openai/v1/chat/completions";
-
-
-function parsePositiveIntHeader(headers: Headers, name: string): number | undefined {
-  const raw = headers.get(name);
-  if (!raw) return undefined;
-  const parsed = Number.parseInt(raw, 10);
-  return Number.isFinite(parsed) && parsed >= 0 ? parsed : undefined;
-}
-
-function readProviderCacheTelemetry(
-  providerId: ProviderConfig["providerId"],
-  headers: Headers,
-): PromptCacheTelemetry | undefined {
-  if (providerId !== "fireworks") return undefined;
-  const promptTokens = parsePositiveIntHeader(headers, "fireworks-prompt-tokens");
-  const cachedPromptTokens = parsePositiveIntHeader(
-    headers,
-    "fireworks-cached-prompt-tokens",
-  );
-  if (promptTokens == null && cachedPromptTokens == null) {
-    logger.debug("agent", "Fireworks cache telemetry headers absent");
-    return undefined;
-  }
-  const cacheHitPct =
-    promptTokens && cachedPromptTokens != null
-      ? Math.round((cachedPromptTokens / promptTokens) * 10000) / 100
-      : undefined;
-  return {
-    provider: providerId,
-    promptTokens,
-    cachedPromptTokens,
-    cacheHitPct,
-    source: "response_headers",
-  };
-}
-
-function mergeCacheTelemetry(
-  usage: TokenUsage | undefined,
-  telemetry: PromptCacheTelemetry | undefined,
-): TokenUsage | undefined {
-  if (!usage) return usage;
-  if (!telemetry) return usage;
-  const promptTokens = telemetry.promptTokens ?? usage.prompt_tokens;
-  const cachedTokens = telemetry.cachedPromptTokens ?? usage.cached_tokens;
-  return {
-    ...usage,
-    prompt_tokens: promptTokens,
-    cached_tokens: cachedTokens,
-    cacheTelemetry: {
-      ...telemetry,
-      promptTokens,
-      cachedPromptTokens: cachedTokens,
-      cacheHitPct:
-        promptTokens > 0 && cachedTokens != null
-          ? Math.round((cachedTokens / promptTokens) * 10000) / 100
-          : telemetry.cacheHitPct,
-    },
-  };
-}
-
-function withUsageCacheTelemetry(
-  usage: TokenUsage | undefined,
-  providerId: ProviderConfig["providerId"],
-): TokenUsage | undefined {
-  if (!usage || usage.cached_tokens == null) return usage;
-  const cacheHitPct =
-    usage.prompt_tokens > 0
-      ? Math.round((usage.cached_tokens / usage.prompt_tokens) * 10000) / 100
-      : undefined;
-  return {
-    ...usage,
-    cacheTelemetry: {
-      provider: providerId,
-      promptTokens: usage.prompt_tokens,
-      cachedPromptTokens: usage.cached_tokens,
-      cacheHitPct,
-      source: "usage",
-    },
-  };
-}
 
 /** Moonshot direct API */
 const MOONSHOT_BASE_URL = "https://api.moonshot.ai/v1/chat/completions";
@@ -623,7 +549,9 @@ export class LLMClient {
     const nitro = options?.useNitro;
     const hasGroq = !!options?.groqApiKey;
     const hasOpenAI = !!options?.openaiApiKey;
-    const hasFireworks = openRouterApiKey === "__opensidebar_cloud__" || !!options?.fireworksApiKey;
+    const hasFireworks =
+      openRouterApiKey === "__opensidebar_cloud__" ||
+      !!options?.fireworksApiKey;
     const hasMoonshot = !!options?.kimiApiKey;
     const hasXiaomi = !!options?.xiaomiApiKey;
 
@@ -681,7 +609,10 @@ export class LLMClient {
         executorFallbackModel: options?.executorFallbackModel,
       });
     } else if (mode === "fireworks" && hasFireworks) {
-      const fwKey = openRouterApiKey === "__opensidebar_cloud__" ? openRouterApiKey : options!.fireworksApiKey!;
+      const fwKey =
+        openRouterApiKey === "__opensidebar_cloud__"
+          ? openRouterApiKey
+          : options!.fireworksApiKey!;
       const fwProv = fireworksProvider(fwKey);
       const executorModel = normalizeExecutorModel({
         providerMode: "fireworks",
@@ -769,10 +700,7 @@ export class LLMClient {
       // is a Fireworks accounts/... id and 404s here.
       this.plannerPool = openRouterProviderPool(
         openRouterApiKey,
-        applyNitro(
-          options?.plannerModel || OPENROUTER_MODEL_PLANNER,
-          nitro,
-        ),
+        applyNitro(options?.plannerModel || OPENROUTER_MODEL_PLANNER, nitro),
       );
     }
 
@@ -1084,7 +1012,17 @@ export class LLMClient {
     actualProviderId: ProviderConfig["providerId"];
     actualModel: string;
   }> {
-    if (this.openRouterApiKey === "__opensidebar_cloud__") return { response: await cloudRelayFetch(JSON.parse(String(init.body ?? "{}")) as Record<string, unknown>, providerId, this._activeTier, signal), actualProviderId: providerId, actualModel: model };
+    if (this.openRouterApiKey === "__opensidebar_cloud__")
+      return {
+        response: await cloudRelayFetch(
+          JSON.parse(String(init.body ?? "{}")) as Record<string, unknown>,
+          providerId,
+          this._activeTier,
+          signal,
+        ),
+        actualProviderId: providerId,
+        actualModel: model,
+      };
     const RETRYABLE = new Set([429, 502, 503, 504]);
     let lastError: Error | null = null;
 
@@ -1292,10 +1230,13 @@ export class LLMClient {
             );
             provider = fallback.provider;
             activeModel = fallback.model;
-            activePayload = this.shapePayloadForActiveTier(provider.providerId, {
-              ...activePayload,
-              model: activeModel,
-            });
+            activePayload = this.shapePayloadForActiveTier(
+              provider.providerId,
+              {
+                ...activePayload,
+                model: activeModel,
+              },
+            );
             requestInitBase = {
               method: "POST",
               headers: buildJsonHeaders(provider, request),
@@ -1553,10 +1494,13 @@ export class LLMClient {
             );
             provider = fallback.provider;
             activeModel = fallback.model;
-            activePayload = this.shapePayloadForActiveTier(provider.providerId, {
-              ...activePayload,
-              model: activeModel,
-            });
+            activePayload = this.shapePayloadForActiveTier(
+              provider.providerId,
+              {
+                ...activePayload,
+                model: activeModel,
+              },
+            );
             requestInitBase = {
               method: "POST",
               headers: buildJsonHeaders(provider, request),

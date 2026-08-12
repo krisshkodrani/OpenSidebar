@@ -227,10 +227,10 @@ import {
   turnCheckpointKey,
   sanitizeTurnCheckpoint,
 } from "../agent/checkpoint-types";
-import type { TaskRunProgressInput } from "@shared-types/progress";
 import type { TurnCheckpoint } from "../agent/checkpoint-types";
 import type { PendingUserInteraction } from "../agent/loop-types";
 import type { CompletionEnvelope } from "../agent/completion-kernel";
+import type { TaskRunProgressInput } from "@shared-types/progress";
 import { hasUsefulPartialProgressHandoff } from "../agent/partial-progress-handoff";
 import {
   buildTaskFleetTelemetryProjectionInput,
@@ -242,71 +242,33 @@ import {
   collectFleetTelemetryLocally,
   projectFleetTelemetryEnvelope,
 } from "../telemetry";
+import {
+  cloneStructuredProgress,
+  clearOutstandingQuestions,
+  deleteStructuredProgressEntry,
+  DEFAULT_MAX_WORKERS,
+  E2E_PENDING_INTERACTION_TIMEOUT_MS,
+  E2E_SYNTHETIC_QUERY_PREFIX,
+  ESCALATION_MAX_REASON_CHARS,
+  ESCALATION_RESPONSE_TIMEOUT_MS,
+  EXHAUSTIVE_REVIEW_MAX_TOTAL_TOKENS,
+  getFleetTelemetryRuntimeContext,
+  ignoreSiblingsAfterRootCompletion,
+  isLargeExhaustiveReviewGraph,
+  LIST_DETAIL_REVIEW_SKILL_ID,
+  MAX_HORIZON_EXPANSIONS,
+  MAX_PERSISTED_MESSAGES,
+  maybeRecordReviewedItem,
+  MULTI_TAB_CHECKLIST_SKILL_ID,
+  NAVIGATE_READ_RETURN_SKILL_ID,
+  recordCompletedPhase,
+  recordOutstandingQuestion,
+  setStructuredProgressEntry,
+} from "./runtime-policy";
 
 export * from "./lane-types";
 export * from "./sanitizers";
 export * from "./utils";
-
-const DEFAULT_MAX_WORKERS = 3;
-const MAX_HORIZON_EXPANSIONS = 30;
-const ESCALATION_RESPONSE_TIMEOUT_MS = 60_000;
-const ESCALATION_MAX_REASON_CHARS = 220;
-const MAX_PERSISTED_MESSAGES = 200;
-const E2E_SYNTHETIC_QUERY_PREFIX = "__e2e_pending_interaction__:";
-const E2E_PENDING_INTERACTION_TIMEOUT_MS = 10 * 60 * 1000;
-const LIST_DETAIL_REVIEW_SKILL_ID = "list-detail-review-loop";
-const NAVIGATE_READ_RETURN_SKILL_ID = "navigate-read-return";
-const MULTI_TAB_CHECKLIST_SKILL_ID = "multi-tab-checklist-workflow";
-const EXHAUSTIVE_REVIEW_MIN_NODES_FOR_BUDGET_BUMP = 8;
-const EXHAUSTIVE_REVIEW_MAX_TOTAL_TOKENS = 1_600_000;
-
-function getFleetTelemetryRuntimeContext(): {
-  eventId: string;
-  extensionVersion: string;
-  extensionChannel: "stable" | "dev";
-  browserMajor: number;
-  osFamily: string;
-} {
-  const userAgent = typeof navigator === "undefined" ? "" : navigator.userAgent;
-  const browserMajor = Number(
-    /(?:Chrome|Chromium)\/(\d+)/.exec(userAgent)?.[1] ?? 0,
-  );
-  const lowerUserAgent = userAgent.toLowerCase();
-  const osFamily = lowerUserAgent.includes("windows")
-    ? "windows"
-    : lowerUserAgent.includes("mac os")
-      ? "macos"
-      : lowerUserAgent.includes("cros")
-        ? "chromeos"
-        : lowerUserAgent.includes("linux")
-          ? "linux"
-          : "other";
-  return {
-    eventId: crypto.randomUUID(),
-    extensionVersion: chrome.runtime.getManifest().version,
-    extensionChannel: __DEV__ ? "dev" : "stable",
-    browserMajor,
-    osFamily,
-  };
-}
-
-function cloneStructuredProgress(
-  progress: Record<string, TaskRunProgressInput> | undefined,
-): Record<string, TaskRunProgressInput> | undefined {
-  if (!progress) return undefined;
-  const entries = Object.entries(progress).map(([key, value]) => [
-    key,
-    JSON.parse(JSON.stringify(value)) as TaskRunProgressInput,
-  ]);
-  return Object.fromEntries(entries);
-}
-
-function isLargeExhaustiveReviewGraph(nodes: TaskNode[]): boolean {
-  const reviewNodeCount = nodes.filter(
-    (node) => node.selectedSkillId === LIST_DETAIL_REVIEW_SKILL_ID,
-  ).length;
-  return reviewNodeCount >= EXHAUSTIVE_REVIEW_MIN_NODES_FOR_BUDGET_BUMP;
-}
 
 export class Orchestrator {
   private tasksByWorkspace = new WorkspaceRegistry<OrchestratorTask>();
@@ -397,41 +359,13 @@ export class Orchestrator {
       result: string;
     },
   ): string[] {
-    const siblings = task.nodes.filter(
-      (node) => node.status === "pending" || node.status === "running",
-    );
-    if (siblings.length === 0) return [];
-
-    const skippedNodeIds = new Set(siblings.map((node) => node.id));
     const workers = this.workersByWorkspace.get(task.workspaceId)?.executor;
-    for (const node of siblings) {
-      node.status = "skipped";
-      node.result = params.result;
-      node.error = undefined;
-    }
-
-    for (const worker of workers?.values() ?? []) {
-      if (!skippedNodeIds.has(worker.nodeId)) continue;
-      const node = task.nodes.find(
-        (candidate) => candidate.id === worker.nodeId,
-      );
-      this.emitTraceEvent(
-        task,
-        "worker_cancelled",
-        {
-          taskId: task.id,
-          nodeId: worker.nodeId,
-          workerId: worker.workerId,
-          reason: params.reason,
-          resources: node?.parallelContract?.resourceHints ?? [],
-          ...buildParallelRunState(task),
-        },
-        "system",
-      );
-      worker.loop.requestStop();
-    }
-
-    return [...skippedNodeIds];
+    return ignoreSiblingsAfterRootCompletion(
+      task,
+      workers,
+      params,
+      (type, data, role) => this.emitTraceEvent(task, type, data, role),
+    );
   }
 
   private attachPlannerUsageTrace(
@@ -886,57 +820,14 @@ export class Orchestrator {
     task: OrchestratorTask,
     entry: TaskRunProgressInput,
   ): void {
-    const current = cloneStructuredProgress(task.structuredProgress) ?? {};
-    current[entry.key] = JSON.parse(
-      JSON.stringify(entry),
-    ) as TaskRunProgressInput;
-    task.structuredProgress = current;
+    setStructuredProgressEntry(task, entry);
   }
 
   private deleteStructuredProgressEntry(
     task: OrchestratorTask,
     key: string,
   ): void {
-    if (task.structuredProgress?.[key]) {
-      const next = cloneStructuredProgress(task.structuredProgress) ?? {};
-      delete next[key];
-      task.structuredProgress = Object.keys(next).length > 0 ? next : undefined;
-    }
-  }
-
-  private recordCompletedPhase(task: OrchestratorTask, phase: string): void {
-    this.setStructuredProgressEntry(task, {
-      key: "completed-phases",
-      kind: "completed-phase-list",
-      payload: [phase],
-    });
-  }
-
-  private recordOutstandingQuestion(
-    task: OrchestratorTask,
-    question: string,
-  ): void {
-    this.setStructuredProgressEntry(task, {
-      key: "outstanding-questions",
-      kind: "outstanding-question-list",
-      payload: [question],
-    });
-  }
-
-  private clearOutstandingQuestions(task: OrchestratorTask): void {
-    this.deleteStructuredProgressEntry(task, "outstanding-questions");
-  }
-
-  private maybeRecordReviewedItem(
-    task: OrchestratorTask,
-    node: TaskNode,
-  ): void {
-    if (node.selectedSkillId !== LIST_DETAIL_REVIEW_SKILL_ID) return;
-    this.setStructuredProgressEntry(task, {
-      key: "reviewed-items",
-      kind: "reviewed-item-list",
-      payload: [node.description],
-    });
+    deleteStructuredProgressEntry(task, key);
   }
 
   private maybeRecordExtractedFacts(
@@ -1062,7 +953,7 @@ export class Orchestrator {
 
   private emitPendingInteraction(task: OrchestratorTask): void {
     if (task.pendingInteraction?.kind === "clarification") {
-      this.recordOutstandingQuestion(task, task.pendingInteraction.question);
+      recordOutstandingQuestion(task, task.pendingInteraction.question);
     }
     const emission = emitPendingInteractionMessage(task);
     if (!emission) return;
@@ -1092,7 +983,7 @@ export class Orchestrator {
         : "completed";
 
     task.pendingInteraction = undefined;
-    this.clearOutstandingQuestions(task);
+    clearOutstandingQuestions(task);
     task.finishedAt = Date.now();
     task.status = terminalStatus;
     task.sessionMetrics.totalSessionTimeMs =
@@ -1245,7 +1136,7 @@ export class Orchestrator {
     }
 
     if (interaction.kind === "clarification") {
-      this.recordOutstandingQuestion(task, interaction.question);
+      recordOutstandingQuestion(task, interaction.question);
     }
 
     const resolvedInteraction: PendingUserInteraction =
@@ -1282,7 +1173,7 @@ export class Orchestrator {
   ): Promise<void> {
     task.pendingInteraction = interaction;
     this.clearPendingInteractionTimer(task.workspaceId);
-    this.clearOutstandingQuestions(task);
+    clearOutstandingQuestions(task);
     if (interaction.nodeId) {
       const targetNode = task.nodes.find(
         (node) => node.id === interaction.nodeId,
@@ -3130,10 +3021,7 @@ export class Orchestrator {
         ) {
           task.pendingInteraction = result.pendingInteraction;
           if (result.pendingInteraction?.kind === "clarification") {
-            this.recordOutstandingQuestion(
-              task,
-              result.pendingInteraction.question,
-            );
+            recordOutstandingQuestion(task, result.pendingInteraction.question);
           }
           this.armPendingInteractionTimeout(task);
           void this.persistTaskCheckpoint(task);
@@ -3504,8 +3392,8 @@ export class Orchestrator {
               node.status = "completed";
               node.result = compactResultSummary;
               node.userFacingResult = result.summary;
-              this.recordCompletedPhase(task, node.description);
-              this.maybeRecordReviewedItem(task, node);
+              recordCompletedPhase(task, node.description);
+              maybeRecordReviewedItem(task, node);
               this.maybeRecordExtractedFacts(task, node, compactResultSummary);
               this.emitCompletionScopeTransition(task, {
                 scope: "node",
@@ -5117,7 +5005,8 @@ export class Orchestrator {
   ): Promise<number> {
     const tab = await createWorkspaceTab({
       sourceTabId: task.rootTabId,
-      url, workspaceId: task.workspaceId,
+      url,
+      workspaceId: task.workspaceId,
       manager: this.deps.workspaceManager,
     });
     claimTaskTab(task, {
