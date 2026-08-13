@@ -82,6 +82,7 @@
     "modelbench:list": "tsx scripts/modelbench.ts list",
     "modelbench:check": "tsx scripts/modelbench.ts check",
     "modelbench:oracle": "tsx scripts/modelbench.ts oracle",
+    "modelbench:quality": "tsx scripts/modelbench-quality.ts",
     "modelbench:run": "tsx scripts/modelbench-run.ts",
     "modelbench:report": "tsx scripts/modelbench-report.ts",
     "modelbench:target": "tsx scripts/modelbench-target-server.ts",

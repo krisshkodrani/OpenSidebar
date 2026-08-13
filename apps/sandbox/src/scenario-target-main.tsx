@@ -3,6 +3,7 @@ import { createRoot } from "react-dom/client";
 import type { JsonObject, JsonValue, ScenarioTargetViewV2 } from "@opensidebar/scenario-contracts";
 import { loadScenarioTarget, sendScenarioAction } from "./scenario-target-api";
 import { isScenarioFamily, TARGET_FAMILIES } from "./scenario-target-config";
+import { ScenarioVisualPresentation } from "./scenario-visual-presentation";
 import "./scenario-target.css";
 
 function objectValue(value: JsonValue | undefined): JsonObject {
@@ -80,6 +81,7 @@ function ConfiguredTargetApplication({ run, familyValue }: { run: ScenarioTarget
         <div className="scenario-heading"><div><p>Workspace</p><h1>{display(caseState.title)}</h1></div><span className="scenario-pill">{display(caseState.status)}</span></div>
         <section className="scenario-panel"><h2>Details</h2><table><tbody>{rows.map(([label, value]) => <tr key={label}><th>{label}</th><td>{value}</td></tr>)}</tbody></table></section>
         {current.lifecycle === "finished" && <section className="scenario-panel scenario-success" role="status"><h2>Saved successfully</h2><p>The requested change is complete. The details above show the current record state.</p></section>}
+        <ScenarioVisualPresentation value={current.data.presentation} />
         {evidence.length > 0 && <section className="scenario-panel"><h2>Visible information</h2><dl className="scenario-evidence">{evidence.map((entry, index) => { const item = objectValue(entry); return <div key={index}><dt>{display(item.label)}</dt><dd>{display(item.value)}</dd></div>; })}</dl></section>}
         {typeof current.data.notice === "string" && <section className="scenario-panel scenario-notice"><h2>Action unavailable</h2><p>{current.data.notice}</p></section>}
         {terminalDecision && current.lifecycle !== "finished" && <section className="scenario-panel scenario-form"><h2>Decision</h2><button className="scenario-primary" disabled={busy} onClick={() => void recordTerminalDecision()}>{busy ? "Savingâ€¦" : display(interaction.terminalLabel)}</button>{feedback && <p role="status" className="scenario-feedback">{feedback}</p>}</section>}
