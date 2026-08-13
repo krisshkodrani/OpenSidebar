@@ -34,6 +34,7 @@ export interface ModelBenchDriverResult {
   terminalOutcome?: string;
   resolvedSeats: Partial<Record<ModelSeat, ResolvedSeatV1>>;
   usageByRole: Partial<Record<ModelSeat, RoleUsageV1>>;
+  telemetry?: BenchmarkAttemptV1["telemetry"];
   artifactRefs: readonly string[];
   failure?: {
     kind: "provider" | "harness" | "indeterminate";
@@ -162,6 +163,7 @@ export async function runModelBenchCase(
       requestedSeats: options.configuration.seats,
       resolvedSeats: result.resolvedSeats,
       usageByRole: result.usageByRole,
+      ...(result.telemetry ? { telemetry: result.telemetry } : {}),
       validation,
       ...(retryOfAttemptId ? { retryOfAttemptId } : {}),
       artifactRefs: result.artifactRefs,

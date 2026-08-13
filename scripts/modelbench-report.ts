@@ -21,6 +21,9 @@ function rows(values: Record<string, MetricSliceV1>): string[] {
 }
 
 function markdown(report: BenchmarkReportV1, source: string): string {
+  const roleUsageRows = Object.entries(report.usageByRole).map(([role, usage]) =>
+    `| ${role} | ${usage?.calls ?? 0} | ${usage?.promptTokens ?? 0} | ${usage?.completionTokens ?? 0} | ${usage?.cachedTokens ?? 0} | $${(usage?.costUsd ?? 0).toFixed(6)} | ${usage?.llmTimeMs ?? 0} |`,
+  );
   return [
     "# ModelBench-100 Report",
     "",
@@ -37,6 +40,12 @@ function markdown(report: BenchmarkReportV1, source: string): string {
     "| --- | ---: | ---: | ---: |",
     ...rows(report.byRole),
     "",
+    "## Usage by model seat",
+    "",
+    "| Seat | Calls | Prompt tokens | Completion tokens | Cached tokens | Cost | LLM time (ms) |",
+    "| --- | ---: | ---: | ---: | ---: | ---: | ---: |",
+    ...roleUsageRows,
+    "",
     "## By application family",
     "",
     "| Family | Passed/valid | Pass@1 | Valid/requested |",
@@ -50,6 +59,10 @@ function markdown(report: BenchmarkReportV1, source: string): string {
     `- Judge disagreement: ${percent(report.judgeDisagreementRate)}`,
     `- Median duration: ${report.medianDurationMs ?? "n/a"} ms`,
     `- p95 duration: ${report.p95DurationMs ?? "n/a"} ms`,
+    `- Median LLM time: ${report.medianLlmTimeMs ?? "n/a"} ms`,
+    `- p95 LLM time: ${report.p95LlmTimeMs ?? "n/a"} ms`,
+    `- Turns / tool executions / perceptions: ${report.totalTurns} / ${report.totalToolExecutions} / ${report.totalPerceptions}`,
+    `- Replans / recoveries: ${report.totalReplans} / ${report.totalRecoveries}`,
     `- Cost/requested task: ${report.costPerRequestedTaskUsd === null ? "n/a" : `$${report.costPerRequestedTaskUsd.toFixed(6)}`}`,
     `- Cost/successful task: ${report.costPerSuccessfulTaskUsd === null ? "n/a" : `$${report.costPerSuccessfulTaskUsd.toFixed(6)}`}`,
     "",
