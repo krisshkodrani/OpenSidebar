@@ -3,6 +3,7 @@ import type {
   BenchmarkReportV1,
   MetricSliceV1,
 } from "@opensidebar/scenario-contracts";
+import { MODEL_BENCH_ACCEPTANCE_CASES } from "./acceptance-cases.js";
 import { MODEL_BENCH_CASES } from "./case-catalog.js";
 
 function percentile(values: readonly number[], ratio: number): number | null {
@@ -49,7 +50,8 @@ function grouped(
 }
 
 function caseFor(id: string) {
-  const definition = MODEL_BENCH_CASES.find((entry) => entry.contract.id === id);
+  const definition = [...MODEL_BENCH_CASES, ...MODEL_BENCH_ACCEPTANCE_CASES]
+    .find((entry) => entry.contract.id === id);
   if (!definition) throw new Error(`Attempt references unknown case: ${id}`);
   return definition.contract;
 }

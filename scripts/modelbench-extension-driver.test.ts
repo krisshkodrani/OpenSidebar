@@ -1,6 +1,9 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { extractModelBenchOutcome } from "./modelbench-extension-driver.js";
+import {
+  extractModelBenchOutcome,
+  observedTabOpeningAction,
+} from "./modelbench-extension-driver.js";
 
 test("clarification is a structured terminal outcome", () => {
   const outcome = extractModelBenchOutcome([
@@ -15,4 +18,10 @@ test("task completion is detected without interpreting its narration", () => {
   const outcome = extractModelBenchOutcome([event]);
   assert.equal(outcome?.kind, "completion");
   assert.equal(outcome?.event, event);
+});
+
+test("recognizes model-issued tab opening actions without reading narration", () => {
+  assert.equal(observedTabOpeningAction([{ toolCalls: [{ name: "create_tab" }] }]), true);
+  assert.equal(observedTabOpeningAction([{ toolCalls: [{ name: "click_element" }] }]), true);
+  assert.equal(observedTabOpeningAction([{ toolCalls: [{ name: "type_text" }] }]), false);
 });

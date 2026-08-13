@@ -1,4 +1,5 @@
 import { execFileSync } from "node:child_process";
+import { resolve } from "node:path";
 import type { ScenarioRunV2 } from "@opensidebar/scenario-contracts";
 import { createE2EHarness } from "../apps/extension/tests/e2e/helpers/harness.js";
 import {
@@ -23,6 +24,61 @@ interface DriverOutcome {
   kind: "completion" | "clarification" | "timeout";
   events: EventRecord[];
   event?: EventRecord;
+}
+
+export function observedTabOpeningAction(turns: readonly EventRecord[]): boolean {
+  return turns.some((turn) =>
+    Array.isArray(turn.toolCalls) &&
+    turn.toolCalls.some((call: EventRecord) =>
+      call?.name === "create_tab" || call?.name === "click_element"
+    )
+  );
+}
+
+async function collectBrowserDriverEvidence(input: {
+  worker: Parameters<typeof getMonitoredEventsWithControlLane>[0];
+  sourceTabId: number;
+  targetOrigin: string;
+  turns: readonly EventRecord[];
+}): Promise<Record<string, boolean>> {
+  const browserState = await input.worker.evaluate(
+    async ({ sourceTabId, targetOrigin }) => {
+      const source = await chrome.tabs.get(sourceTabId).catch(() => null);
+      const tabs = source
+        ? await chrome.tabs.query({ windowId: source.windowId })
+        : [];
+      const linked = tabs.find((tab) =>
+        tab.id !== sourceTabId &&
+        typeof tab.url === "string" &&
+        tab.url.startsWith(targetOrigin) &&
+        tab.url.includes("view=linked-resource")
+      ) ?? null;
+      const active = tabs.find((tab) => tab.active) ?? null;
+      const [sourcePanel, linkedPanel] = await Promise.all([
+        chrome.sidePanel.getOptions({ tabId: sourceTabId }).catch(() => null),
+        linked?.id
+          ? chrome.sidePanel.getOptions({ tabId: linked.id }).catch(() => null)
+          : Promise.resolve(null),
+      ]);
+      const validGroup =
+        typeof source?.groupId === "number" &&
+        source.groupId !== chrome.tabGroups.TAB_GROUP_ID_NONE;
+      return {
+        linkedResourceOpened: Boolean(linked),
+        spawnedTabInWorkspaceGroup: Boolean(
+          linked && validGroup && linked.groupId === source?.groupId,
+        ),
+        sourcePanelEnabled: sourcePanel?.enabled === true,
+        spawnedPanelEnabled: linkedPanel?.enabled === true,
+        returnedToSourceTab: active?.id === sourceTabId,
+      };
+    },
+    { sourceTabId: input.sourceTabId, targetOrigin: input.targetOrigin },
+  );
+  return {
+    ...browserState,
+    openingActionObserved: observedTabOpeningAction(input.turns),
+  };
 }
 
 const E2E_ENV_NAMES = [
@@ -154,6 +210,10 @@ async function readRun(origin: string, runId: string): Promise<ScenarioRunV2> {
 }
 
 export async function createModelBenchDriver(): Promise<ModelBenchDriver> {
+  if (process.env.MODEL_BENCH_SKIP_TARGET_BUILD !== "1") {
+    const { build } = await import("vite");
+    await build({ configFile: resolve("apps/sandbox/vite.config.ts") });
+  }
   if (process.env.MODEL_BENCH_SKIP_EXTENSION_BUILD !== "1") {
     execFileSync(
       process.execPath,
@@ -222,11 +282,18 @@ export async function createModelBenchDriver(): Promise<ModelBenchDriver> {
           requestedSeats: input.configuration.seats,
         });
         const run = await readRun(target.origin, created.runId);
+        const driverEvidence = await collectBrowserDriverEvidence({
+          worker: harness.ctx.serviceWorker,
+          sourceTabId: tabId,
+          targetOrigin: target.origin,
+          turns: traceSummary.turns,
+        });
         return {
           durationMs: Date.now() - startedAt,
           finalState: run.state,
           finalAnswer: finalAnswer(outcome),
           terminalOutcome: terminalOutcome(outcome, run),
+          driverEvidence,
           resolvedSeats: evidence.resolvedSeats,
           usageByRole: evidence.usageByRole,
           telemetry: evidence.telemetry,
@@ -237,6 +304,7 @@ export async function createModelBenchDriver(): Promise<ModelBenchDriver> {
             outcome: outcome.kind,
             runIds: evidence.runIds,
             ambiguousSeats: evidence.ambiguousSeats,
+            driverEvidence,
           },
         };
       } catch (error) {

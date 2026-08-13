@@ -74,3 +74,30 @@ test("local target server runs an interrupted workflow through recovery and comp
     await server.close();
   }
 });
+
+test("local target server exposes MB-101 linked evidence without control data", async () => {
+  const server = await startModelBenchTargetServer();
+  try {
+    const create = await fetch(`${server.origin}/api/v2/modelbench/runs`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ caseId: "acceptance.mb-101-workspace-tab" }),
+    });
+    assert.equal(create.status, 201);
+    const created = await create.json() as { launchUrl: string };
+    const launch = await fetch(created.launchUrl, { redirect: "manual" });
+    const cookie = launch.headers.get("set-cookie")?.split(";")[0];
+    assert.ok(cookie);
+    const state = await fetch(`${server.origin}/api/v2/target/state`, {
+      headers: { cookie },
+    });
+    const payload = await state.json() as {
+      run: { data: { linkedResource?: Record<string, unknown>; control?: unknown } };
+    };
+    assert.equal(payload.run.data.linkedResource?.label, "Open order NW-1048");
+    assert.equal("control" in payload.run.data, false);
+    assert.equal(JSON.stringify(payload).includes("acceptedValue"), false);
+  } finally {
+    await server.close();
+  }
+});

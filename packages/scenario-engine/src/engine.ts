@@ -3,6 +3,7 @@ import type {
   ScenarioStateV2,
   ScenarioTargetViewV2,
 } from "@opensidebar/scenario-contracts";
+import { MODEL_BENCH_ACCEPTANCE_CASES } from "./acceptance-cases.js";
 import { MODEL_BENCH_CASES } from "./case-catalog.js";
 import { SCENARIOS } from "./scenario-catalog.js";
 import type {
@@ -33,7 +34,7 @@ function findVersioned<T>(
 
 export class ScenarioEngine implements ScenarioEngineV1 {
   readonly scenarios = SCENARIOS;
-  readonly cases = MODEL_BENCH_CASES;
+  readonly cases = [...MODEL_BENCH_CASES, ...MODEL_BENCH_ACCEPTANCE_CASES];
 
   scenario(id: string, version?: number): ScenarioDefinitionV2 {
     return findVersioned(

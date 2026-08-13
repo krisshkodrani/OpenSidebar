@@ -3,6 +3,7 @@
 import {
   checkModelBenchCatalog,
   checkRoleProbes,
+  MODEL_BENCH_ACCEPTANCE_CASES,
   MODEL_BENCH_CASES,
   runOracle,
 } from "@opensidebar/scenario-engine";
@@ -33,10 +34,14 @@ function selectedCases() {
   }
   const suite = rawSuite as BenchmarkSuite;
   const requestedCase = option("--case");
-  return MODEL_BENCH_CASES.filter(
+  const runnableCases = requestedCase
+    ? [...MODEL_BENCH_CASES, ...MODEL_BENCH_ACCEPTANCE_CASES]
+    : MODEL_BENCH_CASES;
+  return runnableCases.filter(
     (definition) =>
-      definition.contract.suites.includes(suite) &&
-      (!requestedCase || definition.contract.id === requestedCase),
+      requestedCase
+        ? definition.contract.id === requestedCase
+        : definition.contract.suites.includes(suite),
   );
 }
 
@@ -52,6 +57,22 @@ function list(): void {
 function check(): void {
   const errors = checkModelBenchCatalog(MODEL_BENCH_CASES);
   errors.push(...checkRoleProbes());
+  if (MODEL_BENCH_ACCEPTANCE_CASES.length !== 1) {
+    errors.push(`expected one post-headline acceptance case, received ${MODEL_BENCH_ACCEPTANCE_CASES.length}`);
+  }
+  for (const definition of MODEL_BENCH_ACCEPTANCE_CASES) {
+    if (definition.contract.suites.length !== 0) {
+      errors.push(`${definition.contract.id}: acceptance case must not alter headline suites`);
+    }
+    if (runOracle(definition).verdict !== "pass") {
+      errors.push(`${definition.contract.id}: acceptance oracle did not pass`);
+    }
+    for (const miss of definition.nearMisses) {
+      if (runOracle(definition, miss.outcome).verdict !== "fail") {
+        errors.push(`${definition.contract.id}: near miss ${miss.id} did not fail`);
+      }
+    }
+  }
   const migration = buildLegacyMigrationMatrix();
   errors.push(...checkLegacyMigrationMatrix(migration));
   if (errors.length) {
@@ -59,7 +80,7 @@ function check(): void {
     process.exitCode = 1;
     return;
   }
-  console.log(`[modelbench:check] ${MODEL_BENCH_CASES.length} cases, 50 role probes, and ${migration.length} legacy migration entries satisfy benchmark invariants.`);
+  console.log(`[modelbench:check] ${MODEL_BENCH_CASES.length} headline cases, MB-101, 50 role probes, and ${migration.length} legacy migration entries satisfy benchmark invariants.`);
 }
 
 function oracle(): void {
