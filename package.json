@@ -32,9 +32,12 @@
     "apps/extension/tests/e2e/fixtures/online-shop-pro",
     "infra/sandbox",
     "packages/prompts",
+    "packages/scenario-contracts",
+    "packages/scenario-engine",
     "packages/sandbox-contracts",
     "packages/shared-types",
-    "packages/observability-schema"
+    "packages/observability-schema",
+    "packages/trace-sync"
   ],
   "scripts": {
     "dev": "nx run tools:dev-stack",
@@ -75,6 +78,10 @@
     "typecheck": "nx run-many -t typecheck",
     "ci": "tsx scripts/validate-rfc-decisions.ts && nx affected -t lint,typecheck,test,build",
     "e2e": "nx run extension:test-e2e-staged",
+    "modelbench:list": "tsx scripts/modelbench.ts list",
+    "modelbench:check": "tsx scripts/modelbench.ts check",
+    "modelbench:oracle": "tsx scripts/modelbench.ts oracle",
+    "modelbench:report": "tsx scripts/modelbench-report.ts",
     "bench": "tsx scripts/run-bench.ts",
     "bench:fetch": "tsx scripts/bench/fetch-tasks.ts",
     "models:check": "tsx scripts/model-compatibility-check.ts",

@@ -1,0 +1,104 @@
+import type {
+  BenchmarkAttemptV1,
+  BenchmarkReportV1,
+  MetricSliceV1,
+} from "@opensidebar/scenario-contracts";
+import { MODEL_BENCH_CASES } from "./case-catalog.js";
+
+function percentile(values: readonly number[], ratio: number): number | null {
+  if (!values.length) return null;
+  const sorted = [...values].sort((left, right) => left - right);
+  const index = Math.min(sorted.length - 1, Math.ceil(sorted.length * ratio) - 1);
+  return sorted[index] ?? null;
+}
+
+function slice(attempts: readonly BenchmarkAttemptV1[]): MetricSliceV1 {
+  const firstAttempts = attempts.filter((attempt) => !attempt.retryOfAttemptId);
+  const valid = firstAttempts.filter(
+    (attempt) =>
+      attempt.classification === "valid_pass" ||
+      attempt.classification === "valid_model_failure",
+  );
+  const passed = valid.filter(
+    (attempt) => attempt.classification === "valid_pass",
+  ).length;
+  return {
+    requested: firstAttempts.length,
+    valid: valid.length,
+    passed,
+    passAt1: valid.length ? passed / valid.length : null,
+  };
+}
+
+function grouped(
+  attempts: readonly BenchmarkAttemptV1[],
+  key: (caseId: string) => string,
+): Record<string, MetricSliceV1> {
+  const buckets = new Map<string, BenchmarkAttemptV1[]>();
+  for (const attempt of attempts) {
+    const name = key(attempt.caseId);
+    const target = buckets.get(name) ?? [];
+    target.push(attempt);
+    buckets.set(name, target);
+  }
+  return Object.fromEntries(
+    [...buckets.entries()]
+      .sort(([left], [right]) => left.localeCompare(right))
+      .map(([name, values]) => [name, slice(values)]),
+  );
+}
+
+function caseFor(id: string) {
+  const definition = MODEL_BENCH_CASES.find((entry) => entry.contract.id === id);
+  if (!definition) throw new Error(`Attempt references unknown case: ${id}`);
+  return definition.contract;
+}
+
+export function buildBenchmarkReport(
+  attempts: readonly BenchmarkAttemptV1[],
+  generatedAt = new Date().toISOString(),
+): BenchmarkReportV1 {
+  const overall = slice(attempts);
+  const invalid = attempts.filter(
+    (attempt) =>
+      !attempt.retryOfAttemptId &&
+      !["valid_pass", "valid_model_failure"].includes(attempt.classification),
+  ).length;
+  const retries = attempts.filter((attempt) => Boolean(attempt.retryOfAttemptId)).length;
+  const disagreement = attempts.filter(
+    (attempt) => attempt.classification === "validator_disagreement",
+  ).length;
+  const judged = attempts.filter((attempt) => attempt.validation !== null).length;
+  const durations = attempts
+    .filter((attempt) => !attempt.retryOfAttemptId)
+    .map((attempt) => attempt.durationMs);
+  const totalCostUsd = attempts.reduce(
+    (sum, attempt) =>
+      sum +
+      Object.values(attempt.usageByRole).reduce(
+        (roleSum, usage) => roleSum + (usage?.costUsd ?? 0),
+        0,
+      ),
+    0,
+  );
+  return {
+    schemaVersion: 1,
+    benchmark: "modelbench-100",
+    generatedAt,
+    rankable: overall.requested === 100 && overall.valid / overall.requested >= 0.98,
+    coverage: overall.requested ? overall.valid / overall.requested : 0,
+    overall,
+    byRole: grouped(attempts, (id) => caseFor(id).primaryRole),
+    byFamily: grouped(attempts, (id) => caseFor(id).capabilityTags[0] ?? "unknown"),
+    byDifficulty: grouped(attempts, (id) => caseFor(id).difficulty),
+    byCharacter: grouped(attempts, (id) => caseFor(id).character),
+    invalidRunRate: overall.requested ? invalid / overall.requested : 0,
+    retryRate: overall.requested ? retries / overall.requested : 0,
+    judgeDisagreementRate: judged ? disagreement / judged : null,
+    medianDurationMs: percentile(durations, 0.5),
+    p95DurationMs: percentile(durations, 0.95),
+    totalCostUsd,
+    costPerRequestedTaskUsd: overall.requested ? totalCostUsd / overall.requested : null,
+    costPerSuccessfulTaskUsd: overall.passed ? totalCostUsd / overall.passed : null,
+  };
+}

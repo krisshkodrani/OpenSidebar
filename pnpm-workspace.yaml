@@ -8,8 +8,11 @@ packages:
   - infra/control-plane
   - infra/sandbox
   - packages/prompts
+  - packages/scenario-contracts
+  - packages/scenario-engine
   - packages/sandbox-contracts
   - packages/shared-types
+  - packages/trace-sync
 
 minimumReleaseAge: 10080
 minimumReleaseAgeIgnoreMissingTime: true

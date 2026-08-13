@@ -1,0 +1,16 @@
+{
+  "name": "@opensidebar/scenario-engine",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc -p tsconfig.json",
+    "test": "node --import tsx --test test/**/*.test.ts"
+  },
+  "dependencies": {
+    "@opensidebar/scenario-contracts": "workspace:*"
+  }
+}

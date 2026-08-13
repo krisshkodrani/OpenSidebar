@@ -25,6 +25,8 @@
       "@prompts": ["./packages/prompts/src/index.ts"],
       "@prompts/*": ["./packages/prompts/src/*"],
       "@sandbox-contracts": ["./packages/sandbox-contracts/src/index.ts"],
+      "@opensidebar/scenario-contracts": ["./packages/scenario-contracts/src/index.ts"],
+      "@opensidebar/scenario-engine": ["./packages/scenario-engine/src/index.ts"],
       "@trace-sync": ["./packages/trace-sync/src/index.ts"]
     },
     "types": ["chrome"]
