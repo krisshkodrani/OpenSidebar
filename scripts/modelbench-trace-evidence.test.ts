@@ -85,3 +85,31 @@ test("does not invent a resolved seat when traces contain multiple identities", 
   assert.equal(result.resolvedSeats.executor, undefined);
   assert.deepEqual(result.ambiguousSeats.executor, ["provider:model-a", "provider:model-b"]);
 });
+
+test("attributes a successful pinned OpenRouter call to its enforced upstream", () => {
+  const root = mkdtempSync(resolve(tmpdir(), "modelbench-evidence-"));
+  const trace = resolve(root, "turns.jsonl");
+  writeFileSync(trace, `${JSON.stringify({
+    runId: "run-pinned",
+    llmRequest: { model: "openai/gpt-5.6-luna", modelTier: "executor" },
+    llmResponse: {
+      actualModel: "openai/gpt-5.6-luna",
+      actualProviderId: "openrouter",
+      usage: { prompt_tokens: 1 },
+    },
+  })}\n`);
+
+  const result = collectModelBenchTraceEvidence({
+    traceFiles: [trace],
+    tracesRoot: root,
+    requestedSeats: {
+      executor: {
+        provider: "openrouter",
+        providerPin: "openai",
+        model: "openai/gpt-5.6-luna",
+      },
+    },
+  });
+
+  assert.equal(result.resolvedSeats.executor?.resolvedProvider, "openai");
+});

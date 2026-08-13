@@ -176,3 +176,35 @@ test("resolved seat mismatch is ineligible and not retried", async () => {
   assert.equal(attempts[0]?.classification, "indeterminate");
   assert.equal(attempts[0]?.scoreEligible, false);
 });
+
+test("an unused requested seat does not invalidate an otherwise valid attempt", async () => {
+  const attempts = await runModelBenchCase({
+    definition,
+    configuration: {
+      ...configuration,
+      seats: {
+        ...configuration.seats,
+        judge: { provider: "openrouter", model: "openai/judge" },
+      },
+    },
+    driver: {
+      async execute() {
+        const initial = scenarioEngine.initialize(definition.contract.id);
+        return {
+          durationMs: 5,
+          finalState: applyOutcome(initial, definition.oracle),
+          finalAnswer: definition.oracle.finalAnswer,
+          terminalOutcome: definition.oracle.terminalOutcome,
+          resolvedSeats: resolved,
+          usageByRole: { executor: { calls: 1, promptTokens: 1, completionTokens: 1, cachedTokens: 0, costUsd: 0, llmTimeMs: 1 } },
+          artifactRefs: [],
+        };
+      },
+    },
+    buildRevision: "abc",
+    repetition: 1,
+    id: idFactory(),
+  });
+
+  assert.equal(attempts[0]?.classification, "valid_pass");
+});

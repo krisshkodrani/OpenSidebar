@@ -52,7 +52,7 @@ const matrixPath = option("--matrix");
 const driverPath = option("--driver") ?? process.env.MODEL_BENCH_DRIVER;
 if (!matrixPath || !driverPath) {
   throw new Error(
-    "Usage: pnpm modelbench:run --matrix <matrix.json> --driver <driver.ts> [--suite core-20] [--repeat 1] [--output .artifacts/modelbench/run]",
+    "Usage: pnpm modelbench:run --matrix <matrix.json> --driver <driver.ts> [--suite core-20 | --case <case-id>] [--repeat 1] [--output .artifacts/modelbench/run]",
   );
 }
 const matrix = JSON.parse(readFileSync(resolve(matrixPath), "utf8")) as MatrixFileV1;
@@ -60,10 +60,19 @@ if (matrix.schemaVersion !== 1 || !Array.isArray(matrix.configurations)) {
   throw new Error("ModelBench matrix must have schemaVersion 1 and configurations[].");
 }
 const suite = (option("--suite") ?? "core-20") as BenchmarkSuite;
-const definitions = MODEL_BENCH_CASES.filter((definition) =>
-  definition.contract.suites.includes(suite),
-);
-if (!definitions.length) throw new Error(`Unknown or empty ModelBench suite: ${suite}`);
+const caseId = option("--case");
+const definitions = caseId
+  ? MODEL_BENCH_CASES.filter((definition) => definition.contract.id === caseId)
+  : MODEL_BENCH_CASES.filter((definition) =>
+      definition.contract.suites.includes(suite),
+    );
+if (!definitions.length) {
+  throw new Error(
+    caseId
+      ? `Unknown ModelBench case: ${caseId}`
+      : `Unknown or empty ModelBench suite: ${suite}`,
+  );
+}
 const outputDirectory = resolve(
   option("--output") ?? `.artifacts/modelbench/${new Date().toISOString().replaceAll(":", "-")}`,
 );
