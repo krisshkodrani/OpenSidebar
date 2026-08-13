@@ -59,6 +59,16 @@ Suggested sequencing: ship Stage A (the MCP server over the existing store)
 independently for immediate agent-search value; the storage-rearchitecture
 B-stages land additively underneath the stable MCP/HTTP contract.
 
+## Model evaluation platform (2026-08-13)
+
+| # | RFC | Problem | Depends on |
+| --- | --- | --- | --- |
+| LP-36 | [ModelBench-100 scenario platform](lp-0036-modelbench-100.md) | Fixture E2E, Arena, and Playground scenario implementations overlap and cannot produce one reproducible role-attributed model benchmark | LP-26 privacy and deployment boundaries |
+
+LP-36 is a draft pending an owner Decision Stamp. It proposes an
+acceptance-gated replacement of the current fixture-driven E2E system and a
+shared scenario engine for local ModelBench runs and the public Playground.
+
 ## Perception series (post-v0.3.0, from the 2026-07-04 SOTA audit)
 
 All drafts pending owner Decision Stamps. Sequencing: LP-10 (smallest,
