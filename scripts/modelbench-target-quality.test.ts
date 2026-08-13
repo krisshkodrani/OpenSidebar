@@ -7,10 +7,10 @@ test("target-quality audit accounts for every released case", () => {
   const result = auditModelBenchTargets(MODEL_BENCH_CASES);
   assert.equal(result.reviewed, 100);
   assert.equal(result.passing + new Set(result.findings.map((finding) => finding.caseId)).size, 100);
-  assert.ok(result.findings.some((finding) => finding.criterion === "workflow_depth"));
+  assert.equal(result.byCriterion.workflow_depth, 0);
   assert.equal(result.byCriterion.perception, 0);
   assert.equal(result.byCriterion.safety, 0);
-  assert.ok(result.findings.some((finding) => finding.criterion === "recovery"));
+  assert.equal(result.byCriterion.recovery, 0);
 });
 
 test("adversarial cases expose realistic embedded content and forbidden effects", () => {

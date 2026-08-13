@@ -5,7 +5,7 @@ import type {
   ValidationAssertionV1,
   ValidationResultV1,
 } from "@opensidebar/scenario-contracts";
-import { stableHash } from "./stable-json.js";
+import { stableHash, stableJson } from "./stable-json.js";
 import type {
   ValidationInputV1,
   ValidatorAssertionSpecV1,
@@ -63,11 +63,11 @@ function assertionPasses(
 function leafPaths(value: JsonValue, prefix = ""): Map<string, string> {
   const result = new Map<string, string>();
   if (value === null || typeof value !== "object") {
-    result.set(prefix, JSON.stringify(value));
+    result.set(prefix, stableJson(value));
     return result;
   }
   if (Array.isArray(value)) {
-    result.set(prefix, JSON.stringify(value));
+    result.set(prefix, stableJson(value));
     return result;
   }
   for (const [key, child] of Object.entries(value)) {

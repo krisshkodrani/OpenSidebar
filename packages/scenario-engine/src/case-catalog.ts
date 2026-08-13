@@ -11,6 +11,7 @@ import type {
 import { FAMILY_CASE_GROUPS, type CaseMode } from "./case-seeds.js";
 import { perceptionPresentation } from "./case-presentations.js";
 import { safetyContext } from "./case-safety.js";
+import { caseWorkflow, type CaseWorkflowPresentation } from "./case-workflows.js";
 import { cloneJson, stableHash } from "./stable-json.js";
 import type {
   EngineCaseDefinitionV1,
@@ -63,8 +64,19 @@ function assertions(
   id: string,
   mode: CaseMode,
   expected: JsonValue,
+  hasWorkflow: boolean,
 ): ValidatorAssertionSpecV1[] {
   const result: ValidatorAssertionSpecV1[] = [];
+  if (hasWorkflow) {
+    result.push({
+      id: `${id}.workflow`,
+      source: "state",
+      operator: "equals",
+      path: "data.public.workflowState.status",
+      expected: "complete",
+      evidence: "Every dependent application stage was completed in order.",
+    });
+  }
   if (mode === "state" || mode === "state-and-answer") {
     result.push(
       {
@@ -110,9 +122,11 @@ function nearMisses(
   mode: CaseMode,
   expected: JsonValue,
   good: OracleOutcomeV1,
+  workflowActions: readonly ScenarioActionV2[],
 ): NearMissV1[] {
   const wrong = typeof expected === "number" ? expected + 1 : "unrelated-result";
-  const wrongOutcome = oracle(mode, wrong);
+  const wrongBase = oracle(mode, wrong);
+  const wrongOutcome = { ...wrongBase, actions: [...workflowActions, ...wrongBase.actions] };
   const forbiddenActions = [
     ...good.actions,
     action("set", "public.unrelated.changed", true),
@@ -149,6 +163,17 @@ interface DraftCase {
   control: JsonObject;
   mode: CaseMode;
   expected: JsonValue;
+  workflow?: CaseWorkflowPresentation;
+}
+
+function workflowOracleActions(workflow: CaseWorkflowPresentation | undefined): ScenarioActionV2[] {
+  if (!workflow) return [];
+  const actions: ScenarioActionV2[] = [];
+  workflow.stages.forEach((stage, index) => {
+    actions.push({ type: "workflow.advance", payload: { stageId: stage.id as string } });
+    if (workflow.dynamics && index === 0) actions.push({ type: "workflow.recover", payload: {} });
+  });
+  return actions;
 }
 
 interface TerminalPresentation {
@@ -319,6 +344,14 @@ function drafts(): DraftCase[] {
       const kind = character(groupIndex, taskIndex, group.tasks.length);
       const safety = kind === "adversarial" ? safetyContext(task.slug) : undefined;
       const field = fieldPresentation(task.title, task.prompt);
+      const evidence = terminal
+        ? terminal.evidence
+        : perception
+        ? perception.evidence
+        : mode === "answer" || mode === "state-and-answer"
+        ? answerEvidence(task.title, task.expected)
+        : recordContext(task.prompt);
+      const workflow = caseWorkflow({ family: group.family, slug: task.slug, role, evidence });
       const seed = Number.parseInt(stableHash(id), 16) & 0x7fffffff;
       result.push({
         contract: {
@@ -364,16 +397,16 @@ function drafts(): DraftCase[] {
                   }
                 : {}),
             },
-            evidence:
-              terminal
-                ? terminal.evidence
-                : perception
-                ? perception.evidence
-                : mode === "answer" || mode === "state-and-answer"
-                ? answerEvidence(task.title, task.expected)
-                : recordContext(task.prompt),
+            evidence,
             ...(perception ? { presentation: perception.presentation } : {}),
             ...(safety ? { safety } : {}),
+            ...(workflow
+              ? {
+                  workflow: workflow.stages,
+                  workflowState: workflow.state,
+                  ...(workflow.dynamics ? { dynamics: workflow.dynamics } : {}),
+                }
+              : {}),
             notice: terminal?.notice ?? null,
             unrelated: { changed: false },
           },
@@ -386,10 +419,12 @@ function drafts(): DraftCase[] {
                 : { submissionKind: "action" }
               : {}),
             ...(terminal?.decision ? { terminalDecision: terminal.decision } : {}),
+            ...(workflow ? { workflow: workflow.control } : {}),
           },
         },
         mode,
         expected: task.expected,
+        ...(workflow ? { workflow } : {}),
       });
     });
   });
@@ -412,7 +447,9 @@ function buildCatalog(): EngineCaseDefinitionV1[] {
       ...draft.contract,
       suites: suitesByRank(caseRank),
     };
-    const good = oracle(draft.mode, draft.expected);
+    const workflowActions = workflowOracleActions(draft.workflow);
+    const baseGood = oracle(draft.mode, draft.expected);
+    const good = { ...baseGood, actions: [...workflowActions, ...baseGood.actions] };
     const contentHash = stableHash(contract as unknown as JsonValue);
     return {
       contract,
@@ -421,14 +458,20 @@ function buildCatalog(): EngineCaseDefinitionV1[] {
       validator: {
         id: contract.validatorId,
         version: 1,
-        assertions: assertions(contract.id, draft.mode, draft.expected),
+        assertions: assertions(contract.id, draft.mode, draft.expected, Boolean(draft.workflow)),
         allowedMutationPaths:
           draft.mode === "state" || draft.mode === "state-and-answer"
-            ? ["data.public.case.status", "data.public.case.value"]
+            ? [
+                "data.public.case.status",
+                "data.public.case.value",
+                ...(draft.workflow ? ["data.public.workflow", "data.public.workflowState", "data.public.dynamics.status"] : []),
+              ]
+            : draft.workflow
+            ? ["data.public.workflow", "data.public.workflowState", "data.public.dynamics.status"]
             : [],
       },
       oracle: good,
-      nearMisses: nearMisses(draft.mode, draft.expected, good),
+      nearMisses: nearMisses(draft.mode, draft.expected, good, workflowActions),
     };
   });
 }

@@ -39,3 +39,21 @@ test("case initialization is deterministic and target projection hides controls"
     assert.equal(JSON.stringify(target).includes("expected"), false, definition.contract.id);
   }
 });
+
+test("validator ignores JSON object key order changes inside array state", () => {
+  const definition = MODEL_BENCH_CASES.find((entry) => entry.contract.id === "retail.read-visual-stock-badge")!;
+  const initialState = scenarioEngine.initialize(definition.contract.id);
+  const finalState = JSON.parse(JSON.stringify(initialState)) as typeof initialState;
+  const publicData = finalState.data.public as Record<string, unknown>;
+  const presentation = publicData.presentation as Record<string, unknown>;
+  const sourceItems = presentation.items as Array<Record<string, unknown>>;
+  presentation.items = sourceItems.map((item) => Object.fromEntries(Object.entries(item).reverse()));
+  const validation = scenarioEngine.validate({
+    definition,
+    initialState,
+    finalState,
+    finalAnswer: definition.oracle.finalAnswer,
+  });
+  assert.equal(validation.verdict, "pass");
+  assert.deepEqual(validation.unexpectedMutations, []);
+});

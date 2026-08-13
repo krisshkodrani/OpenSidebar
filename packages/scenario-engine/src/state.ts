@@ -37,6 +37,16 @@ function parentAt(root: JsonObject, parts: string[]): [JsonObject, string] {
   return [parent, final];
 }
 
+function workflowControl(control: JsonObject): JsonObject | null {
+  return objectValue(control.workflow);
+}
+
+function requireCompletedWorkflow(control: JsonObject, publicData: JsonObject): void {
+  if (workflowControl(control) && objectValue(publicData.workflowState)?.status !== "complete") {
+    throw new Error("Complete the current workflow before recording its final outcome.");
+  }
+}
+
 export function createScenarioState(input: {
   scenarioId: string;
   scenarioVersion: number;
@@ -97,10 +107,70 @@ export function reduceScenarioState(
       next.lifecycle = "finished";
       break;
     }
+    case "workflow.advance": {
+      const control = objectValue(next.data.control) ?? {};
+      const publicData = objectValue(next.data.public) ?? {};
+      const workflow = Array.isArray(publicData.workflow) ? publicData.workflow : [];
+      const workflowState = objectValue(publicData.workflowState);
+      const workflowSpec = workflowControl(control);
+      const stageIds = workflowSpec && Array.isArray(workflowSpec.stageIds)
+        ? workflowSpec.stageIds.filter((value): value is string => typeof value === "string")
+        : [];
+      const index = workflowState?.currentIndex;
+      if (
+        !workflowState || !workflowSpec || workflowState.status !== "active" ||
+        workflowState.requiresRecovery === true || typeof index !== "number" ||
+        payload.stageId !== stageIds[index]
+      ) {
+        throw new Error("The requested workflow stage is not currently available.");
+      }
+      const current = objectValue(workflow[index]);
+      if (!current) throw new Error("The current workflow stage is missing.");
+      current.status = "complete";
+      workflow[index] = current;
+      const nextIndex = index + 1;
+      if (nextIndex < workflow.length) {
+        const following = objectValue(workflow[nextIndex]);
+        if (!following) throw new Error("The next workflow stage is missing.");
+        following.status = "active";
+        workflow[nextIndex] = following;
+        workflowState.currentIndex = nextIndex;
+        if (workflowSpec.disruptAfter === index) {
+          workflowState.requiresRecovery = true;
+          const dynamics = objectValue(publicData.dynamics) ?? {};
+          dynamics.status = "interrupted";
+          publicData.dynamics = dynamics;
+        }
+      } else {
+        workflowState.currentIndex = workflow.length;
+        workflowState.status = "complete";
+      }
+      publicData.workflow = workflow;
+      publicData.workflowState = workflowState;
+      next.data.public = publicData;
+      break;
+    }
+    case "workflow.recover": {
+      const control = objectValue(next.data.control) ?? {};
+      const publicData = objectValue(next.data.public) ?? {};
+      const workflowState = objectValue(publicData.workflowState);
+      const workflowSpec = workflowControl(control);
+      if (!workflowSpec || !workflowState || workflowState.requiresRecovery !== true) {
+        throw new Error("There is no interrupted workflow to recover.");
+      }
+      workflowState.requiresRecovery = false;
+      const dynamics = objectValue(publicData.dynamics) ?? {};
+      dynamics.status = "recovered";
+      publicData.dynamics = dynamics;
+      publicData.workflowState = workflowState;
+      next.data.public = publicData;
+      break;
+    }
     case "case.submit": {
       const control = objectValue(next.data.control) ?? {};
       const publicData = objectValue(next.data.public) ?? {};
       const caseState = objectValue(publicData.case) ?? {};
+      requireCompletedWorkflow(control, publicData);
       if (!("expected" in control)) {
         throw new Error("Scenario does not define a case submission result.");
       }
@@ -133,6 +203,7 @@ export function reduceScenarioState(
       const control = objectValue(next.data.control) ?? {};
       const publicData = objectValue(next.data.public) ?? {};
       const caseState = objectValue(publicData.case) ?? {};
+      requireCompletedWorkflow(control, publicData);
       if (
         typeof payload.decision !== "string" ||
         payload.decision !== control.terminalDecision ||

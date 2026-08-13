@@ -40,3 +40,37 @@ test("local target server uses one-time launch sessions and hides controls", asy
     await server.close();
   }
 });
+
+test("local target server runs an interrupted workflow through recovery and completion", async () => {
+  const server = await startModelBenchTargetServer();
+  try {
+    const create = await fetch(`${server.origin}/api/v2/modelbench/runs`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ caseId: "retail.recover-price-refresh" }),
+    });
+    const created = await create.json() as { launchUrl: string };
+    const launch = await fetch(created.launchUrl, { redirect: "manual" });
+    const cookie = launch.headers.get("set-cookie")?.split(";")[0];
+    assert.ok(cookie);
+    const act = (type: string, payload: Record<string, unknown> = {}) => fetch(
+      `${server.origin}/api/v2/target/action`,
+      { method: "POST", headers: { cookie, "content-type": "application/json" }, body: JSON.stringify({ type, payload }) },
+    );
+
+    assert.equal((await act("workflow.advance", { stageId: "stage-1" })).status, 200);
+    const skipped = await act("workflow.advance", { stageId: "stage-2" });
+    assert.equal(skipped.status, 400);
+    assert.match(await skipped.text(), /not currently available/);
+    assert.equal((await act("workflow.recover")).status, 200);
+    assert.equal((await act("workflow.advance", { stageId: "stage-2" })).status, 200);
+    assert.equal((await act("workflow.advance", { stageId: "stage-3" })).status, 200);
+    const completed = await act("case.submit", { decision: "apply" });
+    assert.equal(completed.status, 200);
+    const payload = await completed.json() as { run: { lifecycle: string; data: { workflowState: { status: string } } } };
+    assert.equal(payload.run.lifecycle, "finished");
+    assert.equal(payload.run.data.workflowState.status, "complete");
+  } finally {
+    await server.close();
+  }
+});

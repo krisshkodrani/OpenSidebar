@@ -68,26 +68,26 @@ export async function compareScenarioStores(input: {
       continue;
     }
     const initialState = scenarioEngine.initialize(definition.contract.id);
-    const localVerdict = scenarioEngine.validate({
+    const localValidation = scenarioEngine.validate({
       definition,
       initialState,
       finalState: local.state,
       finalAnswer: definition.oracle.finalAnswer,
       terminalOutcome: definition.oracle.terminalOutcome,
-    }).verdict;
-    const remoteVerdict = scenarioEngine.validate({
+    });
+    const remoteValidation = scenarioEngine.validate({
       definition,
       initialState,
       finalState: remote.state,
       finalAnswer: definition.oracle.finalAnswer,
       terminalOutcome: definition.oracle.terminalOutcome,
-    }).verdict;
-    if (localVerdict !== remoteVerdict) {
+    });
+    if (localValidation.verdict !== remoteValidation.verdict) {
       mismatches.push({
         caseId: definition.contract.id,
         stage: "verdict",
-        local: localVerdict,
-        remote: remoteVerdict,
+        local: stableJson(localValidation),
+        remote: stableJson(remoteValidation),
       });
     }
   }
