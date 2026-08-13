@@ -61,6 +61,7 @@ export interface RunCaseOptions {
 function seatMismatch(
   requested: Partial<Record<ModelSeat, RequestedSeatV1>>,
   resolved: Partial<Record<ModelSeat, ResolvedSeatV1>>,
+  usage: Partial<Record<ModelSeat, RoleUsageV1>>,
 ): string[] {
   const mismatches: string[] = [];
   for (const [seat, wanted] of Object.entries(requested) as Array<
@@ -68,6 +69,7 @@ function seatMismatch(
   >) {
     const actual = resolved[seat];
     if (!actual) {
+      if ((usage[seat]?.calls ?? 0) === 0) continue;
       mismatches.push(`${seat}: no resolved model recorded`);
       continue;
     }
@@ -134,6 +136,7 @@ export async function runModelBenchCase(
     const mismatches = seatMismatch(
       options.configuration.seats,
       result.resolvedSeats,
+      result.usageByRole,
     );
     const validation = result.finalState
       ? scenarioEngine.validate({

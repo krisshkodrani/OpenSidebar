@@ -178,7 +178,13 @@ export function collectModelBenchTraceEvidence(input: {
     }
     const requested = input.requestedSeats[seat];
     if (!requested) continue;
-    const [resolvedProvider, resolvedModel] = identities[0].split("\u0000");
+    const [transportProvider, resolvedModel] = identities[0].split("\u0000");
+    const resolvedProvider =
+      transportProvider === "openrouter" &&
+      requested.provider === "openrouter" &&
+      requested.providerPin
+        ? requested.providerPin
+        : transportProvider;
     resolvedSeats[seat] = {
       ...requested,
       resolvedProvider,

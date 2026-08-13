@@ -1,3 +1,4 @@
+import { execFileSync } from "node:child_process";
 import type { ScenarioRunV2 } from "@opensidebar/scenario-contracts";
 import { createE2EHarness } from "../apps/extension/tests/e2e/helpers/harness.js";
 import {
@@ -153,6 +154,13 @@ async function readRun(origin: string, runId: string): Promise<ScenarioRunV2> {
 }
 
 export async function createModelBenchDriver(): Promise<ModelBenchDriver> {
+  if (process.env.MODEL_BENCH_SKIP_EXTENSION_BUILD !== "1") {
+    execFileSync(
+      process.execPath,
+      ["node_modules/nx/bin/nx.js", "run", "extension:build-e2e"],
+      { stdio: "inherit" },
+    );
+  }
   const target = await startModelBenchTargetServer();
   let closed = false;
   return {
