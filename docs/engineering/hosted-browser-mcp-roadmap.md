@@ -184,10 +184,9 @@ and the local Cancel control. A third mission
 could be committed. Therefore visual visibility is accepted, while the local
   button's real cancellation evidence remains open; the already-passing unit and
   cloud/runtime cancellation evidence is not misreported as that UI evidence.
-- The panel remains available when the active tab is outside the attached
-  workspace so a remote run and its cancel control cannot disappear during tab
-  switching. Detached mode disables local composition and never silently
-  retargets the unrelated tab.
+- The panel is scoped to attached workspace tabs. Chrome hides it on unrelated
+  tabs and restores it on return, while the background worker keeps remote-run
+  state durable and never silently retargets the unrelated tab.
 
 ## Phase 5 — Hosted MCP and scoped authorization
 
@@ -349,7 +348,7 @@ evidence; it is not implied by completing implementation.
 2. Install the normal `0.7.4` production candidate. After its first successful
    poll, confirm the same stable device becomes `remoteWork: ready` without a
    relink and completes one exact-existing-tab read-only mission.
-3. Run duplicate-tab/group selection, detached-panel cancellation, token
+3. Run duplicate-tab/group selection, workspace-return cancellation, token
    refresh/revocation, backend restart, and extension restart acceptance. Keep
    consequential work read-only until the synthetic approval gate is complete.
 4. Publish `0.7.4` only after the production artifact, hash, automated checks,

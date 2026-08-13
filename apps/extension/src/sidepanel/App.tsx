@@ -85,7 +85,6 @@ export default function App({ themeRoot, activityHudRoot }: AppProps = {}) {
   const skillRecordingStatus = useStore((s) => s.skillRecordingStatus);
   const activeUserWebsiteSkill = useStore((s) => s.activeUserWebsiteSkill);
   const isAgentRunning = useStore((s) => s.isAgentRunning);
-  const activeWorkspaceId = useStore((s) => s.activeWorkspaceId);
   // Avoid re-running filter/map work on every streaming delta.
   const visibleMessages = useMemo(
     () =>
@@ -289,18 +288,6 @@ export default function App({ themeRoot, activityHudRoot }: AppProps = {}) {
           recordingActive={skillRecordingStatus === "recording"}
         />
         <RemoteMissionStatusBanner />
-        {!activeWorkspaceId ? (
-          <div
-            className="mx-3 mt-2 rounded-xl border border-warm-200 bg-warm-50/90 px-3 py-2.5 text-xs text-warm-700 shadow-sm dark:border-warm-700 dark:bg-warm-900/90 dark:text-warm-200"
-            role="status"
-          >
-            <div className="font-semibold">This tab is outside the active workspace</div>
-            <p className="mt-0.5 leading-relaxed text-warm-500 dark:text-warm-400">
-              The panel stays open for remote-task supervision. Click the OpenSidebar
-              extension icon to attach this tab before starting a local task.
-            </p>
-          </div>
-        ) : null}
 
         {/* Drawers are only mounted while open so closed drawers do no store
             subscriptions, grouping, or hashing work. Each resets its draft
@@ -393,14 +380,7 @@ export default function App({ themeRoot, activityHudRoot }: AppProps = {}) {
             </div>
           )}
           <div ref={scrollRef} className="flex-1 overflow-y-auto p-4">
-            {!activeWorkspaceId ? (
-              <div className="flex h-full items-center justify-center p-8 text-center">
-                <div className="max-w-[260px] text-xs leading-relaxed text-warm-500 dark:text-warm-400">
-                  Remote tasks remain visible above and stay bound to their selected
-                  browser target. This tab will never be selected implicitly.
-                </div>
-              </div>
-            ) : messages.length === 0 ? (
+            {messages.length === 0 ? (
               <div className="h-full flex flex-col items-center justify-center text-center p-8">
                 <div className="max-w-[260px]">
                   <div className="w-14 h-14 rounded-2xl overflow-hidden mb-5 flex items-center justify-center mx-auto shadow-sm shadow-primary-600/15">
@@ -494,17 +474,15 @@ export default function App({ themeRoot, activityHudRoot }: AppProps = {}) {
           </div>
         </main>
 
-        {activeWorkspaceId ? (
-          <div className="flex flex-col shrink-0 z-20">
-            <InputArea
-              onSend={handleSend}
-              onSendFeedback={handleSendFeedback}
-              onStop={handleStop}
-              onOpenPersonalProfile={() => setIsPersonalProfileOpen(true)}
-              onOpenSavedPrompts={() => setIsSavedPromptsOpen(true)}
-            />
-          </div>
-        ) : null}
+        <div className="flex flex-col shrink-0 z-20">
+          <InputArea
+            onSend={handleSend}
+            onSendFeedback={handleSendFeedback}
+            onStop={handleStop}
+            onOpenPersonalProfile={() => setIsPersonalProfileOpen(true)}
+            onOpenSavedPrompts={() => setIsSavedPromptsOpen(true)}
+          />
+        </div>
 
         {isRecordIntroOpen && (
           <div

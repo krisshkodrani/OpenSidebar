@@ -12,9 +12,8 @@
 
 ### Changed
 
-- Kept the sidepanel available while switching tabs so remote task status and
-  cancellation remain visible. Tabs outside the active workspace use a detached,
-  read-only panel state and are never selected implicitly.
+- Scoped the sidepanel to OpenSidebar workspace tabs. Chrome hides it on tabs
+  outside the workspace and restores it when the user returns.
 
 ### Fixed
 
