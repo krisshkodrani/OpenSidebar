@@ -93,6 +93,13 @@ export async function startModelBenchTargetServer(
         launchTokens.set(token, id);
         return json(res, 201, { runId: id, launchUrl: `${origin}/launch/${token}` });
       }
+      if (req.method === "GET" && url.pathname.startsWith("/api/v2/modelbench/runs/")) {
+        const runId = decodeURIComponent(url.pathname.slice("/api/v2/modelbench/runs/".length));
+        const run = await store.get(runId);
+        return run
+          ? json(res, 200, { run })
+          : json(res, 404, { error: { message: "Run not found." } });
+      }
       if (req.method === "GET" && url.pathname.startsWith("/launch/")) {
         const token = url.pathname.slice("/launch/".length);
         const runId = launchTokens.get(token);

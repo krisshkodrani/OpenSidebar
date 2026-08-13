@@ -13,7 +13,7 @@ test("local target server uses one-time launch sessions and hides controls", asy
       body: JSON.stringify({ caseId: definition.contract.id }),
     });
     assert.equal(create.status, 201);
-    const created = await create.json() as { launchUrl: string };
+    const created = await create.json() as { launchUrl: string; runId: string };
     const launch = await fetch(created.launchUrl, { redirect: "manual" });
     assert.equal(launch.status, 302);
     const cookie = launch.headers.get("set-cookie")?.split(";")[0];
@@ -32,6 +32,10 @@ test("local target server uses one-time launch sessions and hides controls", asy
     assert.equal(action.status, 200);
     const updated = await action.json() as { run: { lifecycle: string } };
     assert.equal(updated.run.lifecycle, "finished");
+    const control = await fetch(`${server.origin}/api/v2/modelbench/runs/${created.runId}`);
+    const stored = await control.json() as { run: { state: { lifecycle: string; data: { control?: unknown } } } };
+    assert.equal(stored.run.state.lifecycle, "finished");
+    assert.ok(stored.run.state.data.control);
   } finally {
     await server.close();
   }
