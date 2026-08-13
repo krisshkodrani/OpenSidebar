@@ -12,6 +12,7 @@
     "@chakra-ui/react": "^3.36.1",
     "@emotion/react": "^11.14.0",
     "@opensidebar/sandbox-contracts": "workspace:*",
+    "@opensidebar/scenario-contracts": "workspace:*",
     "@opensidebar/shared-types": "workspace:*",
     "@opensidebar/trace-sync": "workspace:*",
     "@tanstack/react-query": "^5.90.20",
