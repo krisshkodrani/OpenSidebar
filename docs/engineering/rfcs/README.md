@@ -69,6 +69,14 @@ LP-36 is a draft pending an owner Decision Stamp. It proposes an
 acceptance-gated replacement of the current fixture-driven E2E system and a
 shared scenario engine for local ModelBench runs and the public Playground.
 
+## Personal-data sync (2026-08-13)
+
+| # | RFC | Problem | Depends on |
+| --- | --- | --- | --- |
+| LP-37 | [Optional E2EE personal-data sync and unified Sync center](lp-0037-personal-data-sync.md) | Saved prompts, recorded website skills, and Profile data are local-only while cloud controls are fragmented | LP-28 account/control plane and LP-34 E2EE storage lessons |
+
+LP-37 is decision stamped and in implementation.
+
 ## Perception series (post-v0.3.0, from the 2026-07-04 SOTA audit)
 
 All drafts pending owner Decision Stamps. Sequencing: LP-10 (smallest,

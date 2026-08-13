@@ -41,6 +41,11 @@ export type CloudConfig = {
   traceDownloadsEnabled?: boolean;
   traceBucketName?: string;
   traceTesterSubjects?: ReadonlySet<string>;
+  personalDataReadsEnabled?: boolean;
+  personalDataWritesEnabled?: boolean;
+  personalDataProfileEnabled?: boolean;
+  personalDataBucketName?: string;
+  personalDataTesterSubjects?: ReadonlySet<string>;
   cloudTesterSubjects: ReadonlySet<string>;
   cloudSessionTesterSubjects: ReadonlySet<string>;
   cloudOperatorSubjects: ReadonlySet<string>;
@@ -166,6 +171,13 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): CloudConfig {
   const traceDownloadsEnabled =
     traceSyncEnabled && enabled("TRACE_DOWNLOADS_ENABLED");
   const traceBucketName = env.TRACE_BUCKET_NAME?.trim();
+  const personalDataReadsEnabled =
+    cloudControlEnabled && enabled("PERSONAL_DATA_READS_ENABLED");
+  const personalDataWritesEnabled =
+    personalDataReadsEnabled && enabled("PERSONAL_DATA_WRITES_ENABLED");
+  const personalDataProfileEnabled =
+    personalDataWritesEnabled && enabled("PERSONAL_DATA_PROFILE_ENABLED");
+  const personalDataBucketName = env.PERSONAL_DATA_BUCKET_NAME?.trim();
   if (cloudControlEnabled && (!extensionId || !/^[a-p]{32}$/.test(extensionId)))
     throw new Error(
       "OPENSIDEBAR_EXTENSION_ID must be a pinned Chrome extension id",
@@ -202,6 +214,8 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): CloudConfig {
     throw new Error("Session and credential KMS keys must be different");
   if (traceSyncEnabled && !traceBucketName)
     throw new Error("TRACE_BUCKET_NAME is required when trace sync is enabled");
+  if (personalDataReadsEnabled && !personalDataBucketName)
+    throw new Error("PERSONAL_DATA_BUCKET_NAME is required when personal-data sync is enabled");
   const relayModelAllowlist = new Set(
     (env.RELAY_MODEL_ALLOWLIST ?? "")
       .split(",")
@@ -234,6 +248,22 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): CloudConfig {
       .map((value) => value.trim())
       .filter(Boolean),
   );
+  const personalDataTesterSubjects = new Set(
+    (env.PERSONAL_DATA_TESTER_SUBJECTS ?? "")
+      .split(",")
+      .map((value) => value.trim())
+      .filter(Boolean),
+  );
+  for (const subject of personalDataTesterSubjects) {
+    if (!cloudTesterSubjects.has(subject))
+      throw new Error(
+        "PERSONAL_DATA_TESTER_SUBJECTS must be a subset of CLOUD_TESTER_SUBJECTS",
+      );
+  }
+  if (personalDataReadsEnabled && personalDataTesterSubjects.size === 0)
+    throw new Error(
+      "PERSONAL_DATA_TESTER_SUBJECTS requires at least one named tester when personal-data sync is enabled",
+    );
   for (const subject of traceTesterSubjects) {
     if (!cloudTesterSubjects.has(subject))
       throw new Error(
@@ -310,6 +340,11 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): CloudConfig {
     traceDownloadsEnabled,
     traceBucketName,
     traceTesterSubjects,
+    personalDataReadsEnabled,
+    personalDataWritesEnabled,
+    personalDataProfileEnabled,
+    personalDataBucketName,
+    personalDataTesterSubjects,
     cloudTesterSubjects,
     cloudSessionTesterSubjects,
     cloudOperatorSubjects,

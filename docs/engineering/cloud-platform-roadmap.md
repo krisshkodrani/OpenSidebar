@@ -61,6 +61,7 @@ testers and honest recoverability, not high availability.
 | 5     | [LP-31 — Device reconnect and browser commands](rfcs/lp-0031-device-command-protocol.md)      | Device registration, transport, leases, duplicate suppression, cancellation and takeover                                  | Approved with edits; reconnect/takeover, bounded read/text, and locally approved postcondition-verified clicks pass behind disabled flags; activation remains deferred |
 | 6     | [LP-32/33 — parked Temporal research](rfcs/lp-0033-isolated-temporal-evaluation.md)           | Preserve the evaluated workflow option without adding an active service or production dependency                          | Parked after shared and isolated resource/latency failures; $7 host deleted                                                                                            |
 | 7     | [LP-35 — Hosted browser MCP and supervised remote missions](rfcs/lp-0035-hosted-browser-mcp.md) | Codex supervises semantic plans and evidence while the extension remains browser executor and safety authority | Approved; named-tester read-only delivery/cancellation passed, encrypted progress/result/approval transport and local continuation are implemented, synthetic approval acceptance and hosted MCP remain |
+| 8     | [LP-37 — Optional E2EE personal-data sync](rfcs/lp-0037-personal-data-sync.md) | Unified Sync UX, ciphertext-only saved prompt/website-skill portability, and staged Profile sync | Approved; default-off foundation and named-tester acceptance required before activation |
 
 Temporal is no longer an active roadmap phase. Its RFCs, implementation spike,
 and gate evidence remain available if a future owner decision reopens it.
@@ -416,6 +417,14 @@ included because BYOK users pay providers directly.
 - LP-32: bounded exact-host spike complete. Shared-host adoption is rejected by
   reconnect-latency and Playground-isolation evidence; PostgreSQL remains
   authoritative and all Temporal flags remain disabled.
+- LP-35 Phase 5: connection kinds, account remote-work control, encrypted
+  ambiguous-target continuation, a thin hosted mission adapter, RFC 9728 MCP
+  discovery, separate Cognito-client scope enforcement, and Streamable HTTP are
+  implemented and tested locally behind `HOSTED_MCP_ENABLED=false`. Revisioned
+  Codex evidence supervision, account/client-bound MCP sessions, and separate
+  creation/polling/mutation quotas are also implemented. The separate Cognito
+  resource server and public PKCE client are provisioned but not activated;
+  disabled deployment and real Codex acceptance remain.
 - Post-0.7.2 deployment: the current backend image and Chakra dashboard are live
   behind the existing production origins. Authenticated apex API forwarding was
   corrected and verified. All cloud-session/device/Temporal flags remain false,

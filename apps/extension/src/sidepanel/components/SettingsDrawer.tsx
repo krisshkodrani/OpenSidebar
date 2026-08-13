@@ -22,6 +22,8 @@ import { ModelsSettingsTab } from "./settings/ModelsSettingsTab";
 import type { SettingsChangeHandler, SettingsTab } from "./settings/types";
 import { CloudAccountSettings } from "./settings/CloudAccountSettings";
 import { cloudSession, syncCloudPreferences } from "../cloud-client";
+import { cloudPreferenceSyncEnabled } from "../cloud-client";
+import { SyncSettingsTab } from "./settings/SyncSettingsTab";
 
 interface Props {
   isOpen: boolean;
@@ -193,7 +195,7 @@ export function SettingsDrawer({ isOpen, onClose }: Props) {
         if (error?.includes("API key")) setError(null);
       }
 
-      if (await cloudSession()) {
+      if ((await cloudSession()) && (await cloudPreferenceSyncEnabled())) {
         try {
           await syncCloudPreferences(savedState);
         } catch (error) {
@@ -262,6 +264,10 @@ export function SettingsDrawer({ isOpen, onClose }: Props) {
             />
           ) : null}
 
+          {activeTab === "sync" ? (
+            <SyncSettingsTab formState={formState} onChange={handleChange} />
+          ) : null}
+
           {activeTab === "browser" ? (
             <GeneralSettingsTab
               formState={formState}
@@ -321,7 +327,7 @@ export function SettingsDrawer({ isOpen, onClose }: Props) {
           ) : null}
         </div>
 
-        <div className="border-t border-warm-200 bg-warm-100/50 p-4 dark:border-warm-800 dark:bg-warm-900/50">
+        {activeTab !== "sync" ? <div className="border-t border-warm-200 bg-warm-100/50 p-4 dark:border-warm-800 dark:bg-warm-900/50">
           {saveStatus ? (
             <p className="mb-2 text-xs text-red-600 dark:text-red-400">
               {saveStatus}
@@ -339,7 +345,7 @@ export function SettingsDrawer({ isOpen, onClose }: Props) {
                 ? "Retry account sync"
                 : "Save Changes"}
           </button>
-        </div>
+        </div> : null}
       </div>
     </div>
   );
@@ -358,7 +364,7 @@ function SettingsTabBar({
       aria-label="Settings sections"
       className="flex border-b border-warm-200 px-4 dark:border-warm-800"
     >
-      {(["account", "agent", "browser", "advanced"] as const).map((tab) => (
+      {(["account", "sync", "agent", "browser", "advanced"] as const).map((tab) => (
         <button
           key={tab}
           type="button"

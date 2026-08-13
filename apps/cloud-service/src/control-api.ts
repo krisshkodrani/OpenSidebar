@@ -33,6 +33,9 @@ import type { TraceRepository } from "./trace-repository.js";
 import type { TraceObjectStore } from "./trace-object-store.js";
 import type { RemoteMissionRepository } from "./remote-mission-repository.js";
 import type { RemoteMissionVault } from "./remote-mission-vault.js";
+import { createPersonalDataApi } from "./personal-data-api.js";
+import type { PersonalDataRepository } from "./personal-data-repository.js";
+import type { PersonalDataObjectPort } from "./personal-data-object-store.js";
 import {
   parseConnectionRequest,
   parseCheckpointCommit,
@@ -71,6 +74,8 @@ export type ControlApiDependencies = {
   passwordlessAuth?: PasswordlessAuthProvider;
   remoteMissionRepository?: RemoteMissionRepository;
   remoteMissionVault?: RemoteMissionVault;
+  personalDataRepository?: PersonalDataRepository;
+  personalDataObjectStore?: PersonalDataObjectPort;
 };
 
 const noStore = (c: Context) => c.header("Cache-Control", "no-store");
@@ -117,7 +122,9 @@ const isControlRequest = (c: Context) => {
     path === "/devices" ||
     path.startsWith("/devices/") ||
     path === "/traces" ||
-    path.startsWith("/traces/")
+    path.startsWith("/traces/") ||
+    path === "/personal-data" ||
+    path.startsWith("/personal-data/")
   );
 };
 const statusFor = (error: unknown) => {
@@ -174,6 +181,8 @@ export function createControlApi(deps: ControlApiDependencies) {
     traceObjectStore,
     remoteMissionRepository,
     remoteMissionVault,
+    personalDataRepository,
+    personalDataObjectStore,
   } = deps;
   const api = new Hono<{ Variables: Variables }>();
   const encodeSessionCursor = (
@@ -1679,5 +1688,18 @@ export function createControlApi(deps: ControlApiDependencies) {
           "Relay request was not found.",
         ),
   );
+  if (personalDataRepository && personalDataObjectStore) {
+    api.route(
+      "/personal-data",
+      createPersonalDataApi({
+        repository: personalDataRepository,
+        objects: personalDataObjectStore,
+        readsEnabled: config.personalDataReadsEnabled === true,
+        writesEnabled: config.personalDataWritesEnabled === true,
+        profileEnabled: config.personalDataProfileEnabled === true,
+        testerSubjects: config.personalDataTesterSubjects ?? new Set(),
+      }),
+    );
+  }
   return api;
 }
