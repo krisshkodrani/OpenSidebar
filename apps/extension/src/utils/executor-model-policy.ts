@@ -85,6 +85,7 @@ const OPENROUTER_EXECUTOR_MODELS = new Set([
   "moonshotai/kimi-k2.5",
   "qwen/qwen3.7-plus",
   "qwen/qwen3-vl-30b-a3b-instruct",
+  "openai/gpt-5.6-luna",
   "openai/gpt-5.4-mini",
   "x-ai/grok-4.5",
 ]);
