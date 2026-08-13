@@ -149,9 +149,13 @@ export async function reinjectContentScript(
   }
 
   if (!allowReloadFallback) {
-    logger.warn("tools", "Content script reinjection failed without reload fallback", {
-      tabId,
-    });
+    logger.warn(
+      "tools",
+      "Content script reinjection failed without reload fallback",
+      {
+        tabId,
+      },
+    );
     traceHook?.({
       stage: "result",
       phase: "reinject",
@@ -327,6 +331,7 @@ export async function executeContentTool(
   args: any,
   tabId: number,
   traceHook?: BridgeRecoveryTraceHook,
+  toolCallId?: string,
 ): Promise<string> {
   if (tabId === chrome.tabs.TAB_ID_NONE) {
     return "Error: No active tab to execute tool on.";
@@ -334,6 +339,7 @@ export async function executeContentTool(
 
   logger.debug("tools", `bridge -> ${startName}`, { tabId, args });
 
+  const presentationId = toolCallId ?? `bridge:${crypto.randomUUID()}`;
   const sendMessage = () =>
     chrome.tabs.sendMessage(tabId, {
       type: "TOOL_EXECUTE",
@@ -342,7 +348,7 @@ export async function executeContentTool(
       payload: {
         toolName: startName,
         args,
-        toolCallId: "internal",
+        toolCallId: presentationId,
       },
     });
 
@@ -350,11 +356,16 @@ export async function executeContentTool(
     const response = await Promise.race([
       sendMessage(),
       new Promise<never>((_, reject) =>
-        setTimeout(() => reject(new Error("Tool execution timed out (15s)")), 15_000),
+        setTimeout(
+          () => reject(new Error("Tool execution timed out (15s)")),
+          15_000,
+        ),
       ),
     ]);
     if (!response?.payload?.result && response?.payload?.result !== "") {
-      throw new Error("Empty response from content script - bridge may be disconnected");
+      throw new Error(
+        "Empty response from content script - bridge may be disconnected",
+      );
     }
     return response.payload.result;
   } catch (e: any) {
@@ -385,10 +396,14 @@ export async function executeContentTool(
     if (await probeContentScript(tabId, 150)) {
       try {
         const transientRetryResponse = await sendMessage();
-        logger.info("tools", "Bridge reconnect successful after transient probe", {
-          tabId,
-          tool: startName,
-        });
+        logger.info(
+          "tools",
+          "Bridge reconnect successful after transient probe",
+          {
+            tabId,
+            tool: startName,
+          },
+        );
         traceHook?.({
           stage: "result",
           phase: "transient_probe",
@@ -463,16 +478,24 @@ export async function executeContentTool(
         if (hardRecovered) {
           try {
             const finalRetryResponse = await sendMessage();
-            logger.info("tools", "Bridge reconnect successful after hard page reload", {
-              tabId,
-              tool: startName,
-            });
+            logger.info(
+              "tools",
+              "Bridge reconnect successful after hard page reload",
+              {
+                tabId,
+                tool: startName,
+              },
+            );
             return finalRetryResponse.payload.result;
           } catch (finalErr: any) {
-            logger.error("tools", "Bridge retry failed after hard page reload", {
-              tabId,
-              error: finalErr.message,
-            });
+            logger.error(
+              "tools",
+              "Bridge retry failed after hard page reload",
+              {
+                tabId,
+                error: finalErr.message,
+              },
+            );
           }
         }
       }

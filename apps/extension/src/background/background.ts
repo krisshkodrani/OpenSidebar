@@ -68,6 +68,7 @@ import { drainInternalFleetTelemetry } from "./telemetry";
 import { NoWebPageTaskRecovery } from "./no-web-page-task-recovery";
 import { routeCloudRuntimeMessage } from "./cloud-message-router";
 import { buildWorkspaceConversationContext } from "./workspace-conversation-context";
+import { routeActionPresentation } from "./action-presentation-relay";
 
 /** Cached settings — populated on side panel open, invalidated on storage change. */
 let cachedSettings: UserSettings | null = null;
@@ -639,6 +640,9 @@ chrome.runtime.onMessage.addListener(
 
     const cloudRoute = routeCloudRuntimeMessage(message, sendResponse);
     if (cloudRoute) return cloudRoute === "async";
+
+    if (routeActionPresentation(message, sender, sendResponse, resolveWorkspaceId))
+      return false;
 
     if (isE2EExecuteCloudCommandMessage(message)) {
       void executeE2ECloudCommand(message).then(sendResponse);
