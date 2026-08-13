@@ -9,6 +9,7 @@
   "include": ["src/**/*", "vite.config.ts"],
   "references": [
     { "path": "../../packages/sandbox-contracts" },
+    { "path": "../../packages/scenario-contracts" },
     { "path": "../../packages/trace-sync" }
   ]
 }

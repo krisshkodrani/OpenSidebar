@@ -11,6 +11,10 @@ export default defineConfig({
         __dirname,
         "../../packages/sandbox-contracts/src/index.ts",
       ),
+      "@opensidebar/scenario-contracts": resolve(
+        __dirname,
+        "../../packages/scenario-contracts/src/index.ts",
+      ),
       "@trace-sync": resolve(
         __dirname,
         "../../packages/trace-sync/src/index.ts",
@@ -27,6 +31,7 @@ export default defineConfig({
       input: {
         control: resolve(__dirname, "index.html"),
         target: resolve(__dirname, "target.html"),
+        scenarioTarget: resolve(__dirname, "scenario-target.html"),
       },
     },
   },
