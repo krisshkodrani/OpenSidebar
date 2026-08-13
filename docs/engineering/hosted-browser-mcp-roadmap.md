@@ -3,8 +3,8 @@
 Date: 2026-08-12
 
 Status: LP-35 approved; Phase 5 contract, target-selection loop, scoped resource
-server, mission adapter, and Cognito boundary implemented default-off; disabled
-deployment and real Codex acceptance remain.
+server, mission adapter, Cognito boundary, and exact-host production routing are
+deployed for the named tester. Real Codex OAuth and mission acceptance remain.
 
 ## Outcome
 
@@ -52,7 +52,7 @@ gates pass.
 | Connection normalization | Implemented locally | Browser, Codex integration, and test-client identities are distinct; repeated acceptance clients collapse into one history row; online/offline/revoked state is explicit |
 | Ambiguous existing-tab selection | Implemented locally | Duplicate exact URLs return bounded title/group/window labels plus mission-scoped opaque handles; Chrome identifiers stay local; expiry, URL revalidation, sibling replay, and stale-tab tests pass |
 | Hosted MCP protocol contract | Complete locally, mounted behind disabled flag | Six-tool SDK conformance, Streamable HTTP initialize, and scope tests pass |
-| Hosted MCP OAuth resource boundary | Implemented and provisioned, disabled | RFC 9728 metadata advertises the Cognito issuer; AWS has a separate public PKCE client, fixed loopback callback, MCP resource, and six scopes; resource-bound tokens require the exact audience; website cookies and extension-client tokens fail; local integration revocation wins |
+| Hosted MCP OAuth resource boundary | Deployed for the named tester; login acceptance pending | RFC 9728 metadata advertises the Cognito issuer at the exact `opensidebar.com` host; AWS has a separate public PKCE client, fixed loopback callback, MCP resource, and six scopes; `/mcp` rejects unauthenticated requests with the resource-metadata challenge; resource-bound tokens require the exact audience; website cookies and extension-client tokens fail; local integration revocation wins |
 | Hosted MCP operations adapter | Complete locally, disabled | Device listing/selection, creation, status, target selection, revision-bound evidence supervision, approval response, and cancellation are implemented |
 | MCP transport sessions and quotas | Complete locally, disabled | Account/client-bound Streamable HTTP sessions expire after 30 idle minutes; creation, polling, and mutation use separate hashed per-account quotas |
 | Production E2E and cutover | Not started | Blocks localhost deletion |
@@ -337,10 +337,10 @@ evidence; it is not implied by completing implementation.
 
 ## Immediate next work
 
-1. Deploy the reviewed backend with `HOSTED_MCP_ENABLED=false`, the provisioned
-   Cognito issuer/client/scope prefix present, and exact-host routing for `/mcp`
-   plus protected-resource discovery. Do not configure Codex until the disabled
-   deployment and routing checks pass.
+1. Complete the one-time Codex OAuth callback for the named tester, then verify
+   six-tool discovery, token refresh, and revocation. The backend, cookie-free
+   CloudFront policy, and exact Nginx routes are deployed; unauthenticated
+   `/mcp` returns the expected OAuth challenge.
 2. Add a safe synthetic approval fixture that can exercise account decision,
    denial, expiry, and same-session continuation without a real website effect.
 3. Run exact-host Codex OAuth, unique-tab, duplicate-tab/group selection,
