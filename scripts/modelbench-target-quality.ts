@@ -95,6 +95,16 @@ export function auditModelBenchTargets(
     if (contract.difficulty === "hard" && workflow.length < 3 && contract.primaryRole !== "judge") {
       push(findings, definition, "workflow_depth", "Hard case has fewer than three observable stages.");
     }
+    if (workflow.length > 0) {
+      const emptyStages = workflow.filter((stage) => list(object(stage).evidence).length === 0);
+      if (emptyStages.length > 0) {
+        push(findings, definition, "workflow_depth", `${emptyStages.length} workflow stage(s) expose no application evidence.`);
+      }
+      const stageTitles = workflow.map((stage) => object(stage).title).filter(nonEmptyText);
+      if (new Set(stageTitles).size !== workflow.length) {
+        push(findings, definition, "workflow_depth", "Workflow stages do not have distinct application views.");
+      }
+    }
 
     if (contract.primaryRole === "perception") {
       if (!nonEmptyText(presentation.visualCue)) {

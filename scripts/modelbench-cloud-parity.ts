@@ -21,7 +21,9 @@ try {
   });
   if (mismatches.length) {
     for (const mismatch of mismatches) {
-      console.error(`[modelbench:cloud-parity] ${mismatch.caseId} ${mismatch.stage}`);
+      console.error(
+        `[modelbench:cloud-parity] ${mismatch.caseId} ${mismatch.stage}: local=${mismatch.local} remote=${mismatch.remote}`,
+      );
     }
     process.exitCode = 1;
   } else {

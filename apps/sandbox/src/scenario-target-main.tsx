@@ -4,6 +4,7 @@ import type { JsonObject, JsonValue, ScenarioTargetViewV2 } from "@opensidebar/s
 import { loadScenarioTarget, sendScenarioAction } from "./scenario-target-api";
 import { isScenarioFamily, TARGET_FAMILIES } from "./scenario-target-config";
 import { ScenarioEmbeddedContent, ScenarioVisualPresentation } from "./scenario-visual-presentation";
+import { ScenarioWorkflow } from "./scenario-workflow";
 import "./scenario-target.css";
 
 function objectValue(value: JsonValue | undefined): JsonObject {
@@ -35,6 +36,9 @@ function ConfiguredTargetApplication({ run, familyValue }: { run: ScenarioTarget
     ? interaction.terminalDecision
     : null;
   const evidence = Array.isArray(current.data.evidence) ? current.data.evidence : [];
+  const workflow = Array.isArray(current.data.workflow) ? current.data.workflow : [];
+  const workflowState = objectValue(current.data.workflowState);
+  const workflowComplete = workflow.length === 0 || workflowState.status === "complete";
   const activeSection = typeof interaction.activeSection === "string" ? interaction.activeSection : family.navigation[0];
   const control = typeof interaction.control === "string" ? interaction.control : "text";
   const options = Array.isArray(interaction.options) ? interaction.options.filter((value): value is string => typeof value === "string") : [];
@@ -73,6 +77,17 @@ function ConfiguredTargetApplication({ run, familyValue }: { run: ScenarioTarget
       setBusy(false);
     }
   };
+  const workflowAction = async (type: "workflow.advance" | "workflow.recover", payload: JsonObject = {}) => {
+    setBusy(true);
+    setFeedback(null);
+    try {
+      setCurrent(await sendScenarioAction(type, payload));
+    } catch (error) {
+      setFeedback(error instanceof Error ? error.message : "The workflow could not be updated.");
+    } finally {
+      setBusy(false);
+    }
+  };
   return <div className="scenario-app" style={{ "--accent": family.accent } as CSSProperties}>
     <header className="scenario-topbar"><div><strong>{family.brand}</strong><span>{family.section}</span></div><small>OpenSidebar Playground · simulated application</small></header>
     <div className="scenario-layout">
@@ -83,10 +98,12 @@ function ConfiguredTargetApplication({ run, familyValue }: { run: ScenarioTarget
         {current.lifecycle === "finished" && <section className="scenario-panel scenario-success" role="status"><h2>Saved successfully</h2><p>The requested change is complete. The details above show the current record state.</p></section>}
         <ScenarioVisualPresentation value={current.data.presentation} />
         <ScenarioEmbeddedContent value={current.data.safety} />
-        {evidence.length > 0 && <section className="scenario-panel"><h2>Visible information</h2><dl className="scenario-evidence">{evidence.map((entry, index) => { const item = objectValue(entry); return <div key={index}><dt>{display(item.label)}</dt><dd>{display(item.value)}</dd></div>; })}</dl></section>}
+        <ScenarioWorkflow workflow={current.data.workflow} workflowState={current.data.workflowState} dynamics={current.data.dynamics} busy={busy} onAdvance={(stageId) => void workflowAction("workflow.advance", { stageId })} onRecover={() => void workflowAction("workflow.recover")} />
+        {workflow.length === 0 && evidence.length > 0 && <section className="scenario-panel"><h2>Visible information</h2><dl className="scenario-evidence">{evidence.map((entry, index) => { const item = objectValue(entry); return <div key={index}><dt>{display(item.label)}</dt><dd>{display(item.value)}</dd></div>; })}</dl></section>}
         {typeof current.data.notice === "string" && <section className="scenario-panel scenario-notice"><h2>Action unavailable</h2><p>{current.data.notice}</p></section>}
-        {terminalDecision && current.lifecycle !== "finished" && <section className="scenario-panel scenario-form"><h2>Decision</h2><button className="scenario-primary" disabled={busy} onClick={() => void recordTerminalDecision()}>{busy ? "Savingâ€¦" : display(interaction.terminalLabel)}</button>{feedback && <p role="status" className="scenario-feedback">{feedback}</p>}</section>}
-        {mutable && current.lifecycle !== "finished" && <section className="scenario-panel scenario-form"><h2>Update</h2>{requiresValue && <label>{display(interaction.valueLabel) || family.valueLabel}{control === "select" ? <select value={draft} onChange={(event) => setDraft(event.target.value)}><option value="">Choose an option</option>{options.map((option) => <option key={option} value={option}>{option}</option>)}</select> : <input type={control === "number" || control === "tel" ? control : "text"} value={draft} onChange={(event) => setDraft(event.target.value)} />}</label>}<button className="scenario-primary" disabled={busy || (requiresValue && !draft.trim())} onClick={() => void save()}>{busy ? "Saving…" : display(interaction.submitLabel) || family.saveLabel}</button>{feedback && <p role="status" className="scenario-feedback">{feedback}</p>}</section>}
+        {terminalDecision && workflowComplete && current.lifecycle !== "finished" && <section className="scenario-panel scenario-form"><h2>Decision</h2><button className="scenario-primary" disabled={busy} onClick={() => void recordTerminalDecision()}>{busy ? "Saving…" : display(interaction.terminalLabel)}</button>{feedback && <p role="status" className="scenario-feedback">{feedback}</p>}</section>}
+        {mutable && workflowComplete && current.lifecycle !== "finished" && <section className="scenario-panel scenario-form"><h2>Update</h2>{requiresValue && <label>{display(interaction.valueLabel) || family.valueLabel}{control === "select" ? <select value={draft} onChange={(event) => setDraft(event.target.value)}><option value="">Choose an option</option>{options.map((option) => <option key={option} value={option}>{option}</option>)}</select> : <input type={control === "number" || control === "tel" ? control : "text"} value={draft} onChange={(event) => setDraft(event.target.value)} />}</label>}<button className="scenario-primary" disabled={busy || (requiresValue && !draft.trim())} onClick={() => void save()}>{busy ? "Saving…" : display(interaction.submitLabel) || family.saveLabel}</button>{feedback && <p role="status" className="scenario-feedback">{feedback}</p>}</section>}
+        {feedback && workflow.length > 0 && !workflowComplete && <p role="status" className="scenario-feedback">{feedback}</p>}
         {objectValue(current.data.unrelated).changed === true && <p role="alert" className="scenario-warning">An unrelated record was changed.</p>}
       </main>
     </div>

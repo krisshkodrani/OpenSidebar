@@ -9,6 +9,7 @@ import type { JsonObject, ScenarioActionV2 } from "@opensidebar/scenario-contrac
 import {
   MemoryScenarioStore,
   scenarioEngine,
+  ScenarioRevisionConflict,
   type ScenarioStoreV2,
 } from "@opensidebar/scenario-engine";
 
@@ -124,7 +125,7 @@ export async function startModelBenchTargetServer(
         }
         if (req.method === "POST" && url.pathname === "/api/v2/target/action") {
           const input = await body(req);
-          if (input.type !== "case.submit" && input.type !== "case.terminal") {
+          if (!["case.submit", "case.terminal", "workflow.advance", "workflow.recover"].includes(String(input.type))) {
             return json(res, 400, { error: { message: "Unsupported target action." } });
           }
           const action: ScenarioActionV2 = {
@@ -134,8 +135,16 @@ export async function startModelBenchTargetServer(
                 ? input.payload as JsonObject
                 : {},
           };
-          const updated = await store.apply(run.id, run.revision, action, now().toISOString());
-          return json(res, 200, { run: scenarioEngine.targetView(updated.state) });
+          try {
+            const updated = await store.apply(run.id, run.revision, action, now().toISOString());
+            return json(res, 200, { run: scenarioEngine.targetView(updated.state) });
+          } catch (error) {
+            if (error instanceof ScenarioRevisionConflict) {
+              return json(res, 409, { error: { message: "Target state changed. Refresh and retry." } });
+            }
+            if (error instanceof Error) return json(res, 400, { error: { message: error.message } });
+            throw error;
+          }
         }
         return json(res, 404, { error: { message: "Target endpoint not found." } });
       }
