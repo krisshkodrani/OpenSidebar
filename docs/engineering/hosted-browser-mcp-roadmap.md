@@ -52,7 +52,7 @@ gates pass.
 | Connection normalization | Implemented locally | Browser, Codex integration, and test-client identities are distinct; repeated acceptance clients collapse into one history row; online/offline/revoked state is explicit |
 | Ambiguous existing-tab selection | Implemented locally | Duplicate exact URLs return bounded title/group/window labels plus mission-scoped opaque handles; Chrome identifiers stay local; expiry, URL revalidation, sibling replay, and stale-tab tests pass |
 | Hosted MCP protocol contract | Complete locally, mounted behind disabled flag | Six-tool SDK conformance, Streamable HTTP initialize, and scope tests pass |
-| Hosted MCP OAuth resource boundary | Deployed for the named tester; login acceptance pending | RFC 9728 metadata advertises the Cognito issuer at the exact `opensidebar.com` host; AWS has a separate public PKCE client, fixed loopback callback, MCP resource, and six scopes; `/mcp` rejects unauthenticated requests with the resource-metadata challenge; resource-bound tokens require the exact audience; website cookies and extension-client tokens fail; local integration revocation wins |
+| Hosted MCP OAuth resource boundary | Named-tester OAuth and discovery accepted | RFC 9728 metadata advertises the Cognito issuer at the exact `opensidebar.com` host; AWS has a separate public PKCE client, server-bound loopback callback, email-OTP managed login, MCP resource, and six scopes; `/mcp` rejects unauthenticated requests with the resource-metadata challenge; Codex completed PKCE login and discovered all six tools; resource-bound tokens require the exact audience; website cookies and extension-client tokens fail; local integration revocation wins |
 | Hosted MCP operations adapter | Complete locally, disabled | Device listing/selection, creation, status, target selection, revision-bound evidence supervision, approval response, and cancellation are implemented |
 | MCP transport sessions and quotas | Complete locally, disabled | Account/client-bound Streamable HTTP sessions expire after 30 idle minutes; creation, polling, and mutation use separate hashed per-account quotas |
 | Production E2E and cutover | Not started | Blocks localhost deletion |
@@ -246,11 +246,12 @@ Implementation sequence:
 
 Provisioning is dry-run-first through
 `pnpm cloud:provision-hosted-mcp-cognito`. Codex and Cognito must share one
-fixed loopback callback, for example `http://localhost:1455/callback`, set in
+fixed loopback callback, `http://localhost:1455/auth/callback`, set in
 Codex as both `mcp_oauth_callback_url` and `mcp_oauth_callback_port`. The
 provisioner requires that exact value in `OPENSIDEBAR_MCP_CALLBACK_URL`, creates
 the `https://opensidebar.com/mcp` resource server and six custom scopes, and
-prints the issuer/client/scope-prefix values. Codex is then registered with the
+registers the server-bound callback ID that Codex appends to that base path. It
+prints both callback forms plus the issuer/client/scope-prefix values. Codex is then registered with the
 returned public client ID and `--oauth-resource https://opensidebar.com/mcp`.
 This avoids dynamic registration and repeated link codes while preserving PKCE.
 The server flag remains false throughout provisioning.
@@ -337,10 +338,10 @@ evidence; it is not implied by completing implementation.
 
 ## Immediate next work
 
-1. Complete the one-time Codex OAuth callback for the named tester, then verify
-   six-tool discovery, token refresh, and revocation. The backend, cookie-free
-   CloudFront policy, and exact Nginx routes are deployed; unauthenticated
-   `/mcp` returns the expected OAuth challenge.
+1. Reconnect the accepted `Chrome` 0.7.3 named-tester device, then run one
+   unique-tab read-only mission and one duplicate-tab/group selection mission.
+   OAuth login and six-tool discovery passed; token refresh and revocation remain
+   in the resilience gate.
 2. Add a safe synthetic approval fixture that can exercise account decision,
    denial, expiry, and same-session continuation without a real website effect.
 3. Run exact-host Codex OAuth, unique-tab, duplicate-tab/group selection,
