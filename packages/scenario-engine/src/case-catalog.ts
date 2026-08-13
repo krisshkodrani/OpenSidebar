@@ -9,6 +9,7 @@ import type {
   ScenarioActionV2,
 } from "@opensidebar/scenario-contracts";
 import { FAMILY_CASE_GROUPS, type CaseMode } from "./case-seeds.js";
+import { perceptionPresentation } from "./case-presentations.js";
 import { cloneJson, stableHash } from "./stable-json.js";
 import type {
   EngineCaseDefinitionV1,
@@ -304,6 +305,9 @@ function drafts(): DraftCase[] {
       const terminal = mode === "terminal"
         ? terminalPresentation(task.slug, task.expected)
         : null;
+      const perception = role === "perception"
+        ? perceptionPresentation(task.slug)
+        : undefined;
       const expectedText = String(task.expected);
       const requiresValue =
         (mode === "state" || mode === "state-and-answer") &&
@@ -358,9 +362,12 @@ function drafts(): DraftCase[] {
             evidence:
               terminal
                 ? terminal.evidence
+                : perception
+                ? perception.evidence
                 : mode === "answer" || mode === "state-and-answer"
                 ? answerEvidence(task.title, task.expected)
                 : recordContext(task.prompt),
+            ...(perception ? { presentation: perception.presentation } : {}),
             notice: terminal?.notice ?? null,
             unrelated: { changed: false },
           },
