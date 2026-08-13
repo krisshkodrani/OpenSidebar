@@ -29,6 +29,7 @@ import {
 import { registerContentScriptReadyListener } from "./tab-ready";
 import { resolveValidTabId } from "./infrastructure/tab-resolution";
 import { isUiMessageSource } from "./ui-message-source";
+import { setWorkspacePanelVisibility } from "./side-panel-visibility";
 import { orchestrator } from "./orchestrator";
 import { setDisabledSkillIds } from "./orchestrator/skills";
 import { PassiveMonitorController } from "./passive-monitor";
@@ -521,13 +522,12 @@ async function handleSidePanelOpened(
         // Consumed the flag
         await removeUserOpenedPanel(tabId);
       } else {
-        logger.debug(
+        logger.warn(
           "workspace",
-          "Panel opened on a tab outside an OpenSidebar workspace",
+          "Panel opened outside an OpenSidebar workspace - hiding it",
           { tabId },
         );
-        // Keep the global panel available for remote-task supervision. The UI
-        // resolves this tab to a null workspace and disables local composition.
+        await setWorkspacePanelVisibility(chrome.sidePanel, tabId, false);
       }
     }
   } catch (error) {
@@ -546,11 +546,7 @@ chrome.tabs.onActivated.addListener(async ({ tabId, windowId: _windowId }) => {
     // Tab IS in a workspace -> Enable side panel, but do not auto-open.
     // Per-tab sidebar policy: user must click extension icon to open.
     try {
-      await chrome.sidePanel.setOptions({
-        tabId,
-        path: "src/sidepanel/index.html",
-        enabled: true,
-      });
+      await setWorkspacePanelVisibility(chrome.sidePanel, tabId, true);
 
       logger.debug("sidebar", "Panel enabled for workspace tab (manual open)", {
         tabId,
@@ -565,20 +561,17 @@ chrome.tabs.onActivated.addListener(async ({ tabId, windowId: _windowId }) => {
       });
     }
   } else {
-    // Keep the panel visible for remote-task supervision without implicitly
-    // attaching this tab to any existing workspace.
+    // A non-workspace tab must not inherit the manifest's global side panel.
+    // Chrome hides this tab-specific disabled panel and restores the open panel
+    // automatically when the user returns to an enabled workspace tab.
     try {
-      await chrome.sidePanel.setOptions({
-        tabId,
-        path: "src/sidepanel/index.html",
-        enabled: true,
-      });
+      await setWorkspacePanelVisibility(chrome.sidePanel, tabId, false);
 
-      logger.debug("sidebar", "Panel detached from non-workspace tab", {
+      logger.debug("sidebar", "Panel hidden for non-workspace tab", {
         tabId,
       });
     } catch (e) {
-      logger.debug("sidebar", "Failed to configure panel for non-workspace tab", {
+      logger.debug("sidebar", "Failed to hide panel for non-workspace tab", {
         tabId,
         error: e,
       });
@@ -591,8 +584,8 @@ chrome.tabs.onRemoved.addListener(async (tabId) => {
   // Workspace auto-delete is handled by WorkspaceManager
   logger.debug("sidebar", "Tab closed", { tabId });
 
-  // Robustness: keep the global panel available after a workspace tab closes;
-  // workspace synchronization moves it into detached mode.
+  // Robustness: if closing a workspace tab exposes an unrelated tab, ensure
+  // that tab does not inherit the global side panel.
   try {
     const [activeTab] = await chrome.tabs.query({
       active: true,
@@ -604,14 +597,14 @@ chrome.tabs.onRemoved.addListener(async (tabId) => {
       if (!workspace) {
         logger.debug(
           "sidebar",
-          "Active tab not in workspace after tab removal - detaching panel",
+          "Active tab not in workspace after tab removal - hiding panel",
           { activeTabId: activeTab.id },
         );
-        await chrome.sidePanel.setOptions({
-          tabId: activeTab.id,
-          path: "src/sidepanel/index.html",
-          enabled: true,
-        });
+        await setWorkspacePanelVisibility(
+          chrome.sidePanel,
+          activeTab.id,
+          false,
+        );
       }
     }
   } catch (e) {

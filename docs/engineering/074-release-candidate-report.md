@@ -22,9 +22,9 @@ actions or receive raw browser state.
   cleared operationally by logout, revocation, browser shutdown, or loss of polls.
 - Transient cloud refresh failures preserve the saved extension session. Only a
   definitive credential rejection clears it.
-- The sidepanel stays visible across unrelated tabs for remote supervision. In
-  detached mode it hides the local composer and never implicitly changes the
-  mission target.
+- The sidepanel is enabled only on OpenSidebar workspace tabs. Chrome hides it
+  on unrelated tabs and restores it on return; the background worker keeps a
+  remote mission durable while the panel is hidden.
 - Production and acceptance builds share the same remote worker. Acceptance-only
   diagnostics and release-ineligible markers remain excluded from normal builds.
 
@@ -41,7 +41,7 @@ actions or receive raw browser state.
 - Production build and distribution verification: passed for normal 0.7.4.
 - Extension package: `.artifacts/releases/opensidebar-v0.7.4.zip`.
 - Package SHA-256:
-  `59B7D2542D97166F4416E4139CB156B8276347408C597A15940A67FB918970DD`.
+  `FE75B4F68D537F672451F85A606EFA88ED777772F150DAE8FDFAB0C73211694A`.
 
 ## Backend deployment
 
@@ -63,7 +63,7 @@ actions or receive raw browser state.
 3. Load the normal 0.7.4 candidate and wait for one successful poll; verify the
    same device becomes `remoteWork: ready` without a new device record.
 4. Complete an exact-existing-tab read-only mission and confirm grounded evidence.
-5. Exercise duplicate-tab selection, detached-panel cancel visibility, backend
+5. Exercise duplicate-tab selection, workspace-return cancel visibility, backend
    restart, extension restart, OAuth refresh, and revocation.
 6. Record the final ZIP SHA-256, then submit that exact artifact. Do not widen the
    tester allowlist or enable consequential remote actions during release.
