@@ -24,6 +24,8 @@ import type { TemporalShadowOutbox } from "./temporal-shadow-outbox.js";
 import { createRemoteMissionApi } from "./remote-mission-api.js";
 import type { RemoteMissionRepository } from "./remote-mission-repository.js";
 import type { RemoteMissionVault } from "./remote-mission-vault.js";
+import { createHostedBrowserMcpApi } from "./hosted-browser-mcp-api.js";
+import type { HostedBrowserMcpOperations } from "./hosted-browser-mcp.js";
 
 type Variables = { accountId: string; email: string; csrfHash: string };
 const noStore = (c: Context) => c.header("Cache-Control", "no-store");
@@ -151,6 +153,7 @@ export function createApp(
   control?: Omit<ControlApiDependencies, "config" | "playgroundRepository"> & {
     remoteMissionRepository?: RemoteMissionRepository;
     remoteMissionVault?: RemoteMissionVault;
+    hostedBrowserMcpOperations?: HostedBrowserMcpOperations;
   },
   temporalShadowOutbox?: TemporalShadowOutbox,
 ) {
@@ -219,6 +222,13 @@ export function createApp(
         vault: control.remoteMissionVault,
       }),
     );
+  if (config.hostedMcpEnabled && control?.hostedBrowserMcpOperations)
+    app.route("/", createHostedBrowserMcpApi({
+      config,
+      accounts: control.repository,
+      operations: control.hostedBrowserMcpOperations,
+      quota: repository,
+    }));
   if (temporalShadowOutbox)
     app.route(
       "/internal/v1/temporal-shadow",

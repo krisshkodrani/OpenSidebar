@@ -5,6 +5,7 @@ export const REMOTE_MISSION_STATES = [
   "accepted",
   "running",
   "target_selection_required",
+  "supervision_required",
   "approval_required",
   "succeeded",
   "failed",
@@ -50,11 +51,14 @@ export interface RemoteMissionResultV1 {
 export interface RemoteMissionProgressV1 {
   schemaVersion: typeof REMOTE_MISSION_SCHEMA_VERSION;
   missionId: string;
-  state: "accepted" | "running" | "target_selection_required" | "approval_required";
+  state: "accepted" | "running" | "target_selection_required" | "supervision_required" | "approval_required";
   updatedAt: string;
   summary?: string;
   approval?: RemoteMissionApprovalV1;
   targetSelection?: RemoteMissionTargetSelectionV1;
+  evidence?: MissionEvidenceV1;
+  pendingStep?: MissionStepV1;
+  remainingSteps?: MissionStepV1[];
 }
 
 export interface RemoteMissionTargetCandidateV1 {
@@ -73,6 +77,10 @@ export interface RemoteMissionTargetDecisionV1 {
   schemaVersion: typeof REMOTE_MISSION_SCHEMA_VERSION;
   missionId: string;
   targetHandle: string;
+  decidedAt: string;
+}
+
+export interface RemoteMissionSupervisorDecisionV1 extends SupervisorDecisionV1 {
   decidedAt: string;
 }
 
@@ -177,7 +185,7 @@ export interface MissionAttemptV1 {
   stepId: string;
   attemptId: string;
   planRevision: number;
-  state: "accepted" | "running" | "target_selection_required" | "approval_required" | "terminal";
+  state: "accepted" | "running" | "target_selection_required" | "supervision_required" | "approval_required" | "terminal";
   mayHaveConsequentialEffect: boolean;
   updatedAt: string;
 }

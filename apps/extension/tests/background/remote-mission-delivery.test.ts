@@ -45,6 +45,7 @@ function setup(items = [delivery()]) {
   const progress: unknown[] = [];
   let approvalDecision: Awaited<ReturnType<RemoteMissionDeliveryPort["getApprovalDecision"]>> = null;
   let targetDecision: Awaited<ReturnType<RemoteMissionDeliveryPort["getTargetDecision"]>> = null;
+  let supervisorDecision: Awaited<ReturnType<RemoteMissionDeliveryPort["getSupervisorDecision"]>> = null;
   const transport: RemoteMissionDeliveryPort = {
     enabled: true,
     async poll(_device, after) {
@@ -55,6 +56,8 @@ function setup(items = [delivery()]) {
     async putApprovalDecision() {},
     async getTargetDecision() { return targetDecision; },
     async putTargetDecision() {},
+    async getSupervisorDecision() { return supervisorDecision; },
+    async putSupervisorDecision() {},
     async cancel(id) {
       const current = records.get(id)!;
       const next = { ...current, state: "cancelled" as const, resultCode: "cancelled" as const };
@@ -84,7 +87,11 @@ function setup(items = [delivery()]) {
     state: "succeeded",
     summary: "Selected target verified.",
   });
-  const worker = { run, resumeApproval, resumeTargetSelection } as unknown as MissionWorker;
+  const resumeSupervision = vi.fn().mockResolvedValue({
+    state: "succeeded",
+    summary: "Codex accepted the evidence.",
+  });
+  const worker = { run, resumeApproval, resumeTargetSelection, resumeSupervision } as unknown as MissionWorker;
   const journal = new LocalRemoteMissionDeliveryJournal(port.local);
   const statuses: RemoteMissionState[] = [];
   const statusRecords: Array<Parameters<NonNullable<ConstructorParameters<typeof RemoteMissionDeliveryController>[4]>>[0]> = [];
@@ -104,6 +111,7 @@ function setup(items = [delivery()]) {
     run,
     resumeApproval,
     resumeTargetSelection,
+    resumeSupervision,
     transitions,
     statuses,
     statusRecords,
@@ -112,6 +120,7 @@ function setup(items = [delivery()]) {
     progress,
     setApprovalDecision(value: typeof approvalDecision) { approvalDecision = value; },
     setTargetDecision(value: typeof targetDecision) { targetDecision = value; },
+    setSupervisorDecision(value: typeof supervisorDecision) { supervisorDecision = value; },
   };
 }
 
@@ -297,6 +306,54 @@ describe("remote mission delivery", () => {
     });
   });
 
+  test("resumes the same mission after a revision-bound Codex evidence decision", async () => {
+    const item = delivery({ state: "supervision_required" });
+    const world = setup([item]);
+    const updatedAt = new Date(Date.now() - 1_000).toISOString();
+    const evidence = {
+      schemaVersion: 1 as const,
+      missionId,
+      stepId: `${missionId}:read`,
+      attemptId: "attempt-1",
+      planRevision: 1,
+      outcome: "achieved" as const,
+      claims: [{ claim: "Example Domain", source: "agent_summary" as const }],
+      effects: [],
+      uncertainties: [],
+    };
+    const pendingStep = {
+      schemaVersion: 1 as const,
+      missionId,
+      stepId: evidence.stepId,
+      planRevision: 1,
+      risk: "read_only" as const,
+      objective: "Read the visible page heading",
+      successCriteria: ["Return the exact heading"],
+    };
+    world.records.set(missionId, {
+      ...item.mission,
+      progress: { schemaVersion: 1, missionId, state: "supervision_required", updatedAt, evidence, pendingStep },
+    } as never);
+    world.setSupervisorDecision({
+      schemaVersion: 1,
+      decisionId: "decision-1",
+      missionId,
+      stepId: evidence.stepId,
+      expectedPlanRevision: 1,
+      kind: "complete",
+      outcome: "completed",
+      decidedAt: new Date().toISOString(),
+    });
+    await world.controller.pollOnce();
+    expect(world.transitions).toEqual(["running", "succeeded"]);
+    expect(world.resumeSupervision).toHaveBeenCalledWith(
+      expect.objectContaining({ missionId }),
+      evidence,
+      expect.objectContaining({ kind: "complete" }),
+      expect.objectContaining({ signal: expect.any(AbortSignal) }),
+    );
+  });
+
   test("reports cancellation when a running read-only worker is aborted", async () => {
     const controller = new AbortController();
     const world = setup();
@@ -323,6 +380,8 @@ describe("remote mission delivery", () => {
         putApprovalDecision: async () => {},
         getTargetDecision: async () => null,
         putTargetDecision: async () => {},
+        getSupervisorDecision: async () => null,
+        putSupervisorDecision: async () => {},
         cancel: async () => ({
           ...delivery().mission,
           state: "cancelled",

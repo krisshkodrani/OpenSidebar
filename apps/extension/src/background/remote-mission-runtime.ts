@@ -5,7 +5,7 @@ import { LocalMissionAttemptJournal } from "./remote-missions/local-attempt-jour
 import { MissionWorker } from "./remote-missions/mission-worker";
 import { LocalRemoteMissionDeliveryJournal } from "./remote-missions/delivery-journal";
 import {
-  EvidenceOutcomeSupervisor,
+  CodexHandoffSupervisor,
   RemoteMissionDeliveryController,
 } from "./remote-missions/delivery-controller";
 import {
@@ -32,7 +32,7 @@ const transport = remoteMissionDeliveryEnabled
   : new DisabledRemoteMissionDeliveryPort();
 const worker = new MissionWorker(
   createDefaultRemoteMissionRunner(),
-  new EvidenceOutcomeSupervisor(),
+  new CodexHandoffSupervisor(),
   new LocalMissionAttemptJournal(chromePersistencePort),
 );
 

@@ -102,7 +102,7 @@ export class PostgresRemoteMissionRepository
   async activeMissions(accountId: string) {
     const result = await this.pool.query<MissionRow>(
       `SELECT ${columns} FROM sessions.remote_missions
-       WHERE account_id=$1 AND state IN ('queued','accepted','running','target_selection_required','approval_required')
+       WHERE account_id=$1 AND state IN ('queued','accepted','running','target_selection_required','supervision_required','approval_required')
        ORDER BY sequence`,
       [accountId],
     );
@@ -123,7 +123,7 @@ export class PostgresRemoteMissionRepository
       `SELECT ${columns} FROM sessions.remote_missions
        WHERE account_id=$1 AND device_id=$2 AND sequence>$3
          AND expires_at>now()
-         AND state IN ('queued','accepted','running','target_selection_required','approval_required')
+         AND state IN ('queued','accepted','running','target_selection_required','supervision_required','approval_required')
        ORDER BY sequence ASC LIMIT $4`,
       [input.accountId, input.deviceId, input.afterSequence, input.limit],
     );

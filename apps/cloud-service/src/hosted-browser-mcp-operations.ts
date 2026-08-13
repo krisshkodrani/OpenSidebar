@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import type {
   RemoteMissionApprovalDecisionV1,
   RemoteMissionTargetDecisionV1,
@@ -11,6 +12,7 @@ import type {
 } from "./hosted-browser-mcp.js";
 import type { RemoteMissionRepository } from "./remote-mission-repository.js";
 import type { RemoteMissionVault } from "./remote-mission-vault.js";
+import { parseRemoteMissionSupervisorDecision } from "./remote-mission-policy.js";
 
 type Dependencies = {
   accounts: ControlRepository;
@@ -54,6 +56,7 @@ async function statusFor(
         mission.state === "accepted" ||
         mission.state === "running" ||
         mission.state === "target_selection_required" ||
+        mission.state === "supervision_required" ||
         mission.state === "approval_required"
       ) ? mission.state : undefined).catch(() => null);
   const result = terminal(mission.state)
@@ -85,7 +88,26 @@ export function createHostedBrowserMcpOperations(
     async startTask(principal, input) {
       if (!(await deps.accounts.remoteWorkSettings(principal.accountId)).enabled)
         throw new Error("remote_work_disabled");
-      const eligible = (await deps.accounts.listDevices(principal.accountId)).filter(
+      const devices = await deps.accounts.listDevices(principal.accountId);
+      const idempotencyHash = tokenHash(
+        `mcp:${principal.clientId}:${text(input, "requestId")}`,
+      );
+      const replay = await deps.missions.missionByIdempotency(
+        principal.accountId,
+        idempotencyHash,
+      );
+      if (replay) {
+        const selected = devices.find((device) => device.id === replay.deviceId);
+        return {
+          mission: replay,
+          selectedDevice: {
+            deviceId: replay.deviceId,
+            name: selected?.displayName ?? "Linked browser",
+          },
+          replayed: true,
+        };
+      }
+      const eligible = devices.filter(
         (device) =>
           device.connectionKind === "browser_extension" &&
           !device.revokedAt &&
@@ -127,7 +149,7 @@ export function createHostedBrowserMcpOperations(
         ...location,
         createdAt: now,
         expiresAt: new Date(now.getTime() + 15 * 60_000),
-        idempotencyHash: tokenHash(`mcp:${principal.clientId}:${missionId}`),
+        idempotencyHash,
         payloadObjectKey: deps.vault.objectKey(location),
         payloadCiphertextSizeBytes: stored.ciphertextSizeBytes,
         payloadCiphertextSha256: stored.ciphertextSha256,
@@ -136,7 +158,17 @@ export function createHostedBrowserMcpOperations(
         await deps.vault.delete(location).catch(() => undefined);
         throw new Error(created.kind);
       }
-      return { mission: created.value, selectedDevice: { deviceId: device.id, name: device.displayName } };
+      if (created.kind === "replayed")
+        await deps.vault.delete(location).catch(() => undefined);
+      const selected = devices.find((candidate) => candidate.id === created.value.deviceId);
+      return {
+        mission: created.value,
+        selectedDevice: {
+          deviceId: created.value.deviceId,
+          name: selected?.displayName ?? "Linked browser",
+        },
+        ...(created.kind === "replayed" ? { replayed: true } : {}),
+      };
     },
 
     async getTask(principal, input) {
@@ -145,24 +177,71 @@ export function createHostedBrowserMcpOperations(
 
     async continueTask(principal, input) {
       const mission = await ownedMission(deps, principal, input);
-      if (input.decision !== "select_target")
-        throw new Error("decision_not_available_for_current_mission_contract");
-      if (mission.state !== "target_selection_required") throw new Error("state_conflict");
       const location = identity(principal.accountId, mission);
-      const progress = await deps.vault.getProgressAndDecrypt(location, "target_selection_required");
-      const targetHandle = text(input, "targetHandle");
-      if (
-        !progress.targetSelection?.candidates.some((candidate) => candidate.targetHandle === targetHandle) ||
-        new Date(progress.targetSelection.expiresAt).getTime() <= Date.now()
-      ) throw new Error("target_selection_stale");
-      const decision: RemoteMissionTargetDecisionV1 = {
-        schemaVersion: 1,
+      if (input.decision === "select_target") {
+        if (mission.state !== "target_selection_required") throw new Error("state_conflict");
+        const progress = await deps.vault.getProgressAndDecrypt(location, "target_selection_required");
+        const targetHandle = text(input, "targetHandle");
+        if (
+          !progress.targetSelection?.candidates.some((candidate) => candidate.targetHandle === targetHandle) ||
+          new Date(progress.targetSelection.expiresAt).getTime() <= Date.now()
+        ) throw new Error("target_selection_stale");
+        const decision: RemoteMissionTargetDecisionV1 = {
+          schemaVersion: 1,
+          missionId: mission.missionId,
+          targetHandle,
+          decidedAt: new Date().toISOString(),
+        };
+        await deps.vault.encryptTargetDecisionAndPut(location, decision);
+        return { missionId: mission.missionId, state: mission.state, decision: "select_target" };
+      }
+      if (mission.state !== "supervision_required") throw new Error("state_conflict");
+      const progress = await deps.vault.getProgressAndDecrypt(location, "supervision_required");
+      if (!progress.evidence) throw new Error("supervision_evidence_missing");
+      const decisionId = `decision_${createHash("sha256").update(JSON.stringify({
         missionId: mission.missionId,
-        targetHandle,
+        stepId: input.stepId,
+        expectedPlanRevision: input.expectedPlanRevision,
+        kind: input.decision,
+        guidance: input.guidance,
+        outcome: input.outcome,
+        replacementSteps: input.replacementSteps,
+      })).digest("hex")}`;
+      const decision = parseRemoteMissionSupervisorDecision({
+        schemaVersion: 1,
+        decisionId,
+        missionId: mission.missionId,
+        stepId: input.stepId,
+        expectedPlanRevision: input.expectedPlanRevision,
+        kind: input.decision,
         decidedAt: new Date().toISOString(),
-      };
-      await deps.vault.encryptTargetDecisionAndPut(location, decision);
-      return { missionId: mission.missionId, state: mission.state, decision: "select_target" };
+        ...(input.guidance ? { guidance: input.guidance } : {}),
+        ...(input.outcome ? { outcome: input.outcome } : {}),
+        ...(input.replacementSteps ? { replacementSteps: input.replacementSteps } : {}),
+      }, mission.missionId);
+      if (
+        decision.stepId !== progress.evidence.stepId ||
+        decision.expectedPlanRevision !== progress.evidence.planRevision
+      ) throw new Error("supervisor_decision_stale");
+      if (decision.kind === "request_user_input")
+        return {
+          missionId: mission.missionId,
+          state: mission.state,
+          decision: decision.kind,
+          requiresUserInput: true,
+          question: decision.guidance ?? "Ask the user for the missing information, then continue with their answer as guidance.",
+        };
+      if (decision.kind === "request_approval")
+        throw new Error("approval_must_originate_from_browser_evidence");
+      if (decision.kind === "continue" && !progress.remainingSteps?.length)
+        throw new Error("no_remaining_step_to_continue");
+      if (
+        decision.replacementSteps?.some(
+          (step) => step.planRevision <= progress.evidence!.planRevision,
+        )
+      ) throw new Error("replacement_plan_revision_stale");
+      await deps.vault.encryptSupervisorDecisionAndPut(location, decision);
+      return { missionId: mission.missionId, state: mission.state, decision: decision.kind };
     },
 
     async respondApproval(principal, input) {

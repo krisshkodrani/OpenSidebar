@@ -6,6 +6,9 @@ import type {
   RemoteMissionState,
   RemoteMissionTargetDecisionV1,
   RemoteMissionTargetSelectionV1,
+  RemoteMissionSupervisorDecisionV1,
+  MissionEvidenceV1,
+  MissionStepV1,
   RemoteMissionTransitionV1,
 } from "@opensidebar/shared-types";
 
@@ -113,10 +116,12 @@ export function parseRemoteMissionProgress(
   if (!value || typeof value !== "object" || Array.isArray(value))
     throw new RemoteMissionPolicyError("invalid_request");
   const input = value as Record<string, unknown>;
-  const states = new Set(["accepted", "running", "target_selection_required", "approval_required"]);
+  const states = new Set(["accepted", "running", "target_selection_required", "supervision_required", "approval_required"]);
   const updatedAt = typeof input.updatedAt === "string" ? new Date(input.updatedAt) : null;
   const approval = input.approval as Record<string, unknown> | undefined;
   const targetSelection = input.targetSelection as Record<string, unknown> | undefined;
+  const evidence = input.evidence as Record<string, unknown> | undefined;
+  const pendingStep = input.pendingStep;
   if (
     input.schemaVersion !== 1 ||
     input.missionId !== missionId ||
@@ -125,6 +130,7 @@ export function parseRemoteMissionProgress(
     !Number.isFinite(updatedAt.getTime()) ||
     ((input.state === "approval_required") !== Boolean(approval)) ||
     ((input.state === "target_selection_required") !== Boolean(targetSelection))
+    || ((input.state === "supervision_required") !== Boolean(evidence && pendingStep))
   )
     throw new RemoteMissionPolicyError("invalid_request");
   let boundedApproval: RemoteMissionProgressV1["approval"];
@@ -176,6 +182,18 @@ export function parseRemoteMissionProgress(
       throw new RemoteMissionPolicyError("invalid_request");
   }
   const summary = boundedOptional(input.summary, 1_000);
+  const boundedEvidence = evidence ? parseMissionEvidence(evidence, missionId) : undefined;
+  const boundedPendingStep = pendingStep
+    ? parseReplacementSteps([pendingStep], missionId)[0]
+    : undefined;
+  const boundedRemainingSteps = input.remainingSteps
+    ? parseReplacementSteps(input.remainingSteps, missionId)
+    : undefined;
+  if (
+    boundedEvidence && boundedPendingStep &&
+    (boundedEvidence.stepId !== boundedPendingStep.stepId ||
+      boundedEvidence.planRevision !== boundedPendingStep.planRevision)
+  ) throw new RemoteMissionPolicyError("invalid_request");
   return {
     schemaVersion: 1,
     missionId,
@@ -184,6 +202,189 @@ export function parseRemoteMissionProgress(
     ...(summary ? { summary } : {}),
     ...(boundedApproval ? { approval: boundedApproval } : {}),
     ...(boundedTargetSelection ? { targetSelection: boundedTargetSelection } : {}),
+    ...(boundedEvidence ? { evidence: boundedEvidence } : {}),
+    ...(boundedPendingStep ? { pendingStep: boundedPendingStep } : {}),
+    ...(boundedRemainingSteps ? { remainingSteps: boundedRemainingSteps } : {}),
+  };
+}
+
+const boundedStringList = (value: unknown, maxItems: number, maxLength: number) => {
+  if (!Array.isArray(value) || value.length > maxItems)
+    throw new RemoteMissionPolicyError("invalid_request");
+  return value.map((item) => {
+    const text = boundedOptional(item, maxLength);
+    if (!text) throw new RemoteMissionPolicyError("invalid_request");
+    return text;
+  });
+};
+
+export function parseMissionEvidence(
+  value: unknown,
+  missionId: string,
+): MissionEvidenceV1 {
+  if (!value || typeof value !== "object" || Array.isArray(value))
+    throw new RemoteMissionPolicyError("invalid_request");
+  const input = value as Record<string, unknown>;
+  const stepId = boundedOptional(input.stepId, 200);
+  const attemptId = boundedOptional(input.attemptId, 200);
+  const outcomes = new Set(["achieved", "not_achieved", "approval_required", "unknown"]);
+  if (
+    input.schemaVersion !== 1 || input.missionId !== missionId || !stepId || !attemptId ||
+    !Number.isSafeInteger(input.planRevision) || Number(input.planRevision) < 1 ||
+    !outcomes.has(input.outcome as string) || !Array.isArray(input.claims) ||
+    input.claims.length > 20 || !Array.isArray(input.effects) || input.effects.length > 20
+  ) throw new RemoteMissionPolicyError("invalid_request");
+  const claims = input.claims.map((value) => {
+    if (!value || typeof value !== "object" || Array.isArray(value))
+      throw new RemoteMissionPolicyError("invalid_request");
+    const claim = value as Record<string, unknown>;
+    const content = boundedOptional(claim.claim, 4_000);
+    const sources = new Set(["page_observation", "form_field_readback", "navigation", "download", "agent_summary"]);
+    if (!content || !sources.has(claim.source as string))
+      throw new RemoteMissionPolicyError("invalid_request");
+    return { claim: content, source: claim.source as MissionEvidenceV1["claims"][number]["source"] };
+  });
+  const effects = input.effects.map((value) => {
+    if (!value || typeof value !== "object" || Array.isArray(value))
+      throw new RemoteMissionPolicyError("invalid_request");
+    const effect = value as Record<string, unknown>;
+    const type = boundedOptional(effect.type, 200);
+    if (!type || typeof effect.consequential !== "boolean")
+      throw new RemoteMissionPolicyError("invalid_request");
+    return { type, consequential: effect.consequential };
+  });
+  let page: MissionEvidenceV1["page"];
+  if (input.page !== undefined) {
+    if (!input.page || typeof input.page !== "object" || Array.isArray(input.page))
+      throw new RemoteMissionPolicyError("invalid_request");
+    const candidate = input.page as Record<string, unknown>;
+    const originValue = boundedOptional(candidate.origin, 2_048);
+    if (!originValue) throw new RemoteMissionPolicyError("invalid_request");
+    let origin: string;
+    try {
+      const parsed = new URL(originValue);
+      if (
+        !["http:", "https:"].includes(parsed.protocol) ||
+        parsed.username ||
+        parsed.password ||
+        parsed.origin !== originValue
+      ) throw new Error("invalid origin");
+      origin = parsed.origin;
+    } catch {
+      throw new RemoteMissionPolicyError("invalid_request");
+    }
+    const title = boundedOptional(candidate.title, 160);
+    page = { origin, ...(title ? { title } : {}) };
+  }
+  let approval: MissionEvidenceV1["approval"];
+  if (input.approval !== undefined) {
+    if (!input.approval || typeof input.approval !== "object" || Array.isArray(input.approval))
+      throw new RemoteMissionPolicyError("invalid_request");
+    const candidate = input.approval as Record<string, unknown>;
+    const approvalId = boundedOptional(candidate.approvalId, 200);
+    const question = boundedOptional(candidate.question, 1_000);
+    const expiresAt = typeof candidate.expiresAt === "string"
+      ? new Date(candidate.expiresAt)
+      : null;
+    const actionDigest = boundedOptional(candidate.actionDigest, 256);
+    if (!approvalId || !question || !expiresAt || !Number.isFinite(expiresAt.getTime()))
+      throw new RemoteMissionPolicyError("invalid_request");
+    approval = {
+      approvalId,
+      question,
+      expiresAt: expiresAt.toISOString(),
+      ...(actionDigest ? { actionDigest } : {}),
+    };
+  }
+  if ((input.outcome === "approval_required") !== Boolean(approval))
+    throw new RemoteMissionPolicyError("invalid_request");
+  return {
+    schemaVersion: 1,
+    missionId,
+    stepId,
+    attemptId,
+    planRevision: Number(input.planRevision),
+    outcome: input.outcome as MissionEvidenceV1["outcome"],
+    ...(page ? { page } : {}),
+    claims,
+    effects,
+    uncertainties: boundedStringList(input.uncertainties, 20, 1_000),
+    ...(approval ? { approval } : {}),
+  };
+}
+
+const parseReplacementSteps = (value: unknown, missionId: string): MissionStepV1[] => {
+  if (!Array.isArray(value) || value.length < 1 || value.length > 20)
+    throw new RemoteMissionPolicyError("invalid_request");
+  return value.map((item) => {
+    if (!item || typeof item !== "object" || Array.isArray(item))
+      throw new RemoteMissionPolicyError("invalid_request");
+    const step = item as Record<string, unknown>;
+    const stepId = boundedOptional(step.stepId, 200);
+    const objective = boundedOptional(step.objective, 4_000);
+    if (
+      step.schemaVersion !== 1 || step.missionId !== missionId || !stepId || !objective ||
+      !Number.isSafeInteger(step.planRevision) || Number(step.planRevision) < 1 ||
+      !["read_only", "reversible", "consequential"].includes(String(step.risk))
+    ) throw new RemoteMissionPolicyError("invalid_request");
+    return {
+      schemaVersion: 1,
+      missionId,
+      stepId,
+      planRevision: Number(step.planRevision),
+      risk: step.risk as MissionStepV1["risk"],
+      objective,
+      successCriteria: boundedStringList(step.successCriteria, 20, 500),
+      ...(step.constraints ? { constraints: boundedStringList(step.constraints, 20, 500) } : {}),
+      ...(step.prohibitedEffects ? { prohibitedEffects: boundedStringList(step.prohibitedEffects, 20, 500) } : {}),
+    };
+  });
+};
+
+export function parseRemoteMissionSupervisorDecision(
+  value: unknown,
+  missionId: string,
+): RemoteMissionSupervisorDecisionV1 {
+  if (!value || typeof value !== "object" || Array.isArray(value))
+    throw new RemoteMissionPolicyError("invalid_request");
+  const input = value as Record<string, unknown>;
+  const decisionId = boundedOptional(input.decisionId, 200);
+  const stepId = boundedOptional(input.stepId, 200);
+  const kinds = new Set(["continue", "retry", "replace_remaining_plan", "request_evidence", "request_user_input", "request_approval", "complete", "stop"]);
+  const decidedAt = typeof input.decidedAt === "string" ? new Date(input.decidedAt) : null;
+  if (
+    input.schemaVersion !== 1 || input.missionId !== missionId || !decisionId || !stepId ||
+    !Number.isSafeInteger(input.expectedPlanRevision) || Number(input.expectedPlanRevision) < 1 ||
+    !kinds.has(input.kind as string) || !decidedAt || !Number.isFinite(decidedAt.getTime())
+  ) throw new RemoteMissionPolicyError("invalid_request");
+  const guidance = boundedOptional(input.guidance, 4_000);
+  const outcome = input.outcome;
+  if (outcome !== undefined && !["completed", "not_achieved", "cancelled", "unknown"].includes(String(outcome)))
+    throw new RemoteMissionPolicyError("invalid_request");
+  if (
+    (input.kind === "complete" && outcome !== "completed") ||
+    (input.kind === "stop" && !["not_achieved", "cancelled", "unknown"].includes(String(outcome))) ||
+    (!["complete", "stop"].includes(String(input.kind)) && outcome !== undefined) ||
+    (input.kind !== "replace_remaining_plan" && input.replacementSteps !== undefined)
+  ) throw new RemoteMissionPolicyError("invalid_request");
+  const replacementSteps = input.kind === "replace_remaining_plan"
+    ? parseReplacementSteps(input.replacementSteps, missionId)
+    : undefined;
+  if (
+    replacementSteps &&
+    new Set(replacementSteps.map((step) => step.stepId)).size !== replacementSteps.length
+  ) throw new RemoteMissionPolicyError("invalid_request");
+  return {
+    schemaVersion: 1,
+    decisionId,
+    missionId,
+    stepId,
+    expectedPlanRevision: Number(input.expectedPlanRevision),
+    kind: input.kind as RemoteMissionSupervisorDecisionV1["kind"],
+    decidedAt: decidedAt.toISOString(),
+    ...(guidance ? { guidance } : {}),
+    ...(outcome ? { outcome: outcome as RemoteMissionSupervisorDecisionV1["outcome"] } : {}),
+    ...(replacementSteps ? { replacementSteps } : {}),
   };
 }
 
@@ -240,7 +441,8 @@ export function parseRemoteMissionApprovalDecision(
 const transitions: Readonly<Record<RemoteMissionState, readonly RemoteMissionState[]>> = {
   queued: ["accepted", "cancelled"],
   accepted: ["running", "cancelled"],
-  running: ["target_selection_required", "approval_required", "succeeded", "failed", "cancelled", "outcome_unknown"],
+  running: ["target_selection_required", "supervision_required", "approval_required", "succeeded", "failed", "cancelled", "outcome_unknown"],
+  supervision_required: ["running", "failed", "cancelled"],
   target_selection_required: ["running", "failed", "cancelled"],
   approval_required: ["running", "failed", "cancelled"],
   succeeded: [],

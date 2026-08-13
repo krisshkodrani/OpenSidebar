@@ -34,6 +34,20 @@ export class EvidenceOutcomeSupervisor implements MissionSupervisorPort {
   }
 }
 
+export class CodexHandoffSupervisor implements MissionSupervisorPort {
+  async decide(mission: MissionSpecV1, evidence: Parameters<MissionSupervisorPort["decide"]>[1]) {
+    return {
+      schemaVersion: 1 as const,
+      decisionId: crypto.randomUUID(),
+      missionId: mission.missionId,
+      stepId: evidence.stepId,
+      expectedPlanRevision: evidence.planRevision,
+      kind: "request_user_input" as const,
+      guidance: "Codex must judge this browser evidence.",
+    };
+  }
+}
+
 const specFor = (delivery: DeliveredRemoteMissionV1): MissionSpecV1 => ({
   schemaVersion: 1,
   missionId: delivery.mission.missionId,
@@ -114,7 +128,7 @@ export class RemoteMissionDeliveryController {
   private progress(
     missionId: string,
     state: RemoteMissionProgressV1["state"],
-    values: Pick<RemoteMissionProgressV1, "summary" | "approval" | "targetSelection"> = {},
+    values: Pick<RemoteMissionProgressV1, "summary" | "approval" | "targetSelection" | "evidence" | "pendingStep" | "remainingSteps"> = {},
   ): RemoteMissionProgressV1 {
     return {
       schemaVersion: 1,
@@ -124,6 +138,9 @@ export class RemoteMissionDeliveryController {
       ...(values.summary ? { summary: values.summary.slice(0, 1_000) } : {}),
       ...(values.approval ? { approval: values.approval } : {}),
       ...(values.targetSelection ? { targetSelection: values.targetSelection } : {}),
+      ...(values.evidence ? { evidence: values.evidence } : {}),
+      ...(values.pendingStep ? { pendingStep: values.pendingStep } : {}),
+      ...(values.remainingSteps?.length ? { remainingSteps: values.remainingSteps } : {}),
     };
   }
 
@@ -211,6 +228,7 @@ export class RemoteMissionDeliveryController {
         mission.state === "accepted" ||
         mission.state === "running" ||
         mission.state === "target_selection_required" ||
+        mission.state === "supervision_required" ||
         mission.state === "approval_required"
       ) {
         await this.transport.putResult(
@@ -227,6 +245,42 @@ export class RemoteMissionDeliveryController {
 
     let current = mission;
     let outcome: MissionWorkerOutcome | undefined;
+    if (current.state === "supervision_required") {
+      const status = await this.transport.get(mission.missionId);
+      const evidence = status?.progress?.evidence;
+      const pendingStep = status?.progress?.pendingStep;
+      const remainingSteps = status?.progress?.remainingSteps;
+      await this.report(delivery, "supervision_required");
+      if (!evidence || !pendingStep) return journal;
+      const decision = await this.transport.getSupervisorDecision(mission.missionId);
+      if (!decision) return journal;
+      if (
+        decision.stepId !== evidence.stepId ||
+        decision.expectedPlanRevision !== evidence.planRevision ||
+        new Date(decision.decidedAt).getTime() < new Date(status!.progress!.updatedAt).getTime()
+      ) throw new Error("remote_mission_supervisor_decision_mismatch");
+      current = await this.transport.transition(current, "running");
+      const cancellation = this.cancellationSignal(mission.missionId, signal);
+      try {
+        outcome = await this.worker.resumeSupervision(
+          { ...specFor(delivery), planRevision: pendingStep.planRevision, steps: [pendingStep] },
+          evidence,
+          decision,
+          {
+            signal: cancellation.signal,
+            initialUrl: payload.initialUrl,
+            ...(remainingSteps?.length ? { remainingSteps } : {}),
+          },
+        );
+      } catch (error) {
+        outcome = {
+          state: "failed",
+          reason: error instanceof Error ? error.message : "Supervised continuation failed.",
+        };
+      } finally {
+        cancellation.stop();
+      }
+    }
     if (current.state === "target_selection_required") {
       const status = await this.transport.get(mission.missionId);
       const targetSelection = status?.progress?.targetSelection;
@@ -373,6 +427,19 @@ export class RemoteMissionDeliveryController {
       await this.report(delivery, waiting.state, {
         targetSelection: outcome.targetSelection,
       });
+      return journal;
+    }
+    if (outcome.state === "supervision_required") {
+      await this.transport.putProgress(
+        current,
+        this.progress(mission.missionId, "supervision_required", {
+          evidence: outcome.evidence,
+          pendingStep: outcome.pendingStep,
+          ...(outcome.remainingSteps?.length ? { remainingSteps: outcome.remainingSteps } : {}),
+        }),
+      );
+      const waiting = await this.transport.transition(current, "supervision_required");
+      await this.report(delivery, waiting.state);
       return journal;
     }
     const result = terminal(outcome, signal?.aborted === true);

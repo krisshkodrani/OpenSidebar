@@ -24,6 +24,7 @@ function world(options: {
   const progress = new Map<string, unknown>();
   const decisions = new Map<string, unknown>();
   const targetDecisions = new Map<string, unknown>();
+  const supervisorDecisions = new Map<string, unknown>();
   const principal = {
     accountId: "account-1",
     email: "owner@example.test",
@@ -59,7 +60,7 @@ function world(options: {
   const missions = {
     async activeMissions() {
       return [...records.values()].filter((mission) =>
-        ["queued", "accepted", "running", "target_selection_required", "approval_required"].includes(mission.state),
+        ["queued", "accepted", "running", "target_selection_required", "supervision_required", "approval_required"].includes(mission.state),
       );
     },
     async missionByIdempotency() {
@@ -146,6 +147,11 @@ function world(options: {
       progress.set(identity.missionId, value);
       return { ciphertextSizeBytes: 100, ciphertextSha256: "c".repeat(64) };
     },
+    async replaceSupervisionProgressAndPut(identity: { missionId: string }, value: unknown) {
+      progress.set(identity.missionId, value);
+      supervisorDecisions.delete(identity.missionId);
+      return { ciphertextSizeBytes: 100, ciphertextSha256: "f".repeat(64) };
+    },
     async getProgressAndDecrypt(identity: { missionId: string }) {
       const value = progress.get(identity.missionId);
       if (!value) throw new Error("missing");
@@ -172,12 +178,22 @@ function world(options: {
       if (!value) throw new Error("missing");
       return value;
     },
+    async encryptSupervisorDecisionAndPut(identity: { missionId: string }, value: unknown) {
+      supervisorDecisions.set(identity.missionId, value);
+      return { ciphertextSizeBytes: 100, ciphertextSha256: "f".repeat(64) };
+    },
+    async getSupervisorDecisionAndDecrypt(identity: { missionId: string }) {
+      const value = supervisorDecisions.get(identity.missionId);
+      if (!value) throw new Error("missing");
+      return value;
+    },
     async delete(identity: { missionId: string }) {
       payloads.delete(identity.missionId);
       results.delete(identity.missionId);
       progress.delete(identity.missionId);
       decisions.delete(identity.missionId);
       targetDecisions.delete(identity.missionId);
+      supervisorDecisions.delete(identity.missionId);
     },
   };
   const app = new Hono();
@@ -193,7 +209,7 @@ function world(options: {
       vault: vault as never,
     }),
   );
-  return { app, records, payloads, results, progress, targetDecisions, principal };
+  return { app, records, payloads, results, progress, targetDecisions, supervisorDecisions, principal };
 }
 
 const auth = { authorization: "Bearer token" };
@@ -625,6 +641,85 @@ test("binds target selection to a pending opaque candidate", async () => {
     `/api/v1/remote-missions/${mission.missionId}/target-decision`,
     { headers: auth },
   )).status, 403);
+});
+
+test("binds an encrypted Codex decision to the current browser evidence revision", async () => {
+  const state = world();
+  const created = await state.app.request("/api/v1/remote-missions", {
+    method: "POST",
+    headers: { ...auth, "content-type": "application/json", "idempotency-key": "supervisor-1" },
+    body: JSON.stringify({ schemaVersion: 1, deviceId, instruction: "Read" }),
+  });
+  const mission = (await created.json()) as RemoteMissionV1;
+  state.records.set(mission.missionId, { ...mission, state: "running" });
+  const updatedAt = new Date(Date.now() - 1_000).toISOString();
+  const evidence = {
+    schemaVersion: 1,
+    missionId: mission.missionId,
+    stepId: `${mission.missionId}:read`,
+    attemptId: "attempt-1",
+    planRevision: 1,
+    outcome: "achieved",
+    claims: [{ claim: "Example Domain", source: "agent_summary" }],
+    effects: [],
+    uncertainties: [],
+  };
+  const pendingStep = {
+    schemaVersion: 1,
+    missionId: mission.missionId,
+    stepId: evidence.stepId,
+    planRevision: 1,
+    risk: "read_only",
+    objective: "Read the visible heading",
+    successCriteria: ["Return the exact heading"],
+  };
+  assert.equal((await state.app.request(`/api/v1/remote-missions/${mission.missionId}/progress`, {
+    method: "PUT",
+    headers: { ...auth, "content-type": "application/json" },
+    body: JSON.stringify({
+      schemaVersion: 1,
+      missionId: mission.missionId,
+      state: "supervision_required",
+      updatedAt,
+      evidence,
+      pendingStep,
+    }),
+  })).status, 201);
+  assert.equal((await state.app.request(`/api/v1/remote-missions/${mission.missionId}/transition`, {
+    method: "POST",
+    headers: { ...auth, "content-type": "application/json" },
+    body: JSON.stringify({ schemaVersion: 1, to: "supervision_required" }),
+  })).status, 200);
+  const stale = await state.app.request(`/api/v1/remote-missions/${mission.missionId}/supervisor-decision`, {
+    method: "PUT",
+    headers: { ...auth, "content-type": "application/json", "idempotency-key": "supervisor-stale" },
+    body: JSON.stringify({
+      schemaVersion: 1,
+      decisionId: "decision-stale",
+      missionId: mission.missionId,
+      stepId: evidence.stepId,
+      expectedPlanRevision: 2,
+      kind: "complete",
+      outcome: "completed",
+      decidedAt: new Date().toISOString(),
+    }),
+  });
+  assert.equal(stale.status, 409);
+  const accepted = await state.app.request(`/api/v1/remote-missions/${mission.missionId}/supervisor-decision`, {
+    method: "PUT",
+    headers: { ...auth, "content-type": "application/json", "idempotency-key": "supervisor-current" },
+    body: JSON.stringify({
+      schemaVersion: 1,
+      decisionId: "decision-current",
+      missionId: mission.missionId,
+      stepId: evidence.stepId,
+      expectedPlanRevision: 1,
+      kind: "complete",
+      outcome: "completed",
+      decidedAt: new Date().toISOString(),
+    }),
+  });
+  assert.equal(accepted.status, 201);
 });
 
 test("account deletion removes mission metadata and encrypted payload", async () => {

@@ -17,8 +17,10 @@ const transport = () => ({
   get: vi.fn(),
   getApprovalDecision: vi.fn(),
   getTargetDecision: vi.fn(),
+  getSupervisorDecision: vi.fn(),
   putApprovalDecision: vi.fn(),
   putTargetDecision: vi.fn(),
+  putSupervisorDecision: vi.fn(),
   cancel: vi.fn().mockResolvedValue({
     schemaVersion: 1,
     missionId,

@@ -22,6 +22,31 @@ test("all session and orchestration capabilities default disabled", () => {
   assert.equal(config.traceSyncEnabled, false);
   assert.equal(config.traceUploadsEnabled, false);
   assert.equal(config.traceDownloadsEnabled, false);
+  assert.equal(config.hostedMcpEnabled, false);
+});
+
+test("hosted MCP requires a separate Cognito client and stays subordinate", () => {
+  const subordinate = loadConfig({ ...baseEnv(), HOSTED_MCP_ENABLED: "true" });
+  assert.equal(subordinate.hostedMcpEnabled, false);
+  const enabled = {
+    ...baseEnv(),
+    COGNITO_DOMAIN: "https://auth.example.test",
+    COGNITO_ISSUER: "https://cognito-idp.eu-central-1.amazonaws.com/eu-central-1_TEST",
+    CLOUD_CONTROL_ENABLED: "true",
+    CLOUD_SESSIONS_ENABLED: "true",
+    REMOTE_MISSIONS_ENABLED: "true",
+    HOSTED_MCP_ENABLED: "true",
+    CLOUD_TESTER_SUBJECTS: "account-1",
+    CLOUD_SESSION_TESTER_SUBJECTS: "account-1",
+    SESSION_KMS_KEY_ID: "session-key",
+    SESSION_BUCKET_NAME: "session-bucket",
+  };
+  assert.throws(() => loadConfig(enabled), /COGNITO_MCP_CLIENT_ID/);
+  assert.throws(
+    () => loadConfig({ ...enabled, COGNITO_MCP_CLIENT_ID: "extension-client" }),
+    /must be separate/,
+  );
+  assert.equal(loadConfig({ ...enabled, COGNITO_MCP_CLIENT_ID: "mcp-client" }).hostedMcpEnabled, true);
 });
 
 test("extension test origins accept only explicit Chrome extension ids", () => {

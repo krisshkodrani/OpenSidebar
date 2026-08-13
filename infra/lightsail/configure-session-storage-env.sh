@@ -24,6 +24,7 @@ updates = {
     "SESSION_BUCKET_NAME": sys.argv[3],
     "CLOUD_SESSIONS_ENABLED": "false",
     "REMOTE_MISSIONS_ENABLED": "false",
+    "HOSTED_MCP_ENABLED": "false",
     "CHECKPOINT_WRITES_ENABLED": "false",
     "CHECKPOINT_RESTORE_ENABLED": "false",
     "SESSION_EXPORTS_ENABLED": "false",

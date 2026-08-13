@@ -11,6 +11,7 @@ const labels: Record<RemoteMissionLocalStatus["state"], string> = {
   accepted: "Accepted on this browser",
   running: "Running on this browser",
   target_selection_required: "Choose a browser target in Codex",
+  supervision_required: "Waiting for Codex to review evidence",
   approval_required: "Waiting for your approval",
   succeeded: "Completed",
   failed: "Not completed",
@@ -65,6 +66,7 @@ export function RemoteMissionStatusBanner() {
     status.state === "accepted" ||
     status.state === "running" ||
     status.state === "target_selection_required" ||
+    status.state === "supervision_required" ||
     status.state === "approval_required";
   const control = async (kind: "cancel" | "deny") => {
     setPending(kind);
