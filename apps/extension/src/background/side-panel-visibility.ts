@@ -38,8 +38,18 @@ export function hidePanelForNewUngroupedTab(
 export function installUngroupedTabPanelGuards(
   sidePanel: SidePanelOptionsPort,
   tabs: Pick<typeof chrome.tabs, "onCreated" | "onUpdated">,
-  onError: (event: "created" | "ungrouped", tabId: number | undefined, error: unknown) => void,
+  onError: (
+    event: "default" | "created" | "ungrouped",
+    tabId: number | undefined,
+    error: unknown,
+  ) => void,
 ): void {
+  // The manifest must declare a default_path, but OpenSidebar is not a global
+  // panel. Disable that inherited default once per service-worker lifecycle;
+  // workspace tabs are enabled explicitly by setWorkspacePanelVisibility.
+  void sidePanel
+    .setOptions({ enabled: false })
+    .catch((error) => onError("default", undefined, error));
   tabs.onCreated.addListener((tab) => {
     void hidePanelForNewUngroupedTab(sidePanel, tab)?.catch((error) =>
       onError("created", tab.id, error),
