@@ -16,6 +16,7 @@ function world(options: {
   enabled?: boolean;
   principalDeviceId?: string;
   connectionKind?: "browser_extension" | "test_client";
+  remoteMissionCapable?: boolean;
   remoteWorkEnabled?: boolean;
 } = {}) {
   const records = new Map<string, RemoteMissionV1>();
@@ -50,11 +51,22 @@ function world(options: {
           displayNameRevision: 1,
           extensionVersion: "0.7.3",
           connectionKind: options.connectionKind ?? "browser_extension",
+          capabilities:
+            options.remoteMissionCapable === false
+              ? []
+              : ["remote_browser_tasks_v1" as const],
           availability: "online" as const,
           createdAt: new Date().toISOString(),
           lastSeenAt: new Date().toISOString(),
         },
       ];
+    },
+    async markRemoteMissionReady(accountId: string, candidateDeviceId: string) {
+      return (
+        accountId === principal.accountId &&
+        candidateDeviceId === principal.deviceId &&
+        (options.connectionKind ?? "browser_extension") === "browser_extension"
+      );
     },
   };
   const missions = {
@@ -268,7 +280,22 @@ test("test clients are never selectable as browser mission executors", async () 
     },
     body: JSON.stringify({ schemaVersion: 1, deviceId, instruction: "Read" }),
   });
-  assert.equal(response.status, 404);
+  assert.equal(response.status, 409);
+});
+
+test("online devices without a recent remote poll cannot receive missions", async () => {
+  const { app } = world({ remoteMissionCapable: false });
+  const response = await app.request("/api/v1/remote-missions", {
+    method: "POST",
+    headers: {
+      ...auth,
+      "content-type": "application/json",
+      "idempotency-key": "reject-incapable-device",
+    },
+    body: JSON.stringify({ schemaVersion: 1, deviceId, instruction: "Read" }),
+  });
+  assert.equal(response.status, 409);
+  assert.equal((await response.json()).error.code, "device_remote_work_unavailable");
 });
 
 test("disabled remote work blocks creation and browser delivery", async () => {

@@ -2,9 +2,9 @@
 
 Date: 2026-08-12
 
-Status: LP-35 approved; Phase 5 contract, target-selection loop, scoped resource
-server, mission adapter, Cognito boundary, and exact-host production routing are
-deployed for the named tester. Real Codex OAuth and mission acceptance remain.
+Status: LP-35 approved; Phase 5 contracts, target selection, scoped OAuth,
+hosted MCP, and named-tester delivery are accepted. A capability-gated `0.7.4`
+production candidate is in final verification before production-parity tests.
 
 ## Outcome
 
@@ -26,11 +26,12 @@ browser safety authority.
 
 ## Release boundary
 
-Hosted MCP is post-`0.7.3` work. The prepared `0.7.3` candidate contains the
-disabled LP-35 foundation commits through `3c76d0c1`, but exposes no operable
-hosted-browser path. Hosted supervision targets a default-off `0.7.4` or later
-named-tester build and ships only after the complete path and LP-35 evidence
-gates pass.
+Hosted MCP is post-`0.7.3` work. The published `0.7.3` build does not advertise
+remote-task capability. The `0.7.4` candidate includes the worker in the normal
+production bundle, while account, named-tester, server, and local-policy gates
+continue to control use. The backend requires a recent successful mission poll
+before it advertises a device as ready, so an online older build cannot receive
+a permanently queued task.
 
 ## Current capability
 
@@ -55,7 +56,7 @@ gates pass.
 | Hosted MCP OAuth resource boundary | Named-tester OAuth and discovery accepted | RFC 9728 metadata advertises the Cognito issuer at the exact `opensidebar.com` host; AWS has a separate public PKCE client, server-bound loopback callback, email-OTP managed login, MCP resource, and six scopes; `/mcp` rejects unauthenticated requests with the resource-metadata challenge; Codex completed PKCE login and discovered all six tools; resource-bound tokens require the exact audience; website cookies and extension-client tokens fail; local integration revocation wins |
 | Hosted MCP operations adapter | Complete locally, disabled | Device listing/selection, creation, status, target selection, revision-bound evidence supervision, approval response, and cancellation are implemented |
 | MCP transport sessions and quotas | Complete locally, disabled | Account/client-bound Streamable HTTP sessions expire after 30 idle minutes; creation, polling, and mutation use separate hashed per-account quotas |
-| Production E2E and cutover | Not started | Blocks localhost deletion |
+| Production E2E and cutover | In progress | `0.7.4` automated verification, deployment, and real-browser parity remain before localhost deletion |
 
 ## Phase 1 — Local supervisor and harness vertical slice
 
@@ -181,8 +182,12 @@ confirmed that the remote-task card appeared with account/device/task context
 and the local Cancel control. A third mission
 `5dd54e73-4eb8-480a-b1ac-1e84664157bb` also completed before a cancellation
 could be committed. Therefore visual visibility is accepted, while the local
-button's real cancellation evidence remains open; the already-passing unit and
-cloud/runtime cancellation evidence is not misreported as that UI evidence.
+  button's real cancellation evidence remains open; the already-passing unit and
+  cloud/runtime cancellation evidence is not misreported as that UI evidence.
+- The panel remains available when the active tab is outside the attached
+  workspace so a remote run and its cancel control cannot disappear during tab
+  switching. Detached mode disables local composition and never silently
+  retargets the unrelated tab.
 
 ## Phase 5 — Hosted MCP and scoped authorization
 
@@ -338,15 +343,18 @@ evidence; it is not implied by completing implementation.
 
 ## Immediate next work
 
-1. Reconnect the accepted `Chrome` 0.7.3 named-tester device, then run one
-   unique-tab read-only mission and one duplicate-tab/group selection mission.
-   OAuth login and six-tool discovery passed; token refresh and revocation remain
-   in the resilience gate.
-2. Add a safe synthetic approval fixture that can exercise account decision,
-   denial, expiry, and same-session continuation without a real website effect.
-3. Run exact-host Codex OAuth, unique-tab, duplicate-tab/group selection,
-   cancellation, token refresh/revocation, backend restart, and extension
-   restart acceptance before enabling any additional tester.
+1. Deploy the capability-aware backend without widening the existing named
+   tester or remote-work flags. Confirm an online `0.7.3` device is reported as
+   `remoteWork: unsupported` rather than accepting a mission.
+2. Install the normal `0.7.4` production candidate. After its first successful
+   poll, confirm the same stable device becomes `remoteWork: ready` without a
+   relink and completes one exact-existing-tab read-only mission.
+3. Run duplicate-tab/group selection, detached-panel cancellation, token
+   refresh/revocation, backend restart, and extension restart acceptance. Keep
+   consequential work read-only until the synthetic approval gate is complete.
+4. Publish `0.7.4` only after the production artifact, hash, automated checks,
+   and real-browser evidence are recorded. Do not widen the tester allowlist as
+   part of the release.
 
 The Phase 2 named-tester read-only acceptance gate passed on 2026-08-13. The
 ignored report records mission `45a55bbd-8e40-4e31-98f1-177c401634e8` as

@@ -66,6 +66,10 @@ export interface ControlRepository {
     connectionKind: CloudDeviceV1["connectionKind"],
     revive?: boolean,
   ): Promise<CloudDeviceV1>;
+  markRemoteMissionReady(
+    accountId: string,
+    deviceId: string,
+  ): Promise<boolean>;
   createDeviceSession(session: DeviceSessionWrite): Promise<void>;
   accessPrincipal(accessHash: string): Promise<ControlPrincipal | null>;
   refreshPrincipal(refreshHash: string): Promise<RefreshPrincipal | null>;

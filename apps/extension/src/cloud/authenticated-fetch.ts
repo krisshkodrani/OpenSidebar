@@ -40,8 +40,17 @@ export class CloudAuthenticatedFetch {
       },
     );
     if (!response.ok) {
-      await this.storage.remove(CLOUD_EXTENSION_SESSION_KEY);
-      throw new Error("cloud_session_expired");
+      const sessionRejected =
+        response.status === 400 ||
+        response.status === 401 ||
+        response.status === 403;
+      if (sessionRejected)
+        await this.storage.remove(CLOUD_EXTENSION_SESSION_KEY);
+      throw new Error(
+        sessionRejected
+          ? "cloud_session_expired"
+          : "cloud_temporarily_unavailable",
+      );
     }
     const value = (await response.json()) as ExtensionSessionV1;
     const stored: StoredSession = {

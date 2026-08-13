@@ -60,7 +60,7 @@ testers and honest recoverability, not high availability.
 | 4     | [LP-30 — Portable checkpoint and restore](rfcs/lp-0030-portable-checkpoint-restore.md)        | Environment-neutral checkpoint schema, atomic commit, compatibility, re-grounding and approvals                           | Approved; end-to-end restore implemented and verified behind disabled flags                                                                                            |
 | 5     | [LP-31 — Device reconnect and browser commands](rfcs/lp-0031-device-command-protocol.md)      | Device registration, transport, leases, duplicate suppression, cancellation and takeover                                  | Approved with edits; reconnect/takeover, bounded read/text, and locally approved postcondition-verified clicks pass behind disabled flags; activation remains deferred |
 | 6     | [LP-32/33 — parked Temporal research](rfcs/lp-0033-isolated-temporal-evaluation.md)           | Preserve the evaluated workflow option without adding an active service or production dependency                          | Parked after shared and isolated resource/latency failures; $7 host deleted                                                                                            |
-| 7     | [LP-35 — Hosted browser MCP and supervised remote missions](rfcs/lp-0035-hosted-browser-mcp.md) | Codex supervises semantic plans and evidence while the extension remains browser executor and safety authority | Approved; named-tester read-only delivery/cancellation passed, encrypted progress/result/approval transport and local continuation are implemented, synthetic approval acceptance and hosted MCP remain |
+| 7     | [LP-35 — Hosted browser MCP and supervised remote missions](rfcs/lp-0035-hosted-browser-mcp.md) | Codex supervises semantic plans and evidence while the extension remains browser executor and safety authority | Approved; named-tester read-only delivery, cancellation, hosted MCP/OAuth, and target continuation passed; capability-gated `0.7.4` production parity remains |
 | 8     | [LP-37 — Optional E2EE personal-data sync](rfcs/lp-0037-personal-data-sync.md) | Unified Sync UX, ciphertext-only saved prompt/website-skill portability, and staged Profile sync | Approved; default-off foundation and named-tester acceptance required before activation |
 
 Temporal is no longer an active roadmap phase. Its RFCs, implementation spike,
@@ -72,9 +72,11 @@ PostgreSQL/S3 foundation, 30-day retention, 500 MB quota, and extension opt-in
 remain named-tester-only with all trace capability flags disabled until the
 recovery, deletion, restart, and two-browser acceptance suite passes.
 
-LP-35 hosted activation is sequenced after the `0.7.3` release. The prepared
-`0.7.3` source contains disabled foundation code but no operable Codex control
-path. The feature-specific
+LP-35 hosted activation is sequenced after the `0.7.3` release. Published
+`0.7.3` does not advertise remote-task capability. The normal `0.7.4`
+production candidate includes remote delivery, but the backend accepts work
+only from a recently polling capable build and all account, tester, and local
+safety gates remain authoritative. The feature-specific
 [hosted browser MCP roadmap](hosted-browser-mcp-roadmap.md) controls extension
 delivery, hosted MCP/OAuth, parity, localhost deletion, and named-tester rollout.
 

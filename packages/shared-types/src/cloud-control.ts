@@ -108,6 +108,8 @@ export interface CloudAccountV1 {
   sessionEpoch: number;
 }
 
+export type CloudDeviceCapability = "remote_browser_tasks_v1";
+
 export interface CloudDeviceV1 {
   schemaVersion: typeof CLOUD_CONTROL_SCHEMA_VERSION;
   id: string;
@@ -116,6 +118,7 @@ export interface CloudDeviceV1 {
   displayNameRevision: number;
   extensionVersion: string;
   connectionKind: "browser_extension" | "codex_integration" | "test_client";
+  capabilities: CloudDeviceCapability[];
   availability: "online" | "offline" | "revoked";
   createdAt: string;
   lastSeenAt: string;
