@@ -74,18 +74,22 @@ const driver = await loadDriver(driverPath);
 const buildRevision = execFileSync("git", ["rev-parse", "HEAD"], {
   encoding: "utf8",
 }).trim();
-await runModelBenchSuite({
-  definitions,
-  configurations: matrix.configurations,
-  driver,
-  buildRevision,
-  repeat: positiveInteger(option("--repeat"), 1),
-  onAttempt(attempt) {
-    attempts.push(attempt);
-    writeFileSync(outputPath, `${JSON.stringify({ attempts }, null, 2)}\n`);
-    console.log(
-      `[modelbench:run] ${attempt.caseId}: ${attempt.classification} (${attempt.durationMs} ms)`,
-    );
-  },
-});
+try {
+  await runModelBenchSuite({
+    definitions,
+    configurations: matrix.configurations,
+    driver,
+    buildRevision,
+    repeat: positiveInteger(option("--repeat"), 1),
+    onAttempt(attempt) {
+      attempts.push(attempt);
+      writeFileSync(outputPath, `${JSON.stringify({ attempts }, null, 2)}\n`);
+      console.log(
+        `[modelbench:run] ${attempt.caseId}: ${attempt.classification} (${attempt.durationMs} ms)`,
+      );
+    },
+  });
+} finally {
+  await driver.close?.();
+}
 console.log(`[modelbench:run] Wrote ${attempts.length} attempt record(s) to ${outputPath}`);

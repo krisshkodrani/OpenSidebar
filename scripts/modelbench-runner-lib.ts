@@ -44,6 +44,7 @@ export interface ModelBenchDriverResult {
 
 export interface ModelBenchDriver {
   execute(input: ModelBenchDriverInput): Promise<ModelBenchDriverResult>;
+  close?(): Promise<void>;
 }
 
 export interface RunCaseOptions {
@@ -92,9 +93,9 @@ function classificationFor(
   validationPassed: boolean | null,
   modelMismatch: boolean,
 ): AttemptClassification {
-  if (modelMismatch) return "indeterminate";
   if (result.failure?.kind === "provider") return "provider_failure";
   if (result.failure?.kind === "harness") return "harness_failure";
+  if (modelMismatch) return "indeterminate";
   if (result.failure) return "indeterminate";
   return validationPassed ? "valid_pass" : "valid_model_failure";
 }
