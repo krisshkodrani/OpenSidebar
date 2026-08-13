@@ -227,12 +227,15 @@ importers:
       "@opensidebar/sandbox-contracts":
         specifier: workspace:*
         version: link:../../packages/sandbox-contracts
+      "@opensidebar/scenario-contracts":
+        specifier: workspace:*
+        version: link:../../packages/scenario-contracts
+      "@opensidebar/scenario-engine":
+        specifier: workspace:*
+        version: link:../../packages/scenario-engine
       "@opensidebar/shared-types":
         specifier: workspace:*
         version: link:../../packages/shared-types
-      "@opensidebar/trace-sync":
-        specifier: workspace:*
-        version: link:../../packages/trace-sync
       hono:
         specifier: ^4.12.31
         version: 4.12.31
@@ -285,9 +288,15 @@ importers:
       "@opensidebar/sandbox-contracts":
         specifier: workspace:*
         version: link:../../packages/sandbox-contracts
+      "@opensidebar/scenario-contracts":
+        specifier: workspace:*
+        version: link:../../packages/scenario-contracts
       "@opensidebar/shared-types":
         specifier: workspace:*
         version: link:../../packages/shared-types
+      "@opensidebar/trace-sync":
+        specifier: workspace:*
+        version: link:../../packages/trace-sync
       "@tanstack/react-query":
         specifier: ^5.90.20
         version: 5.101.4(react@18.3.1)
@@ -457,6 +466,14 @@ importers:
   packages/prompts: {}
 
   packages/sandbox-contracts: {}
+
+  packages/scenario-contracts: {}
+
+  packages/scenario-engine:
+    dependencies:
+      "@opensidebar/scenario-contracts":
+        specifier: workspace:*
+        version: link:../scenario-contracts
 
   packages/shared-types: {}
 
