@@ -23,6 +23,7 @@ import { RemoteMissionVault } from "./remote-mission-vault.js";
 import { createHostedBrowserMcpOperations } from "./hosted-browser-mcp-operations.js";
 import { PersonalDataRepository } from "./personal-data-repository.js";
 import { DisabledPersonalDataObjectStore, PersonalDataObjectStore } from "./personal-data-object-store.js";
+import { PostgresModelBenchRepository } from "./postgres-modelbench-repository.js";
 
 const config = loadConfig();
 const repository = new PostgresPlaygroundRepository(config.databaseUrl);
@@ -42,6 +43,11 @@ await controlRepository.cleanupExpired();
 const personalDataRepository = new PersonalDataRepository(controlRepository.pool);
 await personalDataRepository.migrate();
 await personalDataRepository.cleanupExpired();
+const modelBenchRepository = PostgresModelBenchRepository.fromConnectionString(
+  config.controlDatabaseUrl,
+);
+await modelBenchRepository.migrate();
+await modelBenchRepository.cleanupExpired(new Date().toISOString());
 const interruptedRelayCutoff = () => new Date(Date.now() - 16 * 60_000);
 const recoveredRelayRequests =
   await controlRepository.recoverInterruptedRelayRequests(
@@ -137,6 +143,7 @@ const control = {
   traceObjectStore,
   personalDataRepository,
   personalDataObjectStore,
+  modelBenchRepository,
   passwordlessAuth,
 };
 const server = serve(
@@ -167,6 +174,9 @@ const cleanupTimer = setInterval(
       .catch((error) => console.error("personal-data cleanup failed", error));
     void cleanupPersonalDataObjects()
       .catch((error) => console.error("personal-data object cleanup failed", error));
+    void modelBenchRepository
+      .cleanupExpired(new Date().toISOString())
+      .catch((error) => console.error("modelbench cleanup failed", error));
     void sessionRepository
       .cleanupExpired()
       .catch((error) => console.error("session-record cleanup failed", error));
@@ -217,6 +227,7 @@ const stop = async () => {
     controlRepository.close(),
     sessionRepository.close(),
     traceRepository.close(),
+    modelBenchRepository.pool.end(),
   ]);
 };
 process.on("SIGINT", stop);
