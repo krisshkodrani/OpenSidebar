@@ -7,6 +7,10 @@ import {
   runOracle,
 } from "@opensidebar/scenario-engine";
 import type { BenchmarkSuite } from "@opensidebar/scenario-contracts";
+import {
+  buildLegacyMigrationMatrix,
+  checkLegacyMigrationMatrix,
+} from "./modelbench-migration-matrix.js";
 
 const SUITES = new Set<BenchmarkSuite>([
   "smoke-10",
@@ -48,12 +52,14 @@ function list(): void {
 function check(): void {
   const errors = checkModelBenchCatalog(MODEL_BENCH_CASES);
   errors.push(...checkRoleProbes());
+  const migration = buildLegacyMigrationMatrix();
+  errors.push(...checkLegacyMigrationMatrix(migration));
   if (errors.length) {
     for (const error of errors) console.error(`[modelbench:check] ${error}`);
     process.exitCode = 1;
     return;
   }
-  console.log(`[modelbench:check] ${MODEL_BENCH_CASES.length} cases and 50 role probes satisfy catalog invariants.`);
+  console.log(`[modelbench:check] ${MODEL_BENCH_CASES.length} cases, 50 role probes, and ${migration.length} legacy migration entries satisfy benchmark invariants.`);
 }
 
 function oracle(): void {

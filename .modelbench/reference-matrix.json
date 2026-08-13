@@ -1,0 +1,26 @@
+{
+  "schemaVersion": 1,
+  "configurations": [
+    {
+      "label": "terra-luna-gptoss-reference",
+      "provider": "openrouter",
+      "perceptionMode": "structured",
+      "seats": {
+        "executor": {
+          "provider": "openrouter",
+          "providerPin": "openai",
+          "model": "openai/gpt-5.6-luna"
+        },
+        "planner": {
+          "provider": "openrouter",
+          "providerPin": "openai",
+          "model": "openai/gpt-5.6-terra"
+        },
+        "judge": {
+          "provider": "openrouter",
+          "model": "openai/gpt-oss-120b:nitro"
+        }
+      }
+    }
+  ]
+}
