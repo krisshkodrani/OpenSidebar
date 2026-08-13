@@ -9,7 +9,7 @@ import type {
   ValidationResultV1,
 } from "@opensidebar/scenario-contracts";
 
-export type AssertionSource = "state" | "answer" | "terminal" | "events";
+export type AssertionSource = "state" | "answer" | "terminal" | "events" | "driver";
 export type AssertionOperator =
   | "equals"
   | "includes"
@@ -37,6 +37,7 @@ export interface OracleOutcomeV1 {
   actions: readonly ScenarioActionV2[];
   finalAnswer?: string;
   terminalOutcome?: string;
+  driverEvidence?: JsonObject;
 }
 
 export interface NearMissV1 {
@@ -67,6 +68,7 @@ export interface ValidationInputV1 {
   finalState: ScenarioStateV2;
   finalAnswer?: string;
   terminalOutcome?: string;
+  driverEvidence?: JsonObject;
 }
 
 export interface ScenarioEngineV1 {

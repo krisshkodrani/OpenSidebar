@@ -27,6 +27,9 @@ function sourceValue(
 ): JsonValue | undefined {
   if (assertion.source === "answer") return input.finalAnswer;
   if (assertion.source === "terminal") return input.terminalOutcome;
+  if (assertion.source === "driver") {
+    return valueAt(input.driverEvidence, assertion.path);
+  }
   if (assertion.source === "events") {
     return valueAt(input.finalState.events as unknown as JsonValue, assertion.path);
   }
@@ -121,6 +124,7 @@ export function validateCase(input: ValidationInputV1): ValidationResultV1 {
     state: input.finalState as unknown as JsonValue,
     answer: input.finalAnswer ?? null,
     terminal: input.terminalOutcome ?? null,
+    ...(input.driverEvidence ? { driver: input.driverEvidence } : {}),
   };
   return {
     schemaVersion: 1,

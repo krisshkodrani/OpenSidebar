@@ -84,6 +84,7 @@
     "modelbench:oracle": "tsx scripts/modelbench.ts oracle",
     "modelbench:quality": "tsx scripts/modelbench-quality.ts",
     "modelbench:run": "tsx scripts/modelbench-run.ts",
+    "modelbench:101": "tsx scripts/modelbench-run.ts --case acceptance.mb-101-workspace-tab --driver scripts/modelbench-extension-driver.ts",
     "modelbench:report": "tsx scripts/modelbench-report.ts",
     "modelbench:target": "tsx scripts/modelbench-target-server.ts",
     "bench": "tsx scripts/run-bench.ts",
