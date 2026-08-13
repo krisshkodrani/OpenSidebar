@@ -106,6 +106,46 @@ test("one provider failure is preserved and retried once", async () => {
   assert.equal(attempts[1]?.retryOfAttemptId, attempts[0]?.attemptId);
 });
 
+test("provider failure retries even when no model could be resolved", async () => {
+  let calls = 0;
+  const attempts = await runModelBenchCase({
+    definition,
+    configuration,
+    driver: {
+      async execute() {
+        calls += 1;
+        return calls === 1
+          ? {
+              durationMs: 5,
+              resolvedSeats: {},
+              usageByRole: {},
+              artifactRefs: [],
+              failure: { kind: "provider", reason: "upstream unavailable" },
+            }
+          : {
+              durationMs: 5,
+              finalState: applyOutcome(
+                scenarioEngine.initialize(definition.contract.id),
+                definition.oracle,
+              ),
+              finalAnswer: definition.oracle.finalAnswer,
+              terminalOutcome: definition.oracle.terminalOutcome,
+              resolvedSeats: resolved,
+              usageByRole: {},
+              artifactRefs: [],
+            };
+      },
+    },
+    buildRevision: "test",
+    repetition: 1,
+    id: idFactory(),
+  });
+
+  assert.equal(attempts.length, 2);
+  assert.equal(attempts[0].classification, "provider_failure");
+  assert.equal(attempts[1].classification, "valid_pass");
+});
+
 test("resolved seat mismatch is ineligible and not retried", async () => {
   const driver: ModelBenchDriver = {
     async execute() {

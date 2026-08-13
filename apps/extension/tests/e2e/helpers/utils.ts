@@ -656,7 +656,7 @@ export async function getMemoryEvents(
  * APPROVAL_REQUEST, …) are still visible after a STREAM_CHUNK flood has
  * rolled them out of the main buffer.
  */
-async function getMonitoredEventsWithControlLane(
+export async function getMonitoredEventsWithControlLane(
   worker: WebWorker,
   last: number,
 ): Promise<any[]> {
