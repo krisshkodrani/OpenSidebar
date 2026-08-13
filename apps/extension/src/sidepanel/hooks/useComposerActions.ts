@@ -83,7 +83,6 @@ export function useComposerActions(options: { onSendStarted: () => void }): {
 
       addMessage(userEntry);
       onSendStarted();
-      setInputText("");
       setAgentRunning(true);
       updateStatus(AgentStatus.THINKING, "Sending request...");
 
@@ -109,9 +108,11 @@ export function useComposerActions(options: { onSendStarted: () => void }): {
             timestamp: userEntry.timestamp,
           },
         });
+        setInputText("");
       } catch (error) {
         logger.error("ui", "Failed to send message", { error });
         setError("Failed to communicate with the agent.");
+        setInputText(trimmedText);
         setAgentRunning(false);
         updateStatus(AgentStatus.ERROR, "Connection failed");
       }
@@ -169,9 +170,11 @@ export function useComposerActions(options: { onSendStarted: () => void }): {
             isFeedback: true,
           },
         });
+        setInputText("");
       } catch (error) {
         logger.error("ui", "Failed to send feedback", { error });
         setError("Failed to send feedback to agent.");
+        setInputText(trimmedText);
       }
     },
     [addMessage, setError, setInputText, startNewChat],

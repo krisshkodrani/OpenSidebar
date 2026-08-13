@@ -33,6 +33,9 @@ export interface UiRuntimeStorageArea {
   get(keys?: UiRuntimeStorageKeys): Promise<Record<string, unknown>>;
   set(items: Record<string, unknown>): Promise<void>;
   remove(keys: string | string[]): Promise<void>;
+  onChanged?(
+    listener: (changes: Record<string, { oldValue?: unknown; newValue?: unknown }>) => void,
+  ): () => void;
 }
 
 export interface UiRuntimeStorage {
@@ -154,6 +157,16 @@ function chromeStorageArea(
       if (typeof remove === "function") {
         await remove.call(area, keys);
       }
+    },
+    onChanged(listener) {
+      const chromeListener = (
+        changes: Record<string, chrome.storage.StorageChange>,
+        changedArea: string,
+      ) => {
+        if (changedArea === areaName) listener(changes);
+      };
+      chrome.storage.onChanged.addListener(chromeListener);
+      return () => chrome.storage.onChanged.removeListener(chromeListener);
     },
   };
 }

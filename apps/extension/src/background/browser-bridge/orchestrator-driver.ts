@@ -36,10 +36,14 @@
  */
 
 import type { BrowserToolRequest } from "@shared-types/browser-bridge";
+import type { RemoteMissionTargetSelectionV1 } from "@shared-types/remote-missions";
 
 import type { UserSettings } from "../../types";
 import { chromeRuntimeEnvironment } from "../environment/chrome";
 import { loadApiKey, loadSettings } from "../../utils/settings-storage";
+import { getProviderKeyStatus } from "../../utils/provider-keys";
+import { getBlockedRuleForUrl } from "../../utils/site-access";
+import { ensureContentScript } from "../infrastructure/tab-ready";
 import {
   createAgentRuntime,
   type TaskCompletionPayload,
@@ -69,18 +73,54 @@ const DEFAULT_RUN_TIMEOUT_MS = 600_000;
  */
 const CANCELED_REASON = "canceled by caller";
 
+class TargetSelectionRequiredError extends Error {
+  constructor(readonly selection: RemoteMissionTargetSelectionV1) {
+    super("target_selection_required");
+  }
+}
+
+export function resolveBrowserAgentCredential(
+  settings: UserSettings,
+  locallyLoadedKey: string,
+) {
+  const provider = getProviderKeyStatus(settings);
+  if (!provider.hasRequiredKeys || !provider.activeKey)
+    throw new Error(
+      `API key is missing for ${provider.mode}. Please configure it in settings.`,
+    );
+  return provider.activeKey || locallyLoadedKey || settings.openRouterApiKey || "";
+}
+
 /** A TASK_PAUSED payload (approval awaiting an answer) off the messaging port. */
 export type PausePayload = TaskPausedPayload;
 
 export interface BrowserTaskDeps {
   /** Open a background tab and return its id. */
   createTab(url: string): Promise<number>;
+  /** Return the active tab in the current window for explicitly visible runs. */
+  getActiveTab?(): Promise<number>;
+  /** Find already-open exact URL matches without exposing Chrome identifiers. */
+  findTabsByUrl?(url: string): Promise<Array<{
+    tabId: number;
+    pageTitle: string;
+    groupTitle?: string;
+    windowLabel?: string;
+  }>>;
   /** True if the tab is still open (the user can close session tabs anytime). */
   tabExists(tabId: number): Promise<boolean>;
+  /** Revalidate that an opaque choice still points at the expected exact URL. */
+  tabMatchesUrl?(tabId: number, expectedUrl: string): Promise<boolean>;
   /** Point an existing tab at a url. Does not await page load (nor does createTab). */
   navigateTab(tabId: number, url: string): Promise<void>;
+  /** Wait until the production content bridge can observe the selected tab. */
+  ensureTabReady?(tabId: number): Promise<void>;
   /** Start an orchestrator task in the given tab/workspace. */
-  startTask(input: { query: string; tabId: number; workspaceId: string }): Promise<void>;
+  startTask(input: {
+    query: string;
+    tabId: number;
+    workspaceId: string;
+    executionToolProfile?: AgentTask["executionToolProfile"];
+  }): Promise<void>;
   /** Ask the orchestrator to stop the workspace's running task. */
   stopTask(workspaceId: string): Promise<void>;
   /** Answer a forwarded approval; false if no matching pending approval exists. */
@@ -88,6 +128,8 @@ export interface BrowserTaskDeps {
     workspaceId: string,
     payload: { approvalId: string; approved: boolean },
   ): boolean;
+  /** Re-check the current device's latest site policy before remote approval. */
+  validateApprovalContext?(tabId: number): Promise<boolean>;
   /** Subscribe to task completions; returns an unsubscribe fn. */
   addCompletionListener(
     fn: (workspaceId: string, payload: CompletionPayload) => void,
@@ -180,12 +222,79 @@ export function createBrowserAgentRunner(deps: BrowserTaskDeps): AgentRunner {
   // One caller process = one session id, so this map is effectively a
   // singleton per external client; no eviction needed.
   const sessions = new Map<string, SessionEntry>();
+  const workspaceTabs = new Map<string, number>();
   // Remember which workspace a forwarded approval belongs to, so a sessionless
   // (or SW-restart) respond call can still target it. Never cleared — bounded
   // by the number of approvals a single caller process produces.
   const approvalWorkspaces = new Map<string, string>();
+  const targetChoices = new Map<string, {
+    session: string;
+    tabId: number;
+    expectedUrl: string;
+    expiresAt: number;
+  }>();
 
   async function resolveTab(task: AgentTask, entry: SessionEntry | null): Promise<number> {
+    if (task.targetContext === "existing_tab") {
+      if (!task.url)
+        throw new Error("An existing-tab remote task requires a target URL.");
+      if (task.targetHandle) {
+        const choice = targetChoices.get(task.targetHandle);
+        if (
+          !choice ||
+          !task.session ||
+          choice.session !== task.session ||
+          choice.expiresAt <= Date.now() ||
+          !(await deps.tabExists(choice.tabId)) ||
+          !deps.tabMatchesUrl ||
+          !(await deps.tabMatchesUrl(choice.tabId, choice.expectedUrl))
+        ) throw new Error("The selected browser target expired or is no longer open.");
+        for (const [handle, candidate] of targetChoices)
+          if (candidate.session === task.session) targetChoices.delete(handle);
+        if (entry) entry.tabId = choice.tabId;
+        return choice.tabId;
+      }
+      const matches = await deps.findTabsByUrl?.(task.url) ?? [];
+      for (const [handle, candidate] of targetChoices)
+        if (candidate.expiresAt <= Date.now()) targetChoices.delete(handle);
+      if (!matches.length)
+        throw new Error("The requested existing browser tab is not open.");
+      if (matches.length > 1) {
+        if (!task.session)
+          throw new Error("Ambiguous browser targets require a mission session.");
+        const expiresAt = Date.now() + 5 * 60_000;
+        const candidates = matches.slice(0, 10).map((match) => {
+          const targetHandle = `target_${crypto.randomUUID()}`;
+          targetChoices.set(targetHandle, {
+            session: task.session!,
+            tabId: match.tabId,
+            expectedUrl: new URL(task.url!).href,
+            expiresAt,
+          });
+          return {
+            targetHandle,
+            pageTitle: match.pageTitle.slice(0, 160),
+            ...(match.groupTitle ? { groupTitle: match.groupTitle.slice(0, 80) } : {}),
+            ...(match.windowLabel ? { windowLabel: match.windowLabel.slice(0, 80) } : {}),
+          };
+        });
+        throw new TargetSelectionRequiredError({
+          expiresAt: new Date(expiresAt).toISOString(),
+          candidates,
+        });
+      }
+      const tabId = matches[0]!.tabId;
+      if (entry) entry.tabId = tabId;
+      return tabId;
+    }
+    if (task.targetContext === "active_tab") {
+      const tabId = await deps.getActiveTab?.();
+      if (typeof tabId !== "number")
+        throw new Error("No active browser tab is available for the remote task.");
+      if (task.url) await deps.navigateTab(tabId, task.url);
+      if (entry) entry.tabId = tabId;
+      return tabId;
+    }
     if (entry?.tabId != null && (await deps.tabExists(entry.tabId))) {
       if (task.url) await deps.navigateTab(entry.tabId, task.url);
       return entry.tabId;
@@ -248,7 +357,15 @@ export function createBrowserAgentRunner(deps: BrowserTaskDeps): AgentRunner {
           // stop — re-issue now that the task is registered.
           if (signal?.aborted) onAbort();
         })
-        .catch((error) => finish({ status: "error", reason: (error as Error).message }));
+        .catch((error) => finish(
+          error instanceof TargetSelectionRequiredError
+            ? {
+                status: "needs_human",
+                reason: "Choose which matching browser tab to use.",
+                targetSelection: error.selection,
+              }
+            : { status: "error", reason: (error as Error).message },
+        ));
     });
   }
 
@@ -264,7 +381,14 @@ export function createBrowserAgentRunner(deps: BrowserTaskDeps): AgentRunner {
     const workspaceId = entry?.workspaceId ?? newWorkspaceId();
     return waitForOutcome(workspaceId, signal, async () => {
       const tabId = await resolveTab(task, entry);
-      await deps.startTask({ query: task.instruction, tabId, workspaceId });
+      workspaceTabs.set(workspaceId, tabId);
+      await deps.ensureTabReady?.(tabId);
+      await deps.startTask({
+        query: task.instruction,
+        tabId,
+        workspaceId,
+        executionToolProfile: task.executionToolProfile,
+      });
     });
   }
 
@@ -285,6 +409,21 @@ export function createBrowserAgentRunner(deps: BrowserTaskDeps): AgentRunner {
       return run;
     },
 
+    selectTarget(
+      task: AgentTask & { session: string; targetHandle: string },
+      opts?: AgentRunOptions,
+    ): Promise<AgentRunOutcome> {
+      let entry = sessions.get(task.session);
+      if (!entry) {
+        entry = { workspaceId: newWorkspaceId(), tabId: null, queue: Promise.resolve() };
+        sessions.set(task.session, entry);
+      }
+      const sessionEntry = entry;
+      const run = sessionEntry.queue.then(() => executeRun(task, sessionEntry, opts?.signal));
+      sessionEntry.queue = run.catch(() => {});
+      return run;
+    },
+
     respondApproval(
       req: BrowserToolRequest,
       opts?: AgentRunOptions,
@@ -299,9 +438,17 @@ export function createBrowserAgentRunner(deps: BrowserTaskDeps): AgentRunner {
           reason: "no pending approval for that id",
         });
       }
-      const resume = () =>
-        waitForOutcome(workspaceId, opts?.signal, async () => {
-          if (!deps.resolveApproval(workspaceId, { approvalId, approved })) {
+      const resume = async () => {
+        const tabId = entry?.tabId ?? workspaceTabs.get(workspaceId);
+        const locallyAllowed =
+          !approved ||
+          (tabId != null &&
+            (await deps.validateApprovalContext?.(tabId)) !== false);
+        const outcome = await waitForOutcome(workspaceId, opts?.signal, async () => {
+          if (!deps.resolveApproval(workspaceId, {
+            approvalId,
+            approved: approved && locallyAllowed,
+          })) {
             // Unknown / expired / already answered — error fast so the session
             // queue is never blocked on an outcome that will never arrive.
             throw new Error(
@@ -309,6 +456,13 @@ export function createBrowserAgentRunner(deps: BrowserTaskDeps): AgentRunner {
             );
           }
         });
+        return approved && !locallyAllowed
+          ? {
+              status: "error" as const,
+              reason: "Remote approval was denied by the current local site policy.",
+            }
+          : outcome;
+      };
       if (!entry) return resume();
       // Join the session queue so a queued mission cannot start mid-resume.
       const run = entry.queue.then(resume);
@@ -321,6 +475,37 @@ export function createBrowserAgentRunner(deps: BrowserTaskDeps): AgentRunner {
 /** Wire the real chrome + orchestrator + settings singletons (RFC LP-8, M2). */
 export function createDefaultBrowserTaskDeps(): BrowserTaskDeps {
   return {
+    async getActiveTab() {
+      const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+      if (typeof tab?.id !== "number")
+        throw new Error("No active browser tab is available for the remote task.");
+      return tab.id;
+    },
+    async findTabsByUrl(url) {
+      const expected = new URL(url).href;
+      const tabs = await chrome.tabs.query({});
+      const windowIds = [...new Set(tabs.map((tab) => tab.windowId))].sort((a, b) => a - b);
+      const matches = [];
+      for (const tab of tabs) {
+        if (typeof tab.id !== "number" || !tab.url) continue;
+        try {
+          if (new URL(tab.url).href !== expected) continue;
+        } catch {
+          continue;
+        }
+        let groupTitle: string | undefined;
+        if (tab.groupId !== chrome.tabGroups.TAB_GROUP_ID_NONE) {
+          groupTitle = await chrome.tabGroups.get(tab.groupId).then((group) => group.title).catch(() => undefined);
+        }
+        matches.push({
+          tabId: tab.id,
+          pageTitle: tab.title?.trim() || new URL(tab.url).hostname,
+          ...(groupTitle ? { groupTitle } : {}),
+          windowLabel: `Window ${windowIds.indexOf(tab.windowId) + 1}`,
+        });
+      }
+      return matches;
+    },
     async createTab(url) {
       const tab = await chrome.tabs.create({ url, active: false });
       if (typeof tab.id !== "number") throw new Error("Failed to open a tab.");
@@ -334,8 +519,30 @@ export function createDefaultBrowserTaskDeps(): BrowserTaskDeps {
         return false;
       }
     },
+    async tabMatchesUrl(tabId, expectedUrl) {
+      try {
+        const tab = await chrome.tabs.get(tabId);
+        return Boolean(tab.url && new URL(tab.url).href === expectedUrl);
+      } catch {
+        return false;
+      }
+    },
     async navigateTab(tabId, url) {
       await chrome.tabs.update(tabId, { url });
+    },
+    async ensureTabReady(tabId) {
+      if (!(await ensureContentScript(tabId, 10_000)))
+        throw new Error("Browser page did not become ready for the remote task.");
+    },
+    async validateApprovalContext(tabId) {
+      try {
+        const tab = await chrome.tabs.get(tabId);
+        if (!tab.url) return false;
+        const settings = (await loadSettings()) ?? ({} as UserSettings);
+        return getBlockedRuleForUrl(tab.url, settings) === null;
+      } catch {
+        return false;
+      }
     },
     async stopTask(workspaceId) {
       await browserRuntime.stopTask(workspaceId);
@@ -343,7 +550,7 @@ export function createDefaultBrowserTaskDeps(): BrowserTaskDeps {
     resolveApproval(workspaceId, payload) {
       return browserRuntime.resolveApproval(workspaceId, payload);
     },
-    async startTask({ query, tabId, workspaceId }) {
+    async startTask({ query, tabId, workspaceId, executionToolProfile }) {
       const settings = (await loadSettings()) ?? ({} as UserSettings);
       const apiKey = await loadApiKey();
       await browserRuntime.startTask({
@@ -351,10 +558,11 @@ export function createDefaultBrowserTaskDeps(): BrowserTaskDeps {
         tabId,
         workspaceId,
         settings,
-        openRouterApiKey: apiKey || settings.openRouterApiKey || "",
+        openRouterApiKey: resolveBrowserAgentCredential(settings, apiKey),
         // Approvals forward over the bridge — there is no sidepanel to answer
         // them; selects the longer approval timeout (pi-backend Phase 4).
         interactionDelivery: "handoff",
+        executionToolProfile,
       });
     },
     addCompletionListener(fn) {

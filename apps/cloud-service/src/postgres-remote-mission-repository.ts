@@ -80,9 +80,8 @@ export class PostgresRemoteMissionRepository
          (account_id,mission_id,device_id,sequence,state,idempotency_hash,
           payload_object_key,payload_ciphertext_size_bytes,
           payload_ciphertext_sha256,created_at,updated_at,expires_at)
-         SELECT $1,$2,$3,
-           COALESCE(MAX(sequence),0)+1,'queued',$4,$5,$6,$7,$8,$8,$9
-         FROM sessions.remote_missions WHERE account_id=$1 AND device_id=$3
+         VALUES ($1,$2,$3,
+           nextval('sessions.remote_mission_delivery_sequence'),'queued',$4,$5,$6,$7,$8,$8,$9)
          RETURNING ${columns}`,
         [
           input.accountId,
@@ -100,6 +99,16 @@ export class PostgresRemoteMissionRepository
     });
   }
 
+  async activeMissions(accountId: string) {
+    const result = await this.pool.query<MissionRow>(
+      `SELECT ${columns} FROM sessions.remote_missions
+       WHERE account_id=$1 AND state IN ('queued','accepted','running','target_selection_required','approval_required')
+       ORDER BY sequence`,
+      [accountId],
+    );
+    return result.rows.map(publicMission);
+  }
+
   async mission(accountId: string, missionId: string) {
     const result = await this.pool.query<MissionRow>(
       `SELECT ${columns} FROM sessions.remote_missions
@@ -114,6 +123,7 @@ export class PostgresRemoteMissionRepository
       `SELECT ${columns} FROM sessions.remote_missions
        WHERE account_id=$1 AND device_id=$2 AND sequence>$3
          AND expires_at>now()
+         AND state IN ('queued','accepted','running','target_selection_required','approval_required')
        ORDER BY sequence ASC LIMIT $4`,
       [input.accountId, input.deviceId, input.afterSequence, input.limit],
     );
@@ -126,7 +136,7 @@ export class PostgresRemoteMissionRepository
     const result = await this.pool.query<MissionRow>(
       `UPDATE sessions.remote_missions SET state=$1,result_code=$2,updated_at=now()
        WHERE account_id=$3 AND mission_id=$4 AND device_id=$5 AND state=$6
-         AND expires_at>now()
+         AND (expires_at>now() OR $1='cancelled')
        RETURNING ${columns}`,
       [
         input.to,
@@ -150,5 +160,31 @@ export class PostgresRemoteMissionRepository
       [accountId, missionId],
     );
     return result.rows[0]?.payload_object_key ?? null;
+  }
+  async expired(limit: number) {
+    const result = await this.pool.query<{
+      account_id: string;
+      device_id: string;
+      mission_id: string;
+    }>(
+      `SELECT account_id,device_id,mission_id
+       FROM sessions.remote_missions
+       WHERE delete_after<=now()
+       ORDER BY delete_after ASC
+       LIMIT $1`,
+      [limit],
+    );
+    return result.rows.map((row) => ({
+      accountId: row.account_id,
+      deviceId: row.device_id,
+      missionId: row.mission_id,
+    }));
+  }
+  async remove(accountId: string, missionId: string) {
+    const result = await this.pool.query(
+      "DELETE FROM sessions.remote_missions WHERE account_id=$1 AND mission_id=$2",
+      [accountId, missionId],
+    );
+    return result.rowCount === 1;
   }
 }

@@ -31,6 +31,8 @@ import type { DeviceCoordinationRepository } from "./device-coordination-reposit
 import { createTraceApi } from "./trace-api.js";
 import type { TraceRepository } from "./trace-repository.js";
 import type { TraceObjectStore } from "./trace-object-store.js";
+import type { RemoteMissionRepository } from "./remote-mission-repository.js";
+import type { RemoteMissionVault } from "./remote-mission-vault.js";
 import {
   parseConnectionRequest,
   parseCheckpointCommit,
@@ -67,6 +69,8 @@ export type ControlApiDependencies = {
   traceRepository?: TraceRepository;
   traceObjectStore?: TraceObjectStore;
   passwordlessAuth?: PasswordlessAuthProvider;
+  remoteMissionRepository?: RemoteMissionRepository;
+  remoteMissionVault?: RemoteMissionVault;
 };
 
 const noStore = (c: Context) => c.header("Cache-Control", "no-store");
@@ -168,6 +172,8 @@ export function createControlApi(deps: ControlApiDependencies) {
     traceRepository,
     passwordlessAuth,
     traceObjectStore,
+    remoteMissionRepository,
+    remoteMissionVault,
   } = deps;
   const api = new Hono<{ Variables: Variables }>();
   const encodeSessionCursor = (
@@ -584,6 +590,75 @@ export function createControlApi(deps: ControlApiDependencies) {
       devices: await repository.listDevices(c.get("principal").accountId),
     }),
   );
+  api.get("/account/remote-work", async (c) =>
+    c.json(await repository.remoteWorkSettings(c.get("principal").accountId)),
+  );
+  api.put("/account/remote-work", async (c) => {
+    const body = await jsonBody(c);
+    const expectedRevision = Number(c.req.header("if-match"));
+    if (
+      typeof body?.enabled !== "boolean" ||
+      !Number.isSafeInteger(expectedRevision) ||
+      expectedRevision < 1
+    ) return problem(c, 400, "invalid_remote_work_setting", "Refresh and try again.");
+    if (body.enabled && c.get("authKind") !== "cookie")
+      return problem(c, 403, "website_session_required", "Enable remote work from opensidebar.com.");
+    const result = await repository.putRemoteWorkSettings(
+      c.get("principal").accountId,
+      expectedRevision,
+      body.enabled,
+    );
+    if (result === "revision_conflict")
+      return problem(c, 409, "revision_conflict", "Remote-work settings changed elsewhere. Refresh and try again.");
+    if (!result.enabled && remoteMissionRepository && remoteMissionVault) {
+      for (const mission of await remoteMissionRepository.activeMissions(c.get("principal").accountId)) {
+        const identity = {
+          accountId: c.get("principal").accountId,
+          deviceId: mission.deviceId,
+          missionId: mission.missionId,
+        };
+        await remoteMissionVault.encryptResultAndPut(identity, {
+          schemaVersion: 1,
+          missionId: mission.missionId,
+          outcome: "cancelled",
+          summary: "Remote work was disabled for this account.",
+          createdAt: new Date().toISOString(),
+        });
+        await remoteMissionRepository.transition({
+          ...identity,
+          from: mission.state,
+          to: "cancelled",
+          resultCode: "cancelled",
+        });
+      }
+    }
+    return c.json(result);
+  });
+  api.put("/account/devices/:id", async (c) => {
+    const body = await jsonBody(c);
+    const displayName =
+      typeof body?.displayName === "string" ? body.displayName.trim() : "";
+    const expectedRevision = Number(c.req.header("if-match"));
+    if (
+      !displayName ||
+      displayName.length > 80 ||
+      /[\u0000-\u001f\u007f]/.test(displayName) ||
+      !Number.isSafeInteger(expectedRevision) ||
+      expectedRevision < 1
+    )
+      return problem(c, 400, "invalid_device_name", "Enter a device name between 1 and 80 characters.");
+    const result = await repository.renameDevice(
+      c.get("principal").accountId,
+      c.req.param("id"),
+      expectedRevision,
+      displayName,
+    );
+    if (result === "revision_conflict")
+      return problem(c, 409, "revision_conflict", "This device was renamed elsewhere. Refresh and try again.");
+    return result
+      ? c.json(result)
+      : problem(c, 404, "device_not_found", "Device was not found.");
+  });
   api.delete("/account/devices/:id", async (c) =>
     (await repository.revokeDevice(
       c.get("principal").accountId,

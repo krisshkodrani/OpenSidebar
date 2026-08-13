@@ -12,7 +12,7 @@ import {
   TaskCompletionMessage,
   ToolName,
 } from "../../types";
-import { logger, RunManifest } from "../../utils";
+import { logger } from "../../utils";
 import {} from "../../utils/provider-keys";
 import {
   buildPersonalProfilePlannerContext,
@@ -47,6 +47,7 @@ import {
   WorkerInstance,
 } from "./types";
 import { buildProgrammaticSummary } from "./task-summary";
+import { enforceToolProfile } from "./enforced-tool-profile";
 import {
   RecentCompletionTracker,
   MAX_RECENT_COMPLETION_CONTEXT_CHARS,
@@ -312,10 +313,6 @@ export class Orchestrator {
         deps.waitForContentScriptReady ?? waitForContentScriptReady,
       lanePolicies: deps.lanePolicies ?? {},
     };
-  }
-
-  private async emitTraceManifest(manifest: RunManifest): Promise<void> {
-    await this.trace.emitManifest(manifest);
   }
 
   private emitTraceEvent(
@@ -1258,7 +1255,7 @@ export class Orchestrator {
     this.tasksByWorkspace.set(task.workspaceId, task);
     this.initializeWorkspaceRuntime(task.workspaceId, task.maxWorkers, task);
     await this.persistTaskCheckpoint(task);
-    await this.emitTraceManifest({
+    await this.trace.emitManifest({
       ...buildTaskManifest(task, resumeInput),
       source:
         source === "backend"
@@ -1815,7 +1812,7 @@ export class Orchestrator {
     this.tasksByWorkspace.set(input.workspaceId, task);
     this.initializeWorkspaceRuntime(input.workspaceId, task.maxWorkers, task);
     await this.persistTaskCheckpoint(task);
-    await this.emitTraceManifest(buildTaskManifest(task, input));
+    await this.trace.emitManifest(buildTaskManifest(task, input));
     this.emitTraceEvent(
       task,
       "task_started",
@@ -2081,6 +2078,7 @@ export class Orchestrator {
       return;
     }
 
+    nodes = enforceToolProfile(nodes, input.executionToolProfile);
     task.nodes = nodes;
     if (
       isLargeExhaustiveReviewGraph(nodes) &&
@@ -2189,8 +2187,8 @@ export class Orchestrator {
             { displayQuery: revisedQuery },
           );
           if (replanResult.nodes.length > 0) {
-            task.nodes = replanResult.nodes;
-            nodes = replanResult.nodes;
+            nodes = enforceToolProfile(replanResult.nodes, input.executionToolProfile);
+            task.nodes = nodes;
             task.replansUsed += 1;
             this.sendProgress(task);
             updateTabGroupAppearance(input.workspaceId, {
@@ -2604,7 +2602,7 @@ export class Orchestrator {
       const executorContract = buildRoleExecutionContract(
         "executor",
         input.settings,
-        node,
+        node, input.executionToolProfile,
       );
       logger.debug("policy", "Role execution contract resolved", {
         role: executorContract.role,

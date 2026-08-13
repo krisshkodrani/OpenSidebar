@@ -18,8 +18,8 @@ try {
   const accountId = `drill-${crypto.randomUUID()}`;
   await control.upsertAccount(accountId, `${accountId}@invalid.example`, true);
   const devices = await Promise.all([
-    control.upsertDevice(accountId, crypto.randomUUID(), "Browser profile A", "drill"),
-    control.upsertDevice(accountId, crypto.randomUUID(), "Browser profile B", "drill"),
+    control.upsertDevice(accountId, crypto.randomUUID(), "Browser profile A", "drill", "test_client"),
+    control.upsertDevice(accountId, crypto.randomUUID(), "Browser profile B", "drill", "test_client"),
   ]);
   const connections = [crypto.randomUUID(), crypto.randomUUID()];
   for (let index = 0; index < devices.length; index += 1) {

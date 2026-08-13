@@ -7,8 +7,11 @@ import {
   importCloudPreferences,
   pendingCloudEmailAuth,
   credentialStatuses,
+  disableRemoteWork,
   linkCloudAccount,
   requestCloudEmailCode,
+  renameCloudDevice,
+  remoteWorkStatus,
   signOutCloud,
   syncCloudPreferences,
   verifyCloudEmailCode,
@@ -17,10 +20,12 @@ import type { SettingsChangeHandler } from "./types";
 
 type AccountState = {
   email: string | null;
+  deviceName: string;
   providers: Set<string>;
+  remoteWork: { enabled: boolean; revision: number } | null;
 };
 
-const EMPTY_ACCOUNT: AccountState = { email: null, providers: new Set() };
+const EMPTY_ACCOUNT: AccountState = { email: null, deviceName: "", providers: new Set(), remoteWork: null };
 
 export function CloudAccountSettings({
   formState,
@@ -37,6 +42,7 @@ export function CloudAccountSettings({
   const [email, setEmail] = useState("");
   const [emailCode, setEmailCode] = useState("");
   const [challengeId, setChallengeId] = useState("");
+  const [deviceName, setDeviceName] = useState("");
 
   const reload = async () => {
     const session = await cloudSession();
@@ -44,15 +50,21 @@ export function CloudAccountSettings({
       setAccount(EMPTY_ACCOUNT);
       return;
     }
-    const statuses = await credentialStatuses().catch(() => []);
+    const [statuses, remoteWork] = await Promise.all([
+      credentialStatuses().catch(() => []),
+      remoteWorkStatus().catch(() => null),
+    ]);
     setAccount({
       email: session.account.email,
+      deviceName: session.device.displayName,
       providers: new Set(
         statuses
           .filter((item) => item.configured && item.verification === "valid")
           .map((item) => item.provider),
       ),
+      remoteWork,
     });
+    setDeviceName(session.device.displayName);
   };
 
   useEffect(() => {
@@ -250,6 +262,69 @@ export function CloudAccountSettings({
           >
             {ready ? "Ready through your account" : "Connection required"}
           </p>
+        </div>
+        <div className="mt-4">
+          <label className="text-xs font-medium text-warm-600 dark:text-warm-300" htmlFor="cloud-device-name">
+            This browser's name
+          </label>
+          <div className="mt-1 flex gap-2">
+            <input
+              id="cloud-device-name"
+              value={deviceName}
+              maxLength={80}
+              onChange={(event) => setDeviceName(event.target.value)}
+              className="min-w-0 flex-1 rounded-lg border border-warm-300 bg-white px-3 py-2 text-sm dark:border-warm-700 dark:bg-warm-900"
+            />
+            <button
+              type="button"
+              disabled={busy || !deviceName.trim() || deviceName.trim() === account.deviceName}
+              onClick={() =>
+                void perform(
+                  () => renameCloudDevice(deviceName),
+                  "Device name updated.",
+                )
+              }
+              className="rounded-lg border border-warm-300 px-3 text-xs font-semibold disabled:opacity-50 dark:border-warm-700"
+            >
+              Save name
+            </button>
+          </div>
+          <p className="mt-1 text-[11px] text-warm-500">
+            Codex uses this name when offering a connected browser.
+          </p>
+        </div>
+        <div className="mt-4 rounded-lg border border-warm-200 p-3 dark:border-warm-700">
+          <div className="flex items-center justify-between gap-3">
+            <div>
+              <p className="text-xs font-semibold">Remote browser work</p>
+              <p className="mt-1 text-[11px] text-warm-500">
+                {account.remoteWork?.enabled
+                  ? "Authorized integrations may send visible tasks to this browser."
+                  : "Remote work is disabled for this account."}
+              </p>
+            </div>
+            {account.remoteWork?.enabled ? (
+              <button
+                type="button"
+                disabled={busy}
+                onClick={() => void perform(
+                  () => disableRemoteWork(account.remoteWork!.revision),
+                  "Remote work disabled and active remote tasks cancelled.",
+                )}
+                className="rounded-lg border border-red-300 px-3 py-2 text-xs font-semibold text-red-700 disabled:opacity-50 dark:border-red-800 dark:text-red-300"
+              >
+                Stop remote work
+              </button>
+            ) : (
+              <button
+                type="button"
+                onClick={() => window.open("https://opensidebar.com/app/settings", "_blank", "noopener")}
+                className="text-xs font-semibold text-primary-600"
+              >
+                Manage on web
+              </button>
+            )}
+          </div>
         </div>
         <div className="mt-4 flex flex-wrap gap-3">
           <button

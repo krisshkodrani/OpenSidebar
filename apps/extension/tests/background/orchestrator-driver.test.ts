@@ -2,6 +2,7 @@ import { describe, expect, test, vi } from "vitest";
 import {
   createBrowserAgentRunner,
   mapCompletion,
+  resolveBrowserAgentCredential,
   type BrowserTaskDeps,
   type CompletionPayload,
 } from "../../src/background/browser-bridge/orchestrator-driver";
@@ -68,6 +69,34 @@ describe("mapCompletion", () => {
   });
 });
 
+describe("resolveBrowserAgentCredential", () => {
+  test("uses the cloud relay sentinel for signed-in cloud inference", () => {
+    expect(
+      resolveBrowserAgentCredential(
+        {
+          providerMode: "openrouter",
+          inferenceMode: "cloud",
+          openRouterApiKey: "",
+        } as never,
+        "",
+      ),
+    ).toBe("__opensidebar_cloud__");
+  });
+
+  test("keeps the configured local provider credential in local mode", () => {
+    expect(
+      resolveBrowserAgentCredential(
+        {
+          providerMode: "openrouter",
+          inferenceMode: "local",
+          openRouterApiKey: "local-key",
+        } as never,
+        "local-key",
+      ),
+    ).toBe("local-key");
+  });
+});
+
 type PausePayload = Parameters<
   Parameters<BrowserTaskDeps["addPauseListener"]>[0]
 >[1];
@@ -82,6 +111,7 @@ function deps(): BrowserTaskDeps & {
   stopped: string[];
   resolved: Array<{ workspaceId: string; approvalId: string; approved: boolean }>;
   liveTabs: Set<number>;
+  matchingTabs: Array<{ tabId: number; pageTitle: string; groupTitle?: string; windowLabel?: string }>;
 } {
   const listeners = new Set<(ws: string, p: CompletionPayload) => void>();
   const pauseListeners = new Set<(ws: string, p: PausePayload) => void>();
@@ -94,7 +124,8 @@ function deps(): BrowserTaskDeps & {
     approvalId: string;
     approved: boolean;
   }> = [];
-  const liveTabs = new Set<number>();
+  const liveTabs = new Set<number>([8]);
+  const matchingTabs = [{ tabId: 8, pageTitle: "Example Domain", windowLabel: "Window 1" }];
   let nextTabId = 42;
   let resolveApprovalResult = true;
   return {
@@ -104,6 +135,7 @@ function deps(): BrowserTaskDeps & {
     stopped,
     resolved,
     liveTabs,
+    matchingTabs,
     fire(ws, p) {
       for (const fn of [...listeners]) fn(ws, p);
     },
@@ -119,8 +151,17 @@ function deps(): BrowserTaskDeps & {
       liveTabs.add(tabId);
       return tabId;
     },
+    async getActiveTab() {
+      return 7;
+    },
+    async findTabsByUrl(url) {
+      return url === "https://example.com/" ? matchingTabs : [];
+    },
     async tabExists(tabId) {
       return liveTabs.has(tabId);
+    },
+    async tabMatchesUrl(tabId, url) {
+      return liveTabs.has(tabId) && url === "https://example.com/";
     },
     async navigateTab(tabId, url) {
       navigated.push({ tabId, url });
@@ -182,6 +223,124 @@ describe("createBrowserAgentRunner", () => {
 
     d.fire(ws, { status: "completed", summary: "bought" });
     expect(await promise).toEqual({ status: "completed", summary: "bought" });
+  });
+
+  test("does not start a newly opened task until its content bridge is ready", async () => {
+    const d = deps();
+    let releaseReady!: () => void;
+    d.ensureTabReady = () =>
+      new Promise<void>((resolve) => {
+        releaseReady = resolve;
+      });
+    const runner = createBrowserAgentRunner(d);
+    const promise = runner.run({ instruction: "read the heading", url: "https://example.com/" });
+    await tick();
+    expect(d.created).toEqual(["https://example.com/"]);
+    expect(d.started).toHaveLength(0);
+    releaseReady();
+    await tick();
+    expect(d.started).toHaveLength(1);
+    d.fire(d.started[0]!.workspaceId, { status: "completed", summary: "Example Domain" });
+    await expect(promise).resolves.toMatchObject({ status: "completed" });
+  });
+
+  test("uses the existing active tab when a visible remote run requests it", async () => {
+    const d = deps();
+    const runner = createBrowserAgentRunner(d);
+    const promise = runner.run({
+      instruction: "read the heading",
+      targetContext: "active_tab",
+    });
+    await tick();
+    expect(d.created).toEqual([]);
+    expect(d.started[0]?.tabId).toBe(7);
+    d.fire(d.started[0]!.workspaceId, {
+      status: "completed",
+      summary: "Example Domain",
+    });
+    await expect(promise).resolves.toMatchObject({ status: "completed" });
+  });
+
+  test("binds a remote run to an already-open matching tab without navigation", async () => {
+    const d = deps();
+    const runner = createBrowserAgentRunner(d);
+    const promise = runner.run({
+      instruction: "read the heading",
+      url: "https://example.com/",
+      targetContext: "existing_tab",
+    });
+    await tick();
+    expect(d.created).toEqual([]);
+    expect(d.navigated).toEqual([]);
+    expect(d.started[0]?.tabId).toBe(8);
+    d.fire(d.started[0]!.workspaceId, {
+      status: "completed",
+      summary: "Example Domain",
+    });
+    await expect(promise).resolves.toMatchObject({ status: "completed" });
+  });
+
+  test("returns opaque choices for duplicate matches and resumes on the chosen tab", async () => {
+    const d = deps();
+    d.liveTabs.add(9);
+    d.matchingTabs.push({
+      tabId: 9,
+      pageTitle: "Example Domain",
+      groupTitle: "Personal",
+      windowLabel: "Window 2",
+    });
+    const runner = createBrowserAgentRunner(d);
+    const task = {
+      instruction: "read the heading",
+      url: "https://example.com/",
+      session: "mission-1",
+      targetContext: "existing_tab" as const,
+    };
+    const waiting = await runner.run(task);
+    expect(waiting).toMatchObject({
+      status: "needs_human",
+      targetSelection: {
+        candidates: [
+          { pageTitle: "Example Domain", windowLabel: "Window 1" },
+          { pageTitle: "Example Domain", groupTitle: "Personal", windowLabel: "Window 2" },
+        ],
+      },
+    });
+    expect(JSON.stringify(waiting.targetSelection)).not.toContain("tabId");
+    expect(d.started).toHaveLength(0);
+
+    const siblingHandle = waiting.targetSelection!.candidates[0]!.targetHandle;
+    const targetHandle = waiting.targetSelection!.candidates[1]!.targetHandle;
+    const resumed = runner.selectTarget!({ ...task, targetHandle });
+    await tick();
+    expect(d.started[0]?.tabId).toBe(9);
+    d.fire(d.started[0]!.workspaceId, { status: "completed", summary: "Example Domain" });
+    await expect(resumed).resolves.toMatchObject({ status: "completed" });
+    await expect(runner.selectTarget!({ ...task, targetHandle: siblingHandle })).resolves.toMatchObject({
+      status: "error",
+      reason: "The selected browser target expired or is no longer open.",
+    });
+  });
+
+  test("rejects a target handle when the selected tab is no longer valid", async () => {
+    const d = deps();
+    d.liveTabs.add(9);
+    d.matchingTabs.push({ tabId: 9, pageTitle: "Example Domain", windowLabel: "Window 2" });
+    const runner = createBrowserAgentRunner(d);
+    const task = {
+      instruction: "read the heading",
+      url: "https://example.com/",
+      session: "mission-stale",
+      targetContext: "existing_tab" as const,
+    };
+    const waiting = await runner.run(task);
+    const targetHandle = waiting.targetSelection!.candidates[1]!.targetHandle;
+    d.liveTabs.delete(9);
+    await expect(runner.selectTarget!({ ...task, targetHandle })).resolves.toMatchObject({
+      status: "error",
+      reason: "The selected browser target expired or is no longer open.",
+    });
+    expect(d.started).toHaveLength(0);
   });
 
   test("ignores completions for a different workspace", async () => {
@@ -489,6 +648,32 @@ describe("createBrowserAgentRunner approval forwarding", () => {
     // The resumed task completes.
     d.fire(ws, { status: "completed", summary: "submitted" });
     expect(await answer).toMatchObject({ status: "completed", summary: "submitted" });
+  });
+
+  test("a changed local site policy overrides remote approval", async () => {
+    const d = deps();
+    d.validateApprovalContext = vi.fn().mockResolvedValue(false);
+    const runner = createBrowserAgentRunner(d);
+    const first = runner.run({ instruction: "apply", session: "s1" });
+    await tick();
+    const ws = d.started[0].workspaceId;
+    d.firePause(ws, pausePayload("appr-policy"));
+    await first;
+
+    const answer = runner.respondApproval!({
+      tool: "browser_respond_approval",
+      args: { approvalId: "appr-policy", approved: true },
+      session: "s1",
+    });
+    await tick();
+    expect(d.resolved).toEqual([
+      { workspaceId: ws, approvalId: "appr-policy", approved: false },
+    ]);
+    d.fire(ws, { status: "stopped", terminationReason: "Approval denied" });
+    await expect(answer).resolves.toEqual({
+      status: "error",
+      reason: "Remote approval was denied by the current local site policy.",
+    });
   });
 
   test("respondApproval on an unknown approvalId errors immediately", async () => {

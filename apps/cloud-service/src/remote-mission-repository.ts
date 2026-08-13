@@ -30,6 +30,7 @@ export interface RemoteMissionRepository {
     afterSequence: number;
     limit: number;
   }): Promise<RemoteMissionV1[]>;
+  activeMissions(accountId: string): Promise<RemoteMissionV1[]>;
   transition(input: {
     accountId: string;
     missionId: string;
@@ -39,4 +40,10 @@ export interface RemoteMissionRepository {
     resultCode?: RemoteMissionV1["resultCode"];
   }): Promise<RemoteMissionMutation>;
   payloadObjectKey(accountId: string, missionId: string): Promise<string | null>;
+  expired(limit: number): Promise<Array<{
+    accountId: string;
+    deviceId: string;
+    missionId: string;
+  }>>;
+  remove(accountId: string, missionId: string): Promise<boolean>;
 }

@@ -1,6 +1,7 @@
 import { AgentRole, ToolName, UserSettings } from "../../types";
 import { getSkillToolPolicy, getSkillToolSuppressionPolicy } from "./skills";
 import { TaskNode } from "./types";
+import { resolveToolProfile, type ToolProfile } from "../tools/metadata";
 
 export type ModelTier = "executor" | "planner";
 
@@ -51,6 +52,7 @@ export function buildRoleExecutionContract(
   role: AgentRole,
   settings: UserSettings,
   node?: TaskNode,
+  enforcedProfile?: ToolProfile,
 ): RoleExecutionContract {
   if (role === "planner" || role === "verifier") {
     return {
@@ -75,6 +77,11 @@ export function buildRoleExecutionContract(
   allowed.add(ToolName.DONE);
   applySkillToolSuppression(node, allowed);
   applyGlobalToolFlags(settings, allowed);
+  const ceiling = resolveToolProfile(enforcedProfile);
+  if (ceiling) {
+    const ceilingSet = new Set(ceiling);
+    for (const tool of allowed) if (!ceilingSet.has(tool)) allowed.delete(tool);
+  }
 
   return {
     role: "executor",

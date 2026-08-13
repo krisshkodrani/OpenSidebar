@@ -113,7 +113,10 @@ export interface CloudDeviceV1 {
   id: string;
   installationId: string;
   displayName: string;
+  displayNameRevision: number;
   extensionVersion: string;
+  connectionKind: "browser_extension" | "codex_integration" | "test_client";
+  availability: "online" | "offline" | "revoked";
   createdAt: string;
   lastSeenAt: string;
   revokedAt?: string;
@@ -127,6 +130,13 @@ export interface ExtensionSessionV1 {
   refreshExpiresInSeconds: number;
   account: CloudAccountV1;
   device: CloudDeviceV1;
+}
+
+export interface CloudRemoteWorkSettingsV1 {
+  schemaVersion: typeof CLOUD_CONTROL_SCHEMA_VERSION;
+  enabled: boolean;
+  revision: number;
+  updatedAt: string;
 }
 
 export type RelayEventV1 =

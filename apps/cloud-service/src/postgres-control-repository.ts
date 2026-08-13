@@ -4,6 +4,7 @@ import { fileURLToPath } from "node:url";
 import { Pool } from "pg";
 import type {
   CloudDeviceV1,
+  CloudRemoteWorkSettingsV1,
   CloudPreferencesV1,
   CloudProviderId,
   CredentialStatusV1,
@@ -33,7 +34,9 @@ const deviceRow = (row: {
   id: string;
   installation_id: string;
   display_name: string;
+  display_name_revision: string;
   extension_version: string;
+  connection_kind: CloudDeviceV1["connectionKind"];
   created_at: Date;
   last_seen_at: Date;
   revoked_at: Date | null;
@@ -42,7 +45,14 @@ const deviceRow = (row: {
   id: row.id,
   installationId: row.installation_id,
   displayName: row.display_name,
+  displayNameRevision: Number(row.display_name_revision),
   extensionVersion: row.extension_version,
+  connectionKind: row.connection_kind,
+  availability: row.revoked_at
+    ? "revoked"
+    : Date.now() - row.last_seen_at.getTime() <= 3 * 60_000
+      ? "online"
+      : "offline",
   createdAt: row.created_at.toISOString(),
   lastSeenAt: row.last_seen_at.toISOString(),
   ...(row.revoked_at ? { revokedAt: row.revoked_at.toISOString() } : {}),
@@ -61,6 +71,15 @@ export class PostgresControlRepository implements ControlRepository {
     const here = dirname(fileURLToPath(import.meta.url));
     await this.pool.query(
       await readFile(resolve(here, "../migrations/002_control.sql"), "utf8"),
+    );
+    await this.pool.query(
+      await readFile(resolve(here, "../migrations/003_device_names.sql"), "utf8"),
+    );
+    await this.pool.query(
+      await readFile(resolve(here, "../migrations/014_connection_kinds.sql"), "utf8"),
+    );
+    await this.pool.query(
+      await readFile(resolve(here, "../migrations/015_remote_work_settings.sql"), "utf8"),
     );
   }
   async health() {
@@ -98,13 +117,14 @@ export class PostgresControlRepository implements ControlRepository {
     installationId: string,
     displayName: string,
     extensionVersion: string,
+    connectionKind: CloudDeviceV1["connectionKind"],
   ) {
     const result = await this.pool.query(
-      `INSERT INTO control.devices(id,account_id,installation_id,display_name,extension_version)
-      VALUES('dev_'||substr(md5(random()::text||clock_timestamp()::text),1,24),$1,$2,$3,$4)
-      ON CONFLICT(account_id,installation_id) DO UPDATE SET display_name=excluded.display_name,extension_version=excluded.extension_version,last_seen_at=now(),revoked_at=NULL
-      RETURNING id,installation_id,display_name,extension_version,created_at,last_seen_at,revoked_at`,
-      [accountId, installationId, displayName, extensionVersion],
+      `INSERT INTO control.devices(id,account_id,installation_id,display_name,extension_version,connection_kind)
+      VALUES('dev_'||substr(md5(random()::text||clock_timestamp()::text),1,24),$1,$2,$3,$4,$5)
+      ON CONFLICT(account_id,installation_id) DO UPDATE SET extension_version=excluded.extension_version,connection_kind=excluded.connection_kind,last_seen_at=now(),revoked_at=NULL
+      RETURNING id,installation_id,display_name,display_name_revision,extension_version,connection_kind,created_at,last_seen_at,revoked_at`,
+      [accountId, installationId, displayName, extensionVersion, connectionKind],
     );
     return deviceRow(result.rows[0]);
   }
@@ -260,10 +280,30 @@ export class PostgresControlRepository implements ControlRepository {
   }
   async listDevices(accountId: string) {
     const result = await this.pool.query(
-      "SELECT id,installation_id,display_name,extension_version,created_at,last_seen_at,revoked_at FROM control.devices WHERE account_id=$1 ORDER BY last_seen_at DESC",
+      "SELECT id,installation_id,display_name,display_name_revision,extension_version,connection_kind,created_at,last_seen_at,revoked_at FROM control.devices WHERE account_id=$1 ORDER BY last_seen_at DESC",
       [accountId],
     );
     return result.rows.map(deviceRow);
+  }
+  async renameDevice(
+    accountId: string,
+    deviceId: string,
+    expectedRevision: number,
+    displayName: string,
+  ) {
+    const result = await this.pool.query(
+      `UPDATE control.devices
+       SET display_name=$1,display_name_revision=display_name_revision+1
+       WHERE account_id=$2 AND id=$3 AND display_name_revision=$4 AND revoked_at IS NULL
+       RETURNING id,installation_id,display_name,display_name_revision,extension_version,connection_kind,created_at,last_seen_at,revoked_at`,
+      [displayName, accountId, deviceId, expectedRevision],
+    );
+    if (result.rows[0]) return deviceRow(result.rows[0]);
+    const current = await this.pool.query(
+      "SELECT 1 FROM control.devices WHERE account_id=$1 AND id=$2 AND revoked_at IS NULL",
+      [accountId, deviceId],
+    );
+    return current.rowCount ? "revision_conflict" as const : null;
   }
   async revokeDevice(accountId: string, deviceId: string) {
     const result = await this.pool.query(
@@ -275,6 +315,52 @@ export class PostgresControlRepository implements ControlRepository {
       [deviceId],
     );
     return result.rowCount === 1;
+  }
+  async remoteWorkSettings(accountId: string): Promise<CloudRemoteWorkSettingsV1> {
+    const result = await this.pool.query<{
+      enabled: boolean;
+      revision: string;
+      updated_at: Date;
+    }>(
+      `INSERT INTO control.remote_work_settings(account_id) VALUES($1)
+       ON CONFLICT(account_id) DO UPDATE SET account_id=excluded.account_id
+       RETURNING enabled,revision,updated_at`,
+      [accountId],
+    );
+    const row = result.rows[0]!;
+    return {
+      schemaVersion: 1,
+      enabled: row.enabled,
+      revision: Number(row.revision),
+      updatedAt: row.updated_at.toISOString(),
+    };
+  }
+  async putRemoteWorkSettings(
+    accountId: string,
+    expectedRevision: number,
+    enabled: boolean,
+  ) {
+    await this.remoteWorkSettings(accountId);
+    const result = await this.pool.query<{
+      enabled: boolean;
+      revision: string;
+      updated_at: Date;
+    }>(
+      `UPDATE control.remote_work_settings
+       SET enabled=$1,revision=revision+1,updated_at=now()
+       WHERE account_id=$2 AND revision=$3
+       RETURNING enabled,revision,updated_at`,
+      [enabled, accountId, expectedRevision],
+    );
+    const row = result.rows[0];
+    return row
+      ? {
+          schemaVersion: 1 as const,
+          enabled: row.enabled,
+          revision: Number(row.revision),
+          updatedAt: row.updated_at.toISOString(),
+        }
+      : "revision_conflict" as const;
   }
   async logoutAll(accountId: string) {
     const result = await this.pool.query<{ session_epoch: string }>(

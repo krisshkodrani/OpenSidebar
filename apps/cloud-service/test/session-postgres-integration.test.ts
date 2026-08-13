@@ -203,12 +203,14 @@ test(
         crypto.randomUUID(),
         "Device one",
         "0.7.2",
+        "test_client",
       );
       const deviceTwo = await control.upsertDevice(
         "account-1",
         crypto.randomUUID(),
         "Device two",
         "0.7.2",
+        "test_client",
       );
       const connectionOne = crypto.randomUUID();
       const connectionTwo = crypto.randomUUID();

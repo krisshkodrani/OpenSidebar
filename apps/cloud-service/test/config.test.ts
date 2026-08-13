@@ -181,6 +181,22 @@ test("session activation requires a nonempty named-tester subset", () => {
   assert.deepEqual([...config.cloudSessionTesterSubjects], ["account-2"]);
 });
 
+test("remote missions require isolated encrypted session storage", () => {
+  assert.throws(
+    () =>
+      loadConfig({
+        ...baseEnv(),
+        CLOUD_CONTROL_ENABLED: "true",
+        EXTENSION_AUTH_ENABLED: "true",
+        CLOUD_SESSIONS_ENABLED: "true",
+        REMOTE_MISSIONS_ENABLED: "true",
+        CLOUD_TESTER_SUBJECTS: "tester-1",
+        CLOUD_SESSION_TESTER_SUBJECTS: "tester-1",
+      }),
+    /SESSION_KMS_KEY_ID and SESSION_BUCKET_NAME/,
+  );
+});
+
 test("dashboard operators must already have general cloud access", () => {
   assert.throws(
     () =>

@@ -57,6 +57,7 @@ async function runSession(lane: "concurrent" | "reconnect", duplicate: boolean) 
     crypto.randomUUID(),
     "Synthetic device",
     "0.7.2",
+    "test_client",
   );
   const connectionId = crypto.randomUUID();
   expectValue(

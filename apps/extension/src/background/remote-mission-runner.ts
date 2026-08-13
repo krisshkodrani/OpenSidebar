@@ -1,6 +1,7 @@
 import type {
   RemoteMissionPayloadV1,
   RemoteMissionRunResultV1,
+  RemoteMissionTargetDecisionV1,
 } from "@shared-types/remote-missions";
 import type {
   AgentRunOutcome,
@@ -17,6 +18,11 @@ export interface RemoteMissionRunner {
     missionId: string,
     approvalId: string,
     approved: boolean,
+    options?: { signal?: AbortSignal },
+  ): Promise<RemoteMissionRunResultV1>;
+  selectTarget?(
+    payload: RemoteMissionPayloadV1,
+    decision: RemoteMissionTargetDecisionV1,
     options?: { signal?: AbortSignal },
   ): Promise<RemoteMissionRunResultV1>;
 }
@@ -37,6 +43,11 @@ const result = (outcome: AgentRunOutcome): RemoteMissionRunResultV1 => {
           : {}),
       },
     };
+  if (outcome.status === "needs_human" && outcome.targetSelection)
+    return {
+      state: "target_selection_required",
+      targetSelection: outcome.targetSelection,
+    };
   return {
     state: outcome.status === "error" ? "failed" : "outcome_unknown",
     ...(outcome.summary || outcome.reason
@@ -54,6 +65,8 @@ export function adaptAgentRunner(runner: AgentRunner): RemoteMissionRunner {
             instruction: payload.instruction,
             ...(payload.initialUrl ? { url: payload.initialUrl } : {}),
             session: payload.missionId,
+            executionToolProfile: payload.executionClass,
+            targetContext: payload.targetContext ?? "isolated_tab",
           },
           options,
         ),
@@ -77,6 +90,24 @@ export function adaptAgentRunner(runner: AgentRunner): RemoteMissionRunner {
                 options,
               ),
             );
+          },
+        }
+      : {}),
+    ...(runner.selectTarget
+      ? {
+          async selectTarget(
+            payload: RemoteMissionPayloadV1,
+            decision: RemoteMissionTargetDecisionV1,
+            options?: { signal?: AbortSignal },
+          ) {
+            return result(await runner.selectTarget!({
+              instruction: payload.instruction,
+              ...(payload.initialUrl ? { url: payload.initialUrl } : {}),
+              session: payload.missionId,
+              executionToolProfile: payload.executionClass,
+              targetContext: payload.targetContext ?? "isolated_tab",
+              targetHandle: decision.targetHandle,
+            }, options));
           },
         }
       : {}),

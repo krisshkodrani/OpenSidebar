@@ -6,31 +6,43 @@ import path from "path";
 
 export default defineConfig(({ mode }) => {
   const env = loadEnv(mode, process.cwd(), "");
+  const isRemoteMissionAcceptance = mode === "remote-mission-acceptance";
+  if (
+    isRemoteMissionAcceptance &&
+    env.OPENSIDEBAR_REMOTE_MISSION_ACCEPTANCE !== "true"
+  ) {
+    throw new Error(
+      "Remote-mission acceptance builds require OPENSIDEBAR_REMOTE_MISSION_ACCEPTANCE=true.",
+    );
+  }
   const fleetTelemetryInternalEndpoint =
     mode === "internal"
       ? (env.FLEET_TELEMETRY_INTERNAL_ENDPOINT || "").trim()
       : "";
   const isProduction = mode === "production";
-  const localObservabilityServerUrl = isProduction
+  const isProductionLike = isProduction || isRemoteMissionAcceptance;
+  const localObservabilityServerUrl = isProductionLike
     ? ""
     : (
         process.env.LOCAL_OBSERVABILITY_SERVER_URL ||
         env.LOCAL_OBSERVABILITY_SERVER_URL ||
         "http://127.0.0.1:7589"
       ).trim();
-  const outDir = isProduction
+  const outDir = isProductionLike
     ? path.resolve(__dirname, "../../dist")
     : path.resolve(__dirname, "../../dist-dev");
   // Dev builds are HMR-tethered to the local Vite server and load from
   // dist-dev/. Suffix the name so the build is identifiable in Chrome.
-  const buildManifest = isProduction
-    ? manifest
-    : { ...manifest, name: `${manifest.name} (dev)` };
+  const buildManifest = isRemoteMissionAcceptance
+    ? { ...manifest, name: `${manifest.name} (remote acceptance)` }
+    : isProduction
+      ? manifest
+      : { ...manifest, name: `${manifest.name} (dev)` };
 
   return {
     root: __dirname,
     define: {
-      __DEV__: JSON.stringify(mode !== "production"),
+      __DEV__: JSON.stringify(!isProductionLike),
       __FLEET_TELEMETRY_INTERNAL_ENDPOINT__: JSON.stringify(
         fleetTelemetryInternalEndpoint,
       ),
@@ -69,7 +81,7 @@ export default defineConfig(({ mode }) => {
           ),
           // The overlay harness drives headed E2E; the e2e-mode build
           // (dist-dev with __DEV__ surface) needs it just like prod.
-          ...(isProduction || mode === "e2e"
+          ...(isProductionLike || mode === "e2e"
             ? {
                 "overlay-harness": path.resolve(
                   __dirname,
@@ -77,7 +89,7 @@ export default defineConfig(({ mode }) => {
                 ),
               }
             : {}),
-          ...(!isProduction
+          ...(!isProductionLike
             ? {
                 // Dev-only observability page; must never ship in dist/.
                 "trace-viewer": path.resolve(

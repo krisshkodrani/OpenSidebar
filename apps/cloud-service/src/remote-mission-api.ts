@@ -1,5 +1,8 @@
 import { Hono, type Context } from "hono";
-import type { RemoteMissionTransitionV1 } from "@opensidebar/shared-types";
+import {
+  isRemoteMissionTerminal,
+  type RemoteMissionTransitionV1,
+} from "@opensidebar/shared-types";
 import type { CloudConfig } from "./config.js";
 import type {
   ControlPrincipal,
@@ -9,6 +12,10 @@ import { tokenHash } from "./crypto.js";
 import {
   assertRemoteMissionTransition,
   parseCreateRemoteMission,
+  parseRemoteMissionApprovalDecision,
+  parseRemoteMissionProgress,
+  parseRemoteMissionResult,
+  parseRemoteMissionTargetDecision,
   RemoteMissionPolicyError,
 } from "./remote-mission-policy.js";
 import type { RemoteMissionRepository } from "./remote-mission-repository.js";
@@ -41,10 +48,34 @@ const idempotencyHash = (c: Context) => {
     throw new RemoteMissionPolicyError("invalid_request");
   return tokenHash(value);
 };
+const terminalOutcome = (state: RemoteMissionTransitionV1["to"]) =>
+  state === "succeeded"
+    ? "completed"
+    : state === "failed"
+      ? "not_achieved"
+      : state === "cancelled"
+        ? "cancelled"
+        : state === "outcome_unknown"
+          ? "unknown"
+          : null;
+const missionOutcome = (mission: { resultCode?: string }) =>
+  mission.resultCode === "completed"
+    ? "completed"
+    : mission.resultCode === "not_achieved"
+      ? "not_achieved"
+      : mission.resultCode === "cancelled"
+        ? "cancelled"
+        : mission.resultCode === "unknown"
+          ? "unknown"
+          : undefined;
+const missionProgressState = (state: string) =>
+  state === "accepted" || state === "running" || state === "target_selection_required" || state === "approval_required"
+    ? state
+    : undefined;
 
 export function createRemoteMissionApi(deps: Dependencies) {
   const api = new Hono<{ Variables: Variables }>();
-  api.use("*", async (c, next) => {
+  const authenticate = async (c: Context, next: () => Promise<void>) => {
     c.header("Cache-Control", "no-store");
     if (!deps.config.remoteMissionsEnabled)
       return problem(c, 503, "remote_missions_disabled", "Remote missions are not enabled.");
@@ -58,7 +89,10 @@ export function createRemoteMissionApi(deps: Dependencies) {
       return problem(c, 403, "remote_mission_access_not_enabled", "Remote mission access is not enabled.");
     c.set("principal", principal);
     return next();
-  });
+  };
+  api.use("/remote-missions", authenticate);
+  api.use("/remote-missions/*", authenticate);
+  api.use("/devices/:deviceId/remote-missions", authenticate);
 
   const attempt = async (c: Context, action: () => Promise<Response>) => {
     try {
@@ -74,10 +108,15 @@ export function createRemoteMissionApi(deps: Dependencies) {
   api.post("/remote-missions", (c) =>
     attempt(c, async () => {
       const principal = c.get("principal");
+      if (!(await deps.accounts.remoteWorkSettings(principal.accountId)).enabled)
+        return problem(c, 403, "remote_work_disabled", "Enable remote work from your OpenSidebar account.");
       const input = parseCreateRemoteMission(await c.req.json().catch(() => null));
       const devices = await deps.accounts.listDevices(principal.accountId);
       const device = devices.find(
-        (candidate) => candidate.id === input.deviceId && !candidate.revokedAt,
+        (candidate) =>
+          candidate.id === input.deviceId &&
+          candidate.connectionKind === "browser_extension" &&
+          candidate.availability !== "revoked",
       );
       if (!device)
         return problem(c, 404, "device_not_found", "Selected device is unavailable.");
@@ -93,8 +132,10 @@ export function createRemoteMissionApi(deps: Dependencies) {
       const stored = await deps.vault.encryptAndPut(identity, {
         schemaVersion: 1,
         missionId,
+        executionClass: "read_only",
         instruction: input.instruction,
         ...(input.initialUrl ? { initialUrl: input.initialUrl } : {}),
+        ...(input.targetContext ? { targetContext: input.targetContext } : {}),
       });
       const createdAt = new Date();
       const result = await deps.missions.createMission({
@@ -105,6 +146,9 @@ export function createRemoteMissionApi(deps: Dependencies) {
         payloadObjectKey: deps.vault.objectKey(identity),
         payloadCiphertextSizeBytes: stored.ciphertextSizeBytes,
         payloadCiphertextSha256: stored.ciphertextSha256,
+      }).catch(async (error) => {
+        await deps.vault.delete(identity).catch(() => undefined);
+        throw error;
       });
       if (!("value" in result)) {
         await deps.vault.delete(identity).catch(() => undefined);
@@ -122,9 +166,58 @@ export function createRemoteMissionApi(deps: Dependencies) {
       if (!uuid(missionId))
         return problem(c, 404, "mission_not_found", "Mission was not found.");
       const mission = await deps.missions.mission(c.get("principal").accountId, missionId);
+      const result = mission && isRemoteMissionTerminal(mission.state)
+          ? await deps.vault.getResultAndDecrypt({
+            accountId: c.get("principal").accountId,
+            deviceId: mission.deviceId,
+            missionId,
+          }, missionOutcome(mission)).catch(() => null)
+        : null;
+      const progress = mission && !isRemoteMissionTerminal(mission.state)
+          ? await deps.vault.getProgressAndDecrypt({
+            accountId: c.get("principal").accountId,
+            deviceId: mission.deviceId,
+            missionId,
+          }, missionProgressState(mission.state)).catch(() => null)
+        : null;
+      const expectedOutcome = mission ? missionOutcome(mission) : undefined;
+      const expectedProgressState = mission
+        ? missionProgressState(mission.state)
+        : undefined;
+      const matchingResult =
+        result && expectedOutcome && result.outcome === expectedOutcome
+          ? result
+          : null;
+      const matchingProgress =
+        progress && expectedProgressState && progress.state === expectedProgressState
+          ? progress
+          : null;
       return mission
-        ? c.json(mission)
+        ? c.json({
+            ...mission,
+            ...(matchingProgress ? { progress: matchingProgress } : {}),
+            ...(matchingResult ? { result: matchingResult } : {}),
+          })
         : problem(c, 404, "mission_not_found", "Mission was not found.");
+    }),
+  );
+
+  api.delete("/remote-missions/:missionId", (c) =>
+    attempt(c, async () => {
+      const principal = c.get("principal");
+      const missionId = c.req.param("missionId");
+      const mission = uuid(missionId)
+        ? await deps.missions.mission(principal.accountId, missionId)
+        : null;
+      if (!mission)
+        return problem(c, 404, "mission_not_found", "Mission was not found.");
+      await deps.vault.delete({
+        accountId: principal.accountId,
+        deviceId: mission.deviceId,
+        missionId,
+      });
+      await deps.missions.remove(principal.accountId, missionId);
+      return c.body(null, 204);
     }),
   );
 
@@ -132,6 +225,8 @@ export function createRemoteMissionApi(deps: Dependencies) {
     attempt(c, async () => {
       const principal = c.get("principal");
       const deviceId = c.req.param("deviceId");
+      if (!(await deps.accounts.remoteWorkSettings(principal.accountId)).enabled)
+        return problem(c, 403, "remote_work_disabled", "Remote work is disabled.");
       const after = Number(c.req.query("after") ?? 0);
       const limit = Number(c.req.query("limit") ?? 25);
       if (
@@ -179,6 +274,16 @@ export function createRemoteMissionApi(deps: Dependencies) {
       if (!transition || transition.schemaVersion !== 1)
         throw new RemoteMissionPolicyError("invalid_request");
       assertRemoteMissionTransition(mission.state, transition);
+      const expectedOutcome = terminalOutcome(transition.to);
+      if (expectedOutcome) {
+        const result = await deps.vault.getResultAndDecrypt({
+          accountId: principal.accountId,
+          deviceId: principal.deviceId,
+          missionId,
+        }, expectedOutcome).catch(() => null);
+        if (!result || result.outcome !== expectedOutcome)
+          throw new RemoteMissionPolicyError("invalid_request");
+      }
       const result = await deps.missions.transition({
         accountId: principal.accountId,
         missionId,
@@ -190,6 +295,247 @@ export function createRemoteMissionApi(deps: Dependencies) {
       return "value" in result
         ? c.json(result.value)
         : problem(c, 409, result.kind, "Mission state changed.");
+    }),
+  );
+
+  api.put("/remote-missions/:missionId/result", (c) =>
+    attempt(c, async () => {
+      const principal = c.get("principal");
+      const missionId = c.req.param("missionId");
+      const mission = uuid(missionId)
+        ? await deps.missions.mission(principal.accountId, missionId)
+        : null;
+      if (!mission)
+        return problem(c, 404, "mission_not_found", "Mission was not found.");
+      if (principal.deviceId !== mission.deviceId)
+        return problem(c, 403, "device_mismatch", "Mission belongs to another device.");
+      if (isRemoteMissionTerminal(mission.state))
+        return problem(c, 409, "state_conflict", "Mission is already terminal.");
+      const result = parseRemoteMissionResult(await c.req.json().catch(() => null), missionId);
+      await deps.vault.encryptResultAndPut(
+        { accountId: principal.accountId, deviceId: principal.deviceId, missionId },
+        result,
+      );
+      return c.json(result, 201);
+    }),
+  );
+
+  api.put("/remote-missions/:missionId/progress", (c) =>
+    attempt(c, async () => {
+      const principal = c.get("principal");
+      const missionId = c.req.param("missionId");
+      const mission = uuid(missionId)
+        ? await deps.missions.mission(principal.accountId, missionId)
+        : null;
+      if (!mission)
+        return problem(c, 404, "mission_not_found", "Mission was not found.");
+      if (principal.deviceId !== mission.deviceId)
+        return problem(c, 403, "device_mismatch", "Mission belongs to another device.");
+      if (isRemoteMissionTerminal(mission.state))
+        return problem(c, 409, "state_conflict", "Mission is already terminal.");
+      const progress = parseRemoteMissionProgress(
+        await c.req.json().catch(() => null),
+        missionId,
+      );
+      const progressMatchesMission =
+        (progress.state === "accepted" &&
+          (mission.state === "queued" || mission.state === "accepted")) ||
+        (progress.state === "running" && mission.state === "running") ||
+        (progress.state === "target_selection_required" &&
+          (mission.state === "running" || mission.state === "target_selection_required")) ||
+        (progress.state === "approval_required" &&
+          (mission.state === "running" || mission.state === "approval_required"));
+      if (!progressMatchesMission)
+        return problem(c, 409, "state_conflict", "Progress does not match mission state.");
+      await deps.vault.encryptProgressAndPut(
+        { accountId: principal.accountId, deviceId: principal.deviceId, missionId },
+        progress,
+      );
+      return c.json(progress, 201);
+    }),
+  );
+
+  api.put("/remote-missions/:missionId/approval-decision", (c) =>
+    attempt(c, async () => {
+      const principal = c.get("principal");
+      const missionId = c.req.param("missionId");
+      const mission = uuid(missionId)
+        ? await deps.missions.mission(principal.accountId, missionId)
+        : null;
+      if (!mission)
+        return problem(c, 404, "mission_not_found", "Mission was not found.");
+      idempotencyHash(c);
+      const decision = parseRemoteMissionApprovalDecision(
+        await c.req.json().catch(() => null),
+        missionId,
+      );
+      const identity = {
+        accountId: principal.accountId,
+        deviceId: mission.deviceId,
+        missionId,
+      };
+      const existing = await deps.vault
+        .getApprovalDecisionAndDecrypt(identity)
+        .catch(() => null);
+      if (existing) {
+        const matches =
+          existing.approvalId === decision.approvalId &&
+          existing.actionDigest === decision.actionDigest &&
+          existing.approved === decision.approved;
+        return matches
+          ? c.json(existing)
+          : problem(c, 409, "approval_decision_conflict", "Approval was already answered.");
+      }
+      if (mission.state !== "approval_required")
+        return problem(c, 409, "state_conflict", "Mission is not awaiting approval.");
+      const progress = await deps.vault
+        .getProgressAndDecrypt(identity, "approval_required")
+        .catch(() => null);
+      if (
+        !progress?.approval?.actionDigest ||
+        progress.approval.approvalId !== decision.approvalId ||
+        progress.approval.actionDigest !== decision.actionDigest ||
+        new Date(mission.expiresAt).getTime() <= Date.now() ||
+        new Date(progress.approval.expiresAt).getTime() <= Date.now() ||
+        new Date(decision.decidedAt).getTime() <
+          new Date(progress.updatedAt).getTime() ||
+        new Date(decision.decidedAt).getTime() >
+          Math.min(
+            new Date(progress.approval.expiresAt).getTime(),
+            new Date(mission.expiresAt).getTime(),
+          )
+      ) return problem(c, 409, "approval_stale", "Approval is stale or no longer valid.");
+      await deps.vault.encryptApprovalDecisionAndPut(identity, decision);
+      return c.json(decision, 201);
+    }),
+  );
+
+  api.put("/remote-missions/:missionId/target-decision", (c) =>
+    attempt(c, async () => {
+      const principal = c.get("principal");
+      const missionId = c.req.param("missionId");
+      const mission = uuid(missionId)
+        ? await deps.missions.mission(principal.accountId, missionId)
+        : null;
+      if (!mission)
+        return problem(c, 404, "mission_not_found", "Mission was not found.");
+      idempotencyHash(c);
+      const decision = parseRemoteMissionTargetDecision(
+        await c.req.json().catch(() => null),
+        missionId,
+      );
+      const identity = { accountId: principal.accountId, deviceId: mission.deviceId, missionId };
+      const existing = await deps.vault.getTargetDecisionAndDecrypt(identity).catch(() => null);
+      if (existing)
+        return existing.targetHandle === decision.targetHandle
+          ? c.json(existing)
+          : problem(c, 409, "target_decision_conflict", "A browser target was already chosen.");
+      if (mission.state !== "target_selection_required")
+        return problem(c, 409, "state_conflict", "Mission is not awaiting a browser target.");
+      const progress = await deps.vault
+        .getProgressAndDecrypt(identity, "target_selection_required")
+        .catch(() => null);
+      if (
+        !progress?.targetSelection ||
+        !progress.targetSelection.candidates.some(
+          (candidate) => candidate.targetHandle === decision.targetHandle,
+        ) ||
+        new Date(decision.decidedAt).getTime() < new Date(progress.updatedAt).getTime() ||
+        new Date(decision.decidedAt).getTime() >
+          Math.min(
+            new Date(progress.targetSelection.expiresAt).getTime(),
+            new Date(mission.expiresAt).getTime(),
+          )
+      ) return problem(c, 409, "target_selection_stale", "Browser target selection is stale.");
+      await deps.vault.encryptTargetDecisionAndPut(identity, decision);
+      return c.json(decision, 201);
+    }),
+  );
+
+  api.get("/remote-missions/:missionId/target-decision", (c) =>
+    attempt(c, async () => {
+      const principal = c.get("principal");
+      const missionId = c.req.param("missionId");
+      const mission = uuid(missionId)
+        ? await deps.missions.mission(principal.accountId, missionId)
+        : null;
+      if (!mission)
+        return problem(c, 404, "mission_not_found", "Mission was not found.");
+      if (principal.deviceId !== mission.deviceId)
+        return problem(c, 403, "device_mismatch", "Mission belongs to another device.");
+      const decision = await deps.vault.getTargetDecisionAndDecrypt({
+        accountId: principal.accountId,
+        deviceId: mission.deviceId,
+        missionId,
+      }).catch(() => null);
+      return decision
+        ? c.json(decision)
+        : problem(c, 404, "target_decision_not_found", "Browser target has not been chosen.");
+    }),
+  );
+
+  api.get("/remote-missions/:missionId/approval-decision", (c) =>
+    attempt(c, async () => {
+      const principal = c.get("principal");
+      const missionId = c.req.param("missionId");
+      const mission = uuid(missionId)
+        ? await deps.missions.mission(principal.accountId, missionId)
+        : null;
+      if (!mission)
+        return problem(c, 404, "mission_not_found", "Mission was not found.");
+      if (principal.deviceId !== mission.deviceId)
+        return problem(c, 403, "device_mismatch", "Mission belongs to another device.");
+      const decision = await deps.vault
+        .getApprovalDecisionAndDecrypt({
+          accountId: principal.accountId,
+          deviceId: mission.deviceId,
+          missionId,
+        })
+        .catch(() => null);
+      return decision
+        ? c.json(decision)
+        : problem(c, 404, "approval_decision_not_found", "Approval has not been answered.");
+    }),
+  );
+
+  api.post("/remote-missions/:missionId/cancel", (c) =>
+    attempt(c, async () => {
+      const principal = c.get("principal");
+      const missionId = c.req.param("missionId");
+      const mission = uuid(missionId)
+        ? await deps.missions.mission(principal.accountId, missionId)
+        : null;
+      if (!mission)
+        return problem(c, 404, "mission_not_found", "Mission was not found.");
+      idempotencyHash(c);
+      if (mission.state === "cancelled") return c.json(mission);
+      if (isRemoteMissionTerminal(mission.state))
+        return problem(c, 409, "state_conflict", "Mission is already terminal.");
+      const identity = {
+        accountId: principal.accountId,
+        deviceId: mission.deviceId,
+        missionId,
+      };
+      await deps.vault.encryptResultAndPut(identity, {
+        schemaVersion: 1,
+        missionId,
+        outcome: "cancelled",
+        createdAt: new Date().toISOString(),
+        diagnostic: "Cancellation requested by the mission coordinator.",
+      });
+      const cancelled = await deps.missions.transition({
+        accountId: principal.accountId,
+        missionId,
+        deviceId: mission.deviceId,
+        from: mission.state,
+        to: "cancelled",
+        resultCode: "cancelled",
+      });
+      if ("value" in cancelled) return c.json(cancelled.value);
+      const latest = await deps.missions.mission(principal.accountId, missionId);
+      return latest?.state === "cancelled"
+        ? c.json(latest)
+        : problem(c, 409, cancelled.kind, "Mission state changed.");
     }),
   );
 

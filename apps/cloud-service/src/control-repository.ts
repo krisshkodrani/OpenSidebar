@@ -1,5 +1,6 @@
 import type {
   CloudDeviceV1,
+  CloudRemoteWorkSettingsV1,
   CloudPreferencesV1,
   CloudProviderId,
   CredentialStatusV1,
@@ -62,6 +63,7 @@ export interface ControlRepository {
     installationId: string,
     displayName: string,
     extensionVersion: string,
+    connectionKind: CloudDeviceV1["connectionKind"],
   ): Promise<CloudDeviceV1>;
   createDeviceSession(session: DeviceSessionWrite): Promise<void>;
   accessPrincipal(accessHash: string): Promise<ControlPrincipal | null>;
@@ -72,7 +74,19 @@ export interface ControlRepository {
   ): Promise<ControlPrincipal | "reused" | null>;
   revokeAccessSession(accessHash: string): Promise<void>;
   listDevices(accountId: string): Promise<CloudDeviceV1[]>;
+  renameDevice(
+    accountId: string,
+    deviceId: string,
+    expectedRevision: number,
+    displayName: string,
+  ): Promise<CloudDeviceV1 | "revision_conflict" | null>;
   revokeDevice(accountId: string, deviceId: string): Promise<boolean>;
+  remoteWorkSettings(accountId: string): Promise<CloudRemoteWorkSettingsV1>;
+  putRemoteWorkSettings(
+    accountId: string,
+    expectedRevision: number,
+    enabled: boolean,
+  ): Promise<CloudRemoteWorkSettingsV1 | "revision_conflict">;
   logoutAll(accountId: string): Promise<number>;
   createDeviceLink(
     codeHash: string,

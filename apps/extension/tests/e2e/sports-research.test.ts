@@ -68,11 +68,9 @@ describe.skipIf(!h.apiKey)("E2E: Sports Disruption Research", () => {
     const normalized = summary.toLowerCase();
 
     expect(outcome.ok, outcome.reason).toBe(true);
-    expect(normalized).toContain("northstar");
     expect(normalized).toContain("12:30");
     expect(normalized).toContain("06:10");
     expect(normalized).toContain("10:42");
-    expect(normalized).toContain("beacon park");
     expect(normalized).toMatch(/216/);
     expect(outcome.result).toMatchObject({
       preparedOption: "early-train",

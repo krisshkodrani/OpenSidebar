@@ -1,13 +1,14 @@
-# LP-35 — Hosted browser MCP and remote missions
+# LP-35 — Hosted browser MCP and supervised remote missions
 
-Status: Approved. Owner Decision Stamp recorded 2026-08-11.
+Status: Approved. Superseding owner Decision Stamp recorded 2026-08-12.
 
 ## Summary
 
 Replace the experimental localhost browser MCP/WebSocket path with an
-authenticated MCP service at `opensidebar.com`. Codex submits an intent-level
-remote mission to a selected signed-in OpenSidebar extension; the extension's
-existing agent runtime remains the browser executor and local safety authority.
+authenticated MCP service at `opensidebar.com`. Codex supervises a revisioned
+intent-level mission on a selected signed-in OpenSidebar extension: it may plan,
+judge bounded evidence, and replan, while the extension's existing agent runtime
+remains the browser executor and local safety authority.
 
 Reuse LP-28 account/device identity and LP-31 delivery, lease, sequencing,
 idempotency, reconnect, and uncertain-outcome rules. Do not move browser
@@ -62,12 +63,10 @@ local safety, observation, and browser evidence.
 interface RemoteMissionV1 {
   schemaVersion: 1;
   missionId: string;
-  accountId: string;
   deviceId: string;
-  instruction: string;
-  initialUrl?: string;
   createdAt: string;
   expiresAt: string;
+  sequence: number;
   state:
     | "queued"
     | "accepted"
@@ -77,6 +76,7 @@ interface RemoteMissionV1 {
     | "failed"
     | "cancelled"
     | "outcome_unknown";
+  resultCode?: "completed" | "not_achieved" | "cancelled" | "unknown";
 }
 ```
 
@@ -85,6 +85,20 @@ bounded outcome classification. Mission content and user-visible results are
 transient or encrypted for the selected device. Logs and fleet telemetry exclude
 instructions, URLs, approvals, page content, screenshots, and results.
 
+The encrypted delivery body is a separate `RemoteMissionPayloadV1` containing
+`missionId`, `instruction`, optional `initialUrl`, and an explicit
+`active_tab`/`isolated_tab` target context. Account callers and
+ordinary status responses never receive that plaintext body. Only the selected
+authenticated extension device may retrieve it.
+
+Before publishing terminal metadata, the selected device uploads a separate
+bounded result envelope containing only the terminal outcome, summary, and
+sanitized diagnostic. It is KMS-envelope-encrypted under a distinct
+mission/device-bound context. Terminal transitions fail closed when this result
+is missing or its outcome disagrees with the requested state. Authorized
+coordinators receive the decrypted bounded result through mission status; logs,
+fleet telemetry, and PostgreSQL metadata do not.
+
 ## Hosted MCP contract
 
 Initial tools:
@@ -92,12 +106,50 @@ Initial tools:
 - `browser_list_devices`
 - `browser_start_task`
 - `browser_get_task`
+- `browser_continue_task`
 - `browser_respond_approval`
 - `browser_cancel_task`
 
 `browser_start_task` returns a mission ID. Callers poll `browser_get_task` for
 bounded progress or terminal output. Approvals are ID-, digest-, and expiry-bound;
 the extension revalidates local policy and fresh grounding before execution.
+
+`browser_continue_task` submits a revision-checked supervisor decision: continue,
+retry with guidance, replace the remaining semantic plan, request more evidence,
+request user input, select an ambiguous browser target, complete, or stop. A
+target selection uses a short-lived opaque handle returned by the same mission;
+it never carries a Chrome tab, group, or window ID. It is deliberately separate
+from approval decisions. Codex owns the overall completion judgment; the
+extension owns claims about browser observations, effects, local policy, and
+uncertainty. Codex cannot convert `outcome_unknown` into verified success or
+override a local deny.
+
+## Supervisor, evidence, and persistence boundary
+
+The same environment-neutral supervisor/worker protocol is used by hosted Codex,
+an in-memory scripted test supervisor, and local dogfooding. Semantic steps contain
+objectives, success criteria, and constraints, never selectors, Chrome tab IDs,
+storage keys, or fixture answers. OpenSidebar may adapt low-level actions to live
+page state without weakening the supervisor's goal, constraints, or prohibited
+effects.
+
+Unsubmitted composer drafts remain local-only and are scoped by local account and
+workspace. They survive panel and browser restart, are cleared only after confirmed
+submission or explicit discard, and never enter cloud sync, logs, traces, or
+telemetry. Submitted mission instructions, plan revisions, bounded structured
+evidence, approval previews, and terminal summaries are envelope-encrypted and
+retained for 30 days by default. Manual mission/account deletion removes metadata
+and every current and non-current object version.
+
+Structured text evidence is the default. Screenshot or trace evidence is optional,
+explicitly requested, consented, bounded, encrypted, and covered by the same
+retention and deletion rules.
+
+Each extension installation has a stable device ID and user-editable display name.
+Renaming is available from the extension panel and account site, changes display
+metadata only, and never changes mission ownership. Backend presence means recent
+authenticated contact and bounded capability/status metadata; it never exposes
+tabs, URLs, history, cookies, page content, or ordinary local tasks.
 
 Typed domain tools are deferred. They may later become thin intent templates,
 never a second runtime or hidden execution path.
@@ -107,6 +159,10 @@ never a second runtime or hidden execution path.
 - Use a reviewed OAuth flow and narrowly scoped remote-mission credentials.
 - Require a device ID; automatic selection is allowed only when exactly one
   eligible device is connected and the response identifies it.
+- Resolve existing-page targets on the selected device. One exact match may
+  continue automatically. Multiple matches pause the mission for Codex-side
+  user selection using only encrypted bounded labels and mission-scoped opaque
+  handles; never expose a general tab inventory.
 - Device revocation invalidates pending delivery and future mutations.
 - One mission execution lease belongs to one device; takeover is never automatic.
 
@@ -147,6 +203,98 @@ and a local deny/cancel always win.
    `shared-types/browser-bridge.ts`.
 
 The localhost bridge remains only until parity passes, not as a fallback.
+
+## Implementation status — 2026-08-12
+
+Implemented on the `agent/hosted-browser-mcp` working branch:
+
+- Versioned public metadata, encrypted payload, transition, approval, and run
+  result contracts in `packages/shared-types/src/remote-missions.ts`.
+- Pure input and monotonic lifecycle policy with bounded instruction, URL, and
+  expiry validation.
+- PostgreSQL migration and repository for account/device-scoped ordered mission
+  metadata and idempotent creation.
+- KMS-envelope-encrypted payload storage bound to account, device, and mission.
+- Default-off authenticated HTTP APIs for mission creation/status, selected
+  device delivery, and selected-device state transition.
+- A transport-neutral `RemoteMissionRunner` adapter over the existing
+  session-aware browser agent runner, including approval continuation.
+- Focused backend and extension tests for lifecycle policy, encrypted-at-rest
+  payloads, metadata-only status, device isolation, transitions, execution
+  mapping, and approval mapping.
+- A local `MissionWorker`, durable local attempt journal, scripted supervisor,
+  and environment-neutral semantic plan/evidence/decision contracts.
+- Local-only composer draft recovery and revision-checked device renaming in the
+  extension and account site.
+- Thirty-day encrypted mission retention, version-aware/manual cleanup, and
+  orphan cleanup when metadata creation fails.
+- A private, unmounted MCP SDK contract for the six approved scoped tools, with
+  a Codex-like in-memory conformance test.
+- A disabled authenticated extension delivery loop with alarm-based polling,
+  a durable ordered local journal, hard read-only tool enforcement across
+  initial/replanned/synthesized nodes, terminal lifecycle reporting, and a
+  minimal local sidepanel status banner.
+- Explicit active-tab versus isolated-tab execution, plus a separately
+  encrypted terminal result/diagnostic artifact required before terminal state.
+- An acceptance-only coordinator session cache that rotates the existing
+  90-day refresh session after one link-code bootstrap. This is local test
+  automation, not the hosted MCP OAuth credential design.
+- A production-shaped named-tester read-only acceptance passed on 2026-08-13:
+  the cached coordinator selected the named Chrome device, the extension bound
+  to an already-open exact `example.com` tab without activation/navigation,
+  used the encrypted cloud credential through the relay, and returned an
+  encrypted grounded `Example Domain` result.
+- Bounded state-addressed encrypted progress and approval-preview envelopes,
+  outcome-addressed encrypted terminal artifacts, an idempotent coordinator
+  cancellation endpoint, and an extension cancellation watcher. Restarted
+  workers resume from `running` or preserve `approval_required` without
+  replaying earlier lifecycle writes.
+- An immutable KMS-encrypted approval-decision envelope bound to mission,
+  approval ID, action digest, request time, decision time, approval expiry, and
+  mission expiry. Only the selected device can retrieve it; the extension
+  rechecks the binding and asks the existing local orchestrator to resume the
+  same mission session. Immediately before a positive answer, the runner checks
+  the current tab against the device's latest site-access policy; a local block
+  is converted into a denial and allowed to drain. Missing restart state,
+  denial, and expiry fail as not achieved rather than replaying an effect.
+- The Phase 3 backend candidate passed a second real exact-existing-tab mission
+  (`debe50c8-9c5a-4875-8b66-ba60842ead61`) after deployment. The existing
+  accepted client returned a grounded encrypted result through the new
+  outcome-addressed storage path; cancellation-watcher acceptance followed
+  after the new client was reloaded.
+- After reload, real mission `3f10bacc-24c0-44ad-97a8-1fc5fefe0c56` reached
+  `running`, was coordinator-cancelled after 24.1 seconds, retained its encrypted
+  `cancelled` result without a later overwrite, and caused no further model
+  request after the one request already in flight. The separate queued probe
+  missed the fetched delivery batch and is deliberately excluded from handoff
+  evidence.
+- Backend image `remote-mission-approval-v1-20260813` passed rollback-guarded
+  deployment and exact-existing-tab compatibility mission
+  `1c4fdf8b-a96d-4f34-a202-67540defd07b` in 76.5 seconds. The live profile is
+  still hard read-only, so this proves non-regression without manufacturing a
+  consequential website action.
+
+Not yet implemented:
+
+- A safe synthetic real-browser approval fixture and its named-tester evidence.
+  The transport and same-process runner continuation are implemented and unit
+  verified, while the active remote profile remains hard `read_only` and cannot
+  produce a consequential approval.
+- Real-browser visual acceptance of the implemented sidepanel requester,
+  mission-context, approval-preview, and local cancel/deny controls; explicit
+  offline/revoked/partial-rollout presentation and an account-level remote-work
+  switch remain.
+- OAuth grants, the hosted MCP HTTP endpoint, and its concrete mission API
+  operations adapter.
+- Production-shaped real-browser restart, revocation, and two-device E2E evidence.
+- Hosted/local parity cutover and deletion of the localhost WebSocket bridge.
+
+All new backend behavior remains behind `REMOTE_MISSIONS_ENABLED=false` by
+default. The current implementation is foundation code, not an operable hosted
+Codex-to-browser path.
+
+The delivery sequence and acceptance gates are maintained in the
+[hosted browser MCP roadmap](../hosted-browser-mcp-roadmap.md).
 
 ## Rollout
 
@@ -189,6 +337,12 @@ Chosen path:
 - Permit digest-bound, unexpired Codex approval without a second local click,
   while keeping it locally visible/cancellable and subject to local policy.
 - Keep content transient or device-encrypted and persist bounded metadata only.
+- Use a hybrid Codex supervisor: Codex owns semantic planning, evidence acceptance,
+  replanning, and overall completion; OpenSidebar owns browser execution, browser
+  evidence, local safety, and uncertainty.
+- Save unsubmitted composer input locally only. Retain submitted encrypted mission
+  content for 30 days with immediate deletion and version-aware cleanup.
+- Expose user-editable device names and a separate `browser_continue_task` tool.
 
 Required edits before implementation:
 
@@ -205,12 +359,17 @@ Do not do:
 - Do not bypass local policy, auto-take over, or retry uncertain consequences.
 - Do not retain localhost MCP as a permanent production alternative.
 - Do not introduce Temporal as an authority or dependency.
+- Do not upload unsubmitted drafts, expose raw browser primitives, or let the
+  supervisor override local policy or uncertainty.
 
 Evidence required before merge:
 
 - Satisfy every Evidence required item above, including hosted MCP conformance,
   real-browser safety/recovery tests, privacy audit, localhost removal, and full
   verification without raising decomposition budgets.
+- Prove local draft recovery/non-upload, mission retention/deletion, supervisor
+  revision conflicts, device rename stability, and worker/supervisor/validator
+  judgment separation.
 
 Next action:
 

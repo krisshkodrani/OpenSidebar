@@ -8,21 +8,34 @@ import type {
 import { createRemoteMissionApi } from "../src/remote-mission-api.js";
 import { tokenHash } from "../src/crypto.js";
 
-const deviceId = "123e4567-e89b-42d3-a456-426614174000";
-const otherDeviceId = "123e4567-e89b-42d3-a456-426614174099";
+const deviceId = "dev_123e4567e89b42d3a4564266";
+const otherDeviceId = "dev_123e4567e89b42d3a4564299";
 
-function world() {
+function world(options: {
+  createThrows?: boolean;
+  enabled?: boolean;
+  principalDeviceId?: string;
+  connectionKind?: "browser_extension" | "test_client";
+  remoteWorkEnabled?: boolean;
+} = {}) {
   const records = new Map<string, RemoteMissionV1>();
   const payloads = new Map<string, unknown>();
+  const results = new Map<string, unknown>();
+  const progress = new Map<string, unknown>();
+  const decisions = new Map<string, unknown>();
+  const targetDecisions = new Map<string, unknown>();
   const principal = {
     accountId: "account-1",
     email: "owner@example.test",
     sessionEpoch: 1,
     cloudAccess: true,
-    deviceId,
+    deviceId: options.principalDeviceId ?? deviceId,
     installationId: "install-1",
   };
   const accounts = {
+    async remoteWorkSettings() {
+      return { schemaVersion: 1, enabled: options.remoteWorkEnabled ?? true, revision: 1, updatedAt: new Date().toISOString() };
+    },
     async accessPrincipal(hash: string) {
       return hash === tokenHash("token") ? principal : null;
     },
@@ -33,7 +46,10 @@ function world() {
           id: deviceId,
           installationId: "install-1",
           displayName: "Laptop",
+          displayNameRevision: 1,
           extensionVersion: "0.7.3",
+          connectionKind: options.connectionKind ?? "browser_extension",
+          availability: "online" as const,
           createdAt: new Date().toISOString(),
           lastSeenAt: new Date().toISOString(),
         },
@@ -41,6 +57,11 @@ function world() {
     },
   };
   const missions = {
+    async activeMissions() {
+      return [...records.values()].filter((mission) =>
+        ["queued", "accepted", "running", "target_selection_required", "approval_required"].includes(mission.state),
+      );
+    },
     async missionByIdempotency() {
       return null;
     },
@@ -50,6 +71,7 @@ function world() {
       createdAt: Date;
       expiresAt: Date;
     }) {
+      if (options.createThrows) throw new Error("database unavailable");
       const mission: RemoteMissionV1 = {
         schemaVersion: 1,
         missionId: input.missionId,
@@ -92,6 +114,12 @@ function world() {
     async payloadObjectKey() {
       return "unused";
     },
+    async expired() {
+      return [];
+    },
+    async remove(_accountId: string, missionId: string) {
+      return records.delete(missionId);
+    },
   };
   const vault = {
     objectKey: (identity: { missionId: string }) => identity.missionId,
@@ -105,8 +133,51 @@ function world() {
     async getAndDecrypt(identity: { missionId: string }) {
       return payloads.get(identity.missionId)!;
     },
+    async encryptResultAndPut(identity: { missionId: string }, result: unknown) {
+      results.set(identity.missionId, result);
+      return { ciphertextSizeBytes: 100, ciphertextSha256: "b".repeat(64) };
+    },
+    async getResultAndDecrypt(identity: { missionId: string }) {
+      const result = results.get(identity.missionId);
+      if (!result) throw new Error("missing");
+      return result;
+    },
+    async encryptProgressAndPut(identity: { missionId: string }, value: unknown) {
+      progress.set(identity.missionId, value);
+      return { ciphertextSizeBytes: 100, ciphertextSha256: "c".repeat(64) };
+    },
+    async getProgressAndDecrypt(identity: { missionId: string }) {
+      const value = progress.get(identity.missionId);
+      if (!value) throw new Error("missing");
+      return value;
+    },
+    async encryptApprovalDecisionAndPut(
+      identity: { missionId: string },
+      value: unknown,
+    ) {
+      decisions.set(identity.missionId, value);
+      return { ciphertextSizeBytes: 100, ciphertextSha256: "d".repeat(64) };
+    },
+    async getApprovalDecisionAndDecrypt(identity: { missionId: string }) {
+      const value = decisions.get(identity.missionId);
+      if (!value) throw new Error("missing");
+      return value;
+    },
+    async encryptTargetDecisionAndPut(identity: { missionId: string }, value: unknown) {
+      targetDecisions.set(identity.missionId, value);
+      return { ciphertextSizeBytes: 100, ciphertextSha256: "e".repeat(64) };
+    },
+    async getTargetDecisionAndDecrypt(identity: { missionId: string }) {
+      const value = targetDecisions.get(identity.missionId);
+      if (!value) throw new Error("missing");
+      return value;
+    },
     async delete(identity: { missionId: string }) {
       payloads.delete(identity.missionId);
+      results.delete(identity.missionId);
+      progress.delete(identity.missionId);
+      decisions.delete(identity.missionId);
+      targetDecisions.delete(identity.missionId);
     },
   };
   const app = new Hono();
@@ -114,7 +185,7 @@ function world() {
     "/api/v1",
     createRemoteMissionApi({
       config: {
-        remoteMissionsEnabled: true,
+        remoteMissionsEnabled: options.enabled ?? true,
         cloudSessionTesterSubjects: new Set(["account-1"]),
       } as never,
       accounts: accounts as never,
@@ -122,10 +193,19 @@ function world() {
       vault: vault as never,
     }),
   );
-  return { app, records };
+  return { app, records, payloads, results, progress, targetDecisions, principal };
 }
 
 const auth = { authorization: "Bearer token" };
+
+test("mission guards do not intercept unrelated API routes", async () => {
+  const { app } = world({ enabled: false });
+  assert.equal((await app.request("/api/v1/playground/auth/login")).status, 404);
+  const disabled = await app.request("/api/v1/remote-missions", {
+    method: "POST",
+  });
+  assert.equal(disabled.status, 503);
+});
 
 test("creates metadata-only mission and selected device receives payload", async () => {
   const { app } = world();
@@ -155,6 +235,40 @@ test("creates metadata-only mission and selected device receives payload", async
     (await delivery.text()).includes("Summarize this dashboard"),
     true,
   );
+  assert.equal((await (async () => {
+    const response = await app.request(`/api/v1/devices/${deviceId}/remote-missions`, { headers: auth });
+    return response.json() as Promise<{ missions: Array<{ payload: { executionClass: string } }> }>;
+  })()).missions[0]?.payload.executionClass, "read_only");
+});
+
+test("test clients are never selectable as browser mission executors", async () => {
+  const { app } = world({ connectionKind: "test_client" });
+  const response = await app.request("/api/v1/remote-missions", {
+    method: "POST",
+    headers: {
+      ...auth,
+      "content-type": "application/json",
+      "idempotency-key": "reject-test-client",
+    },
+    body: JSON.stringify({ schemaVersion: 1, deviceId, instruction: "Read" }),
+  });
+  assert.equal(response.status, 404);
+});
+
+test("disabled remote work blocks creation and browser delivery", async () => {
+  const { app } = world({ remoteWorkEnabled: false });
+  const created = await app.request("/api/v1/remote-missions", {
+    method: "POST",
+    headers: {
+      ...auth,
+      "content-type": "application/json",
+      "idempotency-key": "remote-disabled",
+    },
+    body: JSON.stringify({ schemaVersion: 1, deviceId, instruction: "Read" }),
+  });
+  assert.equal(created.status, 403);
+  const delivery = await app.request(`/api/v1/devices/${deviceId}/remote-missions`, { headers: auth });
+  assert.equal(delivery.status, 403);
 });
 
 test("rejects delivery to a different authenticated device", async () => {
@@ -164,6 +278,21 @@ test("rejects delivery to a different authenticated device", async () => {
     { headers: auth },
   );
   assert.equal(response.status, 403);
+});
+
+test("removes an encrypted orphan when metadata creation throws", async () => {
+  const { app, payloads } = world({ createThrows: true });
+  const response = await app.request("/api/v1/remote-missions", {
+    method: "POST",
+    headers: {
+      ...auth,
+      "content-type": "application/json",
+      "idempotency-key": "create-orphan",
+    },
+    body: JSON.stringify({ schemaVersion: 1, deviceId, instruction: "Read" }),
+  });
+  assert.equal(response.status, 503);
+  assert.equal(payloads.size, 0);
 });
 
 test("selected device advances the monotonic lifecycle", async () => {
@@ -198,4 +327,319 @@ test("selected device advances the monotonic lifecycle", async () => {
     },
   );
   assert.equal(invalid.status, 400);
+});
+
+test("stores a bounded encrypted terminal result for coordinator retrieval", async () => {
+  const { app } = world();
+  const created = await app.request("/api/v1/remote-missions", {
+    method: "POST",
+    headers: { ...auth, "content-type": "application/json", "idempotency-key": "result-1" },
+    body: JSON.stringify({
+      schemaVersion: 1,
+      deviceId,
+      instruction: "Read",
+      targetContext: "active_tab",
+    }),
+  });
+  const mission = (await created.json()) as RemoteMissionV1;
+  for (const to of ["accepted", "running"] as const) {
+    const transitioned = await app.request(
+      `/api/v1/remote-missions/${mission.missionId}/transition`,
+      {
+        method: "POST",
+        headers: { ...auth, "content-type": "application/json" },
+        body: JSON.stringify({ schemaVersion: 1, to }),
+      },
+    );
+    assert.equal(transitioned.status, 200);
+  }
+  const stored = await app.request(
+    `/api/v1/remote-missions/${mission.missionId}/result`,
+    {
+      method: "PUT",
+      headers: { ...auth, "content-type": "application/json" },
+      body: JSON.stringify({
+        schemaVersion: 1,
+        missionId: mission.missionId,
+        outcome: "completed",
+        createdAt: "2026-08-12T20:00:00.000Z",
+        summary: "Example Domain",
+      }),
+    },
+  );
+  assert.equal(stored.status, 201);
+  const terminal = await app.request(
+    `/api/v1/remote-missions/${mission.missionId}/transition`,
+    {
+      method: "POST",
+      headers: { ...auth, "content-type": "application/json" },
+      body: JSON.stringify({ schemaVersion: 1, to: "succeeded", resultCode: "completed" }),
+    },
+  );
+  assert.equal(terminal.status, 200);
+  const fetched = await app.request(`/api/v1/remote-missions/${mission.missionId}`, {
+    headers: auth,
+  });
+  assert.equal(fetched.status, 200);
+  assert.equal(((await fetched.json()) as { result?: { summary?: string } }).result?.summary, "Example Domain");
+});
+
+test("returns encrypted live progress and coordinator cancellation is idempotent", async () => {
+  const { app } = world();
+  const created = await app.request("/api/v1/remote-missions", {
+    method: "POST",
+    headers: { ...auth, "content-type": "application/json", "idempotency-key": "cancel-1" },
+    body: JSON.stringify({ schemaVersion: 1, deviceId, instruction: "Read" }),
+  });
+  const mission = (await created.json()) as RemoteMissionV1;
+  const progress = await app.request(
+    `/api/v1/remote-missions/${mission.missionId}/progress`,
+    {
+      method: "PUT",
+      headers: { ...auth, "content-type": "application/json" },
+      body: JSON.stringify({
+        schemaVersion: 1,
+        missionId: mission.missionId,
+        state: "accepted",
+        updatedAt: "2026-08-13T08:00:00.000Z",
+      }),
+    },
+  );
+  assert.equal(progress.status, 201);
+  const accepted = await app.request(
+    `/api/v1/remote-missions/${mission.missionId}/transition`,
+    {
+      method: "POST",
+      headers: { ...auth, "content-type": "application/json" },
+      body: JSON.stringify({ schemaVersion: 1, to: "accepted" }),
+    },
+  );
+  assert.equal(accepted.status, 200);
+  const status = await app.request(`/api/v1/remote-missions/${mission.missionId}`, {
+    headers: auth,
+  });
+  assert.equal(
+    ((await status.json()) as { progress?: { state?: string } }).progress?.state,
+    "accepted",
+  );
+  const cancelled = await app.request(
+    `/api/v1/remote-missions/${mission.missionId}/cancel`,
+    {
+      method: "POST",
+      headers: { ...auth, "idempotency-key": "cancel-request-1" },
+    },
+  );
+  assert.equal(cancelled.status, 200);
+  assert.equal(((await cancelled.json()) as RemoteMissionV1).state, "cancelled");
+  const replay = await app.request(
+    `/api/v1/remote-missions/${mission.missionId}/cancel`,
+    {
+      method: "POST",
+      headers: { ...auth, "idempotency-key": "cancel-request-1" },
+    },
+  );
+  assert.equal(replay.status, 200);
+  const terminal = await app.request(`/api/v1/remote-missions/${mission.missionId}`, {
+    headers: auth,
+  });
+  const terminalBody = (await terminal.json()) as {
+    progress?: unknown;
+    result?: { outcome?: string };
+  };
+  assert.equal(terminalBody.progress, undefined);
+  assert.equal(terminalBody.result?.outcome, "cancelled");
+});
+
+test("binds one encrypted approval decision to the pending digest", async () => {
+  const { app, principal } = world();
+  const created = await app.request("/api/v1/remote-missions", {
+    method: "POST",
+    headers: { ...auth, "content-type": "application/json", "idempotency-key": "approval-1" },
+    body: JSON.stringify({ schemaVersion: 1, deviceId, instruction: "Read" }),
+  });
+  const mission = (await created.json()) as RemoteMissionV1;
+  for (const to of ["accepted", "running"] as const) {
+    assert.equal((await app.request(
+      `/api/v1/remote-missions/${mission.missionId}/transition`,
+      {
+        method: "POST",
+        headers: { ...auth, "content-type": "application/json" },
+        body: JSON.stringify({ schemaVersion: 1, to }),
+      },
+    )).status, 200);
+  }
+  assert.equal((await app.request(
+    `/api/v1/remote-missions/${mission.missionId}/progress`,
+    {
+      method: "PUT",
+      headers: { ...auth, "content-type": "application/json" },
+      body: JSON.stringify({
+        schemaVersion: 1,
+        missionId: mission.missionId,
+        state: "approval_required",
+        updatedAt: new Date().toISOString(),
+        approval: {
+          approvalId: "approval-1",
+          question: "Continue?",
+          actionDigest: "digest-1",
+          expiresAt: "2099-08-13T08:00:00.000Z",
+        },
+      }),
+    },
+  )).status, 201);
+  assert.equal((await app.request(
+    `/api/v1/remote-missions/${mission.missionId}/transition`,
+    {
+      method: "POST",
+      headers: { ...auth, "content-type": "application/json" },
+      body: JSON.stringify({ schemaVersion: 1, to: "approval_required" }),
+    },
+  )).status, 200);
+  const stale = await app.request(
+    `/api/v1/remote-missions/${mission.missionId}/approval-decision`,
+    {
+      method: "PUT",
+      headers: { ...auth, "content-type": "application/json", "idempotency-key": "decision-stale" },
+      body: JSON.stringify({
+        schemaVersion: 1,
+        missionId: mission.missionId,
+        approvalId: "approval-1",
+        actionDigest: "wrong",
+        approved: true,
+        decidedAt: new Date().toISOString(),
+      }),
+    },
+  );
+  assert.equal(stale.status, 409);
+  const decisionBody = {
+    schemaVersion: 1,
+    missionId: mission.missionId,
+    approvalId: "approval-1",
+    actionDigest: "digest-1",
+    approved: true,
+    decidedAt: new Date().toISOString(),
+  };
+  const decided = await app.request(
+    `/api/v1/remote-missions/${mission.missionId}/approval-decision`,
+    {
+      method: "PUT",
+      headers: { ...auth, "content-type": "application/json", "idempotency-key": "decision-1" },
+      body: JSON.stringify(decisionBody),
+    },
+  );
+  assert.equal(decided.status, 201);
+  const replay = await app.request(
+    `/api/v1/remote-missions/${mission.missionId}/approval-decision`,
+    {
+      method: "PUT",
+      headers: { ...auth, "content-type": "application/json", "idempotency-key": "decision-1" },
+      body: JSON.stringify(decisionBody),
+    },
+  );
+  assert.equal(replay.status, 200);
+  principal.deviceId = otherDeviceId;
+  assert.equal((await app.request(
+    `/api/v1/remote-missions/${mission.missionId}/approval-decision`,
+    { headers: auth },
+  )).status, 403);
+  principal.deviceId = deviceId;
+  const consumed = await app.request(
+    `/api/v1/remote-missions/${mission.missionId}/approval-decision`,
+    { headers: auth },
+  );
+  assert.equal(consumed.status, 200);
+  assert.equal(
+    ((await consumed.json()) as { actionDigest?: string }).actionDigest,
+    "digest-1",
+  );
+});
+
+test("binds target selection to a pending opaque candidate", async () => {
+  const { app, principal } = world();
+  const created = await app.request("/api/v1/remote-missions", {
+    method: "POST",
+    headers: { ...auth, "content-type": "application/json", "idempotency-key": "target-1" },
+    body: JSON.stringify({
+      schemaVersion: 1,
+      deviceId,
+      instruction: "Read",
+      initialUrl: "https://example.com/",
+      targetContext: "existing_tab",
+    }),
+  });
+  const mission = (await created.json()) as RemoteMissionV1;
+  for (const to of ["accepted", "running"] as const) {
+    assert.equal((await app.request(`/api/v1/remote-missions/${mission.missionId}/transition`, {
+      method: "POST",
+      headers: { ...auth, "content-type": "application/json" },
+      body: JSON.stringify({ schemaVersion: 1, to }),
+    })).status, 200);
+  }
+  const updatedAt = new Date(Date.now() - 1_000).toISOString();
+  assert.equal((await app.request(`/api/v1/remote-missions/${mission.missionId}/progress`, {
+    method: "PUT",
+    headers: { ...auth, "content-type": "application/json" },
+    body: JSON.stringify({
+      schemaVersion: 1,
+      missionId: mission.missionId,
+      state: "target_selection_required",
+      updatedAt,
+      targetSelection: {
+        expiresAt: new Date(Date.now() + 60_000).toISOString(),
+        candidates: [
+          { targetHandle: "target_work", pageTitle: "Example", groupTitle: "Work" },
+          { targetHandle: "target_personal", pageTitle: "Example", groupTitle: "Personal" },
+        ],
+      },
+    }),
+  })).status, 201);
+  assert.equal((await app.request(`/api/v1/remote-missions/${mission.missionId}/transition`, {
+    method: "POST",
+    headers: { ...auth, "content-type": "application/json" },
+    body: JSON.stringify({ schemaVersion: 1, to: "target_selection_required" }),
+  })).status, 200);
+  const rejected = await app.request(`/api/v1/remote-missions/${mission.missionId}/target-decision`, {
+    method: "PUT",
+    headers: { ...auth, "content-type": "application/json", "idempotency-key": "target-bad" },
+    body: JSON.stringify({
+      schemaVersion: 1,
+      missionId: mission.missionId,
+      targetHandle: "target_unknown",
+      decidedAt: new Date().toISOString(),
+    }),
+  });
+  assert.equal(rejected.status, 409);
+  const selected = await app.request(`/api/v1/remote-missions/${mission.missionId}/target-decision`, {
+    method: "PUT",
+    headers: { ...auth, "content-type": "application/json", "idempotency-key": "target-good" },
+    body: JSON.stringify({
+      schemaVersion: 1,
+      missionId: mission.missionId,
+      targetHandle: "target_personal",
+      decidedAt: new Date().toISOString(),
+    }),
+  });
+  assert.equal(selected.status, 201);
+  principal.deviceId = otherDeviceId;
+  assert.equal((await app.request(
+    `/api/v1/remote-missions/${mission.missionId}/target-decision`,
+    { headers: auth },
+  )).status, 403);
+});
+
+test("account deletion removes mission metadata and encrypted payload", async () => {
+  const worldState = world();
+  const created = await worldState.app.request("/api/v1/remote-missions", {
+    method: "POST",
+    headers: { ...auth, "content-type": "application/json", "idempotency-key": "delete-1" },
+    body: JSON.stringify({ schemaVersion: 1, deviceId, instruction: "Read" }),
+  });
+  const mission = (await created.json()) as RemoteMissionV1;
+  const deleted = await worldState.app.request(`/api/v1/remote-missions/${mission.missionId}`, {
+    method: "DELETE",
+    headers: auth,
+  });
+  assert.equal(deleted.status, 204);
+  assert.equal(worldState.payloads.size, 0);
+  assert.equal(worldState.records.size, 0);
 });

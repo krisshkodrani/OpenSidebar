@@ -2,6 +2,7 @@ import type {
   CloudAccountV1,
   CloudDeviceV1,
   CloudPreferencesV1,
+  CloudRemoteWorkSettingsV1,
   CredentialStatusV1,
   UsageSnapshotV1,
   CloudDashboardSummaryV1,
@@ -58,6 +59,13 @@ export const accountApi = {
       .credentials,
   usage: () => request<UsageSnapshotV1>("/relay/usage"),
   preferences: () => request<CloudPreferencesV1 | null>("/preferences"),
+  remoteWork: () => request<CloudRemoteWorkSettingsV1>("/account/remote-work"),
+  saveRemoteWork: (enabled: boolean, expectedRevision: number) =>
+    request<CloudRemoteWorkSettingsV1>("/account/remote-work", {
+      method: "PUT",
+      headers: { "if-match": String(expectedRevision) },
+      body: JSON.stringify({ enabled }),
+    }),
   savePreferences: (value: CloudPreferencesV1, expectedRevision: number) =>
     request<CloudPreferencesV1>("/preferences", {
       method: "PUT",
@@ -72,6 +80,12 @@ export const accountApi = {
   revokeDevice: (id: string) =>
     request<void>(`/account/devices/${encodeURIComponent(id)}`, {
       method: "DELETE",
+    }),
+  renameDevice: (device: CloudDeviceV1, displayName: string) =>
+    request<CloudDeviceV1>(`/account/devices/${encodeURIComponent(device.id)}`, {
+      method: "PUT",
+      headers: { "if-match": String(device.displayNameRevision) },
+      body: JSON.stringify({ displayName }),
     }),
   logoutAll: () => request<void>("/account/logout-all", { method: "POST" }),
   deleteCredential: (provider: string) =>
