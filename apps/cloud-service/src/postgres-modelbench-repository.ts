@@ -137,6 +137,38 @@ export class PostgresModelBenchRepository implements ModelBenchRepository {
     return result.rows[0] ? mapRun(result.rows[0]) : null;
   }
 
+  async createLaunch(tokenHash: string, runId: string, ownerId: string, expiresAt: string): Promise<void> {
+    await this.pool.query(
+      "INSERT INTO modelbench.launch_capabilities(token_hash,run_id,owner_id,expires_at) VALUES($1,$2,$3,$4)",
+      [tokenHash, runId, ownerId, expiresAt],
+    );
+  }
+
+  async consumeLaunch(tokenHash: string): Promise<string | null> {
+    const result = await this.pool.query<{ run_id: string }>(
+      `UPDATE modelbench.launch_capabilities SET consumed_at=now()
+       WHERE token_hash=$1 AND consumed_at IS NULL AND expires_at>now() RETURNING run_id`,
+      [tokenHash],
+    );
+    return result.rows[0]?.run_id ?? null;
+  }
+
+  async createTargetSession(sessionHash: string, runId: string, expiresAt: string): Promise<void> {
+    await this.pool.query(
+      "INSERT INTO modelbench.target_sessions(session_hash,run_id,expires_at) VALUES($1,$2,$3)",
+      [sessionHash, runId, expiresAt],
+    );
+  }
+
+  async targetRunId(sessionHash: string): Promise<string | null> {
+    const result = await this.pool.query<{ run_id: string }>(
+      `SELECT run_id FROM modelbench.target_sessions
+       WHERE session_hash=$1 AND revoked_at IS NULL AND expires_at>now()`,
+      [sessionHash],
+    );
+    return result.rows[0]?.run_id ?? null;
+  }
+
   async apply(
     id: string,
     expectedRevision: number,
@@ -227,6 +259,8 @@ export class PostgresModelBenchRepository implements ModelBenchRepository {
         "DELETE FROM modelbench.attempts WHERE expires_at<=$1",
         [now],
       );
+      await client.query("DELETE FROM modelbench.launch_capabilities WHERE expires_at<=$1", [now]);
+      await client.query("DELETE FROM modelbench.target_sessions WHERE expires_at<=$1", [now]);
       const runs = await client.query(
         "DELETE FROM modelbench.scenario_runs WHERE expires_at<=$1",
         [now],

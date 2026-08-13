@@ -26,6 +26,7 @@ import type { RemoteMissionRepository } from "./remote-mission-repository.js";
 import type { RemoteMissionVault } from "./remote-mission-vault.js";
 import { createHostedBrowserMcpApi } from "./hosted-browser-mcp-api.js";
 import type { HostedBrowserMcpOperations } from "./hosted-browser-mcp.js";
+import { createModelBenchTargetApi } from "./modelbench-target-api.js";
 
 type Variables = { accountId: string; email: string; csrfHash: string };
 const noStore = (c: Context) => c.header("Cache-Control", "no-store");
@@ -222,6 +223,8 @@ export function createApp(
         vault: control.remoteMissionVault,
       }),
     );
+  if (control?.modelBenchRepository)
+    app.route("/", createModelBenchTargetApi(control.modelBenchRepository, config));
   if (config.hostedMcpEnabled && control?.hostedBrowserMcpOperations)
     app.route("/", createHostedBrowserMcpApi({
       config,

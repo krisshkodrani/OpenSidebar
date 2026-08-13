@@ -80,6 +80,32 @@ describe("overlay host", () => {
     );
   });
 
+  test("focused drag handle moves with WASD without capturing editor input", () => {
+    const overlay = createOpenSidebarOverlayHost();
+    const titlebar = overlay.shadowRoot.querySelector(
+      "[data-osb-drag-handle]",
+    ) as HTMLElement;
+    const startLeft = Number.parseFloat(overlay.host.style.left);
+    const startTop = Number.parseFloat(overlay.host.style.top);
+
+    titlebar.focus();
+    titlebar.dispatchEvent(new KeyboardEvent("keydown", { key: "a", bubbles: true }));
+    titlebar.dispatchEvent(new KeyboardEvent("keydown", { key: "s", bubbles: true }));
+
+    expect(Number.parseFloat(overlay.host.style.left)).toBe(startLeft - 24);
+    expect(Number.parseFloat(overlay.host.style.top)).toBeGreaterThan(startTop);
+    expect(Number.parseFloat(overlay.host.style.top)).toBeLessThanOrEqual(
+      startTop + 24,
+    );
+    expect(overlay.host.dataset.dock).toBe("custom");
+    expect(titlebar.getAttribute("aria-keyshortcuts")).toBe("W A S D");
+
+    const input = document.createElement("input");
+    overlay.mountElement.append(input);
+    input.dispatchEvent(new KeyboardEvent("keydown", { key: "d", bubbles: true }));
+    expect(Number.parseFloat(overlay.host.style.left)).toBe(startLeft - 24);
+  });
+
   test("docks the overlay left and right for dense pages", () => {
     const originalWidth = window.innerWidth;
     Object.defineProperty(window, "innerWidth", {

@@ -9,8 +9,12 @@ test("ModelBench migration isolates runs and attempts in a private schema", asyn
   assert.match(sql, /CREATE SCHEMA IF NOT EXISTS modelbench/);
   assert.match(sql, /REVOKE ALL ON SCHEMA modelbench FROM PUBLIC/);
   assert.match(sql, /CREATE TABLE IF NOT EXISTS modelbench\.scenario_runs/);
+  assert.match(sql, /CREATE TABLE IF NOT EXISTS modelbench\.launch_capabilities/);
+  assert.match(sql, /CREATE TABLE IF NOT EXISTS modelbench\.target_sessions/);
   assert.match(sql, /CREATE TABLE IF NOT EXISTS modelbench\.attempts/);
   assert.match(sql, /retry_of_attempt_id text REFERENCES modelbench\.attempts/);
   assert.match(sql, /expires_at timestamptz NOT NULL/);
+  assert.match(sql, /REVOKE ALL ON modelbench\.launch_capabilities FROM PUBLIC/);
+  assert.match(sql, /REVOKE ALL ON modelbench\.target_sessions FROM PUBLIC/);
   assert.doesNotMatch(sql, /prompt|screenshot|provider_key|credential/i);
 });
