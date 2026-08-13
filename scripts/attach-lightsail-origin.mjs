@@ -103,7 +103,7 @@ const controlPolicy = ensurePolicy("CONTROL_API_ORIGIN_REQUEST_POLICY_ID", polic
 ));
 const targetPolicy = ensurePolicy("TARGET_API_ORIGIN_REQUEST_POLICY_ID", policyConfig(
   "OpenSidebarPlaygroundTargetToLightsail",
-  ["__Host-os_playground_target"],
+  ["__Host-os_playground_target", "__Host-os_modelbench_target"],
   ["Accept", "Content-Type", "Origin"],
   "none",
 ));
