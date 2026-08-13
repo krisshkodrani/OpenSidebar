@@ -16,6 +16,7 @@ const API_ORIGIN = "https://opensidebar.com";
 const SESSION_KEY = CLOUD_EXTENSION_SESSION_KEY;
 const INSTALLATION_KEY = "cloudInstallationIdV1";
 const PREFERENCES_LINKED_KEY = "cloudPreferencesLinkedV1";
+const PREFERENCES_SYNC_ENABLED_KEY = "cloudPreferencesSyncEnabledV1";
 const TRACE_RECOVERY_KEY = "cloudTraceRecoveryKeyV1";
 const PENDING_EMAIL_AUTH_KEY = "cloudPendingEmailAuthV1";
 
@@ -270,11 +271,24 @@ export async function cloudPreferences() {
   return response.json() as Promise<CloudPreferencesV1>;
 }
 export async function cloudPreferencesLinked() {
+  const stored = await uiRuntime.storage.local.get([
+    PREFERENCES_LINKED_KEY,
+    PREFERENCES_SYNC_ENABLED_KEY,
+  ]);
   return (
-    (await uiRuntime.storage.local.get(PREFERENCES_LINKED_KEY))[
-      PREFERENCES_LINKED_KEY
-    ] === true
+    stored[PREFERENCES_LINKED_KEY] === true &&
+    stored[PREFERENCES_SYNC_ENABLED_KEY] !== false
   );
+}
+export async function cloudPreferenceSyncEnabled() {
+  return (
+    (await uiRuntime.storage.local.get(PREFERENCES_SYNC_ENABLED_KEY))[
+      PREFERENCES_SYNC_ENABLED_KEY
+    ] !== false
+  );
+}
+export async function setCloudPreferenceSyncEnabled(enabled: boolean) {
+  await uiRuntime.storage.local.set({ [PREFERENCES_SYNC_ENABLED_KEY]: enabled });
 }
 export async function importCloudPreferences() {
   const value = await cloudPreferences();

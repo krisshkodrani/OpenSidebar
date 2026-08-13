@@ -5,7 +5,12 @@ import { uiRuntime } from "./runtime";
 const STORAGE_KEY = "opensidebar:savedPrompts";
 const SEEDED_KEY = "opensidebar:savedPromptsSeeded";
 const VERSION_KEY = "opensidebar:savedPromptsVersion";
-const CURRENT_PROMPTS_VERSION = 4;
+const CURRENT_PROMPTS_VERSION = 5;
+const BUILTIN_PROMPT_IDS = {
+  "Summarize this page": "builtin:summarize-page",
+  "Extract all links": "builtin:extract-links",
+  "Fill out this form": "builtin:fill-form",
+} as const;
 
 const LEGACY_DEFAULT_CONTENT = {
   "Extract all links":
@@ -53,7 +58,7 @@ export async function loadSavedPrompts(): Promise<SavedPrompt[]> {
     const now = Date.now();
     const seeded = DEFAULT_PROMPTS.map((d) => ({
       ...d,
-      id: crypto.randomUUID(),
+      id: BUILTIN_PROMPT_IDS[d.title as keyof typeof BUILTIN_PROMPT_IDS],
       createdAt: now,
       updatedAt: now,
     }));
@@ -89,6 +94,18 @@ export async function loadSavedPrompts(): Promise<SavedPrompt[]> {
           content: getPromptTemplate(DEFAULT_PROMPT_IDS[title]),
           updatedAt: Date.now(),
         };
+      });
+    }
+
+    // v4 -> v5: give untouched bundled defaults deterministic identities so
+    // encrypted cross-device sync never duplicates product-owned templates.
+    if (currentVersion < 5) {
+      next = next.map((prompt) => {
+        const title = prompt.title as keyof typeof BUILTIN_PROMPT_IDS;
+        const templateId = DEFAULT_PROMPT_IDS[title];
+        if (!templateId || prompt.content !== getPromptTemplate(templateId))
+          return prompt;
+        return { ...prompt, id: BUILTIN_PROMPT_IDS[title] };
       });
     }
 

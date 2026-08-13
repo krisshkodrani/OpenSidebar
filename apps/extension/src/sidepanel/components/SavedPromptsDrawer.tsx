@@ -2,6 +2,7 @@ import React, { useEffect, useRef, useState } from "react";
 import { X, Plus, Pencil, Trash2, Check } from "lucide-react";
 import { useStore } from "../store";
 import { SavedPrompt } from "../../types";
+import { PersonalDataSyncBadge } from "./PersonalDataSyncBadge";
 
 interface Props {
   isOpen: boolean;
@@ -140,9 +141,10 @@ export function SavedPromptsDrawer({
         className="relative w-full max-w-[320px] h-full bg-warm-50 dark:bg-warm-900 shadow-2xl flex flex-col border-l border-warm-200 dark:border-warm-800 drawer-enter"
       >
         <header className="flex items-center justify-between p-4 border-b border-warm-200 dark:border-warm-800">
-          <h2 className="font-semibold text-lg dark:text-warm-100">
+              <h2 className="font-semibold text-lg dark:text-warm-100">
             Saved Prompts
-          </h2>
+              </h2>
+              <PersonalDataSyncBadge category="saved_prompts" />
           <div className="flex items-center gap-1">
             <button
               onClick={startCreate}

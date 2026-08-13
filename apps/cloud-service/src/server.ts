@@ -20,6 +20,9 @@ import { PostgresTraceRepository } from "./postgres-trace-repository.js";
 import { TraceObjectStore } from "./trace-object-store.js";
 import { PostgresRemoteMissionRepository } from "./postgres-remote-mission-repository.js";
 import { RemoteMissionVault } from "./remote-mission-vault.js";
+import { createHostedBrowserMcpOperations } from "./hosted-browser-mcp-operations.js";
+import { PersonalDataRepository } from "./personal-data-repository.js";
+import { DisabledPersonalDataObjectStore, PersonalDataObjectStore } from "./personal-data-object-store.js";
 
 const config = loadConfig();
 const repository = new PostgresPlaygroundRepository(config.databaseUrl);
@@ -36,6 +39,9 @@ const controlRepository = new PostgresControlRepository(
 );
 await controlRepository.migrate();
 await controlRepository.cleanupExpired();
+const personalDataRepository = new PersonalDataRepository(controlRepository.pool);
+await personalDataRepository.migrate();
+await personalDataRepository.cleanupExpired();
 const interruptedRelayCutoff = () => new Date(Date.now() - 16 * 60_000);
 const recoveredRelayRequests =
   await controlRepository.recoverInterruptedRelayRequests(
@@ -70,6 +76,21 @@ await traceRepository.migrate();
 const traceObjectStore = config.traceBucketName
   ? new TraceObjectStore(config.traceBucketName)
   : undefined;
+const personalDataObjectStore = config.personalDataBucketName
+  ? new PersonalDataObjectStore(config.personalDataBucketName)
+  : new DisabledPersonalDataObjectStore();
+const cleanupPersonalDataObjects = async () => {
+  if (!config.personalDataBucketName) return;
+  for (const item of await personalDataRepository.pendingObjectDeletions()) {
+    try {
+      await personalDataObjectStore.delete(item.objectKey);
+      await personalDataRepository.completeObjectDeletion(item.accountId, item.objectKey);
+    } catch {
+      await personalDataRepository.noteObjectDeletionFailure(item.accountId, item.objectKey);
+    }
+  }
+};
+await cleanupPersonalDataObjects();
 const temporalShadowOutbox = sessionRepository.temporalShadowOutbox;
 const vault = config.credentialKmsKeyId
   ? new CredentialVault(controlRepository, config.credentialKmsKeyId)
@@ -89,6 +110,13 @@ const remoteMissionVault =
   config.sessionKmsKeyId && sessionObjectStore
     ? new RemoteMissionVault(sessionObjectStore, config.sessionKmsKeyId)
     : undefined;
+const hostedBrowserMcpOperations = remoteMissionVault
+  ? createHostedBrowserMcpOperations({
+      accounts: controlRepository,
+      missions: remoteMissionRepository,
+      vault: remoteMissionVault,
+    })
+  : undefined;
 const sessionJobs = sessionObjectStore
   ? new SessionJobWorker(sessionRepository.pool, sessionObjectStore)
   : undefined;
@@ -104,8 +132,11 @@ const control = {
   commandRepository,
   remoteMissionRepository,
   remoteMissionVault,
+  hostedBrowserMcpOperations,
   traceRepository,
   traceObjectStore,
+  personalDataRepository,
+  personalDataObjectStore,
   passwordlessAuth,
 };
 const server = serve(
@@ -131,6 +162,11 @@ const cleanupTimer = setInterval(
     void controlRepository
       .cleanupExpired()
       .catch((error) => console.error("control-record cleanup failed", error));
+    void personalDataRepository
+      .cleanupExpired()
+      .catch((error) => console.error("personal-data cleanup failed", error));
+    void cleanupPersonalDataObjects()
+      .catch((error) => console.error("personal-data object cleanup failed", error));
     void sessionRepository
       .cleanupExpired()
       .catch((error) => console.error("session-record cleanup failed", error));

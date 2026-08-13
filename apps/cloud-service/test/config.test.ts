@@ -233,3 +233,23 @@ test("dashboard operators must already have general cloud access", () => {
     /CLOUD_OPERATOR_SUBJECTS must be a subset/,
   );
 });
+
+test("personal-data sync requires an isolated bucket and named-tester subset", () => {
+  const enabled = {
+    ...baseEnv(),
+    CLOUD_CONTROL_ENABLED: "true",
+    PERSONAL_DATA_READS_ENABLED: "true",
+  };
+  assert.throws(() => loadConfig(enabled), /PERSONAL_DATA_BUCKET_NAME/);
+  assert.throws(
+    () => loadConfig({ ...enabled, PERSONAL_DATA_BUCKET_NAME: "personal-data",
+      CLOUD_TESTER_SUBJECTS: "account-1", PERSONAL_DATA_TESTER_SUBJECTS: "account-2" }),
+    /PERSONAL_DATA_TESTER_SUBJECTS must be a subset/,
+  );
+  const config = loadConfig({ ...enabled, PERSONAL_DATA_WRITES_ENABLED: "true",
+    PERSONAL_DATA_PROFILE_ENABLED: "true", PERSONAL_DATA_BUCKET_NAME: "personal-data",
+    CLOUD_TESTER_SUBJECTS: "account-1", PERSONAL_DATA_TESTER_SUBJECTS: "account-1" });
+  assert.equal(config.personalDataReadsEnabled, true);
+  assert.equal(config.personalDataWritesEnabled, true);
+  assert.equal(config.personalDataProfileEnabled, true);
+});

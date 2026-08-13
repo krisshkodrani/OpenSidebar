@@ -72,6 +72,10 @@ import {
 } from "./remote-mission-runtime";
 import { clearLocalExtensionData } from "./local-data-cleanup";
 import { routeActionPresentation } from "./action-presentation-relay";
+import {
+  initPersonalDataSyncRuntime,
+  routePersonalDataSyncMessage,
+} from "./personal-data-sync/runtime";
 
 /** Cached settings — populated on side panel open, invalidated on storage change. */
 let cachedSettings: UserSettings | null = null;
@@ -101,6 +105,7 @@ logger.info("system", "Service Worker Initialized");
 // restart. This is intentionally detached from agent execution and is a no-op
 // in published builds because no endpoint is compiled in.
 void drainInternalFleetTelemetry(chromePersistencePort.local).catch(() => {});
+initPersonalDataSyncRuntime();
 
 const passiveMonitor = new PassiveMonitorController({
   isWorkspaceActive: (workspaceId) => orchestrator.hasActiveTask(workspaceId),
@@ -677,6 +682,7 @@ chrome.runtime.onMessage.addListener(
     }
 
     if (routeRemoteMissionControlMessage(message, sendResponse)) return true;
+    if (routePersonalDataSyncMessage(message, sendResponse)) return true;
 
     if (
       isUiMessageSource(message.source) &&

@@ -1,6 +1,6 @@
 import type { UserSettings } from "../../../types";
 
-export type SettingsTab = "account" | "agent" | "browser" | "advanced";
+export type SettingsTab = "account" | "sync" | "agent" | "browser" | "advanced";
 
 export type SettingsChangeHandler = <K extends keyof UserSettings>(
   key: K,
