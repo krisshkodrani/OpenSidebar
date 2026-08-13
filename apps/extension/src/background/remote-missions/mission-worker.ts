@@ -8,6 +8,7 @@ import type {
   RemoteMissionRunResultV1,
   RemoteMissionTargetDecisionV1,
   RemoteMissionTargetSelectionV1,
+  RemoteMissionSupervisorDecisionV1,
   SupervisorDecisionV1,
 } from "@shared-types/remote-missions";
 import type { RemoteMissionRunner } from "../remote-mission-runner";
@@ -21,7 +22,13 @@ export type MissionWorkerOutcome =
   | { state: "succeeded"; summary?: string }
   | { state: "failed" | "cancelled" | "outcome_unknown"; reason?: string }
   | { state: "target_selection_required"; targetSelection: RemoteMissionTargetSelectionV1 }
-  | { state: "approval_required" | "user_input_required"; evidence: MissionEvidenceV1 };
+  | { state: "approval_required"; evidence: MissionEvidenceV1 }
+  | {
+      state: "supervision_required";
+      evidence: MissionEvidenceV1;
+      pendingStep: MissionStepV1;
+      remainingSteps?: MissionStepV1[];
+    };
 
 const bounded = (values: string[] | undefined, limit = 20) =>
   (values ?? []).slice(0, limit).map((value) => value.trim()).filter(Boolean);
@@ -94,6 +101,69 @@ export class MissionWorker {
     private readonly journal: MissionAttemptJournalPort,
     private readonly transport?: RemoteMissionTransportPort,
   ) {}
+
+  async resumeSupervision(
+    mission: MissionSpecV1,
+    evidence: MissionEvidenceV1,
+    decision: RemoteMissionSupervisorDecisionV1,
+    options?: { signal?: AbortSignal; initialUrl?: string; remainingSteps?: MissionStepV1[] },
+  ): Promise<MissionWorkerOutcome> {
+    const baseStep = mission.steps.find((candidate) => candidate.stepId === evidence.stepId);
+    const attempt = await this.journal.read(mission.missionId);
+    if (!baseStep || !attempt || attempt.state !== "supervision_required")
+      return { state: "failed", reason: "The pending supervised attempt is no longer available." };
+    if (
+      decision.schemaVersion !== 1 ||
+      decision.missionId !== mission.missionId ||
+      decision.stepId !== evidence.stepId ||
+      decision.expectedPlanRevision !== evidence.planRevision
+    ) throw new Error("remote_mission_stale_supervisor_decision");
+    const step = { ...baseStep, planRevision: evidence.planRevision };
+    if (decision.kind === "complete") {
+      if (evidence.outcome !== "achieved")
+        return { state: "outcome_unknown", reason: "Codex cannot mark unachieved browser evidence complete." };
+      await this.journal.remove(mission.missionId);
+      return { state: "succeeded", summary: evidence.claims[0]?.claim };
+    }
+    if (decision.kind === "stop") {
+      await this.journal.remove(mission.missionId);
+      return {
+        state: decision.outcome === "cancelled"
+          ? "cancelled"
+          : decision.outcome === "unknown"
+            ? "outcome_unknown"
+            : "failed",
+        reason: decision.guidance,
+      };
+    }
+    if (decision.kind === "request_user_input")
+      return {
+        state: "supervision_required",
+        evidence,
+        pendingStep: step,
+        ...(options?.remainingSteps?.length ? { remainingSteps: options.remainingSteps } : {}),
+      };
+    if (decision.kind === "request_approval")
+      return { state: "failed", reason: "An approval must originate from grounded browser evidence." };
+    const revision = step.planRevision + 1;
+    const steps = decision.kind === "replace_remaining_plan"
+      ? (decision.replacementSteps ?? [])
+      : decision.kind === "continue" && options?.remainingSteps?.length
+        ? options.remainingSteps
+        : [{
+            ...step,
+            planRevision: revision,
+            objective: decision.guidance
+              ? `${step.objective}\n\nSupervisor guidance: ${decision.guidance}`
+              : step.objective,
+          }, ...(options?.remainingSteps ?? [])];
+    if (!steps.length) return { state: "failed", reason: "The replacement plan was empty." };
+    return this.run({
+      ...mission,
+      planRevision: Math.max(...steps.map((candidate) => candidate.planRevision)),
+      steps,
+    }, { signal: options?.signal, initialUrl: options?.initialUrl });
+  }
 
   async resumeTargetSelection(
     mission: MissionSpecV1,
@@ -261,8 +331,19 @@ export class MissionWorker {
           reason: decision.guidance,
         };
       }
-      if (decision.kind === "request_user_input")
-        return { state: "user_input_required", evidence };
+      if (decision.kind === "request_user_input") {
+        await this.journal.write({
+          ...accepted,
+          state: "supervision_required",
+          updatedAt: new Date().toISOString(),
+        });
+        return {
+          state: "supervision_required",
+          evidence,
+          pendingStep: step,
+          ...(steps.length > index + 1 ? { remainingSteps: steps.slice(index + 1) } : {}),
+        };
+      }
       if (decision.kind === "request_approval" || evidence.outcome === "approval_required")
         return { state: "approval_required", evidence };
       if (decision.kind === "replace_remaining_plan") {

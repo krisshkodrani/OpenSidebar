@@ -74,10 +74,12 @@ test("deletion removes all object versions when the object port supports it", as
     vault.progressObjectKey(identity, "accepted"),
     vault.progressObjectKey(identity, "running"),
     vault.progressObjectKey(identity, "target_selection_required"),
+    vault.progressObjectKey(identity, "supervision_required"),
     vault.progressObjectKey(identity, "approval_required"),
     vault.resultObjectKey(identity),
     vault.approvalDecisionObjectKey(identity),
     vault.targetDecisionObjectKey(identity),
+    vault.supervisorDecisionObjectKey(identity),
     vault.resultObjectKey(identity, "completed"),
     vault.resultObjectKey(identity, "not_achieved"),
     vault.resultObjectKey(identity, "cancelled"),
@@ -206,5 +208,69 @@ test("outcome-addressed result objects cannot overwrite each other", async () =>
   assert.deepEqual(
     (await vault.getResultAndDecrypt(identity, "completed")).outcome,
     "completed",
+  );
+});
+
+test("replaces current supervision evidence without a delete gap", async () => {
+  const objects = new Map<string, Uint8Array>();
+  const deleted: string[] = [];
+  const replaced: string[] = [];
+  const dataKey = Buffer.alloc(32, 4);
+  const vault = new RemoteMissionVault(
+    {
+      async put(key, body) { objects.set(key, body); },
+      async replace(key, body) { replaced.push(key); objects.set(key, body); },
+      async get(key) {
+        const body = objects.get(key);
+        if (!body) throw new Error("missing");
+        return body;
+      },
+      async delete(key) { deleted.push(key); objects.delete(key); },
+    },
+    "key",
+    {
+      async send(command: { constructor: { name: string } }) {
+        return command.constructor.name === "GenerateDataKeyCommand"
+          ? { Plaintext: dataKey, CiphertextBlob: Buffer.from("wrapped") }
+          : { Plaintext: dataKey };
+      },
+    } as never,
+  );
+  const progress = (attemptId: string) => ({
+    schemaVersion: 1 as const,
+    missionId: identity.missionId,
+    state: "supervision_required" as const,
+    updatedAt: new Date().toISOString(),
+    evidence: {
+      schemaVersion: 1 as const,
+      missionId: identity.missionId,
+      stepId: "step-1",
+      attemptId,
+      planRevision: 1,
+      outcome: "achieved" as const,
+      claims: [],
+      effects: [],
+      uncertainties: [],
+    },
+    pendingStep: {
+      schemaVersion: 1 as const,
+      missionId: identity.missionId,
+      stepId: "step-1",
+      planRevision: 1,
+      risk: "read_only" as const,
+      objective: "Read the page",
+      successCriteria: ["Return the heading"],
+    },
+  });
+  await vault.replaceSupervisionProgressAndPut(identity, progress("attempt-1"));
+  await vault.replaceSupervisionProgressAndPut(identity, progress("attempt-2"));
+  assert.deepEqual(replaced, [
+    vault.progressObjectKey(identity, "supervision_required"),
+    vault.progressObjectKey(identity, "supervision_required"),
+  ]);
+  assert.equal(deleted.includes(vault.progressObjectKey(identity, "supervision_required")), false);
+  assert.equal(
+    (await vault.getProgressAndDecrypt(identity, "supervision_required")).evidence?.attemptId,
+    "attempt-2",
   );
 });

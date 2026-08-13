@@ -170,6 +170,9 @@ export class PostgresSessionRepository implements SessionRepository {
     await this.pool.query(
       await readFile(resolve(here, "../migrations/016_remote_mission_target_selection.sql"), "utf8"),
     );
+    await this.pool.query(
+      await readFile(resolve(here, "../migrations/017_remote_mission_supervision.sql"), "utf8"),
+    );
     if (this.temporalShadowOutbox)
       await this.temporalShadowOutbox.migrate(
         await readFile(

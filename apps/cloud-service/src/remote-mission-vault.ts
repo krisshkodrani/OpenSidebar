@@ -15,6 +15,7 @@ import type {
   RemoteMissionProgressV1,
   RemoteMissionResultV1,
   RemoteMissionTargetDecisionV1,
+  RemoteMissionSupervisorDecisionV1,
 } from "@opensidebar/shared-types";
 import type { CheckpointObjectPort } from "./checkpoint-vault.js";
 import type { KmsPort } from "./credential-vault.js";
@@ -39,7 +40,7 @@ type MissionEnvelopeV1 = {
 
 const context = (
   identity: RemoteMissionIdentity,
-  purpose: "payload" | "progress" | "result" | "approval-decision" | "target-decision",
+  purpose: "payload" | "progress" | "result" | "approval-decision" | "target-decision" | "supervisor-decision",
 ) => ({
   // Preserve the original payload context so queued envelopes remain
   // decryptable across this rollout; results use a distinct context.
@@ -90,6 +91,10 @@ export class RemoteMissionVault {
     return `${this.objectKey(identity)}/target-decision`;
   }
 
+  supervisorDecisionObjectKey(identity: RemoteMissionIdentity) {
+    return `${this.objectKey(identity)}/supervisor-decision`;
+  }
+
   async encryptAndPut(
     identity: RemoteMissionIdentity,
     payload: RemoteMissionPayloadV1,
@@ -127,6 +132,20 @@ export class RemoteMissionVault {
         throw new Error("remote_mission_progress_conflict");
       return { ciphertextSizeBytes: 0, ciphertextSha256: "" };
     }
+  }
+
+  async replaceSupervisionProgressAndPut(
+    identity: RemoteMissionIdentity,
+    progress: RemoteMissionProgressV1,
+  ) {
+    if (progress.state !== "supervision_required" || !progress.evidence)
+      throw new Error("remote_mission_supervision_progress_invalid");
+    const objectKey = this.progressObjectKey(identity, progress.state);
+    const existing = await this.getProgressAndDecrypt(identity, progress.state).catch(() => null);
+    if (existing?.evidence?.attemptId === progress.evidence?.attemptId)
+      return { ciphertextSizeBytes: 0, ciphertextSha256: "" };
+    await this.objects.delete(this.supervisorDecisionObjectKey(identity)).catch(() => undefined);
+    return this.encryptObject(identity, "progress", objectKey, progress, true);
   }
 
   async encryptApprovalDecisionAndPut(
@@ -172,16 +191,34 @@ export class RemoteMissionVault {
     }
   }
 
+  async encryptSupervisorDecisionAndPut(
+    identity: RemoteMissionIdentity,
+    decision: RemoteMissionSupervisorDecisionV1,
+  ) {
+    const objectKey = this.supervisorDecisionObjectKey(identity);
+    try {
+      return await this.encryptObject(identity, "supervisor-decision", objectKey, decision);
+    } catch (error) {
+      if ((error as Error).message !== "checkpoint_object_exists") throw error;
+      const existing = await this.getSupervisorDecisionAndDecrypt(identity);
+      if (existing.decisionId !== decision.decisionId || existing.kind !== decision.kind)
+        throw new Error("remote_mission_supervisor_decision_conflict");
+      return { ciphertextSizeBytes: 0, ciphertextSha256: "" };
+    }
+  }
+
   private async encryptObject(
     identity: RemoteMissionIdentity,
-    purpose: "payload" | "progress" | "result" | "approval-decision" | "target-decision",
+    purpose: "payload" | "progress" | "result" | "approval-decision" | "target-decision" | "supervisor-decision",
     objectKey: string,
     value:
       | RemoteMissionPayloadV1
       | RemoteMissionProgressV1
       | RemoteMissionResultV1
       | RemoteMissionApprovalDecisionV1
-      | RemoteMissionTargetDecisionV1,
+      | RemoteMissionTargetDecisionV1
+      | RemoteMissionSupervisorDecisionV1,
+    replace = false,
   ) {
     const plaintext = Buffer.from(JSON.stringify(value));
     if (plaintext.byteLength < 1 || plaintext.byteLength > MAX_PAYLOAD_BYTES)
@@ -214,7 +251,11 @@ export class RemoteMissionVault {
         ciphertext: ciphertext.toString("base64"),
       };
       const body = Buffer.from(JSON.stringify(envelope));
-      await this.objects.put(objectKey, body);
+      if (replace && this.objects.replace) await this.objects.replace(objectKey, body);
+      else {
+        if (replace) await this.objects.delete(objectKey).catch(() => undefined);
+        await this.objects.put(objectKey, body);
+      }
       return {
         ciphertextSizeBytes: body.byteLength,
         ciphertextSha256: createHash("sha256").update(body).digest("hex"),
@@ -300,9 +341,19 @@ export class RemoteMissionVault {
     );
   }
 
+  async getSupervisorDecisionAndDecrypt(
+    identity: RemoteMissionIdentity,
+  ): Promise<RemoteMissionSupervisorDecisionV1> {
+    return this.decryptObject<RemoteMissionSupervisorDecisionV1>(
+      identity,
+      "supervisor-decision",
+      this.supervisorDecisionObjectKey(identity),
+    );
+  }
+
   private async decryptObject<T>(
     identity: RemoteMissionIdentity,
-    purpose: "payload" | "progress" | "result" | "approval-decision" | "target-decision",
+    purpose: "payload" | "progress" | "result" | "approval-decision" | "target-decision" | "supervisor-decision",
     objectKey: string,
   ): Promise<T> {
     const body = await this.objects.get(objectKey);
@@ -347,12 +398,13 @@ export class RemoteMissionVault {
     const keys = [
       this.objectKey(identity),
       this.progressObjectKey(identity),
-      ...(["accepted", "running", "target_selection_required", "approval_required"] as const).map(
+      ...(["accepted", "running", "target_selection_required", "supervision_required", "approval_required"] as const).map(
         (state) => this.progressObjectKey(identity, state),
       ),
       this.resultObjectKey(identity),
       this.approvalDecisionObjectKey(identity),
       this.targetDecisionObjectKey(identity),
+      this.supervisorDecisionObjectKey(identity),
       ...(["completed", "not_achieved", "cancelled", "unknown"] as const).map(
         (outcome) => this.resultObjectKey(identity, outcome),
       ),

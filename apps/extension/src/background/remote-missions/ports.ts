@@ -10,6 +10,7 @@ import type {
   RemoteMissionProgressV1,
   RemoteMissionStatusV1,
   RemoteMissionTargetDecisionV1,
+  RemoteMissionSupervisorDecisionV1,
 } from "@shared-types/remote-missions";
 
 export interface MissionSupervisorPort {
@@ -46,6 +47,11 @@ export interface RemoteMissionDeliveryPort {
   putTargetDecision(
     missionId: string,
     decision: RemoteMissionTargetDecisionV1,
+  ): Promise<void>;
+  getSupervisorDecision(missionId: string): Promise<RemoteMissionSupervisorDecisionV1 | null>;
+  putSupervisorDecision(
+    missionId: string,
+    decision: RemoteMissionSupervisorDecisionV1,
   ): Promise<void>;
   cancel(missionId: string): Promise<RemoteMissionV1>;
   transition(

@@ -47,7 +47,7 @@ test("task creation requires both scope and bounded semantic inputs", async () =
       operations,
       principal(["browser.tasks.create"]),
       "browser_start_task",
-      { objective: "Read the heading" },
+      { requestId: "request-1", objective: "Read the heading" },
     ),
     /missing_successCriteria/,
   );
@@ -55,7 +55,7 @@ test("task creation requires both scope and bounded semantic inputs", async () =
     operations,
     principal(["browser.tasks.create"]),
     "browser_start_task",
-    { objective: "Read the heading", successCriteria: ["Heading reported"] },
+    { requestId: "request-1", objective: "Read the heading", successCriteria: ["Heading reported"] },
   );
   assert.deepEqual(result, { missionId: "mission-1", objective: "Read the heading" });
 });

@@ -1,6 +1,7 @@
 import { describe, expect, test, vi } from "vitest";
 import type {
   MissionSpecV1,
+  RemoteMissionSupervisorDecisionV1,
   SupervisorDecisionV1,
 } from "@shared-types/remote-missions";
 import type { RemoteMissionRunner } from "../../src/background/remote-mission-runner";
@@ -239,5 +240,60 @@ describe("MissionWorker", () => {
       { signal: undefined },
     );
     expect(await journal.read("mission-1")).toBeNull();
+  });
+
+  test("hands browser evidence to Codex and completes only after its revision-bound decision", async () => {
+    const journal = new MemoryMissionAttemptJournal();
+    const worker = new MissionWorker(
+      { run: vi.fn().mockResolvedValue({ state: "succeeded", summary: "Example Domain" }) } as RemoteMissionRunner,
+      new ScriptedMissionSupervisor([decision("request_user_input")]),
+      journal,
+    );
+    const waiting = await worker.run(mission());
+    expect(waiting).toMatchObject({
+      state: "supervision_required",
+      evidence: { outcome: "achieved", claims: [{ claim: "Example Domain" }] },
+    });
+    expect((await journal.read("mission-1"))?.state).toBe("supervision_required");
+    const evidence = (waiting as Extract<typeof waiting, { state: "supervision_required" }>).evidence;
+    const codexDecision: RemoteMissionSupervisorDecisionV1 = {
+      ...decision("complete", { outcome: "completed" }),
+      decidedAt: new Date().toISOString(),
+    };
+    await expect(worker.resumeSupervision(mission(), evidence, codexDecision)).resolves.toEqual({
+      state: "succeeded",
+      summary: "Example Domain",
+    });
+    expect(await journal.read("mission-1")).toBeNull();
+  });
+
+  test("Codex retry produces a new evidence revision in the same mission", async () => {
+    const journal = new MemoryMissionAttemptJournal();
+    const run = vi
+      .fn()
+      .mockResolvedValueOnce({ state: "failed", summary: "Heading not grounded" })
+      .mockResolvedValueOnce({ state: "succeeded", summary: "Example Domain" });
+    const worker = new MissionWorker(
+      { run } as RemoteMissionRunner,
+      new ScriptedMissionSupervisor([
+        decision("request_user_input"),
+        { ...decision("request_user_input"), expectedPlanRevision: 2 },
+      ]),
+      journal,
+    );
+    const first = await worker.run(mission());
+    expect(first).toMatchObject({ state: "supervision_required", evidence: { planRevision: 1 } });
+    const evidence = (first as Extract<typeof first, { state: "supervision_required" }>).evidence;
+    const retry: RemoteMissionSupervisorDecisionV1 = {
+      ...decision("retry", { guidance: "Inspect the main region." }),
+      decidedAt: new Date().toISOString(),
+    };
+    const second = await worker.resumeSupervision(mission(), evidence, retry);
+    expect(second).toMatchObject({
+      state: "supervision_required",
+      evidence: { planRevision: 2, outcome: "achieved" },
+      pendingStep: { planRevision: 2 },
+    });
+    expect(run.mock.calls[1]?.[0].instruction).toContain("Inspect the main region.");
   });
 });

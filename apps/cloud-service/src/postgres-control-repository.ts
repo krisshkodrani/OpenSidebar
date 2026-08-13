@@ -118,13 +118,14 @@ export class PostgresControlRepository implements ControlRepository {
     displayName: string,
     extensionVersion: string,
     connectionKind: CloudDeviceV1["connectionKind"],
+    revive = true,
   ) {
     const result = await this.pool.query(
       `INSERT INTO control.devices(id,account_id,installation_id,display_name,extension_version,connection_kind)
       VALUES('dev_'||substr(md5(random()::text||clock_timestamp()::text),1,24),$1,$2,$3,$4,$5)
-      ON CONFLICT(account_id,installation_id) DO UPDATE SET extension_version=excluded.extension_version,connection_kind=excluded.connection_kind,last_seen_at=now(),revoked_at=NULL
+      ON CONFLICT(account_id,installation_id) DO UPDATE SET extension_version=excluded.extension_version,connection_kind=excluded.connection_kind,last_seen_at=now(),revoked_at=CASE WHEN $6 THEN NULL ELSE control.devices.revoked_at END
       RETURNING id,installation_id,display_name,display_name_revision,extension_version,connection_kind,created_at,last_seen_at,revoked_at`,
-      [accountId, installationId, displayName, extensionVersion, connectionKind],
+      [accountId, installationId, displayName, extensionVersion, connectionKind, revive],
     );
     return deviceRow(result.rows[0]);
   }

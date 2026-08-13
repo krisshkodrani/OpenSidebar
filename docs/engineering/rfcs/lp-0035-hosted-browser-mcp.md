@@ -228,8 +228,9 @@ Implemented on the `agent/hosted-browser-mcp` working branch:
   extension and account site.
 - Thirty-day encrypted mission retention, version-aware/manual cleanup, and
   orphan cleanup when metadata creation fails.
-- A private, unmounted MCP SDK contract for the six approved scoped tools, with
-  a Codex-like in-memory conformance test.
+- A six-tool MCP SDK contract, thin mission operations adapter, and Streamable
+  HTTP resource endpoint mounted only when `HOSTED_MCP_ENABLED=true`, with
+  Codex-like in-memory and HTTP initialize conformance tests.
 - A disabled authenticated extension delivery loop with alarm-based polling,
   a durable ordered local journal, hard read-only tool enforcement across
   initial/replanned/synthesized nodes, terminal lifecycle reporting, and a
@@ -273,6 +274,26 @@ Implemented on the `agent/hosted-browser-mcp` working branch:
   `1c4fdf8b-a96d-4f34-a202-67540defd07b` in 76.5 seconds. The live profile is
   still hard read-only, so this proves non-regression without manufacturing a
   consequential website action.
+- Browser, Codex integration, and acceptance test connections now have distinct
+  identities. Repeated acceptance clients collapse into one history summary;
+  active browsers expose explicit online/offline state and revocation remains
+  locally authoritative.
+- Duplicate exact-URL matches now pause in `target_selection_required`. The
+  encrypted envelope contains only bounded page/group/window labels and opaque
+  handles. Chrome identifiers remain in extension memory; handles are bound to
+  the mission session, expire, are single-use across sibling choices, and are
+  revalidated against the live exact URL before continuation.
+- RFC 9728 protected-resource discovery and the hosted resource-server boundary
+  are implemented default-off. They require a separate Cognito MCP app client
+  and resource-bound namespaced scopes; website cookies and extension-client
+  tokens are rejected, and dashboard revocation of the Codex integration wins
+  locally. Streamable HTTP sessions are account/client-bound and creation,
+  polling, and mutation have separate hashed per-account quotas.
+- Codex supervisor decisions are stored in a distinct encrypted envelope and
+  bound to the evidence step and plan revision. Retry, stronger-evidence,
+  replacement-plan, input, completion, and stop decisions resume the same
+  durable mission; the extension no longer declares semantic completion for
+  this path.
 
 Not yet implemented:
 
@@ -280,18 +301,20 @@ Not yet implemented:
   The transport and same-process runner continuation are implemented and unit
   verified, while the active remote profile remains hard `read_only` and cannot
   produce a consequential approval.
-- Real-browser visual acceptance of the implemented sidepanel requester,
-  mission-context, approval-preview, and local cancel/deny controls; explicit
-  offline/revoked/partial-rollout presentation and an account-level remote-work
-  switch remain.
-- OAuth grants, the hosted MCP HTTP endpoint, and its concrete mission API
-  operations adapter.
+- Real-browser duplicate-tab/group selection, synthetic approval, and explicit
+  offline/revoked/partial-rollout visual evidence. The account-level remote-work
+  switch and local target-selection handoff are implemented.
+- Disabled exact-host deployment and real Codex OAuth acceptance. The separate
+  Cognito resource server/public PKCE client are provisioned, and the resource
+  endpoint plus complete mission/supervision adapter exist behind a disabled
+  flag.
 - Production-shaped real-browser restart, revocation, and two-device E2E evidence.
 - Hosted/local parity cutover and deletion of the localhost WebSocket bridge.
 
-All new backend behavior remains behind `REMOTE_MISSIONS_ENABLED=false` by
-default. The current implementation is foundation code, not an operable hosted
-Codex-to-browser path.
+All new backend behavior remains behind `REMOTE_MISSIONS_ENABLED=false` and
+`HOSTED_MCP_ENABLED=false` by default. No hosted Codex-to-browser path is
+operable until the reviewed backend is deployed and exact-host acceptance
+passes.
 
 The delivery sequence and acceptance gates are maintained in the
 [hosted browser MCP roadmap](../hosted-browser-mcp-roadmap.md).

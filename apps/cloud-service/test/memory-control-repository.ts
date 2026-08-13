@@ -54,6 +54,7 @@ export class MemoryControlRepository implements ControlRepository {
     displayName: string,
     extensionVersion: string,
     connectionKind: CloudDeviceV1["connectionKind"] = "browser_extension",
+    revive = true,
   ) {
     const found = [...this.devices.values()].find(
       (item) =>
@@ -68,9 +69,10 @@ export class MemoryControlRepository implements ControlRepository {
       displayNameRevision: found?.displayNameRevision ?? 1,
       extensionVersion,
       connectionKind,
-      availability: "online" as const,
+      availability: (!revive && found?.revokedAt ? "revoked" : "online") as "online" | "revoked",
       createdAt: found?.createdAt ?? new Date().toISOString(),
       lastSeenAt: new Date().toISOString(),
+      ...(!revive && found?.revokedAt ? { revokedAt: found.revokedAt } : {}),
     };
     this.devices.set(value.id, value);
     return value;

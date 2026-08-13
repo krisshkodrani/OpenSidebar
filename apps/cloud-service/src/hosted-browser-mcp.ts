@@ -34,13 +34,14 @@ const tools = [
   {
     name: "browser_start_task",
     scope: "browser.tasks.create",
-    requiredArgs: ["objective", "successCriteria"],
+    requiredArgs: ["requestId", "objective", "successCriteria"],
     description:
-      "Start an explicitly authorized supervised browser mission on a selected device. Returns immediately with a mission ID.",
+      "Start an explicitly authorized supervised browser mission on a selected device. Generate one requestId and reuse it if this call is retried. Returns immediately with a mission ID.",
     inputSchema: {
       type: "object",
       additionalProperties: false,
       properties: {
+        requestId: { type: "string", minLength: 1, maxLength: 200 },
         deviceId: { type: "string" },
         objective: { type: "string", minLength: 1, maxLength: 16_000 },
         successCriteria: { type: "array", minItems: 1, maxItems: 20, items: { type: "string", minLength: 1, maxLength: 500 } },
@@ -49,7 +50,7 @@ const tools = [
         initialUrl: { type: "string", maxLength: 2_048 },
         targetContext: { type: "string", enum: ["active_tab", "existing_tab", "isolated_tab"] },
       },
-      required: ["objective", "successCriteria"],
+      required: ["requestId", "objective", "successCriteria"],
     },
   },
   {
@@ -73,7 +74,7 @@ const tools = [
       "Submit a revision-checked supervisor decision to continue, retry, replan, request evidence or input, complete, or stop.",
     inputSchema: {
       type: "object",
-      additionalProperties: true,
+      additionalProperties: false,
       properties: {
         missionId: { type: "string" },
         stepId: { type: "string" },
@@ -83,6 +84,9 @@ const tools = [
           enum: ["continue", "retry", "replace_remaining_plan", "request_evidence", "request_user_input", "request_approval", "select_target", "complete", "stop"],
         },
         targetHandle: { type: "string", minLength: 1, maxLength: 200 },
+        guidance: { type: "string", minLength: 1, maxLength: 4_000 },
+        outcome: { type: "string", enum: ["completed", "not_achieved", "cancelled", "unknown"] },
+        replacementSteps: { type: "array", minItems: 1, maxItems: 20, items: { type: "object" } },
       },
       required: ["missionId", "decision"],
     },
@@ -122,6 +126,16 @@ const tools = [
 const required = (name: string, args: ToolArgs) => {
   const tool = tools.find((item) => item.name === name);
   if (!tool) throw new Error("unknown_tool");
+  const allowedArgs: Record<string, readonly string[]> = {
+    browser_list_devices: [],
+    browser_start_task: ["requestId", "deviceId", "objective", "successCriteria", "constraints", "prohibitedEffects", "initialUrl", "targetContext"],
+    browser_get_task: ["missionId"],
+    browser_continue_task: ["missionId", "stepId", "expectedPlanRevision", "decision", "targetHandle", "guidance", "outcome", "replacementSteps"],
+    browser_respond_approval: ["missionId", "approvalId", "approved"],
+    browser_cancel_task: ["missionId"],
+  };
+  if (Object.keys(args).some((key) => !allowedArgs[name]?.includes(key)))
+    throw new Error("unknown_argument");
   for (const key of tool.requiredArgs)
     if (args[key] === undefined || args[key] === null || args[key] === "")
       throw new Error(`missing_${key}`);
@@ -142,6 +156,7 @@ const required = (name: string, args: ToolArgs) => {
       throw new Error(`invalid_${key}`);
   };
   if (name === "browser_start_task") {
+    boundedText("requestId", 200);
     boundedText("objective", 16_000);
     boundedText("deviceId", 200);
     boundedText("initialUrl", 2_048);
@@ -173,6 +188,11 @@ const required = (name: string, args: ToolArgs) => {
       boundedText("stepId", 200);
       if (!Number.isSafeInteger(args.expectedPlanRevision) || Number(args.expectedPlanRevision) < 1)
         throw new Error("invalid_expectedPlanRevision");
+      boundedText("guidance", 4_000);
+      if (
+        args.decision === "replace_remaining_plan" &&
+        (!Array.isArray(args.replacementSteps) || args.replacementSteps.length < 1 || args.replacementSteps.length > 20)
+      ) throw new Error("invalid_replacementSteps");
     }
   }
   if (name === "browser_respond_approval") {

@@ -64,6 +64,7 @@
     "playground:security-headers": "node scripts/configure-playground-security-headers.mjs",
     "lightsail:provision": "node scripts/provision-lightsail.mjs",
     "playground:provision-cognito": "node scripts/provision-playground-cognito.mjs",
+    "cloud:provision-hosted-mcp-cognito": "node scripts/provision-hosted-mcp-cognito.mjs",
     "cloud:provision-kms": "node scripts/provision-cloud-kms.mjs",
     "cloud:provision-session-storage": "node scripts/provision-session-storage.mjs",
     "cloud:dev": "node node_modules/tsx/dist/cli.mjs apps/cloud-service/src/server.ts",

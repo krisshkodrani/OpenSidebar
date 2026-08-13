@@ -16,6 +16,7 @@ import {
   parseRemoteMissionProgress,
   parseRemoteMissionResult,
   parseRemoteMissionTargetDecision,
+  parseRemoteMissionSupervisorDecision,
   RemoteMissionPolicyError,
 } from "./remote-mission-policy.js";
 import type { RemoteMissionRepository } from "./remote-mission-repository.js";
@@ -69,7 +70,7 @@ const missionOutcome = (mission: { resultCode?: string }) =>
           ? "unknown"
           : undefined;
 const missionProgressState = (state: string) =>
-  state === "accepted" || state === "running" || state === "target_selection_required" || state === "approval_required"
+  state === "accepted" || state === "running" || state === "target_selection_required" || state === "supervision_required" || state === "approval_required"
     ? state
     : undefined;
 
@@ -343,14 +344,17 @@ export function createRemoteMissionApi(deps: Dependencies) {
         (progress.state === "running" && mission.state === "running") ||
         (progress.state === "target_selection_required" &&
           (mission.state === "running" || mission.state === "target_selection_required")) ||
+        (progress.state === "supervision_required" &&
+          (mission.state === "running" || mission.state === "supervision_required")) ||
         (progress.state === "approval_required" &&
           (mission.state === "running" || mission.state === "approval_required"));
       if (!progressMatchesMission)
         return problem(c, 409, "state_conflict", "Progress does not match mission state.");
-      await deps.vault.encryptProgressAndPut(
-        { accountId: principal.accountId, deviceId: principal.deviceId, missionId },
-        progress,
-      );
+      const identity = { accountId: principal.accountId, deviceId: principal.deviceId, missionId };
+      if (progress.state === "supervision_required")
+        await deps.vault.replaceSupervisionProgressAndPut(identity, progress);
+      else
+        await deps.vault.encryptProgressAndPut(identity, progress);
       return c.json(progress, 201);
     }),
   );
@@ -471,6 +475,70 @@ export function createRemoteMissionApi(deps: Dependencies) {
       return decision
         ? c.json(decision)
         : problem(c, 404, "target_decision_not_found", "Browser target has not been chosen.");
+    }),
+  );
+
+  api.put("/remote-missions/:missionId/supervisor-decision", (c) =>
+    attempt(c, async () => {
+      const principal = c.get("principal");
+      const missionId = c.req.param("missionId");
+      const mission = uuid(missionId)
+        ? await deps.missions.mission(principal.accountId, missionId)
+        : null;
+      if (!mission) return problem(c, 404, "mission_not_found", "Mission was not found.");
+      idempotencyHash(c);
+      const decision = parseRemoteMissionSupervisorDecision(
+        await c.req.json().catch(() => null),
+        missionId,
+      );
+      if (decision.kind === "request_user_input" || decision.kind === "request_approval")
+        return problem(
+          c,
+          409,
+          "non_persistent_supervisor_decision",
+          "This decision must be handled in the supervising conversation.",
+        );
+      const identity = { accountId: principal.accountId, deviceId: mission.deviceId, missionId };
+      const existing = await deps.vault.getSupervisorDecisionAndDecrypt(identity).catch(() => null);
+      if (existing)
+        return existing.decisionId === decision.decisionId
+          ? c.json(existing)
+          : problem(c, 409, "supervisor_decision_conflict", "A supervisor decision already exists.");
+      if (mission.state !== "supervision_required")
+        return problem(c, 409, "state_conflict", "Mission is not awaiting supervision.");
+      const progress = await deps.vault
+        .getProgressAndDecrypt(identity, "supervision_required")
+        .catch(() => null);
+      if (
+        !progress?.evidence ||
+        progress.evidence.stepId !== decision.stepId ||
+        progress.evidence.planRevision !== decision.expectedPlanRevision ||
+        new Date(decision.decidedAt).getTime() < new Date(progress.updatedAt).getTime() ||
+        new Date(decision.decidedAt).getTime() > new Date(mission.expiresAt).getTime()
+      ) return problem(c, 409, "supervisor_decision_stale", "Supervisor decision is stale.");
+      await deps.vault.encryptSupervisorDecisionAndPut(identity, decision);
+      return c.json(decision, 201);
+    }),
+  );
+
+  api.get("/remote-missions/:missionId/supervisor-decision", (c) =>
+    attempt(c, async () => {
+      const principal = c.get("principal");
+      const missionId = c.req.param("missionId");
+      const mission = uuid(missionId)
+        ? await deps.missions.mission(principal.accountId, missionId)
+        : null;
+      if (!mission) return problem(c, 404, "mission_not_found", "Mission was not found.");
+      if (principal.deviceId !== mission.deviceId)
+        return problem(c, 403, "device_mismatch", "Mission belongs to another device.");
+      const decision = await deps.vault.getSupervisorDecisionAndDecrypt({
+        accountId: principal.accountId,
+        deviceId: mission.deviceId,
+        missionId,
+      }).catch(() => null);
+      return decision
+        ? c.json(decision)
+        : problem(c, 404, "supervisor_decision_not_found", "Supervisor has not decided.");
     }),
   );
 

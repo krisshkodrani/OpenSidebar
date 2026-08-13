@@ -64,6 +64,7 @@ export interface ControlRepository {
     displayName: string,
     extensionVersion: string,
     connectionKind: CloudDeviceV1["connectionKind"],
+    revive?: boolean,
   ): Promise<CloudDeviceV1>;
   createDeviceSession(session: DeviceSessionWrite): Promise<void>;
   accessPrincipal(accessHash: string): Promise<ControlPrincipal | null>;

@@ -42,6 +42,8 @@ type StoredEnvelopeV1 = {
 
 export type CheckpointObjectPort = {
   put(key: string, body: Uint8Array): Promise<void>;
+  /** Replace the current version without a delete gap; versioned stores retain history. */
+  replace?(key: string, body: Uint8Array): Promise<void>;
   get(key: string): Promise<Uint8Array>;
   delete(key: string): Promise<void>;
   deleteAllVersions?(key: string): Promise<void>;
@@ -81,6 +83,16 @@ export class S3CheckpointObjectStore implements CheckpointObjectPort {
         throw new Error("checkpoint_object_exists");
       throw error;
     }
+  }
+  async replace(key: string, body: Uint8Array) {
+    await this.s3.send(
+      new PutObjectCommand({
+        Bucket: this.bucket,
+        Key: key,
+        Body: body,
+        ContentType: "application/octet-stream",
+      }),
+    );
   }
   async get(key: string) {
     const result = await this.s3.send(

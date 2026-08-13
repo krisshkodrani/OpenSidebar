@@ -5,6 +5,7 @@ import type {
   RemoteMissionResultV1,
   RemoteMissionProgressV1,
   RemoteMissionTargetDecisionV1,
+  RemoteMissionSupervisorDecisionV1,
 } from "@shared-types/remote-missions";
 import type { RemoteMissionDeliveryPort } from "./ports";
 
@@ -16,10 +17,14 @@ export class DisabledRemoteMissionDeliveryPort implements RemoteMissionDeliveryP
   async get() { return null; }
   async getApprovalDecision() { return null; }
   async getTargetDecision() { return null; }
+  async getSupervisorDecision() { return null; }
   async putApprovalDecision(): Promise<void> {
     throw new Error("remote_missions_disabled");
   }
   async putTargetDecision(): Promise<void> {
+    throw new Error("remote_missions_disabled");
+  }
+  async putSupervisorDecision(): Promise<void> {
     throw new Error("remote_missions_disabled");
   }
   async cancel(): Promise<RemoteMissionV1> {
@@ -112,6 +117,30 @@ export class HttpRemoteMissionDeliveryPort implements RemoteMissionDeliveryPort 
       },
     );
     if (!response.ok) throw new Error(`remote_mission_target_decision_${response.status}`);
+  }
+
+  async getSupervisorDecision(missionId: string) {
+    const response = await this.fetchCloud(
+      `/remote-missions/${encodeURIComponent(missionId)}/supervisor-decision`,
+    );
+    if (response.status === 404) return null;
+    if (!response.ok) throw new Error(`remote_mission_supervisor_decision_${response.status}`);
+    return response.json() as Promise<RemoteMissionSupervisorDecisionV1>;
+  }
+
+  async putSupervisorDecision(missionId: string, decision: RemoteMissionSupervisorDecisionV1) {
+    const response = await this.fetchCloud(
+      `/remote-missions/${encodeURIComponent(missionId)}/supervisor-decision`,
+      {
+        method: "PUT",
+        headers: {
+          "content-type": "application/json",
+          "idempotency-key": `remote-mission:${missionId}:supervisor:${decision.decisionId}`,
+        },
+        body: JSON.stringify(decision),
+      },
+    );
+    if (!response.ok) throw new Error(`remote_mission_supervisor_decision_${response.status}`);
   }
 
   async cancel(missionId: string) {

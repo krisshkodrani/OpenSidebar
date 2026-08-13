@@ -2,8 +2,9 @@
 
 Date: 2026-08-12
 
-Status: LP-35 approved; foundation implemented; end-to-end path incomplete and
-disabled.
+Status: LP-35 approved; Phase 5 contract, target-selection loop, scoped resource
+server, mission adapter, and Cognito boundary implemented default-off; disabled
+deployment and real Codex acceptance remain.
 
 ## Outcome
 
@@ -47,9 +48,13 @@ gates pass.
 | Revisioned device rename | Complete locally | Backend conflict tests and extension/account UI typechecks pass |
 | Automatic extension consumption | Named-tester read-only vertical slice accepted | Real Chrome completed exact-existing-tab mission `45a55bbd` on 2026-08-13 through cloud relay; encrypted grounded result contained `Example Domain`; no new tab, navigation, local key, repeated link code, or manual diagnostic relay |
 | Durable progress/approval/result return | Progress, approval preview/decision, result, and coordinator cancel implemented | Approval decisions are immutable, KMS-encrypted, ID/digest/expiry-bound, readable only by the selected device, and subject to a fresh local site-access check; real consequential acceptance remains intentionally blocked by the read-only rollout profile |
-| Sidepanel remote-run UX | Account requester, sanitized task summary, device/target/expiry, approval preview, and local deny/cancel controls implemented | Visual real-browser acceptance plus offline/revoked/partial-rollout states remain Phase 4 |
-| Hosted MCP protocol contract | Complete locally, not mounted | Six-tool SDK conformance and scope tests pass |
-| Hosted MCP OAuth and operations adapter | Not started | Required after extension vertical slice |
+| Sidepanel remote-run UX | Account requester, sanitized task summary, device/target/expiry, target-choice handoff, approval preview, local deny/cancel, and account remote-work switch implemented | Real duplicate-tab and synthetic approval visual acceptance remain |
+| Connection normalization | Implemented locally | Browser, Codex integration, and test-client identities are distinct; repeated acceptance clients collapse into one history row; online/offline/revoked state is explicit |
+| Ambiguous existing-tab selection | Implemented locally | Duplicate exact URLs return bounded title/group/window labels plus mission-scoped opaque handles; Chrome identifiers stay local; expiry, URL revalidation, sibling replay, and stale-tab tests pass |
+| Hosted MCP protocol contract | Complete locally, mounted behind disabled flag | Six-tool SDK conformance, Streamable HTTP initialize, and scope tests pass |
+| Hosted MCP OAuth resource boundary | Implemented and provisioned, disabled | RFC 9728 metadata advertises the Cognito issuer; AWS has a separate public PKCE client, fixed loopback callback, MCP resource, and six scopes; resource-bound tokens require the exact audience; website cookies and extension-client tokens fail; local integration revocation wins |
+| Hosted MCP operations adapter | Complete locally, disabled | Device listing/selection, creation, status, target selection, revision-bound evidence supervision, approval response, and cancellation are implemented |
+| MCP transport sessions and quotas | Complete locally, disabled | Account/client-bound Streamable HTTP sessions expire after 30 idle minutes; creation, polling, and mutation use separate hashed per-account quotas |
 | Production E2E and cutover | Not started | Blocks localhost deletion |
 
 ## Phase 1 — Local supervisor and harness vertical slice
@@ -239,6 +244,17 @@ Implementation sequence:
    replayed selections, changed groups/tabs, offline devices, OAuth revocation,
    quotas, cancellation, approval, backend restart, and extension restart.
 
+Provisioning is dry-run-first through
+`pnpm cloud:provision-hosted-mcp-cognito`. Codex and Cognito must share one
+fixed loopback callback, for example `http://localhost:1455/callback`, set in
+Codex as both `mcp_oauth_callback_url` and `mcp_oauth_callback_port`. The
+provisioner requires that exact value in `OPENSIDEBAR_MCP_CALLBACK_URL`, creates
+the `https://opensidebar.com/mcp` resource server and six custom scopes, and
+prints the issuer/client/scope-prefix values. Codex is then registered with the
+returned public client ID and `--oauth-resource https://opensidebar.com/mcp`.
+This avoids dynamic registration and repeated link codes while preserving PKCE.
+The server flag remains false throughout provisioning.
+
 Browser process launching is deliberately outside Phase 5. Record it as a later
 opt-in desktop/native-companion research item; a closed browser remains an
 offline device and queued work must say that Chrome needs to be opened.
@@ -321,16 +337,15 @@ evidence; it is not implied by completing implementation.
 
 ## Immediate next work
 
-1. Reload the Phase 4 candidate and complete real-browser visual/restart
-   acceptance for the remote-task card and its cancel path.
-2. Finish explicit offline/revoked/partial-rollout states and the account-level
-   remote-control switch.
-3. Add scoped OAuth and the concrete mission operations adapter behind the
-   still-unmounted MCP contract.
-4. Add a safe synthetic approval fixture that can exercise account decision,
+1. Deploy the reviewed backend with `HOSTED_MCP_ENABLED=false`, the provisioned
+   Cognito issuer/client/scope prefix present, and exact-host routing for `/mcp`
+   plus protected-resource discovery. Do not configure Codex until the disabled
+   deployment and routing checks pass.
+2. Add a safe synthetic approval fixture that can exercise account decision,
    denial, expiry, and same-session continuation without a real website effect.
-5. Mount the already tested MCP protocol contract only after its scoped OAuth
-   grants and concrete mission-API operations adapter are complete.
+3. Run exact-host Codex OAuth, unique-tab, duplicate-tab/group selection,
+   cancellation, token refresh/revocation, backend restart, and extension
+   restart acceptance before enabling any additional tester.
 
 The Phase 2 named-tester read-only acceptance gate passed on 2026-08-13. The
 ignored report records mission `45a55bbd-8e40-4e31-98f1-177c401634e8` as
@@ -370,5 +385,7 @@ the public MCP facade.
 Current production boundary: `CLOUD_SESSIONS_ENABLED` and
 `REMOTE_MISSIONS_ENABLED` are enabled only for the single configured session
 tester. Checkpoint writes/restores, exports, device commands/takeover, and both
-Temporal flags remain disabled. The acceptance-only build is marked
+Temporal flags remain disabled. `HOSTED_MCP_ENABLED` is also false. The separate
+Cognito MCP resource and public PKCE client were provisioned and read-back
+verified on 2026-08-13, but no MCP backend route is enabled. The acceptance-only build is marked
 `releaseEligible: false`, and the normal distribution verifier rejects it.

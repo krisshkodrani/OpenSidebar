@@ -3,8 +3,10 @@ import test from "node:test";
 import {
   assertRemoteMissionTransition,
   parseCreateRemoteMission,
+  parseMissionEvidence,
   parseRemoteMissionProgress,
   parseRemoteMissionTargetDecision,
+  parseRemoteMissionSupervisorDecision,
   RemoteMissionPolicyError,
 } from "../src/remote-mission-policy.js";
 
@@ -125,5 +127,68 @@ test("bounds opaque target choices and decisions", () => {
       ...progress.targetSelection,
       candidates: [{ targetHandle: "target_only", pageTitle: "Only" }],
     },
+  }, missionId), RemoteMissionPolicyError);
+});
+
+test("binds Codex supervisor decisions to a mission step revision", () => {
+  const missionId = crypto.randomUUID();
+  const parsed = parseRemoteMissionSupervisorDecision({
+    schemaVersion: 1,
+    decisionId: "decision-1",
+    missionId,
+    stepId: "step-1",
+    expectedPlanRevision: 2,
+    kind: "retry",
+    guidance: "Inspect the main content region.",
+    decidedAt: new Date().toISOString(),
+  }, missionId);
+  assert.equal(parsed.expectedPlanRevision, 2);
+  assert.equal(parsed.kind, "retry");
+  assert.throws(() => parseRemoteMissionSupervisorDecision({
+    ...parsed,
+    kind: "complete",
+  }, missionId), RemoteMissionPolicyError);
+  assert.doesNotThrow(() => parseRemoteMissionSupervisorDecision({
+    ...parsed,
+    kind: "complete",
+    outcome: "completed",
+  }, missionId));
+  assert.throws(() => parseRemoteMissionSupervisorDecision({
+    ...parsed,
+    expectedPlanRevision: 1,
+    kind: "replace_remaining_plan",
+  }, missionId), RemoteMissionPolicyError);
+});
+
+test("preserves bounded page and approval evidence for Codex", () => {
+  const missionId = crypto.randomUUID();
+  const approval = {
+    approvalId: "approval-1",
+    question: "Submit this form?",
+    expiresAt: new Date(Date.now() + 60_000).toISOString(),
+    actionDigest: "sha256:test",
+  };
+  const parsed = parseMissionEvidence({
+    schemaVersion: 1,
+    missionId,
+    stepId: "step-1",
+    attemptId: "attempt-1",
+    planRevision: 1,
+    outcome: "approval_required",
+    page: { origin: "https://example.test", title: "Example" },
+    claims: [{ claim: "The form is ready.", source: "page_observation" }],
+    effects: [{ type: "form_submit", consequential: true }],
+    uncertainties: [],
+    approval,
+  }, missionId);
+  assert.deepEqual(parsed.page, { origin: "https://example.test", title: "Example" });
+  assert.deepEqual(parsed.approval, approval);
+  assert.throws(() => parseMissionEvidence({
+    ...parsed,
+    page: { origin: "https://example.test/path" },
+  }, missionId), RemoteMissionPolicyError);
+  assert.throws(() => parseMissionEvidence({
+    ...parsed,
+    outcome: "achieved",
   }, missionId), RemoteMissionPolicyError);
 });
