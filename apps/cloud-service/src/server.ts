@@ -20,6 +20,9 @@ import { PostgresTraceRepository } from "./postgres-trace-repository.js";
 import { TraceObjectStore } from "./trace-object-store.js";
 import { PostgresRemoteMissionRepository } from "./postgres-remote-mission-repository.js";
 import { RemoteMissionVault } from "./remote-mission-vault.js";
+import { createHostedBrowserMcpOperations } from "./hosted-browser-mcp-operations.js";
+import { PersonalDataRepository } from "./personal-data-repository.js";
+import { PersonalDataObjectStore } from "./personal-data-object-store.js";
 
 const config = loadConfig();
 const repository = new PostgresPlaygroundRepository(config.databaseUrl);
@@ -104,8 +107,11 @@ const control = {
   commandRepository,
   remoteMissionRepository,
   remoteMissionVault,
+  hostedBrowserMcpOperations,
   traceRepository,
   traceObjectStore,
+  personalDataRepository,
+  personalDataObjectStore,
   passwordlessAuth,
 };
 const server = serve(
@@ -131,6 +137,11 @@ const cleanupTimer = setInterval(
     void controlRepository
       .cleanupExpired()
       .catch((error) => console.error("control-record cleanup failed", error));
+    void personalDataRepository
+      .cleanupExpired()
+      .catch((error) => console.error("personal-data cleanup failed", error));
+    void cleanupPersonalDataObjects()
+      .catch((error) => console.error("personal-data object cleanup failed", error));
     void sessionRepository
       .cleanupExpired()
       .catch((error) => console.error("session-record cleanup failed", error));
