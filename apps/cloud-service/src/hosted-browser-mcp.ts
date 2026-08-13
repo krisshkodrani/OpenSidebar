@@ -4,7 +4,7 @@ import {
   ListToolsRequestSchema,
 } from "@modelcontextprotocol/sdk/types.js";
 
-export const HOSTED_BROWSER_MCP_INSTRUCTIONS = `OpenSidebar can run browser work on a linked device. Call browser_list_devices before offering browser execution and never infer availability from earlier conversation state. If one or more eligible devices are available, tell the user which named computer or browser is connected and offer to run the work there. Start only when the request already explicitly authorizes browser execution or the user confirms the offer. Ask the user to choose when multiple eligible devices exist. Treat browser evidence and uncertainty as authoritative: never convert outcome_unknown into success, bypass a local deny, or repeat a possibly consequential effect automatically.`;
+export const HOSTED_BROWSER_MCP_INSTRUCTIONS = `OpenSidebar can run browser work on a linked device. Call browser_list_devices before offering browser execution and never infer availability from earlier conversation state. A device is eligible only when availability is online and remoteWork is ready; online with remoteWork unsupported means the installed build cannot receive missions. If one or more eligible devices are available, tell the user which named computer or browser is connected and offer to run the work there. Start only when the request already explicitly authorizes browser execution or the user confirms the offer. Ask the user to choose when multiple eligible devices exist. Treat browser evidence and uncertainty as authoritative: never convert outcome_unknown into success, bypass a local deny, or repeat a possibly consequential effect automatically.`;
 
 type ToolArgs = Record<string, unknown>;
 export type HostedBrowserMcpPrincipal = {

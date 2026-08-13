@@ -17,6 +17,7 @@ import {
   verifyCloudEmailCode,
 } from "../../cloud-client";
 import type { SettingsChangeHandler } from "./types";
+import { REMOTE_BROWSER_WORK_SUPPORTED } from "../../../remote-work-capabilities";
 
 type AccountState = {
   email: string | null;
@@ -299,7 +300,9 @@ export function CloudAccountSettings({
               <p className="text-xs font-semibold">Remote browser work</p>
               <p className="mt-1 text-[11px] text-warm-500">
                 {account.remoteWork?.enabled
-                  ? "Authorized integrations may send visible tasks to this browser."
+                  ? REMOTE_BROWSER_WORK_SUPPORTED
+                    ? "Ready. Authorized integrations may send visible tasks to this browser."
+                    : "Enabled for the account, but this extension build cannot receive tasks."
                   : "Remote work is disabled for this account."}
               </p>
             </div>

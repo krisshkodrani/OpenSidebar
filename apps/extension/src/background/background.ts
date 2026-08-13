@@ -521,29 +521,13 @@ async function handleSidePanelOpened(
         // Consumed the flag
         await removeUserOpenedPanel(tabId);
       } else {
-        logger.warn(
+        logger.debug(
           "workspace",
-          "Panel opened without user interaction (switching tabs?) - CLOSING",
+          "Panel opened on a tab outside an OpenSidebar workspace",
           { tabId },
         );
-
-        await chrome.sidePanel.setOptions({
-          tabId,
-          enabled: false,
-        });
-
-        if (windowId) {
-          // Force close via message (workaround for setOptions not closing open panels)
-          await chrome.runtime
-            .sendMessage({
-              type: "CLOSE_SIDE_PANEL",
-              source: MessageSource.BACKGROUND,
-              payload: { tabId, windowId },
-            })
-            .catch(() => {
-              // Ignore errors (e.g. no receiver if panel is already closed)
-            });
-        }
+        // Keep the global panel available for remote-task supervision. The UI
+        // resolves this tab to a null workspace and disables local composition.
       }
     }
   } catch (error) {
@@ -581,23 +565,20 @@ chrome.tabs.onActivated.addListener(async ({ tabId, windowId: _windowId }) => {
       });
     }
   } else {
-    // Tab is NOT in a workspace -> Disable side panel for this tab.
-    // We intentionally do NOT send CLOSE_SIDE_PANEL / globalThis.close() here.
-    // Chrome hides the panel via setOptions({ enabled: false }), but the React
-    // app stays alive in memory so Zustand state (messages, progress, overlays)
-    // survives tab switches. The panel reappears with full context when the
-    // user returns to a workspace tab.
+    // Keep the panel visible for remote-task supervision without implicitly
+    // attaching this tab to any existing workspace.
     try {
       await chrome.sidePanel.setOptions({
         tabId,
-        enabled: false,
+        path: "src/sidepanel/index.html",
+        enabled: true,
       });
 
-      logger.debug("sidebar", "Panel disabled for non-workspace tab", {
+      logger.debug("sidebar", "Panel detached from non-workspace tab", {
         tabId,
       });
     } catch (e) {
-      logger.debug("sidebar", "Failed to disable panel for non-workspace tab", {
+      logger.debug("sidebar", "Failed to configure panel for non-workspace tab", {
         tabId,
         error: e,
       });
@@ -610,9 +591,8 @@ chrome.tabs.onRemoved.addListener(async (tabId) => {
   // Workspace auto-delete is handled by WorkspaceManager
   logger.debug("sidebar", "Tab closed", { tabId });
 
-  // Robustness: If the now-active tab is not in a workspace, disable the
-  // side panel for it. Same as onActivated — we do NOT destroy the panel,
-  // just let Chrome hide it so state is preserved across tab switches.
+  // Robustness: keep the global panel available after a workspace tab closes;
+  // workspace synchronization moves it into detached mode.
   try {
     const [activeTab] = await chrome.tabs.query({
       active: true,
@@ -624,12 +604,13 @@ chrome.tabs.onRemoved.addListener(async (tabId) => {
       if (!workspace) {
         logger.debug(
           "sidebar",
-          "Active tab not in workspace after tab removal - disabling panel",
+          "Active tab not in workspace after tab removal - detaching panel",
           { activeTabId: activeTab.id },
         );
         await chrome.sidePanel.setOptions({
           tabId: activeTab.id,
-          enabled: false,
+          path: "src/sidepanel/index.html",
+          enabled: true,
         });
       }
     }

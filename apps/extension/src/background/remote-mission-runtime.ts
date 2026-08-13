@@ -19,12 +19,12 @@ import {
 } from "./remote-missions/http-delivery-port";
 import { RemoteMissionLocalControls } from "./remote-missions/local-controls";
 import { isUiMessageSource } from "./ui-message-source";
+import { REMOTE_BROWSER_WORK_SUPPORTED } from "../remote-work-capabilities";
 
 const ALARM_NAME = "opensidebar:remote-mission-poll";
 const POLL_PERIOD_MINUTES = 1;
 export const remoteMissionDeliveryEnabled =
-  import.meta.env.VITE_CLOUD_SESSIONS_ENABLED === "true" &&
-  import.meta.env.VITE_REMOTE_MISSIONS_ENABLED === "true";
+  REMOTE_BROWSER_WORK_SUPPORTED;
 
 const cloud = new CloudAuthenticatedFetch(chromePersistencePort.local);
 const transport = remoteMissionDeliveryEnabled

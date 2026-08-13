@@ -117,10 +117,16 @@ export function createRemoteMissionApi(deps: Dependencies) {
         (candidate) =>
           candidate.id === input.deviceId &&
           candidate.connectionKind === "browser_extension" &&
-          candidate.availability !== "revoked",
+          candidate.availability === "online" &&
+          candidate.capabilities.includes("remote_browser_tasks_v1"),
       );
       if (!device)
-        return problem(c, 404, "device_not_found", "Selected device is unavailable.");
+        return problem(
+          c,
+          409,
+          "device_remote_work_unavailable",
+          "Selected device is not currently ready for remote browser work.",
+        );
       const hash = idempotencyHash(c);
       const replay = await deps.missions.missionByIdempotency(principal.accountId, hash);
       if (replay) return c.json(replay);
@@ -239,6 +245,8 @@ export function createRemoteMissionApi(deps: Dependencies) {
         limit > 100
       )
         return problem(c, 403, "device_mismatch", "Mission belongs to another device.");
+      if (!(await deps.accounts.markRemoteMissionReady(principal.accountId, deviceId)))
+        return problem(c, 403, "device_mismatch", "Device is not available for remote work.");
       const missions = await deps.missions.missions({
         accountId: principal.accountId,
         deviceId,

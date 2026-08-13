@@ -81,6 +81,13 @@ export function createHostedBrowserMcpOperations(
           name: device.displayName,
           availability: device.availability,
           extensionVersion: device.extensionVersion,
+          remoteWork:
+            device.capabilities.includes("remote_browser_tasks_v1") &&
+            device.availability === "online"
+              ? "ready"
+              : device.availability === "online"
+                ? "unsupported"
+                : "offline",
         }));
       return { devices };
     },
@@ -111,7 +118,8 @@ export function createHostedBrowserMcpOperations(
         (device) =>
           device.connectionKind === "browser_extension" &&
           !device.revokedAt &&
-          device.availability === "online",
+          device.availability === "online" &&
+          device.capabilities.includes("remote_browser_tasks_v1"),
       );
       const requested = text(input, "deviceId");
       const device = requested
@@ -120,7 +128,9 @@ export function createHostedBrowserMcpOperations(
           ? eligible[0]
           : undefined;
       if (!device)
-        throw new Error(requested ? "device_unavailable" : "device_selection_required");
+        throw new Error(
+          requested ? "device_remote_work_unavailable" : "device_selection_required",
+        );
       const missionId = crypto.randomUUID();
       const now = new Date();
       const location = { accountId: principal.accountId, deviceId: device.id, missionId };

@@ -26,6 +26,7 @@ function world(deviceCount = 1) {
     displayNameRevision: 1,
     extensionVersion: "0.7.4",
     connectionKind: "browser_extension" as const,
+    capabilities: ["remote_browser_tasks_v1" as const],
     availability: "online" as const,
     createdAt: new Date().toISOString(),
     lastSeenAt: new Date().toISOString(),
@@ -137,6 +138,24 @@ test("requires a device choice when two browsers are online", async () => {
       successCriteria: ["Return the exact heading"],
     }),
     /device_selection_required/,
+  );
+});
+
+test("reports but never selects an online build that has not polled remote work", async () => {
+  const state = world();
+  state.devices[0]!.capabilities = [];
+  const listed = await state.operations.listDevices(principal) as {
+    devices: Array<{ remoteWork: string }>;
+  };
+  assert.equal(listed.devices[0]?.remoteWork, "unsupported");
+  await assert.rejects(
+    () => state.operations.startTask(principal, {
+      requestId: "request-incapable",
+      deviceId: state.devices[0]!.id,
+      objective: "Read the heading",
+      successCriteria: ["Return the exact heading"],
+    }),
+    /device_remote_work_unavailable/,
   );
 });
 

@@ -52,4 +52,40 @@ describe("background cloud authenticated fetch", () => {
     const headers = new Headers(fetchImpl.mock.calls[1][1].headers);
     expect(headers.get("authorization")).toBe("Bearer new");
   });
+
+  it("preserves the saved session when refresh fails transiently", async () => {
+    const session = {
+      accessToken: "old",
+      refreshToken: "refresh",
+      accessExpiresAt: 0,
+      account: { accountId: "account", email: "a@example.test" },
+      device: { id: "device" },
+    };
+    const stored = storage({ [CLOUD_EXTENSION_SESSION_KEY]: session });
+    const fetchImpl = vi.fn().mockResolvedValue(new Response("", { status: 503 }));
+
+    await expect(
+      new CloudAuthenticatedFetch(stored.port, "https://cloud.test", fetchImpl).request("/sessions"),
+    ).rejects.toThrow("cloud_temporarily_unavailable");
+    expect(stored.values[CLOUD_EXTENSION_SESSION_KEY]).toEqual(session);
+    expect(stored.port.remove).not.toHaveBeenCalled();
+  });
+
+  it("clears the saved session when the refresh credential is rejected", async () => {
+    const stored = storage({
+      [CLOUD_EXTENSION_SESSION_KEY]: {
+        accessToken: "old",
+        refreshToken: "refresh",
+        accessExpiresAt: 0,
+        account: { accountId: "account", email: "a@example.test" },
+        device: { id: "device" },
+      },
+    });
+    const fetchImpl = vi.fn().mockResolvedValue(new Response("", { status: 401 }));
+
+    await expect(
+      new CloudAuthenticatedFetch(stored.port, "https://cloud.test", fetchImpl).request("/sessions"),
+    ).rejects.toThrow("cloud_session_expired");
+    expect(stored.values[CLOUD_EXTENSION_SESSION_KEY]).toBeUndefined();
+  });
 });

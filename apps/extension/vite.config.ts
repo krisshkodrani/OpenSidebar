@@ -21,6 +21,11 @@ export default defineConfig(({ mode }) => {
       : "";
   const isProduction = mode === "production";
   const isProductionLike = isProduction || isRemoteMissionAcceptance;
+  const remoteMissionsReleaseEnabled =
+    isProduction ||
+    isRemoteMissionAcceptance ||
+    (env.VITE_CLOUD_SESSIONS_ENABLED === "true" &&
+      env.VITE_REMOTE_MISSIONS_ENABLED === "true");
   const localObservabilityServerUrl = isProductionLike
     ? ""
     : (
@@ -48,6 +53,9 @@ export default defineConfig(({ mode }) => {
       ),
       __LOCAL_OBSERVABILITY_SERVER_URL__: JSON.stringify(
         localObservabilityServerUrl,
+      ),
+      __REMOTE_MISSIONS_RELEASE_ENABLED__: JSON.stringify(
+        remoteMissionsReleaseEnabled,
       ),
     },
     plugins: [react(), crx({ manifest: buildManifest })],

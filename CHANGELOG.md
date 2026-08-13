@@ -1,5 +1,28 @@
 # Changelog
 
+## [0.7.4] - 2026-08-13
+
+### Added
+
+- Added supervised remote browser work for authorized named testers through the
+  hosted OpenSidebar MCP connection. Browser execution and safety decisions stay
+  inside the selected extension device.
+- Added explicit remote-work capability discovery so Codex can distinguish an
+  online capable browser from an older build that cannot receive missions.
+
+### Changed
+
+- Kept the sidepanel available while switching tabs so remote task status and
+  cancellation remain visible. Tabs outside the active workspace use a detached,
+  read-only panel state and are never selected implicitly.
+
+### Fixed
+
+- Prevented missions from remaining queued against online but incompatible
+  extension builds.
+- Preserved extension sign-in across temporary cloud or refresh-service outages;
+  sessions are cleared only when their credentials are definitively rejected.
+
 ## [0.7.3] - 2026-08-11
 
 ### Changed

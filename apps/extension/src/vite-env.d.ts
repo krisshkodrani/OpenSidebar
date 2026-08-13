@@ -8,6 +8,8 @@ interface ImportMetaEnv {
   readonly VITE_DEVICE_TAKEOVER_ENABLED?: string;
 }
 
+declare const __REMOTE_MISSIONS_RELEASE_ENABLED__: boolean;
+
 interface ImportMeta {
   readonly env: ImportMetaEnv;
 }

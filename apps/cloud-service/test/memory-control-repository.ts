@@ -69,6 +69,7 @@ export class MemoryControlRepository implements ControlRepository {
       displayNameRevision: found?.displayNameRevision ?? 1,
       extensionVersion,
       connectionKind,
+      capabilities: found?.capabilities ?? [],
       availability: (!revive && found?.revokedAt ? "revoked" : "online") as "online" | "revoked",
       createdAt: found?.createdAt ?? new Date().toISOString(),
       lastSeenAt: new Date().toISOString(),
@@ -76,6 +77,19 @@ export class MemoryControlRepository implements ControlRepository {
     };
     this.devices.set(value.id, value);
     return value;
+  }
+  async markRemoteMissionReady(accountId: string, deviceId: string) {
+    const device = this.devices.get(deviceId);
+    if (
+      !device ||
+      device.accountId !== accountId ||
+      device.connectionKind !== "browser_extension" ||
+      device.revokedAt
+    ) return false;
+    device.capabilities = ["remote_browser_tasks_v1"];
+    device.availability = "online";
+    device.lastSeenAt = new Date().toISOString();
+    return true;
   }
   async createDeviceSession(session: DeviceSessionWrite) {
     this.sessions.set(session.refreshHash, {
