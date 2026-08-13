@@ -29,7 +29,11 @@ import {
 import { registerContentScriptReadyListener } from "./tab-ready";
 import { resolveValidTabId } from "./infrastructure/tab-resolution";
 import { isUiMessageSource } from "./ui-message-source";
-import { setWorkspacePanelVisibility } from "./side-panel-visibility";
+import {
+  belongsToVisibleWorkspace,
+  installUngroupedTabPanelGuards,
+  setWorkspacePanelVisibility,
+} from "./side-panel-visibility";
 import { orchestrator } from "./orchestrator";
 import { setDisabledSkillIds } from "./orchestrator/skills";
 import { PassiveMonitorController } from "./passive-monitor";
@@ -538,11 +542,25 @@ async function handleSidePanelOpened(
   return null;
 }
 
-// Handle tab activation - show/hide panel based on workspace status
-chrome.tabs.onActivated.addListener(async ({ tabId, windowId: _windowId }) => {
-  const workspace = await workspaceManager.getWorkspaceForTab(tabId);
+installUngroupedTabPanelGuards(
+  chrome.sidePanel,
+  chrome.tabs,
+  (event, tabId, error) =>
+    logger.debug("sidebar", "Failed to enforce ungrouped-tab panel boundary", {
+      event,
+      tabId,
+      error,
+    }),
+);
 
-  if (workspace) {
+// Handle tab activation - show/hide panel based on Chrome's live group state
+// plus the matching workspace record. Chrome is authoritative if the two race.
+chrome.tabs.onActivated.addListener(async ({ tabId, windowId: _windowId }) => {
+  const tab = await chrome.tabs.get(tabId).catch(() => null);
+  const workspace = await workspaceManager.getWorkspaceForTab(tabId);
+  const panelVisible = belongsToVisibleWorkspace(tab?.groupId, workspace);
+
+  if (panelVisible && workspace) {
     // Tab IS in a workspace -> Enable side panel, but do not auto-open.
     // Per-tab sidebar policy: user must click extension icon to open.
     try {
@@ -550,6 +568,7 @@ chrome.tabs.onActivated.addListener(async ({ tabId, windowId: _windowId }) => {
 
       logger.debug("sidebar", "Panel enabled for workspace tab (manual open)", {
         tabId,
+        groupId: tab?.groupId,
         workspace: workspace.name,
       });
       // Warm perception on tab switch so first message is instant
@@ -569,6 +588,8 @@ chrome.tabs.onActivated.addListener(async ({ tabId, windowId: _windowId }) => {
 
       logger.debug("sidebar", "Panel hidden for non-workspace tab", {
         tabId,
+        groupId: tab?.groupId,
+        staleWorkspaceId: workspace?.id,
       });
     } catch (e) {
       logger.debug("sidebar", "Failed to hide panel for non-workspace tab", {

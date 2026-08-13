@@ -25,6 +25,10 @@ actions or receive raw browser state.
 - The sidepanel is enabled only on OpenSidebar workspace tabs. Chrome hides it
   on unrelated tabs and restores it on return; the background worker keeps a
   remote mission durable while the panel is hidden.
+- New ungrouped tabs are disabled at `tabs.onCreated`, before they can retain
+  the manifest-global default panel. Activation also cross-checks Chrome's live
+  `groupId` against the workspace record, and ungrouping is enforced even when
+  it does not trigger another activation.
 - Production and acceptance builds share the same remote worker. Acceptance-only
   diagnostics and release-ineligible markers remain excluded from normal builds.
 
@@ -41,7 +45,7 @@ actions or receive raw browser state.
 - Production build and distribution verification: passed for normal 0.7.4.
 - Extension package: `.artifacts/releases/opensidebar-v0.7.4.zip`.
 - Package SHA-256:
-  `FE75B4F68D537F672451F85A606EFA88ED777772F150DAE8FDFAB0C73211694A`.
+  `F11C1D8BAEFF9041611DA1DFD7072905BF66E62ADFC5CBC9A8A96BF2BAC28DEE`.
 
 ## Backend deployment
 
