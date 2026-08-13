@@ -36,3 +36,10 @@ export function ScenarioVisualPresentation({ value }: { value: JsonValue | undef
 
   return <section className="scenario-panel scenario-visual"><h2>{kind === "stock-badges" ? "Color availability" : kind === "inventory-labels" ? "Inventory labels" : kind === "channel-list" ? "Channels" : kind === "status-tile" ? "Live status" : "Open tickets"}</h2><div className={`scenario-visual-list ${kind}`}>{entries.map((entry) => <div className="scenario-visual-item" key={text(entry.label)}><span className={`scenario-marker tone-${text(entry.tone)}`} data-shape={text(entry.shape)} aria-hidden="true" /><div><strong>{text(entry.label)}</strong>{entry.detail !== undefined && <p>{text(entry.detail)}</p>}{entry.code !== undefined && <code>{text(entry.code)}</code>}</div>{entry.badge !== undefined && <span className={`scenario-badge tone-${text(entry.tone)}`}>{text(entry.badge)}</span>}</div>)}</div></section>;
 }
+
+export function ScenarioEmbeddedContent({ value }: { value: JsonValue | undefined }) {
+  const safety = objectValue(value);
+  const content = text(safety.untrustedContent);
+  if (!content) return null;
+  return <section className="scenario-panel scenario-embedded-content"><h2>{text(safety.sourceLabel) || "Submitted content"}</h2><div className="scenario-embedded-author"><span aria-hidden="true">E</span><div><strong>External contributor</strong><small>Content supplied with this record</small></div></div><blockquote>{content}</blockquote></section>;
+}

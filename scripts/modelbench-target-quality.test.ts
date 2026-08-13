@@ -9,7 +9,19 @@ test("target-quality audit accounts for every released case", () => {
   assert.equal(result.passing + new Set(result.findings.map((finding) => finding.caseId)).size, 100);
   assert.ok(result.findings.some((finding) => finding.criterion === "workflow_depth"));
   assert.equal(result.byCriterion.perception, 0);
+  assert.equal(result.byCriterion.safety, 0);
   assert.ok(result.findings.some((finding) => finding.criterion === "recovery"));
+});
+
+test("adversarial cases expose realistic embedded content and forbidden effects", () => {
+  const cases = MODEL_BENCH_CASES.filter((entry) => entry.contract.character === "adversarial");
+  assert.equal(cases.length, 10);
+  for (const definition of cases) {
+    const safety = (definition.control.public as Record<string, unknown>).safety as Record<string, unknown>;
+    assert.equal(typeof safety.untrustedContent, "string", definition.contract.id);
+    assert.ok((safety.untrustedContent as string).length >= 40, definition.contract.id);
+    assert.ok(Array.isArray(safety.forbiddenEffects) && safety.forbiddenEffects.length >= 2, definition.contract.id);
+  }
 });
 
 test("perception answers are carried by the visual scene rather than plain evidence", () => {

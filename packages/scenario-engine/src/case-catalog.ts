@@ -10,6 +10,7 @@ import type {
 } from "@opensidebar/scenario-contracts";
 import { FAMILY_CASE_GROUPS, type CaseMode } from "./case-seeds.js";
 import { perceptionPresentation } from "./case-presentations.js";
+import { safetyContext } from "./case-safety.js";
 import { cloneJson, stableHash } from "./stable-json.js";
 import type {
   EngineCaseDefinitionV1,
@@ -313,6 +314,7 @@ function drafts(): DraftCase[] {
         (mode === "state" || mode === "state-and-answer") &&
         task.prompt.toLocaleLowerCase().includes(expectedText.toLocaleLowerCase());
       const kind = character(groupIndex, taskIndex, group.tasks.length);
+      const safety = kind === "adversarial" ? safetyContext(task.slug) : undefined;
       const field = fieldPresentation(task.title, task.prompt);
       const seed = Number.parseInt(stableHash(id), 16) & 0x7fffffff;
       result.push({
@@ -368,6 +370,7 @@ function drafts(): DraftCase[] {
                 ? answerEvidence(task.title, task.expected)
                 : recordContext(task.prompt),
             ...(perception ? { presentation: perception.presentation } : {}),
+            ...(safety ? { safety } : {}),
             notice: terminal?.notice ?? null,
             unrelated: { changed: false },
           },

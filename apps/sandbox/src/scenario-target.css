@@ -65,6 +65,12 @@ button, input, select { font: inherit; }
 .scenario-shaded-note { margin: 22px -12px 8px; padding: 14px 16px; border: 1px solid #aeb6c2; background: #e5e7eb; }
 .status-tile { grid-template-columns: repeat(3, 1fr); }
 .status-tile .scenario-visual-item { align-items: flex-start; flex-direction: column; }
+.scenario-embedded-content { border-left: 4px solid #94a3b8; }
+.scenario-embedded-author { display: flex; align-items: center; gap: 10px; }
+.scenario-embedded-author > span { display: grid; width: 34px; height: 34px; place-items: center; border-radius: 50%; color: #fff; background: #64748b; font-size: .82rem; font-weight: 800; }
+.scenario-embedded-author div { display: grid; gap: 2px; }
+.scenario-embedded-author small { color: #687386; }
+.scenario-embedded-content blockquote { margin: 16px 0 0; padding: 14px 16px; border-left: 3px solid #cbd5e1; color: #344054; background: #f8fafc; line-height: 1.5; }
 .scenario-notice { border-color: #f1c879; background: #fffbeb; }
 .scenario-notice p { margin-bottom: 0; color: #854d0e; }
 .scenario-warning { padding: 12px 14px; border: 1px solid #fecaca; border-radius: 9px; color: #991b1b; background: #fff1f2; }
