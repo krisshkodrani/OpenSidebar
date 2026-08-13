@@ -28,10 +28,13 @@ function behavior(pathPattern, policyId) {
 }
 
 function policyConfig(name, cookies, headers, queryStringBehavior) {
+  const cookieConfig = cookies.length
+    ? { CookieBehavior: "whitelist", Cookies: { Quantity: cookies.length, Items: cookies } }
+    : { CookieBehavior: "none" };
   return {
     Name: name,
     Comment: "Least-privilege forwarding to the OpenSidebar Lightsail Playground origin",
-    CookiesConfig: { CookieBehavior: "whitelist", Cookies: { Quantity: cookies.length, Items: cookies } },
+    CookiesConfig: cookieConfig,
     HeadersConfig: { HeaderBehavior: "whitelist", Headers: { Quantity: headers.length, Items: headers } },
     QueryStringsConfig: { QueryStringBehavior: queryStringBehavior },
   };
@@ -39,7 +42,8 @@ function policyConfig(name, cookies, headers, queryStringBehavior) {
 function policyMatches(actual, expected) {
   const normalize = (items = []) => [...items].map((item) => item.toLowerCase()).sort();
   const same = (left, right) => JSON.stringify(normalize(left)) === JSON.stringify(normalize(right));
-  return !(actual.CookiesConfig.CookieBehavior !== "whitelist" || !same(actual.CookiesConfig.Cookies?.Items, expected.CookiesConfig.Cookies.Items) ||
+  return !(actual.CookiesConfig.CookieBehavior !== expected.CookiesConfig.CookieBehavior ||
+      !same(actual.CookiesConfig.Cookies?.Items, expected.CookiesConfig.Cookies?.Items) ||
       actual.HeadersConfig.HeaderBehavior !== "whitelist" || !same(actual.HeadersConfig.Headers?.Items, expected.HeadersConfig.Headers.Items) ||
       actual.QueryStringsConfig.QueryStringBehavior !== expected.QueryStringsConfig.QueryStringBehavior);
 }
@@ -63,7 +67,7 @@ function ensurePolicy(envName, expected) {
   }
   return id;
 }
-function updateDistribution(distributionId, paths, policyId) {
+function updateDistribution(distributionId, paths, policyId, policyOverrides = new Map()) {
   if (dryRun) { console.log(`Would attach ${paths.join(", ")} to ${distributionId}`); return; }
   const document = JSON.parse(aws(["cloudfront", "get-distribution-config", "--id", distributionId, "--output", "json"]));
   const config = document.DistributionConfig;
@@ -79,7 +83,9 @@ function updateDistribution(distributionId, paths, policyId) {
     config.CacheBehaviors.Items = config.CacheBehaviors.Items.filter((item) => !legacy.has(item.PathPattern));
   }
   config.CacheBehaviors.Items = config.CacheBehaviors.Items.filter((item) => !paths.includes(item.PathPattern));
-  config.CacheBehaviors.Items.push(...paths.map((path) => behavior(path, policyId)));
+  config.CacheBehaviors.Items.push(
+    ...paths.map((path) => behavior(path, policyOverrides.get(path) ?? policyId)),
+  );
   config.CacheBehaviors.Quantity = config.CacheBehaviors.Items.length;
   if (config.CustomErrorResponses?.Items) {
     config.CustomErrorResponses.Items = config.CustomErrorResponses.Items.filter((entry) => ![401, 403].includes(entry.ErrorCode));
@@ -101,5 +107,19 @@ const targetPolicy = ensurePolicy("TARGET_API_ORIGIN_REQUEST_POLICY_ID", policyC
   ["Accept", "Content-Type", "Origin"],
   "none",
 ));
-updateDistribution(process.env.PLAYGROUND_CONTROL_DISTRIBUTION_ID, ["/api/v1/*"], controlPolicy);
+const mcpPolicy = ensurePolicy("MCP_ORIGIN_REQUEST_POLICY_ID", policyConfig(
+  "OpenSidebarHostedMcpToLightsail",
+  [],
+  ["Accept", "Authorization", "Content-Type", "Last-Event-ID", "Mcp-Session-Id", "Origin"],
+  "none",
+));
+updateDistribution(
+  process.env.PLAYGROUND_CONTROL_DISTRIBUTION_ID,
+  ["/api/v1/*", "/mcp", "/.well-known/oauth-protected-resource/mcp"],
+  controlPolicy,
+  new Map([
+    ["/mcp", mcpPolicy],
+    ["/.well-known/oauth-protected-resource/mcp", mcpPolicy],
+  ]),
+);
 updateDistribution(process.env.PLAYGROUND_TARGET_DISTRIBUTION_ID, ["/api/v1/target/*", "/launch/*"], targetPolicy);
