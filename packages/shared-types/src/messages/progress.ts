@@ -4,7 +4,7 @@
  * reports, session metrics, and durable-run status.
  */
 
-import type { AgentRole, MessageSource } from "../enums";
+import type { AgentRole, MessageSource, ToolName } from "../enums";
 import type { AgentStep } from "../agent";
 import type { PartialProgressHandoff } from "../progress";
 import type { BaseMessage } from "./base";
@@ -38,6 +38,27 @@ export interface AgentStepLabelMessage extends BaseMessage {
   payload: {
     label: string;
     status: "running" | "done" | "error";
+  };
+}
+
+export type ActionPresentationPhase =
+  | "acquiring"
+  | "acting"
+  | "applied"
+  | "failed"
+  | "interrupted";
+
+/** Correlated spatial (page cursor) and semantic (panel HUD) action state. */
+export interface ActionPresentationMessage extends BaseMessage {
+  type: "ACTION_PRESENTATION";
+  source: MessageSource.CONTENT | MessageSource.BACKGROUND;
+  payload: {
+    toolCallId: string;
+    sequence: number;
+    phase: ActionPresentationPhase;
+    label: string;
+    toolName: ToolName;
+    error?: string;
   };
 }
 
@@ -306,6 +327,7 @@ export type ProgressMessage =
   | AgentStepMessage
   | AgentActivityMessage
   | AgentStepLabelMessage
+  | ActionPresentationMessage
   | AgentStagnationMessage
   | AgentTurnMessage
   | TaskProgressMessage

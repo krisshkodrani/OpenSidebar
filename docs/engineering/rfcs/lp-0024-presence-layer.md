@@ -20,8 +20,8 @@ demo-video pipeline (`demo_video_pipeline`) — the primary cinematic consumer.
 When the agent acts, pages change with no visible cause. Users watching a
 live run (and viewers of demo videos) see forms filling themselves and views
 jumping — there is no spatial narrative connecting intent to effect. The
-existing in-page UI (agent border, floating HUD) says *that* the agent is
-working, but never *where* or *what*. Claude-for-Chrome-style synthetic
+existing in-page UI (agent border, floating HUD) says _that_ the agent is
+working, but never _where_ or _what_. Claude-for-Chrome-style synthetic
 cursors prove the UX value; a naive version (a div that teleports and
 pulses) reads as cheap and, worse, can mislead — a cursor that jumps
 instantly or clicks with no press feedback breaks the mental model instead
@@ -88,9 +88,9 @@ known code paths. The integration is one call at the top of each dispatching
 helper:
 
 ```ts
-await presence.perform({ kind: "click", target, point });  // resolves at "press" moment
-performElementClick(target, opts);                          // unchanged
-presence.settle();                                          // post-action ripple/settle
+await presence.perform({ kind: "click", target, point }); // resolves at "press" moment
+performElementClick(target, opts); // unchanged
+presence.settle(); // post-action ripple/settle
 ```
 
 `presence.perform` resolves when the choreography reaches its dispatch
@@ -115,9 +115,9 @@ Movement is where fake cursors die. The spec:
   side chosen deterministically (hash of from+to), giving every glide a
   slight human arc instead of a laser line.
 - **Duration:** Fitts-inspired — `duration = clamp(90, 60 + 70 ×
-  log2(distance / targetWidth + 1), 420)` ms in subtle mode (×1.8 in
+log2(distance / targetWidth + 1), 420)` ms in subtle mode (×1.8 in
   cinematic). Short hops are quick flicks; cross-screen travel visibly
-  *travels* but never dawdles.
+  _travels_ but never dawdles.
 - **Easing:** ease-in-out with a 2–3 px overshoot-and-settle on glides
   longer than 300 px (cinematic only). The settle is what reads as "a hand
   stopped here" rather than "an element animated".
@@ -131,7 +131,7 @@ Movement is where fake cursors die. The spec:
   Double-click = two ripples; right-click = square-ish pulse.
 - **Idle behavior:** after 1.5 s of no actions the cursor fades to 40 %;
   after 4 s it hides entirely (also keeps stray perception captures clean).
-  Next action fades it in *at its last position* and glides from there —
+  Next action fades it in _at its last position_ and glides from there —
   continuity, never teleporting. Position survives same-tab navigations via
   `sessionStorage`, so a link click flows into the next page's first action.
 
@@ -141,18 +141,18 @@ The user-visible soul of the feature. `choreography.ts` maps action × control
 type to a script; the coordinator executes it. Control type comes from the
 target element itself (tag/type/role), which `interaction.ts` already has.
 
-| Control | Script |
-| --- | --- |
-| **Button / link** | glide → dwell (native hover shows) → press scale → ripple → dispatch. Links add a brief "navigating" glyph state if a navigation follows within 400 ms. |
-| **Radio / checkbox** | glide → dwell → press → **small ripple centered on the control, not the label** (clicks on `<label>` retarget the visual to the input's rect) → the control's own checked animation carries the payoff. |
-| **Text field focus + type** | glide → cursor morphs to I-beam over the field → click → **focus halo**: a rounded-rect outline drawn around the field border (180 ms fade-in, subtle breathing at 4 s period) that persists while the field stays the action target and fades on blur/next target. The page's real caret (from the real focus) does the rest. No fake keystrokes. |
-| **Native `<select>`** | glide → click → since the OS picker never renders in-page and the value is set directly, honesty beats mime: focus halo + a **selection chip** — a small floating label near the control ("Business ✓") that fades after ~1.2 s. Never pretend a menu opened. |
-| **Custom (DOM) dropdowns** | plain click choreography on the option element — the page's own menu is real, so no special casing. |
-| **Drag & drop** | press at source → weighted glide (slower curve, ×1.4 duration) with a low-opacity ghost outline of the dragged element following the cursor → release ripple at target. |
-| **Scroll** | cursor holds position; a two-chevron glyph pulses beside it in the scroll direction. The real scroll stays instant — we do not switch to smooth scrolling (it changes timing and triggers scroll-linked page behavior differently). |
-| **Key press (Enter/Escape/Tab)** | a small key-cap chip (`⏎`, `esc`) appears beside the cursor for 500 ms. Communicates non-pointer actions without inventing pointer motion. |
-| **Blocked / failed action** | 2-cycle 3 px horizontal shake + brief red pulse ring. Users watching a run instantly see "it tried, the page refused" — currently invisible. |
-| **Upload** | click choreography on the trigger + chip ("file attached"). |
+| Control                          | Script                                                                                                                                                                                                                                                                                                                                             |
+| -------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Button / link**                | glide → dwell (native hover shows) → press scale → ripple → dispatch. Links add a brief "navigating" glyph state if a navigation follows within 400 ms.                                                                                                                                                                                            |
+| **Radio / checkbox**             | glide → dwell → press → **small ripple centered on the control, not the label** (clicks on `<label>` retarget the visual to the input's rect) → the control's own checked animation carries the payoff.                                                                                                                                            |
+| **Text field focus + type**      | glide → cursor morphs to I-beam over the field → click → **focus halo**: a rounded-rect outline drawn around the field border (180 ms fade-in, subtle breathing at 4 s period) that persists while the field stays the action target and fades on blur/next target. The page's real caret (from the real focus) does the rest. No fake keystrokes. |
+| **Native `<select>`**            | glide → click → since the OS picker never renders in-page and the value is set directly, honesty beats mime: focus halo + a **selection chip** — a small floating label near the control ("Business ✓") that fades after ~1.2 s. Never pretend a menu opened.                                                                                      |
+| **Custom (DOM) dropdowns**       | plain click choreography on the option element — the page's own menu is real, so no special casing.                                                                                                                                                                                                                                                |
+| **Drag & drop**                  | press at source → weighted glide (slower curve, ×1.4 duration) with a low-opacity ghost outline of the dragged element following the cursor → release ripple at target.                                                                                                                                                                            |
+| **Scroll**                       | cursor holds position; a two-chevron glyph pulses beside it in the scroll direction. The real scroll stays instant — we do not switch to smooth scrolling (it changes timing and triggers scroll-linked page behavior differently).                                                                                                                |
+| **Key press (Enter/Escape/Tab)** | a small key-cap chip (`⏎`, `esc`) appears beside the cursor for 500 ms. Communicates non-pointer actions without inventing pointer motion.                                                                                                                                                                                                         |
+| **Blocked / failed action**      | 2-cycle 3 px horizontal shake + brief red pulse ring. Users watching a run instantly see "it tried, the page refused" — currently invisible.                                                                                                                                                                                                       |
+| **Upload**                       | click choreography on the trigger + chip ("file attached").                                                                                                                                                                                                                                                                                        |
 
 Everything above is driven by design tokens in `presence-styles.ts`
 (durations, radii, the accent color — reuse the agent-border blue so the
@@ -222,13 +222,13 @@ perception. Additions:
 
 ## 9. Phases
 
-| Phase | Content | Exit criterion |
-| --- | --- | --- |
-| 0 | Settings plumbing + messages + empty host behind `off` default | verify green; no visual change |
-| 1 | Core engine: host/shadow, cursor glyph, motion, click choreography, capture suspend, reduced-motion | subtle mode demo on shop fixture; event-sequence parity test green |
-| 2 | Grammar table complete: focus halo, I-beam morph, radio/checkbox retarget, select chip, key chips, scroll glyph, error shake | all §5 rows demonstrable on fixtures |
-| 3 | Cinematic mode (pacing ×1.8, overshoot, drag ghost), navigation continuity, sidepanel toggle UI | video-lane recording reviewed by owner |
-| 4 | Perf audit (budget §7), QA matrix, default-mode decision, docs | stamp follow-up: flip default per §10 decision |
+| Phase | Content                                                                                                                      | Exit criterion                                                     |
+| ----- | ---------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------ |
+| 0     | Settings plumbing + messages + empty host behind `off` default                                                               | verify green; no visual change                                     |
+| 1     | Core engine: host/shadow, cursor glyph, motion, click choreography, capture suspend, reduced-motion                          | subtle mode demo on shop fixture; event-sequence parity test green |
+| 2     | Grammar table complete: focus halo, I-beam morph, radio/checkbox retarget, select chip, key chips, scroll glyph, error shake | all §5 rows demonstrable on fixtures                               |
+| 3     | Cinematic mode (pacing ×1.8, overshoot, drag ghost), navigation continuity, sidepanel toggle UI                              | video-lane recording reviewed by owner                             |
+| 4     | Perf audit (budget §7), QA matrix, default-mode decision, docs                                                               | stamp follow-up: flip default per §10 decision                     |
 
 Phases 1–2 are the substance; 0 is an afternoon; 3–4 are polish and
 decision-making. Each phase lands independently behind the setting.
@@ -243,6 +243,39 @@ decision-making. Each phase lands independently behind the setting.
    single text source; the choreography itself communicates the action.
 3. **Error shake: ships in all modes.** Blocked/failed actions become
    visible — honest UX over a purely positive picture.
+
+## Decision Amendment — Fast synchronized presence (2026-08-13)
+
+Status: Approved with edits
+
+Chosen path:
+
+- Use fast, trackable cursor travel in both `subtle` and `cinematic` modes.
+- Correlate the page cursor and panel action state with the existing tool-call ID.
+- Make cinematic presentation stronger through longer-lived effects, not slower execution.
+
+Required edits before implementation:
+
+- Remove post-action linger and rest drift from the serial movement queue.
+- Add a shared acquiring/acting/applied/failed/interrupted presentation lifecycle.
+- Preserve presentation-only behavior and capture cleanliness.
+
+Non-blocking follow-ups:
+
+- Review recorded motion across additional real-world sites after the initial QA matrix.
+
+Do not do:
+
+- Add cursor captions, field overlays, fixture-specific behavior, or altered DOM event semantics.
+
+Evidence required before merge:
+
+- Lifecycle synchronization, stale-event, motion, presence-parity, and shared UI tests.
+- Focused visual QA plus lint, typecheck, tests, and build.
+
+Next action:
+
+- Implement
 
 Implementation-review amendments (owner, 2026-07-24, across four filmed
 review rounds): (a) the glyph must NOT resemble the OS cursor — larger

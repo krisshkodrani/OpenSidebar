@@ -16,14 +16,19 @@ let capturedListener: ((message: any) => void) | null = null;
  * so we can simulate SW crashes.
  */
 let capturedPortDisconnectListener: (() => void) | null = null;
-let mockPort: { disconnect: ReturnType<typeof vi.fn>; onDisconnect: { addListener: ReturnType<typeof vi.fn> } };
+let mockPort: {
+    disconnect: ReturnType<typeof vi.fn>;
+    onDisconnect: { addListener: ReturnType<typeof vi.fn> };
+};
 
 function createMockPort() {
     capturedPortDisconnectListener = null;
     mockPort = {
         disconnect: vi.fn(),
         onDisconnect: {
-            addListener: vi.fn((fn: any) => { capturedPortDisconnectListener = fn; }),
+            addListener: vi.fn((fn: any) => {
+                capturedPortDisconnectListener = fn;
+            }),
         },
     };
     return mockPort;
@@ -33,17 +38,22 @@ describe("Bridge Message Routing", () => {
     beforeEach(() => {
         capturedListener = null;
 
-        globalThis.chrome = globalThis.chrome || {} as any;
+        globalThis.chrome = globalThis.chrome || ({} as any);
         globalThis.chrome.runtime = {
             onMessage: {
-                addListener: vi.fn((fn: any) => { capturedListener = fn; }),
+                addListener: vi.fn((fn: any) => {
+                    capturedListener = fn;
+                }),
                 removeListener: vi.fn(() => {}),
             },
             sendMessage: vi.fn(async () => {}),
             connect: vi.fn(() => createMockPort()),
         } as any;
         globalThis.chrome.storage = {
-            session: { get: vi.fn(async () => ({})), set: vi.fn(async () => {}) },
+            session: {
+                get: vi.fn(async () => ({})),
+                set: vi.fn(async () => {}),
+            },
             local: { get: vi.fn(async () => ({})), set: vi.fn(async () => {}) },
             sync: { get: vi.fn(async () => ({})), set: vi.fn(async () => {}) },
         } as any;
@@ -73,6 +83,7 @@ describe("Bridge Message Routing", () => {
             pendingClarification: null,
             taskRecovery: null,
             laneTelemetry: null,
+            actionPresentation: null,
             settings: {
                 openRouterApiKey: "",
                 maxTurns: 30,
@@ -117,6 +128,45 @@ describe("Bridge Message Routing", () => {
         });
         // Status should NOT have changed
         expect(useStore.getState().agentStatus).toBe(AgentStatus.IDLE);
+    });
+
+    test("correlates action presentation and ignores stale sequences", () => {
+        setupBridge();
+        send("ACTION_PRESENTATION", {
+            toolCallId: "call-new",
+            sequence: 20,
+            phase: "acquiring",
+            label: "Opening Settings",
+            toolName: "click_element",
+        });
+        send("ACTION_PRESENTATION", {
+            toolCallId: "call-old",
+            sequence: 19,
+            phase: "acting",
+            label: "Opening Old Target",
+            toolName: "click_element",
+        });
+        send("ACTION_PRESENTATION", {
+            toolCallId: "call-new",
+            sequence: 20,
+            phase: "acting",
+            label: "Opening Settings",
+            toolName: "click_element",
+        });
+        send("ACTION_PRESENTATION", {
+            toolCallId: "call-new",
+            sequence: 20,
+            phase: "acquiring",
+            label: "Opening Settings",
+            toolName: "click_element",
+        });
+
+        expect(useStore.getState().actionPresentation).toMatchObject({
+            toolCallId: "call-new",
+            sequence: 20,
+            phase: "acting",
+            label: "Opening Settings",
+        });
     });
 
     test("USER_CHAT_ACCEPTED renders externally-started user chat", () => {
@@ -169,7 +219,10 @@ describe("Bridge Message Routing", () => {
 
     test("AGENT_STATUS updates status and running state", () => {
         setupBridge();
-        send("AGENT_STATUS", { status: AgentStatus.THINKING, detail: "Analyzing..." });
+        send("AGENT_STATUS", {
+            status: AgentStatus.THINKING,
+            detail: "Analyzing...",
+        });
 
         expect(useStore.getState().agentStatus).toBe(AgentStatus.THINKING);
         expect(useStore.getState().statusDetail).toBe("Analyzing...");
@@ -274,7 +327,10 @@ describe("Bridge Message Routing", () => {
         setupBridge();
         send("AGENT_TURN", { turn: 5, maxTurns: 30 });
 
-        expect(useStore.getState().turnProgress).toEqual({ turn: 5, maxTurns: 30 });
+        expect(useStore.getState().turnProgress).toEqual({
+            turn: 5,
+            maxTurns: 30,
+        });
     });
 
     test("DURABLE_RUN_STATUS updates minimal durable run awareness", () => {
@@ -300,7 +356,14 @@ describe("Bridge Message Routing", () => {
         setupBridge();
         const payload = {
             taskId: "t1",
-            subtasks: [{ description: "Step 1", status: "running", turnsUsed: 2, turnBudget: 20 }],
+            subtasks: [
+                {
+                    description: "Step 1",
+                    status: "running",
+                    turnsUsed: 2,
+                    turnBudget: 20,
+                },
+            ],
             currentIndex: 0,
             totalTurnsUsed: 2,
         };
@@ -493,7 +556,10 @@ describe("Bridge Message Routing", () => {
         });
 
         setupBridge();
-        send("AGENT_STATUS", { status: AgentStatus.ACTING, detail: "Verifying..." });
+        send("AGENT_STATUS", {
+            status: AgentStatus.ACTING,
+            detail: "Verifying...",
+        });
         send("TASK_PROGRESS", {
             taskId: "t1",
             subtasks: [{ description: "Old step", status: "running" }],
@@ -550,7 +616,10 @@ describe("Bridge Message Routing", () => {
         });
 
         setupBridge();
-        send("AGENT_STATUS", { status: AgentStatus.THINKING, detail: "Planning..." });
+        send("AGENT_STATUS", {
+            status: AgentStatus.THINKING,
+            detail: "Planning...",
+        });
 
         expect(useStore.getState().isAgentRunning).toBe(true);
         expect(useStore.getState().agentStatus).toBe(AgentStatus.THINKING);
@@ -759,7 +828,11 @@ describe("Bridge Message Routing", () => {
 
     test("SCREENSHOT_CAPTURED calls onScreenshot callback", () => {
         const { onScreenshot } = setupBridge();
-        const payload = { dataUrl: "data:image/png;base64,abc", context: "test", timestamp: 123 };
+        const payload = {
+            dataUrl: "data:image/png;base64,abc",
+            context: "test",
+            timestamp: 123,
+        };
         send("SCREENSHOT_CAPTURED", payload);
 
         expect(onScreenshot).toHaveBeenCalledWith(payload);
@@ -855,8 +928,7 @@ describe("Bridge Message Routing", () => {
             payload: {
                 ...basePayload,
                 suggestionId: "suggestion-2",
-                answer:
-                    " Question 49:   Reduce the number of tokens in the input. ",
+                answer: " Question 49:   Reduce the number of tokens in the input. ",
                 observedAt: 2010,
             },
         });
@@ -928,7 +1000,11 @@ describe("Bridge Message Routing", () => {
 
         for (const payload of [
             { ...basePayload, suggestionId: "suggestion-1", observedAt: 2000 },
-            { ...basePayload, suggestionId: "suggestion-2", observedAt: 63_000 },
+            {
+                ...basePayload,
+                suggestionId: "suggestion-2",
+                observedAt: 63_000,
+            },
         ]) {
             capturedListener!({
                 type: "PASSIVE_MONITOR_SUGGESTION",
@@ -939,10 +1015,7 @@ describe("Bridge Message Routing", () => {
             });
         }
 
-        expect(useStore.getState().messages.map((message) => message.id)).toEqual([
-            "suggestion-1",
-            "suggestion-2",
-        ]);
+        expect(useStore.getState().messages.map((message) => message.id)).toEqual(["suggestion-1", "suggestion-2"]);
     });
 
     test("PASSIVE_MONITOR_SUGGESTION resets content dedupe on active task start", () => {
@@ -985,16 +1058,20 @@ describe("Bridge Message Routing", () => {
             },
         });
 
-        expect(useStore.getState().messages.map((message) => message.id)).toEqual([
-            "suggestion-1",
-            "suggestion-2",
-        ]);
+        expect(useStore.getState().messages.map((message) => message.id)).toEqual(["suggestion-1", "suggestion-2"]);
     });
 
     test("IDLE clears stale taskProgress when no TASK_COMPLETION was received", () => {
         useStore.getState().setTaskProgress({
             taskId: "t1",
-            subtasks: [{ description: "Step 1", status: "running", turnsUsed: 2, turnBudget: 20 }],
+            subtasks: [
+                {
+                    description: "Step 1",
+                    status: "running",
+                    turnsUsed: 2,
+                    turnBudget: 20,
+                },
+            ],
             currentIndex: 0,
             totalTurnsUsed: 2,
         });
@@ -1009,13 +1086,23 @@ describe("Bridge Message Routing", () => {
     test("ERROR clears stale taskProgress when no TASK_COMPLETION was received", () => {
         useStore.getState().setTaskProgress({
             taskId: "t1",
-            subtasks: [{ description: "Step 1", status: "running", turnsUsed: 1, turnBudget: 10 }],
+            subtasks: [
+                {
+                    description: "Step 1",
+                    status: "running",
+                    turnsUsed: 1,
+                    turnBudget: 10,
+                },
+            ],
             currentIndex: 0,
             totalTurnsUsed: 1,
         });
 
         setupBridge();
-        send("AGENT_STATUS", { status: AgentStatus.ERROR, detail: "Runtime error" });
+        send("AGENT_STATUS", {
+            status: AgentStatus.ERROR,
+            detail: "Runtime error",
+        });
 
         expect(useStore.getState().taskProgress).toBeNull();
         expect(useStore.getState().taskCompletion).toBeNull();
@@ -1055,17 +1142,22 @@ describe("Bridge Port Keepalive", () => {
         capturedListener = null;
         vi.useFakeTimers();
 
-        globalThis.chrome = globalThis.chrome || {} as any;
+        globalThis.chrome = globalThis.chrome || ({} as any);
         globalThis.chrome.runtime = {
             onMessage: {
-                addListener: vi.fn((fn: any) => { capturedListener = fn; }),
+                addListener: vi.fn((fn: any) => {
+                    capturedListener = fn;
+                }),
                 removeListener: vi.fn(() => {}),
             },
             sendMessage: vi.fn(async () => {}),
             connect: vi.fn(() => createMockPort()),
         } as any;
         globalThis.chrome.storage = {
-            session: { get: vi.fn(async () => ({})), set: vi.fn(async () => {}) },
+            session: {
+                get: vi.fn(async () => ({})),
+                set: vi.fn(async () => {}),
+            },
             local: { get: vi.fn(async () => ({})), set: vi.fn(async () => {}) },
             sync: { get: vi.fn(async () => ({})), set: vi.fn(async () => {}) },
         } as any;
@@ -1118,7 +1210,9 @@ describe("Bridge Port Keepalive", () => {
 
     test("connects port on initialization", () => {
         setupBridge();
-        expect(chrome.runtime.connect).toHaveBeenCalledWith({ name: "sidepanel-keepalive" });
+        expect(chrome.runtime.connect).toHaveBeenCalledWith({
+            name: "sidepanel-keepalive",
+        });
     });
 
     test("port disconnect resets isAgentRunning when agent was running", () => {
@@ -1165,8 +1259,12 @@ describe("Bridge Port Keepalive", () => {
             snapshotSummary: "Example",
             lastActions: [],
             budgetState: {
-                elapsedMs: 0, maxSessionTimeMs: 10000, totalTokens: 0,
-                maxTotalTokens: 1000, totalCostUsd: 0, maxTotalCostUsd: 1,
+                elapsedMs: 0,
+                maxSessionTimeMs: 10000,
+                totalTokens: 0,
+                maxTotalTokens: 1000,
+                totalCostUsd: 0,
+                maxTotalCostUsd: 1,
             },
             timeoutMs: 60000,
             timestamp: Date.now(),

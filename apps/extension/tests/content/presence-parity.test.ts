@@ -4,7 +4,7 @@
  * sequence to the page as with presence off. The choreography may only add
  * time and shadow-DOM pixels — never events.
  */
-import { afterEach, beforeEach, describe, expect, test } from "vitest";
+import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 import "../setup";
 import { ToolName } from "../../src/types";
 import { executeAction } from "../../src/content/actions";
@@ -69,6 +69,28 @@ describe("presence parity (LP-24 principle 1)", () => {
     expect(onLog).toEqual(offLog);
   });
 
+  test("emits a correlated action lifecycle around the real DOM action", async () => {
+    const sendMessage = vi
+      .spyOn(chrome.runtime, "sendMessage")
+      .mockResolvedValue(undefined as never);
+    await runClickScenario();
+    const events = sendMessage.mock.calls
+      .map(([message]) => message as any)
+      .filter((message) => message.type === "ACTION_PRESENTATION");
+
+    expect(events.map((event) => event.payload.phase)).toEqual([
+      "acquiring",
+      "acting",
+      "applied",
+    ]);
+    expect(new Set(events.map((event) => event.payload.toolCallId)).size).toBe(
+      1,
+    );
+    expect(new Set(events.map((event) => event.payload.sequence)).size).toBe(1);
+    expect(events[0].payload.label).toBe("Opening Advance");
+    sendMessage.mockRestore();
+  });
+
   test("presence failure feedback dispatches no page events", async () => {
     document.body.innerHTML = `<button id="only">A</button>`;
     resetStableIds();
@@ -101,7 +123,15 @@ describe("presence parity (LP-24 principle 1)", () => {
     const radio = document.getElementById("r")!;
     const stub = (el: Element, rect: Partial<DOMRect>) => {
       (el as HTMLElement).getBoundingClientRect = () =>
-        ({ left: 0, top: 0, width: 0, height: 0, right: 0, bottom: 0, ...rect }) as DOMRect;
+        ({
+          left: 0,
+          top: 0,
+          width: 0,
+          height: 0,
+          right: 0,
+          bottom: 0,
+          ...rect,
+        }) as DOMRect;
     };
 
     // Custom-widget case: the input is hidden, only the label has geometry.
@@ -120,7 +150,14 @@ describe("presence parity (LP-24 principle 1)", () => {
     stub(radio, { width: 0, height: 0 });
     stub(label, { width: 0, height: 0 });
     document.body.getBoundingClientRect = () =>
-      ({ left: 0, top: 0, width: 0, height: 0, right: 0, bottom: 0 }) as DOMRect;
+      ({
+        left: 0,
+        top: 0,
+        width: 0,
+        height: 0,
+        right: 0,
+        bottom: 0,
+      }) as DOMRect;
     expect(resolveVisualAnchor(radio, "checkbox")).toBeNull();
   });
 });

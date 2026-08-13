@@ -1,6 +1,7 @@
 import { describe, expect, test } from "vitest";
 import {
   arcControlPoint,
+  ballisticEase,
   bezierPoint,
   distance,
   easeInOut,
@@ -23,22 +24,22 @@ describe("presence motion math", () => {
     expect(s1).toEqual(s2);
   });
 
-  test("duration follows Fitts scaling and clamps to [90, 420] in subtle", () => {
+  test("duration follows Fitts scaling and clamps to [90, 320]", () => {
     const short = glideDurationMs(A, { x: 110, y: 100 }, 40, "subtle");
     const long = glideDurationMs(A, { x: 3000, y: 2000 }, 8, "subtle");
     expect(short).toBe(90); // clamp floor
-    expect(long).toBe(420); // clamp ceiling
+    expect(long).toBe(320); // clamp ceiling
     const mid = glideDurationMs(A, B, 40, "subtle");
     expect(mid).toBeGreaterThan(short);
-    expect(mid).toBeLessThanOrEqual(420);
+    expect(mid).toBeLessThanOrEqual(320);
   });
 
   test("cinematic pacing is ×1.8 over subtle, floored at 300ms", () => {
     const subtle = glideDurationMs(A, B, 40, "subtle");
     const cinematic = glideDurationMs(A, B, 40, "cinematic");
-    expect(cinematic).toBe(Math.max(300, Math.round(subtle * 1.8)));
+    expect(cinematic).toBe(subtle);
     // Short hop: subtle clamps to 90ms; cinematic must still be perceivable.
-    expect(glideDurationMs(A, { x: 110, y: 100 }, 40, "cinematic")).toBe(300);
+    expect(glideDurationMs(A, { x: 110, y: 100 }, 40, "cinematic")).toBe(90);
   });
 
   test("zero-distance glides cost nothing", () => {
@@ -46,12 +47,12 @@ describe("presence motion math", () => {
     expect(sampleGlide(A, A, 40, "subtle").points).toEqual([A]);
   });
 
-  test("arc control point bulges perpendicular, capped at 60px", () => {
+  test("arc control point bulges perpendicular, capped at 25px", () => {
     const control = arcControlPoint(A, B);
     const mid = { x: 400, y: 250 };
     const bulge = distance(control, mid);
     expect(bulge).toBeGreaterThan(1);
-    expect(bulge).toBeLessThanOrEqual(60.001);
+    expect(bulge).toBeLessThanOrEqual(25.001);
   });
 
   test("bezier hits both endpoints and easing is monotone-bounded", () => {
@@ -61,6 +62,12 @@ describe("presence motion math", () => {
     expect(easeInOut(0)).toBeCloseTo(0);
     expect(easeInOut(1)).toBeCloseTo(1);
     expect(easeInOut(0.5)).toBeCloseTo(0.5);
+  });
+
+  test("ballistic easing launches ahead of symmetric easing and lands exactly", () => {
+    expect(ballisticEase(0)).toBe(0);
+    expect(ballisticEase(0.25)).toBeGreaterThan(easeInOut(0.25));
+    expect(ballisticEase(1)).toBe(1);
   });
 
   test("overshoot only on long cinematic glides, settling on the true target", () => {
