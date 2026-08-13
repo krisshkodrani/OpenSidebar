@@ -36,6 +36,8 @@ import type { RemoteMissionVault } from "./remote-mission-vault.js";
 import { createPersonalDataApi } from "./personal-data-api.js";
 import type { PersonalDataRepository } from "./personal-data-repository.js";
 import type { PersonalDataObjectPort } from "./personal-data-object-store.js";
+import { createModelBenchApi } from "./modelbench-api.js";
+import type { ModelBenchRepository } from "./modelbench-repository.js";
 import {
   parseConnectionRequest,
   parseCheckpointCommit,
@@ -76,6 +78,7 @@ export type ControlApiDependencies = {
   remoteMissionVault?: RemoteMissionVault;
   personalDataRepository?: PersonalDataRepository;
   personalDataObjectStore?: PersonalDataObjectPort;
+  modelBenchRepository?: ModelBenchRepository;
 };
 
 const noStore = (c: Context) => c.header("Cache-Control", "no-store");
@@ -124,7 +127,9 @@ const isControlRequest = (c: Context) => {
     path === "/traces" ||
     path.startsWith("/traces/") ||
     path === "/personal-data" ||
-    path.startsWith("/personal-data/")
+    path.startsWith("/personal-data/") ||
+    path === "/modelbench" ||
+    path.startsWith("/modelbench/")
   );
 };
 const statusFor = (error: unknown) => {
@@ -183,6 +188,7 @@ export function createControlApi(deps: ControlApiDependencies) {
     remoteMissionVault,
     personalDataRepository,
     personalDataObjectStore,
+    modelBenchRepository,
   } = deps;
   const api = new Hono<{ Variables: Variables }>();
   const encodeSessionCursor = (
@@ -500,6 +506,8 @@ export function createControlApi(deps: ControlApiDependencies) {
         );
   api.use("/traces", traceTesterGuard);
   api.use("/traces/*", traceTesterGuard);
+  if (modelBenchRepository)
+    api.route("/modelbench", createModelBenchApi(modelBenchRepository));
   if (config.traceSyncEnabled && traceRepository && traceObjectStore)
     api.route(
       "/traces",
