@@ -1,6 +1,6 @@
 # LP-36: ModelBench-100 Scenario Platform
 
-Status: Draft for owner decision
+Status: Approved; implementation and acceptance in progress
 
 ## Problem
 

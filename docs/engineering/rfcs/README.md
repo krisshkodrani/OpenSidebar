@@ -65,9 +65,10 @@ B-stages land additively underneath the stable MCP/HTTP contract.
 | --- | --- | --- | --- |
 | LP-36 | [ModelBench-100 scenario platform](lp-0036-modelbench-100.md) | Fixture E2E, Arena, and Playground scenario implementations overlap and cannot produce one reproducible role-attributed model benchmark | LP-26 privacy and deployment boundaries |
 
-LP-36 is a draft pending an owner Decision Stamp. It proposes an
-acceptance-gated replacement of the current fixture-driven E2E system and a
-shared scenario engine for local ModelBench runs and the public Playground.
+LP-36 is approved and its shared contracts, 100-case catalog, deterministic
+engine, runner, local target, and internal cloud service are implemented. The
+legacy cutover remains gated on realistic-target review, PostgreSQL parity,
+three full reference runs, deployment smoke, and rollback rehearsal.
 
 ## Personal-data sync (2026-08-13)
 
