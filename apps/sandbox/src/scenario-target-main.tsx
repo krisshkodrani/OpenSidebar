@@ -29,6 +29,10 @@ function ConfiguredTargetApplication({ run, familyValue }: { run: ScenarioTarget
   const caseState = objectValue(current.data.case);
   const interaction = objectValue(current.data.interaction);
   const mutable = interaction.mutable === true;
+  const requiresValue = interaction.requiresValue === true;
+  const terminalDecision = typeof interaction.terminalDecision === "string"
+    ? interaction.terminalDecision
+    : null;
   const evidence = Array.isArray(current.data.evidence) ? current.data.evidence : [];
   const rows = useMemo(() => [
     ["Status", display(caseState.status)],
@@ -36,15 +40,31 @@ function ConfiguredTargetApplication({ run, familyValue }: { run: ScenarioTarget
     ["Last revision", String(current.revision)],
   ], [caseState.status, caseState.value, current.revision, family.valueLabel]);
   const save = async () => {
-    if (!draft.trim()) return;
+    if (requiresValue && !draft.trim()) return;
     setBusy(true);
     setFeedback(null);
     try {
-      setCurrent(await sendScenarioAction("case.submit", { value: draft.trim() }));
+      setCurrent(await sendScenarioAction(
+        "case.submit",
+        requiresValue ? { value: draft.trim() } : { decision: "apply" },
+      ));
       setDraft("");
       setFeedback("Changes saved.");
     } catch (error) {
       setFeedback(error instanceof Error ? error.message : "Changes could not be saved.");
+    } finally {
+      setBusy(false);
+    }
+  };
+  const recordTerminalDecision = async () => {
+    if (!terminalDecision) return;
+    setBusy(true);
+    setFeedback(null);
+    try {
+      setCurrent(await sendScenarioAction("case.terminal", { decision: terminalDecision }));
+      setFeedback("Decision recorded.");
+    } catch (error) {
+      setFeedback(error instanceof Error ? error.message : "Decision could not be recorded.");
     } finally {
       setBusy(false);
     }
@@ -58,7 +78,8 @@ function ConfiguredTargetApplication({ run, familyValue }: { run: ScenarioTarget
         <section className="scenario-panel"><h2>Details</h2><table><tbody>{rows.map(([label, value]) => <tr key={label}><th>{label}</th><td>{value}</td></tr>)}</tbody></table></section>
         {evidence.length > 0 && <section className="scenario-panel"><h2>Visible information</h2><dl className="scenario-evidence">{evidence.map((entry, index) => { const item = objectValue(entry); return <div key={index}><dt>{display(item.label)}</dt><dd>{display(item.value)}</dd></div>; })}</dl></section>}
         {typeof current.data.notice === "string" && <section className="scenario-panel scenario-notice"><h2>Action unavailable</h2><p>{current.data.notice}</p></section>}
-        {mutable && <section className="scenario-panel scenario-form"><h2>Update</h2><label>{display(interaction.valueLabel) || family.valueLabel}<input value={draft} onChange={(event) => setDraft(event.target.value)} /></label><button className="scenario-primary" disabled={busy || !draft.trim()} onClick={() => void save()}>{busy ? "Saving…" : display(interaction.submitLabel) || family.saveLabel}</button>{feedback && <p role="status" className="scenario-feedback">{feedback}</p>}</section>}
+        {terminalDecision && current.lifecycle !== "finished" && <section className="scenario-panel scenario-form"><h2>Decision</h2><button className="scenario-primary" disabled={busy} onClick={() => void recordTerminalDecision()}>{busy ? "Savingâ€¦" : display(interaction.terminalLabel)}</button>{feedback && <p role="status" className="scenario-feedback">{feedback}</p>}</section>}
+        {mutable && <section className="scenario-panel scenario-form"><h2>Update</h2>{requiresValue && <label>{display(interaction.valueLabel) || family.valueLabel}<input value={draft} onChange={(event) => setDraft(event.target.value)} /></label>}<button className="scenario-primary" disabled={busy || (requiresValue && !draft.trim())} onClick={() => void save()}>{busy ? "Saving…" : display(interaction.submitLabel) || family.saveLabel}</button>{feedback && <p role="status" className="scenario-feedback">{feedback}</p>}</section>}
         {objectValue(current.data.unrelated).changed === true && <p role="alert" className="scenario-warning">An unrelated record was changed.</p>}
       </main>
     </div>

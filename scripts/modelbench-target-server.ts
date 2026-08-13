@@ -124,7 +124,9 @@ export async function startModelBenchTargetServer(
         }
         if (req.method === "POST" && url.pathname === "/api/v2/target/action") {
           const input = await body(req);
-          if (input.type !== "case.submit") return json(res, 400, { error: { message: "Unsupported target action." } });
+          if (input.type !== "case.submit" && input.type !== "case.terminal") {
+            return json(res, 400, { error: { message: "Unsupported target action." } });
+          }
           const action: ScenarioActionV2 = {
             type: input.type,
             payload:
