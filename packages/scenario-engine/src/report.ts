@@ -72,6 +72,38 @@ export function buildBenchmarkReport(
   const durations = attempts
     .filter((attempt) => !attempt.retryOfAttemptId)
     .map((attempt) => attempt.durationMs);
+  const firstAttempts = attempts.filter((attempt) => !attempt.retryOfAttemptId);
+  const llmTimes = firstAttempts.map((attempt) =>
+    Object.values(attempt.usageByRole).reduce(
+      (sum, usage) => sum + (usage?.llmTimeMs ?? 0),
+      0,
+    ),
+  );
+  const usageByRole = attempts.reduce<BenchmarkReportV1["usageByRole"]>(
+    (totals, attempt) => {
+      for (const [role, usage] of Object.entries(attempt.usageByRole)) {
+        if (!usage) continue;
+        const current = totals[role as keyof typeof totals] ?? {
+          calls: 0,
+          promptTokens: 0,
+          completionTokens: 0,
+          cachedTokens: 0,
+          costUsd: 0,
+          llmTimeMs: 0,
+        };
+        totals[role as keyof typeof totals] = {
+          calls: current.calls + usage.calls,
+          promptTokens: current.promptTokens + usage.promptTokens,
+          completionTokens: current.completionTokens + usage.completionTokens,
+          cachedTokens: current.cachedTokens + usage.cachedTokens,
+          costUsd: current.costUsd + usage.costUsd,
+          llmTimeMs: current.llmTimeMs + usage.llmTimeMs,
+        };
+      }
+      return totals;
+    },
+    {},
+  );
   const totalCostUsd = attempts.reduce(
     (sum, attempt) =>
       sum +
@@ -97,6 +129,14 @@ export function buildBenchmarkReport(
     judgeDisagreementRate: judged ? disagreement / judged : null,
     medianDurationMs: percentile(durations, 0.5),
     p95DurationMs: percentile(durations, 0.95),
+    medianLlmTimeMs: percentile(llmTimes, 0.5),
+    p95LlmTimeMs: percentile(llmTimes, 0.95),
+    totalTurns: firstAttempts.reduce((sum, attempt) => sum + (attempt.telemetry?.turns ?? 0), 0),
+    totalToolExecutions: firstAttempts.reduce((sum, attempt) => sum + (attempt.telemetry?.toolExecutions ?? 0), 0),
+    totalPerceptions: firstAttempts.reduce((sum, attempt) => sum + (attempt.telemetry?.perceptions ?? 0), 0),
+    totalReplans: firstAttempts.reduce((sum, attempt) => sum + (attempt.telemetry?.replans ?? 0), 0),
+    totalRecoveries: firstAttempts.reduce((sum, attempt) => sum + (attempt.telemetry?.recoveries ?? 0), 0),
+    usageByRole,
     totalCostUsd,
     costPerRequestedTaskUsd: overall.requested ? totalCostUsd / overall.requested : null,
     costPerSuccessfulTaskUsd: overall.passed ? totalCostUsd / overall.passed : null,

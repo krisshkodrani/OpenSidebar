@@ -63,6 +63,8 @@ test("collects actual executor, planner, and judge identities and usage", () => 
     llmTimeMs: 11,
   });
   assert.equal(result.artifactRefs.length, 2);
+  assert.equal(result.telemetry.turns, 1);
+  assert.equal(result.telemetry.replans, 0);
 });
 
 test("does not invent a resolved seat when traces contain multiple identities", () => {

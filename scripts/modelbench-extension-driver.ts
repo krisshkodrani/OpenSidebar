@@ -221,6 +221,7 @@ export async function createModelBenchDriver(): Promise<ModelBenchDriver> {
           terminalOutcome: terminalOutcome(outcome, run),
           resolvedSeats: evidence.resolvedSeats,
           usageByRole: evidence.usageByRole,
+          telemetry: evidence.telemetry,
           artifactRefs: evidence.artifactRefs,
           diagnostics: {
             runId: created.runId,

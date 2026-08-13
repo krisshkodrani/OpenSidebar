@@ -53,6 +53,14 @@ export interface RoleUsageV1 {
   llmTimeMs: number;
 }
 
+export interface AttemptTelemetryV1 {
+  turns: number;
+  toolExecutions: number;
+  perceptions: number;
+  replans: number;
+  recoveries: number;
+}
+
 export interface BenchmarkAttemptV1 {
   schemaVersion: 1;
   attemptId: string;
@@ -67,6 +75,7 @@ export interface BenchmarkAttemptV1 {
   requestedSeats: Partial<Record<ModelSeat, RequestedSeatV1>>;
   resolvedSeats: Partial<Record<ModelSeat, ResolvedSeatV1>>;
   usageByRole: Partial<Record<ModelSeat, RoleUsageV1>>;
+  telemetry?: AttemptTelemetryV1;
   validation: ValidationResultV1 | null;
   retryOfAttemptId?: string;
   artifactRefs: readonly string[];
@@ -95,6 +104,14 @@ export interface BenchmarkReportV1 {
   judgeDisagreementRate: number | null;
   medianDurationMs: number | null;
   p95DurationMs: number | null;
+  medianLlmTimeMs: number | null;
+  p95LlmTimeMs: number | null;
+  totalTurns: number;
+  totalToolExecutions: number;
+  totalPerceptions: number;
+  totalReplans: number;
+  totalRecoveries: number;
+  usageByRole: Partial<Record<ModelSeat, RoleUsageV1>>;
   totalCostUsd: number;
   costPerRequestedTaskUsd: number | null;
   costPerSuccessfulTaskUsd: number | null;

@@ -143,6 +143,13 @@ function attempt(index: number): BenchmarkAttemptV1 {
         llmTimeMs: 500,
       },
     },
+    telemetry: {
+      turns: 2,
+      toolExecutions: 1,
+      perceptions: 1,
+      replans: 0,
+      recoveries: 0,
+    },
     validation: null,
     artifactRefs: [],
   };
@@ -160,4 +167,9 @@ test("full valid 100-case report is rankable and preserves metric vectors", () =
   assert.equal(report.byFamily.retail.requested, 10);
   assert.equal(report.byDifficulty.hard.requested, 35);
   assert.equal(report.totalCostUsd.toFixed(2), "1.00");
+  assert.equal(report.totalTurns, 200);
+  assert.equal(report.totalToolExecutions, 100);
+  assert.equal(report.totalPerceptions, 100);
+  assert.equal(report.medianLlmTimeMs, 500);
+  assert.equal(report.usageByRole.executor?.promptTokens, 1000);
 });

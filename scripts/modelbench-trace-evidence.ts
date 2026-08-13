@@ -26,6 +26,13 @@ export interface ModelBenchTraceEvidence {
   artifactRefs: string[];
   runIds: string[];
   ambiguousSeats: Partial<Record<ModelSeat, string[]>>;
+  telemetry: {
+    turns: number;
+    toolExecutions: number;
+    perceptions: number;
+    replans: number;
+    recoveries: number;
+  };
 }
 
 function number(...values: unknown[]): number {
@@ -121,12 +128,23 @@ export function collectModelBenchTraceEvidence(input: {
   const runIds = new Set<string>();
   const artifactRefs = new Set<string>();
   const calls: ObservedCall[] = [];
+  let turns = 0;
+  let toolExecutions = 0;
+  let perceptions = 0;
+  let plannerCalls = 0;
+  let recoveries = 0;
 
   for (const traceFile of input.traceFiles) {
     const path = resolve(traceFile);
     artifactRefs.add(path);
     for (const entry of lines(path)) {
       if (typeof entry.runId === "string") runIds.add(entry.runId);
+      if (entry.traceKind === "agent.turn" || entry.llmResponse) turns += 1;
+      if (Array.isArray(entry.toolExecutions)) toolExecutions += entry.toolExecutions.length;
+      if (
+        entry.llmRequest?.modelTier === "perception" ||
+        number(entry.contextMetrics?.imagePromptCount) > 0
+      ) perceptions += 1;
       const call = executorCall(entry);
       if (call) calls.push(call);
     }
@@ -136,6 +154,8 @@ export function collectModelBenchTraceEvidence(input: {
     if (!existsSync(path)) continue;
     artifactRefs.add(path);
     for (const entry of lines(path)) {
+      if (entry.type === "planner_llm_call") plannerCalls += 1;
+      if (String(entry.type ?? "").toLocaleLowerCase().includes("recovery")) recoveries += 1;
       const call = orchestratorCall(entry);
       if (call) calls.push(call);
     }
@@ -172,5 +192,12 @@ export function collectModelBenchTraceEvidence(input: {
     artifactRefs: [...artifactRefs],
     runIds: [...runIds],
     ambiguousSeats,
+    telemetry: {
+      turns,
+      toolExecutions,
+      perceptions,
+      replans: Math.max(0, plannerCalls - 1),
+      recoveries,
+    },
   };
 }
