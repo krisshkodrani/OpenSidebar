@@ -9,6 +9,8 @@
   "include": ["src/**/*.ts", "test/**/*.ts"],
   "references": [
     { "path": "../../packages/sandbox-contracts" },
+    { "path": "../../packages/scenario-contracts" },
+    { "path": "../../packages/scenario-engine" },
     { "path": "../../packages/shared-types" }
   ]
 }
