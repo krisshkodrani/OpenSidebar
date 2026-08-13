@@ -104,8 +104,40 @@ export function reduceScenarioState(
       if (!("expected" in control)) {
         throw new Error("Scenario does not define a case submission result.");
       }
+      if (control.submissionKind === "value") {
+        const actual = String(payload.value ?? "").trim().toLocaleLowerCase();
+        const accepted = String(control.acceptedValue ?? "").trim().toLocaleLowerCase();
+        if (!actual || actual !== accepted) {
+          throw new Error("The submitted value is not valid for this record.");
+        }
+      } else if (control.submissionKind === "action") {
+        if (payload.decision !== "apply") {
+          throw new Error("The requested application action was not confirmed.");
+        }
+      } else {
+        throw new Error("Scenario does not define a supported submission interaction.");
+      }
       caseState.status = "complete";
       caseState.value = cloneJson(control.expected);
+      publicData.case = caseState;
+      next.data.public = publicData;
+      next.lifecycle = "finished";
+      break;
+    }
+    case "case.terminal": {
+      const control = objectValue(next.data.control) ?? {};
+      const publicData = objectValue(next.data.public) ?? {};
+      const caseState = objectValue(publicData.case) ?? {};
+      if (
+        typeof payload.decision !== "string" ||
+        payload.decision !== control.terminalDecision ||
+        control.mode !== "terminal" ||
+        typeof control.expected !== "string"
+      ) {
+        throw new Error("Scenario terminal decision is not available.");
+      }
+      caseState.status = "complete";
+      caseState.outcome = control.expected;
       publicData.case = caseState;
       next.data.public = publicData;
       next.lifecycle = "finished";

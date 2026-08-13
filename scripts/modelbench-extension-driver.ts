@@ -128,7 +128,14 @@ function finalAnswer(outcome: DriverOutcome): string | undefined {
   return typeof value === "string" && value.trim() ? value.trim() : undefined;
 }
 
-function terminalOutcome(outcome: DriverOutcome): string | undefined {
+function terminalOutcome(outcome: DriverOutcome, run: ScenarioRunV2): string | undefined {
+  const caseState = run.state.data.public;
+  const structured =
+    caseState && typeof caseState === "object" && !Array.isArray(caseState) &&
+    caseState.case && typeof caseState.case === "object" && !Array.isArray(caseState.case)
+      ? caseState.case.outcome
+      : undefined;
+  if (typeof structured === "string" && structured.trim()) return structured.trim();
   if (outcome.kind === "clarification") return "clarification";
   const value = outcome.event?.outcome ?? outcome.event?.payload?.outcome;
   return typeof value === "string" && value.trim() ? value.trim() : undefined;
@@ -211,7 +218,7 @@ export async function createModelBenchDriver(): Promise<ModelBenchDriver> {
           durationMs: Date.now() - startedAt,
           finalState: run.state,
           finalAnswer: finalAnswer(outcome),
-          terminalOutcome: terminalOutcome(outcome),
+          terminalOutcome: terminalOutcome(outcome, run),
           resolvedSeats: evidence.resolvedSeats,
           usageByRole: evidence.usageByRole,
           artifactRefs: evidence.artifactRefs,

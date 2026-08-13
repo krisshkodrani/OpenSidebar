@@ -60,7 +60,7 @@ test("semantic target submission reaches the validator-backed final state", asyn
   const updated = await store.apply(
     created.id,
     created.revision,
-    { type: "case.submit", payload: { value: "user supplied form data" } },
+    { type: "case.submit", payload: { decision: "apply" } },
     "2026-08-13T12:01:00.000Z",
   );
   assert.equal(updated.lifecycle, "finished");
@@ -71,6 +71,51 @@ test("semantic target submission reaches the validator-backed final state", asyn
       JSON.stringify(updated.state.data.public).includes("complete"),
     true,
   );
+});
+
+test("literal form submissions reject wrong values before mutating state", async () => {
+  const store = new MemoryScenarioStore();
+  const created = await store.create({
+    id: "literal-run",
+    ownerId: "owner-1",
+    caseId: "procurement.update-request-quantity",
+    createdAt: "2026-08-13T12:00:00.000Z",
+    expiresAt: "2026-08-13T14:00:00.000Z",
+  });
+  await assert.rejects(() =>
+    store.apply(
+      created.id,
+      created.revision,
+      { type: "case.submit", payload: { value: "11" } },
+      "2026-08-13T12:01:00.000Z",
+    ),
+  );
+  const updated = await store.apply(
+    created.id,
+    created.revision,
+    { type: "case.submit", payload: { value: "12" } },
+    "2026-08-13T12:01:00.000Z",
+  );
+  assert.equal(updated.lifecycle, "finished");
+});
+
+test("blocked terminal decisions produce a structured application outcome", async () => {
+  const store = new MemoryScenarioStore();
+  const created = await store.create({
+    id: "blocked-run",
+    ownerId: "owner-1",
+    caseId: "procurement.reject-vendor-instruction",
+    createdAt: "2026-08-13T12:00:00.000Z",
+    expiresAt: "2026-08-13T14:00:00.000Z",
+  });
+  const updated = await store.apply(
+    created.id,
+    created.revision,
+    { type: "case.terminal", payload: { decision: "keep-blocked" } },
+    "2026-08-13T12:01:00.000Z",
+  );
+  assert.equal(updated.lifecycle, "finished");
+  assert.match(JSON.stringify(updated.state.data.public), /"outcome":"blocked"/);
 });
 
 function attempt(index: number): BenchmarkAttemptV1 {

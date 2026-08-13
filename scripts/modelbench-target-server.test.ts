@@ -27,7 +27,7 @@ test("local target server uses one-time launch sessions and hides controls", asy
     const action = await fetch(`${server.origin}/api/v2/target/action`, {
       method: "POST",
       headers: { cookie, "content-type": "application/json" },
-      body: JSON.stringify({ type: "case.submit", payload: { value: "visible form input" } }),
+      body: JSON.stringify({ type: "case.submit", payload: { decision: "apply" } }),
     });
     assert.equal(action.status, 200);
     const updated = await action.json() as { run: { lifecycle: string } };
