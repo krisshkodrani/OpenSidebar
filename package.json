@@ -83,6 +83,7 @@
     "modelbench:oracle": "tsx scripts/modelbench.ts oracle",
     "modelbench:run": "tsx scripts/modelbench-run.ts",
     "modelbench:report": "tsx scripts/modelbench-report.ts",
+    "modelbench:target": "tsx scripts/modelbench-target-server.ts",
     "bench": "tsx scripts/run-bench.ts",
     "bench:fetch": "tsx scripts/bench/fetch-tasks.ts",
     "models:check": "tsx scripts/model-compatibility-check.ts",
