@@ -268,4 +268,6 @@ export interface OrchestratorStartInput {
   conversationContextBrief?: string;
   /** See OrchestratorTask.interactionDelivery. Set by the browser bridge. */
   interactionDelivery?: "handoff";
+  /** Hard ceiling for every executor node, including replans. */
+  executionToolProfile?: ToolProfile;
 }

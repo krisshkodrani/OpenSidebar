@@ -1,5 +1,6 @@
 import type {
   CloudPreferencesV1,
+  CloudRemoteWorkSettingsV1,
   CredentialStatusV1,
   ExtensionSessionV1,
   UserSettings,
@@ -9,6 +10,7 @@ import {
   CLOUD_EXTENSION_SESSION_KEY,
   CloudAuthenticatedFetch,
 } from "../cloud/authenticated-fetch";
+import { REMOTE_MISSION_LOCAL_STATUS_KEY } from "../remote-mission-local-status";
 
 const API_ORIGIN = "https://opensidebar.com";
 const SESSION_KEY = CLOUD_EXTENSION_SESSION_KEY;
@@ -213,12 +215,42 @@ export async function signOutCloud() {
     );
   await uiRuntime.storage.local.remove(SESSION_KEY);
   await uiRuntime.storage.local.remove(PREFERENCES_LINKED_KEY);
+  await uiRuntime.storage.local.remove(REMOTE_MISSION_LOCAL_STATUS_KEY);
+}
+export async function renameCloudDevice(displayName: string) {
+  const session = await readSession();
+  if (!session) throw new Error("Sign in to OpenSidebar first.");
+  const response = await cloudFetch(`/account/devices/${encodeURIComponent(session.device.id)}`, {
+    method: "PUT",
+    headers: { "if-match": String(session.device.displayNameRevision ?? 1) },
+    body: JSON.stringify({ displayName }),
+  });
+  if (!response.ok) throw await responseError(response);
+  const device = (await response.json()) as ExtensionSessionV1["device"];
+  await uiRuntime.storage.local.set({
+    [SESSION_KEY]: { ...session, device },
+  });
+  return device;
 }
 export async function credentialStatuses() {
   const response = await cloudFetch("/credentials");
   if (!response.ok) throw await responseError(response);
   return ((await response.json()) as { credentials: CredentialStatusV1[] })
     .credentials;
+}
+export async function remoteWorkStatus() {
+  const response = await cloudFetch("/account/remote-work");
+  if (!response.ok) throw await responseError(response);
+  return response.json() as Promise<CloudRemoteWorkSettingsV1>;
+}
+export async function disableRemoteWork(expectedRevision: number) {
+  const response = await cloudFetch("/account/remote-work", {
+    method: "PUT",
+    headers: { "if-match": String(expectedRevision) },
+    body: JSON.stringify({ enabled: false }),
+  });
+  if (!response.ok) throw await responseError(response);
+  return response.json() as Promise<CloudRemoteWorkSettingsV1>;
 }
 export async function uploadCredential(
   provider: "openrouter" | "fireworks",

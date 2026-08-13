@@ -5,6 +5,7 @@ import { adaptAgentRunner } from "../../src/background/remote-mission-runner";
 const payload = {
   schemaVersion: 1 as const,
   missionId: "123e4567-e89b-42d3-a456-426614174001",
+  executionClass: "read_only" as const,
   instruction: "Summarize the current dashboard",
   initialUrl: "https://example.test/dashboard",
 };
@@ -26,6 +27,8 @@ describe("RemoteMissionRunner", () => {
         instruction: payload.instruction,
         url: payload.initialUrl,
         session: payload.missionId,
+        executionToolProfile: "read_only",
+        targetContext: "isolated_tab",
       },
       undefined,
     );

@@ -251,6 +251,11 @@ function checkNoDevSurface() {
 if (!existsSync(distPath) || !statSync(distPath).isDirectory()) {
   fail("dist folder not found");
 } else {
+  if (existsSync(resolve(distPath, ".remote-mission-acceptance.json"))) {
+    fail(
+      "acceptance-only dist cannot pass release verification; rebuild with npm run build",
+    );
+  }
   packageJson = readRootJson("package.json");
   checkManifest();
   checkNoDevSurface();

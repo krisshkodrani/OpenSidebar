@@ -103,6 +103,119 @@ test("website account session requires matching double-submit CSRF for mutations
   );
 });
 
+test("remote work is website-enabled, revisioned, and bearer-disable-only", async () => {
+  const repository = new MemoryControlRepository();
+  const websitePlayground = {
+    health: async () => undefined,
+    session: async (hash: string) => hash === tokenHash("web-token")
+      ? { accountId: "account-1", email: "owner@example.com", csrfHash: tokenHash("csrf-token") }
+      : null,
+    consumeAuthQuota: async () => undefined,
+  } as unknown as PlaygroundRepository;
+  const authService = new ControlAuthService(repository, baseConfig);
+  const app = createApp(websitePlayground, baseConfig, undefined, {
+    repository,
+    auth: authService,
+  });
+  const cookieHeaders = {
+    origin: "https://opensidebar.com",
+    cookie: "__Host-os_session=web-token; os_csrf=csrf-token",
+    "x-os-csrf": "csrf-token",
+    "content-type": "application/json",
+  };
+  const enabled = await app.request("/api/v1/account/remote-work", {
+    method: "PUT",
+    headers: { ...cookieHeaders, "if-match": "1" },
+    body: JSON.stringify({ enabled: true }),
+  });
+  assert.equal(enabled.status, 200);
+  assert.equal(((await enabled.json()) as { enabled: boolean }).enabled, true);
+
+  await repository.createDeviceLink(tokenHash("ABCDEFGH"), "account-1", new Date(Date.now() + 60_000));
+  const linked = await app.request("/api/v1/extension/auth/link", body({
+    code: "ABCDEFGH",
+    installationId: "40d3c2e7-c7c3-41d2-8c82-64f8b6cf53bf",
+    displayName: "Chrome",
+    extensionVersion: "0.7.3",
+  }));
+  const { accessToken } = (await linked.json()) as { accessToken: string };
+  const bearerHeaders = {
+    origin,
+    authorization: `Bearer ${accessToken}`,
+    "content-type": "application/json",
+    "if-match": "2",
+  };
+  assert.equal((await app.request("/api/v1/account/remote-work", {
+    method: "PUT", headers: bearerHeaders, body: JSON.stringify({ enabled: true }),
+  })).status, 403);
+  const disabled = await app.request("/api/v1/account/remote-work", {
+    method: "PUT", headers: bearerHeaders, body: JSON.stringify({ enabled: false }),
+  });
+  assert.equal(disabled.status, 200);
+  assert.equal(((await disabled.json()) as { enabled: boolean }).enabled, false);
+});
+
+test("disabling remote work cancels active missions with an encrypted result", async () => {
+  const repository = new MemoryControlRepository();
+  repository.remoteWork.set("account-1", {
+    enabled: true,
+    revision: 2,
+    updatedAt: new Date().toISOString(),
+  });
+  const websitePlayground = {
+    health: async () => undefined,
+    session: async (hash: string) => hash === tokenHash("web-token")
+      ? { accountId: "account-1", email: "owner@example.com", csrfHash: tokenHash("csrf-token") }
+      : null,
+    consumeAuthQuota: async () => undefined,
+  } as unknown as PlaygroundRepository;
+  const transitions: unknown[] = [];
+  const encrypted: unknown[] = [];
+  const mission = {
+    schemaVersion: 1 as const,
+    missionId: "123e4567-e89b-42d3-a456-426614174000",
+    deviceId: "dev_1",
+    sequence: 1,
+    state: "running" as const,
+    createdAt: new Date().toISOString(),
+    expiresAt: new Date(Date.now() + 60_000).toISOString(),
+  };
+  const remoteMissionRepository = {
+    activeMissions: async () => [mission],
+    transition: async (value: unknown) => {
+      transitions.push(value);
+      return { kind: "updated", value: { ...mission, state: "cancelled" } };
+    },
+  };
+  const remoteMissionVault = {
+    encryptResultAndPut: async (_identity: unknown, value: unknown) => {
+      encrypted.push(value);
+      return { ciphertextSizeBytes: 1, ciphertextSha256: "0".repeat(64) };
+    },
+  };
+  const app = createApp(websitePlayground, baseConfig, undefined, {
+    repository,
+    auth: new ControlAuthService(repository, baseConfig),
+    remoteMissionRepository: remoteMissionRepository as never,
+    remoteMissionVault: remoteMissionVault as never,
+  });
+  const response = await app.request("/api/v1/account/remote-work", {
+    method: "PUT",
+    headers: {
+      origin: "https://opensidebar.com",
+      cookie: "__Host-os_session=web-token; os_csrf=csrf-token",
+      "x-os-csrf": "csrf-token",
+      "content-type": "application/json",
+      "if-match": "2",
+    },
+    body: JSON.stringify({ enabled: false }),
+  });
+  assert.equal(response.status, 200);
+  assert.equal(encrypted.length, 1);
+  assert.equal((encrypted[0] as { outcome: string }).outcome, "cancelled");
+  assert.equal(transitions.length, 1);
+});
+
 test("control API stays unavailable when the master flag is disabled", async () => {
   const repository = new MemoryControlRepository();
   const config = {
@@ -373,9 +486,25 @@ test("linked extension session reaches account and revisioned preferences with e
   });
   assert.equal(unsafe.status, 400);
   const devices = await app.request("/api/v1/account/devices", { headers });
-  const deviceId = (
-    (await devices.json()) as { devices: Array<{ id: string }> }
-  ).devices[0]!.id;
+  const device = (
+    (await devices.json()) as {
+      devices: Array<{ id: string; displayNameRevision: number }>;
+    }
+  ).devices[0]!;
+  const deviceId = device.id;
+  const renamed = await app.request(`/api/v1/account/devices/${deviceId}`, {
+    method: "PUT",
+    headers: { ...headers, "if-match": String(device.displayNameRevision) },
+    body: JSON.stringify({ displayName: "Work laptop" }),
+  });
+  assert.equal(renamed.status, 200);
+  assert.equal((await renamed.json()).displayName, "Work laptop");
+  const staleRename = await app.request(`/api/v1/account/devices/${deviceId}`, {
+    method: "PUT",
+    headers: { ...headers, "if-match": String(device.displayNameRevision) },
+    body: JSON.stringify({ displayName: "Stale name" }),
+  });
+  assert.equal(staleRename.status, 409);
   const revoked = await app.request(`/api/v1/account/devices/${deviceId}`, {
     method: "DELETE",
     headers,

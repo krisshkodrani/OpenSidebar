@@ -106,6 +106,8 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): CloudConfig {
   const cloudControlEnabled = enabled("CLOUD_CONTROL_ENABLED");
   const cloudSessionsEnabled =
     cloudControlEnabled && enabled("CLOUD_SESSIONS_ENABLED");
+  const remoteMissionsEnabled =
+    cloudSessionsEnabled && enabled("REMOTE_MISSIONS_ENABLED");
   const checkpointWritesEnabled =
     cloudSessionsEnabled && enabled("CHECKPOINT_WRITES_ENABLED");
   const checkpointRestoreEnabled =
@@ -160,7 +162,8 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): CloudConfig {
   if (
     (checkpointWritesEnabled ||
       checkpointRestoreEnabled ||
-      sessionExportsEnabled) &&
+      sessionExportsEnabled ||
+      remoteMissionsEnabled) &&
     (!sessionKmsKeyId || !sessionBucketName)
   )
     throw new Error(
@@ -259,8 +262,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): CloudConfig {
     deviceCommandsEnabled,
     deviceTakeoverEnabled:
       deviceCommandsEnabled && enabled("DEVICE_TAKEOVER_ENABLED"),
-    remoteMissionsEnabled:
-      cloudSessionsEnabled && enabled("REMOTE_MISSIONS_ENABLED"),
+    remoteMissionsEnabled,
     temporalShadowEnabled,
     temporalShadowToken,
     temporalShadowHashKey,

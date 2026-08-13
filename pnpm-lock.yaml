@@ -209,6 +209,9 @@ importers:
 
   apps/cloud-service:
     dependencies:
+      "@modelcontextprotocol/sdk":
+        specifier: ^1.29.0
+        version: 1.29.0(zod@4.4.3)
       "@aws-sdk/client-cognito-identity-provider":
         specifier: ^3.859.0
         version: 3.1095.0

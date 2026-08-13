@@ -119,6 +119,7 @@ export class ControlAuthService {
       installationId,
       displayName,
       extensionVersion,
+      "browser_extension",
     );
     return this.response(account, device);
   }
@@ -188,6 +189,7 @@ export class ControlAuthService {
       installationId,
       displayName,
       extensionVersion,
+      "browser_extension",
     );
     return this.response(account, device);
   }
@@ -196,6 +198,9 @@ export class ControlAuthService {
       installationId = uuid(body.installationId),
       displayName = bounded(body.displayName, 80),
       extensionVersion = bounded(body.extensionVersion, 32);
+    const connectionKind = body.connectionKind === "test_client"
+      ? "test_client"
+      : "browser_extension";
     if (!code || !installationId || !displayName || !extensionVersion)
       throw new ControlAuthError("invalid_auth_request");
     const account = await this.repository.consumeDeviceLink(tokenHash(code));
@@ -207,6 +212,7 @@ export class ControlAuthService {
       installationId,
       displayName,
       extensionVersion,
+      connectionKind,
     );
     return this.response(account, device);
   }

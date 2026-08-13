@@ -148,6 +148,13 @@ const cleanupTimer = setInterval(
         }
       })
       .catch((error) => console.error("trace cleanup failed", error));
+    void (async () => {
+      if (!remoteMissionVault) return;
+      for (const mission of await remoteMissionRepository.expired(100)) {
+        await remoteMissionVault.delete(mission);
+        await remoteMissionRepository.remove(mission.accountId, mission.missionId);
+      }
+    })().catch((error) => console.error("remote-mission cleanup failed", error));
   },
   60 * 60 * 1000,
 );

@@ -6,6 +6,7 @@ import {
   Container,
   Flex,
   Heading,
+  Input,
   SimpleGrid,
   Stack,
   Text,
@@ -22,18 +23,21 @@ export function AccountPage() {
   const [credentialDrafts, setCredentialDrafts] = useState<
     Record<string, string>
   >({});
+  const [deviceNames, setDeviceNames] = useState<Record<string, string>>({});
+  const [showConnectionHistory, setShowConnectionHistory] = useState(false);
   const accountQuery = useQuery({
     queryKey: ["cloud-account"],
     queryFn: async () => {
-      const [account, devices, credentials, usage, preferences] =
+      const [account, devices, credentials, usage, preferences, remoteWork] =
         await Promise.all([
           accountApi.account(),
           accountApi.devices(),
           accountApi.credentials(),
           accountApi.usage(),
           accountApi.preferences(),
+          accountApi.remoteWork(),
         ]);
-      return { account, devices, credentials, usage, preferences };
+      return { account, devices, credentials, usage, preferences, remoteWork };
     },
     retry: false,
   });
@@ -48,11 +52,31 @@ export function AccountPage() {
     credentials = [],
     usage,
     preferences,
+    remoteWork,
   } = accountQuery.data ?? {};
   const error = accountQuery.error ?? mutation.error;
   const errorMessage =
     error instanceof Error ? error.message : error ? String(error) : null;
   const act = (operation: () => Promise<unknown>) => mutation.mutate(operation);
+  const connectedBrowsers = devices.filter(
+    (device) => device.connectionKind === "browser_extension" && !device.revokedAt,
+  );
+  const connectedIntegrations = devices.filter(
+    (device) => device.connectionKind === "codex_integration" && !device.revokedAt,
+  );
+  const connectionHistory = devices.filter(
+    (device) =>
+      Boolean(device.revokedAt) || device.connectionKind === "test_client",
+  );
+  const testConnectionHistory = connectionHistory.filter(
+    (device) => device.connectionKind === "test_client",
+  );
+  const revokedConnectionHistory = connectionHistory.filter(
+    (device) => device.connectionKind !== "test_client",
+  );
+  const latestTestConnection = [...testConnectionHistory].sort(
+    (left, right) => Date.parse(right.lastSeenAt) - Date.parse(left.lastSeenAt),
+  )[0];
   if (errorMessage && !account)
     return (
       <AppShell>
@@ -198,6 +222,39 @@ export function AccountPage() {
           boxShadow="card"
           p="6"
         >
+          <Flex justify="space-between" align="center" gap="4" wrap="wrap">
+            <Box>
+              <Heading size="md">Remote browser work</Heading>
+              <Text mt="1" color="muted" fontSize="sm">
+                Allow authorized Codex integrations to send visible, cancellable tasks to linked browsers.
+              </Text>
+            </Box>
+            <Button
+              colorPalette={remoteWork?.enabled ? "red" : "blue"}
+              variant={remoteWork?.enabled ? "outline" : "solid"}
+              disabled={!remoteWork || mutation.isPending}
+              onClick={() => remoteWork && void act(() =>
+                accountApi.saveRemoteWork(!remoteWork.enabled, remoteWork.revision),
+              )}
+            >
+              {remoteWork?.enabled ? "Disable remote work" : "Enable remote work"}
+            </Button>
+          </Flex>
+          <Text mt="3" fontSize="xs" color="muted">
+            {remoteWork?.enabled
+              ? "Enabled. Local browser safety rules and approval settings still apply."
+              : "Disabled. Local OpenSidebar tasks continue to work normally."}
+          </Text>
+        </Box>
+        <Box
+          mt="5"
+          bg="surface"
+          borderWidth="1px"
+          borderColor="line"
+          borderRadius="card"
+          boxShadow="card"
+          p="6"
+        >
           <Heading size="md">Provider connections</Heading>
           <Stack mt="4" gap="3">
             {credentials.map((credential) => (
@@ -298,9 +355,9 @@ export function AccountPage() {
         >
           <Flex justify="space-between" align="center">
             <Box>
-              <Heading size="md">Devices</Heading>
+              <Heading size="md">Connections</Heading>
               <Text color="muted" fontSize="sm" mt="1">
-                Revoke devices you no longer use.
+                Browsers and integrations connected to your account.
               </Text>
             </Box>
             <Button
@@ -311,32 +368,118 @@ export function AccountPage() {
               Sign out extension devices
             </Button>
           </Flex>
-          <Stack mt="5" gap="3">
-            {devices.length ? (
-              devices.map((device) => (
-                <Flex key={device.id} justify="space-between" align="center">
+          <Heading size="sm" mt="5">Connected browsers</Heading>
+          <Stack mt="3" gap="3">
+            {connectedBrowsers.length ? (
+              connectedBrowsers.map((device) => (
+                <Flex key={device.id} justify="space-between" align="center" gap="3" wrap="wrap">
                   <Box>
-                    <Text fontWeight="700">{device.displayName}</Text>
+                    <Flex align="center" gap="2">
+                      <Text fontWeight="700">{device.displayName}</Text>
+                      <Badge colorPalette={device.availability === "online" ? "green" : "gray"}>
+                        {device.availability}
+                      </Badge>
+                    </Flex>
                     <Text color="muted" fontSize="sm">
                       Version {device.extensionVersion} · last seen{" "}
                       {new Date(device.lastSeenAt).toLocaleString()}
                     </Text>
                   </Box>
-                  <Button
-                    size="sm"
-                    variant="outline"
-                    onClick={() =>
-                      void act(() => accountApi.revokeDevice(device.id))
-                    }
-                  >
-                    Revoke
-                  </Button>
+                  <Flex gap="2" align="center">
+                    <Input
+                      size="sm"
+                      maxLength={80}
+                      aria-label={`Name for ${device.displayName}`}
+                      value={deviceNames[device.id] ?? device.displayName}
+                      onChange={(event) =>
+                        setDeviceNames((current) => ({ ...current, [device.id]: event.target.value }))
+                      }
+                    />
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      disabled={!(deviceNames[device.id] ?? device.displayName).trim()}
+                      onClick={() => void act(() => accountApi.renameDevice(device, deviceNames[device.id] ?? device.displayName))}
+                    >
+                      Rename
+                    </Button>
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      onClick={() => void act(() => accountApi.revokeDevice(device.id))}
+                    >
+                      Revoke
+                    </Button>
+                  </Flex>
                 </Flex>
               ))
             ) : (
-              <Text color="muted">No linked extension devices.</Text>
+              <Text color="muted">No connected browsers.</Text>
             )}
           </Stack>
+          <Heading size="sm" mt="6">Connected integrations</Heading>
+          <Stack mt="3" gap="3">
+            {connectedIntegrations.length ? connectedIntegrations.map((device) => (
+              <Flex key={device.id} justify="space-between" align="center" gap="3">
+                <Box>
+                  <Text fontWeight="700">{device.displayName}</Text>
+                  <Text color="muted" fontSize="sm">Connected to Codex</Text>
+                </Box>
+                <Button size="sm" variant="outline" onClick={() => void act(() => accountApi.revokeDevice(device.id))}>
+                  Revoke
+                </Button>
+              </Flex>
+            )) : <Text color="muted">No connected integrations.</Text>}
+          </Stack>
+          <Flex mt="6" justify="space-between" align="center">
+            <Box>
+              <Heading size="sm">Connection history</Heading>
+              <Text color="muted" fontSize="sm">
+                {connectionHistory.length} revoked or development connection(s)
+              </Text>
+            </Box>
+            <Button size="sm" variant="ghost" onClick={() => setShowConnectionHistory((value) => !value)}>
+              {showConnectionHistory ? "Hide" : "Show"}
+            </Button>
+          </Flex>
+          {showConnectionHistory ? (
+            <Stack mt="3" gap="3">
+              {latestTestConnection ? (
+                <Flex justify="space-between" align="center" gap="3">
+                  <Box>
+                    <Flex align="center" gap="2">
+                      <Text fontWeight="700">Development and acceptance tests</Text>
+                      <Badge colorPalette="gray">Test history</Badge>
+                    </Flex>
+                    <Text color="muted" fontSize="sm">
+                      {testConnectionHistory.length} run(s) · last seen{" "}
+                      {new Date(latestTestConnection.lastSeenAt).toLocaleString()}
+                    </Text>
+                  </Box>
+                </Flex>
+              ) : null}
+              {revokedConnectionHistory.map((device) => (
+                <Flex key={device.id} justify="space-between" align="center" gap="3">
+                  <Box>
+                    <Flex align="center" gap="2">
+                      <Text fontWeight="700">{device.displayName}</Text>
+                      <Badge colorPalette="gray">
+                        Revoked
+                      </Badge>
+                    </Flex>
+                    <Text color="muted" fontSize="sm">
+                      Last seen {new Date(device.lastSeenAt).toLocaleString()}
+                    </Text>
+                  </Box>
+                  {!device.revokedAt ? (
+                    <Button size="sm" variant="outline" onClick={() => void act(() => accountApi.revokeDevice(device.id))}>
+                      Revoke
+                    </Button>
+                  ) : null}
+                </Flex>
+              ))}
+            </Stack>
+          ) : null}
         </Box>
       </Container>
     </AppShell>

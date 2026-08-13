@@ -155,6 +155,21 @@ export class PostgresSessionRepository implements SessionRepository {
     await this.pool.query(
       await readFile(resolve(here, "../migrations/009_remote_missions.sql"), "utf8"),
     );
+    await this.pool.query(
+      await readFile(resolve(here, "../migrations/010_remote_mission_retention.sql"), "utf8"),
+    );
+    await this.pool.query(
+      await readFile(resolve(here, "../migrations/011_remote_mission_device_ids.sql"), "utf8"),
+    );
+    await this.pool.query(
+      await readFile(resolve(here, "../migrations/012_remote_mission_delivery_sequence.sql"), "utf8"),
+    );
+    await this.pool.query(
+      await readFile(resolve(here, "../migrations/013_remote_mission_sequence_epoch_floor.sql"), "utf8"),
+    );
+    await this.pool.query(
+      await readFile(resolve(here, "../migrations/016_remote_mission_target_selection.sql"), "utf8"),
+    );
     if (this.temporalShadowOutbox)
       await this.temporalShadowOutbox.migrate(
         await readFile(

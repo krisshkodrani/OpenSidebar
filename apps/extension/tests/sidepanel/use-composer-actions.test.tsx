@@ -240,5 +240,13 @@ describe("useComposerActions /new command", () => {
         }),
       }),
     );
+
+    useStore.setState({ isAgentRunning: false, inputText: "" });
+    sendMessage.mockRejectedValueOnce(new Error("runtime unavailable"));
+    await act(async () => {
+      await actions.handleSend("Keep this draft");
+    });
+    expect(useStore.getState().inputText).toBe("Keep this draft");
+    expect(useStore.getState().error).toBe("Failed to communicate with the agent.");
   });
 });

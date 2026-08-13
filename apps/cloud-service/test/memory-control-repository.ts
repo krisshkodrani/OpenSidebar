@@ -29,6 +29,7 @@ export class MemoryControlRepository implements ControlRepository {
     { status: string; statusClass?: number; updatedAt?: Date }
   >();
   usage: RelayUsage = { requests: 0, inputTokens: 0, outputTokens: 0 };
+  remoteWork = new Map<string, { enabled: boolean; revision: number; updatedAt: string }>();
   async migrate() {}
   async health() {}
   async cleanupExpired() {}
@@ -52,6 +53,7 @@ export class MemoryControlRepository implements ControlRepository {
     installationId: string,
     displayName: string,
     extensionVersion: string,
+    connectionKind: CloudDeviceV1["connectionKind"] = "browser_extension",
   ) {
     const found = [...this.devices.values()].find(
       (item) =>
@@ -62,8 +64,11 @@ export class MemoryControlRepository implements ControlRepository {
       id: found?.id ?? `dev_${this.devices.size + 1}`,
       accountId,
       installationId,
-      displayName,
+      displayName: found?.displayName ?? displayName,
+      displayNameRevision: found?.displayNameRevision ?? 1,
       extensionVersion,
+      connectionKind,
+      availability: "online" as const,
       createdAt: found?.createdAt ?? new Date().toISOString(),
       lastSeenAt: new Date().toISOString(),
     };
@@ -135,12 +140,45 @@ export class MemoryControlRepository implements ControlRepository {
       .filter((item) => item.accountId === accountId)
       .map(({ accountId: _accountId, ...item }) => item);
   }
+  async renameDevice(
+    accountId: string,
+    deviceId: string,
+    expectedRevision: number,
+    displayName: string,
+  ) {
+    const value = this.devices.get(deviceId);
+    if (!value || value.accountId !== accountId || value.revokedAt) return null;
+    if (value.displayNameRevision !== expectedRevision)
+      return "revision_conflict" as const;
+    value.displayName = displayName;
+    value.displayNameRevision += 1;
+    const { accountId: _accountId, ...device } = value;
+    return device;
+  }
   async revokeDevice(accountId: string, deviceId: string) {
     const value = this.devices.get(deviceId);
     if (!value || value.accountId !== accountId) return false;
+    value.revokedAt = new Date().toISOString();
+    value.availability = "revoked";
     for (const session of this.sessions.values())
       if (session.deviceId === deviceId) session.revoked = true;
     return true;
+  }
+  async remoteWorkSettings(accountId: string) {
+    const value = this.remoteWork.get(accountId) ?? {
+      enabled: false,
+      revision: 1,
+      updatedAt: new Date().toISOString(),
+    };
+    this.remoteWork.set(accountId, value);
+    return { schemaVersion: 1 as const, ...value };
+  }
+  async putRemoteWorkSettings(accountId: string, expectedRevision: number, enabled: boolean) {
+    const current = await this.remoteWorkSettings(accountId);
+    if (current.revision !== expectedRevision) return "revision_conflict" as const;
+    const value = { enabled, revision: current.revision + 1, updatedAt: new Date().toISOString() };
+    this.remoteWork.set(accountId, value);
+    return { schemaVersion: 1 as const, ...value };
   }
   async logoutAll(accountId: string) {
     const account = this.accounts.get(accountId);

@@ -52,8 +52,6 @@ import {
   startCorpusLegacySync,
 } from "./memory/corpus-runtime";
 import {
-  RECORD_SKILL_INTRO_DISMISSED_KEY,
-  WEBSITE_SKILLS_STORAGE_KEY,
   deleteUserWebsiteSkill,
   findMatchingUserWebsiteSkill,
   formatSkillRecordingTimeline,
@@ -68,6 +66,11 @@ import { drainInternalFleetTelemetry } from "./telemetry";
 import { NoWebPageTaskRecovery } from "./no-web-page-task-recovery";
 import { routeCloudRuntimeMessage } from "./cloud-message-router";
 import { buildWorkspaceConversationContext } from "./workspace-conversation-context";
+import {
+  initRemoteMissionRuntime,
+  routeRemoteMissionControlMessage,
+} from "./remote-mission-runtime";
+import { clearLocalExtensionData } from "./local-data-cleanup";
 import { routeActionPresentation } from "./action-presentation-relay";
 
 /** Cached settings — populated on side panel open, invalidated on storage change. */
@@ -172,6 +175,7 @@ setNavigationCallbacks(
 
 // 3. Initialize Keepalive Alarm
 registerAlarmListener();
+initRemoteMissionRuntime();
 agentNotifications.registerHandlers();
 
 // 3b. Invalidate perception warmup cache on navigation and tab close
@@ -672,6 +676,8 @@ chrome.runtime.onMessage.addListener(
       return true;
     }
 
+    if (routeRemoteMissionControlMessage(message, sendResponse)) return true;
+
     if (
       isUiMessageSource(message.source) &&
       message.type === "SKILL_RECORDING_START"
@@ -1103,17 +1109,7 @@ chrome.runtime.onMessage.addListener(
             return;
           }
           if (action === "clear_local_data") {
-            await chrome.storage.local.remove([
-              "opensidebar:savedPrompts",
-              "opensidebar:savedPromptsSeeded",
-              "opensidebar:savedPromptsVersion",
-              WEBSITE_SKILLS_STORAGE_KEY,
-              RECORD_SKILL_INTRO_DISMISSED_KEY,
-              "opensidebar_logs",
-              "opensidebar:workspaces",
-              "opensidebar:nextWorkspaceNum",
-              "opensidebar:checkpoints:v1",
-            ]);
+            await clearLocalExtensionData(chromePersistencePort.local);
             sendResponse({
               ok: true,
               detail: "Local extension data cleared.",

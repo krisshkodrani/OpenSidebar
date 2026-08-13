@@ -12,6 +12,8 @@ import {
 import { saveSettings } from "../../utils/settings-storage";
 import { useComposerTextarea } from "../hooks/useComposerTextarea";
 import { useSpeechRecorder } from "../hooks/useSpeechRecorder";
+import { useComposerDraft } from "../hooks/useComposerDraft";
+import { COMPOSER_DRAFT_MAX_CHARS } from "../composer-draft-storage";
 import { uiRuntime } from "../runtime";
 import { ComposerBox } from "./input/ComposerBox";
 import { InteractionModeMenu } from "./input/InteractionModeMenu";
@@ -53,6 +55,7 @@ export function InputArea({
   const settings = useStore((s) => s.settings);
   const updateSettings = useStore((s) => s.updateSettings);
   const personalProfileState = useStore((s) => s.personalProfileState);
+  const activeWorkspaceId = useStore((s) => s.activeWorkspaceId);
   const setPersonalProfileEnabled = useStore(
     (s) => s.setPersonalProfileEnabled,
   );
@@ -88,6 +91,12 @@ export function InputArea({
   ]);
 
   const hasText = inputText.trim().length > 0;
+  const draft = useComposerDraft({
+    text: inputText,
+    workspaceId: activeWorkspaceId ?? "default",
+    mode: isAgentRunning ? "guidance" : "task",
+    setText: setInputText,
+  });
   const handleSubmit = useCallback(() => {
     if (!hasText) return;
     if (isAgentRunning) {
@@ -95,14 +104,12 @@ export function InputArea({
     } else {
       onSend(inputText);
     }
-    setInputText("");
   }, [
     hasText,
     inputText,
     isAgentRunning,
     onSend,
     onSendFeedback,
-    setInputText,
   ]);
 
   const composer = useComposerTextarea({
@@ -145,7 +152,7 @@ export function InputArea({
 
   const handleInputChange = useCallback(
     (event: React.ChangeEvent<HTMLTextAreaElement>) => {
-      setInputText(event.target.value);
+      setInputText(event.target.value.slice(0, COMPOSER_DRAFT_MAX_CHARS));
     },
     [setInputText],
   );
@@ -203,7 +210,10 @@ export function InputArea({
             hasText={hasText}
             inputRef={composer.textareaRef}
             isGuidance={isAgentRunning}
-            onBlur={composer.handleBlur}
+            onBlur={() => {
+              composer.handleBlur();
+              void draft.saveNow();
+            }}
             onChange={handleInputChange}
             onFocus={composer.handleFocus}
             onKeyDown={composer.handleKeyDown}
@@ -227,6 +237,18 @@ export function InputArea({
             </p>
           ) : (
             <>
+              {hasText ? (
+                <div className="mt-1 flex items-center justify-end gap-2 px-1 text-[10px] text-warm-400 dark:text-warm-500">
+                  <span>{draft.saved ? "Saved on this device" : "Saving locally…"}</span>
+                  <button
+                    type="button"
+                    className="underline underline-offset-2 hover:text-warm-600 dark:hover:text-warm-300"
+                    onClick={() => void draft.discard()}
+                  >
+                    Discard draft
+                  </button>
+                </div>
+              ) : null}
               <div className="relative mt-1.5 flex items-center px-1">
                 <InteractionModeMenu
                   mode={interactionMode}
