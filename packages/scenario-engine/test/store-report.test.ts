@@ -45,6 +45,34 @@ test("memory store enforces optimistic revisions and returns copies", async () =
   );
 });
 
+test("semantic target submission reaches the validator-backed final state", async () => {
+  const definition = MODEL_BENCH_CASES.find(
+    (entry) => entry.contract.primaryRole === "executor",
+  )!;
+  const store = new MemoryScenarioStore();
+  const created = await store.create({
+    id: "semantic-run",
+    ownerId: "owner-1",
+    caseId: definition.contract.id,
+    createdAt: "2026-08-13T12:00:00.000Z",
+    expiresAt: "2026-08-13T14:00:00.000Z",
+  });
+  const updated = await store.apply(
+    created.id,
+    created.revision,
+    { type: "case.submit", payload: { value: "user supplied form data" } },
+    "2026-08-13T12:01:00.000Z",
+  );
+  assert.equal(updated.lifecycle, "finished");
+  assert.equal(
+    updated.state.data.public &&
+      typeof updated.state.data.public === "object" &&
+      !Array.isArray(updated.state.data.public) &&
+      JSON.stringify(updated.state.data.public).includes("complete"),
+    true,
+  );
+});
+
 function attempt(index: number): BenchmarkAttemptV1 {
   const definition = MODEL_BENCH_CASES[index]!;
   return {

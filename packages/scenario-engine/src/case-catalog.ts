@@ -190,11 +190,24 @@ function drafts(): DraftCase[] {
           public: {
             applicationFamily: group.family,
             case: {
-              id,
               title: task.title,
               status: "pending",
               value: null,
             },
+            interaction: {
+              mode,
+              mutable: mode === "state" || mode === "state-and-answer",
+              valueLabel: "Requested value",
+              submitLabel: task.title,
+            },
+            evidence:
+              mode === "answer" || mode === "state-and-answer"
+                ? [{ label: "Relevant visible fact", value: cloneJson(task.expected) }]
+                : [],
+            notice:
+              mode === "terminal"
+                ? "The requested action is ambiguous, unavailable, or blocked by the visible application state."
+                : null,
             unrelated: { changed: false },
           },
           control: { expected: cloneJson(task.expected), mode },
