@@ -22,6 +22,15 @@ import {
 describe("provider-scoped model catalogs", () => {
   const openRouterModels = [
     {
+      id: "openai/gpt-5.6-luna",
+      name: "GPT-5.6 Luna",
+      promptPrice: 0.5 / 1_000_000,
+      completionPrice: 3 / 1_000_000,
+      supportsVision: true,
+      provider: "openrouter" as const,
+      source: "live" as const,
+    },
+    {
       id: "openai/gpt-5.4-mini",
       name: "GPT-5.4 Mini",
       promptPrice: 0.75 / 1_000_000,
@@ -129,6 +138,18 @@ describe("provider-scoped model catalogs", () => {
     }
   });
 
+  test("OpenRouter can seat the vision-and-tools Luna route as executor", () => {
+    expect(isExecutorEligible("openai/gpt-5.6-luna", "openrouter")).toBe(true);
+    expect(isVLCapable("openai/gpt-5.6-luna")).toBe(true);
+    expect(
+      getProviderModelOptions({
+        providerMode: "openrouter",
+        role: "executor",
+        openRouterModels,
+      }).map((model) => model.id),
+    ).toContain("openai/gpt-5.6-luna");
+  });
+
   test("fireworks Kimi K2.6 catalog pricing matches Fireworks serverless pricing", () => {
     expect(
       FIREWORKS_MODELS.find(
@@ -214,7 +235,7 @@ describe("provider-scoped model catalogs", () => {
         role: "executor",
         openRouterModels,
       }),
-    ).toEqual([openRouterModels[0]]);
+    ).toEqual(openRouterModels.slice(0, 2));
   });
 
   test("moonshot mode uses curated Moonshot models for executor", () => {
