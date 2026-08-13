@@ -215,11 +215,13 @@ export async function createModelBenchDriver(): Promise<ModelBenchDriver> {
     await build({ configFile: resolve("apps/sandbox/vite.config.ts") });
   }
   if (process.env.MODEL_BENCH_SKIP_EXTENSION_BUILD !== "1") {
-    execFileSync(
-      process.execPath,
-      ["node_modules/nx/bin/nx.js", "run", "extension:build-e2e"],
-      { stdio: "inherit" },
-    );
+    for (const args of [
+      ["node_modules/tsx/dist/cli.mjs", "scripts/build-prompts.ts"],
+      ["node_modules/tsx/dist/cli.mjs", "scripts/check-inline-prompts.ts"],
+      ["node_modules/tsx/dist/cli.mjs", "scripts/vite-clean.ts", "build", "--mode", "e2e"],
+    ]) {
+      execFileSync(process.execPath, args, { stdio: "inherit" });
+    }
   }
   const target = await startModelBenchTargetServer();
   let closed = false;
