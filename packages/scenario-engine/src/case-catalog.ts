@@ -266,6 +266,7 @@ function terminalPresentation(slug: string, expected: JsonValue): TerminalPresen
     ],
     "clarify-project-channel": [
       { label: "Matching channels", value: "#project-alpha; #project-aurora" },
+      { label: "Channel descriptions", value: "Both channels are active project workspaces" },
     ],
     "clarify-benefit-dependent": [
       { label: "Required dependent fields", value: "Name, date of birth, relationship" },
@@ -273,6 +274,7 @@ function terminalPresentation(slug: string, expected: JsonValue): TerminalPresen
     ],
     "clarify-nonunique-record": [
       { label: "Matching renewal records", value: "Acme North; Acme Services" },
+      { label: "Current status", value: "Both matching records are Open" },
     ],
     "clarify-metric-definition": [
       { label: "Available metrics", value: "Availability; incident load; customer impact" },
@@ -280,6 +282,7 @@ function terminalPresentation(slug: string, expected: JsonValue): TerminalPresen
     ],
     "clarify-missing-profile": [
       { label: "Saved applicant profile", value: "No skills, location, or salary preferences" },
+      { label: "Available roles", value: "184 results across multiple job families and locations" },
     ],
   };
   return {
