@@ -6,7 +6,6 @@ export type CloudConfig = {
   cookieSecure: boolean;
   developmentAccountId?: string;
   cognitoDomain?: string;
-  cognitoIssuer?: string;
   cognitoClientId?: string;
   awsRegion: string;
   authQuotaHmacKey: string;
@@ -23,9 +22,6 @@ export type CloudConfig = {
   deviceCommandsEnabled: boolean;
   deviceTakeoverEnabled: boolean;
   remoteMissionsEnabled?: boolean;
-  hostedMcpEnabled?: boolean;
-  cognitoMcpClientId?: string;
-  mcpScopePrefix?: string;
   temporalShadowEnabled: boolean;
   temporalCoordinationEnabled: boolean;
   temporalShadowToken?: string;
@@ -65,7 +61,6 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): CloudConfig {
   const cognitoClientId = developmentAccountId
     ? env.COGNITO_CLIENT_ID
     : required("COGNITO_CLIENT_ID");
-  const cognitoIssuer = env.COGNITO_ISSUER?.trim();
   const port = Number(env.PORT ?? 8787);
   if (!Number.isInteger(port) || port < 1 || port > 65_535)
     throw new Error("PORT must be an integer between 1 and 65535");
@@ -107,19 +102,12 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): CloudConfig {
     throw new Error("COOKIE_SECURE cannot be disabled outside development");
   if (cognitoDomain && new URL(cognitoDomain).protocol !== "https:")
     throw new Error("COGNITO_DOMAIN must use HTTPS");
-  if (cognitoIssuer) {
-    const issuer = new URL(cognitoIssuer);
-    if (issuer.protocol !== "https:" || issuer.search || issuer.hash)
-      throw new Error("COGNITO_ISSUER must be an HTTPS issuer URL");
-  }
   const enabled = (name: string) => env[name] === "true";
   const cloudControlEnabled = enabled("CLOUD_CONTROL_ENABLED");
   const cloudSessionsEnabled =
     cloudControlEnabled && enabled("CLOUD_SESSIONS_ENABLED");
   const remoteMissionsEnabled =
     cloudSessionsEnabled && enabled("REMOTE_MISSIONS_ENABLED");
-  const hostedMcpEnabled =
-    remoteMissionsEnabled && enabled("HOSTED_MCP_ENABLED");
   const checkpointWritesEnabled =
     cloudSessionsEnabled && enabled("CHECKPOINT_WRITES_ENABLED");
   const checkpointRestoreEnabled =
@@ -154,9 +142,6 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): CloudConfig {
       "OPENSIDEBAR_EXTENSION_TEST_IDS must contain comma-separated Chrome extension ids",
     );
   const extensionClientId = env.COGNITO_EXTENSION_CLIENT_ID?.trim();
-  const cognitoMcpClientId = env.COGNITO_MCP_CLIENT_ID?.trim();
-  const mcpScopePrefix =
-    env.MCP_SCOPE_PREFIX?.trim() || `${controlOrigin}/mcp/`;
   const credentialKmsKeyId = env.CREDENTIAL_KMS_KEY_ID?.trim();
   const sessionKmsKeyId = env.SESSION_KMS_KEY_ID?.trim();
   const sessionBucketName = env.SESSION_BUCKET_NAME?.trim();
@@ -172,16 +157,6 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): CloudConfig {
     );
   if (cloudControlEnabled && !extensionClientId)
     throw new Error("COGNITO_EXTENSION_CLIENT_ID is required");
-  if (hostedMcpEnabled && !cognitoMcpClientId)
-    throw new Error("COGNITO_MCP_CLIENT_ID is required when hosted MCP is enabled");
-  if (hostedMcpEnabled && !cognitoDomain)
-    throw new Error("COGNITO_DOMAIN is required when hosted MCP is enabled");
-  if (hostedMcpEnabled && !cognitoIssuer)
-    throw new Error("COGNITO_ISSUER is required when hosted MCP is enabled");
-  if (hostedMcpEnabled && cognitoMcpClientId === extensionClientId)
-    throw new Error("COGNITO_MCP_CLIENT_ID must be separate from the extension client");
-  if (hostedMcpEnabled && (!mcpScopePrefix.endsWith("/") || mcpScopePrefix.length > 80))
-    throw new Error("MCP_SCOPE_PREFIX must be a bounded scope namespace ending in /");
   if (enabled("CREDENTIAL_WRITES_ENABLED") && !credentialKmsKeyId)
     throw new Error("CREDENTIAL_KMS_KEY_ID is required");
   if (
@@ -268,7 +243,6 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): CloudConfig {
     cookieSecure: env.COOKIE_SECURE !== "false",
     developmentAccountId,
     cognitoDomain,
-    cognitoIssuer,
     cognitoClientId,
     awsRegion: env.AWS_REGION ?? "eu-central-1",
     authQuotaHmacKey,
@@ -289,9 +263,6 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): CloudConfig {
     deviceTakeoverEnabled:
       deviceCommandsEnabled && enabled("DEVICE_TAKEOVER_ENABLED"),
     remoteMissionsEnabled,
-    hostedMcpEnabled,
-    cognitoMcpClientId,
-    mcpScopePrefix,
     temporalShadowEnabled,
     temporalShadowToken,
     temporalShadowHashKey,
