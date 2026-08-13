@@ -29,6 +29,9 @@ actions or receive raw browser state.
   the manifest-global default panel. Activation also cross-checks Chrome's live
   `groupId` against the workspace record, and ungrouping is enforced even when
   it does not trigger another activation.
+- The service worker disables the manifest-global default configuration at
+  startup. Only an explicitly attached workspace tab is enabled, so new tabs
+  inherit `enabled: false` rather than briefly inheriting a global panel.
 - Production and acceptance builds share the same remote worker. Acceptance-only
   diagnostics and release-ineligible markers remain excluded from normal builds.
 
@@ -45,7 +48,7 @@ actions or receive raw browser state.
 - Production build and distribution verification: passed for normal 0.7.4.
 - Extension package: `.artifacts/releases/opensidebar-v0.7.4.zip`.
 - Package SHA-256:
-  `F11C1D8BAEFF9041611DA1DFD7072905BF66E62ADFC5CBC9A8A96BF2BAC28DEE`.
+  `1BB360C28C4285F9A8B6E6ADDF6CD88EC46A11AA3C9EAFBCF324F50681720E18`.
 
 ## Backend deployment
 

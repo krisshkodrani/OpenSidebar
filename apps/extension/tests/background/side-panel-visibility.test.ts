@@ -73,9 +73,27 @@ describe("workspace side-panel visibility", () => {
 
     onCreated?.({ id: 45, groupId: -1 });
     onUpdated?.(46, { groupId: -1 });
-    await vi.waitFor(() => expect(setOptions).toHaveBeenCalledTimes(2));
-    expect(setOptions).toHaveBeenNthCalledWith(1, { tabId: 45, enabled: false });
-    expect(setOptions).toHaveBeenNthCalledWith(2, { tabId: 46, enabled: false });
+    await vi.waitFor(() => expect(setOptions).toHaveBeenCalledTimes(3));
+    expect(setOptions).toHaveBeenNthCalledWith(1, { enabled: false });
+    expect(setOptions).toHaveBeenNthCalledWith(2, { tabId: 45, enabled: false });
+    expect(setOptions).toHaveBeenNthCalledWith(3, { tabId: 46, enabled: false });
     expect(onError).not.toHaveBeenCalled();
+  });
+
+  it("reports failure to disable the manifest-global default", async () => {
+    const failure = new Error("unavailable");
+    const onError = vi.fn();
+    installUngroupedTabPanelGuards(
+      { setOptions: vi.fn().mockRejectedValue(failure) },
+      {
+        onCreated: { addListener: vi.fn() },
+        onUpdated: { addListener: vi.fn() },
+      } as never,
+      onError,
+    );
+
+    await vi.waitFor(() =>
+      expect(onError).toHaveBeenCalledWith("default", undefined, failure),
+    );
   });
 });
