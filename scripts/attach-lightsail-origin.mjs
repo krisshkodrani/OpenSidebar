@@ -122,4 +122,8 @@ updateDistribution(
     ["/.well-known/oauth-protected-resource/mcp", mcpPolicy],
   ]),
 );
-updateDistribution(process.env.PLAYGROUND_TARGET_DISTRIBUTION_ID, ["/api/v1/target/*", "/launch/*"], targetPolicy);
+updateDistribution(
+  process.env.PLAYGROUND_TARGET_DISTRIBUTION_ID,
+  ["/api/v1/target/*", "/api/v2/target/*", "/launch/*", "/modelbench/launch/*"],
+  targetPolicy,
+);

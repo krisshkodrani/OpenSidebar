@@ -1,6 +1,7 @@
 import { Hono } from "hono";
 import type { BenchmarkAttemptV1, ScenarioActionV2 } from "@opensidebar/scenario-contracts";
 import { scenarioEngine } from "@opensidebar/scenario-engine";
+import { opaqueToken, tokenHash } from "./crypto.js";
 import type { ModelBenchRepository } from "./modelbench-repository.js";
 
 type Variables = { principal: { accountId: string } };
@@ -28,7 +29,7 @@ function attempt(value: unknown): value is BenchmarkAttemptV1 {
   );
 }
 
-export function createModelBenchApi(repository: ModelBenchRepository) {
+export function createModelBenchApi(repository: ModelBenchRepository, targetOrigin: string) {
   const api = new Hono<{ Variables: Variables }>();
   api.use("*", async (c, next) => {
     c.header("Cache-Control", "no-store");
@@ -83,6 +84,26 @@ export function createModelBenchApi(repository: ModelBenchRepository) {
       }
       throw error;
     }
+  });
+  api.post("/runs/:runId/launch", async (c) => {
+    const run = await repository.get(c.req.param("runId"));
+    if (!run || run.ownerId !== c.get("principal").accountId) {
+      return problem(c, 404, "run_not_found", "Run not found.");
+    }
+    if (run.lifecycle === "expired" || Date.parse(run.expiresAt) <= Date.now()) {
+      return problem(c, 409, "run_expired", "This run has expired.");
+    }
+    const token = opaqueToken(24);
+    await repository.createLaunch(
+      tokenHash(token),
+      run.id,
+      run.ownerId,
+      new Date(Date.now() + 300_000).toISOString(),
+    );
+    return c.json({
+      launchUrl: `${targetOrigin}/modelbench/launch/${token}`,
+      expiresInSeconds: 300,
+    }, 201);
   });
   api.post("/attempts", async (c) => {
     const body = await c.req.json<unknown>().catch(() => null);

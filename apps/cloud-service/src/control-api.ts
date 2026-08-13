@@ -507,7 +507,7 @@ export function createControlApi(deps: ControlApiDependencies) {
   api.use("/traces", traceTesterGuard);
   api.use("/traces/*", traceTesterGuard);
   if (modelBenchRepository)
-    api.route("/modelbench", createModelBenchApi(modelBenchRepository));
+    api.route("/modelbench", createModelBenchApi(modelBenchRepository, config.targetOrigin));
   if (config.traceSyncEnabled && traceRepository && traceObjectStore)
     api.route(
       "/traces",

@@ -20,6 +20,22 @@ CREATE INDEX IF NOT EXISTS modelbench_scenario_runs_owner_updated
 CREATE INDEX IF NOT EXISTS modelbench_scenario_runs_expiry
   ON modelbench.scenario_runs(expires_at);
 
+CREATE TABLE IF NOT EXISTS modelbench.launch_capabilities (
+  token_hash text PRIMARY KEY,
+  run_id text NOT NULL REFERENCES modelbench.scenario_runs(id) ON DELETE CASCADE,
+  owner_id text NOT NULL,
+  expires_at timestamptz NOT NULL,
+  consumed_at timestamptz
+);
+
+CREATE TABLE IF NOT EXISTS modelbench.target_sessions (
+  session_hash text PRIMARY KEY,
+  run_id text NOT NULL REFERENCES modelbench.scenario_runs(id) ON DELETE CASCADE,
+  issued_at timestamptz NOT NULL DEFAULT now(),
+  expires_at timestamptz NOT NULL,
+  revoked_at timestamptz
+);
+
 CREATE TABLE IF NOT EXISTS modelbench.attempts (
   attempt_id text PRIMARY KEY,
   case_id text NOT NULL,
@@ -51,4 +67,6 @@ CREATE INDEX IF NOT EXISTS modelbench_attempts_expiry
   ON modelbench.attempts(expires_at);
 
 REVOKE ALL ON modelbench.scenario_runs FROM PUBLIC;
+REVOKE ALL ON modelbench.launch_capabilities FROM PUBLIC;
+REVOKE ALL ON modelbench.target_sessions FROM PUBLIC;
 REVOKE ALL ON modelbench.attempts FROM PUBLIC;

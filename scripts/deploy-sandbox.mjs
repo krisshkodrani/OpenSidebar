@@ -45,8 +45,6 @@ function isolatedTargetDirectory() {
   const manifestPath = path.join(dist, ".vite", "manifest.json");
   if (!existsSync(manifestPath)) throw new Error("Playground build did not produce its Vite manifest.");
   const manifest = JSON.parse(readFileSync(manifestPath, "utf8"));
-  const entry = Object.entries(manifest).find(([, value]) => value.isEntry && value.src?.endsWith("target.html"));
-  if (!entry) throw new Error("Vite manifest is missing the target entry.");
   const files = new Set();
   const visit = (key) => {
     const chunk = manifest[key];
@@ -55,12 +53,19 @@ function isolatedTargetDirectory() {
     for (const file of [...(chunk.css ?? []), ...(chunk.assets ?? [])]) files.add(file);
     for (const imported of [...(chunk.imports ?? []), ...(chunk.dynamicImports ?? [])]) visit(imported);
   };
-  visit(entry[0]);
+  const entry = (source) => Object.entries(manifest).find(([, value]) => value.isEntry && value.src === source)?.[0];
+  const legacyEntry = entry("target.html");
+  const modelBenchEntry = entry("scenario-target.html");
+  if (!legacyEntry || !modelBenchEntry) throw new Error("Vite manifest is missing an isolated target entry.");
+  visit(legacyEntry);
+  visit(modelBenchEntry);
   for (const file of files) {
     if (file.includes("control-")) throw new Error(`Target dependency closure contains Control Center asset ${file}.`);
   }
   const directory = mkdtempSync(path.join(tmpdir(), "opensidebar-target-"));
   copyFileSync(path.join(dist, "target.html"), path.join(directory, "index.html"));
+  mkdirSync(path.join(directory, "modelbench"), { recursive: true });
+  copyFileSync(path.join(dist, "scenario-target.html"), path.join(directory, "modelbench", "index.html"));
   for (const file of files) {
     const destination = path.join(directory, file);
     mkdirSync(path.dirname(destination), { recursive: true });

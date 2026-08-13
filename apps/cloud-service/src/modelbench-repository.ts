@@ -9,6 +9,10 @@ import type {
 } from "@opensidebar/scenario-engine";
 
 export interface ModelBenchRepository extends ScenarioStoreV2 {
+  createLaunch(tokenHash: string, runId: string, ownerId: string, expiresAt: string): Promise<void>;
+  consumeLaunch(tokenHash: string): Promise<string | null>;
+  createTargetSession(sessionHash: string, runId: string, expiresAt: string): Promise<void>;
+  targetRunId(sessionHash: string): Promise<string | null>;
   saveAttempt(attempt: BenchmarkAttemptV1, expiresAt: string): Promise<void>;
   attempt(id: string): Promise<BenchmarkAttemptV1 | null>;
   listAttempts(caseId?: string): Promise<BenchmarkAttemptV1[]>;
