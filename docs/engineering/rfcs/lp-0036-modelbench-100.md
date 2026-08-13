@@ -285,3 +285,40 @@ Recommended evidence required before merge:
 - Complete every item in this RFC's Acceptance evidence section.
 
 Recommended next action: Implement
+
+## Decision
+
+Status: Approved
+
+Chosen path:
+
+- Build ModelBench-100 exactly as specified in this RFC: one shared versioned
+  scenario platform, 100 canonical browser tasks, additional role probes,
+  deterministic scoring, and separate public/internal data modes.
+- Replace the current fixture-driven E2E and Arena systems in one
+  acceptance-gated cutover after local/cloud parity and rollback evidence pass.
+
+Required edits before implementation:
+
+- None.
+
+Non-blocking follow-ups:
+
+- Public benchmark score publication and statistical confidence intervals.
+- Silver-trajectory repair and training-data export.
+
+Do not do:
+
+- Do not weaken LP-26 privacy or target/control-origin isolation.
+- Do not add benchmark-specific behavior to the product runtime.
+- Do not make an LLM judge or trace narration authoritative over deterministic
+  state.
+- Do not retain a permanent legacy E2E compatibility mode after cutover.
+
+Evidence required before merge:
+
+- Complete every item in this RFC's Acceptance evidence section.
+
+Next action:
+
+- Implement
