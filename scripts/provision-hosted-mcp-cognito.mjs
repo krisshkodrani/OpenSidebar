@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 /** Converge the separate public Cognito client and resource scopes for hosted MCP. */
 import { execFileSync } from "node:child_process";
+import { createHash } from "node:crypto";
 
 const apply = process.argv.includes("--apply");
 const profile = process.env.AWS_PROFILE || "aipoweredapps-admin";
@@ -35,6 +36,14 @@ if (
 ) throw new Error("OPENSIDEBAR_MCP_CALLBACK_URL must be HTTPS or http://localhost with no query or fragment");
 if (new URL(resource).protocol !== "https:")
   throw new Error("OPENSIDEBAR_MCP_RESOURCE must use HTTPS");
+const callbackId = createHash("sha256")
+  .update(new URL(resource).toString())
+  .digest()
+  .subarray(0, 9)
+  .toString("base64url");
+const registeredCallback = new URL(callbackUrl);
+registeredCallback.pathname = `${registeredCallback.pathname.replace(/\/$/, "")}/${callbackId}`;
+const registeredCallbackUrl = registeredCallback.toString();
 
 function aws(args) {
   return execFileSync(
@@ -47,6 +56,14 @@ function json(args) {
   const output = aws([...args, "--output", "json"]);
   return output ? JSON.parse(output) : null;
 }
+function optionalJson(args) {
+  try {
+    return json(args);
+  } catch (error) {
+    if (error?.status === 254) return null;
+    throw error;
+  }
+}
 function mutate(args) {
   console.log(`$ aws ${args.join(" ")} --profile ${profile} --region ${region}`);
   return apply ? aws(args) : "";
@@ -55,7 +72,8 @@ function mutate(args) {
 console.log(`${apply ? "APPLY" : "DRY RUN"}: hosted MCP Cognito boundary in ${region}`);
 if (!apply) {
   console.log(`Would converge resource ${resource}, six custom scopes, and public PKCE client ${clientName}.`);
-  console.log(`Callback: ${callbackUrl}`);
+  console.log(`Codex callback base: ${callbackUrl}`);
+  console.log(`Registered callback: ${registeredCallbackUrl}`);
   console.log("No AWS calls were made. Pass --apply to converge it.");
   process.exit(0);
 }
@@ -107,6 +125,7 @@ const command = [
   ...(existingClient ? ["--client-id", existingClient.ClientId] : ["--client-name", clientName, "--no-generate-secret"]),
   "--explicit-auth-flows",
   "ALLOW_REFRESH_TOKEN_AUTH",
+  "ALLOW_USER_AUTH",
   "--allowed-o-auth-flows",
   "code",
   "--allowed-o-auth-scopes",
@@ -116,7 +135,7 @@ const command = [
   "--supported-identity-providers",
   "COGNITO",
   "--callback-urls",
-  callbackUrl,
+  registeredCallbackUrl,
   "--prevent-user-existence-errors",
   "ENABLED",
   "--auth-session-validity",
@@ -132,6 +151,24 @@ const command = [
 ];
 const output = mutate(command);
 const client = existingClient ?? JSON.parse(output).UserPoolClient;
+const existingBranding = optionalJson([
+  "cognito-idp",
+  "describe-managed-login-branding-by-client",
+  "--user-pool-id",
+  poolId,
+  "--client-id",
+  client.ClientId,
+])?.ManagedLoginBranding;
+mutate([
+  "cognito-idp",
+  existingBranding ? "update-managed-login-branding" : "create-managed-login-branding",
+  "--user-pool-id",
+  poolId,
+  ...(existingBranding
+    ? ["--managed-login-branding-id", existingBranding.ManagedLoginBrandingId]
+    : ["--client-id", client.ClientId]),
+  "--use-cognito-provided-values",
+]);
 const issuer = `https://cognito-idp.${region}.amazonaws.com/${poolId}`;
 
 console.log("\nHosted MCP Cognito boundary converged; keep HOSTED_MCP_ENABLED=false until acceptance:");
@@ -140,3 +177,4 @@ console.log(`COGNITO_MCP_CLIENT_ID=${client.ClientId}`);
 console.log(`MCP_SCOPE_PREFIX=${resource}/`);
 console.log(`MCP_RESOURCE=${resource}`);
 console.log(`CODEX_MCP_OAUTH_CALLBACK_URL=${callbackUrl}`);
+console.log(`COGNITO_MCP_CALLBACK_URL=${registeredCallbackUrl}`);
