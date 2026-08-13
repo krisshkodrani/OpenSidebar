@@ -97,6 +97,20 @@ export function reduceScenarioState(
       next.lifecycle = "finished";
       break;
     }
+    case "case.submit": {
+      const control = objectValue(next.data.control) ?? {};
+      const publicData = objectValue(next.data.public) ?? {};
+      const caseState = objectValue(publicData.case) ?? {};
+      if (!("expected" in control)) {
+        throw new Error("Scenario does not define a case submission result.");
+      }
+      caseState.status = "complete";
+      caseState.value = cloneJson(control.expected);
+      publicData.case = caseState;
+      next.data.public = publicData;
+      next.lifecycle = "finished";
+      break;
+    }
     default:
       throw new Error(`Unsupported scenario action: ${action.type}`);
   }

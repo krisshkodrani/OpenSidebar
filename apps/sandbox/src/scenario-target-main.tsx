@@ -18,12 +18,18 @@ function TargetMessage({ title, body }: { title: string; body: string }) {
 function TargetApplication({ run }: { run: ScenarioTargetViewV2 }) {
   const familyValue = run.data.applicationFamily;
   if (!isScenarioFamily(familyValue)) return <TargetMessage title="Scenario unavailable" body="This scenario does not have a target application yet." />;
+  return <ConfiguredTargetApplication run={run} familyValue={familyValue} />;
+}
+function ConfiguredTargetApplication({ run, familyValue }: { run: ScenarioTargetViewV2; familyValue: keyof typeof TARGET_FAMILIES }) {
   const family = TARGET_FAMILIES[familyValue];
   const [draft, setDraft] = useState("");
   const [current, setCurrent] = useState(run);
   const [feedback, setFeedback] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const caseState = objectValue(current.data.case);
+  const interaction = objectValue(current.data.interaction);
+  const mutable = interaction.mutable === true;
+  const evidence = Array.isArray(current.data.evidence) ? current.data.evidence : [];
   const rows = useMemo(() => [
     ["Status", display(caseState.status)],
     [family.valueLabel, display(caseState.value)],
@@ -50,7 +56,9 @@ function TargetApplication({ run }: { run: ScenarioTargetViewV2 }) {
       <main>
         <div className="scenario-heading"><div><p>Workspace</p><h1>{display(caseState.title)}</h1></div><span className="scenario-pill">{display(caseState.status)}</span></div>
         <section className="scenario-panel"><h2>Details</h2><table><tbody>{rows.map(([label, value]) => <tr key={label}><th>{label}</th><td>{value}</td></tr>)}</tbody></table></section>
-        <section className="scenario-panel scenario-form"><h2>Update</h2><label>{family.valueLabel}<input value={draft} onChange={(event) => setDraft(event.target.value)} /></label><button className="scenario-primary" disabled={busy || !draft.trim()} onClick={() => void save()}>{busy ? "Saving…" : family.saveLabel}</button>{feedback && <p role="status" className="scenario-feedback">{feedback}</p>}</section>
+        {evidence.length > 0 && <section className="scenario-panel"><h2>Visible information</h2><dl className="scenario-evidence">{evidence.map((entry, index) => { const item = objectValue(entry); return <div key={index}><dt>{display(item.label)}</dt><dd>{display(item.value)}</dd></div>; })}</dl></section>}
+        {typeof current.data.notice === "string" && <section className="scenario-panel scenario-notice"><h2>Action unavailable</h2><p>{current.data.notice}</p></section>}
+        {mutable && <section className="scenario-panel scenario-form"><h2>Update</h2><label>{display(interaction.valueLabel) || family.valueLabel}<input value={draft} onChange={(event) => setDraft(event.target.value)} /></label><button className="scenario-primary" disabled={busy || !draft.trim()} onClick={() => void save()}>{busy ? "Saving…" : display(interaction.submitLabel) || family.saveLabel}</button>{feedback && <p role="status" className="scenario-feedback">{feedback}</p>}</section>}
         {objectValue(current.data.unrelated).changed === true && <p role="alert" className="scenario-warning">An unrelated record was changed.</p>}
       </main>
     </div>

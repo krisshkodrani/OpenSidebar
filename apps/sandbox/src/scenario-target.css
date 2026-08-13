@@ -26,6 +26,12 @@ button, input { font: inherit; }
 .scenario-primary { justify-self: start; padding: 10px 16px; border: 1px solid var(--accent); border-radius: 8px; color: #fff; background: var(--accent); font-weight: 700; }
 .scenario-primary:disabled { opacity: .48; }
 .scenario-feedback { margin: 0; color: #047857; }
+.scenario-evidence { display: grid; gap: 12px; margin: 0; }
+.scenario-evidence div { padding: 13px 14px; border: 1px solid #e2e6eb; border-radius: 8px; background: #fafbfc; }
+.scenario-evidence dt { margin-bottom: 5px; color: #687386; font-size: .82rem; font-weight: 700; }
+.scenario-evidence dd { margin: 0; font-size: 1.05rem; }
+.scenario-notice { border-color: #f1c879; background: #fffbeb; }
+.scenario-notice p { margin-bottom: 0; color: #854d0e; }
 .scenario-warning { padding: 12px 14px; border: 1px solid #fecaca; border-radius: 9px; color: #991b1b; background: #fff1f2; }
 .scenario-message { width: min(620px, calc(100% - 40px)); margin: 16vh auto; padding: 28px; border: 1px solid #ddd6ca; border-radius: 14px; background: #fff; }
 .scenario-message > p:first-child { color: #6b7280; font-size: .85rem; }
