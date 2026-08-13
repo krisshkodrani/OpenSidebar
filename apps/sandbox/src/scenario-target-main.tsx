@@ -34,6 +34,9 @@ function ConfiguredTargetApplication({ run, familyValue }: { run: ScenarioTarget
     ? interaction.terminalDecision
     : null;
   const evidence = Array.isArray(current.data.evidence) ? current.data.evidence : [];
+  const activeSection = typeof interaction.activeSection === "string" ? interaction.activeSection : family.navigation[0];
+  const control = typeof interaction.control === "string" ? interaction.control : "text";
+  const options = Array.isArray(interaction.options) ? interaction.options.filter((value): value is string => typeof value === "string") : [];
   const rows = useMemo(() => [
     ["Status", display(caseState.status)],
     [family.valueLabel, display(caseState.value)],
@@ -72,14 +75,15 @@ function ConfiguredTargetApplication({ run, familyValue }: { run: ScenarioTarget
   return <div className="scenario-app" style={{ "--accent": family.accent } as CSSProperties}>
     <header className="scenario-topbar"><div><strong>{family.brand}</strong><span>{family.section}</span></div><small>OpenSidebar Playground · simulated application</small></header>
     <div className="scenario-layout">
-      <nav aria-label="Application navigation">{family.navigation.map((item, index) => <button className={index === 0 ? "active" : ""} key={item}>{item}</button>)}</nav>
+      <nav aria-label="Application navigation">{family.navigation.map((item) => <span aria-current={item === activeSection ? "page" : undefined} className={item === activeSection ? "active" : ""} key={item}>{item}</span>)}</nav>
       <main>
         <div className="scenario-heading"><div><p>Workspace</p><h1>{display(caseState.title)}</h1></div><span className="scenario-pill">{display(caseState.status)}</span></div>
         <section className="scenario-panel"><h2>Details</h2><table><tbody>{rows.map(([label, value]) => <tr key={label}><th>{label}</th><td>{value}</td></tr>)}</tbody></table></section>
+        {current.lifecycle === "finished" && <section className="scenario-panel scenario-success" role="status"><h2>Saved successfully</h2><p>The requested change is complete. The details above show the current record state.</p></section>}
         {evidence.length > 0 && <section className="scenario-panel"><h2>Visible information</h2><dl className="scenario-evidence">{evidence.map((entry, index) => { const item = objectValue(entry); return <div key={index}><dt>{display(item.label)}</dt><dd>{display(item.value)}</dd></div>; })}</dl></section>}
         {typeof current.data.notice === "string" && <section className="scenario-panel scenario-notice"><h2>Action unavailable</h2><p>{current.data.notice}</p></section>}
         {terminalDecision && current.lifecycle !== "finished" && <section className="scenario-panel scenario-form"><h2>Decision</h2><button className="scenario-primary" disabled={busy} onClick={() => void recordTerminalDecision()}>{busy ? "Savingâ€¦" : display(interaction.terminalLabel)}</button>{feedback && <p role="status" className="scenario-feedback">{feedback}</p>}</section>}
-        {mutable && <section className="scenario-panel scenario-form"><h2>Update</h2>{requiresValue && <label>{display(interaction.valueLabel) || family.valueLabel}<input value={draft} onChange={(event) => setDraft(event.target.value)} /></label>}<button className="scenario-primary" disabled={busy || (requiresValue && !draft.trim())} onClick={() => void save()}>{busy ? "Saving…" : display(interaction.submitLabel) || family.saveLabel}</button>{feedback && <p role="status" className="scenario-feedback">{feedback}</p>}</section>}
+        {mutable && current.lifecycle !== "finished" && <section className="scenario-panel scenario-form"><h2>Update</h2>{requiresValue && <label>{display(interaction.valueLabel) || family.valueLabel}{control === "select" ? <select value={draft} onChange={(event) => setDraft(event.target.value)}><option value="">Choose an option</option>{options.map((option) => <option key={option} value={option}>{option}</option>)}</select> : <input type={control === "number" || control === "tel" ? control : "text"} value={draft} onChange={(event) => setDraft(event.target.value)} />}</label>}<button className="scenario-primary" disabled={busy || (requiresValue && !draft.trim())} onClick={() => void save()}>{busy ? "Saving…" : display(interaction.submitLabel) || family.saveLabel}</button>{feedback && <p role="status" className="scenario-feedback">{feedback}</p>}</section>}
         {objectValue(current.data.unrelated).changed === true && <p role="alert" className="scenario-warning">An unrelated record was changed.</p>}
       </main>
     </div>

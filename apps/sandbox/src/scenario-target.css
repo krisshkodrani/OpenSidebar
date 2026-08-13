@@ -8,8 +8,8 @@ button, input { font: inherit; }
 .scenario-topbar span, .scenario-topbar small { color: #c7ceda; }
 .scenario-layout { display: grid; grid-template-columns: 220px minmax(0, 1fr); min-height: calc(100vh - 64px); }
 .scenario-layout nav { padding: 24px 14px; border-right: 1px solid #dfe3e8; background: #fff; }
-.scenario-layout nav button { width: 100%; padding: 10px 12px; border: 0; border-radius: 8px; color: #4a5568; background: transparent; text-align: left; }
-.scenario-layout nav button.active { color: var(--accent); background: color-mix(in srgb, var(--accent) 10%, white); font-weight: 700; }
+.scenario-layout nav span { display: block; width: 100%; padding: 10px 12px; border-radius: 8px; color: #4a5568; }
+.scenario-layout nav span.active { color: var(--accent); background: color-mix(in srgb, var(--accent) 10%, white); font-weight: 700; }
 .scenario-layout main { width: min(980px, 100%); padding: 34px 42px 80px; }
 .scenario-heading { display: flex; align-items: center; justify-content: space-between; gap: 24px; margin-bottom: 22px; }
 .scenario-heading p { margin: 0 0 5px; color: #687386; font-size: .85rem; font-weight: 700; letter-spacing: .04em; text-transform: uppercase; }
@@ -22,10 +22,12 @@ button, input { font: inherit; }
 .scenario-panel th { width: 180px; color: #687386; font-weight: 650; }
 .scenario-form { display: grid; gap: 14px; }
 .scenario-form label { display: grid; gap: 7px; color: #4a5568; font-size: .88rem; font-weight: 650; }
-.scenario-form input { width: min(520px, 100%); padding: 10px 12px; border: 1px solid #b9c1cc; border-radius: 8px; }
+.scenario-form input, .scenario-form select { width: min(520px, 100%); padding: 10px 12px; border: 1px solid #b9c1cc; border-radius: 8px; background: #fff; }
 .scenario-primary { justify-self: start; padding: 10px 16px; border: 1px solid var(--accent); border-radius: 8px; color: #fff; background: var(--accent); font-weight: 700; }
 .scenario-primary:disabled { opacity: .48; }
 .scenario-feedback { margin: 0; color: #047857; }
+.scenario-success { border-color: #86d5b0; background: #ecfdf5; }
+.scenario-success p { margin-bottom: 0; color: #046c4e; }
 .scenario-evidence { display: grid; gap: 12px; margin: 0; }
 .scenario-evidence div { padding: 13px 14px; border: 1px solid #e2e6eb; border-radius: 8px; background: #fafbfc; }
 .scenario-evidence dt { margin-bottom: 5px; color: #687386; font-size: .82rem; font-weight: 700; }
@@ -35,4 +37,4 @@ button, input { font: inherit; }
 .scenario-warning { padding: 12px 14px; border: 1px solid #fecaca; border-radius: 9px; color: #991b1b; background: #fff1f2; }
 .scenario-message { width: min(620px, calc(100% - 40px)); margin: 16vh auto; padding: 28px; border: 1px solid #ddd6ca; border-radius: 14px; background: #fff; }
 .scenario-message > p:first-child { color: #6b7280; font-size: .85rem; }
-@media (max-width: 720px) { .scenario-topbar { padding: 0 16px; } .scenario-topbar small { display: none; } .scenario-layout { grid-template-columns: 1fr; } .scenario-layout nav { display: flex; overflow-x: auto; border-right: 0; border-bottom: 1px solid #dfe3e8; padding: 10px; } .scenario-layout nav button { width: auto; white-space: nowrap; } .scenario-layout main { padding: 24px 18px 60px; } }
+@media (max-width: 720px) { .scenario-topbar { padding: 0 16px; } .scenario-topbar small { display: none; } .scenario-layout { grid-template-columns: 1fr; } .scenario-layout nav { display: flex; overflow-x: auto; border-right: 0; border-bottom: 1px solid #dfe3e8; padding: 10px; } .scenario-layout nav span { width: auto; white-space: nowrap; } .scenario-layout main { padding: 24px 18px 60px; } }

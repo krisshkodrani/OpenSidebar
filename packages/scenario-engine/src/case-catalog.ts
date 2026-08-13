@@ -156,6 +156,61 @@ interface TerminalPresentation {
   decisionLabel?: string;
 }
 
+interface FieldPresentation {
+  label: string;
+  control: "text" | "number" | "select" | "tel";
+  options?: string[];
+}
+
+function fieldPresentation(title: string, prompt: string): FieldPresentation {
+  const source = `${title} ${prompt}`.toLocaleLowerCase();
+  if (source.includes("priority")) return { label: "Priority", control: "select", options: ["Low", "Normal", "High", "Urgent"] };
+  if (source.includes("status")) return { label: "Status", control: "select", options: ["Open", "In Progress", "Ready", "Closed"] };
+  if (source.includes("quantity") || /\b\d+\s+(?:monitors|docks|socks)\b/i.test(prompt)) return { label: "Quantity", control: "number" };
+  if (source.includes("cost center")) return { label: "Cost center", control: "select", options: ["Finance", "Engineering Platform", "Operations"] };
+  if (source.includes("phone")) return { label: "Phone number", control: "tel" };
+  if (source.includes("address")) return { label: "Delivery address", control: "text" };
+  if (source.includes("coupon")) return { label: "Coupon code", control: "text" };
+  if (source.includes("salary") && source.includes("sort")) return { label: "Sort order", control: "select", options: ["Ascending", "Descending"] };
+  if (source.includes("date range") || source.includes("dashboard range")) return { label: "Date range", control: "text" };
+  if (source.includes("threshold")) return { label: "Alert threshold", control: "number" };
+  if (source.includes("laptop")) return { label: "Laptop", control: "select", options: ["13-inch MacBook Air", "14-inch MacBook Pro", "ThinkPad T14"] };
+  if (source.includes("assign") || source.includes("owner")) return { label: "Assignee", control: "text" };
+  return { label: "Requested value", control: "text" };
+}
+
+function recordContext(prompt: string): JsonObject[] {
+  const identifiers = [...prompt.matchAll(/\b(?:NW|PR|SH|T|E|A|INC|CTR)-\d+\b/g)].map((match) => match[0]);
+  const rows: JsonObject[] = identifiers.map((value) => ({ label: "Record", value }));
+  if (/priority/i.test(prompt)) rows.push({ label: "Current priority", value: /from Normal/i.test(prompt) ? "Normal" : "High" });
+  if (/leave its owner unchanged/i.test(prompt)) rows.push({ label: "Owner", value: "Morgan Lee" });
+  if (/two Trail Bottles/i.test(prompt)) rows.push({ label: "Trail Bottle quantity", value: 2 });
+  if (!rows.length) rows.push({ label: "Record state", value: "Ready for review" });
+  return rows;
+}
+
+function answerEvidence(title: string, expected: JsonValue): JsonObject[] {
+  return [
+    { label: "View", value: title },
+    { label: "Previous reference", value: "Archived" },
+    { label: "Current observed value", value: cloneJson(expected) },
+  ];
+}
+
+function navigationSection(family: string, prompt: string): string {
+  const source = prompt.toLocaleLowerCase();
+  if (family === "retail") return source.includes("order") || source.includes("exchange") ? "Orders" : source.includes("cart") || source.includes("coupon") ? "Cart" : "Shop";
+  if (family === "crm") return source.includes("account") && !source.includes("ticket") ? "Accounts" : "Tickets";
+  if (family === "email") return source.includes("draft") ? "Drafts" : source.includes("send") ? "Sent" : "Inbox";
+  if (family === "collaboration") return source.includes("meeting") || source.includes("calendar") ? "Calendar" : source.includes("thread") ? "Threads" : "Channels";
+  if (family === "hr") return source.includes("benefit") ? "Benefits" : source.includes("leave") ? "Time off" : source.includes("onboard") ? "Onboarding" : "People";
+  if (family === "analytics") return source.includes("marketing") || source.includes("campaign") ? "Marketing" : source.includes("support") || source.includes("incident") ? "Support" : source.includes("sale") || source.includes("revenue") ? "Sales" : "Overview";
+  if (family === "knowledge") return source.includes("bookmark") ? "Bookmarks" : source.includes("policy") ? "Policies" : "Articles";
+  if (family === "jobs") return source.includes("application") || source.includes("apply") ? "Applications" : source.includes("save") ? "Saved" : "Search";
+  if (family === "monitoring") return source.includes("alert") ? "Alerts" : source.includes("incident") ? "Incidents" : "Live";
+  return "";
+}
+
 function terminalPresentation(slug: string, expected: JsonValue): TerminalPresentation {
   const blocked: Record<string, TerminalPresentation> = {
     "reject-vendor-instruction": {
@@ -254,6 +309,7 @@ function drafts(): DraftCase[] {
         (mode === "state" || mode === "state-and-answer") &&
         task.prompt.toLocaleLowerCase().includes(expectedText.toLocaleLowerCase());
       const kind = character(groupIndex, taskIndex, group.tasks.length);
+      const field = fieldPresentation(task.title, task.prompt);
       const seed = Number.parseInt(stableHash(id), 16) & 0x7fffffff;
       result.push({
         contract: {
@@ -287,8 +343,11 @@ function drafts(): DraftCase[] {
               mode,
               mutable: mode === "state" || mode === "state-and-answer",
               requiresValue,
-              valueLabel: task.title,
+              valueLabel: field.label,
+              control: field.control,
+              ...(field.options ? { options: field.options } : {}),
               submitLabel: task.title,
+              activeSection: navigationSection(group.family, task.prompt),
               ...(terminal?.decision
                 ? {
                     terminalDecision: terminal.decision,
@@ -300,8 +359,8 @@ function drafts(): DraftCase[] {
               terminal
                 ? terminal.evidence
                 : mode === "answer" || mode === "state-and-answer"
-                ? [{ label: "Relevant visible fact", value: cloneJson(task.expected) }]
-                : [],
+                ? answerEvidence(task.title, task.expected)
+                : recordContext(task.prompt),
             notice: terminal?.notice ?? null,
             unrelated: { changed: false },
           },

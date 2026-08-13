@@ -105,8 +105,13 @@ export function reduceScenarioState(
         throw new Error("Scenario does not define a case submission result.");
       }
       if (control.submissionKind === "value") {
-        const actual = String(payload.value ?? "").trim().toLocaleLowerCase();
-        const accepted = String(control.acceptedValue ?? "").trim().toLocaleLowerCase();
+        const normalize = (value: unknown) => String(value ?? "")
+          .trim()
+          .toLocaleLowerCase()
+          .replace(/[^a-z0-9]+/g, " ")
+          .trim();
+        const actual = normalize(payload.value);
+        const accepted = normalize(control.acceptedValue);
         if (!actual || actual !== accepted) {
           throw new Error("The submitted value is not valid for this record.");
         }
