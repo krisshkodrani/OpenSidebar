@@ -18,10 +18,9 @@ import {
   MessageBubble,
   InputArea,
   PersonalProfileDrawer,
-  TaskStatusRegion,
+  WorkSurfaceRegion,
   WebsiteSkillsDrawer,
   TaskActivityHud,
-  RemoteMissionStatusBanner,
 } from "./components";
 import { ErrorBoundary } from "./components/ErrorBoundary";
 import { SettingsDrawer } from "./components/SettingsDrawer";
@@ -289,7 +288,6 @@ export default function App({ themeRoot, activityHudRoot }: AppProps = {}) {
           }
           recordingActive={skillRecordingStatus === "recording"}
         />
-        <RemoteMissionStatusBanner />
 
         {/* Drawers are only mounted while open so closed drawers do no store
             subscriptions, grouping, or hashing work. Settings navigation is
@@ -332,7 +330,7 @@ export default function App({ themeRoot, activityHudRoot }: AppProps = {}) {
         )}
 
         <main className="flex-1 overflow-hidden relative flex flex-col">
-          <TaskStatusRegion
+          <WorkSurfaceRegion
             isPlanExpanded={isPlanExpanded}
             onTogglePlan={() => setIsPlanExpanded((v) => !v)}
             onSkillRecordingHelp={() => {

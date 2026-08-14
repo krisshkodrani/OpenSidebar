@@ -159,14 +159,16 @@ function chromeStorageArea(
       }
     },
     onChanged(listener) {
+      const changedEvent = chrome.storage.onChanged;
+      if (!changedEvent?.addListener) return () => {};
       const chromeListener = (
         changes: Record<string, chrome.storage.StorageChange>,
         changedArea: string,
       ) => {
         if (changedArea === areaName) listener(changes);
       };
-      chrome.storage.onChanged.addListener(chromeListener);
-      return () => chrome.storage.onChanged.removeListener(chromeListener);
+      changedEvent.addListener(chromeListener);
+      return () => changedEvent.removeListener(chromeListener);
     },
   };
 }

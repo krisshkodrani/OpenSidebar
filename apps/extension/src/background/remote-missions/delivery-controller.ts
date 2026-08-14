@@ -124,6 +124,7 @@ export class RemoteMissionDeliveryController {
     private readonly onStatus?: (status: RemoteMissionLocalStatus) => Promise<void> | void,
     private readonly cancellationPollMilliseconds = 1_000,
     private readonly readinessRefreshMilliseconds = 60_000,
+    private readonly isBrowserBusy: () => boolean | Promise<boolean> = () => false,
   ) {}
 
   private progress(
@@ -405,6 +406,16 @@ export class RemoteMissionDeliveryController {
       } finally {
         cancellation.stop();
       }
+    }
+    if (
+      !outcome &&
+      (current.state === "queued" || current.state === "accepted") &&
+      (await this.isBrowserBusy())
+    ) {
+      // Keep the delivery unacknowledged and in the cloud queue. A later poll
+      // retries it after the locally controlled workspace becomes available.
+      await this.report(delivery, "queued");
+      return journal;
     }
     if (!outcome && (current.state === "queued" || current.state === "accepted")) {
       await this.writeActive(journal, mission, "accepted");

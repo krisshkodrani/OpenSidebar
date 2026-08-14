@@ -42,6 +42,7 @@ function setup(
   options: {
     readinessRefreshMilliseconds?: number;
     onStatus?: ConstructorParameters<typeof RemoteMissionDeliveryController>[4];
+    isBrowserBusy?: () => boolean | Promise<boolean>;
   } = {},
 ) {
   const { port } = createFakePersistencePort();
@@ -112,6 +113,7 @@ function setup(
     }),
     1_000,
     options.readinessRefreshMilliseconds,
+    options.isBrowserBusy,
   );
   return {
     controller,
@@ -134,6 +136,22 @@ function setup(
 }
 
 describe("remote mission delivery", () => {
+  test("keeps a remote mission queued while local browser work is active", async () => {
+    let busy = true;
+    const world = setup(undefined, { isBrowserBusy: () => busy });
+
+    await world.controller.pollOnce();
+    expect(world.statuses).toEqual(["queued"]);
+    expect(world.transitions).toEqual([]);
+    expect(world.run).not.toHaveBeenCalled();
+    expect((await world.journal.read()).lastSequence).toBe(0);
+
+    busy = false;
+    await world.controller.pollOnce();
+    expect(world.transitions).toEqual(["accepted", "running", "succeeded"]);
+    expect(world.run).toHaveBeenCalledOnce();
+  });
+
   test("journals before dispatch and completes an ordered read-only mission", async () => {
     const world = setup();
     await world.controller.pollOnce();
