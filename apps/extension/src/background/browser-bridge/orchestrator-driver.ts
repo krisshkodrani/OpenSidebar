@@ -44,7 +44,7 @@ import { loadApiKey, loadSettings } from "../../utils/settings-storage";
 import { getProviderKeyStatus } from "../../utils/provider-keys";
 import { getBlockedRuleForUrl } from "../../utils/site-access";
 import { ensureContentScript } from "../infrastructure/tab-ready";
-import { workspaceManager } from "../workspaces/manager";
+import { ensureIsolatedTaskWorkspace } from "./isolated-workspace";
 import {
   createAgentRuntime,
   type TaskCompletionPayload,
@@ -541,22 +541,7 @@ export function createDefaultBrowserTaskDeps(): BrowserTaskDeps {
         throw new Error("Browser page did not become ready for the remote task.");
     },
     async ensureIsolatedWorkspace(workspaceId, tabId) {
-      const existing = await workspaceManager.getWorkspaceById(workspaceId);
-      if (existing) {
-        if (
-          !existing.tabIds.includes(tabId) &&
-          !(await workspaceManager.addTabToWorkspace(tabId, workspaceId))
-        ) {
-          throw new Error("Failed to attach the remote task tab to its workspace.");
-        }
-        return;
-      }
-      await workspaceManager.createWorkspace(
-        await workspaceManager.getNextWorkspaceName(),
-        workspaceManager.getNextColor(),
-        tabId,
-        workspaceId,
-      );
+      await ensureIsolatedTaskWorkspace(workspaceId, tabId);
     },
     async validateApprovalContext(tabId) {
       try {
