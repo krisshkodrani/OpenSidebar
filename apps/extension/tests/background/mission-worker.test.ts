@@ -69,7 +69,15 @@ describe("MissionWorker", () => {
   });
 
   test("journals, publishes evidence, and acknowledges only after supervisor completion", async () => {
-    const run = vi.fn().mockResolvedValue({ state: "succeeded", summary: "Heading: Example Domain" });
+    const run = vi.fn().mockImplementation(async (_payload, options) => {
+      await options?.onTargetBound?.({
+        context: "isolated_tab",
+        inWorkspace: true,
+        sidePanelEnabled: true,
+        createdForMission: true,
+      });
+      return { state: "succeeded", summary: "Heading: Example Domain" };
+    });
     const journal = new MemoryMissionAttemptJournal();
     const transport = new MemoryRemoteMissionTransport();
     const worker = new MissionWorker(
@@ -79,11 +87,20 @@ describe("MissionWorker", () => {
       transport,
     );
 
-    await expect(worker.run(mission(), { sequence: 7 })).resolves.toEqual({
+    const onEvidence = vi.fn();
+    await expect(worker.run(mission(), { sequence: 7, onEvidence })).resolves.toEqual({
       state: "succeeded",
       summary: "Heading: Example Domain",
     });
     expect(run).toHaveBeenCalledOnce();
+    expect(onEvidence).toHaveBeenCalledWith(expect.objectContaining({
+      outcome: "unknown",
+      target: expect.objectContaining({
+        context: "isolated_tab",
+        inWorkspace: true,
+        sidePanelEnabled: true,
+      }),
+    }));
     expect(transport.evidence[0]?.claims[0]?.claim).toBe("Heading: Example Domain");
     expect(transport.acknowledgements).toEqual([7]);
     expect(await journal.read("mission-1")).toBeNull();

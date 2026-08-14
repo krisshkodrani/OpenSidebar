@@ -260,8 +260,17 @@ describe("createBrowserAgentRunner", () => {
   test("opens a tab, starts the task, resolves on the correlated completion", async () => {
     const d = deps();
     const runner = createBrowserAgentRunner(d);
-    const promise = runner.run({ instruction: "buy milk" });
+    const onTargetBound = vi.fn();
+    const promise = runner.run(
+      { instruction: "buy milk" },
+      { onTargetBound },
+    );
     await new Promise((r) => setTimeout(r, 0));
+    expect(onTargetBound).toHaveBeenCalledWith(expect.objectContaining({
+      context: "isolated_tab",
+      inWorkspace: true,
+      sidePanelEnabled: true,
+    }));
     expect(d.started).toHaveLength(1);
     expect(d.started[0].tabId).toBe(42);
     const ws = d.started[0].workspaceId;

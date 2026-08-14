@@ -123,6 +123,7 @@ export class RemoteMissionDeliveryController {
     private readonly deviceId: () => Promise<string | null>,
     private readonly onStatus?: (status: RemoteMissionLocalStatus) => Promise<void> | void,
     private readonly cancellationPollMilliseconds = 1_000,
+    private readonly readinessRefreshMilliseconds = 60_000,
   ) {}
 
   private progress(
@@ -167,7 +168,12 @@ export class RemoteMissionDeliveryController {
     });
   }
 
-  private cancellationSignal(missionId: string, parent?: AbortSignal) {
+  private cancellationSignal(
+    missionId: string,
+    deviceId: string,
+    afterSequence: number,
+    parent?: AbortSignal,
+  ) {
     const controller = new AbortController();
     const onParentAbort = () => controller.abort();
     parent?.addEventListener("abort", onParentAbort, { once: true });
@@ -182,10 +188,19 @@ export class RemoteMissionDeliveryController {
         .catch(() => undefined)
         .finally(() => { checking = false; });
     }, this.cancellationPollMilliseconds);
+    let refreshing = false;
+    const readinessTimer = setInterval(() => {
+      if (refreshing || controller.signal.aborted) return;
+      refreshing = true;
+      void this.transport.poll(deviceId, afterSequence)
+        .catch(() => undefined)
+        .finally(() => { refreshing = false; });
+    }, this.readinessRefreshMilliseconds);
     return {
       signal: controller.signal,
       stop: () => {
         clearInterval(timer);
+        clearInterval(readinessTimer);
         parent?.removeEventListener("abort", onParentAbort);
       },
     };
@@ -272,7 +287,12 @@ export class RemoteMissionDeliveryController {
         new Date(decision.decidedAt).getTime() < new Date(status!.progress!.updatedAt).getTime()
       ) throw new Error("remote_mission_supervisor_decision_mismatch");
       current = await this.transport.transition(current, "running");
-      const cancellation = this.cancellationSignal(mission.missionId, signal);
+      const cancellation = this.cancellationSignal(
+        mission.missionId,
+        deviceId,
+        journal.lastSequence,
+        signal,
+      );
       try {
         outcome = await this.worker.resumeSupervision(
           { ...specFor(delivery), planRevision: pendingStep.planRevision, steps: [pendingStep] },
@@ -315,7 +335,12 @@ export class RemoteMissionDeliveryController {
         new Date(decision.decidedAt).getTime() > new Date(targetSelection.expiresAt).getTime()
       ) throw new Error("remote_mission_target_decision_mismatch");
       current = await this.transport.transition(current, "running");
-      const cancellation = this.cancellationSignal(mission.missionId, signal);
+      const cancellation = this.cancellationSignal(
+        mission.missionId,
+        deviceId,
+        journal.lastSequence,
+        signal,
+      );
       try {
         outcome = await this.worker.resumeTargetSelection(
           specFor(delivery),
@@ -362,7 +387,12 @@ export class RemoteMissionDeliveryController {
           new Date(approval.expiresAt).getTime()
       ) throw new Error("remote_mission_approval_decision_mismatch");
       current = await this.transport.transition(current, "running");
-      const cancellation = this.cancellationSignal(mission.missionId, signal);
+      const cancellation = this.cancellationSignal(
+        mission.missionId,
+        deviceId,
+        journal.lastSequence,
+        signal,
+      );
       try {
         outcome = await this.worker.resumeApproval(specFor(delivery), decision, {
           signal: cancellation.signal,
@@ -400,11 +430,20 @@ export class RemoteMissionDeliveryController {
     }
 
     if (!outcome) {
-      const cancellation = this.cancellationSignal(mission.missionId, signal);
+      const cancellation = this.cancellationSignal(
+        mission.missionId,
+        deviceId,
+        journal.lastSequence,
+        signal,
+      );
       try {
         outcome = await this.worker.run(specFor(delivery), {
           signal: cancellation.signal,
           initialUrl: payload.initialUrl,
+          onEvidence: (evidence) => this.transport.putProgress(
+            current,
+            this.progress(mission.missionId, "running", { evidence }),
+          ),
         });
       } catch (error) {
         outcome = { state: "failed", reason: error instanceof Error ? error.message : "Remote mission failed." };

@@ -509,6 +509,7 @@ export function createBrowserAgentRunner(deps: BrowserTaskDeps): AgentRunner {
     task: AgentTask,
     entry: SessionEntry | null,
     signal: AbortSignal | undefined,
+    onTargetBound?: AgentRunOptions["onTargetBound"],
   ): Promise<AgentRunOutcome> {
     if (signal?.aborted) {
       // Aborted while queued (or before dispatch): touch nothing.
@@ -555,6 +556,8 @@ export function createBrowserAgentRunner(deps: BrowserTaskDeps): AgentRunner {
           await deps.describeTarget(tabId, targetContext, task.url),
         );
       }
+      const boundTarget = workspaceTargets.get(workspaceId);
+      if (boundTarget) await onTargetBound?.(boundTarget);
       await deps.startTask({
         query: task.instruction,
         tabId,
@@ -575,14 +578,15 @@ export function createBrowserAgentRunner(deps: BrowserTaskDeps): AgentRunner {
   return {
     run(task: AgentTask, opts?: AgentRunOptions): Promise<AgentRunOutcome> {
       const signal = opts?.signal;
-      if (!task.session) return executeRun(task, null, signal);
+      if (!task.session) return executeRun(task, null, signal, opts?.onTargetBound);
       let entry = sessions.get(task.session);
       if (!entry) {
         entry = { workspaceId: newWorkspaceId(), tabId: null, queue: Promise.resolve() };
         sessions.set(task.session, entry);
       }
       const sessionEntry = entry;
-      const run = sessionEntry.queue.then(() => executeRun(task, sessionEntry, signal));
+      const run = sessionEntry.queue.then(() =>
+        executeRun(task, sessionEntry, signal, opts?.onTargetBound));
       // executeRun never rejects by design, but guard the queue anyway so one
       // bad run can never wedge the session forever.
       sessionEntry.queue = run.catch(() => {});
