@@ -632,6 +632,12 @@ export class WorkspaceManager {
     return workspace ? { ...workspace, tabIds: [...workspace.tabIds] } : null;
   }
 
+  /** Non-blocking metadata snapshot for paths already grounded in live Chrome state. */
+  public peekWorkspaceByGroupId(groupId: number): Workspace | null {
+    const workspace = this.workspaces.find((ws) => ws.tabGroupId === groupId) || null;
+    return workspace ? { ...workspace, tabIds: [...workspace.tabIds] } : null;
+  }
+
   /**
    * Restore workspace from existing tab group (browser restart scenario)
    */

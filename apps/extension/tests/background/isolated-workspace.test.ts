@@ -6,6 +6,11 @@ function deps(options: { attached?: boolean; keepGroup?: boolean } = {}) {
   const setOptions = vi.fn().mockResolvedValue(undefined);
   return {
     manager: {
+      peekWorkspaceByGroupId: vi.fn().mockReturnValue(
+        options.attached === false
+          ? null
+          : { name: "OpenSidebar 1", tabGroupId: 17, tabIds: [42] },
+      ),
       getWorkspaceForTab: vi.fn().mockResolvedValue(
         options.attached === false
           ? null
@@ -77,5 +82,27 @@ describe("isolated remote workspace", () => {
       verifyIsolatedTaskWorkspace(42, undefined, true, d),
     ).rejects.toThrow("Chrome did not keep the remote task tab");
     expect(d.sidePanel.setOptions).not.toHaveBeenCalled();
+  });
+
+  test("verifies from live group metadata without waiting for a manager mutation", async () => {
+    const d = deps();
+    d.manager.getWorkspaceForTab = vi.fn(() => new Promise(() => {}));
+    d.manager.peekWorkspaceByGroupId = vi.fn(() => ({
+      name: "OpenSidebar 1",
+      tabGroupId: 17,
+      tabIds: [10],
+    }));
+
+    await expect(verifyIsolatedTaskWorkspace(
+      42,
+      "https://example.com/",
+      true,
+      d,
+    )).resolves.toMatchObject({
+      inWorkspace: true,
+      sidePanelEnabled: true,
+      expectedUrlMatched: true,
+    });
+    expect(d.manager.getWorkspaceForTab).not.toHaveBeenCalled();
   });
 });

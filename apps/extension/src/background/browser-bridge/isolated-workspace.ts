@@ -11,6 +11,7 @@ type WorkspaceRecord = {
 
 type WorkspacePort = {
   getWorkspaceForTab(tabId: number): Promise<WorkspaceRecord | null>;
+  peekWorkspaceByGroupId?(groupId: number): WorkspaceRecord | null;
 };
 
 type IsolatedWorkspaceDeps = {
@@ -35,7 +36,12 @@ export async function verifyIsolatedTaskWorkspace(
     sidePanel: chrome.sidePanel,
   },
 ): Promise<RemoteMissionTargetBindingV1> {
-  const workspace = await deps.manager.getWorkspaceForTab(tabId);
+  const initialTab = await deps.tabs.get(tabId);
+  const workspace =
+    (initialTab.groupId !== chrome.tabGroups.TAB_GROUP_ID_NONE
+      ? deps.manager.peekWorkspaceByGroupId?.(initialTab.groupId)
+      : null) ??
+    await deps.manager.getWorkspaceForTab(tabId);
   if (!workspace || workspace.tabGroupId === null) {
     throw new Error(
       "The remote task tab is not attached to an existing OpenSidebar workspace.",

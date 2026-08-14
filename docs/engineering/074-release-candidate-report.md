@@ -58,7 +58,7 @@ actions or receive raw browser state.
 - Settings session regression tests passed for remount restoration,
   cross-instance synchronization, close synchronization, and per-window
   isolation. The full sidepanel suite passed: 31 files and 210 tests.
-- The focused browser-bridge and remote-mission suite passed 56 tests after the
+- The focused browser-bridge and remote-mission suite passed 58 tests after the
   isolated-tab grouping hardening. Dedicated gates prove execution cannot begin
   until the isolated tab has joined its workspace group, and fails closed if
   Chrome drops membership or the sidepanel configuration cannot be verified.
@@ -115,6 +115,14 @@ actions or receive raw browser state.
   is now best-effort at dispatch time and cannot block browser execution; a
   regression test holds that write open indefinitely and proves the mission
   still reaches terminal execution.
+- Mission `393b143f-9b1f-4e6a-9428-21168a36244e` on `179a15ac` then proved
+  dispatch could create the target tab while the workspace-manager mutation
+  queue still delayed its visible adoption; the user observed that tab outside
+  the OpenSidebar group, and the mission was cancelled. Chrome's live group is
+  now the placement authority: the target joins and verifies the source group
+  before execution, while manager persistence runs as a non-blocking projection.
+  The focused 58-test slice, production build, 21-item distribution check, and
+  exact real-Chrome browser-bridge E2E all pass with this change.
 - Provisional extension package: `.artifacts/releases/opensidebar-v0.7.4.zip`.
 - Provisional package SHA-256 (superseded by the final ModelBench gate fixes):
   `0170648EE2856C03E79807292F050C6F3E91190C4D6338BAB16A77AA78CB02CC`.
@@ -211,10 +219,11 @@ actions or receive raw browser state.
    `c4067951-2706-4e2f-afbc-cefaec54eda4` then proved the run stalls before the
    target callback. Instrumented mission
    `a8e8465c-db84-4869-970d-21e47709722b` isolated the blocker to the awaited
-   local UI-status write before runner dispatch. The strengthened
-   final-completion gate, matching cloud parser, status-poll readiness refresh,
-   target phases, non-blocking local status, and early bounded binding evidence
-   require an exact-build reload and retry.
+   local UI-status write before runner dispatch. Mission
+   `393b143f-9b1f-4e6a-9428-21168a36244e` on the non-blocking-status build then
+   opened outside the group and was cancelled. The final direct Chrome-group
+   placement fix passes focused and real-Chrome E2E verification; it requires
+   an exact-build reload and live retry.
 7. Exercise duplicate-tab selection, workspace-return cancel visibility, backend
    restart, extension restart, OAuth refresh, and revocation.
 8. Done: complete clean shipped-workspace verification, then rebuild, smoke, and
