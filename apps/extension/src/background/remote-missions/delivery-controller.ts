@@ -426,7 +426,9 @@ export class RemoteMissionDeliveryController {
         current,
         this.progress(mission.missionId, "running"),
       );
-      await this.report(delivery, "running");
+      // Local UI projection must never gate browser execution. A suspended or
+      // contended chrome.storage write can be retried by later status updates.
+      void this.report(delivery, "running").catch(() => undefined);
     }
 
     if (!outcome) {

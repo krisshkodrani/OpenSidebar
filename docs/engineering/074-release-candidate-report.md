@@ -108,6 +108,13 @@ actions or receive raw browser state.
   the workspace, creating the grouped tab, verifying the sidepanel binding, and
   starting execution. The device-authenticated mission-status poll also refreshes
   remote readiness server-side, replacing reliance on a second delivery poll.
+- Instrumented mission `a8e8465c-db84-4869-970d-21e47709722b` reached the
+  server `running` transition but emitted none of the runner's first phase,
+  isolating the stall to the awaited local sidepanel-status projection between
+  those operations. It was cancelled. The local `chrome.storage` UI projection
+  is now best-effort at dispatch time and cannot block browser execution; a
+  regression test holds that write open indefinitely and proves the mission
+  still reaches terminal execution.
 - Provisional extension package: `.artifacts/releases/opensidebar-v0.7.4.zip`.
 - Provisional package SHA-256 (superseded by the final ModelBench gate fixes):
   `0170648EE2856C03E79807292F050C6F3E91190C4D6338BAB16A77AA78CB02CC`.
@@ -166,9 +173,13 @@ actions or receive raw browser state.
 - RC2 predates the bounded remote-target evidence parser. It remains the live
   rollback image. Image `opensidebar-cloud-service:0.7.4-rc3`, built from
   `f4b8b367`, passed the isolated smoke and was promoted with automatic rollback
-  protection. The live container is healthy with zero restarts on image
+  protection. It was healthy with zero restarts on image before RC4 promotion:
   `sha256:8a261a79949ed9f6b024a91919fa64cefc52ac5054367a5c78b693c09468dd82`;
   hosted MCP can now retain the bounded target contract.
+- RC4, built from `f92ae95b`, added device-status readiness refresh and target
+  phase transport. It passed isolated smoke and rollback-protected promotion;
+  the live container is healthy with zero restarts on
+  `sha256:2768e04cadf19c3ffa521af524f2cc8017cf6da323d6e95ecc81156e62269c57`.
 
 ## Deployment and acceptance gates
 
@@ -198,9 +209,12 @@ actions or receive raw browser state.
    Mission `331c98d5-e83d-4288-ad7e-2da7d4636e5c` proved the first alarm-only
    readiness fix insufficient and was also cancelled. Mission
    `c4067951-2706-4e2f-afbc-cefaec54eda4` then proved the run stalls before the
-   target callback. The strengthened final-completion gate, matching cloud
-   parser, status-poll readiness refresh, target phases, and early bounded
-   binding evidence require an exact-build reload/deploy and retry.
+   target callback. Instrumented mission
+   `a8e8465c-db84-4869-970d-21e47709722b` isolated the blocker to the awaited
+   local UI-status write before runner dispatch. The strengthened
+   final-completion gate, matching cloud parser, status-poll readiness refresh,
+   target phases, non-blocking local status, and early bounded binding evidence
+   require an exact-build reload and retry.
 7. Exercise duplicate-tab selection, workspace-return cancel visibility, backend
    restart, extension restart, OAuth refresh, and revocation.
 8. Done: complete clean shipped-workspace verification, then rebuild, smoke, and
