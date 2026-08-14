@@ -1,6 +1,6 @@
 # LP-38 — Task-centered sidepanel workbench
 
-Status: Decision stamped; prototype approval required before implementation.
+Status: Decision stamped; implementation approved.
 
 ## Context
 
@@ -123,7 +123,8 @@ hierarchy, inbox behavior, collapsed history, and diagnostic ID disclosure.
 Prototype candidate: `.artifacts/ux/task-workbench-prototype.html` (local,
 ignored release artifact). All 12 required states render without script errors
 or horizontal overflow at 320px; the default running state was also inspected
-at 360px and 736px. Owner approval is pending.
+at 360px and 736px. The owner approved the prototype on 2026-08-14 without
+requested changes.
 
 ## Delivery
 
@@ -139,7 +140,7 @@ at 360px and 736px. Owner approval is pending.
 
 ## Decision
 
-Status: Approved with edits
+Status: Approved
 
 Chosen path:
 
@@ -158,10 +159,7 @@ Chosen path:
 
 Required edits before implementation:
 
-- Build the interactive state prototype.
-- Obtain and record owner approval of its layout, copy, and interaction
-  behavior.
-- Add the approved prototype review result to this RFC.
+- None.
 
 Non-blocking follow-ups:
 
@@ -195,4 +193,4 @@ Evidence required before merge:
 
 Next action:
 
-- Revise RFC
+- Implement

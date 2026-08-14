@@ -191,6 +191,30 @@ actions or receive raw browser state.
 
 ## Deployment and acceptance gates
 
+### Task-centered workbench gate
+
+- LP-38 is owner-approved and implemented. The sidepanel now projects local
+  tasks, plans, decisions, watch mode, skill recording, and remote missions into
+  one active work item with state-derived composer permissions.
+- Remote work no longer leaves a permanent banner. Terminal missions remain
+  visible for eight seconds, then move into collapsed per-workspace history;
+  history is deduplicated and capped at 50 items. Mission IDs are available
+  only under Details.
+- Remote deliveries remain queued and unacknowledged while a local task or
+  watch session controls the browser. The UI presents that delivery as incoming
+  work without replacing the local task; execution resumes on a later poll once
+  the browser is free.
+- The 0.7.4 migration clears legacy chat, agent recovery, composer drafts, and
+  remote-status UI state exactly once. Workspace definitions and tab groups,
+  account/session data, settings, saved prompts, profile data, and skills are
+  preserved.
+- Verification: 32 focused workbench/remote-delivery tests pass; lint, RFC
+  validation, the decomposition ratchet, affected-project TypeScript build, the
+  production build, and the 21-item distribution check pass. The repository
+  suite reached 5,488 passing tests; its product failure was fixed and passes in
+  isolation, while the only other failure was an unrelated trace-retention
+  setup timeout that also passes in isolation.
+
 1. Done: deploy the refreshed backend while preserving the current named-tester
    allowlist and feature-flag values.
 2. Done: verify the published 0.7.3 device is online but
