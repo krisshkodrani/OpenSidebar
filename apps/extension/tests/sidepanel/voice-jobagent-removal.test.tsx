@@ -28,7 +28,14 @@ describe("removed voice and JobAgent MCP surfaces", () => {
 
   test("settings drawer has no Voice tab or JobAgent MCP controls", async () => {
     await act(async () => {
-      root.render(<SettingsDrawer isOpen onClose={() => {}} />);
+      root.render(
+        <SettingsDrawer
+          isOpen
+          activeTab="account"
+          onActiveTabChange={() => {}}
+          onClose={() => {}}
+        />,
+      );
     });
 
     expect(container.textContent).toContain("account");

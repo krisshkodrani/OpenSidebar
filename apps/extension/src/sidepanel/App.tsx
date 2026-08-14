@@ -36,6 +36,7 @@ import { useSidepanelBridge } from "./hooks/useSidepanelBridge";
 import { useTranscriptAutoScroll } from "./hooks/useTranscriptAutoScroll";
 import { useComposerActions } from "./hooks/useComposerActions";
 import { useSkillRecordingActions } from "./hooks/useSkillRecordingActions";
+import { useSettingsViewSession } from "./hooks/useSettingsViewSession";
 import { useTaskUiState } from "./task-ui-state";
 import { getAvailableProviderStacks } from "../utils/provider-keys";
 import {
@@ -126,7 +127,8 @@ export default function App({ themeRoot, activityHudRoot }: AppProps = {}) {
   }, [pendingPlanConfirmation, taskProgress, taskCompletion, isPlanning]);
 
   // Sidebar UI State
-  const [isSettingsOpen, setIsSettingsOpen] = useState(false);
+  const [settingsView, updateSettingsView] = useSettingsViewSession();
+  const isSettingsOpen = settingsView.open;
   const [isPersonalProfileOpen, setIsPersonalProfileOpen] = useState(false);
   const [isSavedPromptsOpen, setIsSavedPromptsOpen] = useState(false);
   const [isWebsiteSkillsOpen, setIsWebsiteSkillsOpen] = useState(false);
@@ -139,9 +141,9 @@ export default function App({ themeRoot, activityHudRoot }: AppProps = {}) {
   const [accountProviderReady, setAccountProviderReady] = useState(false);
   useEffect(() => {
     void pendingCloudEmailAuth().then((pending) => {
-      if (pending) setIsSettingsOpen(true);
+      if (pending) updateSettingsView({ open: true, activeTab: "account" });
     });
-  }, []);
+  }, [updateSettingsView]);
   useEffect(() => {
     let active = true;
     void cloudSession()
@@ -273,7 +275,7 @@ export default function App({ themeRoot, activityHudRoot }: AppProps = {}) {
           />
         )}
         <Header
-          onOpenSettings={() => setIsSettingsOpen(true)}
+          onOpenSettings={() => updateSettingsView({ open: true })}
           onOpenWebsiteSkills={() => setIsWebsiteSkillsOpen(true)}
           modeBadgeLabel={getHeaderModeBadge(settings)}
           connectionLabel={
@@ -290,10 +292,17 @@ export default function App({ themeRoot, activityHudRoot }: AppProps = {}) {
         <RemoteMissionStatusBanner />
 
         {/* Drawers are only mounted while open so closed drawers do no store
-            subscriptions, grouping, or hashing work. Each resets its draft
-            state on open, so nothing meaningful is lost on unmount. */}
+            subscriptions, grouping, or hashing work. Settings navigation is
+            session-restored; sensitive and unsaved form drafts are not. */}
         {isSettingsOpen && (
-          <SettingsDrawer isOpen onClose={() => setIsSettingsOpen(false)} />
+          <SettingsDrawer
+            isOpen
+            activeTab={settingsView.activeTab}
+            onActiveTabChange={(activeTab) =>
+              updateSettingsView({ activeTab })
+            }
+            onClose={() => updateSettingsView({ open: false })}
+          />
         )}
 
         {isPersonalProfileOpen && (
@@ -425,7 +434,7 @@ export default function App({ themeRoot, activityHudRoot }: AppProps = {}) {
                         </li>
                       </ol>
                       <button
-                        onClick={() => setIsSettingsOpen(true)}
+                        onClick={() => updateSettingsView({ open: true })}
                         className="px-4 py-2 rounded-lg bg-primary-600 text-white text-sm font-medium hover:bg-primary-700 transition-colors shadow-sm shadow-primary-600/20"
                       >
                         {!accountEmail
