@@ -734,7 +734,12 @@ export function createDefaultBrowserTaskDeps(): BrowserTaskDeps {
       return targets;
     },
     async createTabInWorkspace(sourceTabId, workspaceId, url) {
-      const tab = await createWorkspaceTab({ sourceTabId, workspaceId, url });
+      const tab = await createWorkspaceTab({
+        sourceTabId,
+        workspaceId,
+        url,
+        adoptionMode: "live_group",
+      });
       return tab.id;
     },
     async createTab(url) {
