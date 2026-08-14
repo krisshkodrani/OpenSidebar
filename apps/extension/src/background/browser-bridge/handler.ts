@@ -53,6 +53,8 @@ export interface AgentRunOptions {
   signal?: AbortSignal;
   /** Report a verified, sanitized target binding before agent execution. */
   onTargetBound?: (target: RemoteMissionTargetBindingV1) => Promise<void> | void;
+  /** Report a bounded target-binding phase without exposing browser IDs. */
+  onProgress?: (summary: string) => Promise<void> | void;
 }
 
 /** Runs one internal agent task. Implemented by the orchestrator in Stage 2b. */

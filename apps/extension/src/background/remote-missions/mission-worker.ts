@@ -266,6 +266,7 @@ export class MissionWorker {
       sequence?: number;
       initialUrl?: string;
       onEvidence?: (evidence: MissionEvidenceV1) => Promise<void> | void;
+      onProgress?: (summary: string) => Promise<void> | void;
     },
   ): Promise<MissionWorkerOutcome> {
     if (new Date(mission.expiresAt).getTime() <= Date.now())
@@ -308,6 +309,7 @@ export class MissionWorker {
       };
       const result = await this.runner.run(payload, {
         signal: options?.signal,
+        onProgress: options?.onProgress,
         onTargetBound: options?.onEvidence
           ? async (target) => {
               await options.onEvidence!(evidenceFor(

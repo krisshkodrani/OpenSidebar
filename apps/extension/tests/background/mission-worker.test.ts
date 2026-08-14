@@ -70,6 +70,7 @@ describe("MissionWorker", () => {
 
   test("journals, publishes evidence, and acknowledges only after supervisor completion", async () => {
     const run = vi.fn().mockImplementation(async (_payload, options) => {
+      await options?.onProgress?.("Discovering the existing OpenSidebar workspace.");
       await options?.onTargetBound?.({
         context: "isolated_tab",
         inWorkspace: true,
@@ -88,11 +89,19 @@ describe("MissionWorker", () => {
     );
 
     const onEvidence = vi.fn();
-    await expect(worker.run(mission(), { sequence: 7, onEvidence })).resolves.toEqual({
+    const onProgress = vi.fn();
+    await expect(worker.run(mission(), {
+      sequence: 7,
+      onEvidence,
+      onProgress,
+    })).resolves.toEqual({
       state: "succeeded",
       summary: "Heading: Example Domain",
     });
     expect(run).toHaveBeenCalledOnce();
+    expect(onProgress).toHaveBeenCalledWith(
+      "Discovering the existing OpenSidebar workspace.",
+    );
     expect(onEvidence).toHaveBeenCalledWith(expect.objectContaining({
       outcome: "unknown",
       target: expect.objectContaining({

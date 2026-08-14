@@ -285,6 +285,7 @@ export function createBrowserAgentRunner(deps: BrowserTaskDeps): AgentRunner {
   async function resolveTab(
     task: AgentTask,
     entry: SessionEntry | null,
+    onProgress?: AgentRunOptions["onProgress"],
   ): Promise<ResolvedTarget> {
     if (task.targetContext === "existing_tab") {
       if (!task.url)
@@ -376,6 +377,7 @@ export function createBrowserAgentRunner(deps: BrowserTaskDeps): AgentRunner {
       for (const [handle, candidate] of targetChoices)
         if (candidate.session === task.session) targetChoices.delete(handle);
     } else {
+      await onProgress?.("Discovering the existing OpenSidebar workspace.");
       const matches = await deps.findWorkspaceTargets();
       if (!matches.length) {
         throw new Error(
@@ -409,6 +411,7 @@ export function createBrowserAgentRunner(deps: BrowserTaskDeps): AgentRunner {
       }
       target = matches[0]!;
     }
+    await onProgress?.("Creating the mission tab in the selected workspace.");
     const tabId = await deps.createTabInWorkspace(
       target.sourceTabId,
       target.workspaceId,
@@ -510,6 +513,7 @@ export function createBrowserAgentRunner(deps: BrowserTaskDeps): AgentRunner {
     entry: SessionEntry | null,
     signal: AbortSignal | undefined,
     onTargetBound?: AgentRunOptions["onTargetBound"],
+    onProgress?: AgentRunOptions["onProgress"],
   ): Promise<AgentRunOutcome> {
     if (signal?.aborted) {
       // Aborted while queued (or before dispatch): touch nothing.
@@ -517,7 +521,7 @@ export function createBrowserAgentRunner(deps: BrowserTaskDeps): AgentRunner {
     }
     let resolved: ResolvedTarget;
     try {
-      resolved = await resolveTab(task, entry);
+      resolved = await resolveTab(task, entry, onProgress);
     } catch (error) {
       return error instanceof TargetSelectionRequiredError
         ? {
@@ -532,6 +536,7 @@ export function createBrowserAgentRunner(deps: BrowserTaskDeps): AgentRunner {
     const targetContext = task.targetContext ?? "isolated_tab";
     return waitForOutcome(workspaceId, signal, async () => {
       workspaceTabs.set(workspaceId, tabId);
+      await onProgress?.("Verifying the mission tab workspace and sidepanel binding.");
       let isolatedTarget: RemoteMissionTargetBindingV1 | undefined;
       if (targetContext === "isolated_tab") {
         // Prove placement before waiting on page readiness so no agent work can
@@ -558,6 +563,7 @@ export function createBrowserAgentRunner(deps: BrowserTaskDeps): AgentRunner {
       }
       const boundTarget = workspaceTargets.get(workspaceId);
       if (boundTarget) await onTargetBound?.(boundTarget);
+      await onProgress?.("Starting read-only browser execution on the verified target.");
       await deps.startTask({
         query: task.instruction,
         tabId,
@@ -578,7 +584,8 @@ export function createBrowserAgentRunner(deps: BrowserTaskDeps): AgentRunner {
   return {
     run(task: AgentTask, opts?: AgentRunOptions): Promise<AgentRunOutcome> {
       const signal = opts?.signal;
-      if (!task.session) return executeRun(task, null, signal, opts?.onTargetBound);
+      if (!task.session)
+        return executeRun(task, null, signal, opts?.onTargetBound, opts?.onProgress);
       let entry = sessions.get(task.session);
       if (!entry) {
         entry = { workspaceId: newWorkspaceId(), tabId: null, queue: Promise.resolve() };
@@ -586,7 +593,13 @@ export function createBrowserAgentRunner(deps: BrowserTaskDeps): AgentRunner {
       }
       const sessionEntry = entry;
       const run = sessionEntry.queue.then(() =>
-        executeRun(task, sessionEntry, signal, opts?.onTargetBound));
+        executeRun(
+          task,
+          sessionEntry,
+          signal,
+          opts?.onTargetBound,
+          opts?.onProgress,
+        ));
       // executeRun never rejects by design, but guard the queue anyway so one
       // bad run can never wedge the session forever.
       sessionEntry.queue = run.catch(() => {});

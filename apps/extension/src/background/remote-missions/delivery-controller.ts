@@ -444,6 +444,10 @@ export class RemoteMissionDeliveryController {
             current,
             this.progress(mission.missionId, "running", { evidence }),
           ),
+          onProgress: (summary) => this.transport.putProgress(
+            current,
+            this.progress(mission.missionId, "running", { summary }),
+          ),
         });
       } catch (error) {
         outcome = { state: "failed", reason: error instanceof Error ? error.message : "Remote mission failed." };
