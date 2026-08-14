@@ -16,6 +16,7 @@ export interface RemoteMissionRunner {
     options?: {
       signal?: AbortSignal;
       onTargetBound?: AgentRunOptions["onTargetBound"];
+      onProgress?: AgentRunOptions["onProgress"];
     },
   ): Promise<RemoteMissionRunResultV1>;
   respondApproval?(

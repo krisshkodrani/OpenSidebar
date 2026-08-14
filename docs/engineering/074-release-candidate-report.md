@@ -101,6 +101,13 @@ actions or receive raw browser state.
   Chrome verification, allowing MCP to inspect group, URL, and sidepanel state
   without waiting for model completion. The final focused slice passes 63 tests,
   and the exact real-Chrome grouping E2E passes after agent completion.
+- Mission `c4067951-2706-4e2f-afbc-cefaec54eda4` on `b5302e5b` produced
+  neither early binding nor terminal evidence before readiness expired, proving
+  the live stall occurs before the verified target callback. It was cancelled.
+  The browser runner now publishes bounded phase summaries while discovering
+  the workspace, creating the grouped tab, verifying the sidepanel binding, and
+  starting execution. The device-authenticated mission-status poll also refreshes
+  remote readiness server-side, replacing reliance on a second delivery poll.
 - Provisional extension package: `.artifacts/releases/opensidebar-v0.7.4.zip`.
 - Provisional package SHA-256 (superseded by the final ModelBench gate fixes):
   `0170648EE2856C03E79807292F050C6F3E91190C4D6338BAB16A77AA78CB02CC`.
@@ -189,10 +196,11 @@ actions or receive raw browser state.
    `55a5fa75-2e07-487c-a532-3fb0db447227` ran on RC3 but stalled without
    evidence and exposed readiness expiry during execution; it was cancelled.
    Mission `331c98d5-e83d-4288-ad7e-2da7d4636e5c` proved the first alarm-only
-   readiness fix insufficient and was also cancelled. The strengthened
-   final-completion gate, matching cloud parser, execution-lifecycle readiness
-   refresh, and early bounded binding evidence require an exact-build reload
-   and retry.
+   readiness fix insufficient and was also cancelled. Mission
+   `c4067951-2706-4e2f-afbc-cefaec54eda4` then proved the run stalls before the
+   target callback. The strengthened final-completion gate, matching cloud
+   parser, status-poll readiness refresh, target phases, and early bounded
+   binding evidence require an exact-build reload/deploy and retry.
 7. Exercise duplicate-tab selection, workspace-return cancel visibility, backend
    restart, extension restart, OAuth refresh, and revocation.
 8. Done: complete clean shipped-workspace verification, then rebuild, smoke, and

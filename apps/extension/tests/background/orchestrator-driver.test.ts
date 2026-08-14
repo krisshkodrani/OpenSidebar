@@ -261,9 +261,10 @@ describe("createBrowserAgentRunner", () => {
     const d = deps();
     const runner = createBrowserAgentRunner(d);
     const onTargetBound = vi.fn();
+    const onProgress = vi.fn();
     const promise = runner.run(
       { instruction: "buy milk" },
-      { onTargetBound },
+      { onTargetBound, onProgress },
     );
     await new Promise((r) => setTimeout(r, 0));
     expect(onTargetBound).toHaveBeenCalledWith(expect.objectContaining({
@@ -271,6 +272,12 @@ describe("createBrowserAgentRunner", () => {
       inWorkspace: true,
       sidePanelEnabled: true,
     }));
+    expect(onProgress.mock.calls.map(([summary]) => summary)).toEqual([
+      "Discovering the existing OpenSidebar workspace.",
+      "Creating the mission tab in the selected workspace.",
+      "Verifying the mission tab workspace and sidepanel binding.",
+      "Starting read-only browser execution on the verified target.",
+    ]);
     expect(d.started).toHaveLength(1);
     expect(d.started[0].tabId).toBe(42);
     const ws = d.started[0].workspaceId;

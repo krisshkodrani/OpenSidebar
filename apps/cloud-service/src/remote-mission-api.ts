@@ -172,7 +172,13 @@ export function createRemoteMissionApi(deps: Dependencies) {
       const missionId = c.req.param("missionId");
       if (!uuid(missionId))
         return problem(c, 404, "mission_not_found", "Mission was not found.");
-      const mission = await deps.missions.mission(c.get("principal").accountId, missionId);
+      const principal = c.get("principal");
+      const mission = await deps.missions.mission(principal.accountId, missionId);
+      if (mission && principal.deviceId === mission.deviceId)
+        await deps.accounts.markRemoteMissionReady(
+          principal.accountId,
+          principal.deviceId,
+        );
       const result = mission && isRemoteMissionTerminal(mission.state)
           ? await deps.vault.getResultAndDecrypt({
             accountId: c.get("principal").accountId,
