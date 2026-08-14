@@ -23,6 +23,11 @@ actions or receive raw browser state.
   cleared operationally by logout, revocation, browser shutdown, or loss of polls.
 - Transient cloud refresh failures preserve the saved extension session. Only a
   definitive credential rejection clears it.
+- The Settings drawer and selected Settings section are restored for the current
+  Chrome window while the browser session is alive. Tab switches, panel hiding,
+  and sidepanel remounts no longer reset the view to Account; Chrome exit clears
+  the navigation state, and credentials, link codes, and unsaved form drafts are
+  never stored with it.
 - The sidepanel is enabled only on OpenSidebar workspace tabs. Chrome hides it
   on unrelated tabs and restores it on return; the background worker keeps a
   remote mission durable while the panel is hidden.
@@ -41,6 +46,9 @@ actions or receive raw browser state.
 - Cloud API and repository tests: passed, including incapable-device rejection.
 - Remote worker, cancellation, runner, and sidepanel banner tests: passed.
 - Cloud authenticated-fetch regression tests: passed.
+- Settings session regression tests passed for remount restoration,
+  cross-instance synchronization, close synchronization, and per-window
+  isolation. The full sidepanel suite passed: 31 files and 210 tests.
 - Shared/cloud and extension direct TypeScript builds: passed.
 - Repository lint, RFC validation, and decomposition ratchet: passed.
 - Full extension Vitest suite: passed serially. A parallel run first exposed and
@@ -111,12 +119,14 @@ actions or receive raw browser state.
    `remoteWork: unsupported`.
 3. Load the normal 0.7.4 candidate and wait for one successful poll; verify the
    same device becomes `remoteWork: ready` without a new device record.
-4. Complete an exact-existing-tab read-only mission and confirm grounded evidence.
-5. Exercise duplicate-tab selection, workspace-return cancel visibility, backend
+4. Switch between workspace tabs and hide/reopen the panel; verify Settings stays
+   open on the selected section. Restart Chrome and verify the view resets.
+5. Complete an exact-existing-tab read-only mission and confirm grounded evidence.
+6. Exercise duplicate-tab selection, workspace-return cancel visibility, backend
    restart, extension restart, OAuth refresh, and revocation.
-6. Done: complete clean shipped-workspace verification, then rebuild, smoke, and
+7. Done: complete clean shipped-workspace verification, then rebuild, smoke, and
    promote the cloud-service candidate from the integrated release head.
-7. Record the final ZIP SHA-256, then submit that exact artifact. Do not widen the
+8. Record the final ZIP SHA-256, then submit that exact artifact. Do not widen the
    tester allowlist or enable consequential remote actions during release.
 
 ## Rollback
