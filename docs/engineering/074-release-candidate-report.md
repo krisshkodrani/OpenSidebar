@@ -2,9 +2,9 @@
 
 Date: 2026-08-14
 
-Status: ModelBench integration, clean full-suite verification, and production
-extension build complete; refreshed backend deployment and named-tester browser
-acceptance remain before Chrome Web Store submission.
+Status: ModelBench integration, clean full-suite verification, production
+extension build, and refreshed backend deployment complete; named-tester browser
+acceptance and an exact-commit package remain before Chrome Web Store submission.
 
 ## Release outcome
 
@@ -47,8 +47,8 @@ actions or receive raw browser state.
   led to fixing an undefined test-time build constant; its later unrelated
   resource-contention timeouts all pass in the serial release run.
 - Production build and distribution verification: passed for normal 0.7.4.
-- Extension package: `.artifacts/releases/opensidebar-v0.7.4.zip`.
-- Package SHA-256:
+- Provisional extension package: `.artifacts/releases/opensidebar-v0.7.4.zip`.
+- Provisional package SHA-256 (superseded by the final ModelBench gate fixes):
   `0170648EE2856C03E79807292F050C6F3E91190C4D6338BAB16A77AA78CB02CC`.
 
 ## ModelBench integration
@@ -77,15 +77,25 @@ actions or receive raw browser state.
   `apps/temporal-spike` experiment, which is not in the root workspace list and
   has no installed `@temporalio/*` dependencies. It is not part of the 0.7.4
   extension, cloud image, or package.
+- Live MB-101 execution exposed an invalid `groq` executor pin for MiniMax M3;
+  OpenRouter lists no such endpoint. The release matrix now pins the executor to
+  `minimax`, and a direct MiniMax M3 vision/tool probe passed with HTTP 200.
+- MB-101 now creates a real grouped workspace through the gated E2E test API.
+  Its final fixed attempt passed the state mutation and all six browser
+  assertions: linked tab opened, same workspace group, both panels enabled,
+  returned to source, and opening directly observed. MiniMax did not emit a
+  terminal answer before the five-minute contract timeout, so the attempt is
+  honestly retained as `valid_model_failure` rather than rerun until green.
 
 ## Backend deployment
 
-- Image `opensidebar-cloud-service:0.7.4-rc1` passed the isolated, no-public-port
-  smoke and was promoted with automatic rollback protection.
-- That image predates the final ModelBench scenario-workspace packaging change.
-  Build and promote a refreshed candidate from `79704d26` or its release-only
-  documentation successor before final production parity acceptance.
-- The live container is healthy with zero restarts and migration 020 is present.
+- Image `opensidebar-cloud-service:0.7.4-rc2` was built from the integrated
+  ModelBench head, including the scenario workspaces. Its local image ID is
+  `sha256:8afc5b0a487e4015500fe3b801c5254fb9daf4ca0414d56beece51caf0124147`.
+- RC2 passed the isolated no-public-port readiness, disabled-control, and
+  Playground-login smoke, then was promoted with automatic rollback protection.
+- The live container is healthy with zero restarts on that exact image and
+  migration 020 is present.
 - The pre-release Chrome 0.7.3 device is correctly classified as unsupported;
   no old client can receive a newly queued mission.
 - Hosted MCP discovery returns 200 and unauthenticated `/mcp` returns the expected
@@ -95,16 +105,17 @@ actions or receive raw browser state.
 
 ## Deployment and acceptance gates
 
-1. Deploy the backend migration and capability gate while preserving the current
-   named-tester allowlist and feature-flag values.
-2. Verify the published 0.7.3 device is online but `remoteWork: unsupported`.
+1. Done: deploy the refreshed backend while preserving the current named-tester
+   allowlist and feature-flag values.
+2. Done: verify the published 0.7.3 device is online but
+   `remoteWork: unsupported`.
 3. Load the normal 0.7.4 candidate and wait for one successful poll; verify the
    same device becomes `remoteWork: ready` without a new device record.
 4. Complete an exact-existing-tab read-only mission and confirm grounded evidence.
 5. Exercise duplicate-tab selection, workspace-return cancel visibility, backend
    restart, extension restart, OAuth refresh, and revocation.
-6. Complete a clean dependency install and full repository verification, then
-   rebuild and smoke the cloud-service candidate from the integrated release head.
+6. Done: complete clean shipped-workspace verification, then rebuild, smoke, and
+   promote the cloud-service candidate from the integrated release head.
 7. Record the final ZIP SHA-256, then submit that exact artifact. Do not widen the
    tester allowlist or enable consequential remote actions during release.
 
