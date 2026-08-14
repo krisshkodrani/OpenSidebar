@@ -311,15 +311,19 @@ describe("createBrowserAgentRunner", () => {
   test("does not start an isolated task until its tab joins a workspace group", async () => {
     const d = deps();
     let releaseGroup!: () => void;
-    d.verifyIsolatedWorkspace = () =>
-      new Promise((resolve) => {
-        releaseGroup = resolve;
-      }).then(() => ({
+    let checks = 0;
+    d.verifyIsolatedWorkspace = () => {
+      const evidence = {
         context: "isolated_tab" as const,
         inWorkspace: true,
         sidePanelEnabled: true,
         createdForMission: true,
-      }));
+      };
+      if (checks++ > 0) return Promise.resolve(evidence);
+      return new Promise<void>((resolve) => {
+        releaseGroup = resolve;
+      }).then(() => evidence);
+    };
     const runner = createBrowserAgentRunner(d);
     const promise = runner.run({
       instruction: "read the heading",
