@@ -76,6 +76,15 @@ actions or receive raw browser state.
   failure summary was produced. The full lint wrapper is currently blocked by
   the pre-existing 1,518-line `background.ts` decomposition ratchet (1,500 cap),
   which this slice does not modify.
+- A final-completion guard now re-verifies group membership, sidepanel
+  enablement, and URL binding after the agent stops, so a tab that leaves its
+  workspace during execution cannot be reported as a successful remote result.
+  Its focused unit suite passed 37 tests, extension TypeScript and changed-file
+  ESLint passed, and the normal production build passed distribution checks.
+- A real headless-Chrome E2E created an actual OpenSidebar tab group, ran the
+  browser bridge through an isolated mission, and inspected Chrome after agent
+  completion. Exactly one mission tab existed; its live group ID matched the
+  source workspace and its sidepanel remained enabled at the production path.
 - Provisional extension package: `.artifacts/releases/opensidebar-v0.7.4.zip`.
 - Provisional package SHA-256 (superseded by the final ModelBench gate fixes):
   `0170648EE2856C03E79807292F050C6F3E91190C4D6338BAB16A77AA78CB02CC`.
@@ -131,6 +140,9 @@ actions or receive raw browser state.
   401 resource-metadata challenge.
 - Remote missions and hosted MCP retain their existing named-tester boundary.
   Checkpoint write/restore, device command/takeover, and Temporal flags remain off.
+- RC2 predates the bounded remote-target evidence parser. It remains the live
+  rollback image until the exact final release head is smoked and promoted;
+  hosted MCP cannot validate the new target contract while RC2 is serving it.
 
 ## Deployment and acceptance gates
 
@@ -151,8 +163,11 @@ actions or receive raw browser state.
    the workspace/window and confirms group/panel/URL binding. Live missions
    `531e74ea-b5c0-4ee3-9319-e10a4cd0163d` and
    `86b6aecb-591c-4eeb-b03e-e7e64e1b97dd` confirmed the first fix did not enforce
-   the live group/panel postconditions and are retained as failed evidence. The
-   strengthened postcondition gate requires another exact-build reload and retry.
+   the live group/panel postconditions and are retained as failed evidence.
+   Mission `67df9fbd-3ddf-4e2c-97f2-9370f4888045` also opened outside the group;
+   RC2 stripped its target evidence, so it is retained as a failed acceptance
+   attempt rather than inferred as a pass. The strengthened final-completion
+   gate and matching cloud parser require an exact-build reload/deploy and retry.
 7. Exercise duplicate-tab selection, workspace-return cancel visibility, backend
    restart, extension restart, OAuth refresh, and revocation.
 8. Done: complete clean shipped-workspace verification, then rebuild, smoke, and

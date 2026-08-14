@@ -437,6 +437,7 @@ export function createBrowserAgentRunner(deps: BrowserTaskDeps): AgentRunner {
     workspaceId: string,
     signal: AbortSignal | undefined,
     start: () => Promise<void>,
+    finalizeTarget?: () => Promise<RemoteMissionTargetBindingV1>,
   ): Promise<AgentRunOutcome> {
     return new Promise<AgentRunOutcome>((resolve) => {
       let settled = false;
@@ -447,8 +448,20 @@ export function createBrowserAgentRunner(deps: BrowserTaskDeps): AgentRunner {
         offCompletion();
         offPause();
         signal?.removeEventListener("abort", onAbort);
-        const target = workspaceTargets.get(workspaceId);
-        resolve(target ? { ...outcome, target } : outcome);
+        void (async () => {
+          try {
+            const target = finalizeTarget
+              ? await finalizeTarget()
+              : workspaceTargets.get(workspaceId);
+            if (target) workspaceTargets.set(workspaceId, target);
+            resolve(target ? { ...outcome, target } : outcome);
+          } catch (error) {
+            resolve({
+              status: "error",
+              reason: `Remote target binding was lost before completion: ${(error as Error).message}`,
+            });
+          }
+        })();
       };
       const onAbort = () => {
         // Settle via the stopped completion (not early), which keeps the
@@ -515,9 +528,9 @@ export function createBrowserAgentRunner(deps: BrowserTaskDeps): AgentRunner {
     }
     const { tabId, createdForMission } = resolved;
     const workspaceId = resolved.visualWorkspaceId ?? entry?.workspaceId ?? newWorkspaceId();
+    const targetContext = task.targetContext ?? "isolated_tab";
     return waitForOutcome(workspaceId, signal, async () => {
       workspaceTabs.set(workspaceId, tabId);
-      const targetContext = task.targetContext ?? "isolated_tab";
       let isolatedTarget: RemoteMissionTargetBindingV1 | undefined;
       if (targetContext === "isolated_tab") {
         // Prove placement before waiting on page readiness so no agent work can
@@ -548,7 +561,15 @@ export function createBrowserAgentRunner(deps: BrowserTaskDeps): AgentRunner {
         workspaceId,
         executionToolProfile: task.executionToolProfile,
       });
-    });
+    }, targetContext === "isolated_tab"
+      ? () => deps.verifyIsolatedWorkspace(tabId, task.url, createdForMission)
+      : deps.describeTarget
+        ? () => deps.describeTarget!(
+            tabId,
+            targetContext,
+            task.url,
+          )
+        : undefined);
   }
 
   return {
