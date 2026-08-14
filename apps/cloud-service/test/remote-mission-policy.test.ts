@@ -176,12 +176,25 @@ test("preserves bounded page and approval evidence for Codex", () => {
     planRevision: 1,
     outcome: "approval_required",
     page: { origin: "https://example.test", title: "Example" },
+    target: {
+      context: "isolated_tab",
+      pageOrigin: "https://example.test",
+      pageTitle: "Example",
+      expectedUrlMatched: true,
+      windowLabel: "Window 1",
+      workspaceTitle: "OpenSidebar 1",
+      inWorkspace: true,
+      sidePanelEnabled: true,
+      createdForMission: true,
+    },
     claims: [{ claim: "The form is ready.", source: "page_observation" }],
     effects: [{ type: "form_submit", consequential: true }],
     uncertainties: [],
     approval,
   }, missionId);
   assert.deepEqual(parsed.page, { origin: "https://example.test", title: "Example" });
+  assert.equal(parsed.target?.workspaceTitle, "OpenSidebar 1");
+  assert.equal(parsed.target?.sidePanelEnabled, true);
   assert.deepEqual(parsed.approval, approval);
   assert.throws(() => parseMissionEvidence({
     ...parsed,
@@ -190,5 +203,9 @@ test("preserves bounded page and approval evidence for Codex", () => {
   assert.throws(() => parseMissionEvidence({
     ...parsed,
     outcome: "achieved",
+  }, missionId), RemoteMissionPolicyError);
+  assert.throws(() => parseMissionEvidence({
+    ...parsed,
+    target: { ...parsed.target, pageOrigin: "https://example.test/path" },
   }, missionId), RemoteMissionPolicyError);
 });
