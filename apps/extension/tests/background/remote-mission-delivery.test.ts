@@ -46,11 +46,11 @@ function setup(items = [delivery()]) {
   let approvalDecision: Awaited<ReturnType<RemoteMissionDeliveryPort["getApprovalDecision"]>> = null;
   let targetDecision: Awaited<ReturnType<RemoteMissionDeliveryPort["getTargetDecision"]>> = null;
   let supervisorDecision: Awaited<ReturnType<RemoteMissionDeliveryPort["getSupervisorDecision"]>> = null;
+  const poll = vi.fn(async (_device: string, after: number) =>
+    items.filter((item) => item.mission.sequence > after));
   const transport: RemoteMissionDeliveryPort = {
     enabled: true,
-    async poll(_device, after) {
-      return items.filter((item) => item.mission.sequence > after);
-    },
+    poll,
     async get(id) { return records.get(id) ?? null; },
     async getApprovalDecision() { return approvalDecision; },
     async putApprovalDecision() {},
@@ -118,6 +118,7 @@ function setup(items = [delivery()]) {
     records,
     results,
     progress,
+    poll,
     setApprovalDecision(value: typeof approvalDecision) { approvalDecision = value; },
     setTargetDecision(value: typeof targetDecision) { targetDecision = value; },
     setSupervisorDecision(value: typeof supervisorDecision) { supervisorDecision = value; },
@@ -149,7 +150,7 @@ describe("remote mission delivery", () => {
     ]);
   });
 
-  test("coalesces concurrent polls and suppresses terminal replay", async () => {
+  test("refreshes readiness during a run without dispatching concurrently", async () => {
     let release!: () => void;
     const world = setup();
     world.run.mockReturnValue(new Promise((resolve) => {
@@ -158,8 +159,10 @@ describe("remote mission delivery", () => {
     const first = world.controller.pollOnce();
     const second = world.controller.pollOnce();
     await vi.waitFor(() => expect(world.run).toHaveBeenCalledTimes(1));
+    await expect(second).resolves.toBeUndefined();
+    expect(world.poll).toHaveBeenCalledTimes(2);
     release();
-    await Promise.all([first, second]);
+    await first;
     await world.controller.pollOnce();
     expect(world.run).toHaveBeenCalledTimes(1);
   });

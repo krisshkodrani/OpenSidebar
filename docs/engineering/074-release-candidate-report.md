@@ -85,6 +85,13 @@ actions or receive raw browser state.
   browser bridge through an isolated mission, and inspected Chrome after agent
   completion. Exactly one mission tab existed; its live group ID matched the
   source workspace and its sidepanel remained enabled at the production path.
+- Live mission `55a5fa75-2e07-487c-a532-3fb0db447227` was claimed but returned
+  no evidence for more than six minutes and was cancelled rather than inferred
+  successful. During the run, the device's three-minute remote-work readiness
+  expired because serialized delivery polling was occupied by execution. The
+  worker now performs a delivery-only readiness refresh on alarm ticks while a
+  mission is active, without concurrently dispatching fetched work. Its focused
+  delivery and binding suites pass 49 tests.
 - Provisional extension package: `.artifacts/releases/opensidebar-v0.7.4.zip`.
 - Provisional package SHA-256 (superseded by the final ModelBench gate fixes):
   `0170648EE2856C03E79807292F050C6F3E91190C4D6338BAB16A77AA78CB02CC`.
@@ -132,8 +139,8 @@ actions or receive raw browser state.
   `sha256:8afc5b0a487e4015500fe3b801c5254fb9daf4ca0414d56beece51caf0124147`.
 - RC2 passed the isolated no-public-port readiness, disabled-control, and
   Playground-login smoke, then was promoted with automatic rollback protection.
-- The live container is healthy with zero restarts on that exact image and
-  migration 020 is present.
+- RC2 was healthy with zero restarts on that exact image before RC3 promotion;
+  migration 020 was present.
 - The pre-release Chrome 0.7.3 device is correctly classified as unsupported;
   no old client can receive a newly queued mission.
 - Hosted MCP discovery returns 200 and unauthenticated `/mcp` returns the expected
@@ -141,8 +148,11 @@ actions or receive raw browser state.
 - Remote missions and hosted MCP retain their existing named-tester boundary.
   Checkpoint write/restore, device command/takeover, and Temporal flags remain off.
 - RC2 predates the bounded remote-target evidence parser. It remains the live
-  rollback image until the exact final release head is smoked and promoted;
-  hosted MCP cannot validate the new target contract while RC2 is serving it.
+  rollback image. Image `opensidebar-cloud-service:0.7.4-rc3`, built from
+  `f4b8b367`, passed the isolated smoke and was promoted with automatic rollback
+  protection. The live container is healthy with zero restarts on image
+  `sha256:8a261a79949ed9f6b024a91919fa64cefc52ac5054367a5c78b693c09468dd82`;
+  hosted MCP can now retain the bounded target contract.
 
 ## Deployment and acceptance gates
 
@@ -166,8 +176,11 @@ actions or receive raw browser state.
    the live group/panel postconditions and are retained as failed evidence.
    Mission `67df9fbd-3ddf-4e2c-97f2-9370f4888045` also opened outside the group;
    RC2 stripped its target evidence, so it is retained as a failed acceptance
-   attempt rather than inferred as a pass. The strengthened final-completion
-   gate and matching cloud parser require an exact-build reload/deploy and retry.
+   attempt rather than inferred as a pass. Mission
+   `55a5fa75-2e07-487c-a532-3fb0db447227` ran on RC3 but stalled without
+   evidence and exposed readiness expiry during execution; it was cancelled.
+   The strengthened final-completion gate, matching cloud parser, and readiness
+   refresh require an exact-build reload and retry.
 7. Exercise duplicate-tab selection, workspace-return cancel visibility, backend
    restart, extension restart, OAuth refresh, and revocation.
 8. Done: complete clean shipped-workspace verification, then rebuild, smoke, and

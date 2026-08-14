@@ -192,9 +192,21 @@ export class RemoteMissionDeliveryController {
   }
 
   pollOnce(options?: { signal?: AbortSignal }): Promise<void> {
-    if (this.inFlight) return this.inFlight;
+    // A mission run can occupy the delivery loop for several minutes. Keep
+    // polling while it runs so the server continues to see this capable device
+    // as ready; fetched deliveries are deliberately left for the serialized
+    // processing pass after the active mission settles.
+    if (this.inFlight) return this.refreshAvailability(options?.signal);
     this.inFlight = this.runPoll(options).finally(() => { this.inFlight = null; });
     return this.inFlight;
+  }
+
+  private async refreshAvailability(signal?: AbortSignal) {
+    if (!this.transport.enabled || signal?.aborted) return;
+    const deviceId = await this.deviceId();
+    if (!deviceId) return;
+    const journal = await this.journal.read();
+    await this.transport.poll(deviceId, journal.lastSequence);
   }
 
   private async runPoll(options?: { signal?: AbortSignal }) {
