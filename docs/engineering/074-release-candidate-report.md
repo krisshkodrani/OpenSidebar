@@ -1,9 +1,10 @@
 # OpenSidebar 0.7.4 release candidate
 
-Date: 2026-08-13
+Date: 2026-08-14
 
-Status: automated verification and capability-aware backend deployment complete;
-named-tester browser acceptance remains before Chrome Web Store submission.
+Status: ModelBench release-gate integration and focused verification complete;
+a clean full-suite rerun, refreshed backend deployment, and named-tester browser
+acceptance remain before Chrome Web Store submission.
 
 ## Release outcome
 
@@ -48,12 +49,39 @@ actions or receive raw browser state.
 - Production build and distribution verification: passed for normal 0.7.4.
 - Extension package: `.artifacts/releases/opensidebar-v0.7.4.zip`.
 - Package SHA-256:
-  `1BB360C28C4285F9A8B6E6ADDF6CD88EC46A11AA3C9EAFBCF324F50681720E18`.
+  `0170648EE2856C03E79807292F050C6F3E91190C4D6338BAB16A77AA78CB02CC`.
+
+## ModelBench integration
+
+- The release candidate now includes the six commits through `79704d26`, adding
+  the MB-101 workspace-tab acceptance probe, deterministic release matrix,
+  hosted target-session cookie forwarding, and scenario workspace packaging in
+  the cloud-service image. These commits do not change extension runtime source.
+- ModelBench catalog validation passed with 100 headline cases, MB-101, 50 role
+  probes, and 119 legacy migration dispositions.
+- The oracle passed 100 gold paths, rejected 300 near misses, and evaluated 888
+  assertions. The target-quality audit passed 100 of 100 cases.
+- The focused ModelBench/scenario-engine suite passed 33 tests. The final
+  sidepanel visibility regression suite passed 7 tests.
+- Repository RFC validation, decomposition ratchet, skill lint, E2E inventory,
+  and lint passed. The three changed scenario packages typecheck directly.
+- Production extension build and distribution verification passed and produced
+  the package hash above.
+- A fresh full extension serial run made sustained progress but exceeded the
+  15-minute local command bound without producing a final suite summary. The
+  repository-wide Nx typecheck also hit the local pnpm registry-signature guard
+  for four package-script targets; three changed scenario packages passed when
+  run through the installed TypeScript binary, while the parked Temporal spike
+  still lacked its optional linked dependencies. Do not treat either run as a
+  complete green release gate; repeat from a clean dependency installation.
 
 ## Backend deployment
 
 - Image `opensidebar-cloud-service:0.7.4-rc1` passed the isolated, no-public-port
   smoke and was promoted with automatic rollback protection.
+- That image predates the final ModelBench scenario-workspace packaging change.
+  Build and promote a refreshed candidate from `79704d26` or its release-only
+  documentation successor before final production parity acceptance.
 - The live container is healthy with zero restarts and migration 020 is present.
 - The pre-release Chrome 0.7.3 device is correctly classified as unsupported;
   no old client can receive a newly queued mission.
@@ -72,7 +100,9 @@ actions or receive raw browser state.
 4. Complete an exact-existing-tab read-only mission and confirm grounded evidence.
 5. Exercise duplicate-tab selection, workspace-return cancel visibility, backend
    restart, extension restart, OAuth refresh, and revocation.
-6. Record the final ZIP SHA-256, then submit that exact artifact. Do not widen the
+6. Complete a clean dependency install and full repository verification, then
+   rebuild and smoke the cloud-service candidate from the integrated release head.
+7. Record the final ZIP SHA-256, then submit that exact artifact. Do not widen the
    tester allowlist or enable consequential remote actions during release.
 
 ## Rollback
