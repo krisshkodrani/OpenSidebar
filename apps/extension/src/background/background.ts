@@ -43,6 +43,7 @@ import { perceptionWarmup } from "./perception-warmup";
 import { agentNotifications } from "./notifications";
 import {
   isE2ESeedPendingInteractionMessage,
+  isE2ECreateWorkspaceMessage,
   isE2ETestApiEnabled,
   isE2EExecuteCloudCommandMessage,
   executeE2ECloudCommand,
@@ -650,6 +651,34 @@ chrome.runtime.onMessage.addListener(
 
     if (isE2EExecuteCloudCommandMessage(message)) {
       void executeE2ECloudCommand(message).then(sendResponse);
+      return true;
+    }
+
+    const e2eCreateWorkspaceMessage: unknown = message;
+    if (isE2ECreateWorkspaceMessage(e2eCreateWorkspaceMessage)) {
+      (async () => {
+        try {
+          if (
+            import.meta.env.MODE !== "e2e" ||
+            !(await isE2ETestApiEnabled())
+          ) {
+            sendResponse({ ok: false, detail: "E2E test API is disabled" });
+            return;
+          }
+          const workspace = await workspaceManager.createWorkspace(
+            e2eCreateWorkspaceMessage.payload.name ?? "E2E workspace",
+            workspaceManager.getNextColor(),
+            e2eCreateWorkspaceMessage.payload.tabId,
+            e2eCreateWorkspaceMessage.payload.workspaceId,
+          );
+          sendResponse({ ok: true, workspaceId: workspace.id });
+        } catch (error: any) {
+          sendResponse({
+            ok: false,
+            detail: error?.message ?? String(error),
+          });
+        }
+      })();
       return true;
     }
 
