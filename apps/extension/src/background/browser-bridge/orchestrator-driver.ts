@@ -44,6 +44,7 @@ import { loadApiKey, loadSettings } from "../../utils/settings-storage";
 import { getProviderKeyStatus } from "../../utils/provider-keys";
 import { getBlockedRuleForUrl } from "../../utils/site-access";
 import { ensureContentScript } from "../infrastructure/tab-ready";
+import { workspaceManager } from "../workspaces/manager";
 import {
   createAgentRuntime,
   type TaskCompletionPayload,
@@ -114,6 +115,8 @@ export interface BrowserTaskDeps {
   navigateTab(tabId: number, url: string): Promise<void>;
   /** Wait until the production content bridge can observe the selected tab. */
   ensureTabReady?(tabId: number): Promise<void>;
+  /** Attach an isolated remote tab to a real OpenSidebar workspace group. */
+  ensureIsolatedWorkspace(workspaceId: string, tabId: number): Promise<void>;
   /** Start an orchestrator task in the given tab/workspace. */
   startTask(input: {
     query: string;
@@ -382,6 +385,9 @@ export function createBrowserAgentRunner(deps: BrowserTaskDeps): AgentRunner {
     return waitForOutcome(workspaceId, signal, async () => {
       const tabId = await resolveTab(task, entry);
       workspaceTabs.set(workspaceId, tabId);
+      if ((task.targetContext ?? "isolated_tab") === "isolated_tab") {
+        await deps.ensureIsolatedWorkspace(workspaceId, tabId);
+      }
       await deps.ensureTabReady?.(tabId);
       await deps.startTask({
         query: task.instruction,
@@ -533,6 +539,24 @@ export function createDefaultBrowserTaskDeps(): BrowserTaskDeps {
     async ensureTabReady(tabId) {
       if (!(await ensureContentScript(tabId, 10_000)))
         throw new Error("Browser page did not become ready for the remote task.");
+    },
+    async ensureIsolatedWorkspace(workspaceId, tabId) {
+      const existing = await workspaceManager.getWorkspaceById(workspaceId);
+      if (existing) {
+        if (
+          !existing.tabIds.includes(tabId) &&
+          !(await workspaceManager.addTabToWorkspace(tabId, workspaceId))
+        ) {
+          throw new Error("Failed to attach the remote task tab to its workspace.");
+        }
+        return;
+      }
+      await workspaceManager.createWorkspace(
+        await workspaceManager.getNextWorkspaceName(),
+        workspaceManager.getNextColor(),
+        tabId,
+        workspaceId,
+      );
     },
     async validateApprovalContext(tabId) {
       try {

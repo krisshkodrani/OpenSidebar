@@ -107,6 +107,7 @@ function deps(): BrowserTaskDeps & {
   resolveApprovalReturns: (value: boolean) => void;
   started: Array<{ workspaceId: string; tabId: number }>;
   created: string[];
+  grouped: Array<{ workspaceId: string; tabId: number }>;
   navigated: Array<{ tabId: number; url: string }>;
   stopped: string[];
   resolved: Array<{ workspaceId: string; approvalId: string; approved: boolean }>;
@@ -117,6 +118,7 @@ function deps(): BrowserTaskDeps & {
   const pauseListeners = new Set<(ws: string, p: PausePayload) => void>();
   const started: Array<{ workspaceId: string; tabId: number }> = [];
   const created: string[] = [];
+  const grouped: Array<{ workspaceId: string; tabId: number }> = [];
   const navigated: Array<{ tabId: number; url: string }> = [];
   const stopped: string[] = [];
   const resolved: Array<{
@@ -131,6 +133,7 @@ function deps(): BrowserTaskDeps & {
   return {
     started,
     created,
+    grouped,
     navigated,
     stopped,
     resolved,
@@ -165,6 +168,9 @@ function deps(): BrowserTaskDeps & {
     },
     async navigateTab(tabId, url) {
       navigated.push({ tabId, url });
+    },
+    async ensureIsolatedWorkspace(workspaceId, tabId) {
+      grouped.push({ workspaceId, tabId });
     },
     async stopTask(workspaceId) {
       stopped.push(workspaceId);
@@ -220,6 +226,7 @@ describe("createBrowserAgentRunner", () => {
     expect(d.started).toHaveLength(1);
     expect(d.started[0].tabId).toBe(42);
     const ws = d.started[0].workspaceId;
+    expect(d.grouped).toEqual([{ workspaceId: ws, tabId: 42 }]);
 
     d.fire(ws, { status: "completed", summary: "bought" });
     expect(await promise).toEqual({ status: "completed", summary: "bought" });
@@ -244,6 +251,32 @@ describe("createBrowserAgentRunner", () => {
     await expect(promise).resolves.toMatchObject({ status: "completed" });
   });
 
+  test("does not start an isolated task until its tab joins a workspace group", async () => {
+    const d = deps();
+    let releaseGroup!: () => void;
+    d.ensureIsolatedWorkspace = () =>
+      new Promise<void>((resolve) => {
+        releaseGroup = resolve;
+      });
+    const runner = createBrowserAgentRunner(d);
+    const promise = runner.run({
+      instruction: "read the heading",
+      url: "https://example.com/",
+      targetContext: "isolated_tab",
+    });
+    await tick();
+    expect(d.created).toEqual(["https://example.com/"]);
+    expect(d.started).toHaveLength(0);
+    releaseGroup();
+    await tick();
+    expect(d.started).toHaveLength(1);
+    d.fire(d.started[0]!.workspaceId, {
+      status: "completed",
+      summary: "Example Domain",
+    });
+    await expect(promise).resolves.toMatchObject({ status: "completed" });
+  });
+
   test("uses the existing active tab when a visible remote run requests it", async () => {
     const d = deps();
     const runner = createBrowserAgentRunner(d);
@@ -253,6 +286,7 @@ describe("createBrowserAgentRunner", () => {
     });
     await tick();
     expect(d.created).toEqual([]);
+    expect(d.grouped).toEqual([]);
     expect(d.started[0]?.tabId).toBe(7);
     d.fire(d.started[0]!.workspaceId, {
       status: "completed",
@@ -271,6 +305,7 @@ describe("createBrowserAgentRunner", () => {
     });
     await tick();
     expect(d.created).toEqual([]);
+    expect(d.grouped).toEqual([]);
     expect(d.navigated).toEqual([]);
     expect(d.started[0]?.tabId).toBe(8);
     d.fire(d.started[0]!.workspaceId, {
