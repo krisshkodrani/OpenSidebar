@@ -219,8 +219,8 @@ actions or receive raw browser state.
    allowlist and feature-flag values.
 2. Done: verify the published 0.7.3 device is online but
    `remoteWork: unsupported`.
-3. Load the normal 0.7.4 candidate and wait for one successful poll; verify the
-   same device becomes `remoteWork: ready` without a new device record.
+3. Done: the linked `0.7.4 Acceptance Test` device advertised extension version
+   `0.7.4` and `remoteWork: ready` after the exact-build reload.
 4. Switch between workspace tabs and hide/reopen the panel; verify Settings stays
    open on the selected section. Restart Chrome and verify the view resets.
 5. Done: complete an exact-existing-tab read-only mission and confirm grounded
@@ -246,8 +246,16 @@ actions or receive raw browser state.
    local UI-status write before runner dispatch. Mission
    `393b143f-9b1f-4e6a-9428-21168a36244e` on the non-blocking-status build then
    opened outside the group and was cancelled. The final direct Chrome-group
-   placement fix passes focused and real-Chrome E2E verification; it requires
-   an exact-build reload and live retry.
+   placement fix passes focused and real-Chrome E2E verification. After the
+   exact-build reload, live mission
+   `433d0374-76b1-40d3-b23b-d5c1d333ebb7` completed successfully on the linked
+   `0.7.4 Acceptance Test` device. Its bounded target evidence independently
+   reported `createdForMission: true`, `inWorkspace: true`,
+   `sidePanelEnabled: true`, window `Window 1`, the expected OpenSidebar
+   workspace title, origin `https://example.com`, title `Example Domain`, and
+   `expectedUrlMatched: true`. The mission progressed through queued, running,
+   and supervised completion to terminal `succeeded`; the device returned to
+   `remoteWork: ready` with no external effects.
 7. Exercise duplicate-tab selection, workspace-return cancel visibility, backend
    restart, extension restart, OAuth refresh, and revocation.
 8. Done: complete clean shipped-workspace verification, then rebuild, smoke, and
