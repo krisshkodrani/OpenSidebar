@@ -89,9 +89,18 @@ actions or receive raw browser state.
   no evidence for more than six minutes and was cancelled rather than inferred
   successful. During the run, the device's three-minute remote-work readiness
   expired because serialized delivery polling was occupied by execution. The
-  worker now performs a delivery-only readiness refresh on alarm ticks while a
-  mission is active, without concurrently dispatching fetched work. Its focused
-  delivery and binding suites pass 49 tests.
+  first fix performed a delivery-only readiness refresh on alarm ticks while a
+  mission was active, without concurrently dispatching fetched work. That
+  focused slice passed 49 tests but still required live verification.
+- Mission `331c98d5-e83d-4288-ad7e-2da7d4636e5c` disproved the alarm-only
+  refresh: Chrome did not dispatch that alarm while the delivery event remained
+  occupied, and readiness again expired at three minutes. It was cancelled.
+  Readiness refresh now runs from the active execution/cancellation lifecycle,
+  which is demonstrably alive throughout a stalled task. The device also
+  publishes its bounded target binding immediately after the pre-execution
+  Chrome verification, allowing MCP to inspect group, URL, and sidepanel state
+  without waiting for model completion. The final focused slice passes 63 tests,
+  and the exact real-Chrome grouping E2E passes after agent completion.
 - Provisional extension package: `.artifacts/releases/opensidebar-v0.7.4.zip`.
 - Provisional package SHA-256 (superseded by the final ModelBench gate fixes):
   `0170648EE2856C03E79807292F050C6F3E91190C4D6338BAB16A77AA78CB02CC`.
@@ -179,8 +188,11 @@ actions or receive raw browser state.
    attempt rather than inferred as a pass. Mission
    `55a5fa75-2e07-487c-a532-3fb0db447227` ran on RC3 but stalled without
    evidence and exposed readiness expiry during execution; it was cancelled.
-   The strengthened final-completion gate, matching cloud parser, and readiness
-   refresh require an exact-build reload and retry.
+   Mission `331c98d5-e83d-4288-ad7e-2da7d4636e5c` proved the first alarm-only
+   readiness fix insufficient and was also cancelled. The strengthened
+   final-completion gate, matching cloud parser, execution-lifecycle readiness
+   refresh, and early bounded binding evidence require an exact-build reload
+   and retry.
 7. Exercise duplicate-tab selection, workspace-return cancel visibility, backend
    restart, extension restart, OAuth refresh, and revocation.
 8. Done: complete clean shipped-workspace verification, then rebuild, smoke, and

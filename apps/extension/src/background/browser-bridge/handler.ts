@@ -51,6 +51,8 @@ export interface AgentRunOutcome {
 export interface AgentRunOptions {
   /** Aborting requests a stop of the running task; the run settles normally. */
   signal?: AbortSignal;
+  /** Report a verified, sanitized target binding before agent execution. */
+  onTargetBound?: (target: RemoteMissionTargetBindingV1) => Promise<void> | void;
 }
 
 /** Runs one internal agent task. Implemented by the orchestrator in Stage 2b. */

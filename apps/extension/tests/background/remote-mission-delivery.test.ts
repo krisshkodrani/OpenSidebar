@@ -37,7 +37,10 @@ const delivery = (overrides: Partial<RemoteMissionV1> = {}): DeliveredRemoteMiss
   };
 };
 
-function setup(items = [delivery()]) {
+function setup(
+  items = [delivery()],
+  options: { readinessRefreshMilliseconds?: number } = {},
+) {
   const { port } = createFakePersistencePort();
   const records = new Map(items.map((item) => [item.mission.missionId, item.mission]));
   const transitions: RemoteMissionState[] = [];
@@ -104,6 +107,8 @@ function setup(items = [delivery()]) {
       statuses.push(status.state);
       statusRecords.push(status);
     },
+    1_000,
+    options.readinessRefreshMilliseconds,
   );
   return {
     controller,
@@ -165,6 +170,20 @@ describe("remote mission delivery", () => {
     await first;
     await world.controller.pollOnce();
     expect(world.run).toHaveBeenCalledTimes(1);
+  });
+
+  test("refreshes readiness from the active execution lifecycle", async () => {
+    let release!: () => void;
+    const world = setup([delivery()], { readinessRefreshMilliseconds: 10 });
+    world.run.mockReturnValue(new Promise((resolve) => {
+      release = () => resolve({ state: "succeeded", summary: "done" });
+    }));
+    const active = world.controller.pollOnce();
+    await vi.waitFor(() => expect(world.run).toHaveBeenCalledTimes(1));
+    await vi.waitFor(() => expect(world.poll.mock.calls.length).toBeGreaterThanOrEqual(2));
+    expect(world.run).toHaveBeenCalledTimes(1);
+    release();
+    await active;
   });
 
   test("fails closed on a cross-device or payload identity mismatch", async () => {

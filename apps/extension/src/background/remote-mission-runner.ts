@@ -4,6 +4,7 @@ import type {
   RemoteMissionTargetDecisionV1,
 } from "@shared-types/remote-missions";
 import type {
+  AgentRunOptions,
   AgentRunOutcome,
   AgentRunner,
 } from "./browser-bridge/handler";
@@ -12,7 +13,10 @@ import { createDefaultBrowserAgentRunner } from "./browser-bridge/orchestrator-d
 export interface RemoteMissionRunner {
   run(
     payload: RemoteMissionPayloadV1,
-    options?: { signal?: AbortSignal },
+    options?: {
+      signal?: AbortSignal;
+      onTargetBound?: AgentRunOptions["onTargetBound"];
+    },
   ): Promise<RemoteMissionRunResultV1>;
   respondApproval?(
     missionId: string,

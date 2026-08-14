@@ -261,7 +261,12 @@ export class MissionWorker {
 
   async run(
     mission: MissionSpecV1,
-    options?: { signal?: AbortSignal; sequence?: number; initialUrl?: string },
+    options?: {
+      signal?: AbortSignal;
+      sequence?: number;
+      initialUrl?: string;
+      onEvidence?: (evidence: MissionEvidenceV1) => Promise<void> | void;
+    },
   ): Promise<MissionWorkerOutcome> {
     if (new Date(mission.expiresAt).getTime() <= Date.now())
       return { state: "cancelled", reason: "Mission expired before execution." };
@@ -301,7 +306,23 @@ export class MissionWorker {
         ...(options?.initialUrl ? { initialUrl: options.initialUrl } : {}),
         targetContext: mission.targetContext,
       };
-      const result = await this.runner.run(payload, { signal: options?.signal });
+      const result = await this.runner.run(payload, {
+        signal: options?.signal,
+        onTargetBound: options?.onEvidence
+          ? async (target) => {
+              await options.onEvidence!(evidenceFor(
+                mission,
+                step,
+                attemptId,
+                {
+                  state: "outcome_unknown",
+                  summary: "Browser execution is still in progress.",
+                  target,
+                },
+              ));
+            }
+          : undefined,
+      });
       if (result.state === "target_selection_required") {
         await this.journal.write({
           ...accepted,
