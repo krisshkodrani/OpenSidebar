@@ -39,8 +39,10 @@ actions or receive raw browser state.
   startup. Only an explicitly attached workspace tab is enabled, so new tabs
   inherit `enabled: false` rather than briefly inheriting a global panel.
 - An `isolated_tab` remote mission now creates its task tab inside a real
-  OpenSidebar workspace group before execution begins. Existing- and active-tab
-  missions do not regroup or otherwise move the user's selected tab.
+  OpenSidebar workspace group before execution begins, reasserts and verifies
+  Chrome's live group membership, and explicitly enables and reads back the
+  tab-scoped sidepanel. Existing- and active-tab missions do not regroup or
+  otherwise move the user's selected tab.
 - Production and acceptance builds share the same remote worker. Acceptance-only
   diagnostics and release-ineligible markers remain excluded from normal builds.
 
@@ -52,9 +54,10 @@ actions or receive raw browser state.
 - Settings session regression tests passed for remount restoration,
   cross-instance synchronization, close synchronization, and per-window
   isolation. The full sidepanel suite passed: 31 files and 210 tests.
-- The focused browser-bridge and remote-mission suite passed 52 tests after the
-  isolated-tab grouping fix; a dedicated gate proves execution cannot begin
-  until the isolated tab has joined its workspace group.
+- The focused browser-bridge and remote-mission suite passed 56 tests after the
+  isolated-tab grouping hardening. Dedicated gates prove execution cannot begin
+  until the isolated tab has joined its workspace group, and fails closed if
+  Chrome drops membership or the sidepanel configuration cannot be verified.
 - Shared/cloud and extension direct TypeScript builds: passed.
 - Repository lint, RFC validation, and decomposition ratchet: passed.
 - Full extension Vitest suite: passed serially. A parallel run first exposed and
@@ -131,8 +134,11 @@ actions or receive raw browser state.
    evidence without navigation or new tabs. Mission
    `d34bce00-ff93-49ae-ad30-3fa24b0a37cc` completed successfully.
 6. Reload the grouping fix and verify an isolated remote task opens exactly one
-   tab inside its own OpenSidebar workspace group. The first live attempt exposed
-   the previously ungrouped-tab defect and is not counted as passing evidence.
+   tab inside its own OpenSidebar workspace group. Live missions
+   `531e74ea-b5c0-4ee3-9319-e10a4cd0163d` and
+   `86b6aecb-591c-4eeb-b03e-e7e64e1b97dd` confirmed the first fix did not enforce
+   the live group/panel postconditions and are retained as failed evidence. The
+   strengthened postcondition gate requires another exact-build reload and retry.
 7. Exercise duplicate-tab selection, workspace-return cancel visibility, backend
    restart, extension restart, OAuth refresh, and revocation.
 8. Done: complete clean shipped-workspace verification, then rebuild, smoke, and
