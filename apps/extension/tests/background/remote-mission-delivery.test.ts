@@ -39,7 +39,10 @@ const delivery = (overrides: Partial<RemoteMissionV1> = {}): DeliveredRemoteMiss
 
 function setup(
   items = [delivery()],
-  options: { readinessRefreshMilliseconds?: number } = {},
+  options: {
+    readinessRefreshMilliseconds?: number;
+    onStatus?: ConstructorParameters<typeof RemoteMissionDeliveryController>[4];
+  } = {},
 ) {
   const { port } = createFakePersistencePort();
   const records = new Map(items.map((item) => [item.mission.missionId, item.mission]));
@@ -103,10 +106,10 @@ function setup(
     journal,
     worker,
     async () => deviceId,
-    async (status) => {
+    options.onStatus ?? (async (status) => {
       statuses.push(status.state);
       statusRecords.push(status);
-    },
+    }),
     1_000,
     options.readinessRefreshMilliseconds,
   );
@@ -184,6 +187,18 @@ describe("remote mission delivery", () => {
     expect(world.run).toHaveBeenCalledTimes(1);
     release();
     await active;
+  });
+
+  test("does not let a stalled local status write block browser execution", async () => {
+    const world = setup([delivery()], {
+      onStatus: (status) => status.state === "running"
+        ? new Promise<void>(() => {})
+        : undefined,
+    });
+    const active = world.controller.pollOnce();
+    await vi.waitFor(() => expect(world.run).toHaveBeenCalledTimes(1));
+    await active;
+    expect(world.transitions).toEqual(["accepted", "running", "succeeded"]);
   });
 
   test("fails closed on a cross-device or payload identity mismatch", async () => {
