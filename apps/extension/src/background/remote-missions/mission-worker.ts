@@ -78,6 +78,9 @@ const evidenceFor = (
       ? [("summary" in result ? result.summary?.slice(0, 1_000) : undefined) ?? "The browser outcome could not be verified."]
       : [],
   ...(result.state === "approval_required" ? { approval: result.approval } : {}),
+  ...(result.state !== "target_selection_required" && result.target
+    ? { target: result.target }
+    : {}),
 });
 
 const validateDecision = (

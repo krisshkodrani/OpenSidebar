@@ -38,11 +38,15 @@ actions or receive raw browser state.
 - The service worker disables the manifest-global default configuration at
   startup. Only an explicitly attached workspace tab is enabled, so new tabs
   inherit `enabled: false` rather than briefly inheriting a global panel.
-- An `isolated_tab` remote mission now creates its task tab inside a real
-  OpenSidebar workspace group before execution begins, reasserts and verifies
-  Chrome's live group membership, and explicitly enables and reads back the
-  tab-scoped sidepanel. Existing- and active-tab missions do not regroup or
-  otherwise move the user's selected tab.
+- An `isolated_tab` remote mission now joins an existing OpenSidebar workspace
+  instead of manufacturing a mission-only group. The real workspace identity
+  drives both Chrome placement and the orchestrator/UI event stream. With more
+  than one eligible workspace, the mission pauses for an opaque group/window
+  choice; with none, it fails before opening a tab.
+- All remote target modes return encrypted, bounded target evidence: page
+  origin/title, expected-URL match, window label, workspace title/membership,
+  sidepanel enablement, and whether the tab was mission-created. Raw Chrome and
+  workspace identifiers are not exposed to the coordinator.
 - Production and acceptance builds share the same remote worker. Acceptance-only
   diagnostics and release-ineligible markers remain excluded from normal builds.
 
@@ -64,6 +68,14 @@ actions or receive raw browser state.
   led to fixing an undefined test-time build constant; its later unrelated
   resource-contention timeouts all pass in the serial release run.
 - Production build and distribution verification: passed for normal 0.7.4.
+- The final existing-workspace binding/evidence slice passed 53 focused
+  extension tests, all 124 runnable cloud tests (2 PostgreSQL tests skipped),
+  changed-file ESLint, extension/cloud TypeScript checks, production build, and
+  21-item distribution verification. A repository-wide Vitest run exceeded the
+  five-minute local ceiling amid pre-existing high-volume test logging; no
+  failure summary was produced. The full lint wrapper is currently blocked by
+  the pre-existing 1,518-line `background.ts` decomposition ratchet (1,500 cap),
+  which this slice does not modify.
 - Provisional extension package: `.artifacts/releases/opensidebar-v0.7.4.zip`.
 - Provisional package SHA-256 (superseded by the final ModelBench gate fixes):
   `0170648EE2856C03E79807292F050C6F3E91190C4D6338BAB16A77AA78CB02CC`.
@@ -133,8 +145,10 @@ actions or receive raw browser state.
 5. Done: complete an exact-existing-tab read-only mission and confirm grounded
    evidence without navigation or new tabs. Mission
    `d34bce00-ff93-49ae-ad30-3fa24b0a37cc` completed successfully.
-6. Reload the grouping fix and verify an isolated remote task opens exactly one
-   tab inside its own OpenSidebar workspace group. Live missions
+6. Reload the final binding fix and verify an isolated remote task opens exactly
+   one tab inside the already-open OpenSidebar workspace group, the task is
+   visible to that group's sidepanel, and returned evidence independently names
+   the workspace/window and confirms group/panel/URL binding. Live missions
    `531e74ea-b5c0-4ee3-9319-e10a4cd0163d` and
    `86b6aecb-591c-4eeb-b03e-e7e64e1b97dd` confirmed the first fix did not enforce
    the live group/panel postconditions and are retained as failed evidence. The

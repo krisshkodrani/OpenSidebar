@@ -1,29 +1,30 @@
 import { describe, expect, test, vi } from "vitest";
-import { ensureIsolatedTaskWorkspace } from "../../src/background/browser-bridge/isolated-workspace";
+import { verifyIsolatedTaskWorkspace } from "../../src/background/browser-bridge/isolated-workspace";
 
-function deps(options: { existing?: boolean; keepGroup?: boolean } = {}) {
+function deps(options: { attached?: boolean; keepGroup?: boolean } = {}) {
   const group = vi.fn().mockResolvedValue(17);
   const setOptions = vi.fn().mockResolvedValue(undefined);
-  const manager = {
-    getWorkspaceById: vi.fn().mockResolvedValue(
-      options.existing ? { tabGroupId: 17, tabIds: [42] } : null,
-    ),
-    addTabToWorkspace: vi.fn().mockResolvedValue(true),
-    getNextWorkspaceName: vi.fn().mockResolvedValue("OS 4"),
-    getNextColor: vi.fn().mockReturnValue("blue"),
-    createWorkspace: vi.fn().mockResolvedValue({
-      tabGroupId: 17,
-      tabIds: [42],
-    }),
-  };
   return {
-    manager,
+    manager: {
+      getWorkspaceForTab: vi.fn().mockResolvedValue(
+        options.attached === false
+          ? null
+          : { name: "OpenSidebar 1", tabGroupId: 17, tabIds: [42] },
+      ),
+    },
     tabs: {
       group,
       get: vi.fn().mockResolvedValue({
         id: 42,
+        windowId: 3,
         groupId: options.keepGroup === false ? -1 : 17,
+        url: "https://example.com/",
+        title: "Example Domain",
       }),
+      query: vi.fn().mockResolvedValue([{ id: 42, windowId: 3 }]),
+    },
+    tabGroups: {
+      get: vi.fn().mockResolvedValue({ id: 17, title: "OpenSidebar 1" }),
     },
     sidePanel: {
       setOptions,
@@ -36,36 +37,44 @@ function deps(options: { existing?: boolean; keepGroup?: boolean } = {}) {
 }
 
 describe("isolated remote workspace", () => {
-  test("creates, reasserts, and verifies the grouped panel-enabled tab", async () => {
+  test("verifies an existing grouped panel-enabled tab and returns bounded evidence", async () => {
     const d = deps();
-    await ensureIsolatedTaskWorkspace("remote-1", 42, d);
-
-    expect(d.manager.createWorkspace).toHaveBeenCalledWith(
-      "OS 4",
-      "blue",
+    const evidence = await verifyIsolatedTaskWorkspace(
       42,
-      "remote-1",
+      "https://example.com/",
+      true,
+      d,
     );
+
     expect(d.tabs.group).toHaveBeenCalledWith({ tabIds: [42], groupId: 17 });
     expect(d.sidePanel.setOptions).toHaveBeenCalledWith({
       tabId: 42,
       path: "src/sidepanel/index.html",
       enabled: true,
     });
+    expect(evidence).toEqual({
+      context: "isolated_tab",
+      pageOrigin: "https://example.com",
+      pageTitle: "Example Domain",
+      expectedUrlMatched: true,
+      windowLabel: "Window 1",
+      workspaceTitle: "OpenSidebar 1",
+      inWorkspace: true,
+      sidePanelEnabled: true,
+      createdForMission: true,
+    });
   });
 
-  test("reuses an existing real workspace without creating another group", async () => {
-    const d = deps({ existing: true });
-    await ensureIsolatedTaskWorkspace("remote-1", 42, d);
-
-    expect(d.manager.createWorkspace).not.toHaveBeenCalled();
-    expect(d.tabs.group).toHaveBeenCalledWith({ tabIds: [42], groupId: 17 });
+  test("refuses to create or infer a workspace when none owns the tab", async () => {
+    await expect(
+      verifyIsolatedTaskWorkspace(42, undefined, true, deps({ attached: false })),
+    ).rejects.toThrow("not attached to an existing OpenSidebar workspace");
   });
 
   test("fails before execution when Chrome drops group membership", async () => {
     const d = deps({ keepGroup: false });
     await expect(
-      ensureIsolatedTaskWorkspace("remote-1", 42, d),
+      verifyIsolatedTaskWorkspace(42, undefined, true, d),
     ).rejects.toThrow("Chrome did not keep the remote task tab");
     expect(d.sidePanel.setOptions).not.toHaveBeenCalled();
   });

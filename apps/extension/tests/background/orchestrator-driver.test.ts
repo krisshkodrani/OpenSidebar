@@ -154,6 +154,21 @@ function deps(): BrowserTaskDeps & {
       liveTabs.add(tabId);
       return tabId;
     },
+    async findWorkspaceTargets() {
+      return [{
+        workspaceId: "workspace-1",
+        sourceTabId: 8,
+        pageTitle: "OpenSidebar",
+        groupTitle: "OpenSidebar 1",
+        windowLabel: "Window 1",
+      }];
+    },
+    async createTabInWorkspace(_sourceTabId, _workspaceId, url) {
+      created.push(url);
+      const tabId = nextTabId++;
+      liveTabs.add(tabId);
+      return tabId;
+    },
     async getActiveTab() {
       return 7;
     },
@@ -169,8 +184,32 @@ function deps(): BrowserTaskDeps & {
     async navigateTab(tabId, url) {
       navigated.push({ tabId, url });
     },
-    async ensureIsolatedWorkspace(workspaceId, tabId) {
-      grouped.push({ workspaceId, tabId });
+    async verifyIsolatedWorkspace(tabId) {
+      grouped.push({ workspaceId: "workspace-1", tabId });
+      return {
+        context: "isolated_tab",
+        pageOrigin: "https://example.com",
+        pageTitle: "Example Domain",
+        expectedUrlMatched: true,
+        windowLabel: "Window 1",
+        workspaceTitle: "OpenSidebar 1",
+        inWorkspace: true,
+        sidePanelEnabled: true,
+        createdForMission: true,
+      };
+    },
+    async describeTarget(_tabId, context) {
+      return {
+        context,
+        pageOrigin: "https://example.com",
+        pageTitle: "Example Domain",
+        expectedUrlMatched: true,
+        windowLabel: "Window 1",
+        workspaceTitle: "OpenSidebar 1",
+        inWorkspace: true,
+        sidePanelEnabled: true,
+        createdForMission: false,
+      };
     },
     async stopTask(workspaceId) {
       stopped.push(workspaceId);
@@ -226,10 +265,20 @@ describe("createBrowserAgentRunner", () => {
     expect(d.started).toHaveLength(1);
     expect(d.started[0].tabId).toBe(42);
     const ws = d.started[0].workspaceId;
-    expect(d.grouped).toEqual([{ workspaceId: ws, tabId: 42 }]);
+    expect(d.grouped).toEqual([{ workspaceId: "workspace-1", tabId: 42 }]);
 
     d.fire(ws, { status: "completed", summary: "bought" });
-    expect(await promise).toEqual({ status: "completed", summary: "bought" });
+    expect(await promise).toMatchObject({
+      status: "completed",
+      summary: "bought",
+      target: {
+        context: "isolated_tab",
+        workspaceTitle: "OpenSidebar 1",
+        inWorkspace: true,
+        sidePanelEnabled: true,
+        createdForMission: true,
+      },
+    });
   });
 
   test("does not start a newly opened task until its content bridge is ready", async () => {
@@ -248,16 +297,29 @@ describe("createBrowserAgentRunner", () => {
     await tick();
     expect(d.started).toHaveLength(1);
     d.fire(d.started[0]!.workspaceId, { status: "completed", summary: "Example Domain" });
-    await expect(promise).resolves.toMatchObject({ status: "completed" });
+    await expect(promise).resolves.toMatchObject({
+      status: "completed",
+      target: {
+        context: "isolated_tab",
+        pageTitle: "Example Domain",
+        workspaceTitle: "OpenSidebar 1",
+        sidePanelEnabled: true,
+      },
+    });
   });
 
   test("does not start an isolated task until its tab joins a workspace group", async () => {
     const d = deps();
     let releaseGroup!: () => void;
-    d.ensureIsolatedWorkspace = () =>
-      new Promise<void>((resolve) => {
+    d.verifyIsolatedWorkspace = () =>
+      new Promise((resolve) => {
         releaseGroup = resolve;
-      });
+      }).then(() => ({
+        context: "isolated_tab" as const,
+        inWorkspace: true,
+        sidePanelEnabled: true,
+        createdForMission: true,
+      }));
     const runner = createBrowserAgentRunner(d);
     const promise = runner.run({
       instruction: "read the heading",
@@ -275,6 +337,75 @@ describe("createBrowserAgentRunner", () => {
       summary: "Example Domain",
     });
     await expect(promise).resolves.toMatchObject({ status: "completed" });
+  });
+
+  test("asks which existing workspace to join instead of guessing across groups", async () => {
+    const d = deps();
+    d.liveTabs.add(9);
+    d.findWorkspaceTargets = async () => [
+      {
+        workspaceId: "workspace-1",
+        sourceTabId: 8,
+        pageTitle: "First page",
+        groupTitle: "OpenSidebar 1",
+        windowLabel: "Window 1",
+      },
+      {
+        workspaceId: "workspace-2",
+        sourceTabId: 9,
+        pageTitle: "Second page",
+        groupTitle: "OpenSidebar 2",
+        windowLabel: "Window 2",
+      },
+    ];
+    let selectedWorkspace = "";
+    d.createTabInWorkspace = async (_sourceTabId, workspaceId, url) => {
+      selectedWorkspace = workspaceId;
+      d.created.push(url);
+      d.liveTabs.add(42);
+      return 42;
+    };
+    const runner = createBrowserAgentRunner(d);
+    const task = {
+      instruction: "read the heading",
+      url: "https://example.com/",
+      session: "mission-workspace",
+      targetContext: "isolated_tab" as const,
+    };
+
+    const waiting = await runner.run(task);
+    expect(waiting).toMatchObject({
+      status: "needs_human",
+      targetSelection: {
+        candidates: [
+          { groupTitle: "OpenSidebar 1", windowLabel: "Window 1" },
+          { groupTitle: "OpenSidebar 2", windowLabel: "Window 2" },
+        ],
+      },
+    });
+    expect(d.started).toHaveLength(0);
+
+    const targetHandle = waiting.targetSelection!.candidates[1]!.targetHandle;
+    const resumed = runner.selectTarget!({ ...task, targetHandle });
+    await tick();
+    expect(selectedWorkspace).toBe("workspace-2");
+    d.fire(d.started[0]!.workspaceId, { status: "completed", summary: "done" });
+    await expect(resumed).resolves.toMatchObject({ status: "completed" });
+  });
+
+  test("refuses isolated execution when no OpenSidebar workspace exists", async () => {
+    const d = deps();
+    d.findWorkspaceTargets = async () => [];
+    const outcome = await createBrowserAgentRunner(d).run({
+      instruction: "read the heading",
+      targetContext: "isolated_tab",
+    });
+    expect(outcome).toMatchObject({
+      status: "error",
+      reason: expect.stringContaining("No existing OpenSidebar workspace"),
+    });
+    expect(d.created).toHaveLength(0);
+    expect(d.started).toHaveLength(0);
   });
 
   test("uses the existing active tab when a visible remote run requests it", async () => {
@@ -312,7 +443,15 @@ describe("createBrowserAgentRunner", () => {
       status: "completed",
       summary: "Example Domain",
     });
-    await expect(promise).resolves.toMatchObject({ status: "completed" });
+    await expect(promise).resolves.toMatchObject({
+      status: "completed",
+      target: {
+        context: "existing_tab",
+        pageTitle: "Example Domain",
+        workspaceTitle: "OpenSidebar 1",
+        sidePanelEnabled: true,
+      },
+    });
   });
 
   test("returns opaque choices for duplicate matches and resumes on the chosen tab", async () => {
@@ -403,7 +542,7 @@ describe("createBrowserAgentRunner", () => {
       },
     };
     const runner = createBrowserAgentRunner(failing);
-    expect(await runner.run({ instruction: "x" })).toEqual({
+    expect(await runner.run({ instruction: "x" })).toMatchObject({
       status: "error",
       reason: "no tab",
     });
@@ -440,7 +579,7 @@ describe("createBrowserAgentRunner", () => {
 });
 
 describe("createBrowserAgentRunner sessions", () => {
-  test("sessionless runs keep a fresh workspace and tab per call", async () => {
+  test("sessionless isolated runs keep fresh tabs in the same existing workspace", async () => {
     const d = deps();
     const runner = createBrowserAgentRunner(d);
 
@@ -456,7 +595,8 @@ describe("createBrowserAgentRunner sessions", () => {
 
     expect(d.created).toHaveLength(2);
     expect(d.started[0].tabId).not.toBe(d.started[1].tabId);
-    expect(d.started[0].workspaceId).not.toBe(d.started[1].workspaceId);
+    expect(d.started[0].workspaceId).toBe("workspace-1");
+    expect(d.started[1].workspaceId).toBe("workspace-1");
   });
 
   test("a second run on the same session reuses the workspace and tab", async () => {
@@ -540,7 +680,7 @@ describe("createBrowserAgentRunner sessions", () => {
     await second;
   });
 
-  test("different sessions get independent workspaces and tabs", async () => {
+  test("different sessions get independent tabs in the selected existing workspace", async () => {
     const d = deps();
     const runner = createBrowserAgentRunner(d);
 
@@ -549,7 +689,8 @@ describe("createBrowserAgentRunner sessions", () => {
     await tick();
 
     expect(d.started).toHaveLength(2);
-    expect(d.started[0].workspaceId).not.toBe(d.started[1].workspaceId);
+    expect(d.started[0].workspaceId).toBe("workspace-1");
+    expect(d.started[1].workspaceId).toBe("workspace-1");
     expect(d.started[0].tabId).not.toBe(d.started[1].tabId);
 
     d.fire(d.started[0].workspaceId, { status: "completed" });

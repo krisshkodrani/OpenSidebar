@@ -245,14 +245,32 @@ describe("MissionWorker", () => {
   test("hands browser evidence to Codex and completes only after its revision-bound decision", async () => {
     const journal = new MemoryMissionAttemptJournal();
     const worker = new MissionWorker(
-      { run: vi.fn().mockResolvedValue({ state: "succeeded", summary: "Example Domain" }) } as RemoteMissionRunner,
+      { run: vi.fn().mockResolvedValue({
+        state: "succeeded",
+        summary: "Example Domain",
+        target: {
+          context: "isolated_tab",
+          workspaceTitle: "OpenSidebar 1",
+          inWorkspace: true,
+          sidePanelEnabled: true,
+          createdForMission: true,
+        },
+      }) } as RemoteMissionRunner,
       new ScriptedMissionSupervisor([decision("request_user_input")]),
       journal,
     );
     const waiting = await worker.run(mission());
     expect(waiting).toMatchObject({
       state: "supervision_required",
-      evidence: { outcome: "achieved", claims: [{ claim: "Example Domain" }] },
+      evidence: {
+        outcome: "achieved",
+        claims: [{ claim: "Example Domain" }],
+        target: {
+          workspaceTitle: "OpenSidebar 1",
+          inWorkspace: true,
+          sidePanelEnabled: true,
+        },
+      },
     });
     expect((await journal.read("mission-1"))?.state).toBe("supervision_required");
     const evidence = (waiting as Extract<typeof waiting, { state: "supervision_required" }>).evidence;

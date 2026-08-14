@@ -28,8 +28,9 @@ export interface RemoteMissionRunner {
 }
 
 const result = (outcome: AgentRunOutcome): RemoteMissionRunResultV1 => {
+  const target = outcome.target ? { target: outcome.target } : {};
   if (outcome.status === "completed")
-    return { state: "succeeded", ...(outcome.summary ? { summary: outcome.summary } : {}) };
+    return { state: "succeeded", ...(outcome.summary ? { summary: outcome.summary } : {}), ...target };
   if (outcome.status === "needs_human" && outcome.approval)
     return {
       state: "approval_required",
@@ -42,6 +43,7 @@ const result = (outcome: AgentRunOutcome): RemoteMissionRunResultV1 => {
           ? { actionDigest: outcome.approval.dryRun.diffHash }
           : {}),
       },
+      ...target,
     };
   if (outcome.status === "needs_human" && outcome.targetSelection)
     return {
@@ -53,6 +55,7 @@ const result = (outcome: AgentRunOutcome): RemoteMissionRunResultV1 => {
     ...(outcome.summary || outcome.reason
       ? { summary: outcome.summary ?? outcome.reason }
       : {}),
+    ...target,
   };
 };
 
