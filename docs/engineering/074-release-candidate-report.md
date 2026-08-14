@@ -2,8 +2,8 @@
 
 Date: 2026-08-14
 
-Status: ModelBench release-gate integration and focused verification complete;
-a clean full-suite rerun, refreshed backend deployment, and named-tester browser
+Status: ModelBench integration, clean full-suite verification, and production
+extension build complete; refreshed backend deployment and named-tester browser
 acceptance remain before Chrome Web Store submission.
 
 ## Release outcome
@@ -67,13 +67,16 @@ actions or receive raw browser state.
   and lint passed. The three changed scenario packages typecheck directly.
 - Production extension build and distribution verification passed and produced
   the package hash above.
-- A fresh full extension serial run made sustained progress but exceeded the
-  15-minute local command bound without producing a final suite summary. The
-  repository-wide Nx typecheck also hit the local pnpm registry-signature guard
-  for four package-script targets; three changed scenario packages passed when
-  run through the installed TypeScript binary, while the parked Temporal spike
-  still lacked its optional linked dependencies. Do not treat either run as a
-  complete green release gate; repeat from a clean dependency installation.
+- A clean full extension serial run passed from the integration worktree in
+  16m17s. Direct TypeScript checks also passed for every shipped workspace,
+  including the scenario packages, cloud service, sandbox, and sandbox
+  infrastructure.
+- The repository-wide inferred Nx typecheck remains unable to invoke package
+  scripts because the local pnpm registry-signature check cannot reach the
+  registry. Its only unresolved direct-project check is the parked
+  `apps/temporal-spike` experiment, which is not in the root workspace list and
+  has no installed `@temporalio/*` dependencies. It is not part of the 0.7.4
+  extension, cloud image, or package.
 
 ## Backend deployment
 
