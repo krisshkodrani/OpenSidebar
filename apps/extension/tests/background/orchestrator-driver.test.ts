@@ -5,6 +5,7 @@ import {
   resolveBrowserAgentCredential,
   type BrowserTaskDeps,
   type CompletionPayload,
+  type TargetChoice,
 } from "../../src/background/browser-bridge/orchestrator-driver";
 import type { PartialProgressHandoff } from "../../src/types";
 
@@ -535,6 +536,42 @@ describe("createBrowserAgentRunner", () => {
       reason: "The selected browser target expired or is no longer open.",
     });
     expect(d.started).toHaveLength(0);
+  });
+
+  test("restores an existing-tab target choice after a service-worker restart", async () => {
+    const d = deps();
+    d.liveTabs.add(9);
+    d.matchingTabs.push({
+      tabId: 9,
+      pageTitle: "Example Domain",
+      groupTitle: "Acceptance",
+      windowLabel: "Window 1",
+    });
+    const stored = new Map<string, TargetChoice>();
+    d.readTargetChoice = async (handle) => stored.get(handle);
+    d.writeTargetChoice = async (handle, choice) => {
+      stored.set(handle, structuredClone(choice));
+    };
+    d.removeTargetChoicesForSession = async (session) => {
+      for (const [handle, choice] of stored)
+        if (choice.session === session) stored.delete(handle);
+    };
+    const task = {
+      instruction: "read the heading",
+      url: "https://example.com/",
+      session: "mission-restarted-selection",
+      targetContext: "existing_tab" as const,
+    };
+    const waiting = await createBrowserAgentRunner(d).run(task);
+    const targetHandle = waiting.targetSelection!.candidates[1]!.targetHandle;
+
+    // A fresh runner models an MV3 service worker recreated between polls.
+    const resumed = createBrowserAgentRunner(d).selectTarget!({ ...task, targetHandle });
+    await tick();
+    expect(d.started[0]?.tabId).toBe(9);
+    d.fire(d.started[0]!.workspaceId, { status: "completed", summary: "Example Domain" });
+    await expect(resumed).resolves.toMatchObject({ status: "completed" });
+    expect(stored.size).toBe(0);
   });
 
   test("ignores completions for a different workspace", async () => {
