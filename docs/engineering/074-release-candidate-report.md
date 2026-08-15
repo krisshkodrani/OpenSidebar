@@ -3,8 +3,9 @@
 Date: 2026-08-14
 
 Status: ModelBench integration, named-tester browser acceptance, clean full-suite
-verification, and production extension build complete. The exact dependency-remediated
-backend promotion and exact-commit package remain before Chrome Web Store submission.
+verification, production extension build, dependency-remediated backend promotion,
+and exact-commit package complete. The final manual Settings persistence spot-check
+and publication remain before Chrome Web Store submission.
 
 ## Release outcome
 
@@ -135,9 +136,12 @@ actions or receive raw browser state.
   before execution, while manager persistence runs as a non-blocking projection.
   The focused 58-test slice, production build, 21-item distribution check, and
   exact real-Chrome browser-bridge E2E all pass with this change.
-- Provisional extension package: `.artifacts/releases/opensidebar-v0.7.4.zip`.
-- Provisional package SHA-256 (superseded by the final ModelBench gate fixes):
-  `0170648EE2856C03E79807292F050C6F3E91190C4D6338BAB16A77AA78CB02CC`.
+- Final extension package: `.artifacts/releases/opensidebar-v0.7.4.zip`.
+- Final deterministic package SHA-256:
+  `76A21641CCEF96559FD78C5FE57A00B7D69779E68B0D4B57783A6BCD11BE4D7C`.
+- Exact-head extension verification passed 561 test files and 5,499 tests,
+  production build, 21-item distribution verification, clean production audit,
+  internally consistent package preflight, and native Chrome sidepanel handshake.
 
 ## ModelBench integration
 
@@ -350,11 +354,12 @@ actions or receive raw browser state.
    reported the exact page title, the named workspace, `inWorkspace: true`,
    `sidePanelEnabled: true`, `createdForMission: false`, no effects, and no raw
    browser identifiers; supervised completion reached terminal `succeeded`.
-8. Complete clean shipped-workspace verification, then rebuild, smoke, and
+8. Done: complete clean shipped-workspace verification, then rebuild, smoke, and
    promote the dependency-remediated cloud-service candidate from the integrated
-   release head. Verification is complete; the final backend promotion remains.
-9. Record the final ZIP SHA-256, then submit that exact artifact. Do not widen the
-   tester allowlist or enable consequential remote actions during release.
+   release head.
+9. Final ZIP SHA-256 recorded. Submit that exact artifact after the manual
+   Settings persistence spot-check. Do not widen the tester allowlist or enable
+   consequential remote actions during release.
 
 ## Rollback
 
