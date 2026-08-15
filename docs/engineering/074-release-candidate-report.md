@@ -197,6 +197,20 @@ actions or receive raw browser state.
   phase transport. It passed isolated smoke and rollback-protected promotion;
   the live container is healthy with zero restarts on
   `sha256:2768e04cadf19c3ffa521af524f2cc8017cf6da323d6e95ecc81156e62269c57`.
+- The final audit exposed a second manifest boundary: the Docker runtime manifest
+  still pinned the pre-remediation AWS and Hono versions even though the
+  workspace lockfile was clean. The runtime manifest now matches all six
+  externally installed cloud dependencies, and release verification fails on
+  any future drift. RC5, built from the verified prebuilt bundle at `cc3f60f6`,
+  contains AWS clients 3.1106.0, Hono 4.13.1, the Hono Node server 2.1.0, and
+  PostgreSQL client 8.22.0. Its isolated readiness, disabled-control, and
+  Playground-login smoke passed before rollback-protected promotion. The live
+  container is healthy with zero restarts on
+  `sha256:014b23935f7397cd7cf621d6d27028627ab71c90e81c816096992fe874167528`;
+  hosted MCP discovery returns 200, unauthenticated MCP remains 401, and the
+  linked 0.7.4 device remained online and remote-work ready. Remote missions and
+  hosted MCP stayed enabled for the named tester, while checkpoint restore,
+  device commands/takeover, and both Temporal modes stayed disabled.
 
 ## Deployment and acceptance gates
 
