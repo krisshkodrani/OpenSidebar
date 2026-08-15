@@ -64,17 +64,25 @@ function assertionPasses(
 }
 
 function normalizeAnswerText(value: string): string {
-  return value
+  const tokens = value
     .toLocaleLowerCase()
     .replace(/[^\p{L}\p{N}]+/gu, " ")
     .replace(/\s+/g, " ")
-    .trim();
+    .trim()
+    .split(" ")
+    .filter(Boolean)
+    .map((token) =>
+      token.length > 3 && token.endsWith("s") && !/(?:ss|us|is)$/.test(token)
+        ? token.slice(0, -1)
+        : token,
+    );
+  return tokens.join(" ");
 }
 
 function includesExpectedAnswer(actual: string, expected: string): boolean {
   const normalizedActual = normalizeAnswerText(actual);
   const expectedClauses = expected
-    .split(";")
+    .split(/;|\band\b/i)
     .map(normalizeAnswerText)
     .filter(Boolean);
   return (
