@@ -7,7 +7,6 @@ import type {
   ResolvedSeatV1,
   RoleUsageV1,
   ScenarioStateV2,
-  JsonObject,
 } from "@opensidebar/scenario-contracts";
 import {
   scenarioEngine,
@@ -119,6 +118,20 @@ function retryable(classification: AttemptClassification): boolean {
   );
 }
 
+function sanitizeFailureReason(reason: string): string {
+  return reason
+    .replace(/\bBearer\s+[^\s,;]+/gi, "Bearer [redacted]")
+    .replace(/\b(?:sk|or|fw|gsk)_[A-Za-z0-9_-]{12,}\b/g, "[redacted]")
+    .replace(/([?&](?:api[_-]?key|token)=)[^&\s]+/gi, "$1[redacted]")
+    .replace(
+      /(\b(?:api[_-]?key|access[_-]?token)\s*[=:]\s*)[^\s,;]+/gi,
+      "$1[redacted]",
+    )
+    .replace(/\s+/g, " ")
+    .trim()
+    .slice(0, 500);
+}
+
 export async function runModelBenchCase(
   options: RunCaseOptions,
 ): Promise<BenchmarkAttemptV1[]> {
@@ -171,6 +184,14 @@ export async function runModelBenchCase(
       usageByRole: result.usageByRole,
       ...(result.telemetry ? { telemetry: result.telemetry } : {}),
       validation,
+      ...(result.failure
+        ? {
+            failure: {
+              kind: result.failure.kind,
+              reason: sanitizeFailureReason(result.failure.reason),
+            },
+          }
+        : {}),
       ...(retryOfAttemptId ? { retryOfAttemptId } : {}),
       artifactRefs: result.artifactRefs,
     };

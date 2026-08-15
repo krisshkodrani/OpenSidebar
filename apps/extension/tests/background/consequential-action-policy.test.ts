@@ -134,6 +134,34 @@ describe("consequential action policy", () => {
     expect(result).toContain("draft-only");
   });
 
+  test("allows reply controls that open or prepare a draft", () => {
+    for (const actionLabel of [
+      'Click [42] button "Reply"',
+      'Click [42] button "Draft a short reply"',
+      'Click [42] button "Compose reply"',
+    ]) {
+      expect(
+        assessConsequentialFinalActionBlock({
+          toolName: ToolName.CLICK_ELEMENT,
+          args: { id: 42 },
+          taskText: "Draft a reply to David and do not send it.",
+          actionLabel,
+        }),
+      ).toBeNull();
+    }
+  });
+
+  test("blocks explicit delivery controls even when their label includes reply", () => {
+    expect(
+      assessConsequentialFinalActionBlock({
+        toolName: ToolName.CLICK_ELEMENT,
+        args: { id: 42 },
+        taskText: "Draft a reply to David and do not send it.",
+        actionLabel: 'Click [42] button "Send reply"',
+      }),
+    ).toContain("draft-only");
+  });
+
   test("allows send clicks when sending is the explicit communication goal", () => {
     expect(
       assessConsequentialFinalActionBlock({

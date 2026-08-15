@@ -26,9 +26,24 @@ import type {
 
 export function isDoneSummaryAskingClarification(summary: string): boolean {
   const text = summary.trim();
+  const lower = text.toLowerCase();
+  const requestsBlockingUserInput =
+    /\b(?:clarification|information|details|input)\s+(?:is|are\s+)?needed\b/.test(
+      lower,
+    ) ||
+    /\b(?:cannot|can't|unable to)\s+(?:continue|proceed|complete|choose|determine)\b[\s\S]{0,120}\b(?:until|without)\b/.test(
+      lower,
+    ) ||
+    /\bplease\s+(?:share|provide|choose|confirm|clarify|tell me|specify)\b/.test(
+      lower,
+    ) ||
+    /\bonce you (?:share|provide|choose|confirm|clarify|specify)\b/.test(
+      lower,
+    );
+  if (requestsBlockingUserInput) return true;
+
   if (!text.includes("?")) return false;
 
-  const lower = text.toLowerCase();
   const hasCompletionFrame =
     /\b(completed|successfully|identified|found|located|confirmed|verified|posted|sent|drafted|updated|read|analysis complete|summary)\b/.test(
       lower,
