@@ -316,6 +316,16 @@ actions or receive raw browser state.
    reported the selected `Post-idle workspace-targeting...` group, Window 1,
    exact URL/title match, `inWorkspace: true`, `sidePanelEnabled: true`, and
    `createdForMission: false`; no replacement tab was created.
+   Active-tab mission `6ed6e7e7-0bcc-40e1-b24e-0b06188f1426` then selected an
+   unrelated ChatGPT tab in Window 2 and returned `inWorkspace: false` and
+   `sidePanelEnabled: false`; it was stopped as `not_achieved`. Its agent summary
+   also repeated a raw Chrome tab ID. Non-isolated targets now fail before agent
+   execution unless both workspace membership and sidepanel enablement are
+   verified, and the same binding (plus an expected URL when present) is
+   rechecked at completion. Agent-authored evidence lines containing Chrome-local
+   tab/group/window/workspace IDs or storage keys are removed at the transport
+   boundary. The focused mission-worker and browser-runner suite passes 52 tests,
+   with extension TypeScript and changed-file ESLint clean.
 8. Complete clean shipped-workspace verification, then rebuild, smoke, and
    promote the dependency-remediated cloud-service candidate from the integrated
    release head. Verification is complete; the final backend promotion remains.
