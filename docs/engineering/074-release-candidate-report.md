@@ -326,6 +326,16 @@ actions or receive raw browser state.
    tab/group/window/workspace IDs or storage keys are removed at the transport
    boundary. The focused mission-worker and browser-runner suite passes 52 tests,
    with extension TypeScript and changed-file ESLint clean.
+   After reloading the fixed build, mission
+   `1a7305b6-25e8-4cc9-be9e-ca9fad7823ff` exercised the negative path: the
+   active target was outside a workspace or lacked its sidepanel, so it was
+   rejected before agent execution and retained as terminal `not_achieved`
+   without leaking a browser identifier. Mission
+   `6e91bc20-cfb9-4de1-8d67-636016541d04` then exercised the positive path on
+   the active `https://example.com/` tab in Window 1. Structured evidence
+   reported the exact page title, the named workspace, `inWorkspace: true`,
+   `sidePanelEnabled: true`, `createdForMission: false`, no effects, and no raw
+   browser identifiers; supervised completion reached terminal `succeeded`.
 8. Complete clean shipped-workspace verification, then rebuild, smoke, and
    promote the dependency-remediated cloud-service candidate from the integrated
    release head. Verification is complete; the final backend promotion remains.
