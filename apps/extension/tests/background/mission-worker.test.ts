@@ -232,6 +232,71 @@ describe("MissionWorker", () => {
     expect(respondApproval).not.toHaveBeenCalled();
   });
 
+  test("hands achieved evidence to Codex after target selection", async () => {
+    const journal = new MemoryMissionAttemptJournal();
+    await journal.write({
+      schemaVersion: 1,
+      missionId: "mission-1",
+      stepId: "step-1",
+      attemptId: "attempt-target",
+      planRevision: 1,
+      state: "target_selection_required",
+      mayHaveConsequentialEffect: false,
+      updatedAt: new Date().toISOString(),
+    });
+    const selectTarget = vi.fn().mockResolvedValue({
+      state: "succeeded",
+      summary: "Heading: Example Domain",
+      target: {
+        context: "isolated_tab",
+        workspaceTitle: "Acceptance",
+        inWorkspace: true,
+        sidePanelEnabled: true,
+        createdForMission: true,
+      },
+    });
+    const transport = new MemoryRemoteMissionTransport();
+    const worker = new MissionWorker(
+      { run: vi.fn(), selectTarget } as RemoteMissionRunner,
+      new ScriptedMissionSupervisor([decision("request_user_input")]),
+      journal,
+      transport,
+    );
+
+    await expect(worker.resumeTargetSelection(
+      mission(),
+      {
+        schemaVersion: 1,
+        missionId: "mission-1",
+        executionClass: "read_only",
+        instruction: "Read the visible heading",
+        targetContext: "isolated_tab",
+      },
+      {
+        schemaVersion: 1,
+        missionId: "mission-1",
+        targetHandle: "target-acceptance",
+        decidedAt: new Date().toISOString(),
+      },
+    )).resolves.toMatchObject({
+      state: "supervision_required",
+      evidence: {
+        outcome: "achieved",
+        claims: [{ claim: "Heading: Example Domain" }],
+        target: {
+          workspaceTitle: "Acceptance",
+          inWorkspace: true,
+          sidePanelEnabled: true,
+        },
+      },
+      pendingStep: { stepId: "step-1" },
+    });
+    expect(transport.evidence).toHaveLength(1);
+    expect(await journal.read("mission-1")).toMatchObject({
+      state: "supervision_required",
+    });
+  });
+
   test("denial resumes only to stop the pending action and never claims completion", async () => {
     const journal = new MemoryMissionAttemptJournal();
     await journal.write({

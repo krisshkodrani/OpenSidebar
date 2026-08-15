@@ -283,8 +283,21 @@ actions or receive raw browser state.
    `c205ad76-86f8-456f-8a9f-65efe27fb78f` was then accepted and returned bounded
    evidence for one mission-created `https://example.com` tab in Window 1 with
    `inWorkspace: true`, `sidePanelEnabled: true`, and the expected title/URL.
-   Chrome exposed only one eligible workspace, so the ambiguous-workspace target
-   selection branch remains pending.
+   Ambiguous-workspace missions
+   `31d09561-7041-4efb-b77b-a5b8d67d08ec` and
+   `51c64fe5-ab2d-4420-8980-da92c917dec9` then exposed a continuation bug:
+   target selection was accepted and browser execution completed, but the
+   Codex evidence handoff was collapsed to terminal `outcome_unknown`. The
+   target-selection resume path now preserves achieved evidence as
+   `supervision_required`, matching the normal run path; 67 focused mission,
+   delivery, runner, and browser-orchestration tests pass. After the exact-build
+   reload, mission `58585a49-a8ac-4360-9ce9-bbd140193c97` presented two named
+   workspace candidates, selected the group containing Google News by opaque
+   handle, and returned authoritative target evidence for the mission-created
+   `https://example.com` tab: `inWorkspace: true`, `sidePanelEnabled: true`,
+   `createdForMission: true`, `expectedUrlMatched: true`, window `Window 1`,
+   workspace title present, and page title `Example Domain`. Codex completed the
+   evidence review and the mission reached terminal `succeeded`.
 8. Done: complete clean shipped-workspace verification, then rebuild, smoke, and
    promote the cloud-service candidate from the integrated release head.
 9. Record the final ZIP SHA-256, then submit that exact artifact. Do not widen the
