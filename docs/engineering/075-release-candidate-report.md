@@ -21,6 +21,10 @@ cancellation and revoked-session hardening found during acceptance. The existing
 - Mounted sidepanels subscribe to cloud-session removal and re-read session
   state after authenticated account reload, so server-side revocation clears
   stale identity across extension contexts.
+- The sidepanel keepalive port now has an explicit background receiver, and
+  disconnect handlers consume Chrome's transient `runtime.lastError`. This
+  removes the repeated "Receiving end does not exist" console error while
+  preserving genuine service-worker disconnect recovery.
 - Remote takeover, device-command execution, checkpoint restore, and Temporal
   coordination remain disabled.
 
@@ -31,6 +35,8 @@ cancellation and revoked-session hardening found during acceptance. The existing
 - Affected background suites: 4 files and 202 tests passed.
 - Extension TypeScript, changed-file lint, production build, and the 21-item
   distribution inspection passed.
+- The keepalive receiver, sidepanel runtime wrapper, and existing reconnect
+  behavior pass a focused 3-file, 57-test regression slice.
 - The complete 0.7.4 acceptance evidence remains recorded in
   `docs/engineering/074-release-candidate-report.md`.
 
