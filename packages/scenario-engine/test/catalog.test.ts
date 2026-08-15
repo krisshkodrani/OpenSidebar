@@ -113,3 +113,18 @@ test("formatted answer matching still rejects a missing expected clause", () => 
   });
   assert.equal(validation.verdict, "fail");
 });
+
+test("answer matching accepts separated conjunctive facts and light plurals", () => {
+  const definition = MODEL_BENCH_CASES.find(
+    (entry) => entry.contract.id === "knowledge.synthesize-two-policies",
+  )!;
+  const initialState = scenarioEngine.initialize(definition.contract.id);
+  const validation = scenarioEngine.validate({
+    definition,
+    initialState,
+    finalState: initialState,
+    finalAnswer:
+      "International travel requires approval. Any single expense over $1,000 also requires approval.",
+  });
+  assert.equal(validation.verdict, "pass");
+});
