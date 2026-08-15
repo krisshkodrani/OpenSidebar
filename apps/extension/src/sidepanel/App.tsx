@@ -42,6 +42,7 @@ import {
   cloudSession,
   credentialStatuses,
   pendingCloudEmailAuth,
+  subscribeCloudSession,
 } from "./cloud-client";
 
 const SUGGESTED_ACTIONS = [
@@ -138,6 +139,14 @@ export default function App({ themeRoot, activityHudRoot }: AppProps = {}) {
   const splashLogoUrl = uiRuntime.getUrl("public/icons/icon-128.png");
   const [accountEmail, setAccountEmail] = useState<string | null>(null);
   const [accountProviderReady, setAccountProviderReady] = useState(false);
+  useEffect(
+    () =>
+      subscribeCloudSession((session) => {
+        setAccountEmail(session?.account.email ?? null);
+        if (!session) setAccountProviderReady(false);
+      }),
+    [],
+  );
   useEffect(() => {
     void pendingCloudEmailAuth().then((pending) => {
       if (pending) updateSettingsView({ open: true, activeTab: "account" });

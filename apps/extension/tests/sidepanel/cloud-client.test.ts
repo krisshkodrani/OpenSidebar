@@ -2,6 +2,9 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const runtime = vi.hoisted(() => {
   const values = new Map<string, unknown>();
+  const listeners = new Set<
+    (changes: Record<string, { oldValue?: unknown; newValue?: unknown }>) => void
+  >();
   const storage = {
     get: vi.fn(async (keys?: string | string[]) => {
       const requested = typeof keys === "string" ? [keys] : (keys ?? []);
@@ -12,14 +15,40 @@ const runtime = vi.hoisted(() => {
       );
     }),
     set: vi.fn(async (items: Record<string, unknown>) => {
-      for (const [key, value] of Object.entries(items)) values.set(key, value);
+      const changes: Record<
+        string,
+        { oldValue?: unknown; newValue?: unknown }
+      > = {};
+      for (const [key, value] of Object.entries(items)) {
+        changes[key] = { oldValue: values.get(key), newValue: value };
+        values.set(key, value);
+      }
+      for (const listener of listeners) listener(changes);
     }),
     remove: vi.fn(async (keys: string | string[]) => {
-      for (const key of typeof keys === "string" ? [keys] : keys)
+      const changes: Record<
+        string,
+        { oldValue?: unknown; newValue?: unknown }
+      > = {};
+      for (const key of typeof keys === "string" ? [keys] : keys) {
+        changes[key] = { oldValue: values.get(key) };
         values.delete(key);
+      }
+      for (const listener of listeners) listener(changes);
     }),
+    onChanged: vi.fn(
+      (
+        listener: (
+          changes: Record<string, { oldValue?: unknown; newValue?: unknown }>,
+        ) => void,
+      ) => {
+        listeners.add(listener);
+        return () => listeners.delete(listener);
+      },
+    ),
   };
   return {
+    listeners,
     values,
     storage,
     port: {
@@ -37,6 +66,7 @@ import {
   linkCloudAccount,
   pendingCloudEmailAuth,
   requestCloudEmailCode,
+  subscribeCloudSession,
   syncCloudPreferences,
   verifyCloudEmailCode,
 } from "../../src/sidepanel/cloud-client";
@@ -71,6 +101,8 @@ describe("cloud account client", () => {
     runtime.storage.get.mockClear();
     runtime.storage.set.mockClear();
     runtime.storage.remove.mockClear();
+    runtime.storage.onChanged.mockClear();
+    runtime.listeners.clear();
     vi.unstubAllEnvs();
     vi.restoreAllMocks();
   });
@@ -132,6 +164,23 @@ describe("cloud account client", () => {
 
     expect(await pendingCloudEmailAuth()).toBeNull();
     expect(runtime.values.has("cloudPendingEmailAuthV1")).toBe(false);
+  });
+
+  it("notifies mounted UI when a rejected session is removed", async () => {
+    runtime.values.set("cloudExtensionSessionV1", {
+      ...session,
+      accessExpiresAt: Date.now() + 60_000,
+    });
+    const observed: Array<string | null> = [];
+    const unsubscribe = subscribeCloudSession((next) =>
+      observed.push(next?.account.email ?? null),
+    );
+
+    await runtime.storage.remove("cloudExtensionSessionV1");
+
+    expect(observed).toEqual([null]);
+    unsubscribe();
+    expect(runtime.listeners).toHaveLength(0);
   });
 
   it("syncs only allowlisted preferences and links them after a successful save", async () => {
