@@ -124,7 +124,7 @@ test("answer matching accepts separated conjunctive facts and light plurals", ()
     initialState,
     finalState: initialState,
     finalAnswer:
-      "International travel requires approval. Any single expense over $1,000 also requires approval.",
+      "International travel requires approval. Any single expense above $1,000 also requires approval.",
   });
   assert.equal(validation.verdict, "pass");
 });

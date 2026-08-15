@@ -66,6 +66,7 @@ function assertionPasses(
 function normalizeAnswerText(value: string): string {
   const tokens = value
     .toLocaleLowerCase()
+    .replace(/\b(?:above|exceeding|greater\s+than)\b/g, "over")
     .replace(/[^\p{L}\p{N}]+/gu, " ")
     .replace(/\s+/g, " ")
     .trim()
