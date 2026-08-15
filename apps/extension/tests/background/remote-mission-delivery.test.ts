@@ -40,6 +40,7 @@ const delivery = (overrides: Partial<RemoteMissionV1> = {}): DeliveredRemoteMiss
 function setup(
   items = [delivery()],
   options: {
+    cancellationPollMilliseconds?: number;
     readinessRefreshMilliseconds?: number;
     onStatus?: ConstructorParameters<typeof RemoteMissionDeliveryController>[4];
     isBrowserBusy?: () => boolean | Promise<boolean>;
@@ -111,7 +112,7 @@ function setup(
       statuses.push(status.state);
       statusRecords.push(status);
     }),
-    1_000,
+    options.cancellationPollMilliseconds ?? 1_000,
     options.readinessRefreshMilliseconds,
     options.isBrowserBusy,
   );
@@ -205,6 +206,41 @@ describe("remote mission delivery", () => {
     expect(world.run).toHaveBeenCalledTimes(1);
     release();
     await active;
+  });
+
+  test("keeps readiness alive while a cancelled worker drains to a safe stop", async () => {
+    let release!: () => void;
+    let runSignal: AbortSignal | undefined;
+    const world = setup([delivery()], {
+      cancellationPollMilliseconds: 5,
+      readinessRefreshMilliseconds: 10,
+    });
+    world.run.mockImplementation((_mission, options) => {
+      runSignal = options.signal;
+      return new Promise((resolve) => {
+        release = () => resolve({ state: "cancelled", reason: "Mission cancelled." });
+      });
+    });
+
+    const active = world.controller.pollOnce();
+    await vi.waitFor(() => expect(world.run).toHaveBeenCalledTimes(1));
+    world.records.set(missionId, {
+      ...world.records.get(missionId)!,
+      state: "cancelled",
+      resultCode: "cancelled",
+    });
+    await vi.waitFor(() => expect(runSignal?.aborted).toBe(true));
+    const pollsAtCancellation = world.poll.mock.calls.length;
+
+    try {
+      await vi.waitFor(() =>
+        expect(world.poll.mock.calls.length).toBeGreaterThan(pollsAtCancellation),
+      );
+    } finally {
+      release();
+      await active;
+    }
+    expect((await world.journal.read()).lastSequence).toBe(1);
   });
 
   test("does not let a stalled local status write block browser execution", async () => {

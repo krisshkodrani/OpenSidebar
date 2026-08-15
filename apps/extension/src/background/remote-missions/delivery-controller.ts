@@ -191,7 +191,10 @@ export class RemoteMissionDeliveryController {
     }, this.cancellationPollMilliseconds);
     let refreshing = false;
     const readinessTimer = setInterval(() => {
-      if (refreshing || controller.signal.aborted) return;
+      // Cancellation asks the local agent to drain at its next safe point.
+      // Keep the device heartbeat alive until that worker promise settles;
+      // stop() owns timer cleanup in the surrounding execution finally block.
+      if (refreshing) return;
       refreshing = true;
       void this.transport.poll(deviceId, afterSequence)
         .catch(() => undefined)
