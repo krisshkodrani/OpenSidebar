@@ -23,6 +23,11 @@ actions or receive raw browser state.
   cleared operationally by logout, revocation, browser shutdown, or loss of polls.
 - Transient cloud refresh failures preserve the saved extension session. Only a
   definitive credential rejection clears it.
+- Rotating cloud-session refresh is serialized across extension contexts with a
+  Web Lock and an in-process fallback. Each waiter re-reads the stored session
+  inside the lock, preventing background, sidepanel, sync, and restore clients
+  from concurrently consuming the same refresh token and triggering reuse-family
+  revocation at the 15-minute access-token boundary.
 - The Settings drawer and selected Settings section are restored for the current
   Chrome window while the browser session is alive. Tab switches, panel hiding,
   and sidepanel remounts no longer reset the view to Account; Chrome exit clears
@@ -270,7 +275,16 @@ actions or receive raw browser state.
    was correctly rejected because Chrome's active tab was outside an
    OpenSidebar workspace. Existing-tab retry
    `01cd91de-5a39-46c9-8526-a8e112c01a0b` then failed closed without creating
-   or navigating a replacement when its requested tab was absent.
+   or navigating a replacement when its requested tab was absent. Seven focused
+   authentication tests now cover cross-context rotation, concurrent 401s,
+   restarted clients, and transient/rejected refreshes. After the exact-build
+   reload, the same linked device remained `online` and `remoteWork: ready`
+   throughout a no-interaction 15-minute idle window. Post-boundary mission
+   `c205ad76-86f8-456f-8a9f-65efe27fb78f` was then accepted and returned bounded
+   evidence for one mission-created `https://example.com` tab in Window 1 with
+   `inWorkspace: true`, `sidePanelEnabled: true`, and the expected title/URL.
+   Chrome exposed only one eligible workspace, so the ambiguous-workspace target
+   selection branch remains pending.
 8. Done: complete clean shipped-workspace verification, then rebuild, smoke, and
    promote the cloud-service candidate from the integrated release head.
 9. Record the final ZIP SHA-256, then submit that exact artifact. Do not widen the
