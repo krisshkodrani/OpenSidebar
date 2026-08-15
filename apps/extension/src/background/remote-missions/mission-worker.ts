@@ -201,6 +201,14 @@ export class MissionWorker {
     if (result.state === "outcome_unknown") return { state: "outcome_unknown", reason: result.summary };
     const supervisor = await this.supervisor.decide(mission, evidence, options);
     validateDecision(mission, step, supervisor);
+    if (supervisor.kind === "request_user_input") {
+      await this.journal.write({
+        ...attempt,
+        state: "supervision_required",
+        updatedAt: new Date().toISOString(),
+      });
+      return { state: "supervision_required", evidence, pendingStep: step };
+    }
     if (supervisor.kind !== "complete" || evidence.outcome !== "achieved")
       return { state: "outcome_unknown", reason: supervisor.guidance ?? "Target continuation lacked verified completion." };
     await this.journal.remove(mission.missionId);
