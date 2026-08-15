@@ -2,9 +2,9 @@
 
 Date: 2026-08-14
 
-Status: ModelBench integration, clean full-suite verification, production
-extension build, and refreshed backend deployment complete; named-tester browser
-acceptance and an exact-commit package remain before Chrome Web Store submission.
+Status: ModelBench integration, named-tester browser acceptance, clean full-suite
+verification, and production extension build complete. The exact dependency-remediated
+backend promotion and exact-commit package remain before Chrome Web Store submission.
 
 ## Release outcome
 
@@ -73,6 +73,13 @@ actions or receive raw browser state.
   led to fixing an undefined test-time build constant; its later unrelated
   resource-contention timeouts all pass in the serial release run.
 - Production build and distribution verification: passed for normal 0.7.4.
+- The final production dependency audit initially found 28 advisories, including
+  a critical `fast-xml-parser` path through the pinned S3 client. AWS, MCP, Hono,
+  DOMPurify, and the parked Temporal spike were upgraded together, and audited
+  transitive versions are locked with workspace overrides. A frozen install and
+  `pnpm audit --prod` now report no known vulnerabilities. The patched graph
+  passes cloud typecheck/build and all 124 runnable cloud tests (2 PostgreSQL
+  tests skipped), plus all 561 extension test files and 5,496 tests.
 - The final existing-workspace binding/evidence slice passed 53 focused
   extension tests, all 124 runnable cloud tests (2 PostgreSQL tests skipped),
   changed-file ESLint, extension/cloud TypeScript checks, production build, and
@@ -152,12 +159,9 @@ actions or receive raw browser state.
   16m17s. Direct TypeScript checks also passed for every shipped workspace,
   including the scenario packages, cloud service, sandbox, and sandbox
   infrastructure.
-- The repository-wide inferred Nx typecheck remains unable to invoke package
-  scripts because the local pnpm registry-signature check cannot reach the
-  registry. Its only unresolved direct-project check is the parked
-  `apps/temporal-spike` experiment, which is not in the root workspace list and
-  has no installed `@temporalio/*` dependencies. It is not part of the 0.7.4
-  extension, cloud image, or package.
+- The parked `apps/temporal-spike` experiment remains outside the shipped 0.7.4
+  extension and cloud image, but its dependency graph is now installed,
+  typecheckable, and included in the clean repository audit.
 - Live MB-101 execution exposed an invalid `groq` executor pin for MiniMax M3;
   OpenRouter lists no such endpoint. The release matrix now pins the executor to
   `minimax`, and a direct MiniMax M3 vision/tool probe passed with HTTP 200.
@@ -312,8 +316,9 @@ actions or receive raw browser state.
    reported the selected `Post-idle workspace-targeting...` group, Window 1,
    exact URL/title match, `inWorkspace: true`, `sidePanelEnabled: true`, and
    `createdForMission: false`; no replacement tab was created.
-8. Done: complete clean shipped-workspace verification, then rebuild, smoke, and
-   promote the cloud-service candidate from the integrated release head.
+8. Complete clean shipped-workspace verification, then rebuild, smoke, and
+   promote the dependency-remediated cloud-service candidate from the integrated
+   release head. Verification is complete; the final backend promotion remains.
 9. Record the final ZIP SHA-256, then submit that exact artifact. Do not widen the
    tester allowlist or enable consequential remote actions during release.
 
