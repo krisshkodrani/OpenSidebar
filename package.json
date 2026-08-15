@@ -113,7 +113,7 @@
     "ci:dist": "node scripts/check-dist.js",
     "ci:audit": "corepack pnpm audit --prod",
     "ci:local": "tsx scripts/validate-rfc-decisions.ts && nx run-many -t lint && nx run-many -t typecheck && nx run-many -t test --projects=extension && nx run extension:build && node scripts/check-dist.js",
-    "release:verify": "tsx scripts/validate-rfc-decisions.ts && nx run-many -t lint && nx run-many -t typecheck && nx run-many -t test --projects=extension && nx run extension:build && node scripts/check-dist.js && corepack pnpm audit --prod",
+    "release:verify": "tsx scripts/validate-rfc-decisions.ts && node scripts/check-cloud-runtime-deps.mjs && nx run-many -t lint && nx run-many -t typecheck && nx run-many -t test --projects=extension && nx run extension:build && node scripts/check-dist.js && corepack pnpm audit --prod",
     "release:package": "node scripts/package-release.js",
     "release:preflight": "node scripts/check-release.js",
     "extension:pin-identity": "node scripts/pin-extension-identity.mjs",
