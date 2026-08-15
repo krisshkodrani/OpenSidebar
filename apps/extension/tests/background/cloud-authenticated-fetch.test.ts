@@ -53,6 +53,147 @@ describe("background cloud authenticated fetch", () => {
     expect(headers.get("authorization")).toBe("Bearer new");
   });
 
+  it("serializes refresh rotation across concurrent cloud clients", async () => {
+    const originalLocks = Object.getOwnPropertyDescriptor(globalThis.navigator, "locks");
+    const lockRequests: string[] = [];
+    let lockTail: Promise<unknown> = Promise.resolve();
+    Object.defineProperty(globalThis.navigator, "locks", {
+      configurable: true,
+      value: {
+        request<T>(name: string, callback: () => Promise<T>) {
+          lockRequests.push(name);
+          const result = lockTail.then(callback);
+          lockTail = result.catch(() => undefined);
+          return result;
+        },
+      },
+    });
+    const stored = storage({
+      [CLOUD_EXTENSION_SESSION_KEY]: {
+        accessToken: "old",
+        refreshToken: "refresh",
+        accessExpiresAt: 0,
+        account: { accountId: "account", email: "a@example.test" },
+        device: { id: "device" },
+      },
+    });
+    let refreshCalls = 0;
+    const requestTokens: string[] = [];
+    const fetchImpl = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      if (String(input).endsWith("/extension/auth/refresh")) {
+        refreshCalls += 1;
+        await new Promise((resolve) => setTimeout(resolve, 5));
+        return new Response(JSON.stringify({
+          accessToken: "new",
+          refreshToken: "next",
+          accessExpiresInSeconds: 900,
+          account: { accountId: "account", email: "a@example.test" },
+          device: { id: "device" },
+        }), { status: 200 });
+      }
+      requestTokens.push(new Headers(init?.headers).get("authorization") ?? "");
+      return new Response("{}", { status: 200 });
+    });
+    const first = new CloudAuthenticatedFetch(stored.port, "https://cloud.concurrent.test", fetchImpl);
+    const second = new CloudAuthenticatedFetch(stored.port, "https://cloud.concurrent.test", fetchImpl);
+
+    try {
+      await Promise.all([first.request("/sessions"), second.request("/sessions")]);
+
+      expect(lockRequests).toHaveLength(2);
+      expect(refreshCalls).toBe(1);
+      expect(requestTokens).toEqual(["Bearer new", "Bearer new"]);
+      expect(stored.values[CLOUD_EXTENSION_SESSION_KEY]).toMatchObject({
+        accessToken: "new",
+        refreshToken: "next",
+      });
+    } finally {
+      if (originalLocks)
+        Object.defineProperty(globalThis.navigator, "locks", originalLocks);
+      else delete (globalThis.navigator as Navigator & { locks?: unknown }).locks;
+    }
+  });
+
+  it("reuses a session refreshed elsewhere after concurrent 401 responses", async () => {
+    const stored = storage({
+      [CLOUD_EXTENSION_SESSION_KEY]: {
+        accessToken: "old",
+        refreshToken: "refresh",
+        accessExpiresAt: Date.now() + 60_000,
+        account: { accountId: "account", email: "a@example.test" },
+        device: { id: "device" },
+      },
+    });
+    let refreshCalls = 0;
+    const fetchImpl = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      if (String(input).endsWith("/extension/auth/refresh")) {
+        refreshCalls += 1;
+        await new Promise((resolve) => setTimeout(resolve, 5));
+        return new Response(JSON.stringify({
+          accessToken: "new",
+          refreshToken: "next",
+          accessExpiresInSeconds: 900,
+          account: { accountId: "account", email: "a@example.test" },
+          device: { id: "device" },
+        }), { status: 200 });
+      }
+      const token = new Headers(init?.headers).get("authorization");
+      return new Response("{}", { status: token === "Bearer new" ? 200 : 401 });
+    });
+    const first = new CloudAuthenticatedFetch(stored.port, "https://cloud.401.test", fetchImpl);
+    const second = new CloudAuthenticatedFetch(stored.port, "https://cloud.401.test", fetchImpl);
+
+    const responses = await Promise.all([
+      first.request("/sessions"),
+      second.request("/sessions"),
+    ]);
+
+    expect(responses.map((response) => response.status)).toEqual([200, 200]);
+    expect(refreshCalls).toBe(1);
+  });
+
+  it("lets a restarted client resume from the rotated stored session", async () => {
+    const stored = storage({
+      [CLOUD_EXTENSION_SESSION_KEY]: {
+        accessToken: "old",
+        refreshToken: "refresh",
+        accessExpiresAt: 0,
+        account: { accountId: "account", email: "a@example.test" },
+        device: { id: "device" },
+      },
+    });
+    let refreshCalls = 0;
+    const requestTokens: string[] = [];
+    const fetchImpl = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      if (String(input).endsWith("/extension/auth/refresh")) {
+        refreshCalls += 1;
+        return new Response(JSON.stringify({
+          accessToken: "new",
+          refreshToken: "next",
+          accessExpiresInSeconds: 900,
+          account: { accountId: "account", email: "a@example.test" },
+          device: { id: "device" },
+        }), { status: 200 });
+      }
+      requestTokens.push(new Headers(init?.headers).get("authorization") ?? "");
+      return new Response("{}", { status: 200 });
+    });
+
+    await new CloudAuthenticatedFetch(
+      stored.port,
+      "https://cloud.restart.test",
+      fetchImpl,
+    ).request("/sessions");
+    await new CloudAuthenticatedFetch(
+      stored.port,
+      "https://cloud.restart.test",
+      fetchImpl,
+    ).request("/sessions");
+
+    expect(refreshCalls).toBe(1);
+    expect(requestTokens).toEqual(["Bearer new", "Bearer new"]);
+  });
+
   it("preserves the saved session when refresh fails transiently", async () => {
     const session = {
       accessToken: "old",
