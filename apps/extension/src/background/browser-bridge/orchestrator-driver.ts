@@ -42,7 +42,7 @@ import type {
 } from "@shared-types/remote-missions";
 
 import type { UserSettings } from "../../types";
-import { chromeRuntimeEnvironment } from "../environment/chrome";
+import { chromePersistencePort, chromeRuntimeEnvironment } from "../environment/chrome";
 import { loadApiKey, loadSettings } from "../../utils/settings-storage";
 import { getProviderKeyStatus } from "../../utils/provider-keys";
 import { getBlockedRuleForUrl } from "../../utils/site-access";
@@ -126,6 +126,12 @@ export interface BrowserTaskDeps {
   tabExists(tabId: number): Promise<boolean>;
   /** Revalidate that an opaque choice still points at the expected exact URL. */
   tabMatchesUrl?(tabId: number, expectedUrl: string): Promise<boolean>;
+  /** Restore a short-lived opaque target choice after an MV3 worker restart. */
+  readTargetChoice?(targetHandle: string): Promise<TargetChoice | undefined>;
+  /** Persist a short-lived opaque target choice across MV3 worker restarts. */
+  writeTargetChoice?(targetHandle: string, choice: TargetChoice): Promise<void>;
+  /** Remove all choices after one is consumed for a mission session. */
+  removeTargetChoicesForSession?(session: string): Promise<void>;
   /** Point an existing tab at a url. Does not await page load (nor does createTab). */
   navigateTab(tabId: number, url: string): Promise<void>;
   /** Wait until the production content bridge can observe the selected tab. */
@@ -234,7 +240,7 @@ type ResolvedTarget = {
   visualWorkspaceId?: string;
 };
 
-type TargetChoice =
+export type TargetChoice =
   | {
       kind: "existing_tab";
       session: string;
@@ -282,6 +288,18 @@ export function createBrowserAgentRunner(deps: BrowserTaskDeps): AgentRunner {
   const approvalWorkspaces = new Map<string, string>();
   const targetChoices = new Map<string, TargetChoice>();
 
+  const rememberTargetChoice = async (targetHandle: string, choice: TargetChoice) => {
+    targetChoices.set(targetHandle, choice);
+    await deps.writeTargetChoice?.(targetHandle, choice);
+  };
+  const readTargetChoice = async (targetHandle: string) =>
+    targetChoices.get(targetHandle) ?? await deps.readTargetChoice?.(targetHandle);
+  const removeTargetChoicesForSession = async (session: string) => {
+    for (const [handle, candidate] of targetChoices)
+      if (candidate.session === session) targetChoices.delete(handle);
+    await deps.removeTargetChoicesForSession?.(session);
+  };
+
   async function resolveTab(
     task: AgentTask,
     entry: SessionEntry | null,
@@ -291,7 +309,7 @@ export function createBrowserAgentRunner(deps: BrowserTaskDeps): AgentRunner {
       if (!task.url)
         throw new Error("An existing-tab remote task requires a target URL.");
       if (task.targetHandle) {
-        const choice = targetChoices.get(task.targetHandle);
+        const choice = await readTargetChoice(task.targetHandle);
         if (
           !choice ||
           choice.kind !== "existing_tab" ||
@@ -302,8 +320,7 @@ export function createBrowserAgentRunner(deps: BrowserTaskDeps): AgentRunner {
           !deps.tabMatchesUrl ||
           !(await deps.tabMatchesUrl(choice.tabId, choice.expectedUrl))
         ) throw new Error("The selected browser target expired or is no longer open.");
-        for (const [handle, candidate] of targetChoices)
-          if (candidate.session === task.session) targetChoices.delete(handle);
+        await removeTargetChoicesForSession(task.session);
         if (entry) entry.tabId = choice.tabId;
         return { tabId: choice.tabId, createdForMission: false };
       }
@@ -316,9 +333,9 @@ export function createBrowserAgentRunner(deps: BrowserTaskDeps): AgentRunner {
         if (!task.session)
           throw new Error("Ambiguous browser targets require a mission session.");
         const expiresAt = Date.now() + 5 * 60_000;
-        const candidates = matches.slice(0, 10).map((match) => {
+        const candidates = await Promise.all(matches.slice(0, 10).map(async (match) => {
           const targetHandle = `target_${crypto.randomUUID()}`;
-          targetChoices.set(targetHandle, {
+          await rememberTargetChoice(targetHandle, {
             kind: "existing_tab",
             session: task.session!,
             tabId: match.tabId,
@@ -331,7 +348,7 @@ export function createBrowserAgentRunner(deps: BrowserTaskDeps): AgentRunner {
             ...(match.groupTitle ? { groupTitle: match.groupTitle.slice(0, 80) } : {}),
             ...(match.windowLabel ? { windowLabel: match.windowLabel.slice(0, 80) } : {}),
           };
-        });
+        }));
         throw new TargetSelectionRequiredError({
           expiresAt: new Date(expiresAt).toISOString(),
           candidates,
@@ -364,7 +381,7 @@ export function createBrowserAgentRunner(deps: BrowserTaskDeps): AgentRunner {
     }
     let target: { sourceTabId: number; workspaceId: string };
     if (task.targetHandle) {
-      const choice = targetChoices.get(task.targetHandle);
+      const choice = await readTargetChoice(task.targetHandle);
       if (
         !choice ||
         choice.kind !== "workspace" ||
@@ -374,8 +391,7 @@ export function createBrowserAgentRunner(deps: BrowserTaskDeps): AgentRunner {
         !(await deps.tabExists(choice.sourceTabId))
       ) throw new Error("The selected OpenSidebar workspace expired or is no longer open.");
       target = choice;
-      for (const [handle, candidate] of targetChoices)
-        if (candidate.session === task.session) targetChoices.delete(handle);
+      await removeTargetChoicesForSession(task.session);
     } else {
       await onProgress?.("Discovering the existing OpenSidebar workspace.");
       const matches = await deps.findWorkspaceTargets();
@@ -388,9 +404,9 @@ export function createBrowserAgentRunner(deps: BrowserTaskDeps): AgentRunner {
         if (!task.session)
           throw new Error("Ambiguous OpenSidebar workspaces require a mission session.");
         const expiresAt = Date.now() + 5 * 60_000;
-        const candidates = matches.slice(0, 10).map((match) => {
+        const candidates = await Promise.all(matches.slice(0, 10).map(async (match) => {
           const targetHandle = `target_${crypto.randomUUID()}`;
-          targetChoices.set(targetHandle, {
+          await rememberTargetChoice(targetHandle, {
             kind: "workspace",
             session: task.session!,
             workspaceId: match.workspaceId,
@@ -403,7 +419,7 @@ export function createBrowserAgentRunner(deps: BrowserTaskDeps): AgentRunner {
             ...(match.groupTitle ? { groupTitle: match.groupTitle.slice(0, 80) } : {}),
             ...(match.windowLabel ? { windowLabel: match.windowLabel.slice(0, 80) } : {}),
           };
-        });
+        }));
         throw new TargetSelectionRequiredError({
           expiresAt: new Date(expiresAt).toISOString(),
           candidates,
@@ -669,6 +685,24 @@ export function createBrowserAgentRunner(deps: BrowserTaskDeps): AgentRunner {
   };
 }
 
+const TARGET_CHOICE_STORAGE_PREFIX = "remoteMissionTargetChoice:";
+const targetChoiceStorageKey = (targetHandle: string) =>
+  `${TARGET_CHOICE_STORAGE_PREFIX}${targetHandle}`;
+
+function isTargetChoice(value: unknown): value is TargetChoice {
+  if (!value || typeof value !== "object") return false;
+  const choice = value as Record<string, unknown>;
+  if (
+    typeof choice.session !== "string" ||
+    typeof choice.expiresAt !== "number"
+  ) return false;
+  return choice.kind === "existing_tab"
+    ? typeof choice.tabId === "number" && typeof choice.expectedUrl === "string"
+    : choice.kind === "workspace" &&
+        typeof choice.workspaceId === "string" &&
+        typeof choice.sourceTabId === "number";
+}
+
 /** Wire the real chrome + orchestrator + settings singletons (RFC LP-8, M2). */
 export function createDefaultBrowserTaskDeps(): BrowserTaskDeps {
   return {
@@ -762,6 +796,30 @@ export function createDefaultBrowserTaskDeps(): BrowserTaskDeps {
       } catch {
         return false;
       }
+    },
+    async readTargetChoice(targetHandle) {
+      const key = targetChoiceStorageKey(targetHandle);
+      const value = (await chromePersistencePort.session.get(key))[key];
+      if (!isTargetChoice(value) || value.expiresAt <= Date.now()) {
+        if (value !== undefined) await chromePersistencePort.session.remove(key);
+        return undefined;
+      }
+      return value;
+    },
+    async writeTargetChoice(targetHandle, choice) {
+      await chromePersistencePort.session.set({
+        [targetChoiceStorageKey(targetHandle)]: choice,
+      });
+    },
+    async removeTargetChoicesForSession(session) {
+      const stored = await chromePersistencePort.session.get(null);
+      const keys = Object.entries(stored)
+        .filter(([key, value]) =>
+          key.startsWith(TARGET_CHOICE_STORAGE_PREFIX) &&
+          isTargetChoice(value) &&
+          value.session === session)
+        .map(([key]) => key);
+      if (keys.length) await chromePersistencePort.session.remove(keys);
     },
     async navigateTab(tabId, url) {
       await chrome.tabs.update(tabId, { url });

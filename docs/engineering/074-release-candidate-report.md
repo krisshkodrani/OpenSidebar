@@ -297,7 +297,21 @@ actions or receive raw browser state.
    `https://example.com` tab: `inWorkspace: true`, `sidePanelEnabled: true`,
    `createdForMission: true`, `expectedUrlMatched: true`, window `Window 1`,
    workspace title present, and page title `Example Domain`. Codex completed the
-   evidence review and the mission reached terminal `succeeded`.
+   evidence review and the mission reached terminal `succeeded`. Duplicate-tab
+   missions `2a7f4a9b-9ff5-4f1b-af91-76b4383224d7` and
+   `edead42c-489c-4195-86e7-fa2178e16f82` then consistently failed closed after
+   selection because their short-lived opaque target handles existed only in
+   MV3 service-worker memory and were lost between delivery polls. Target choices
+   now persist in `chrome.storage.session`, remain bound to the mission session
+   and five-minute expiry, are revalidated against the live tab/URL before use,
+   and are removed after consumption. The 68 focused mission, delivery, runner,
+   and browser-orchestration tests pass. After the exact-build reload, mission
+   `7031920d-da8a-4e95-b9d3-535defb5fc29` selected one of five matching
+   `https://example.com` tabs across two workspaces, crossed the same poll gap,
+   and reached supervised terminal `succeeded`. Its authoritative target evidence
+   reported the selected `Post-idle workspace-targeting...` group, Window 1,
+   exact URL/title match, `inWorkspace: true`, `sidePanelEnabled: true`, and
+   `createdForMission: false`; no replacement tab was created.
 8. Done: complete clean shipped-workspace verification, then rebuild, smoke, and
    promote the cloud-service candidate from the integrated release head.
 9. Record the final ZIP SHA-256, then submit that exact artifact. Do not widen the
