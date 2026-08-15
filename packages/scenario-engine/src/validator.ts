@@ -47,7 +47,7 @@ function assertionPasses(
       return (
         typeof actual === "string" &&
         typeof assertion.expected === "string" &&
-        actual.toLocaleLowerCase().includes(assertion.expected.toLocaleLowerCase())
+        includesExpectedAnswer(actual, assertion.expected)
       );
     case "exists":
       return actual !== undefined;
@@ -61,6 +61,26 @@ function assertionPasses(
         )
       );
   }
+}
+
+function normalizeAnswerText(value: string): string {
+  return value
+    .toLocaleLowerCase()
+    .replace(/[^\p{L}\p{N}]+/gu, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function includesExpectedAnswer(actual: string, expected: string): boolean {
+  const normalizedActual = normalizeAnswerText(actual);
+  const expectedClauses = expected
+    .split(";")
+    .map(normalizeAnswerText)
+    .filter(Boolean);
+  return (
+    expectedClauses.length > 0 &&
+    expectedClauses.every((clause) => normalizedActual.includes(clause))
+  );
 }
 
 function leafPaths(value: JsonValue, prefix = ""): Map<string, string> {
