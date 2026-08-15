@@ -77,6 +77,11 @@ export interface BenchmarkAttemptV1 {
   usageByRole: Partial<Record<ModelSeat, RoleUsageV1>>;
   telemetry?: AttemptTelemetryV1;
   validation: ValidationResultV1 | null;
+  /** Sanitized driver failure detail for infrastructure triage. */
+  failure?: {
+    kind: "provider" | "harness" | "indeterminate";
+    reason: string;
+  };
   retryOfAttemptId?: string;
   artifactRefs: readonly string[];
 }

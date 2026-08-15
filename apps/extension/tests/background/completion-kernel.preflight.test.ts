@@ -110,6 +110,31 @@ describe("completion kernel preflights", () => {
     });
   });
 
+  test("routes blocking user-input requests to clarification without requiring a trailing question", () => {
+    const decision = evaluateCompletionSummaryPreflight({
+      summary:
+        "## Clarification Needed\nThe application cannot proceed without profile details. Please share your skills, location, and salary preferences. Once you provide them, I can choose a suitable role.",
+      taskContext: "Apply to the best role for me.",
+      turnCount: 2,
+    });
+
+    expect(decision).toEqual({
+      status: "needs_clarification",
+      reason: "done_summary_is_question",
+    });
+  });
+
+  test("does not redirect an optional follow-up after a completed result", () => {
+    const decision = evaluateCompletionSummaryPreflight({
+      summary:
+        "The requested report was completed and saved. You can provide another date range later if you want a second report.",
+      taskContext: "Create and save the requested report.",
+      turnCount: 2,
+    });
+
+    expect(decision).toEqual({ status: "valid" });
+  });
+
   test("rejects incomplete long summaries in summary preflight", () => {
     const decision = evaluateCompletionSummaryPreflight({
       summary:

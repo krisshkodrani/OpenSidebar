@@ -204,7 +204,10 @@ function isCommunicationSendAction(
   if (args.id == null) return false;
 
   const label = actionLabel.toLowerCase();
-  return /\b(send|post|reply)\b/.test(label);
+  // "Reply" controls normally open a composer; they do not send anything.
+  // Treat only labels with an explicit delivery verb as final actions so
+  // preparatory controls such as "Draft a short reply" remain usable.
+  return /\b(send|post|publish|submit)\b/.test(label);
 }
 
 export function isDraftOnlyCommunicationTask(taskText: string): boolean {
