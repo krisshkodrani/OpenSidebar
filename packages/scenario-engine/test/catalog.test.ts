@@ -68,3 +68,48 @@ test("validator ignores JSON object key order changes inside array state", () =>
   assert.equal(validation.verdict, "pass");
   assert.deepEqual(validation.unexpectedMutations, []);
 });
+
+test("answer-only cases accept equivalent formatting without an unrequested finalization click", () => {
+  const definition = MODEL_BENCH_CASES.find(
+    (entry) => entry.contract.id === "analytics.cross-dashboard-brief",
+  )!;
+  const initialState = scenarioEngine.initialize(definition.contract.id);
+  let finalState = scenarioEngine.apply(initialState, {
+    type: "workflow.advance",
+    payload: { stageId: "stage-1" },
+  });
+  finalState = scenarioEngine.apply(finalState, {
+    type: "workflow.advance",
+    payload: { stageId: "stage-2" },
+  });
+
+  const validation = scenarioEngine.validate({
+    definition,
+    initialState,
+    finalState,
+    finalAnswer:
+      "- Support dashboard - Open Tickets: 42\n- Marketing dashboard - Active Campaigns: 7",
+  });
+
+  assert.equal(validation.verdict, "pass");
+  assert.equal(
+    definition.validator.assertions.some((assertion) =>
+      assertion.id.endsWith(".workflow"),
+    ),
+    false,
+  );
+});
+
+test("formatted answer matching still rejects a missing expected clause", () => {
+  const definition = MODEL_BENCH_CASES.find(
+    (entry) => entry.contract.id === "analytics.cross-dashboard-brief",
+  )!;
+  const initialState = scenarioEngine.initialize(definition.contract.id);
+  const validation = scenarioEngine.validate({
+    definition,
+    initialState,
+    finalState: initialState,
+    finalAnswer: "Support dashboard - Open Tickets: 42",
+  });
+  assert.equal(validation.verdict, "fail");
+});
