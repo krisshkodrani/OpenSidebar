@@ -21,6 +21,10 @@ import {
 } from "../agent/task-contract";
 import { BuildNodesResult, PlannerAssignment, TaskNode } from "./types";
 import { annotateParallelContracts } from "./parallel-contract";
+import {
+  hasSequentialDependencyOrder,
+  isReadSynthesisPlan,
+} from "./read-synthesis-policy";
 // Re-exported so the ratcheted orchestrator/index.ts can import it from its
 // existing "./planner" group (LP-17 P6).
 export { qualifiesForDirectSingleNode } from "./planner-gate-policy";
@@ -730,17 +734,17 @@ const ITEMWISE_ORDINAL_TARGET =
   /\b(?:first|second|third|fourth|fifth|next|another)\b[\w\s-]{0,24}\b(?:item|record|entry|row|product|listing|application|ticket|task)s?\b/i;
 
 /**
- * LP-17 P7: merge a serialized chain of same-page, same-skill nodes into one.
+ * LP-17 P7: merge a serialized chain that should retain one executor context.
  * Live plans split sequential single-page work (add-to-cart → coupon →
  * checkout) into 4-5 serialized nodes, each spawning a fresh executor
  * session (~12-35K tokens of context) and each a link in a dependency chain
  * whose failure kills everything downstream. Serialized + same page + same
  * skill = no parallelism gained, pure overhead.
  *
- * Load-bearing guard: cross-view plans always contain a navigation step (the
- * prompt's VIEW-STATE rule), so refusing to merge across navigation verbs or
- * distinct origins keeps genuinely multi-page plans intact. The user's
- * explicit "separate updates" phrasing also opts out.
+ * Load-bearing guard: navigation normally keeps genuinely multi-page plans
+ * intact. The exception is a read-only chain culminating in one synthesized
+ * answer, where splitting workers loses evidence as the shared tab advances.
+ * Distinct origins and explicit "separate updates" phrasing still opt out.
  */
 export function collapseSameContextSequentialNodes(
   nodes: TaskNode[],
@@ -757,14 +761,10 @@ export function collapseSameContextSequentialNodes(
   if (shouldPreserveSeparateFormUpdateNodes(nodes, taskLabelQuery)) {
     return nodes;
   }
-  // Pure chain: each node depends exactly on its predecessor.
-  for (let i = 0; i < nodes.length; i++) {
-    const deps = nodes[i].dependencies;
-    if (i === 0 ? deps.length !== 0 : !(deps.length === 1 && deps[0] === nodes[i - 1].id)) {
-      return nodes;
-    }
-  }
+  if (!hasSequentialDependencyOrder(nodes)) return nodes;
+  const readSynthesisPlan = isReadSynthesisPlan(nodes, query);
   if (
+    !readSynthesisPlan &&
     nodes.some(
       (node) =>
         node.toolProfile === "navigate" ||

@@ -73,8 +73,10 @@ export function buildRoleExecutionContract(
   for (const tool of skillToolPolicy?.preferredTools ?? []) {
     allowed.add(tool);
   }
-  // Executor must always be able to finalize a subtask.
+  // Executors must always have a terminal exit. Clarification is not a page
+  // capability: it is the safe outcome when required user input is missing.
   allowed.add(ToolName.DONE);
+  allowed.add(ToolName.CLARIFY);
   applySkillToolSuppression(node, allowed);
   applyGlobalToolFlags(settings, allowed);
   const ceiling = resolveToolProfile(enforcedProfile);
