@@ -257,7 +257,20 @@ actions or receive raw browser state.
    and supervised completion to terminal `succeeded`; the device returned to
    `remoteWork: ready` with no external effects.
 7. Exercise duplicate-tab selection, workspace-return cancel visibility, backend
-   restart, extension restart, OAuth refresh, and revocation.
+   restart, extension restart, OAuth refresh, and revocation. The in-flight
+   cancellation subgate exposed and fixed a readiness gap: aborting the local
+   worker also stopped its active heartbeat while the orchestrator was still
+   draining to a safe stop. A focused regression now holds that drain open and
+   proves readiness polling continues until the worker settles; 56 focused
+   delivery, cancellation, and browser-runner tests pass. After the exact-build
+   reload, mission `8ab3199d-1e00-4840-ac81-3bd25036d7be` reached `running` and
+   was cancelled, and follow-on mission
+   `20bc3c92-cd5a-4db2-ae4f-7bcf5d52d5d8` moved immediately to `running` while
+   the same device remained `online` and `remoteWork: ready`. Its browser result
+   was correctly rejected because Chrome's active tab was outside an
+   OpenSidebar workspace. Existing-tab retry
+   `01cd91de-5a39-46c9-8526-a8e112c01a0b` then failed closed without creating
+   or navigating a replacement when its requested tab was absent.
 8. Done: complete clean shipped-workspace verification, then rebuild, smoke, and
    promote the cloud-service candidate from the integrated release head.
 9. Record the final ZIP SHA-256, then submit that exact artifact. Do not widen the
