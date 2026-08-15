@@ -6,6 +6,7 @@ import {
   checkRoleProbes,
   MemoryScenarioStore,
   MODEL_BENCH_CASES,
+  MODEL_BENCH_ACCEPTANCE_CASES,
   ROLE_PROBES,
   scenarioEngine,
   ScenarioRevisionConflict,
@@ -200,4 +201,30 @@ test("full valid 100-case report is rankable and preserves metric vectors", () =
   assert.equal(report.totalPerceptions, 100);
   assert.equal(report.medianLlmTimeMs, 500);
   assert.equal(report.usageByRole.executor?.promptTokens, 1000);
+});
+
+test("MB-101 attempt records can be reported without changing headline rankability", () => {
+  const definition = MODEL_BENCH_ACCEPTANCE_CASES[0]!;
+  const report = buildBenchmarkReport([
+    {
+      schemaVersion: 1,
+      attemptId: "mb-101-attempt",
+      caseId: definition.contract.id,
+      caseVersion: definition.contract.version,
+      caseContentHash: definition.contentHash,
+      buildRevision: "test",
+      startedAt: "2026-08-13T00:00:00.000Z",
+      durationMs: 1,
+      classification: "valid_pass",
+      scoreEligible: true,
+      requestedSeats: {},
+      resolvedSeats: {},
+      usageByRole: {},
+      validation: null,
+      artifactRefs: [],
+    },
+  ]);
+  assert.equal(report.rankable, false);
+  assert.equal(report.overall.passed, 1);
+  assert.equal(report.byRole.orchestration?.passed, 1);
 });

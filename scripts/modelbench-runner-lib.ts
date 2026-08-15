@@ -7,6 +7,7 @@ import type {
   ResolvedSeatV1,
   RoleUsageV1,
   ScenarioStateV2,
+  JsonObject,
 } from "@opensidebar/scenario-contracts";
 import {
   scenarioEngine,
@@ -32,6 +33,7 @@ export interface ModelBenchDriverResult {
   finalState?: ScenarioStateV2;
   finalAnswer?: string;
   terminalOutcome?: string;
+  driverEvidence?: JsonObject;
   resolvedSeats: Partial<Record<ModelSeat, ResolvedSeatV1>>;
   usageByRole: Partial<Record<ModelSeat, RoleUsageV1>>;
   telemetry?: BenchmarkAttemptV1["telemetry"];
@@ -145,6 +147,7 @@ export async function runModelBenchCase(
           finalState: result.finalState,
           finalAnswer: result.finalAnswer,
           terminalOutcome: result.terminalOutcome,
+          driverEvidence: result.driverEvidence,
         })
       : null;
     const classification = classificationFor(

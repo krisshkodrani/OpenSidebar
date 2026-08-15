@@ -1,0 +1,27 @@
+{
+  "schemaVersion": 1,
+  "configurations": [
+    {
+      "label": "openrouter-release-candidate",
+      "provider": "openrouter",
+      "perceptionMode": "auto",
+      "seats": {
+        "executor": {
+          "provider": "openrouter",
+          "providerPin": "minimax",
+          "model": "minimax/minimax-m3"
+        },
+        "planner": {
+          "provider": "openrouter",
+          "providerPin": "z-ai",
+          "model": "z-ai/glm-5.2"
+        },
+        "judge": {
+          "provider": "openrouter",
+          "providerPin": "groq",
+          "model": "openai/gpt-oss-120b"
+        }
+      }
+    }
+  ]
+}

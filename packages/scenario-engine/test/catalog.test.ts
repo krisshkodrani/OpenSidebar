@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import {
   checkModelBenchCatalog,
+  MODEL_BENCH_ACCEPTANCE_CASES,
   MODEL_BENCH_CASES,
   runOracle,
   scenarioEngine,
@@ -10,6 +11,16 @@ import {
 
 test("ModelBench catalog has exactly the approved distributions", () => {
   assert.deepEqual(checkModelBenchCatalog(MODEL_BENCH_CASES), []);
+});
+
+test("MB-101 is a runnable acceptance case outside the frozen Full-100 score", () => {
+  const definition = MODEL_BENCH_ACCEPTANCE_CASES[0]!;
+  assert.equal(definition.contract.metadata?.ordinal, 101);
+  assert.deepEqual(definition.contract.suites, []);
+  assert.equal(runOracle(definition).verdict, "pass");
+  for (const miss of definition.nearMisses) {
+    assert.equal(runOracle(definition, miss.outcome).verdict, "fail", miss.id);
+  }
 });
 
 test("every gold oracle passes and every declared near miss fails", () => {

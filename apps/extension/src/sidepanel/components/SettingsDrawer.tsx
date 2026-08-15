@@ -27,6 +27,8 @@ import { SyncSettingsTab } from "./settings/SyncSettingsTab";
 
 interface Props {
   isOpen: boolean;
+  activeTab: SettingsTab;
+  onActiveTabChange: (tab: SettingsTab) => void;
   onClose: () => void;
 }
 
@@ -37,7 +39,12 @@ const PROVIDER_CREDENTIAL_KEYS: readonly (keyof UserSettings)[] = [
   "fireworksApiKey",
 ];
 
-export function SettingsDrawer({ isOpen, onClose }: Props) {
+export function SettingsDrawer({
+  isOpen,
+  activeTab,
+  onActiveTabChange,
+  onClose,
+}: Props) {
   const settings = useStore((s) => s.settings);
   const updateSettings = useStore((s) => s.updateSettings);
 
@@ -49,8 +56,6 @@ export function SettingsDrawer({ isOpen, onClose }: Props) {
   const [isSaving, setIsSaving] = useState(false);
   const [notificationPermissionError, setNotificationPermissionError] =
     useState<string | null>(null);
-  const [activeTab, setActiveTab] = useState<SettingsTab>("account");
-
   const drawerRef = useRef<HTMLDivElement>(null);
   const closeButtonRef = useRef<HTMLButtonElement>(null);
   const activeProviderMode = resolveAvailableProviderMode(formState);
@@ -254,7 +259,10 @@ export function SettingsDrawer({ isOpen, onClose }: Props) {
           </button>
         </header>
 
-        <SettingsTabBar activeTab={activeTab} onChange={setActiveTab} />
+        <SettingsTabBar
+          activeTab={activeTab}
+          onChange={onActiveTabChange}
+        />
 
         <div className="flex-1 space-y-6 overflow-y-auto p-4">
           {activeTab === "account" ? (

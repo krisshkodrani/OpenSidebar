@@ -1,4 +1,5 @@
 import { execFileSync } from "node:child_process";
+import { resolve } from "node:path";
 import type { ScenarioRunV2 } from "@opensidebar/scenario-contracts";
 import { createE2EHarness } from "../apps/extension/tests/e2e/helpers/harness.js";
 import {
@@ -14,6 +15,11 @@ import type {
   ModelBenchDriverInput,
   ModelBenchDriverResult,
 } from "./modelbench-runner-lib.js";
+import { openHelperPage } from "../apps/extension/tests/e2e/helpers/browser.js";
+import {
+  E2E_CREATE_WORKSPACE_MESSAGE_TYPE,
+  E2E_TEST_API_ENABLED_STORAGE_KEY,
+} from "../apps/extension/src/background/e2e-test-api.js";
 import { startModelBenchTargetServer } from "./modelbench-target-server.js";
 import { collectModelBenchTraceEvidence } from "./modelbench-trace-evidence.js";
 
@@ -23,6 +29,96 @@ interface DriverOutcome {
   kind: "completion" | "clarification" | "timeout";
   events: EventRecord[];
   event?: EventRecord;
+}
+
+export function observedTabOpeningAction(turns: readonly EventRecord[]): boolean {
+  return turns.some((turn) =>
+    Array.isArray(turn.toolCalls) &&
+    turn.toolCalls.some((call: EventRecord) =>
+      call?.name === "create_tab" || call?.name === "click_element"
+    )
+  );
+}
+
+async function collectBrowserDriverEvidence(input: {
+  worker: Parameters<typeof getMonitoredEventsWithControlLane>[0];
+  sourceTabId: number;
+  targetOrigin: string;
+  turns: readonly EventRecord[];
+}): Promise<Record<string, boolean>> {
+  const browserState = await input.worker.evaluate(
+    async ({ sourceTabId, targetOrigin }) => {
+      const source = await chrome.tabs.get(sourceTabId).catch(() => null);
+      const tabs = source
+        ? await chrome.tabs.query({ windowId: source.windowId })
+        : [];
+      const linked = tabs.find((tab) =>
+        tab.id !== sourceTabId &&
+        typeof tab.url === "string" &&
+        tab.url.startsWith(targetOrigin) &&
+        tab.url.includes("view=linked-resource")
+      ) ?? null;
+      const active = tabs.find((tab) => tab.active) ?? null;
+      const [sourcePanel, linkedPanel] = await Promise.all([
+        chrome.sidePanel.getOptions({ tabId: sourceTabId }).catch(() => null),
+        linked?.id
+          ? chrome.sidePanel.getOptions({ tabId: linked.id }).catch(() => null)
+          : Promise.resolve(null),
+      ]);
+      const validGroup =
+        typeof source?.groupId === "number" &&
+        source.groupId !== chrome.tabGroups.TAB_GROUP_ID_NONE;
+      return {
+        linkedResourceOpened: Boolean(linked),
+        spawnedTabInWorkspaceGroup: Boolean(
+          linked && validGroup && linked.groupId === source?.groupId,
+        ),
+        sourcePanelEnabled: sourcePanel?.enabled === true,
+        spawnedPanelEnabled: linkedPanel?.enabled === true,
+        returnedToSourceTab: active?.id === sourceTabId,
+      };
+    },
+    { sourceTabId: input.sourceTabId, targetOrigin: input.targetOrigin },
+  );
+  return {
+    ...browserState,
+    openingActionObserved:
+      browserState.linkedResourceOpened ||
+      observedTabOpeningAction(input.turns),
+  };
+}
+
+async function createGroupedWorkspace(
+  harness: ReturnType<typeof createE2EHarness>,
+  tabId: number,
+): Promise<string> {
+  const workspaceId = `modelbench-${crypto.randomUUID()}`;
+  const helperPage = await openHelperPage(harness.ctx);
+  const response = await helperPage.evaluate(
+    async (input) => {
+      await chrome.storage.local.set({ [input.enabledKey]: true });
+      return chrome.runtime.sendMessage({
+        type: input.messageType,
+        payload: {
+          tabId: input.tabId,
+          workspaceId: input.workspaceId,
+          name: "ModelBench",
+        },
+      });
+    },
+    {
+      enabledKey: E2E_TEST_API_ENABLED_STORAGE_KEY,
+      messageType: E2E_CREATE_WORKSPACE_MESSAGE_TYPE,
+      tabId,
+      workspaceId,
+    },
+  );
+  if (!response?.ok || response.workspaceId !== workspaceId) {
+    throw new Error(
+      response?.detail ?? "Could not create the MB-101 source workspace group.",
+    );
+  }
+  return workspaceId;
 }
 
 const E2E_ENV_NAMES = [
@@ -154,12 +250,18 @@ async function readRun(origin: string, runId: string): Promise<ScenarioRunV2> {
 }
 
 export async function createModelBenchDriver(): Promise<ModelBenchDriver> {
+  if (process.env.MODEL_BENCH_SKIP_TARGET_BUILD !== "1") {
+    const { build } = await import("vite");
+    await build({ configFile: resolve("apps/sandbox/vite.config.ts") });
+  }
   if (process.env.MODEL_BENCH_SKIP_EXTENSION_BUILD !== "1") {
-    execFileSync(
-      process.execPath,
-      ["node_modules/nx/bin/nx.js", "run", "extension:build-e2e"],
-      { stdio: "inherit" },
-    );
+    for (const args of [
+      ["node_modules/tsx/dist/cli.mjs", "scripts/build-prompts.ts"],
+      ["node_modules/tsx/dist/cli.mjs", "scripts/check-inline-prompts.ts"],
+      ["node_modules/tsx/dist/cli.mjs", "scripts/vite-clean.ts", "build", "--mode", "e2e"],
+    ]) {
+      execFileSync(process.execPath, args, { stdio: "inherit" });
+    }
   }
   const target = await startModelBenchTargetServer();
   let closed = false;
@@ -195,10 +297,12 @@ export async function createModelBenchDriver(): Promise<ModelBenchDriver> {
         await navigateAndWait(harness.page, created.launchUrl);
         const tabId = await getActiveTabId(harness.ctx.serviceWorker);
         if (tabId <= 0) throw new Error("ModelBench target tab was not active.");
+        workspaceId = await createGroupedWorkspace(harness, tabId);
         workspaceId = await sendUserChat(
           harness.ctx,
           input.definition.contract.prompt,
           tabId,
+          workspaceId,
         );
         if (input.definition.contract.approvalPolicy === "confirm-consequential") {
           approvals = startApprovalAutoResponder(
@@ -222,11 +326,18 @@ export async function createModelBenchDriver(): Promise<ModelBenchDriver> {
           requestedSeats: input.configuration.seats,
         });
         const run = await readRun(target.origin, created.runId);
+        const driverEvidence = await collectBrowserDriverEvidence({
+          worker: harness.ctx.serviceWorker,
+          sourceTabId: tabId,
+          targetOrigin: target.origin,
+          turns: traceSummary.turns,
+        });
         return {
           durationMs: Date.now() - startedAt,
           finalState: run.state,
           finalAnswer: finalAnswer(outcome),
           terminalOutcome: terminalOutcome(outcome, run),
+          driverEvidence,
           resolvedSeats: evidence.resolvedSeats,
           usageByRole: evidence.usageByRole,
           telemetry: evidence.telemetry,
@@ -237,6 +348,7 @@ export async function createModelBenchDriver(): Promise<ModelBenchDriver> {
             outcome: outcome.kind,
             runIds: evidence.runIds,
             ambiguousSeats: evidence.ambiguousSeats,
+            driverEvidence,
           },
         };
       } catch (error) {

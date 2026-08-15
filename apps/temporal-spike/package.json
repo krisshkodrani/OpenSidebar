@@ -10,19 +10,19 @@
     "test": "tsx --test test/*.test.ts"
   },
   "dependencies": {
-    "@temporalio/activity": "1.21.1",
-    "@temporalio/client": "1.21.1",
-    "@temporalio/common": "1.21.1",
-    "@temporalio/worker": "1.21.1",
-    "@temporalio/workflow": "1.21.1"
+    "@temporalio/activity": "1.22.0",
+    "@temporalio/client": "1.22.0",
+    "@temporalio/common": "1.22.0",
+    "@temporalio/worker": "1.22.0",
+    "@temporalio/workflow": "1.22.0"
   },
   "devDependencies": {
     "@types/node": "22.13.14",
-    "esbuild": "^0.27.7",
+    "esbuild": "^0.28.1",
     "tsx": "^4.19.0",
     "typescript": "^5.5.3"
   },
   "optionalDependencies": {
-    "@esbuild/linux-x64": "0.27.7"
+    "@esbuild/linux-x64": "0.28.1"
   }
 }

@@ -92,3 +92,28 @@ button, input, select { font: inherit; }
 .scenario-message { width: min(620px, calc(100% - 40px)); margin: 16vh auto; padding: 28px; border: 1px solid #ddd6ca; border-radius: 14px; background: #fff; }
 .scenario-message > p:first-child { color: #6b7280; font-size: .85rem; }
 @media (max-width: 720px) { .scenario-topbar { padding: 0 16px; } .scenario-topbar small { display: none; } .scenario-layout { grid-template-columns: 1fr; } .scenario-layout nav { display: flex; overflow-x: auto; border-right: 0; border-bottom: 1px solid #dfe3e8; padding: 10px; } .scenario-layout nav span { width: auto; white-space: nowrap; } .scenario-layout main { padding: 24px 18px 60px; } }
+.scenario-linked-resource p {
+  color: #4b5563;
+  margin: 0 0 1rem;
+}
+
+.scenario-linked-resource a.scenario-primary {
+  display: inline-block;
+  text-decoration: none;
+}
+
+.scenario-resource-page {
+  box-sizing: border-box;
+  margin: 0 auto;
+  max-width: 760px;
+  min-height: 100vh;
+  padding: 4rem 2rem;
+}
+
+.scenario-resource-page > p {
+  color: #64748b;
+  font-size: 0.82rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}

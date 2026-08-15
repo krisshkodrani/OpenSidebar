@@ -36,14 +36,20 @@
  */
 
 import type { BrowserToolRequest } from "@shared-types/browser-bridge";
-import type { RemoteMissionTargetSelectionV1 } from "@shared-types/remote-missions";
+import type {
+  RemoteMissionTargetBindingV1,
+  RemoteMissionTargetSelectionV1,
+} from "@shared-types/remote-missions";
 
 import type { UserSettings } from "../../types";
-import { chromeRuntimeEnvironment } from "../environment/chrome";
+import { chromePersistencePort, chromeRuntimeEnvironment } from "../environment/chrome";
 import { loadApiKey, loadSettings } from "../../utils/settings-storage";
 import { getProviderKeyStatus } from "../../utils/provider-keys";
 import { getBlockedRuleForUrl } from "../../utils/site-access";
 import { ensureContentScript } from "../infrastructure/tab-ready";
+import { verifyIsolatedTaskWorkspace } from "./isolated-workspace";
+import { createWorkspaceTab } from "../workspaces/create-workspace-tab";
+import { workspaceManager } from "../workspaces/manager";
 import {
   createAgentRuntime,
   type TaskCompletionPayload,
@@ -106,14 +112,42 @@ export interface BrowserTaskDeps {
     groupTitle?: string;
     windowLabel?: string;
   }>>;
+  /** List existing real OpenSidebar workspaces, one bounded candidate each. */
+  findWorkspaceTargets?(): Promise<Array<{
+    workspaceId: string;
+    sourceTabId: number;
+    pageTitle: string;
+    groupTitle?: string;
+    windowLabel?: string;
+  }>>;
+  /** Create a background tab directly inside an existing workspace. */
+  createTabInWorkspace?(sourceTabId: number, workspaceId: string, url: string): Promise<number>;
   /** True if the tab is still open (the user can close session tabs anytime). */
   tabExists(tabId: number): Promise<boolean>;
   /** Revalidate that an opaque choice still points at the expected exact URL. */
   tabMatchesUrl?(tabId: number, expectedUrl: string): Promise<boolean>;
+  /** Restore a short-lived opaque target choice after an MV3 worker restart. */
+  readTargetChoice?(targetHandle: string): Promise<TargetChoice | undefined>;
+  /** Persist a short-lived opaque target choice across MV3 worker restarts. */
+  writeTargetChoice?(targetHandle: string, choice: TargetChoice): Promise<void>;
+  /** Remove all choices after one is consumed for a mission session. */
+  removeTargetChoicesForSession?(session: string): Promise<void>;
   /** Point an existing tab at a url. Does not await page load (nor does createTab). */
   navigateTab(tabId: number, url: string): Promise<void>;
   /** Wait until the production content bridge can observe the selected tab. */
   ensureTabReady?(tabId: number): Promise<void>;
+  /** Prove workspace/group/panel binding and return sanitized evidence. */
+  verifyIsolatedWorkspace(
+    tabId: number,
+    expectedUrl: string | undefined,
+    createdForMission: boolean,
+  ): Promise<RemoteMissionTargetBindingV1>;
+  /** Inspect a visible/existing target without changing its workspace state. */
+  describeTarget?(
+    tabId: number,
+    context: "active_tab" | "existing_tab",
+    expectedUrl?: string,
+  ): Promise<RemoteMissionTargetBindingV1>;
   /** Start an orchestrator task in the given tab/workspace. */
   startTask(input: {
     query: string;
@@ -187,6 +221,8 @@ export function mapCompletion(payload: CompletionPayload): AgentRunOutcome {
 
 interface SessionEntry {
   workspaceId: string;
+  /** Real visual workspace selected for an isolated mission. */
+  visualWorkspaceId?: string;
   tabId: number | null;
   /**
    * Serializes runs on the session. The orchestrator's same-workspace
@@ -197,6 +233,40 @@ interface SessionEntry {
    */
   queue: Promise<unknown>;
 }
+
+type ResolvedTarget = {
+  tabId: number;
+  createdForMission: boolean;
+  visualWorkspaceId?: string;
+};
+
+function requireWorkspaceBoundTarget(
+  target: RemoteMissionTargetBindingV1,
+): RemoteMissionTargetBindingV1 {
+  if (!target.inWorkspace || !target.sidePanelEnabled)
+    throw new Error(
+      "The selected browser target is outside an OpenSidebar workspace or its sidepanel is disabled.",
+    );
+  if (target.expectedUrlMatched === false)
+    throw new Error("The selected browser target no longer matches the requested URL.");
+  return target;
+}
+
+export type TargetChoice =
+  | {
+      kind: "existing_tab";
+      session: string;
+      tabId: number;
+      expectedUrl: string;
+      expiresAt: number;
+    }
+  | {
+      kind: "workspace";
+      session: string;
+      workspaceId: string;
+      sourceTabId: number;
+      expiresAt: number;
+    };
 
 /** Project a forwarded pause into a `needs_human` outcome carrying the approval. */
 function pauseToOutcome(payload: PausePayload): AgentRunOutcome {
@@ -223,25 +293,38 @@ export function createBrowserAgentRunner(deps: BrowserTaskDeps): AgentRunner {
   // singleton per external client; no eviction needed.
   const sessions = new Map<string, SessionEntry>();
   const workspaceTabs = new Map<string, number>();
+  const workspaceTargets = new Map<string, RemoteMissionTargetBindingV1>();
   // Remember which workspace a forwarded approval belongs to, so a sessionless
   // (or SW-restart) respond call can still target it. Never cleared — bounded
   // by the number of approvals a single caller process produces.
   const approvalWorkspaces = new Map<string, string>();
-  const targetChoices = new Map<string, {
-    session: string;
-    tabId: number;
-    expectedUrl: string;
-    expiresAt: number;
-  }>();
+  const targetChoices = new Map<string, TargetChoice>();
 
-  async function resolveTab(task: AgentTask, entry: SessionEntry | null): Promise<number> {
+  const rememberTargetChoice = async (targetHandle: string, choice: TargetChoice) => {
+    targetChoices.set(targetHandle, choice);
+    await deps.writeTargetChoice?.(targetHandle, choice);
+  };
+  const readTargetChoice = async (targetHandle: string) =>
+    targetChoices.get(targetHandle) ?? await deps.readTargetChoice?.(targetHandle);
+  const removeTargetChoicesForSession = async (session: string) => {
+    for (const [handle, candidate] of targetChoices)
+      if (candidate.session === session) targetChoices.delete(handle);
+    await deps.removeTargetChoicesForSession?.(session);
+  };
+
+  async function resolveTab(
+    task: AgentTask,
+    entry: SessionEntry | null,
+    onProgress?: AgentRunOptions["onProgress"],
+  ): Promise<ResolvedTarget> {
     if (task.targetContext === "existing_tab") {
       if (!task.url)
         throw new Error("An existing-tab remote task requires a target URL.");
       if (task.targetHandle) {
-        const choice = targetChoices.get(task.targetHandle);
+        const choice = await readTargetChoice(task.targetHandle);
         if (
           !choice ||
+          choice.kind !== "existing_tab" ||
           !task.session ||
           choice.session !== task.session ||
           choice.expiresAt <= Date.now() ||
@@ -249,10 +332,9 @@ export function createBrowserAgentRunner(deps: BrowserTaskDeps): AgentRunner {
           !deps.tabMatchesUrl ||
           !(await deps.tabMatchesUrl(choice.tabId, choice.expectedUrl))
         ) throw new Error("The selected browser target expired or is no longer open.");
-        for (const [handle, candidate] of targetChoices)
-          if (candidate.session === task.session) targetChoices.delete(handle);
+        await removeTargetChoicesForSession(task.session);
         if (entry) entry.tabId = choice.tabId;
-        return choice.tabId;
+        return { tabId: choice.tabId, createdForMission: false };
       }
       const matches = await deps.findTabsByUrl?.(task.url) ?? [];
       for (const [handle, candidate] of targetChoices)
@@ -263,9 +345,10 @@ export function createBrowserAgentRunner(deps: BrowserTaskDeps): AgentRunner {
         if (!task.session)
           throw new Error("Ambiguous browser targets require a mission session.");
         const expiresAt = Date.now() + 5 * 60_000;
-        const candidates = matches.slice(0, 10).map((match) => {
+        const candidates = await Promise.all(matches.slice(0, 10).map(async (match) => {
           const targetHandle = `target_${crypto.randomUUID()}`;
-          targetChoices.set(targetHandle, {
+          await rememberTargetChoice(targetHandle, {
+            kind: "existing_tab",
             session: task.session!,
             tabId: match.tabId,
             expectedUrl: new URL(task.url!).href,
@@ -277,7 +360,7 @@ export function createBrowserAgentRunner(deps: BrowserTaskDeps): AgentRunner {
             ...(match.groupTitle ? { groupTitle: match.groupTitle.slice(0, 80) } : {}),
             ...(match.windowLabel ? { windowLabel: match.windowLabel.slice(0, 80) } : {}),
           };
-        });
+        }));
         throw new TargetSelectionRequiredError({
           expiresAt: new Date(expiresAt).toISOString(),
           candidates,
@@ -285,7 +368,7 @@ export function createBrowserAgentRunner(deps: BrowserTaskDeps): AgentRunner {
       }
       const tabId = matches[0]!.tabId;
       if (entry) entry.tabId = tabId;
-      return tabId;
+      return { tabId, createdForMission: false };
     }
     if (task.targetContext === "active_tab") {
       const tabId = await deps.getActiveTab?.();
@@ -293,15 +376,85 @@ export function createBrowserAgentRunner(deps: BrowserTaskDeps): AgentRunner {
         throw new Error("No active browser tab is available for the remote task.");
       if (task.url) await deps.navigateTab(tabId, task.url);
       if (entry) entry.tabId = tabId;
-      return tabId;
+      return { tabId, createdForMission: false };
     }
     if (entry?.tabId != null && (await deps.tabExists(entry.tabId))) {
       if (task.url) await deps.navigateTab(entry.tabId, task.url);
-      return entry.tabId;
+      return {
+        tabId: entry.tabId,
+        createdForMission: false,
+        ...(entry.visualWorkspaceId
+          ? { visualWorkspaceId: entry.visualWorkspaceId }
+          : {}),
+      };
     }
-    const tabId = await deps.createTab(task.url ?? "about:blank");
-    if (entry) entry.tabId = tabId;
-    return tabId;
+    if (!deps.findWorkspaceTargets || !deps.createTabInWorkspace) {
+      throw new Error("Existing OpenSidebar workspace discovery is unavailable.");
+    }
+    let target: { sourceTabId: number; workspaceId: string };
+    if (task.targetHandle) {
+      const choice = await readTargetChoice(task.targetHandle);
+      if (
+        !choice ||
+        choice.kind !== "workspace" ||
+        !task.session ||
+        choice.session !== task.session ||
+        choice.expiresAt <= Date.now() ||
+        !(await deps.tabExists(choice.sourceTabId))
+      ) throw new Error("The selected OpenSidebar workspace expired or is no longer open.");
+      target = choice;
+      await removeTargetChoicesForSession(task.session);
+    } else {
+      await onProgress?.("Discovering the existing OpenSidebar workspace.");
+      const matches = await deps.findWorkspaceTargets();
+      if (!matches.length) {
+        throw new Error(
+          "No existing OpenSidebar workspace is available. Open a workspace before starting isolated remote work.",
+        );
+      }
+      if (matches.length > 1) {
+        if (!task.session)
+          throw new Error("Ambiguous OpenSidebar workspaces require a mission session.");
+        const expiresAt = Date.now() + 5 * 60_000;
+        const candidates = await Promise.all(matches.slice(0, 10).map(async (match) => {
+          const targetHandle = `target_${crypto.randomUUID()}`;
+          await rememberTargetChoice(targetHandle, {
+            kind: "workspace",
+            session: task.session!,
+            workspaceId: match.workspaceId,
+            sourceTabId: match.sourceTabId,
+            expiresAt,
+          });
+          return {
+            targetHandle,
+            pageTitle: match.pageTitle.slice(0, 160),
+            ...(match.groupTitle ? { groupTitle: match.groupTitle.slice(0, 80) } : {}),
+            ...(match.windowLabel ? { windowLabel: match.windowLabel.slice(0, 80) } : {}),
+          };
+        }));
+        throw new TargetSelectionRequiredError({
+          expiresAt: new Date(expiresAt).toISOString(),
+          candidates,
+        });
+      }
+      target = matches[0]!;
+    }
+    await onProgress?.("Creating the mission tab in the selected workspace.");
+    const tabId = await deps.createTabInWorkspace(
+      target.sourceTabId,
+      target.workspaceId,
+      task.url ?? "about:blank",
+    );
+    if (entry) {
+      entry.tabId = tabId;
+      entry.visualWorkspaceId = target.workspaceId;
+      entry.workspaceId = target.workspaceId;
+    }
+    return {
+      tabId,
+      createdForMission: true,
+      visualWorkspaceId: target.workspaceId,
+    };
   }
 
   /**
@@ -315,6 +468,7 @@ export function createBrowserAgentRunner(deps: BrowserTaskDeps): AgentRunner {
     workspaceId: string,
     signal: AbortSignal | undefined,
     start: () => Promise<void>,
+    finalizeTarget?: () => Promise<RemoteMissionTargetBindingV1>,
   ): Promise<AgentRunOutcome> {
     return new Promise<AgentRunOutcome>((resolve) => {
       let settled = false;
@@ -325,7 +479,20 @@ export function createBrowserAgentRunner(deps: BrowserTaskDeps): AgentRunner {
         offCompletion();
         offPause();
         signal?.removeEventListener("abort", onAbort);
-        resolve(outcome);
+        void (async () => {
+          try {
+            const target = finalizeTarget
+              ? await finalizeTarget()
+              : workspaceTargets.get(workspaceId);
+            if (target) workspaceTargets.set(workspaceId, target);
+            resolve(target ? { ...outcome, target } : outcome);
+          } catch (error) {
+            resolve({
+              status: "error",
+              reason: `Remote target binding was lost before completion: ${(error as Error).message}`,
+            });
+          }
+        })();
       };
       const onAbort = () => {
         // Settle via the stopped completion (not early), which keeps the
@@ -369,40 +536,98 @@ export function createBrowserAgentRunner(deps: BrowserTaskDeps): AgentRunner {
     });
   }
 
-  function executeRun(
+  async function executeRun(
     task: AgentTask,
     entry: SessionEntry | null,
     signal: AbortSignal | undefined,
+    onTargetBound?: AgentRunOptions["onTargetBound"],
+    onProgress?: AgentRunOptions["onProgress"],
   ): Promise<AgentRunOutcome> {
     if (signal?.aborted) {
       // Aborted while queued (or before dispatch): touch nothing.
       return Promise.resolve({ status: "error", reason: CANCELED_REASON });
     }
-    const workspaceId = entry?.workspaceId ?? newWorkspaceId();
+    let resolved: ResolvedTarget;
+    try {
+      resolved = await resolveTab(task, entry, onProgress);
+    } catch (error) {
+      return error instanceof TargetSelectionRequiredError
+        ? {
+            status: "needs_human",
+            reason: "Choose which browser target or OpenSidebar workspace to use.",
+            targetSelection: error.selection,
+          }
+        : { status: "error", reason: (error as Error).message };
+    }
+    const { tabId, createdForMission } = resolved;
+    const workspaceId = resolved.visualWorkspaceId ?? entry?.workspaceId ?? newWorkspaceId();
+    const targetContext = task.targetContext ?? "isolated_tab";
     return waitForOutcome(workspaceId, signal, async () => {
-      const tabId = await resolveTab(task, entry);
       workspaceTabs.set(workspaceId, tabId);
+      await onProgress?.("Verifying the mission tab workspace and sidepanel binding.");
+      let isolatedTarget: RemoteMissionTargetBindingV1 | undefined;
+      if (targetContext === "isolated_tab") {
+        // Prove placement before waiting on page readiness so no agent work can
+        // begin from a detached tab.
+        isolatedTarget = await deps.verifyIsolatedWorkspace(
+          tabId,
+          task.url,
+          createdForMission,
+        );
+      }
       await deps.ensureTabReady?.(tabId);
+      if (targetContext === "isolated_tab") {
+        workspaceTargets.set(
+          workspaceId,
+          deps.ensureTabReady
+            ? await deps.verifyIsolatedWorkspace(tabId, task.url, createdForMission)
+            : isolatedTarget!,
+        );
+      } else if (deps.describeTarget) {
+        workspaceTargets.set(
+          workspaceId,
+          requireWorkspaceBoundTarget(
+            await deps.describeTarget(tabId, targetContext, task.url),
+          ),
+        );
+      }
+      const boundTarget = workspaceTargets.get(workspaceId);
+      if (boundTarget) await onTargetBound?.(boundTarget);
+      await onProgress?.("Starting read-only browser execution on the verified target.");
       await deps.startTask({
         query: task.instruction,
         tabId,
         workspaceId,
         executionToolProfile: task.executionToolProfile,
       });
-    });
+    }, targetContext === "isolated_tab"
+      ? () => deps.verifyIsolatedWorkspace(tabId, task.url, createdForMission)
+      : deps.describeTarget
+        ? async () => requireWorkspaceBoundTarget(
+            await deps.describeTarget!(tabId, targetContext, task.url),
+          )
+        : undefined);
   }
 
   return {
     run(task: AgentTask, opts?: AgentRunOptions): Promise<AgentRunOutcome> {
       const signal = opts?.signal;
-      if (!task.session) return executeRun(task, null, signal);
+      if (!task.session)
+        return executeRun(task, null, signal, opts?.onTargetBound, opts?.onProgress);
       let entry = sessions.get(task.session);
       if (!entry) {
         entry = { workspaceId: newWorkspaceId(), tabId: null, queue: Promise.resolve() };
         sessions.set(task.session, entry);
       }
       const sessionEntry = entry;
-      const run = sessionEntry.queue.then(() => executeRun(task, sessionEntry, signal));
+      const run = sessionEntry.queue.then(() =>
+        executeRun(
+          task,
+          sessionEntry,
+          signal,
+          opts?.onTargetBound,
+          opts?.onProgress,
+        ));
       // executeRun never rejects by design, but guard the queue anyway so one
       // bad run can never wedge the session forever.
       sessionEntry.queue = run.catch(() => {});
@@ -472,6 +697,24 @@ export function createBrowserAgentRunner(deps: BrowserTaskDeps): AgentRunner {
   };
 }
 
+const TARGET_CHOICE_STORAGE_PREFIX = "remoteMissionTargetChoice:";
+const targetChoiceStorageKey = (targetHandle: string) =>
+  `${TARGET_CHOICE_STORAGE_PREFIX}${targetHandle}`;
+
+function isTargetChoice(value: unknown): value is TargetChoice {
+  if (!value || typeof value !== "object") return false;
+  const choice = value as Record<string, unknown>;
+  if (
+    typeof choice.session !== "string" ||
+    typeof choice.expiresAt !== "number"
+  ) return false;
+  return choice.kind === "existing_tab"
+    ? typeof choice.tabId === "number" && typeof choice.expectedUrl === "string"
+    : choice.kind === "workspace" &&
+        typeof choice.workspaceId === "string" &&
+        typeof choice.sourceTabId === "number";
+}
+
 /** Wire the real chrome + orchestrator + settings singletons (RFC LP-8, M2). */
 export function createDefaultBrowserTaskDeps(): BrowserTaskDeps {
   return {
@@ -506,6 +749,45 @@ export function createDefaultBrowserTaskDeps(): BrowserTaskDeps {
       }
       return matches;
     },
+    async findWorkspaceTargets() {
+      const tabs = await chrome.tabs.query({});
+      const windowIds = [...new Set(tabs.map((tab) => tab.windowId))]
+        .sort((a, b) => a - b);
+      const byId = new Map(
+        tabs
+          .filter((tab): tab is chrome.tabs.Tab & { id: number } => typeof tab.id === "number")
+          .map((tab) => [tab.id, tab]),
+      );
+      const targets = [];
+      for (const workspace of await workspaceManager.getWorkspaces()) {
+        if (workspace.id === "default" || workspace.tabGroupId === null) continue;
+        const source = workspace.tabIds
+          .map((tabId) => byId.get(tabId))
+          .find((tab) => tab?.groupId === workspace.tabGroupId);
+        if (!source?.id) continue;
+        const groupTitle = await chrome.tabGroups
+          .get(workspace.tabGroupId)
+          .then((group) => group.title?.trim())
+          .catch(() => undefined);
+        targets.push({
+          workspaceId: workspace.id,
+          sourceTabId: source.id,
+          pageTitle: source.title?.trim() || "OpenSidebar workspace",
+          groupTitle: groupTitle || workspace.name,
+          windowLabel: `Window ${windowIds.indexOf(source.windowId) + 1}`,
+        });
+      }
+      return targets;
+    },
+    async createTabInWorkspace(sourceTabId, workspaceId, url) {
+      const tab = await createWorkspaceTab({
+        sourceTabId,
+        workspaceId,
+        url,
+        adoptionMode: "live_group",
+      });
+      return tab.id;
+    },
     async createTab(url) {
       const tab = await chrome.tabs.create({ url, active: false });
       if (typeof tab.id !== "number") throw new Error("Failed to open a tab.");
@@ -527,12 +809,74 @@ export function createDefaultBrowserTaskDeps(): BrowserTaskDeps {
         return false;
       }
     },
+    async readTargetChoice(targetHandle) {
+      const key = targetChoiceStorageKey(targetHandle);
+      const value = (await chromePersistencePort.session.get(key))[key];
+      if (!isTargetChoice(value) || value.expiresAt <= Date.now()) {
+        if (value !== undefined) await chromePersistencePort.session.remove(key);
+        return undefined;
+      }
+      return value;
+    },
+    async writeTargetChoice(targetHandle, choice) {
+      await chromePersistencePort.session.set({
+        [targetChoiceStorageKey(targetHandle)]: choice,
+      });
+    },
+    async removeTargetChoicesForSession(session) {
+      const stored = await chromePersistencePort.session.get(null);
+      const keys = Object.entries(stored)
+        .filter(([key, value]) =>
+          key.startsWith(TARGET_CHOICE_STORAGE_PREFIX) &&
+          isTargetChoice(value) &&
+          value.session === session)
+        .map(([key]) => key);
+      if (keys.length) await chromePersistencePort.session.remove(keys);
+    },
     async navigateTab(tabId, url) {
       await chrome.tabs.update(tabId, { url });
     },
     async ensureTabReady(tabId) {
       if (!(await ensureContentScript(tabId, 10_000)))
         throw new Error("Browser page did not become ready for the remote task.");
+    },
+    async verifyIsolatedWorkspace(tabId, expectedUrl, createdForMission) {
+      return verifyIsolatedTaskWorkspace(tabId, expectedUrl, createdForMission);
+    },
+    async describeTarget(tabId, context, expectedUrl) {
+      const tab = await chrome.tabs.get(tabId);
+      const workspace = await workspaceManager.getWorkspaceForTab(tabId);
+      const tabs = await chrome.tabs.query({});
+      const windowIds = [...new Set(tabs.map((candidate) => candidate.windowId))]
+        .sort((a, b) => a - b);
+      const groupTitle = workspace?.tabGroupId != null
+        ? await chrome.tabGroups
+            .get(workspace.tabGroupId)
+            .then((group) => group.title?.trim())
+            .catch(() => undefined)
+        : undefined;
+      const panel = await chrome.sidePanel.getOptions({ tabId }).catch(() => undefined);
+      let pageOrigin: string | undefined;
+      let expectedUrlMatched: boolean | undefined;
+      try {
+        pageOrigin = tab.url ? new URL(tab.url).origin : undefined;
+        expectedUrlMatched = expectedUrl
+          ? Boolean(tab.url && new URL(tab.url).href === new URL(expectedUrl).href)
+          : undefined;
+      } catch {
+        expectedUrlMatched = expectedUrl ? false : undefined;
+      }
+      return {
+        context,
+        ...(pageOrigin && pageOrigin !== "null" ? { pageOrigin } : {}),
+        ...(tab.title?.trim() ? { pageTitle: tab.title.trim().slice(0, 160) } : {}),
+        ...(expectedUrlMatched === undefined ? {} : { expectedUrlMatched }),
+        windowLabel: `Window ${windowIds.indexOf(tab.windowId) + 1}`,
+        ...(workspace ? { workspaceTitle: (groupTitle || workspace.name).slice(0, 80) } : {}),
+        inWorkspace: Boolean(workspace?.tabGroupId != null),
+        sidePanelEnabled: panel?.enabled === true,
+        createdForMission: false,
+      };
     },
     async validateApprovalContext(tabId) {
       try {

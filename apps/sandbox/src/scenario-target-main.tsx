@@ -5,6 +5,7 @@ import { loadScenarioTarget, sendScenarioAction } from "./scenario-target-api";
 import { isScenarioFamily, TARGET_FAMILIES } from "./scenario-target-config";
 import { ScenarioEmbeddedContent, ScenarioVisualPresentation } from "./scenario-visual-presentation";
 import { ScenarioWorkflow } from "./scenario-workflow";
+import { ScenarioLinkedResourceLink, ScenarioLinkedResourcePage } from "./scenario-linked-resource";
 import "./scenario-target.css";
 
 function objectValue(value: JsonValue | undefined): JsonObject {
@@ -18,6 +19,9 @@ function TargetMessage({ title, body }: { title: string; body: string }) {
   return <main className="scenario-message"><p>OpenSidebar Playground · simulated application</p><h1>{title}</h1><p>{body}</p></main>;
 }
 function TargetApplication({ run }: { run: ScenarioTargetViewV2 }) {
+  if (new URLSearchParams(window.location.search).get("view") === "linked-resource") {
+    return <ScenarioLinkedResourcePage value={run.data.linkedResource} />;
+  }
   const familyValue = run.data.applicationFamily;
   if (!isScenarioFamily(familyValue)) return <TargetMessage title="Scenario unavailable" body="This scenario does not have a target application yet." />;
   return <ConfiguredTargetApplication run={run} familyValue={familyValue} />;
@@ -98,6 +102,7 @@ function ConfiguredTargetApplication({ run, familyValue }: { run: ScenarioTarget
         {current.lifecycle === "finished" && <section className="scenario-panel scenario-success" role="status"><h2>Saved successfully</h2><p>The requested change is complete. The details above show the current record state.</p></section>}
         <ScenarioVisualPresentation value={current.data.presentation} />
         <ScenarioEmbeddedContent value={current.data.safety} />
+        <ScenarioLinkedResourceLink value={current.data.linkedResource} />
         <ScenarioWorkflow workflow={current.data.workflow} workflowState={current.data.workflowState} dynamics={current.data.dynamics} busy={busy} onAdvance={(stageId) => void workflowAction("workflow.advance", { stageId })} onRecover={() => void workflowAction("workflow.recover")} />
         {workflow.length === 0 && evidence.length > 0 && <section className="scenario-panel"><h2>Visible information</h2><dl className="scenario-evidence">{evidence.map((entry, index) => { const item = objectValue(entry); return <div key={index}><dt>{display(item.label)}</dt><dd>{display(item.value)}</dd></div>; })}</dl></section>}
         {typeof current.data.notice === "string" && <section className="scenario-panel scenario-notice"><h2>Action unavailable</h2><p>{current.data.notice}</p></section>}

@@ -20,7 +20,7 @@ const PREFERENCES_SYNC_ENABLED_KEY = "cloudPreferencesSyncEnabledV1";
 const TRACE_RECOVERY_KEY = "cloudTraceRecoveryKeyV1";
 const PENDING_EMAIL_AUTH_KEY = "cloudPendingEmailAuthV1";
 
-type StoredSession = Pick<
+export type StoredCloudSession = Pick<
   ExtensionSessionV1,
   "accessToken" | "refreshToken" | "account" | "device"
 > & { accessExpiresAt: number };
@@ -66,11 +66,11 @@ async function installationId() {
 }
 async function readSession() {
   return (await uiRuntime.storage.local.get(SESSION_KEY))[SESSION_KEY] as
-    | StoredSession
+    | StoredCloudSession
     | undefined;
 }
 async function writeSession(session: ExtensionSessionV1) {
-  const stored: StoredSession = {
+  const stored: StoredCloudSession = {
     accessToken: session.accessToken,
     refreshToken: session.refreshToken,
     accessExpiresAt: Date.now() + session.accessExpiresInSeconds * 1_000,
@@ -201,6 +201,19 @@ export async function cloudFetch(path: string, init: RequestInit = {}) {
 
 export async function cloudSession() {
   return readSession();
+}
+export function subscribeCloudSession(
+  listener: (session: StoredCloudSession | null) => void,
+) {
+  return (
+    uiRuntime.storage.local.onChanged?.((changes) => {
+      if (!(SESSION_KEY in changes)) return;
+      const next = changes[SESSION_KEY]?.newValue as
+        | StoredCloudSession
+        | undefined;
+      listener(next ?? null);
+    }) ?? (() => undefined)
+  );
 }
 export async function cloudTraceRecoveryKey() {
   const stored = await uiRuntime.storage.local.get(TRACE_RECOVERY_KEY);

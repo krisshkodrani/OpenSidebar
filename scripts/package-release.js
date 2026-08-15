@@ -208,24 +208,21 @@ function readGitCommit() {
 function writeReleaseNotes({ commit, distManifest, hash }) {
   const notes = `# OpenSidebar v${version}
 
-OpenSidebar v${version} presents one account-first setup across the extension and opensidebar.com while preserving Direct from this browser as an advanced option. It ships as a reproducible Chrome Web Store update candidate and unpacked-extension zip.
+OpenSidebar v${version} adds supervised remote browser work to the normal production extension while preserving local browser tasks and Direct from this browser. It ships as a reproducible Chrome Web Store update candidate and unpacked-extension zip.
 
 ## Highlights
 
-- Account-first onboarding guides users through sign-in, secure provider connection, and a safe first task.
-- OpenRouter is the recommended BYOK provider, with Fireworks retained as the supported alternative.
-- Account connections use Cognito email OTP, revocable device sessions, KMS-envelope-encrypted credentials, and a non-retaining streaming relay.
-- Direct from this browser keeps provider keys in Chrome and sends requests directly to the provider.
-- Settings are organized into Account, Agent, Browser, and Advanced; safety controls remain device-local.
-- Synced preference conflicts refresh and retry without blocking browser-only settings from saving.
-- The normalized Chakra application shell manages providers, preferences, devices, Playground, and the Run Viewer.
-- Sessions, checkpoints, device coordination, and encrypted run sync remain hidden behind disabled production flags.
-- Release package builds \`dist/\` and writes a SHA-256 checksum.
-- Manifest/package version alignment enforced by \`ci:dist\`.
-- Public install docs use Corepack-managed pnpm and a safe read-only first task.
-- Native side-panel launch can be driven through the default \`Ctrl+Shift+Y\` extension action shortcut.
-- Known limitations are documented for agent reliability, Done/verifier behavior, permissions, traces, providers, and distribution.
-- DOMPurify is updated to \`3.4.12\`, and the production dependency audit is clean.
+- Linked named-tester devices can receive supervised read-only browser missions from opensidebar.com and compatible MCP clients.
+- Remote targets are bound to an existing OpenSidebar tab group with the sidepanel enabled; detached or stale targets fail closed before execution and are rechecked at completion.
+- Active-tab, existing-tab, duplicate-tab selection, and isolated-tab creation return bounded workspace, window, URL, title, and sidepanel evidence without raw Chrome identifiers.
+- The task-centered workbench presents local tasks, plans, decisions, watch mode, and remote missions as one state-driven workflow with bounded history.
+- Account sign-in uses Cognito email OTP and revocable device sessions; serialized refresh preserves the session across extension contexts and token rotation.
+- Direct from this browser remains available for local provider use, and local browser tasks continue independently of remote work.
+- Settings navigation survives tab switches and sidepanel remounts for the current Chrome session.
+- Remote takeover, device-command execution, checkpoint restore, and Temporal coordination remain disabled for this release.
+- The extension remains compatible with the audited 0.7.4 backend contract; the production dependency audit reports no known vulnerabilities.
+- DOMPurify is updated to \`3.4.13\`, and the container runtime dependency manifest is checked against the audited lockfile during release verification.
+- Release packaging builds \`dist/\`, verifies manifest/package version alignment, and writes a deterministic ZIP with a SHA-256 checksum.
 
 ## Verification
 

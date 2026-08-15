@@ -7,6 +7,8 @@ Status: Implementation complete; final benchmark acceptance and legacy cutover p
 ## Passed evidence
 
 - Catalog check: 100 released cases, 50 frozen role probes, and 119 checked legacy migration dispositions.
+- Post-headline acceptance: MB-101 exercises a production extension opening a linked record in a real Chrome tab, adopting it into the source workspace group, preserving side-panel availability, reading deterministic evidence, returning to the source tab, and saving/reporting the grounded result. MB-101 uses normal ModelBench attempt and validator records but is deliberately excluded from the frozen `full-100` score.
+  Run it with `pnpm modelbench:101`. The checked-in matrix pins the release-candidate OpenRouter seats without containing credentials. The reference extension driver rebuilds both target and extension, writes the normal `attempts.json`, and `pnpm modelbench:report <attempts.json>` accepts the result while keeping it non-rankable as a one-case acceptance run.
 - Scripted oracle: 100 gold paths passed, 300 declared near misses rejected, and 888 assertions evaluated.
 - Store parity: `MemoryScenarioStore` and `PostgresModelBenchRepository` produced identical initial state, oracle final state, and deterministic verdict for all 100 cases against an isolated PostgreSQL 16 database.
 - Target-quality gate: 100 of 100 cases pass prompt, isolation, discoverability, workflow-depth, perception, judgment, recovery, and safety checks. Fifty planner/integrated/orchestration cases now require three ordered application stages; all 15 orchestration cases additionally require an observable disruption and explicit recovery transition.

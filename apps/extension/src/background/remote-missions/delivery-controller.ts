@@ -123,6 +123,8 @@ export class RemoteMissionDeliveryController {
     private readonly deviceId: () => Promise<string | null>,
     private readonly onStatus?: (status: RemoteMissionLocalStatus) => Promise<void> | void,
     private readonly cancellationPollMilliseconds = 1_000,
+    private readonly readinessRefreshMilliseconds = 60_000,
+    private readonly isBrowserBusy: () => boolean | Promise<boolean> = () => false,
   ) {}
 
   private progress(
@@ -167,7 +169,12 @@ export class RemoteMissionDeliveryController {
     });
   }
 
-  private cancellationSignal(missionId: string, parent?: AbortSignal) {
+  private cancellationSignal(
+    missionId: string,
+    deviceId: string,
+    afterSequence: number,
+    parent?: AbortSignal,
+  ) {
     const controller = new AbortController();
     const onParentAbort = () => controller.abort();
     parent?.addEventListener("abort", onParentAbort, { once: true });
@@ -182,19 +189,43 @@ export class RemoteMissionDeliveryController {
         .catch(() => undefined)
         .finally(() => { checking = false; });
     }, this.cancellationPollMilliseconds);
+    let refreshing = false;
+    const readinessTimer = setInterval(() => {
+      // Cancellation asks the local agent to drain at its next safe point.
+      // Keep the device heartbeat alive until that worker promise settles;
+      // stop() owns timer cleanup in the surrounding execution finally block.
+      if (refreshing) return;
+      refreshing = true;
+      void this.transport.poll(deviceId, afterSequence)
+        .catch(() => undefined)
+        .finally(() => { refreshing = false; });
+    }, this.readinessRefreshMilliseconds);
     return {
       signal: controller.signal,
       stop: () => {
         clearInterval(timer);
+        clearInterval(readinessTimer);
         parent?.removeEventListener("abort", onParentAbort);
       },
     };
   }
 
   pollOnce(options?: { signal?: AbortSignal }): Promise<void> {
-    if (this.inFlight) return this.inFlight;
+    // A mission run can occupy the delivery loop for several minutes. Keep
+    // polling while it runs so the server continues to see this capable device
+    // as ready; fetched deliveries are deliberately left for the serialized
+    // processing pass after the active mission settles.
+    if (this.inFlight) return this.refreshAvailability(options?.signal);
     this.inFlight = this.runPoll(options).finally(() => { this.inFlight = null; });
     return this.inFlight;
+  }
+
+  private async refreshAvailability(signal?: AbortSignal) {
+    if (!this.transport.enabled || signal?.aborted) return;
+    const deviceId = await this.deviceId();
+    if (!deviceId) return;
+    const journal = await this.journal.read();
+    await this.transport.poll(deviceId, journal.lastSequence);
   }
 
   private async runPoll(options?: { signal?: AbortSignal }) {
@@ -260,7 +291,12 @@ export class RemoteMissionDeliveryController {
         new Date(decision.decidedAt).getTime() < new Date(status!.progress!.updatedAt).getTime()
       ) throw new Error("remote_mission_supervisor_decision_mismatch");
       current = await this.transport.transition(current, "running");
-      const cancellation = this.cancellationSignal(mission.missionId, signal);
+      const cancellation = this.cancellationSignal(
+        mission.missionId,
+        deviceId,
+        journal.lastSequence,
+        signal,
+      );
       try {
         outcome = await this.worker.resumeSupervision(
           { ...specFor(delivery), planRevision: pendingStep.planRevision, steps: [pendingStep] },
@@ -303,7 +339,12 @@ export class RemoteMissionDeliveryController {
         new Date(decision.decidedAt).getTime() > new Date(targetSelection.expiresAt).getTime()
       ) throw new Error("remote_mission_target_decision_mismatch");
       current = await this.transport.transition(current, "running");
-      const cancellation = this.cancellationSignal(mission.missionId, signal);
+      const cancellation = this.cancellationSignal(
+        mission.missionId,
+        deviceId,
+        journal.lastSequence,
+        signal,
+      );
       try {
         outcome = await this.worker.resumeTargetSelection(
           specFor(delivery),
@@ -350,7 +391,12 @@ export class RemoteMissionDeliveryController {
           new Date(approval.expiresAt).getTime()
       ) throw new Error("remote_mission_approval_decision_mismatch");
       current = await this.transport.transition(current, "running");
-      const cancellation = this.cancellationSignal(mission.missionId, signal);
+      const cancellation = this.cancellationSignal(
+        mission.missionId,
+        deviceId,
+        journal.lastSequence,
+        signal,
+      );
       try {
         outcome = await this.worker.resumeApproval(specFor(delivery), decision, {
           signal: cancellation.signal,
@@ -363,6 +409,16 @@ export class RemoteMissionDeliveryController {
       } finally {
         cancellation.stop();
       }
+    }
+    if (
+      !outcome &&
+      (current.state === "queued" || current.state === "accepted") &&
+      (await this.isBrowserBusy())
+    ) {
+      // Keep the delivery unacknowledged and in the cloud queue. A later poll
+      // retries it after the locally controlled workspace becomes available.
+      await this.report(delivery, "queued");
+      return journal;
     }
     if (!outcome && (current.state === "queued" || current.state === "accepted")) {
       await this.writeActive(journal, mission, "accepted");
@@ -384,15 +440,30 @@ export class RemoteMissionDeliveryController {
         current,
         this.progress(mission.missionId, "running"),
       );
-      await this.report(delivery, "running");
+      // Local UI projection must never gate browser execution. A suspended or
+      // contended chrome.storage write can be retried by later status updates.
+      void this.report(delivery, "running").catch(() => undefined);
     }
 
     if (!outcome) {
-      const cancellation = this.cancellationSignal(mission.missionId, signal);
+      const cancellation = this.cancellationSignal(
+        mission.missionId,
+        deviceId,
+        journal.lastSequence,
+        signal,
+      );
       try {
         outcome = await this.worker.run(specFor(delivery), {
           signal: cancellation.signal,
           initialUrl: payload.initialUrl,
+          onEvidence: (evidence) => this.transport.putProgress(
+            current,
+            this.progress(mission.missionId, "running", { evidence }),
+          ),
+          onProgress: (summary) => this.transport.putProgress(
+            current,
+            this.progress(mission.missionId, "running", { summary }),
+          ),
         });
       } catch (error) {
         outcome = { state: "failed", reason: error instanceof Error ? error.message : "Remote mission failed." };

@@ -37,7 +37,15 @@ const delivery = (overrides: Partial<RemoteMissionV1> = {}): DeliveredRemoteMiss
   };
 };
 
-function setup(items = [delivery()]) {
+function setup(
+  items = [delivery()],
+  options: {
+    cancellationPollMilliseconds?: number;
+    readinessRefreshMilliseconds?: number;
+    onStatus?: ConstructorParameters<typeof RemoteMissionDeliveryController>[4];
+    isBrowserBusy?: () => boolean | Promise<boolean>;
+  } = {},
+) {
   const { port } = createFakePersistencePort();
   const records = new Map(items.map((item) => [item.mission.missionId, item.mission]));
   const transitions: RemoteMissionState[] = [];
@@ -46,11 +54,11 @@ function setup(items = [delivery()]) {
   let approvalDecision: Awaited<ReturnType<RemoteMissionDeliveryPort["getApprovalDecision"]>> = null;
   let targetDecision: Awaited<ReturnType<RemoteMissionDeliveryPort["getTargetDecision"]>> = null;
   let supervisorDecision: Awaited<ReturnType<RemoteMissionDeliveryPort["getSupervisorDecision"]>> = null;
+  const poll = vi.fn(async (_device: string, after: number) =>
+    items.filter((item) => item.mission.sequence > after));
   const transport: RemoteMissionDeliveryPort = {
     enabled: true,
-    async poll(_device, after) {
-      return items.filter((item) => item.mission.sequence > after);
-    },
+    poll,
     async get(id) { return records.get(id) ?? null; },
     async getApprovalDecision() { return approvalDecision; },
     async putApprovalDecision() {},
@@ -100,10 +108,13 @@ function setup(items = [delivery()]) {
     journal,
     worker,
     async () => deviceId,
-    async (status) => {
+    options.onStatus ?? (async (status) => {
       statuses.push(status.state);
       statusRecords.push(status);
-    },
+    }),
+    options.cancellationPollMilliseconds ?? 1_000,
+    options.readinessRefreshMilliseconds,
+    options.isBrowserBusy,
   );
   return {
     controller,
@@ -118,6 +129,7 @@ function setup(items = [delivery()]) {
     records,
     results,
     progress,
+    poll,
     setApprovalDecision(value: typeof approvalDecision) { approvalDecision = value; },
     setTargetDecision(value: typeof targetDecision) { targetDecision = value; },
     setSupervisorDecision(value: typeof supervisorDecision) { supervisorDecision = value; },
@@ -125,6 +137,22 @@ function setup(items = [delivery()]) {
 }
 
 describe("remote mission delivery", () => {
+  test("keeps a remote mission queued while local browser work is active", async () => {
+    let busy = true;
+    const world = setup(undefined, { isBrowserBusy: () => busy });
+
+    await world.controller.pollOnce();
+    expect(world.statuses).toEqual(["queued"]);
+    expect(world.transitions).toEqual([]);
+    expect(world.run).not.toHaveBeenCalled();
+    expect((await world.journal.read()).lastSequence).toBe(0);
+
+    busy = false;
+    await world.controller.pollOnce();
+    expect(world.transitions).toEqual(["accepted", "running", "succeeded"]);
+    expect(world.run).toHaveBeenCalledOnce();
+  });
+
   test("journals before dispatch and completes an ordered read-only mission", async () => {
     const world = setup();
     await world.controller.pollOnce();
@@ -149,7 +177,7 @@ describe("remote mission delivery", () => {
     ]);
   });
 
-  test("coalesces concurrent polls and suppresses terminal replay", async () => {
+  test("refreshes readiness during a run without dispatching concurrently", async () => {
     let release!: () => void;
     const world = setup();
     world.run.mockReturnValue(new Promise((resolve) => {
@@ -158,10 +186,73 @@ describe("remote mission delivery", () => {
     const first = world.controller.pollOnce();
     const second = world.controller.pollOnce();
     await vi.waitFor(() => expect(world.run).toHaveBeenCalledTimes(1));
+    await expect(second).resolves.toBeUndefined();
+    expect(world.poll).toHaveBeenCalledTimes(2);
     release();
-    await Promise.all([first, second]);
+    await first;
     await world.controller.pollOnce();
     expect(world.run).toHaveBeenCalledTimes(1);
+  });
+
+  test("refreshes readiness from the active execution lifecycle", async () => {
+    let release!: () => void;
+    const world = setup([delivery()], { readinessRefreshMilliseconds: 10 });
+    world.run.mockReturnValue(new Promise((resolve) => {
+      release = () => resolve({ state: "succeeded", summary: "done" });
+    }));
+    const active = world.controller.pollOnce();
+    await vi.waitFor(() => expect(world.run).toHaveBeenCalledTimes(1));
+    await vi.waitFor(() => expect(world.poll.mock.calls.length).toBeGreaterThanOrEqual(2));
+    expect(world.run).toHaveBeenCalledTimes(1);
+    release();
+    await active;
+  });
+
+  test("keeps readiness alive while a cancelled worker drains to a safe stop", async () => {
+    let release!: () => void;
+    let runSignal: AbortSignal | undefined;
+    const world = setup([delivery()], {
+      cancellationPollMilliseconds: 5,
+      readinessRefreshMilliseconds: 10,
+    });
+    world.run.mockImplementation((_mission, options) => {
+      runSignal = options.signal;
+      return new Promise((resolve) => {
+        release = () => resolve({ state: "cancelled", reason: "Mission cancelled." });
+      });
+    });
+
+    const active = world.controller.pollOnce();
+    await vi.waitFor(() => expect(world.run).toHaveBeenCalledTimes(1));
+    world.records.set(missionId, {
+      ...world.records.get(missionId)!,
+      state: "cancelled",
+      resultCode: "cancelled",
+    });
+    await vi.waitFor(() => expect(runSignal?.aborted).toBe(true));
+    const pollsAtCancellation = world.poll.mock.calls.length;
+
+    try {
+      await vi.waitFor(() =>
+        expect(world.poll.mock.calls.length).toBeGreaterThan(pollsAtCancellation),
+      );
+    } finally {
+      release();
+      await active;
+    }
+    expect((await world.journal.read()).lastSequence).toBe(1);
+  });
+
+  test("does not let a stalled local status write block browser execution", async () => {
+    const world = setup([delivery()], {
+      onStatus: (status) => status.state === "running"
+        ? new Promise<void>(() => {})
+        : undefined,
+    });
+    const active = world.controller.pollOnce();
+    await vi.waitFor(() => expect(world.run).toHaveBeenCalledTimes(1));
+    await active;
+    expect(world.transitions).toEqual(["accepted", "running", "succeeded"]);
   });
 
   test("fails closed on a cross-device or payload identity mismatch", async () => {

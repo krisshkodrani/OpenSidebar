@@ -8,7 +8,10 @@ import type {
   BenchmarkAttemptV1,
   BenchmarkSuite,
 } from "@opensidebar/scenario-contracts";
-import { MODEL_BENCH_CASES } from "@opensidebar/scenario-engine";
+import {
+  MODEL_BENCH_ACCEPTANCE_CASES,
+  MODEL_BENCH_CASES,
+} from "@opensidebar/scenario-engine";
 import {
   runModelBenchSuite,
   type ModelBenchDriver,
@@ -61,8 +64,9 @@ if (matrix.schemaVersion !== 1 || !Array.isArray(matrix.configurations)) {
 }
 const suite = (option("--suite") ?? "core-20") as BenchmarkSuite;
 const caseId = option("--case");
+const runnableCases = [...MODEL_BENCH_CASES, ...MODEL_BENCH_ACCEPTANCE_CASES];
 const definitions = caseId
-  ? MODEL_BENCH_CASES.filter((definition) => definition.contract.id === caseId)
+  ? runnableCases.filter((definition) => definition.contract.id === caseId)
   : MODEL_BENCH_CASES.filter((definition) =>
       definition.contract.suites.includes(suite),
     );

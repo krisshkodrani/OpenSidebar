@@ -2,7 +2,8 @@ import { DomSnapshot, ToolName } from "../../types";
 
 export type ConsequentialActionKind =
   | "job_application_submit"
-  | "communication_send";
+  | "communication_send"
+  | "destructive_delete";
 
 export type ConsequentialActionConsentMode =
   | "explicit_go"
@@ -84,11 +85,31 @@ export function assessConsequentialActionApproval(
     };
   }
 
+  if (isDestructiveDeleteAction(input.toolName, input.args, input.actionLabel)) {
+    return {
+      requiresApproval: true,
+      kind: "destructive_delete",
+      consentMode,
+    };
+  }
+
   return {
     requiresApproval: false,
     kind: null,
     consentMode,
   };
+}
+
+function isDestructiveDeleteAction(
+  toolName: ToolName,
+  args: Record<string, unknown>,
+  actionLabel: string,
+): boolean {
+  if (toolName !== ToolName.CLICK_ELEMENT || args.id == null) return false;
+
+  return /\b(?:delete|trash|move to trash|empty trash|remove permanently)\b/i.test(
+    actionLabel,
+  );
 }
 
 export function assessConsequentialFinalActionBlock(

@@ -6,11 +6,13 @@ describe("createWorkspaceTab", () => {
   const originalGet = chrome.tabs.get;
   const originalCreate = chrome.tabs.create;
   const originalRemove = chrome.tabs.remove;
+  const originalGroup = chrome.tabs.group;
 
   afterEach(() => {
     (chrome.tabs as any).get = originalGet;
     (chrome.tabs as any).create = originalCreate;
     (chrome.tabs as any).remove = originalRemove;
+    (chrome.tabs as any).group = originalGroup;
   });
 
   test("creates an inactive tab in the source workspace window", async () => {
@@ -63,5 +65,28 @@ describe("createWorkspaceTab", () => {
       }),
     ).rejects.toThrow("Could not add new tab 20 to workspace ws-1");
     expect(chrome.tabs.remove).toHaveBeenCalledWith(20);
+  });
+
+  test("groups directly before a stalled manager projection completes", async () => {
+    (chrome.tabs as any).get = vi.fn(async (tabId: number) =>
+      tabId === 10
+        ? { id: 10, windowId: 4, groupId: 7 }
+        : { id: 20, windowId: 4, groupId: 7 });
+    (chrome.tabs as any).create = vi.fn(async () => ({ id: 20, windowId: 4 }));
+    (chrome.tabs as any).group = vi.fn(async () => 7);
+    const manager = {
+      addTabToWorkspace: vi.fn(() => new Promise<boolean>(() => {})),
+    };
+
+    await expect(createWorkspaceTab({
+      sourceTabId: 10,
+      url: "https://example.com",
+      workspaceId: "ws-1",
+      manager,
+      adoptionMode: "live_group",
+    })).resolves.toMatchObject({ id: 20 });
+
+    expect(chrome.tabs.group).toHaveBeenCalledWith({ tabIds: [20], groupId: 7 });
+    expect(manager.addTabToWorkspace).toHaveBeenCalledWith(20, "ws-1");
   });
 });

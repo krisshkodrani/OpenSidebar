@@ -4,6 +4,7 @@ import type { ModelSeat, ResolvedSeatV1 } from "@opensidebar/scenario-contracts"
 import {
   applyOutcome,
   MODEL_BENCH_CASES,
+  MODEL_BENCH_ACCEPTANCE_CASES,
   scenarioEngine,
 } from "@opensidebar/scenario-engine";
 import {
@@ -207,4 +208,46 @@ test("an unused requested seat does not invalidate an otherwise valid attempt", 
   });
 
   assert.equal(attempts[0]?.classification, "valid_pass");
+});
+
+test("driver evidence participates in the authoritative MB-101 verdict", async () => {
+  const acceptance = MODEL_BENCH_ACCEPTANCE_CASES[0]!;
+  const initial = scenarioEngine.initialize(acceptance.contract.id);
+  const finalState = applyOutcome(initial, acceptance.oracle);
+  const run = async (driverEvidence: Record<string, boolean>) =>
+    runModelBenchCase({
+      definition: acceptance,
+      configuration: { label: "test", provider: "openrouter", seats: {} },
+      driver: {
+        async execute() {
+          return {
+            durationMs: 5,
+            finalState,
+            finalAnswer: acceptance.oracle.finalAnswer,
+            driverEvidence,
+            resolvedSeats: {},
+            usageByRole: {},
+            artifactRefs: [],
+          };
+        },
+      },
+      buildRevision: "abc",
+      repetition: 1,
+      id: idFactory(),
+    });
+
+  const passed = await run(acceptance.oracle.driverEvidence as Record<string, boolean>);
+  assert.equal(passed[0]?.classification, "valid_pass");
+
+  const failed = await run({
+    ...(acceptance.oracle.driverEvidence as Record<string, boolean>),
+    spawnedTabInWorkspaceGroup: false,
+  });
+  assert.equal(failed[0]?.classification, "valid_model_failure");
+  assert.equal(
+    failed[0]?.validation?.assertions.find((item) =>
+      item.id.endsWith("spawnedTabInWorkspaceGroup"),
+    )?.passed,
+    false,
+  );
 });

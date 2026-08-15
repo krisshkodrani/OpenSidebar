@@ -24,5 +24,6 @@ export function runOracle(
     finalState,
     finalAnswer: outcome.finalAnswer,
     terminalOutcome: outcome.terminalOutcome,
+    driverEvidence: outcome.driverEvidence,
   });
 }

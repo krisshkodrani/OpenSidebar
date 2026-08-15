@@ -73,6 +73,19 @@ export interface RemoteMissionTargetSelectionV1 {
   candidates: RemoteMissionTargetCandidateV1[];
 }
 
+/** Sanitized proof of where the device actually ran the browser task. */
+export interface RemoteMissionTargetBindingV1 {
+  context: "active_tab" | "existing_tab" | "isolated_tab";
+  pageOrigin?: string;
+  pageTitle?: string;
+  expectedUrlMatched?: boolean;
+  windowLabel?: string;
+  workspaceTitle?: string;
+  inWorkspace: boolean;
+  sidePanelEnabled: boolean;
+  createdForMission: boolean;
+}
+
 export interface RemoteMissionTargetDecisionV1 {
   schemaVersion: typeof REMOTE_MISSION_SCHEMA_VERSION;
   missionId: string;
@@ -149,6 +162,7 @@ export interface MissionEvidenceV1 {
   planRevision: number;
   outcome: RemoteMissionEvidenceOutcome;
   page?: { origin: string; title?: string };
+  target?: RemoteMissionTargetBindingV1;
   claims: MissionEvidenceClaimV1[];
   effects: Array<{ type: string; consequential: boolean }>;
   uncertainties: string[];
@@ -213,11 +227,11 @@ export interface RemoteMissionApprovalV1 {
 }
 
 export type RemoteMissionRunResultV1 =
-  | { state: "succeeded"; summary?: string }
-  | { state: "approval_required"; summary?: string; approval: RemoteMissionApprovalV1 }
+  | { state: "succeeded"; summary?: string; target?: RemoteMissionTargetBindingV1 }
+  | { state: "approval_required"; summary?: string; approval: RemoteMissionApprovalV1; target?: RemoteMissionTargetBindingV1 }
   | { state: "target_selection_required"; targetSelection: RemoteMissionTargetSelectionV1 }
-  | { state: "failed"; summary?: string }
-  | { state: "outcome_unknown"; summary?: string };
+  | { state: "failed"; summary?: string; target?: RemoteMissionTargetBindingV1 }
+  | { state: "outcome_unknown"; summary?: string; target?: RemoteMissionTargetBindingV1 };
 
 export interface RemoteMissionTransitionV1 {
   schemaVersion: typeof REMOTE_MISSION_SCHEMA_VERSION;

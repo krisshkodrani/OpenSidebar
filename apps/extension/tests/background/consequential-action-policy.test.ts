@@ -39,6 +39,36 @@ describe("consequential action policy", () => {
     });
   });
 
+  test.each([
+    'Click [42] button "Delete"',
+    'Click [42] button "Move to trash"',
+    'Click [42] menuitem "Empty trash"',
+  ])("requires approval for destructive UI actions: %s", (actionLabel) => {
+    expect(
+      assessConsequentialActionApproval({
+        toolName: ToolName.CLICK_ELEMENT,
+        args: { id: 42 },
+        taskText: "Delete the selected messages.",
+        actionLabel,
+      }),
+    ).toEqual({
+      requiresApproval: true,
+      kind: "destructive_delete",
+      consentMode: "explicit_go",
+    });
+  });
+
+  test("does not confuse removing a filter with destructive deletion", () => {
+    expect(
+      assessConsequentialActionApproval({
+        toolName: ToolName.CLICK_ELEMENT,
+        args: { id: 42 },
+        taskText: "Clear the search filter.",
+        actionLabel: 'Click [42] button "Remove filter"',
+      }).requiresApproval,
+    ).toBe(false);
+  });
+
   test("classifies prepare-only final-action requests", () => {
     expect(
       classifyConsequentialActionConsentMode(
