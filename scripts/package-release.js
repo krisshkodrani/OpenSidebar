@@ -220,7 +220,7 @@ OpenSidebar v${version} adds supervised remote browser work to the normal produc
 - Direct from this browser remains available for local provider use, and local browser tasks continue independently of remote work.
 - Settings navigation survives tab switches and sidepanel remounts for the current Chrome session.
 - Remote takeover, device-command execution, checkpoint restore, and Temporal coordination remain disabled for this release.
-- The extension and deployed backend share the audited 0.7.4 contract; the production dependency audit reports no known vulnerabilities.
+- The extension remains compatible with the audited 0.7.4 backend contract; the production dependency audit reports no known vulnerabilities.
 - DOMPurify is updated to \`3.4.13\`, and the container runtime dependency manifest is checked against the audited lockfile during release verification.
 - Release packaging builds \`dist/\`, verifies manifest/package version alignment, and writes a deterministic ZIP with a SHA-256 checksum.
 
