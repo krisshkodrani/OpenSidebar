@@ -205,7 +205,12 @@ export const chromeUiRuntimePort: UiRuntimePort = {
 
   connectKeepalive(name, onDisconnect) {
     const port = chrome.runtime.connect({ name });
-    port.onDisconnect.addListener(onDisconnect);
+    port.onDisconnect.addListener(() => {
+      // Reading runtime.lastError inside the callback prevents Chrome from
+      // reporting an "Unchecked runtime.lastError" for transient disconnects.
+      void chrome.runtime.lastError;
+      onDisconnect();
+    });
     return {
       disconnect() {
         port.disconnect();

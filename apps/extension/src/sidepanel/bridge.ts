@@ -1,4 +1,5 @@
 ﻿import { AgentStatus, RuntimeMessage, MessageSource } from "../types";
+import { SIDEPANEL_KEEPALIVE_PORT_NAME } from "../lib/sidepanel-keepalive";
 import { logger } from "../utils";
 import { useStore } from "./store";
 import { getE2EPanelConfig, uiRuntime } from "./runtime";
@@ -483,7 +484,7 @@ export function initializeBridge(
   function connectPort() {
     if (tornDown) return;
     try {
-      port = uiRuntime.connectKeepalive("sidepanel-keepalive", () => {
+      port = uiRuntime.connectKeepalive(SIDEPANEL_KEEPALIVE_PORT_NAME, () => {
         port = null;
         if (tornDown) return;
         const state = store.getState();

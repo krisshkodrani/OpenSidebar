@@ -15,6 +15,8 @@ describe("sidepanel runtime detached E2E panel config", () => {
   afterEach(() => {
     window.history.replaceState(null, "", "/");
     document.getElementById("opensidebar-overlay-config")?.remove();
+    delete (chrome.runtime as { connect?: unknown }).connect;
+    delete (chrome.runtime as { lastError?: unknown }).lastError;
     vi.restoreAllMocks();
   });
 
@@ -105,5 +107,32 @@ describe("sidepanel runtime detached E2E panel config", () => {
     expect(chromeUiRuntimePort.getUrl("public/icons/icon-128.png")).toBe(
       "chrome-extension://real-extension-id/public/icons/icon-128.png",
     );
+  });
+
+  test("consumes runtime.lastError when the keepalive port disconnects", () => {
+    let disconnectListener: (() => void) | undefined;
+    const onDisconnect = vi.fn();
+    const readLastError = vi.fn(() => undefined);
+    Object.defineProperty(chrome.runtime, "connect", {
+      configurable: true,
+      value: vi.fn(() => ({
+        disconnect: vi.fn(),
+        onDisconnect: {
+          addListener: vi.fn((listener: () => void) => {
+            disconnectListener = listener;
+          }),
+        },
+      })),
+    });
+    Object.defineProperty(chrome.runtime, "lastError", {
+      configurable: true,
+      get: readLastError,
+    });
+
+    chromeUiRuntimePort.connectKeepalive("sidepanel-keepalive", onDisconnect);
+    disconnectListener?.();
+
+    expect(readLastError).toHaveBeenCalledTimes(1);
+    expect(onDisconnect).toHaveBeenCalledTimes(1);
   });
 });

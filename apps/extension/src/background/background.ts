@@ -83,6 +83,7 @@ import {
   initPersonalDataSyncRuntime,
   routePersonalDataSyncMessage,
 } from "./personal-data-sync/runtime";
+import { registerSidepanelKeepalivePort } from "./sidepanel-keepalive";
 
 /** Cached settings — populated on side panel open, invalidated on storage change. */
 let cachedSettings: UserSettings | null = null;
@@ -108,6 +109,7 @@ void chrome.storage.local
   .catch(() => {});
 
 logger.info("system", "Service Worker Initialized");
+registerSidepanelKeepalivePort();
 // Internal builds can recover a bounded consented queue after an MV3 worker
 // restart. This is intentionally detached from agent execution and is a no-op
 // in published builds because no endpoint is compiled in.
