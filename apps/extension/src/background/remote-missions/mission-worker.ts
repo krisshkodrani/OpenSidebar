@@ -33,6 +33,23 @@ export type MissionWorkerOutcome =
 const bounded = (values: string[] | undefined, limit = 20) =>
   (values ?? []).slice(0, limit).map((value) => value.trim()).filter(Boolean);
 
+const INTERNAL_BROWSER_IDENTIFIER =
+  /\b(?:tab|group|window|workspace)[\s_-]*ids?\b|\bchrome\.storage\b|\bstorage[\s_-]*keys?\b/i;
+
+/** Keep agent-authored evidence useful without forwarding Chrome-local identifiers. */
+export const sanitizeRemoteEvidenceClaim = (value: string): string =>
+  value
+    .split(/\r?\n/)
+    .filter((line) => !INTERNAL_BROWSER_IDENTIFIER.test(line))
+    .join("\n")
+    .trim();
+
+const claimsFor = (result: RemoteMissionRunResultV1): MissionEvidenceV1["claims"] => {
+  if (!("summary" in result) || !result.summary) return [];
+  const claim = sanitizeRemoteEvidenceClaim(result.summary).slice(0, 4_000);
+  return claim ? [{ claim, source: "agent_summary" }] : [];
+};
+
 const instructionFor = (step: MissionStepV1, guidance?: string) =>
   [
     step.objective,
@@ -69,9 +86,7 @@ const evidenceFor = (
         : result.state === "approval_required"
           ? "approval_required"
           : "unknown",
-  claims: "summary" in result && result.summary
-    ? [{ claim: result.summary.slice(0, 4_000), source: "agent_summary" }]
-    : [],
+  claims: claimsFor(result),
   effects: [],
   uncertainties:
     result.state === "outcome_unknown"

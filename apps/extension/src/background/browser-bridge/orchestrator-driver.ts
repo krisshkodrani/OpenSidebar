@@ -240,6 +240,18 @@ type ResolvedTarget = {
   visualWorkspaceId?: string;
 };
 
+function requireWorkspaceBoundTarget(
+  target: RemoteMissionTargetBindingV1,
+): RemoteMissionTargetBindingV1 {
+  if (!target.inWorkspace || !target.sidePanelEnabled)
+    throw new Error(
+      "The selected browser target is outside an OpenSidebar workspace or its sidepanel is disabled.",
+    );
+  if (target.expectedUrlMatched === false)
+    throw new Error("The selected browser target no longer matches the requested URL.");
+  return target;
+}
+
 export type TargetChoice =
   | {
       kind: "existing_tab";
@@ -574,7 +586,9 @@ export function createBrowserAgentRunner(deps: BrowserTaskDeps): AgentRunner {
       } else if (deps.describeTarget) {
         workspaceTargets.set(
           workspaceId,
-          await deps.describeTarget(tabId, targetContext, task.url),
+          requireWorkspaceBoundTarget(
+            await deps.describeTarget(tabId, targetContext, task.url),
+          ),
         );
       }
       const boundTarget = workspaceTargets.get(workspaceId);
@@ -589,10 +603,8 @@ export function createBrowserAgentRunner(deps: BrowserTaskDeps): AgentRunner {
     }, targetContext === "isolated_tab"
       ? () => deps.verifyIsolatedWorkspace(tabId, task.url, createdForMission)
       : deps.describeTarget
-        ? () => deps.describeTarget!(
-            tabId,
-            targetContext,
-            task.url,
+        ? async () => requireWorkspaceBoundTarget(
+            await deps.describeTarget!(tabId, targetContext, task.url),
           )
         : undefined);
   }

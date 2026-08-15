@@ -10,7 +10,10 @@ import {
   MemoryRemoteMissionTransport,
   ScriptedMissionSupervisor,
 } from "../../src/background/remote-missions/in-memory-ports";
-import { MissionWorker } from "../../src/background/remote-missions/mission-worker";
+import {
+  MissionWorker,
+  sanitizeRemoteEvidenceClaim,
+} from "../../src/background/remote-missions/mission-worker";
 import { LocalMissionAttemptJournal } from "../../src/background/remote-missions/local-attempt-journal";
 import { createFakePersistencePort } from "../fakes/persistence";
 
@@ -49,6 +52,19 @@ const decision = (
 });
 
 describe("MissionWorker", () => {
+  test("removes Chrome-local identifiers from agent-authored evidence", () => {
+    expect(sanitizeRemoteEvidenceClaim([
+      "Title: Example Domain",
+      "Tab ID: 1652526121 (current)",
+      "workspace_id: ws-secret",
+      "Chrome.storage session key: remote-targets",
+      "URL: https://example.com/",
+    ].join("\n"))).toBe([
+      "Title: Example Domain",
+      "URL: https://example.com/",
+    ].join("\n"));
+  });
+
   test("persists a bounded attempt journal across worker instances", async () => {
     const { port, sync, session } = createFakePersistencePort();
     const first = new LocalMissionAttemptJournal(port);

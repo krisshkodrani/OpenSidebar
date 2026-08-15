@@ -447,6 +447,55 @@ describe("createBrowserAgentRunner", () => {
     await expect(promise).resolves.toMatchObject({ status: "completed" });
   });
 
+  test("refuses an active tab outside its OpenSidebar workspace before execution", async () => {
+    const d = deps();
+    d.describeTarget = async (_tabId, context) => ({
+      context,
+      pageTitle: "Unrelated tab",
+      inWorkspace: false,
+      sidePanelEnabled: false,
+      createdForMission: false,
+    });
+    const outcome = await createBrowserAgentRunner(d).run({
+      instruction: "read the heading",
+      targetContext: "active_tab",
+    });
+    expect(outcome).toMatchObject({
+      status: "error",
+      reason: expect.stringContaining("outside an OpenSidebar workspace"),
+    });
+    expect(d.started).toHaveLength(0);
+  });
+
+  test("rejects completion when an existing tab loses its workspace binding", async () => {
+    const d = deps();
+    let bound = true;
+    d.describeTarget = async (_tabId, context) => ({
+      context,
+      pageTitle: "Example Domain",
+      expectedUrlMatched: true,
+      inWorkspace: bound,
+      sidePanelEnabled: bound,
+      createdForMission: false,
+    });
+    const promise = createBrowserAgentRunner(d).run({
+      instruction: "read the heading",
+      url: "https://example.com/",
+      targetContext: "existing_tab",
+    });
+    await tick();
+    expect(d.started).toHaveLength(1);
+    bound = false;
+    d.fire(d.started[0]!.workspaceId, {
+      status: "completed",
+      summary: "Example Domain",
+    });
+    await expect(promise).resolves.toMatchObject({
+      status: "error",
+      reason: expect.stringContaining("binding was lost before completion"),
+    });
+  });
+
   test("binds a remote run to an already-open matching tab without navigation", async () => {
     const d = deps();
     const runner = createBrowserAgentRunner(d);
