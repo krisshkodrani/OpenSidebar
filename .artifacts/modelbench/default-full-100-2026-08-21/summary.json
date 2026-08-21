@@ -1,0 +1,182 @@
+{
+  "schemaVersion": 1,
+  "benchmark": "modelbench-100",
+  "generatedAt": "2026-08-21T17:30:49.066Z",
+  "rankable": false,
+  "coverage": 0.9857142857142858,
+  "overall": {
+    "requested": 70,
+    "valid": 69,
+    "passed": 45,
+    "passAt1": 0.6521739130434783
+  },
+  "byRole": {
+    "executor": {
+      "requested": 23,
+      "valid": 23,
+      "passed": 20,
+      "passAt1": 0.8695652173913043
+    },
+    "integrated": {
+      "requested": 15,
+      "valid": 15,
+      "passed": 8,
+      "passAt1": 0.5333333333333333
+    },
+    "judge": {
+      "requested": 6,
+      "valid": 6,
+      "passed": 0,
+      "passAt1": 0
+    },
+    "orchestration": {
+      "requested": 9,
+      "valid": 8,
+      "passed": 5,
+      "passAt1": 0.625
+    },
+    "perception": {
+      "requested": 7,
+      "valid": 7,
+      "passed": 6,
+      "passAt1": 0.8571428571428571
+    },
+    "planner": {
+      "requested": 10,
+      "valid": 10,
+      "passed": 6,
+      "passAt1": 0.6
+    }
+  },
+  "byFamily": {
+    "analytics": {
+      "requested": 8,
+      "valid": 8,
+      "passed": 2,
+      "passAt1": 0.25
+    },
+    "collaboration": {
+      "requested": 8,
+      "valid": 7,
+      "passed": 4,
+      "passAt1": 0.5714285714285714
+    },
+    "crm": {
+      "requested": 10,
+      "valid": 10,
+      "passed": 6,
+      "passAt1": 0.6
+    },
+    "email": {
+      "requested": 8,
+      "valid": 8,
+      "passed": 6,
+      "passAt1": 0.75
+    },
+    "hr": {
+      "requested": 8,
+      "valid": 8,
+      "passed": 6,
+      "passAt1": 0.75
+    },
+    "procurement": {
+      "requested": 8,
+      "valid": 8,
+      "passed": 6,
+      "passAt1": 0.75
+    },
+    "records": {
+      "requested": 10,
+      "valid": 10,
+      "passed": 7,
+      "passAt1": 0.7
+    },
+    "retail": {
+      "requested": 10,
+      "valid": 10,
+      "passed": 8,
+      "passAt1": 0.8
+    }
+  },
+  "byDifficulty": {
+    "easy": {
+      "requested": 19,
+      "valid": 19,
+      "passed": 17,
+      "passAt1": 0.8947368421052632
+    },
+    "hard": {
+      "requested": 23,
+      "valid": 22,
+      "passed": 11,
+      "passAt1": 0.5
+    },
+    "medium": {
+      "requested": 28,
+      "valid": 28,
+      "passed": 17,
+      "passAt1": 0.6071428571428571
+    }
+  },
+  "byCharacter": {
+    "adversarial": {
+      "requested": 7,
+      "valid": 7,
+      "passed": 0,
+      "passAt1": 0
+    },
+    "diagnostic": {
+      "requested": 15,
+      "valid": 14,
+      "passed": 11,
+      "passAt1": 0.7857142857142857
+    },
+    "realistic": {
+      "requested": 48,
+      "valid": 48,
+      "passed": 34,
+      "passAt1": 0.7083333333333334
+    }
+  },
+  "invalidRunRate": 0.014285714285714285,
+  "retryRate": 0.014285714285714285,
+  "judgeDisagreementRate": 0,
+  "medianDurationMs": 101864,
+  "p95DurationMs": 329202,
+  "medianLlmTimeMs": 69189,
+  "p95LlmTimeMs": 231774,
+  "totalTurns": 942,
+  "totalToolExecutions": 652,
+  "totalPerceptions": 0,
+  "totalReplans": 16,
+  "totalRecoveries": 0,
+  "usageByRole": {
+    "executor": {
+      "calls": 971,
+      "promptTokens": 10818273,
+      "completionTokens": 337331,
+      "cachedTokens": 6830905,
+      "costUsd": 2.0108619000000005,
+      "llmTimeMs": 4762275
+    },
+    "planner": {
+      "calls": 64,
+      "promptTokens": 211349,
+      "completionTokens": 125185,
+      "cachedTokens": 143232,
+      "costUsd": 0.6834181200000001,
+      "llmTimeMs": 1474368
+    },
+    "judge": {
+      "calls": 33,
+      "promptTokens": 18155,
+      "completionTokens": 16488,
+      "cachedTokens": 1856,
+      "costUsd": 0.0034746950000000003,
+      "llmTimeMs": 56631
+    }
+  },
+  "totalCostUsd": 2.697754715,
+  "costPerRequestedTaskUsd": 0.03853935307142857,
+  "costPerSuccessfulTaskUsd": 0.05995010477777778
+}
