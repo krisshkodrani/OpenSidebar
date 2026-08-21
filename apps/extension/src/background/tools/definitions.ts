@@ -608,7 +608,7 @@ export const EXTRACT_FORM_STATE_DEF: ToolDefinition = {
   function: {
     name: ToolName.EXTRACT_FORM_STATE,
     description:
-      "Capture the current field values and submit buttons of a form as structured data, to verify it before submitting. Read-only.",
+      "Capture structured form state without changing the page: labels, values, required/filled/valid status, choices, and submit buttons. Use scope=\"document\" to inventory all application questions; use the default primary_form scope to verify one form before submitting. Prefer this over read_page for field-by-field form reviews.",
     parameters: {
       type: "object",
       properties: {
@@ -616,6 +616,12 @@ export const EXTRACT_FORM_STATE_DEF: ToolDefinition = {
           type: "integer",
           description:
             "Tag ID of a field or submit button inside the form. Omit for the primary form on the page.",
+        },
+        scope: {
+          type: "string",
+          enum: ["primary_form", "document"],
+          description:
+            "primary_form (default) captures one form for submit verification; document captures all traversable form controls for a complete inventory.",
         },
       },
       required: [],

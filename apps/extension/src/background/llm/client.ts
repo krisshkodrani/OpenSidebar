@@ -197,7 +197,11 @@ export interface LLMClientOptions {
    * judge pool transparently reuses the planner pool.
    */
   judgeModel?: string;
-  /** OpenRouter upstream provider pins, applied independently per model seat. */
+  /**
+   * Preferred OpenRouter upstreams, applied independently per model seat.
+   * Requests retain OpenRouter's fallback routing when a preferred upstream is
+   * transiently unavailable.
+   */
   executorProviderPin?: string;
   plannerProviderPin?: string;
   judgeProviderPin?: string;
@@ -995,7 +999,10 @@ export class LLMClient {
     const shaped = shapePayloadForProvider(providerId, payload);
     const pin = this.providerPins[this._activeTier]?.trim();
     if (providerId === "openrouter" && pin) {
-      shaped.provider = { only: [pin] };
+      // `only` makes a transient upstream failure terminal by excluding every
+      // other eligible host. `order` preserves the preference while allowing
+      // OpenRouter to recover through its normal provider fallback path.
+      shaped.provider = { order: [pin], allow_fallbacks: true };
     }
     return shaped;
   }
@@ -1023,7 +1030,10 @@ export class LLMClient {
         actualProviderId: providerId,
         actualModel: model,
       };
-    const RETRYABLE = new Set([429, 502, 503, 504]);
+    // OpenRouter classifies 408 as a request timeout and 500 as a transient
+    // router/upstream error. Retrying either is materially safer than failing
+    // an agent turn immediately; permanent 4xx failures still return directly.
+    const RETRYABLE = new Set([408, 429, 500, 502, 503, 504]);
     let lastError: Error | null = null;
 
     for (let attempt = 1; attempt <= maxRetries; attempt++) {

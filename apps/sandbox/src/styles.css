@@ -87,6 +87,27 @@ h2 {
 .catalog {
   margin-top: 92px;
 }
+.playground-catalog {
+  padding-top: 56px;
+}
+.playground-catalog .catalog {
+  margin-top: 0;
+}
+.playground-catalog .catalog > h1 {
+  margin: 0 0 24px;
+  font-size: clamp(2rem, 4vw, 3.25rem);
+}
+.catalog-heading {
+  margin-bottom: 32px;
+}
+.catalog-heading h1 {
+  margin-bottom: 8px;
+}
+.catalog-heading p {
+  margin: 0;
+  color: var(--muted);
+  font-size: 1rem;
+}
 .grid {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(230px, 1fr));

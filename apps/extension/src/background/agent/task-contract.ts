@@ -503,6 +503,20 @@ function extractMultiReturnMarkers(text: string): {
   const lower = text.toLowerCase();
   let count = 0;
 
+  const comparison = lower.match(
+    /\bcompare\s+(?:the\s+)?([a-z][a-z0-9-]{1,30})\s+and\s+([a-z][a-z0-9-]{1,30})\s+([a-z][a-z0-9-]{2,30})\b/,
+  );
+  if (comparison) {
+    const sharedNoun = singularizePhrase(comparison[3] || "");
+    return {
+      count: 2,
+      entities: unique([
+        `${comparison[1]} ${sharedNoun}`,
+        `${comparison[2]} ${sharedNoun}`,
+      ]),
+    };
+  }
+
   if (/\bboth\b/.test(lower)) count = 2;
   else if (/\ball\s+(three|3)\b/.test(lower)) count = 3;
   else if (/\ball\s+(four|4)\b/.test(lower)) count = 4;

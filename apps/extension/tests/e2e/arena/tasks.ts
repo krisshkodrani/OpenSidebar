@@ -37,7 +37,13 @@ export const ARENA_TASKS: readonly ArenaTask[] = [
       "Set ticket TICKET-4271 to In Progress and add an internal note summarizing the issue and next steps.",
     maxTurns: 20,
     timeoutMs: 240_000,
-    tags: ["record-update", "form", "workarena-like", "support", "workarena-category:form"],
+    tags: [
+      "record-update",
+      "form",
+      "workarena-like",
+      "support",
+      "workarena-category:form",
+    ],
     validator: "supportTicketTriaged",
     validatorKind: "fixture-state",
     description:
@@ -54,7 +60,13 @@ export const ARENA_TASKS: readonly ArenaTask[] = [
       "Submit an enterprise request for Jane Smith at jane@example.com, phone 555-0123, company Acme Corp, premium budget, with Priority support needed as the special requirement.",
     maxTurns: 30,
     timeoutMs: 300_000,
-    tags: ["form", "wizard", "conditional-fields", "workarena-like", "workarena-category:form"],
+    tags: [
+      "form",
+      "wizard",
+      "conditional-fields",
+      "workarena-like",
+      "workarena-category:form",
+    ],
     validator: "enterpriseFormSubmitted",
     validatorKind: "fixture-state",
     description:
@@ -65,12 +77,20 @@ export const ARENA_TASKS: readonly ArenaTask[] = [
     title: "Find Employee Salary",
     tier: "easy",
     sourceFile: "fixtures/online-shop-pro/src/routes/data-table.tsx",
-    sourceCase: "agent navigates paginated table to find employee and extract salary",
+    sourceCase:
+      "agent navigates paginated table to find employee and extract salary",
     startRoute: "/data-table",
-    prompt: "Search for Diana in the employee directory and tell me her salary.",
+    prompt:
+      "Search for Diana in the employee directory and tell me her salary.",
     maxTurns: 30,
     timeoutMs: 240_000,
-    tags: ["table", "pagination", "lookup", "workarena-like", "workarena-category:list-filter"],
+    tags: [
+      "table",
+      "pagination",
+      "lookup",
+      "workarena-like",
+      "workarena-category:list-filter",
+    ],
     validator: "dianaSalaryFound",
     validatorKind: "fixture-state",
     description:
@@ -87,7 +107,13 @@ export const ARENA_TASKS: readonly ArenaTask[] = [
       "Find the source referenced by Footnote 2 in the article and tell me what source it cites.",
     maxTurns: 12,
     timeoutMs: 120_000,
-    tags: ["research", "evidence", "scrolling", "final-answer", "workarena-category:information_retrieval"],
+    tags: [
+      "research",
+      "evidence",
+      "scrolling",
+      "final-answer",
+      "workarena-category:information_retrieval",
+    ],
     validator: "articleFootnoteSourceAnswered",
     validatorKind: "final-answer",
     description:
@@ -105,7 +131,13 @@ export const ARENA_TASKS: readonly ArenaTask[] = [
     maxTurns: 25,
     timeoutMs: 240_000,
     allowNavigation: true,
-    tags: ["multi-tab", "dashboard", "lookup", "planning", "workarena-category:dashboard"],
+    tags: [
+      "multi-tab",
+      "dashboard",
+      "lookup",
+      "planning",
+      "workarena-category:dashboard",
+    ],
     validator: "dashboardMetricsAnswered",
     validatorKind: "final-answer",
     description:
@@ -125,20 +157,27 @@ export const ARENA_TASKS: readonly ArenaTask[] = [
     maxTurns: 40,
     timeoutMs: 480_000,
     allowNavigation: true,
-    tags: ["workflow", "multi-tab", "planning", "workarena-like", "workarena-category:service catalog"],
+    tags: [
+      "workflow",
+      "multi-tab",
+      "planning",
+      "workarena-like",
+      "workarena-category:service catalog",
+    ],
     validator: "firstTwoProcurementItemsComplete",
     validatorKind: "fixture-state",
     description:
       "Completes a multi-record purchasing workflow while preserving state across pages.",
     notes:
-      "Arena variant removes the current procedural instruction to open stores in new tabs.",
+      "The prompt and fixture state the outcome without prescribing tab choreography.",
   },
   {
     id: "job-board.recommend-best-matches",
     title: "Recommend Job Matches",
     tier: "hard",
     sourceFile: "fixtures/online-shop-pro/src/routes/job-board.tsx",
-    sourceCase: "reviews all job listings and recommends best matches for profile",
+    sourceCase:
+      "reviews all job listings and recommends best matches for profile",
     startRoute: "/job-board",
     prompt:
       "I'm a senior frontend engineer with 5 years of experience specializing in React and TypeScript. I also have strong experience with Node.js and GraphQL. I'm looking for a fully remote position in the $120K-$160K salary range. Review the job listings and tell me which ones are the best matches for my profile and why.",
@@ -292,7 +331,8 @@ export const ARENA_TASKS: readonly ArenaTask[] = [
     title: "Use Product Menu And SKU Lookup",
     tier: "medium",
     sourceFile: "hover-menus.test.ts",
-    sourceCase: "agent hovers to reveal menu, selects category, reads tooltip SKU, and searches",
+    sourceCase:
+      "agent hovers to reveal menu, selects category, reads tooltip SKU, and searches",
     startRoute: "/hover-menus",
     prompt:
       "Open the product menu, choose Electronics, find the SKU for Widget X, and search for that SKU.",
@@ -332,11 +372,10 @@ export const ARENA_TASKS: readonly ArenaTask[] = [
     id: "workarena-category.infeasible-workspace-choice",
     title: "Recognize Missing Workspace Context",
     tier: "medium",
-    sourceFile: "clarification-recovery.test.ts",
+    sourceFile: "fixtures/online-shop-pro/src/routes/workspace-choice.tsx",
     sourceCase: "agent should not choose when required context is absent",
     startRoute: "/workspace-choice",
-    prompt:
-      "Open the workspace I should use for this project.",
+    prompt: "Open the workspace I should use for this project.",
     maxTurns: 15,
     timeoutMs: 180_000,
     tags: [
@@ -378,7 +417,7 @@ export const ARENA_TASKS: readonly ArenaTask[] = [
     prompt:
       "I'm a senior frontend engineer with 5 years of experience in React and TypeScript, plus solid Node.js and GraphQL, looking for a fully remote role in the $120K–$160K range. Go through this job board, pick the two roles that best fit me, and prepare an application for each. Fill in my details on every field — Name: Jordan Reyes, Email: jordan.reyes@example.com, LinkedIn: https://www.linkedin.com/in/jordanreyes, Phone: +1 555 010 0199, Current Location: Denver, CO, EU Work Permit: No, Salary Expectation: $120,000–$160,000 depending on role, Earliest Start Date: 2026-08-03 — and for the 'why do you care' question write 2–3 sentences grounded in that role's posting. Leave the résumé/CV upload for me to attach, and don't submit anything — I'll review each application and send it myself. When you're done, tell me which two roles you picked and why.",
     // Long-horizon: read ~10 postings, judge the best two, then draft a full
-    // 7-field application for each (naturally one browser tab per application).
+    // 9-field application for each (naturally one browser tab per application).
     // Clean runs spend ~8 turns on research and the rest drafting; 100 gives
     // headroom for two full drafts without rewarding thrash.
     maxTurns: 100,

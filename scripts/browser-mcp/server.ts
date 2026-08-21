@@ -50,10 +50,10 @@ type Args = Record<string, unknown>;
 
 // Telemetry handles (Bluebox, see scripts/otel/sdk.ts). Pure no-ops until
 // startOtel() runs in the auto-start block — unit tests never export anything.
-const otelTracer = trace.getTracer("opensidebar-browser-mcp");
-const otelLogger = logs.getLogger("opensidebar-browser-mcp");
+const otelTracer = trace.getTracer("opensidebar-agent-mcp");
+const otelLogger = logs.getLogger("opensidebar-agent-mcp");
 const toolCallCounter = metrics
-  .getMeter("opensidebar-browser-mcp")
+  .getMeter("opensidebar-agent-mcp")
   .createCounter("opensidebar.browser_tool.calls", {
     description: "Thick browser tool calls dispatched over the bridge, by outcome",
   });
@@ -116,7 +116,7 @@ export async function dispatch(
 /** Build a configured MCP server bound to the given bridge (no transport yet). */
 export function buildBrowserMcpServer(bridge: BrowserBridge): Server {
   const server = new Server(
-    { name: "opensidebar-browser", version: "0.1.0" },
+    { name: "opensidebar-agent", version: "0.1.0" },
     { capabilities: { tools: {} } },
   );
 
@@ -239,7 +239,7 @@ if (entryPath && entryPath === fileURLToPath(import.meta.url)) {
   // Bluebox telemetry (default-off; no-op without OTEL_EXPORTER_OTLP_ENDPOINT
   // / .env.otel). Dynamic import keeps the SDK out of unit-test module graphs.
   const { startOtel } = await import("../otel/sdk.js");
-  await startOtel("opensidebar-browser-mcp");
+  await startOtel("opensidebar-agent-mcp");
   const wsPort = process.env.BROWSER_MCP_WS_PORT;
   const bridge: BrowserBridge = wsPort
     ? new WebSocketBridge({

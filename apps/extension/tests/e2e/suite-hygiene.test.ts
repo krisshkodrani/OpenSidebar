@@ -22,6 +22,13 @@ function readTestFile(file: string): string {
   return fs.readFileSync(path.join(__dirname, file), "utf8");
 }
 
+function readOnlineShopRoute(file: string): string {
+  return fs.readFileSync(
+    path.join(__dirname, "fixtures", "online-shop-pro", "src", "routes", file),
+    "utf8",
+  );
+}
+
 /**
  * Prompt-naturalness lint. Prompts should read like a real user request:
  * constraints are fine when phrased naturally ("don't send it yet"), but
@@ -38,7 +45,8 @@ const STRATEGY_LEAK_PATTERNS: Array<{ label: string; pattern: RegExp }> = [
   },
   {
     label: "step-by-step answer reveal",
-    pattern: /\bto\s+reveal\s+the\s+secret\s+code,\s+then\s+enter\s+it\s+and\s+submit\b/i,
+    pattern:
+      /\bto\s+reveal\s+the\s+secret\s+code,\s+then\s+enter\s+it\s+and\s+submit\b/i,
   },
   {
     label: "direct tool invocation",
@@ -113,5 +121,19 @@ describe("E2E suite hygiene", () => {
     }
 
     expect(violations, "Strategy-leaking E2E prompt text").toEqual([]);
+  });
+
+  it("keeps Arena fixture copy from coaching the tested strategy", () => {
+    const fixtureCopy = [
+      readOnlineShopRoute("procurement-list.tsx"),
+      readOnlineShopRoute("workspace-choice.tsx"),
+    ].join("\n");
+
+    expect(fixtureCopy).not.toMatch(/open each store in a[\s\S]{0,40}new tab/i);
+    expect(fixtureCopy).not.toMatch(/then come back here/i);
+    expect(fixtureCopy).not.toMatch(/ask the user which workspace/i);
+    expect(fixtureCopy).not.toMatch(
+      /correct workspace is intentionally not specified/i,
+    );
   });
 });

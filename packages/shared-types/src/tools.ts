@@ -266,6 +266,17 @@ export interface ExtractFormStateArgs {
    * the primary (first) form on the page.
    */
   id?: number;
+  /**
+   * Capture the primary form (default, for submit verification) or every form
+   * control in the document (for user-facing form inventories).
+   */
+  scope?: "primary_form" | "document";
+}
+
+export interface FormStateOption {
+  value: string;
+  label: string;
+  selected: boolean;
 }
 
 /** A single captured form control. */
@@ -288,12 +299,30 @@ export interface FormStateField {
   value: string;
   /** Whether the control is disabled. */
   disabled: boolean;
+  /** Whether the page marks the control as required. */
+  required: boolean;
+  /** Whether the control currently contains a value or checked selection. */
+  filled: boolean;
+  /** Native constraint-validation result when the browser exposes one. */
+  valid: boolean;
+  /** Browser-provided validation detail for an invalid control. */
+  validationMessage?: string;
+  /** Available choices for select, radio, and checkbox controls. */
+  options?: FormStateOption[];
 }
 
 /** The structured form-state capture returned by extract_form_state. */
 export interface FormStateCapture {
   /** Stable-ish form identity (action > id > name > page path). */
   formKey: string;
+  /** Scope actually inspected. */
+  scope: "primary_form" | "document";
+  /** Number of forms present in the traversable document. */
+  formCount: number;
+  /** False when a known browser boundary prevented a complete capture. */
+  complete: boolean;
+  /** Human-readable reasons why the capture may be partial. */
+  limitations: string[];
   fields: FormStateField[];
   submitTargets: Array<{ label: string; selector: string }>;
 }

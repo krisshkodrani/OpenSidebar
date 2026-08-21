@@ -127,9 +127,9 @@
   },
   {
     "id": "planner.decompose.system",
-    "version": "v7",
-    "hash": "1ec120a9",
-    "description": "Planner decomposition system prompt for the task planner. v7: per-step display label for the UI. v6: no literal-value restatement, at most 5 one-line assumptions (LP-17b CM-4).",
+    "version": "v8",
+    "hash": "ce0d4298",
+    "description": "Planner decomposition system prompt for the task planner. v8: structured whole-document form inspection. v7: per-step display label for the UI.",
     "sourcePath": "prompts/runtime/planner/decompose_system.md"
   },
   {

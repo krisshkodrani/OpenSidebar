@@ -150,6 +150,11 @@ describe("provider-scoped model catalogs", () => {
     ).toContain("openai/gpt-5.6-luna");
   });
 
+  test("OpenRouter can seat the multimodal tool-capable Ox Alpha route as executor", () => {
+    expect(isExecutorEligible("stealth/ox-alpha", "openrouter")).toBe(true);
+    expect(isVLCapable("stealth/ox-alpha")).toBe(true);
+  });
+
   test("fireworks Kimi K2.6 catalog pricing matches Fireworks serverless pricing", () => {
     expect(
       FIREWORKS_MODELS.find(

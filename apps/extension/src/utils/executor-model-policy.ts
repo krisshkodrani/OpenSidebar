@@ -79,6 +79,7 @@ const CEREBRAS_EXECUTOR_MODELS = new Set(["gemma-4-31b"]);
  * alias, which is not a routable id.
  */
 const OPENROUTER_EXECUTOR_MODELS = new Set([
+  "stealth/ox-alpha",
   "minimax/minimax-m3",
   "moonshotai/kimi-k2.7-code",
   "moonshotai/kimi-k2.6",

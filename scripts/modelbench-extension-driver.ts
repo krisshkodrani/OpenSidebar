@@ -2,6 +2,7 @@ import { execFileSync } from "node:child_process";
 import { resolve } from "node:path";
 import type { ScenarioRunV2 } from "@opensidebar/scenario-contracts";
 import { createE2EHarness } from "../apps/extension/tests/e2e/helpers/harness.js";
+import { openHelperPage } from "../apps/extension/tests/e2e/helpers/browser.js";
 import {
   getActiveTabId,
   getMonitoredEventsWithControlLane,
@@ -200,7 +201,119 @@ function terminalOutcome(outcome: DriverOutcome, run: ScenarioRunV2): string | u
 
 function providerError(error: unknown): boolean {
   const detail = error instanceof Error ? error.message : String(error);
-  return /api key|provider|rate limit|429|quota|model unavailable|failed to fetch/i.test(detail);
+  return /api key|provider|rate limit|(?:http(?: status)?|status|error|response)\b[^\r\n]{0,12}\b429\b|\b429\s+(?:too many requests|rate limit)|quota|model unavailable|failed to fetch/i.test(
+    detail,
+  );
+}
+
+export function providerFailureReason(outcome: DriverOutcome): string | undefined {
+  const answer = finalAnswer(outcome);
+  return answer && providerError(answer) ? answer : undefined;
+}
+
+async function preflightProviderNetwork(
+  provider: string,
+  ctx: Parameters<typeof openHelperPage>[0],
+): Promise<void> {
+  if (provider !== "openrouter") return;
+  const page = await openHelperPage(ctx);
+  const result = await page.evaluate(async () => {
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), 10_000);
+    try {
+      const response = await fetch("https://openrouter.ai/api/v1/models", {
+        method: "HEAD",
+        cache: "no-store",
+        signal: controller.signal,
+      });
+      return { ok: true, status: response.status };
+    } catch (error) {
+      return {
+        ok: false,
+        detail: error instanceof Error ? error.message : String(error),
+      };
+    } finally {
+      clearTimeout(timer);
+    }
+  });
+  if (!result.ok) {
+    throw new Error(`OpenRouter network preflight failed: ${result.detail}`);
+  }
+
+  // Chrome for Testing can indefinitely suspend external fetches made by an
+  // attached MV3 service worker even though the same extension-origin request
+  // succeeds in a page. Keep this workaround in the E2E driver: it transports
+  // the unchanged HTTP request through the helper page and reconstructs the
+  // response in the worker. No benchmark state or task data is involved.
+  await page.evaluate(() => {
+    const marker = "__openSidebarE2ENetworkProxyInstalled";
+    const scope = globalThis as typeof globalThis & Record<string, unknown>;
+    if (scope[marker]) return;
+    scope[marker] = true;
+    chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
+      if (message?.type !== "E2E_NETWORK_PROXY_FETCH") return false;
+      void (async () => {
+        const controller = new AbortController();
+        const timer = setTimeout(() => controller.abort(), 120_000);
+        try {
+          const response = await fetch(message.url, {
+            method: message.method,
+            headers: message.headers,
+            body: message.body,
+            cache: "no-store",
+            signal: controller.signal,
+          });
+          sendResponse({
+            ok: true,
+            status: response.status,
+            statusText: response.statusText,
+            headers: [...response.headers.entries()],
+            body: await response.text(),
+          });
+        } catch (error) {
+          sendResponse({
+            ok: false,
+            detail: error instanceof Error ? error.message : String(error),
+          });
+        } finally {
+          clearTimeout(timer);
+        }
+      })();
+      return true;
+    });
+  });
+
+  await ctx.serviceWorker.evaluate(() => {
+    const marker = "__openSidebarE2ENetworkProxyInstalled";
+    const scope = globalThis as typeof globalThis & Record<string, unknown>;
+    if (scope[marker]) return;
+    scope[marker] = true;
+    const nativeFetch = globalThis.fetch.bind(globalThis);
+    globalThis.fetch = async (input, init) => {
+      const request = new Request(input, init);
+      if (new URL(request.url).origin !== "https://openrouter.ai") {
+        return nativeFetch(input, init);
+      }
+      const body = ["GET", "HEAD"].includes(request.method)
+        ? undefined
+        : await request.text();
+      const result = await chrome.runtime.sendMessage({
+        type: "E2E_NETWORK_PROXY_FETCH",
+        url: request.url,
+        method: request.method,
+        headers: Object.fromEntries(request.headers.entries()),
+        body,
+      });
+      if (!result?.ok) {
+        throw new TypeError(result?.detail || "E2E network proxy failed.");
+      }
+      return new Response(result.body, {
+        status: result.status,
+        statusText: result.statusText,
+        headers: result.headers,
+      });
+    };
+  });
 }
 
 async function readRun(origin: string, runId: string): Promise<ScenarioRunV2> {
@@ -254,6 +367,7 @@ export async function createModelBenchDriver(): Promise<ModelBenchDriver> {
         }
         await harness.beforeEachHook();
         beforeEachComplete = true;
+        await preflightProviderNetwork(input.configuration.provider, harness.ctx);
         await navigateAndWait(harness.page, created.launchUrl);
         const tabId = await getActiveTabId(harness.ctx.serviceWorker);
         if (tabId <= 0) throw new Error("ModelBench target tab was not active.");
@@ -290,6 +404,7 @@ export async function createModelBenchDriver(): Promise<ModelBenchDriver> {
           targetOrigin: target.origin,
           turns: traceSummary.turns,
         });
+        const providerFailure = providerFailureReason(outcome);
         return {
           durationMs: Date.now() - startedAt,
           finalState: run.state,
@@ -300,6 +415,14 @@ export async function createModelBenchDriver(): Promise<ModelBenchDriver> {
           usageByRole: evidence.usageByRole,
           telemetry: evidence.telemetry,
           artifactRefs: evidence.artifactRefs,
+          ...(providerFailure
+            ? {
+                failure: {
+                  kind: "provider" as const,
+                  reason: providerFailure,
+                },
+              }
+            : {}),
           diagnostics: {
             runId: created.runId,
             workspaceId,

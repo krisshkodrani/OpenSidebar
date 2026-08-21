@@ -9,6 +9,7 @@ import { sanitizeUrl } from "../security";
 import { ToolRegistry } from "./registry";
 import { executeContentTool, waitForNavigation } from "./bridge";
 import { clearTabReady, ensureContentScript, waitForDomReady } from "../tab-ready";
+import { isUsableTabUrl } from "../infrastructure/tab-resolution";
 import { formatControllableTabLines, tryInPageHistoryBack, waitForTabUrlChange } from "./tab-navigation-helpers";
 import {
     WAIT_DEF,
@@ -138,6 +139,20 @@ export function registerCoreActionTools(toolRegistry: ToolRegistry): void {
                 } catch {
                     currentUrl = null;
                 }
+            }
+
+            if (currentUrl && !isUsableTabUrl(currentUrl)) {
+                logger.warn("tools", "go_back reached an uncontrollable browser page; restoring source URL", {
+                    tabId,
+                    previousUrl,
+                    currentUrl,
+                });
+                if (isUsableTabUrl(previousUrl)) {
+                    clearTabReady(tabId);
+                    await chrome.tabs.update(tabId, { url: previousUrl });
+                    await waitForNavigation(tabId);
+                }
+                return `Error going back: browser history led to an uncontrollable page (${currentUrl}). Restored ${previousUrl || "the previous page"}.`;
             }
 
             if (!currentUrl || currentUrl === "about:blank") {

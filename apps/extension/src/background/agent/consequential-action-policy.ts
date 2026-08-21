@@ -183,6 +183,13 @@ function isCommunicationSendAction(
   if (args.id == null) return false;
 
   const label = actionLabel.toLowerCase();
+  if (
+    /\b(?:draft|compose|write|prepare|create|start|open)\b[^\n]{0,60}\b(?:reply|response|message|email|comment|post)\b/.test(
+      label,
+    )
+  ) {
+    return false;
+  }
   return /\b(send|post|reply)\b/.test(label);
 }
 

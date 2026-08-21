@@ -188,6 +188,37 @@ describe("completion kernel read-answer completion", () => {
     expect(decision.status).toBe("accepted");
   });
 
+  test("rejects a comparison answer that covers only one requested policy", () => {
+    const snap = workflowSnapshot({
+      title: "Policy comparison",
+      url: "https://example.test/policies",
+      visibleContent:
+        "Source comparison active. Expense policy: manager pre-approval is required above $500. Continue to conclusion.",
+      pageContent:
+        "Step 2 of 3. Travel policy pending. Expense policy: manager pre-approval is required above $500.",
+    });
+    const generated = generateCompletionContract({
+      userRequest:
+        "Compare the travel and expense policies and tell me when manager pre-approval is required.",
+      snapshot: snap,
+    });
+    const decision = evaluateCompletionContract({
+      contract: generated?.contract,
+      evidence: deriveCompletionEvidenceFromSnapshot(snap, 2),
+      snapshot: snap,
+      candidateSource: "model_done",
+      summary:
+        "The expense policy requires manager pre-approval for expenses above $500.",
+    });
+
+    expect(generated?.contract).toMatchObject({
+      kind: "read_answer",
+      taskContract: { multiReturnCount: 2 },
+    });
+    expect(decision.status).toBe("rejected");
+    expect(decision.reason).toContain("travel policy");
+  });
+
   test("derives read-answer evidence from read_page results", () => {
     const snap = workflowSnapshot({
       title: "Release Notes",
@@ -401,4 +432,3 @@ describe("completion kernel read-answer completion", () => {
     expect(generated?.contract).toMatchObject({ kind: "read_answer" });
   });
 });
-
