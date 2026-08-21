@@ -266,6 +266,7 @@ describe("Tool Metadata", () => {
       expect(tools).toContain(ToolName.APPLY_LIST_FILTER);
       expect(tools).toContain(ToolName.GET_PROFILE_FIELDS);
       expect(tools).toContain(ToolName.UPLOAD_FILE);
+      expect(tools).toContain(ToolName.EXTRACT_FORM_STATE);
       expect(tools).not.toContain(ToolName.NAVIGATE);
       expect(tools).not.toContain(ToolName.CREATE_TAB);
       expect(tools).not.toContain(ToolName.GO_BACK);
@@ -294,6 +295,7 @@ describe("Tool Metadata", () => {
       expect(tools).toContain(ToolName.SEARCH_KNOWLEDGE_BASE);
       expect(tools).toContain(ToolName.FIND_ELEMENT);
       expect(tools).toContain(ToolName.SCROLL_PAGE);
+      expect(tools).toContain(ToolName.EXTRACT_FORM_STATE);
     });
 
     test('resolveToolProfile("navigate") includes navigation tools', () => {
@@ -334,6 +336,7 @@ describe("Tool Metadata", () => {
       expect(tools).toContain(ToolName.PRESS_KEY);
       expect(tools).toContain(ToolName.TYPE_TEXT);
       expect(tools).toContain(ToolName.UPLOAD_FILE);
+      expect(tools).toContain(ToolName.EXTRACT_FORM_STATE);
       expect(tools).not.toContain(ToolName.EXECUTE_JS);
     });
 

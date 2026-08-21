@@ -1,4 +1,4 @@
-import { useState, useRef, useCallback } from "react";
+import { useState, useRef, useCallback, useEffect } from "react";
 
 interface Task {
   id: string;
@@ -38,10 +38,24 @@ const INITIAL_COLUMNS: Column[] = [
 
 export default function Kanban() {
   const [columns, setColumns] = useState<Column[]>(INITIAL_COLUMNS);
-  const [moves, setMoves] = useState<Array<{ card: string; from: string; to: string }>>([]);
+  const [moves, setMoves] = useState<
+    Array<{ card: string; from: string; to: string }>
+  >([]);
   const draggingRef = useRef<{ taskId: string; fromCol: string } | null>(null);
   const columnsRef = useRef<Column[]>(INITIAL_COLUMNS);
   const moveKeysRef = useRef<Set<string>>(new Set());
+
+  useEffect(() => {
+    (window as any).kanbanResult = {
+      moves,
+      columns: Object.fromEntries(
+        columns.map((column) => [
+          column.id,
+          column.tasks.map((task) => task.title),
+        ]),
+      ),
+    };
+  }, [columns, moves]);
 
   const moveTask = useCallback(
     (taskId: string, fromColId: string, toColId: string) => {
@@ -76,11 +90,7 @@ export default function Kanban() {
           ?.title || taskId;
 
       const newMove = { card: taskTitle, from: fromColId, to: toColId };
-      setMoves((prev) => {
-        const updated = [...prev, newMove];
-        (window as any).kanbanResult = { moves: updated };
-        return updated;
-      });
+      setMoves((prev) => [...prev, newMove]);
     },
     [],
   );
@@ -91,7 +101,11 @@ export default function Kanban() {
   };
 
   // HTML5 DnD handlers (Strategy 2 fallback)
-  const handleDragStart = (e: React.DragEvent, taskId: string, colId: string) => {
+  const handleDragStart = (
+    e: React.DragEvent,
+    taskId: string,
+    colId: string,
+  ) => {
     draggingRef.current = { taskId, fromCol: colId };
     e.dataTransfer.setData("text/plain", taskId);
     e.dataTransfer.effectAllowed = "move";
@@ -105,7 +119,11 @@ export default function Kanban() {
   const handleDrop = (e: React.DragEvent, toColId: string) => {
     e.preventDefault();
     if (draggingRef.current) {
-      moveTask(draggingRef.current.taskId, draggingRef.current.fromCol, toColId);
+      moveTask(
+        draggingRef.current.taskId,
+        draggingRef.current.fromCol,
+        toColId,
+      );
       draggingRef.current = null;
     }
   };
@@ -113,7 +131,11 @@ export default function Kanban() {
   // Pointer-based drop: listen for pointerup on column drop zones
   const handlePointerUp = (toColId: string) => {
     if (draggingRef.current) {
-      moveTask(draggingRef.current.taskId, draggingRef.current.fromCol, toColId);
+      moveTask(
+        draggingRef.current.taskId,
+        draggingRef.current.fromCol,
+        toColId,
+      );
       draggingRef.current = null;
     }
   };

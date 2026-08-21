@@ -137,6 +137,17 @@ describe("task contract helpers", () => {
     expect(coverage.satisfied).toBe(true);
   });
 
+  test("detects two subjects in a natural comparison request", () => {
+    const contract = buildTaskContract(
+      "Compare the travel and expense policies and tell me when manager pre-approval is required.",
+    );
+
+    expect(contract.multiReturnCount).toBe(2);
+    expect(contract.requiredEntities).toEqual(
+      expect.arrayContaining(["travel policy", "expense policy"]),
+    );
+  });
+
   test("ignores conversational filler when building required entities", () => {
     const contract = buildTaskContract(
       "Actually, change the reply. Decline both proposed times and suggest Monday at 11 AM instead.",

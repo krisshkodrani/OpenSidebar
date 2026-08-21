@@ -8,7 +8,7 @@
       "seats": {
         "executor": {
           "provider": "openrouter",
-          "providerPin": "groq",
+          "providerPin": "minimax",
           "model": "minimax/minimax-m3"
         },
         "planner": {

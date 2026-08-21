@@ -104,6 +104,17 @@ describe("consequential action policy", () => {
     expect(result).toContain("draft-only");
   });
 
+  test("allows opening a draft reply editor for draft-only tasks", () => {
+    expect(
+      assessConsequentialFinalActionBlock({
+        toolName: ToolName.CLICK_ELEMENT,
+        args: { id: 17 },
+        taskText: "Draft a short reply to David and leave it unsent.",
+        actionLabel: 'Click [17] button "Draft a short reply"',
+      }),
+    ).toBeNull();
+  });
+
   test("allows send clicks when sending is the explicit communication goal", () => {
     expect(
       assessConsequentialFinalActionBlock({

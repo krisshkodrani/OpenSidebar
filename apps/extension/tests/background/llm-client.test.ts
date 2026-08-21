@@ -440,7 +440,7 @@ describe("LLMClient construction & tier switching", () => {
     expect(sentModel).toBe("custom/judge");
   });
 
-  test("applies independent OpenRouter upstream pins per model seat", async () => {
+  test("prefers independent OpenRouter upstreams without blocking fallback", async () => {
     const client = new LLMClient("test-api-key", {
       providerMode: "openrouter",
       executorModel: "minimax/minimax-m3",
@@ -464,15 +464,15 @@ describe("LLMClient construction & tier switching", () => {
     expect(sent.map(({ model, provider }) => ({ model, provider }))).toEqual([
       {
         model: "minimax/minimax-m3",
-        provider: { only: ["Groq"] },
+        provider: { order: ["Groq"], allow_fallbacks: true },
       },
       {
         model: "openai/gpt-5.6-terra",
-        provider: { only: ["OpenAI"] },
+        provider: { order: ["OpenAI"], allow_fallbacks: true },
       },
       {
         model: "openai/gpt-5.6-luna",
-        provider: { only: ["OpenAI"] },
+        provider: { order: ["OpenAI"], allow_fallbacks: true },
       },
     ]);
   });
@@ -920,6 +920,22 @@ describe("complete() error handling & retry", () => {
     expect(result.content).toBe("Success");
     // Should have called fetch more than once due to retries
     expect(callCount).toBeGreaterThan(1);
+  });
+
+  test("retries transient OpenRouter timeouts and server errors", async () => {
+    const client = makeClient();
+    let callCount = 0;
+    mockFetch(() => {
+      callCount++;
+      if (callCount === 1) return new Response("Timed out", { status: 408 });
+      if (callCount === 2)
+        return new Response("Temporary router error", { status: 500 });
+      return jsonApiResponse("Recovered");
+    });
+
+    const result = await client.complete(baseRequest());
+    expect(result.content).toBe("Recovered");
+    expect(callCount).toBe(3);
   });
 
   test("does NOT retry on 400/401/404", async () => {

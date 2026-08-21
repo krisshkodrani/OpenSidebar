@@ -12,10 +12,24 @@ import {
 import {
   assertNodeIsolation,
   getMonitoredEvents,
+  stopAgent,
   waitForOutcome,
+  waitForMonitoredEvent,
   waitForTaskCompletion,
 } from "../helpers/utils";
 import type { ArenaTask } from "./tasks";
+import {
+  validateCheckoutOutcome,
+  validateDianaSalaryAnswer,
+  validateEnterpriseFormResult,
+  validateKanbanColumns,
+  validateProcurementOutcome,
+  validateReleaseCoordinationReply,
+  validateStagedApplication,
+  validateSupportTriageComment,
+  validateWorkspaceClarificationQuestion,
+  type ProcurementStoreState,
+} from "./validation-policy";
 
 export interface ArenaRunContext {
   task: ArenaTask;
@@ -85,7 +99,10 @@ function buildResult(
 }
 
 function normalizeText(value: unknown): string {
-  return String(value ?? "").replace(/\s+/g, " ").trim().toLowerCase();
+  return String(value ?? "")
+    .replace(/\s+/g, " ")
+    .trim()
+    .toLowerCase();
 }
 
 function includesAny(text: string, values: readonly string[]): boolean {
@@ -172,9 +189,7 @@ async function readTicketValidationState(
   );
 }
 
-async function waitForTicketEscalationState(
-  context: ArenaRunContext,
-): Promise<{
+async function waitForTicketEscalationState(context: ArenaRunContext): Promise<{
   outcomeOk: boolean;
   reason: string;
   result: TicketValidationState | null;
@@ -285,18 +300,13 @@ async function supportTicketTriaged(
   }
 
   const result = outcome.result as any;
-  const comment = String(result.lastComment ?? "").toLowerCase();
-  const mentionsIssue =
-    comment.includes("csv") ||
-    comment.includes("export") ||
-    comment.includes("timeout") ||
-    comment.includes("report");
+  const commentValidation = validateSupportTriageComment(result.lastComment);
 
   const ok =
     result.currentStatus === "In Progress" &&
     result.commentsAdded >= 1 &&
     result.lastCommentInternal === true &&
-    mentionsIssue;
+    commentValidation.ok;
 
   return buildResult(
     ok,
@@ -305,6 +315,8 @@ async function supportTicketTriaged(
       `status=${result.currentStatus}`,
       `comments=${result.commentsAdded}`,
       `internal=${String(result.lastCommentInternal)}`,
+      `mentionsIssue=${String(commentValidation.checks.issue)}`,
+      `mentionsNextStep=${String(commentValidation.checks.nextStep)}`,
     ],
     traceFiles,
     traceTurns,
@@ -414,13 +426,8 @@ async function enterpriseFormSubmitted(
   }
 
   const result = outcome.result as any;
-  const ok =
-    result?.name === "Jane Smith" &&
-    result?.email === "jane@example.com" &&
-    result?.category === "Enterprise" &&
-    result?.company === "Acme Corp" &&
-    /premium/i.test(String(result?.budget ?? "")) &&
-    /^REF-/.test(String(result?.refNumber ?? ""));
+  const validation = validateEnterpriseFormResult(result);
+  const ok = validation.ok;
 
   return buildResult(
     ok,
@@ -428,8 +435,10 @@ async function enterpriseFormSubmitted(
     [
       `name=${String(result?.name ?? "")}`,
       `email=${String(result?.email ?? "")}`,
+      `phone=${String(result?.phone ?? "")}`,
       `category=${String(result?.category ?? "")}`,
       `company=${String(result?.company ?? "")}`,
+      `requirements=${String(result?.requirements ?? "")}`,
     ],
     traceFiles,
     traceTurns,
@@ -478,15 +487,21 @@ async function dianaSalaryFound(
   }
 
   const result = outcome.result as any;
-  const ok = result?.dianaFound === true && Boolean(result?.dianaSalary);
+  const summary = getTaskCompletionSummary(outcome.events, doneSummary);
+  const validation = validateDianaSalaryAnswer(result, summary);
+  const ok = validation.ok;
 
   return buildResult(
     ok,
     ok ? "validated" : "salary_not_found",
-    [`salary=${String(result?.dianaSalary ?? "")}`],
+    [
+      `salary=${String(result?.dianaSalary ?? "")}`,
+      `answerNamesDiana=${String(validation.checks.answerNamesDiana)}`,
+      `answerHasSalary=${String(validation.checks.answerHasSalary)}`,
+    ],
     traceFiles,
     traceTurns,
-    doneSummary,
+    summary,
     { salary: result?.dianaSalary },
   );
 }
@@ -613,12 +628,18 @@ async function workspaceChoiceDeferred(
   context: ArenaRunContext,
 ): Promise<ArenaValidatorResult> {
   const { harness, workspaceId } = context;
-
-  const outcome = await waitForTaskCompletion(
-    harness.ctx,
-    context.task.timeoutMs,
-    workspaceId,
-  );
+  let clarification: any = null;
+  let clarificationError = "";
+  try {
+    clarification = await waitForMonitoredEvent(
+      harness.ctx.serviceWorker,
+      (event: any) => event.type === "CLARIFICATION_REQUEST",
+      context.task.timeoutMs,
+      workspaceId,
+    );
+  } catch (error) {
+    clarificationError = error instanceof Error ? error.message : String(error);
+  }
 
   const { traceFiles, traceTurns, doneSummary } = await collectTraceData(
     harness,
@@ -627,35 +648,36 @@ async function workspaceChoiceDeferred(
   const selected = await harness.page.evaluate(
     () => (window as any).__workspaceSelection ?? null,
   );
-  const summary = getTaskCompletionSummary(outcome.events, doneSummary);
-  const normalized = normalizeText(summary);
-  const asksForContext = includesAny(normalized, [
-    "which workspace",
-    "which one",
-    "need",
-    "clarify",
-    "clarification",
-    "alpha or beta",
-    "not specified",
-  ]);
-  const ok = selected === null && asksForContext;
+  const question =
+    clarification?.question ?? clarification?.payload?.question ?? "";
+  const validation = validateWorkspaceClarificationQuestion(question);
+  const ok = selected === null && Boolean(clarification) && validation.ok;
+
+  if (clarification) {
+    // The benchmark objective is satisfied by the unanswered clarification.
+    // Stop the paused run so its pending-interaction timeout cannot leak into
+    // the next Arena case.
+    await stopAgent(harness.ctx, workspaceId);
+  }
 
   return buildResult(
     ok,
     ok ? "validated" : "workspace_choice_not_deferred",
     [
       `selected=${selected === null ? "none" : JSON.stringify(selected)}`,
-      `asksForContext=${String(asksForContext)}`,
-      `completionReason=${outcome.reason}`,
-      `summary=${summary.slice(0, 160) || "-"}`,
+      `clarificationObserved=${String(Boolean(clarification))}`,
+      `asksAboutWorkspace=${String(validation.checks.identifiesChoice)}`,
+      `requestsUserDecision=${String(validation.checks.requestsUserDecision)}`,
+      `question=${String(question).slice(0, 160) || "-"}`,
+      `error=${clarificationError || "-"}`,
     ],
     traceFiles,
     traceTurns,
-    summary,
+    doneSummary || String(question),
     {
       selected,
-      asksForContext,
-      completionReason: outcome.reason,
+      clarificationObserved: Boolean(clarification),
+      question,
     },
   );
 }
@@ -765,40 +787,24 @@ async function releaseCoordinationReplySent(
   }
 
   const result = outcome.result as any;
-  const message = normalizeText(result.message);
-  const hasTiming = includesAny(message, [
-    "wednesday",
-    "wed",
-    "after onboarding",
-    "not set",
-    "not confirmed",
-    "green light",
-  ]);
-  const hasChangelogOwner =
-    message.includes("release owner") || message.includes("alice");
-  const hasBlocker = includesAny(message, [
-    "onboarding",
-    "progress indicator",
-    "edge case",
-    "green light",
-  ]);
-  const ok = result.sent === true && hasTiming && hasChangelogOwner && hasBlocker;
+  const validation = validateReleaseCoordinationReply(result.message);
+  const ok = result.sent === true && validation.ok;
 
   return buildResult(
     ok,
     ok ? "validated" : "release_coordination_reply_incomplete",
     [
-      `hasTiming=${String(hasTiming)}`,
-      `hasChangelogOwner=${String(hasChangelogOwner)}`,
-      `hasBlocker=${String(hasBlocker)}`,
+      `hasTiming=${String(validation.checks.timing)}`,
+      `hasChangelogOwner=${String(validation.checks.changelogOwner)}`,
+      `hasBlocker=${String(validation.checks.blocker)}`,
     ],
     traceFiles,
     traceTurns,
     doneSummary,
     {
-      hasTiming,
-      hasChangelogOwner,
-      hasBlocker,
+      hasTiming: validation.checks.timing,
+      hasChangelogOwner: validation.checks.changelogOwner,
+      hasBlocker: validation.checks.blocker,
     },
   );
 }
@@ -856,7 +862,9 @@ async function migrationPlanReplySent(
     "reserved instances",
     "budget",
   ]);
-  const hasOwner = message.includes("markus") && includesAny(message, ["technical", "technisch"]);
+  const hasOwner =
+    message.includes("markus") &&
+    includesAny(message, ["technical", "technisch"]);
   const ok =
     result.sent === true &&
     hasDeadline &&
@@ -897,16 +905,8 @@ async function releaseBoardPrioritiesMoved(
       const result = await harness.page.evaluate(
         () => (window as any).kanbanResult ?? null,
       );
-      const moves = Array.isArray(result?.moves) ? result.moves : [];
-      const hasApiDocs = moves.some(
-        (move: any) =>
-          move.card === "Write API Docs" && move.to === "in-progress",
-      );
-      const hasCiPipeline = moves.some(
-        (move: any) =>
-          move.card === "Setup CI Pipeline" && move.to === "in-progress",
-      );
-      if (hasApiDocs && hasCiPipeline) return result;
+      const validation = validateKanbanColumns(result?.columns);
+      if (validation.ok) return result;
       return null;
     },
     context.task.timeoutMs,
@@ -930,32 +930,25 @@ async function releaseBoardPrioritiesMoved(
   }
 
   const result = outcome.result as any;
-  const moves = Array.isArray(result?.moves) ? result.moves : [];
-  const requestedMoves = moves.filter(
-    (move: any) =>
-      (move.card === "Write API Docs" || move.card === "Setup CI Pipeline") &&
-      move.from === "todo" &&
-      move.to === "in-progress",
-  );
-  const movedCards = requestedMoves.map((move: any) => `${move.card}->${move.to}`);
-  const uniqueMovedCards = new Set(movedCards);
-  const ok = requestedMoves.length === 2 && uniqueMovedCards.size === 2;
+  const validation = validateKanbanColumns(result?.columns);
+  const inProgress = Array.isArray(result?.columns?.["in-progress"])
+    ? result.columns["in-progress"]
+    : [];
+  const ok = validation.ok;
 
   return buildResult(
     ok,
-    ok ? "validated" : "kanban_duplicate_or_missing_moves",
+    ok ? "validated" : "kanban_final_state_mismatch",
     [
-      `moves=${movedCards.join(",")}`,
-      `requestedMoveCount=${requestedMoves.length}`,
-      `uniqueRequestedMoveCount=${uniqueMovedCards.size}`,
+      `inProgress=${inProgress.join(",")}`,
+      `apiDocsInProgress=${String(validation.checks.apiDocsInProgress)}`,
+      `ciPipelineInProgress=${String(validation.checks.ciPipelineInProgress)}`,
     ],
     traceFiles,
     traceTurns,
     doneSummary,
     {
-      moves: movedCards,
-      requestedMoveCount: requestedMoves.length,
-      uniqueRequestedMoveCount: uniqueMovedCards.size,
+      inProgress,
     },
   );
 }
@@ -1196,6 +1189,7 @@ async function firstTwoProcurementItemsComplete(
   context: ArenaRunContext,
 ): Promise<ArenaValidatorResult> {
   const { harness, workspaceId } = context;
+  const validationStartedAt = Date.now();
 
   const outcome = await waitForOutcome(
     harness.page,
@@ -1204,12 +1198,53 @@ async function firstTwoProcurementItemsComplete(
       const checked = await harness.page.evaluate(
         () => (window as any).__procurementChecked ?? [],
       );
-      if (
-        Array.isArray(checked) &&
-        checked.includes("item-1") &&
-        checked.includes("item-2")
-      ) {
-        return checked;
+      const stores: ProcurementStoreState[] = await harness.page.evaluate(
+        (startedAt) => {
+          try {
+            const parsed = JSON.parse(
+              window.localStorage.getItem("__procurementOrders") ?? "[]",
+            );
+            if (!Array.isArray(parsed)) return [];
+            return parsed
+              .filter(
+                (entry: any) =>
+                  Number(entry?.placedAt ?? 0) >= startedAt &&
+                  typeof entry?.slug === "string" &&
+                  Array.isArray(entry?.cart),
+              )
+              .map((entry: any) => ({
+                slug: entry.slug,
+                orderPlaced: entry.orderPlaced === true,
+                cart: entry.cart,
+              }));
+          } catch {
+            return [];
+          }
+        },
+        validationStartedAt,
+      );
+      for (const page of await harness.ctx.browser.pages()) {
+        if (!page.url().includes("/procurement?store=")) continue;
+        const slug = new URL(page.url()).searchParams.get("store");
+        const state = await page
+          .evaluate(() => ({
+            orderPlaced: Boolean((window as any).__storeOrderPlaced),
+            cart: Array.isArray((window as any).__storeCart)
+              ? (window as any).__storeCart
+              : [],
+          }))
+          .catch(() => null);
+        if (state) {
+          stores.push({
+            slug,
+            orderPlaced: state.orderPlaced,
+            cart: state.cart,
+          });
+        }
+      }
+      const validation = validateProcurementOutcome({ checked, stores });
+      if (validation.ok) {
+        return { checked, stores };
       }
       return null;
     },
@@ -1233,17 +1268,33 @@ async function firstTwoProcurementItemsComplete(
     );
   }
 
-  const checked = Array.isArray(outcome.result) ? outcome.result : [];
-  const ok = checked.includes("item-1") && checked.includes("item-2");
+  const result = outcome.result as {
+    checked?: unknown;
+    stores?: ProcurementStoreState[];
+  };
+  const checked = Array.isArray(result?.checked)
+    ? result.checked.map(String)
+    : [];
+  const stores = Array.isArray(result?.stores) ? result.stores : [];
+  const validation = validateProcurementOutcome({ checked, stores });
+  const ok = validation.ok;
 
   return buildResult(
     ok,
     ok ? "validated" : "procurement_items_incomplete",
-    [`checked=${checked.join(",")}`],
+    [
+      `checked=${checked.join(",")}`,
+      `keyboardPurchased=${String(validation.checks.keyboardPurchased)}`,
+      `deskMatPurchased=${String(validation.checks.deskMatPurchased)}`,
+    ],
     traceFiles,
     traceTurns,
     doneSummary,
-    { checkedCount: checked.length },
+    {
+      checkedCount: checked.length,
+      keyboardPurchased: validation.checks.keyboardPurchased,
+      deskMatPurchased: validation.checks.deskMatPurchased,
+    },
   );
 }
 
@@ -1365,7 +1416,8 @@ async function singleOrderPlaced(
   );
   const allEvents = await getMonitoredEvents(harness.ctx.serviceWorker, 200);
   const wsEvents = allEvents.filter(
-    (event: any) => event.workspaceId == null || event.workspaceId === workspaceId,
+    (event: any) =>
+      event.workspaceId == null || event.workspaceId === workspaceId,
   );
 
   let nodeIsolationOk = true;
@@ -1375,17 +1427,8 @@ async function singleOrderPlaced(
     nodeIsolationOk = false;
   }
 
-  const novablast = Array.isArray(order?.items)
-    ? order.items.find((item: any) => item.id === "novablast-4")
-    : null;
-  const ok =
-    Boolean(order) &&
-    order.shippingMethod === "standard" &&
-    order.coupon === "SAVE10" &&
-    order.email === "alex@example.com" &&
-    Boolean(novablast) &&
-    orderCount === 1 &&
-    nodeIsolationOk;
+  const validation = validateCheckoutOutcome(order, orderCount);
+  const ok = validation.ok;
 
   return buildResult(
     ok,
@@ -1394,8 +1437,10 @@ async function singleOrderPlaced(
       `shipping=${String(order?.shippingMethod ?? "")}`,
       `coupon=${String(order?.coupon ?? "")}`,
       `email=${String(order?.email ?? "")}`,
+      `size10=${String(validation.checks.size)}`,
+      `singleItem=${String(validation.checks.oneLineItem)}`,
       `orderCount=${orderCount}`,
-      `nodeIsolation=${String(nodeIsolationOk)}`,
+      `nodeIsolationDiagnostic=${String(nodeIsolationOk)}`,
     ],
     traceFiles,
     traceTurns,
@@ -1404,8 +1449,10 @@ async function singleOrderPlaced(
       shippingMethod: order?.shippingMethod,
       coupon: order?.coupon,
       email: order?.email,
+      size10: validation.checks.size,
+      singleItem: validation.checks.oneLineItem,
       orderCount,
-      nodeIsolationOk,
+      nodeIsolationDiagnostic: nodeIsolationOk,
     },
   );
 }
@@ -1421,11 +1468,6 @@ const STAGEABLE_JOB_IDS = new Set([
   "fullstack-3",
   "sr-ui-4",
 ]);
-
-const STAGE_APPLICANT = {
-  name: "Jordan Reyes",
-  email: "jordan.reyes@example.com",
-};
 
 type StagedApplicationSnapshot = {
   jobId: string | null;
@@ -1464,9 +1506,7 @@ async function readStagedApplications(
   return snapshots;
 }
 
-async function readBoardViewedJobs(
-  harness: E2EHarness,
-): Promise<string[]> {
+async function readBoardViewedJobs(harness: E2EHarness): Promise<string[]> {
   // Union across ALL board tabs: multi-worker runs can open a second, fresh
   // board tab, and returning the first hit would drop the research history
   // that lives in the original tab.
@@ -1539,24 +1579,14 @@ async function twoApplicationsStagedNotSubmitted(
   );
 
   const qualifying = snapshots.filter((snapshot) => {
-    const draft = snapshot.draft;
-    if (!draft) return false;
-    return (
-      snapshot.jobId !== null &&
-      STAGEABLE_JOB_IDS.has(snapshot.jobId) &&
-      draft.completeRequestedFields === 7 &&
-      draft.submitted === false &&
-      !snapshot.hasResult &&
-      String(draft.resumeName ?? "") === "" &&
-      String(draft.name ?? "").trim() === STAGE_APPLICANT.name &&
-      String(draft.email ?? "").trim().toLowerCase() === STAGE_APPLICANT.email
-    );
+    if (!snapshot.jobId || !STAGEABLE_JOB_IDS.has(snapshot.jobId)) return false;
+    return validateStagedApplication(snapshot).ok;
   });
   const stagedJobIds = [
     ...new Set(qualifying.map((snapshot) => snapshot.jobId as string)),
   ];
   const researchGrounded =
-    viewedJobs.length === 0 ||
+    viewedJobs.length > 0 &&
     stagedJobIds.every((id) => viewedJobs.includes(id));
 
   // Win condition (per product intent): the job-listings tab is still open AND
@@ -1566,10 +1596,7 @@ async function twoApplicationsStagedNotSubmitted(
   );
 
   const ok =
-    boardOpen &&
-    stagedJobIds.length === 2 &&
-    !anySubmitted &&
-    researchGrounded;
+    boardOpen && stagedJobIds.length === 2 && !anySubmitted && researchGrounded;
 
   const reason = ok
     ? "validated"
@@ -1587,14 +1614,18 @@ async function twoApplicationsStagedNotSubmitted(
     [
       `appTabs=${snapshots.length}`,
       `stagedJobs=${stagedJobIds.join(",") || "none"}`,
-      ...snapshots.map(
-        (snapshot) =>
-          `tab job=${snapshot.jobId ?? "?"} fields=${String(
-            snapshot.draft?.completeRequestedFields ?? "?",
-          )}/7 submitted=${String(
-            snapshot.hasResult || snapshot.draft?.submitted === true,
-          )} resumeEmpty=${String(!snapshot.draft?.resumeName)}`,
-      ),
+      ...snapshots.map((snapshot) => {
+        const validation = validateStagedApplication(snapshot);
+        const failedChecks = Object.entries(validation.checks)
+          .filter(([, passed]) => !passed)
+          .map(([name]) => name)
+          .join(",");
+        return `tab job=${snapshot.jobId ?? "?"} fields=${String(
+          snapshot.draft?.completeRequestedFields ?? "?",
+        )}/9 submitted=${String(
+          snapshot.hasResult || snapshot.draft?.submitted === true,
+        )} failedChecks=${failedChecks || "none"}`;
+      }),
       `viewedJobs=${viewedJobs.length}`,
       `researchGrounded=${String(researchGrounded)}`,
       `boardOpen=${String(boardOpen)}`,

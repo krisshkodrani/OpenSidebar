@@ -254,8 +254,8 @@ function ScenarioCard({
 
 const controlSteps = [
   {
-    title: "Sign in and choose a scenario",
-    body: "Open the Control Center, sign in with your email code, and start one of the available scenarios.",
+    title: "Choose a scenario",
+    body: "Start one of the available scenarios. Each run has its own hidden controls and target session.",
   },
   {
     title: "Prepare the hidden conditions",
@@ -301,29 +301,36 @@ const targetSteps = [
 function SandboxGuide({ surface }: { surface: "control" | "target" }) {
   const steps = surface === "control" ? controlSteps : targetSteps;
   return (
-    <section className="guide" aria-labelledby={`${surface}-guide-title`}>
-      <div className="guide-heading">
-        <div>
-          <span className="eyebrow">Step by step</span>
-          <h2 id={`${surface}-guide-title`}>How to use the Playground</h2>
-        </div>
+    <details className="guide" open={surface === "target"}>
+      <summary>
+        <span>
+          <span className="eyebrow">Help</span>
+          <strong id={`${surface}-guide-title`}>
+            How to use the Playground
+          </strong>
+        </span>
+        <span className="guide-toggle" aria-hidden="true">
+          Show guide
+        </span>
+      </summary>
+      <div className="guide-content">
         <p>
           <strong>Two separate rooms:</strong> you operate the private Control
           Center; the agent operates only the target site.
         </p>
+        <ol className="step-list" aria-labelledby={`${surface}-guide-title`}>
+          {steps.map((step, index) => (
+            <li className="step" key={step.title}>
+              <span className="step-number">{index + 1}</span>
+              <div>
+                <h3>{step.title}</h3>
+                <p>{step.body}</p>
+              </div>
+            </li>
+          ))}
+        </ol>
       </div>
-      <ol className="step-list">
-        {steps.map((step, index) => (
-          <li className="step" key={step.title}>
-            <span className="step-number">{index + 1}</span>
-            <div>
-              <h3>{step.title}</h3>
-              <p>{step.body}</p>
-            </div>
-          </li>
-        ))}
-      </ol>
-    </section>
+    </details>
   );
 }
 
@@ -573,7 +580,7 @@ function ControlCenter() {
   const [launching, setLaunching] = useState(false);
   const [clock, setClock] = useState(() => Date.now());
   const [authenticated, setAuthenticated] = useState(!remote);
-  const [signedInEmail, setSignedInEmail] = useState<string | null>(null);
+  const [sessionChecked, setSessionChecked] = useState(!remote);
   useEffect(() => {
     if (!remote) return;
     let alive = true;
@@ -582,12 +589,12 @@ function ControlCenter() {
       .then((session) => {
         if (!alive) return;
         setAuthenticated(session.authenticated);
-        setSignedInEmail(session.email ?? null);
+        setSessionChecked(true);
       })
       .catch(() => {
         if (alive) {
           setAuthenticated(false);
-          setSignedInEmail(null);
+          setSessionChecked(true);
         }
       });
     return () => {
@@ -695,38 +702,28 @@ function ControlCenter() {
   };
   if (!run || creatingRun)
     return (
-      <main className="empty">
-        <span className="eyebrow">OpenSidebar Playground</span>
-        <h1>
-          {creatingRun
-            ? "Choose a new scenario."
-            : "Try your browser agent in a safe, realistic environment."}
-        </h1>
-        <p>
-          {creatingRun
-            ? "Create a separate run with its own hidden controls and target session."
-            : "You control the change; OpenSidebar sees only the target page."}
-        </p>
+      <main className="empty playground-catalog">
+        {creatingRun && (
+          <header className="catalog-heading">
+            <h1>Choose a new scenario</h1>
+            <p>
+              Each run has its own hidden controls and isolated target session.
+            </p>
+          </header>
+        )}
         {!remote && <p className="muted">Local playground mode</p>}
-        {remote && !authenticated && (
+        {remote && sessionChecked && !authenticated && (
           <button className="btn btn-ghost" onClick={controlApi.login}>
             Sign in with email
           </button>
-        )}
-        {remote && authenticated && (
-          <p className="notice">
-            Signed in as <strong>{signedInEmail ?? "your email"}</strong>. Your
-            Playground access is available across all scenarios for 90 days.
-          </p>
         )}
         {startError && (
           <p className="notice" role="alert">
             {startError}
           </p>
         )}
-        {!creatingRun && <SandboxGuide surface="control" />}
         <section className="catalog">
-          <h2>Scenarios</h2>
+          {creatingRun ? <h2>Scenarios</h2> : <h1>Choose a scenario</h1>}
           <div className="grid">
             {scenarios.map((scenario) => (
               <ScenarioCard
@@ -738,6 +735,7 @@ function ControlCenter() {
             ))}
           </div>
         </section>
+        {!creatingRun && <SandboxGuide surface="control" />}
         {creatingRun && (
           <button
             className="btn btn-ghost"
@@ -887,7 +885,6 @@ function ControlCenter() {
             </p>
           )}
         </section>
-        <SandboxGuide surface="control" />
         <div className="control-grid">
           <section className="card">
             <h2>Current target state</h2>
@@ -1062,6 +1059,7 @@ function ControlCenter() {
             </div>
           </section>
         </div>
+        <SandboxGuide surface="control" />
         <footer>
           <button className="link-danger" onClick={() => void deleteRun()}>
             Delete run
