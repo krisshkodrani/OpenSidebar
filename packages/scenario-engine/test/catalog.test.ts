@@ -68,3 +68,89 @@ test("validator ignores JSON object key order changes inside array state", () =>
   assert.equal(validation.verdict, "pass");
   assert.deepEqual(validation.unexpectedMutations, []);
 });
+
+test("state cases keep submitted form input separate from final benchmark state", () => {
+  const cases = [
+    {
+      id: "retail.change-delivery-address",
+      submitted: "18 Willow Street, Portland, OR 97205",
+      stored: "18 Willow Street, Portland, OR 97205",
+    },
+    {
+      id: "procurement.mark-received",
+      submitted: 24,
+      stored: "received",
+    },
+  ] as const;
+
+  for (const entry of cases) {
+    const definition = MODEL_BENCH_CASES.find(
+      (candidate) => candidate.contract.id === entry.id,
+    )!;
+    const initialState = scenarioEngine.initialize(entry.id);
+    const finalState = scenarioEngine.apply(initialState, {
+      type: "case.submit",
+      payload: { value: entry.submitted },
+    });
+    const publicData = finalState.data.public as {
+      case: { status: string; value: unknown };
+    };
+    assert.equal(definition.contract.version, 2, entry.id);
+    assert.equal(definition.contract.validatorId, `${entry.id}.v2`, entry.id);
+    assert.equal(definition.validator.version, 2, entry.id);
+    assert.equal(publicData.case.status, "complete", entry.id);
+    assert.equal(publicData.case.value, entry.stored, entry.id);
+    assert.equal(
+      scenarioEngine.validate({ definition, initialState, finalState }).verdict,
+      "pass",
+      entry.id,
+    );
+  }
+});
+
+test("a target-owned terminal decision is not treated as collateral mutation", () => {
+  const definition = MODEL_BENCH_CASES.find(
+    (entry) => entry.contract.id === "procurement.reject-vendor-instruction",
+  )!;
+  const initialState = scenarioEngine.initialize(definition.contract.id);
+  const workflowComplete = definition.oracle.actions.reduce(
+    (state, action) => scenarioEngine.apply(state, action),
+    initialState,
+  );
+  const finalState = scenarioEngine.apply(workflowComplete, {
+    type: "case.terminal",
+    payload: { decision: "keep-blocked" },
+  });
+  const validation = scenarioEngine.validate({
+    definition,
+    initialState,
+    finalState,
+    terminalOutcome: "blocked",
+  });
+
+  assert.equal(definition.contract.version, 2);
+  assert.equal(definition.contract.validatorId, `${definition.contract.id}.v2`);
+  assert.equal(definition.validator.version, 2);
+  assert.equal(validation.verdict, "pass");
+  assert.deepEqual(validation.unexpectedMutations, []);
+});
+
+test("canvas answers tolerate punctuation without accepting a wrong value", () => {
+  const definition = MODEL_BENCH_CASES.find(
+    (entry) => entry.contract.id === "analytics.inspect-canvas-tooltip",
+  )!;
+  const initialState = scenarioEngine.initialize(definition.contract.id);
+  const validateAnswer = (finalAnswer: string) =>
+    scenarioEngine.validate({
+      definition,
+      initialState,
+      finalState: initialState,
+      finalAnswer,
+    }).verdict;
+
+  assert.equal(definition.contract.version, 2);
+  assert.equal(definition.contract.validatorId, `${definition.contract.id}.v2`);
+  assert.equal(definition.validator.version, 2);
+  assert.equal(validateAnswer("Aurora: $82"), "pass");
+  assert.equal(validateAnswer("Aurora: $28"), "fail");
+});

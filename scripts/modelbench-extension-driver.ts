@@ -128,29 +128,74 @@ function workspaceEvents(events: EventRecord[], workspaceId: string): EventRecor
   );
 }
 
+function eventStatus(event: EventRecord): string {
+  return String(event.status ?? event.payload?.status ?? "");
+}
+
 export function extractModelBenchOutcome(events: EventRecord[]): DriverOutcome | null {
   const clarification = [...events]
     .reverse()
-    .find((event) => event.type === "CLARIFICATION_REQUEST" && event.clarificationId);
+    .find(
+      (event) =>
+        event.type === "CLARIFICATION_REQUEST" &&
+        (event.clarificationId ?? event.payload?.clarificationId),
+    );
   if (clarification) return { kind: "clarification", event: clarification, events };
   const completion = [...events].reverse().find(
     (event) =>
       event.type === "TASK_COMPLETION" &&
-      ["completed", "partial", "failed", "stopped"].includes(String(event.status)),
+      ["completed", "partial", "failed", "stopped"].includes(eventStatus(event)),
   );
   if (completion) return { kind: "completion", event: completion, events };
   const terminalStatus = [...events].reverse().find(
-    (event) =>
-      event.type === "AGENT_STATUS" &&
-      (event.status === "ERROR" ||
-        (event.status === "IDLE" &&
-          ["completed", "partial", "failed", "stopped"].includes(
-            String(event.completionStatus),
-          ))),
+    (event) => event.type === "AGENT_STATUS" && eventStatus(event) === "ERROR",
   );
   return terminalStatus
     ? { kind: "completion", event: terminalStatus, events }
     : null;
+}
+
+export function extractStoredModelBenchOutcome(
+  messages: unknown,
+  workspaceId: string,
+): DriverOutcome | null {
+  if (!Array.isArray(messages)) return null;
+  const message = [...messages].reverse().find((candidate) => {
+    if (!candidate || typeof candidate !== "object" || Array.isArray(candidate)) {
+      return false;
+    }
+    const completionData = (candidate as EventRecord).completionData;
+    return (
+      completionData &&
+      typeof completionData === "object" &&
+      ["completed", "partial", "failed", "stopped"].includes(
+        String(completionData.status),
+      )
+    );
+  }) as EventRecord | undefined;
+  if (!message) return null;
+  const event: EventRecord = {
+    type: "TASK_COMPLETION",
+    workspaceId,
+    timestamp: message.timestamp ?? Date.now(),
+    payload: message.completionData,
+  };
+  return extractModelBenchOutcome([event]);
+}
+
+async function readStoredOutcome(
+  worker: Parameters<typeof getMonitoredEventsWithControlLane>[0],
+  workspaceId: string,
+): Promise<DriverOutcome | null> {
+  try {
+    const messages = await worker.evaluate(async (storageKey: string) => {
+      const stored = await chrome.storage.local.get(storageKey);
+      return stored[storageKey] ?? null;
+    }, `chatMessages:${workspaceId}`);
+    return extractStoredModelBenchOutcome(messages, workspaceId);
+  } catch {
+    return null;
+  }
 }
 
 async function waitForOutcome(
@@ -164,17 +209,23 @@ async function waitForOutcome(
       await getMonitoredEventsWithControlLane(worker, 160),
       workspaceId,
     );
-    const outcome = extractModelBenchOutcome(events);
-    if (outcome) return outcome;
+    const outcome = extractModelBenchOutcome(events) ??
+      await readStoredOutcome(worker, workspaceId);
+    if (outcome) {
+      return outcome.events === events
+        ? outcome
+        : { ...outcome, events: [...events, ...outcome.events] };
+    }
     await new Promise((resolve) => setTimeout(resolve, 1_000));
   }
-  return {
-    kind: "timeout",
-    events: workspaceEvents(
-      await getMonitoredEventsWithControlLane(worker, 160),
-      workspaceId,
-    ),
-  };
+  const events = workspaceEvents(
+    await getMonitoredEventsWithControlLane(worker, 160),
+    workspaceId,
+  );
+  const stored = await readStoredOutcome(worker, workspaceId);
+  return stored
+    ? { ...stored, events: [...events, ...stored.events] }
+    : { kind: "timeout", events };
 }
 
 function finalAnswer(outcome: DriverOutcome): string | undefined {
@@ -209,6 +260,17 @@ function providerError(error: unknown): boolean {
 export function providerFailureReason(outcome: DriverOutcome): string | undefined {
   const answer = finalAnswer(outcome);
   return answer && providerError(answer) ? answer : undefined;
+}
+
+export function harnessFailureReason(outcome: DriverOutcome): string | undefined {
+  if (eventStatus(outcome.event ?? {}) === "completed") return undefined;
+  const answer = finalAnswer(outcome);
+  return answer &&
+    /content script disconnected|reinjection failed|extension context invalidated|receiving end does not exist|message port closed/i.test(
+      answer,
+    )
+    ? answer
+    : undefined;
 }
 
 async function preflightProviderNetwork(
@@ -405,6 +467,7 @@ export async function createModelBenchDriver(): Promise<ModelBenchDriver> {
           turns: traceSummary.turns,
         });
         const providerFailure = providerFailureReason(outcome);
+        const harnessFailure = harnessFailureReason(outcome);
         return {
           durationMs: Date.now() - startedAt,
           finalState: run.state,
@@ -420,6 +483,13 @@ export async function createModelBenchDriver(): Promise<ModelBenchDriver> {
                 failure: {
                   kind: "provider" as const,
                   reason: providerFailure,
+                },
+              }
+            : harnessFailure
+            ? {
+                failure: {
+                  kind: "harness" as const,
+                  reason: harnessFailure,
                 },
               }
             : {}),
