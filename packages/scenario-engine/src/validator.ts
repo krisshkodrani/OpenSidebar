@@ -49,6 +49,19 @@ function assertionPasses(
         typeof assertion.expected === "string" &&
         actual.toLocaleLowerCase().includes(assertion.expected.toLocaleLowerCase())
       );
+    case "includes-normalized": {
+      if (typeof actual !== "string" || typeof assertion.expected !== "string") {
+        return false;
+      }
+      const normalize = (value: string) =>
+        value
+          .normalize("NFKC")
+          .toLocaleLowerCase()
+          .replace(/[\p{P}\p{S}]+/gu, " ")
+          .replace(/\s+/gu, " ")
+          .trim();
+      return normalize(actual).includes(normalize(assertion.expected));
+    }
     case "exists":
       return actual !== undefined;
     case "not-exists":

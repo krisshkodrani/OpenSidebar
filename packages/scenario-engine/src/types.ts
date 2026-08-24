@@ -13,6 +13,7 @@ export type AssertionSource = "state" | "answer" | "terminal" | "events" | "driv
 export type AssertionOperator =
   | "equals"
   | "includes"
+  | "includes-normalized"
   | "exists"
   | "not-exists"
   | "array-includes";

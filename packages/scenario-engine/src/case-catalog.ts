@@ -65,6 +65,7 @@ function assertions(
   mode: CaseMode,
   expected: JsonValue,
   hasWorkflow: boolean,
+  answerMatch: "literal" | "normalized" | undefined,
 ): ValidatorAssertionSpecV1[] {
   const result: ValidatorAssertionSpecV1[] = [];
   if (hasWorkflow) {
@@ -101,7 +102,7 @@ function assertions(
     result.push({
       id: `${id}.answer`,
       source: "answer",
-      operator: "includes",
+      operator: answerMatch === "normalized" ? "includes-normalized" : "includes",
       expected: String(expected),
       evidence: "The final answer contains the required fact from visible application evidence.",
     });
@@ -163,6 +164,7 @@ interface DraftCase {
   control: JsonObject;
   mode: CaseMode;
   expected: JsonValue;
+  answerMatch?: "literal" | "normalized";
   workflow?: CaseWorkflowPresentation;
 }
 
@@ -331,6 +333,7 @@ function drafts(): DraftCase[] {
       const difficulty = group.difficulties[taskIndex];
       if (!role || !difficulty) throw new Error(`Missing metadata for ${id}.`);
       const mode = task.mode ?? "state";
+      const version = task.version ?? 1;
       const terminal = mode === "terminal"
         ? terminalPresentation(task.slug, task.expected)
         : null;
@@ -357,7 +360,7 @@ function drafts(): DraftCase[] {
         contract: {
           schemaVersion: 1,
           id,
-          version: 1,
+          version,
           title: task.title,
           prompt: task.prompt,
           scenarioId: group.scenarioId,
@@ -370,7 +373,7 @@ function drafts(): DraftCase[] {
           maxTurns: difficulty === "easy" ? 16 : difficulty === "medium" ? 28 : 45,
           timeoutMs: difficulty === "easy" ? 180_000 : difficulty === "medium" ? 300_000 : 600_000,
           approvalPolicy: approvalPolicy(mode, kind),
-          validatorId: `${id}.v1`,
+          validatorId: `${id}.v${version}`,
           roleRationale: ROLE_RATIONALE[role],
         },
         control: {
@@ -415,7 +418,10 @@ function drafts(): DraftCase[] {
             mode,
             ...(mode === "state" || mode === "state-and-answer"
               ? requiresValue
-                ? { submissionKind: "value", acceptedValue: cloneJson(task.expected) }
+                ? {
+                    submissionKind: "value",
+                    acceptedValue: cloneJson(task.acceptedInput ?? task.expected),
+                  }
                 : { submissionKind: "action" }
               : {}),
             ...(terminal?.decision ? { terminalDecision: terminal.decision } : {}),
@@ -424,6 +430,7 @@ function drafts(): DraftCase[] {
         },
         mode,
         expected: task.expected,
+        ...(task.answerMatch ? { answerMatch: task.answerMatch } : {}),
         ...(workflow ? { workflow } : {}),
       });
     });
@@ -457,13 +464,25 @@ function buildCatalog(): EngineCaseDefinitionV1[] {
       control: draft.control,
       validator: {
         id: contract.validatorId,
-        version: 1,
-        assertions: assertions(contract.id, draft.mode, draft.expected, Boolean(draft.workflow)),
+        version: contract.version,
+        assertions: assertions(
+          contract.id,
+          draft.mode,
+          draft.expected,
+          Boolean(draft.workflow),
+          draft.answerMatch,
+        ),
         allowedMutationPaths:
           draft.mode === "state" || draft.mode === "state-and-answer"
             ? [
                 "data.public.case.status",
                 "data.public.case.value",
+                ...(draft.workflow ? ["data.public.workflow", "data.public.workflowState", "data.public.dynamics.status"] : []),
+              ]
+            : draft.mode === "terminal"
+            ? [
+                "data.public.case.status",
+                "data.public.case.outcome",
                 ...(draft.workflow ? ["data.public.workflow", "data.public.workflowState", "data.public.dynamics.status"] : []),
               ]
             : draft.workflow
