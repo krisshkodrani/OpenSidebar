@@ -108,6 +108,56 @@ test("state cases keep submitted form input separate from final benchmark state"
   }
 });
 
+test("CRM account-impact triage matches the workflow controls exposed by the target", () => {
+  const definition = MODEL_BENCH_CASES.find(
+    (entry) => entry.contract.id === "crm.triage-account-impact",
+  )!;
+  let state = scenarioEngine.initialize(definition.contract.id);
+  const initialTarget = scenarioEngine.targetView(state);
+  const initialPublic = initialTarget.data as {
+    interaction: { requiresValue: boolean; submitLabel: string };
+    workflow: Array<{
+      id: string;
+      evidence: Array<{ label: string; value: string }>;
+    }>;
+  };
+
+  assert.equal(definition.contract.version, 2);
+  assert.equal(definition.contract.validatorId, `${definition.contract.id}.v2`);
+  assert.equal(definition.validator.version, 2);
+  assert.match(definition.contract.prompt, /displayed High priority is appropriate/);
+  assert.doesNotMatch(definition.contract.prompt, /add .*summary/i);
+  assert.equal(initialPublic.interaction.requiresValue, false);
+  assert.equal(initialPublic.interaction.submitLabel, "Triage account impact");
+  assert.deepEqual(
+    initialPublic.workflow.at(-1)?.evidence,
+    [
+      { label: "Record", value: "T-4312" },
+      { label: "Current priority", value: "High" },
+    ],
+  );
+
+  for (const stage of initialPublic.workflow) {
+    state = scenarioEngine.apply(state, {
+      type: "workflow.advance",
+      payload: { stageId: stage.id },
+    });
+  }
+  state = scenarioEngine.apply(state, {
+    type: "case.submit",
+    payload: { decision: "apply" },
+  });
+
+  assert.equal(
+    scenarioEngine.validate({
+      definition,
+      initialState: scenarioEngine.initialize(definition.contract.id),
+      finalState: state,
+    }).verdict,
+    "pass",
+  );
+});
+
 test("a target-owned terminal decision is not treated as collateral mutation", () => {
   const definition = MODEL_BENCH_CASES.find(
     (entry) => entry.contract.id === "procurement.reject-vendor-instruction",
