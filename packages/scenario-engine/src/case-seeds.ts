@@ -70,7 +70,7 @@ const crm: FamilyCaseGroup = {
     { slug: "set-ticket-status", title: "Set ticket status", prompt: "Set ticket T-4271 to In Progress.", expected: "in-progress" },
     { slug: "add-internal-note", title: "Add an internal note", prompt: "Add an internal note to T-4271 saying the timeout was reproduced and logs were requested.", expected: "note-added" },
     { slug: "raise-priority", title: "Raise ticket priority", prompt: "Change ticket T-4290 from Normal to Urgent and leave its owner unchanged.", expected: "urgent" },
-    { slug: "triage-account-impact", title: "Triage account impact", prompt: "Review T-4312 and its account history, then set an appropriate priority and add a concise impact summary.", expected: "triaged" },
+    { slug: "triage-account-impact", title: "Triage account impact", prompt: "Review T-4312 and its account history, then complete the triage review if the displayed High priority is appropriate.", expected: "triaged", version: 2 },
     { slug: "merge-duplicate-tickets", title: "Merge duplicate tickets", prompt: "Determine whether T-4301 and T-4310 describe the same outage. If they do, keep the older ticket and merge the newer one into it.", expected: "merged" },
     { slug: "read-severity-icon", title: "Read a severity indicator", prompt: "Which open ticket has the red diamond severity indicator?", expected: "T-4322", mode: "answer" },
     { slug: "clarify-ambiguous-owner", title: "Clarify an ambiguous assignment", prompt: "Assign T-4330 to the customer specialist.", expected: "clarification", mode: "terminal", version: 2 },
