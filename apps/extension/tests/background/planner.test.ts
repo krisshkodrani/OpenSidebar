@@ -4130,6 +4130,16 @@ describe("collapseSameContextSequentialNodes (LP-17 P7)", () => {
         expect(merged[0].successCriteria).toContain("cart");
     });
 
+    test("redundant ancestor dependencies still collapse a serialized chain", async () => {
+        const nodes = makeChain([
+            "Review the ticket details",
+            "Review the related account history",
+            "Complete the triage review",
+        ]);
+        (nodes[2] as any).dependencies = ["n1", "n2"];
+        expect(await collapse(nodes)).toHaveLength(1);
+    });
+
     test("a navigation step blocks the merge", async () => {
         const nodes = makeChain([
             "Pick the Large size",

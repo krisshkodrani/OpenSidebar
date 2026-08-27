@@ -3,6 +3,7 @@ import { composeCollapsedDisplayLabel } from "../agent/plan-display-label";
 import {
   compactText,
   dedupeStrings,
+  isSerializedDependencyChain,
   nodeUrlOrigins,
   unionTools,
 } from "./planner-node-utils";
@@ -757,13 +758,7 @@ export function collapseSameContextSequentialNodes(
   if (shouldPreserveSeparateFormUpdateNodes(nodes, taskLabelQuery)) {
     return nodes;
   }
-  // Pure chain: each node depends exactly on its predecessor.
-  for (let i = 0; i < nodes.length; i++) {
-    const deps = nodes[i].dependencies;
-    if (i === 0 ? deps.length !== 0 : !(deps.length === 1 && deps[0] === nodes[i - 1].id)) {
-      return nodes;
-    }
-  }
+  if (!isSerializedDependencyChain(nodes)) return nodes;
   if (
     nodes.some(
       (node) =>
