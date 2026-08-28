@@ -7,7 +7,7 @@
       "loopMethodLines": 261
     },
     "apps/extension/src/background/agent/completion-kernel.ts": {
-      "fileLines": 5885
+      "fileLines": 5834
     },
     "apps/extension/src/background/tools/index.ts": {
       "fileLines": 132
@@ -28,7 +28,7 @@
     "apps/extension/src/background/tools/servicenow/register-list-actions.ts": 1902,
     "apps/extension/src/background/agent/context.ts": 1554,
     "apps/extension/src/background/llm/client.ts": 1576,
-    "apps/extension/src/background/orchestrator/planner.ts": 1666,
+    "apps/extension/src/background/orchestrator/planner.ts": 1665,
     "apps/extension/src/background/tools/servicenow/navigation.ts": 1596,
     "apps/extension/src/background/orchestrator/skill-bodies.ts": 1557
   }

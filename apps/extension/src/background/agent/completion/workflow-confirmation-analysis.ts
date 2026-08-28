@@ -245,7 +245,7 @@ export function inferWorkflowConfirmationAction(
     return "create";
   }
   if (
-    /\b(?:create(?:d)?|add(?:ed)?|register(?:ed)?)\s+(?:the\s+)?(?:record|item|task|ticket|request|entry|row|template|report|page|document|file|workflow|rule|dashboard|view|list|policy|profile|account|user|order|case|issue|incident|project|contact|customer)\b/i.test(
+    /\b(?:create(?:d)?|add(?:ed)?|register(?:ed)?)\s+(?:(?:a|an|the)\s+)?(?:[\w-]+\s+){0,3}(?:record|item|task|ticket|request|entry|row|template|report|page|document|file|workflow|rule|dashboard|view|list|policy|profile|account|user|order|case|issue|incident|project|contact|customer|meeting|event|appointment|review)\b/i.test(
       text,
     )
   ) {
@@ -641,7 +641,7 @@ export function inferWorkflowConfirmationTargetLabel(
   return null;
 }
 
-function workflowTargetActionPattern(
+export function workflowTargetActionPattern(
   action: WorkflowConfirmationAction,
 ): string | null {
   switch (action) {
