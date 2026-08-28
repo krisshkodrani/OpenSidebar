@@ -1667,6 +1667,18 @@ describe("OrchestratorPlanner.buildNodes returns BuildNodesResult", () => {
         );
     });
 
+    test("buildFallbackNodes requires the full mixed read/write objective", () => {
+        const query =
+            "Find a 30-minute time when Ana, Marco, and Priya are free tomorrow afternoon and create a tentative release review.";
+
+        const nodes = buildFallbackNodes(query);
+
+        expect(nodes).toHaveLength(1);
+        expect(nodes[0].successCriteria).toMatch(/entire original request/i);
+        expect(nodes[0].successCriteria).toMatch(/every requested action/i);
+        expect(nodes[0].successCriteria).toMatch(/partial answer.*insufficient/i);
+    });
+
     test("buildFallbackNodes collapses the field-value form plan so the planner-failure fallback cannot strand", () => {
         // Regression: when planner.buildNodes throws, the orchestrator falls
         // back to buildFallbackNodes. That path must run the same collapse as

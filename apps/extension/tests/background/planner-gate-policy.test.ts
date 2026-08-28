@@ -43,10 +43,13 @@ describe("qualifiesForDirectSingleNode", () => {
     "Review each application one by one",
     // Multiple URLs.
     "Read https://a.example/one and https://b.example/two",
+    // Mixed read/write objective: finding the value is only an intermediate.
+    "Find a 30-minute time when Ana, Marco, and Priya are free tomorrow afternoon and create a tentative release review.",
     // Explicit separate-updates opt-out.
     "Apply the name change and the email change as separate form updates",
     // Long WITHOUT the field-value-line shape: length alone stays untrusted.
-    "Fill out this job application form. " + "Use exactly these values. ".repeat(12),
+    "Fill out this job application form. " +
+      "Use exactly these values. ".repeat(12),
     // No positive shape at all.
     "Handle my workflow",
   ])("routes to the planner: %s", (query) => {
@@ -70,7 +73,7 @@ describe("qualifiesForDirectSingleNode", () => {
       "Resume/CV: upload the file from this URL: http://127.0.0.1:8899/cv.pdf",
       "(If the file input is not visibly tagged, use inspect_hidden to reveal",
       "it, then call upload_file with that input's id and the URL above.)",
-      "Contract style: select BOTH \"Permanent\" and \"Freelance/B2B\"",
+      'Contract style: select BOTH "Permanent" and "Freelance/B2B"',
       "Salary expectations: € 50,000 - 60,000",
       "Fill each field ONCE. A field that already shows your value is DONE.",
       "Cover Letter: " + "This is a long pasted cover letter body. ".repeat(40),

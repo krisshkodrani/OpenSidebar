@@ -9,13 +9,14 @@ import {
   evaluateCompletionContract,
   generateCompletionContract,
 } from "../../src/background/agent/completion-kernel";
-import { ToolName, type DomSnapshot, type TaggedElement } from "../../src/types";
+import { inferRequestedWorkflowConfirmationAction } from "../../src/background/agent/completion/workflow-request-intent";
+import {
+  ToolName,
+  type DomSnapshot,
+  type TaggedElement,
+} from "../../src/types";
 
-function choice(
-  tag: number,
-  label: string,
-  checked: boolean,
-): TaggedElement {
+function choice(tag: number, label: string, checked: boolean): TaggedElement {
   return {
     tag,
     tagName: "input",
@@ -68,6 +69,78 @@ function workflowSnapshot(overrides: Partial<DomSnapshot> = {}): DomSnapshot {
 }
 
 describe("completion kernel read-answer completion", () => {
+  test("keeps a mixed find-and-create objective under workflow confirmation", () => {
+    const snap = workflowSnapshot({
+      title: "Coordinate meeting",
+      visibleContent: "Step 2 of 3. Conversation details. Continue to update.",
+      pageContent:
+        "Attendee calendars: Ana free 13:00–15:00; Marco 14:00–16:00; Priya 13:30–14:30. Event requirements: tomorrow afternoon; 30 minutes; tentative release review. Workspace update pending.",
+    });
+    const request =
+      "Find a 30-minute time when Ana, Marco, and Priya are free tomorrow afternoon and create a tentative release review.";
+    const generated = generateCompletionContract({
+      userRequest: request,
+      activeObjective: request,
+      successCriteria:
+        "The entire original request is completed and verified, including every requested action.",
+      snapshot: snap,
+    });
+    const decision = evaluateCompletionContract({
+      contract: generated?.contract,
+      evidence: deriveCompletionEvidenceFromSnapshot(snap, 3),
+      snapshot: snap,
+      candidateSource: "model_done",
+      summary: "The common time is 14:00–14:30.",
+    });
+
+    expect(generated?.contract).toMatchObject({
+      kind: "workflow_confirmation",
+      action: "create",
+    });
+    expect(decision.status).not.toBe("accepted");
+  });
+
+  test("allows the focused read phase of a mixed objective to use read-answer completion", () => {
+    const snap = workflowSnapshot({
+      title: "Coordinate meeting",
+      visibleContent:
+        "Ana free 13:00–15:00; Marco 14:00–16:00; Priya 13:30–14:30.",
+      pageContent:
+        "Attendee calendars. Ana free 13:00–15:00; Marco 14:00–16:00; Priya 13:30–14:30.",
+    });
+    const generated = generateCompletionContract({
+      userRequest:
+        "Find a 30-minute time when Ana, Marco, and Priya are free tomorrow afternoon and create a tentative release review.",
+      activeObjective:
+        "Find the requested result for the common 30-minute meeting window and report the answer.",
+      successCriteria:
+        "The shared available time is grounded in all three attendee calendars.",
+      snapshot: snap,
+    });
+
+    expect(generated?.contract).toMatchObject({ kind: "read_answer" });
+  });
+
+  test("does not leak root read intent into a focused navigation phase", () => {
+    const snap = workflowSnapshot({
+      title: "Coordinate meeting",
+      visibleContent: "Step 2 of 3. Conversation details. Continue to update.",
+      pageContent:
+        "Event requirements: tomorrow afternoon; 30 minutes; tentative release review. Workspace update pending.",
+    });
+    const generated = generateCompletionContract({
+      userRequest:
+        "Find a 30-minute time when Ana, Marco, and Priya are free tomorrow afternoon and create a tentative release review.",
+      activeObjective:
+        "Navigate to tomorrow's date in the calendar and locate the scheduling tool.",
+      successCriteria:
+        "The scheduling view showing all three attendee calendars is visible.",
+      snapshot: snap,
+    });
+
+    expect(generated?.contract).not.toMatchObject({ kind: "read_answer" });
+  });
+
   test("keeps option comparison read-only despite a prohibited root purchase", () => {
     const snap = workflowSnapshot({
       title: "Replacement options",
@@ -397,13 +470,20 @@ describe("completion kernel read-answer completion", () => {
       pageContent:
         "Post #35 by Eve K. The Secret Formula for Productivity. The answer to maximum productivity is: CODE-OMEGA-42. Remember this code - it unlocks the productivity dashboard.",
     });
+    const activeObjective =
+      "Navigate to Post #35 and read the requested result there.";
+    const successCriteria =
+      "The requested result is reported from the matching post.";
+    expect(
+      inferRequestedWorkflowConfirmationAction(
+        `${activeObjective}\n${successCriteria}`,
+      ),
+    ).toBeNull();
     const generated = generateCompletionContract({
       userRequest:
         "Find Post #35 'The Secret Formula for Productivity' in the feed and tell me the secret code mentioned in it.",
-      activeObjective:
-        "Navigate to Post #35 and read the requested result there.",
-      successCriteria:
-        "The requested result is reported from the matching post.",
+      activeObjective,
+      successCriteria,
       snapshot: snap,
     });
 

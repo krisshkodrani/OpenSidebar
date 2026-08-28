@@ -1,3 +1,5 @@
+import { inferRequestedWorkflowConfirmationAction } from "../agent/completion/workflow-request-intent";
+
 /**
  * Planner-gate policy (LP-17 P6): pre-LLM single-node short-circuit.
  *
@@ -33,7 +35,8 @@ const ENUMERATED_LIST = /(?:^|\n)\s*(?:\d+[.)]|[-*•])\s/;
 const STEPS_LABEL = /\bsteps?\s*:/i;
 const SEQUENCING_CONNECTIVE =
   /\b(?:then|after that|next,|afterwards|finally|once (?:done|complete|finished))\b/gi;
-const ROUND_TRIP = /\b(?:return to|go(?:ing)? back|back to|come back|and back)\b/i;
+const ROUND_TRIP =
+  /\b(?:return to|go(?:ing)? back|back to|come back|and back)\b/i;
 const MULTI_TAB_OR_COMPARE =
   /\b(?:new tab|each tab|separate tabs?|both tabs|across tabs|side by side|compare)\b/i;
 // Cross-ITEM iteration only (LP-17b CM-1): "update every record" is a real
@@ -78,7 +81,16 @@ export function qualifiesForDirectSingleNode(query: string): boolean {
   if (ROUND_TRIP.test(compacted)) return false;
   if (MULTI_TAB_OR_COMPARE.test(compacted)) return false;
   if (EXHAUSTIVE_ITERATION.test(compacted)) return false;
-  if (SEPARATE_UPDATES_A.test(compacted) || SEPARATE_UPDATES_B.test(compacted)) {
+  if (
+    SEPARATE_UPDATES_A.test(compacted) ||
+    SEPARATE_UPDATES_B.test(compacted)
+  ) {
+    return false;
+  }
+  if (
+    CURRENT_PAGE_READ.test(compacted) &&
+    inferRequestedWorkflowConfirmationAction(compacted)
+  ) {
     return false;
   }
 

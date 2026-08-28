@@ -549,7 +549,8 @@ function collapseSkillOwnedWorkflowNodes(
 ): TaskNode[] {
   if (nodes.length < 2) return nodes;
   const taskLabelQuery = displayQueryOrFallback(query, displayQuery);
-  if (shouldPreserveSeparateFormUpdateNodes(nodes, taskLabelQuery)) return nodes;
+  if (shouldPreserveSeparateFormUpdateNodes(nodes, taskLabelQuery))
+    return nodes;
 
   const selection = selectPrimarySkill({
     query,
@@ -993,7 +994,7 @@ function buildSingleFallbackStep(query: string): DecompositionStep {
       ? compactQuery
       : "Follow the user's exact request on the current page and report the result clearly.";
 
-  const successCriteria = targetSummary
+  const evidenceCriteria = targetSummary
     ? isNavigationOnlyTask(query)
       ? navigationOnlySuccessCriteria()
       : `Page or tool output shows ${targetSummary} or the requested result needed for the final answer.`
@@ -1002,6 +1003,9 @@ function buildSingleFallbackStep(query: string): DecompositionStep {
       : isNavigationOnlyTask(query)
         ? navigationOnlySuccessCriteria()
         : "Page or tool output shows the result needed to answer the user request.";
+  const successCriteria = isNavigationOnlyTask(query)
+    ? evidenceCriteria
+    : `The entire original request is completed and verified, including every requested action and constraint; an intermediate page, partial answer, or proposed value is insufficient. ${evidenceCriteria}`;
 
   return {
     objective,
