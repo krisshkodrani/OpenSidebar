@@ -112,6 +112,16 @@ export function buildProgrammaticSummary(task: OrchestratorTask): string {
     .reverse()
     .find((n) => n.status === "failed" && (n.error || "").trim().length > 0);
 
+  // Disclosure boundaries apply even when the planner collapses a workflow to
+  // one executor. The fast path must not bypass canonical answer synthesis or
+  // repeat out-of-scope values from an otherwise accepted worker summary.
+  if (
+    acceptedResults.length > 0 &&
+    hasRestrictedRootDisclosure(task.query)
+  ) {
+    return synthesizeVerifiedResults(task, acceptedResults);
+  }
+
   // Single-node completed: show executor's actual output directly
   if (
     task.planClassification?.isSingleNode &&

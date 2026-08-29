@@ -105,6 +105,31 @@ describe("programmatic task summary", () => {
     expect(summary).not.toContain("REC-1204");
   });
 
+  test("sanitizes a restricted single-node answer before returning it", () => {
+    const singleNodeTask = task(
+      "Export the overdue record IDs and do not disclose unrelated records.",
+      [
+        node(
+          "finish",
+          "Overdue records: REC-1042, REC-1077, REC-1113, REC-1148 (non-overdue Current records REC-0991, REC-1204 were excluded).\nWorkflow complete.",
+        ),
+      ],
+    );
+    singleNodeTask.planClassification = {
+      isSingleNode: true,
+      difficulty: "simple",
+    };
+
+    const summary = buildProgrammaticSummary(singleNodeTask);
+
+    expect(summary).toContain(
+      "Requested identifiers: REC-1042, REC-1077, REC-1113, REC-1148",
+    );
+    expect(summary).toContain("Workflow complete.");
+    expect(summary).not.toContain("REC-0991");
+    expect(summary).not.toContain("REC-1204");
+  });
+
   test("synthesizes replanned nodes even when the initial plan was classified as single-node", () => {
     const replannedTask = task(
       "Export the overdue record IDs and do not disclose unrelated records.",

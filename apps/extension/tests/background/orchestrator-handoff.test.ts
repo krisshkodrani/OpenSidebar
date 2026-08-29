@@ -96,6 +96,12 @@ describe("Orchestrator handoff briefing", () => {
     expect(instruction).toContain(
       "Root response contract (applies across every decomposed step):",
     );
+    expect(instruction).toContain(
+      "Before an action replaces a view containing facts requested by the original user",
+    );
+    expect(instruction).toContain(
+      "even when this node's local objective only asks you to navigate",
+    );
     expect(instruction).toContain("Root-answer evidence:");
     expect(instruction).toContain(
       "do not disclose unrelated records",
