@@ -383,6 +383,28 @@ describe("sanitizeTask", () => {
     expect(task!.nodes).toHaveLength(1);
   });
 
+  test("round-trips verifier-accepted results across checkpoints", () => {
+    const task = sanitizeTask(
+      validTask({
+        verifierAcceptedResults: [
+          {
+            nodeId: "node-replaced-by-replan",
+            result: "Verified identifiers: REC-1042 and REC-1077.",
+            acceptedAt: 1234,
+          },
+        ],
+      }),
+    );
+
+    expect(task?.verifierAcceptedResults).toEqual([
+      {
+        nodeId: "node-replaced-by-replan",
+        result: "Verified identifiers: REC-1042 and REC-1077.",
+        acceptedAt: 1234,
+      },
+    ]);
+  });
+
   test("round-trips interactionDelivery=handoff", () => {
     expect(sanitizeTask(validTask())!.interactionDelivery).toBeUndefined();
     const task = sanitizeTask(validTask({ interactionDelivery: "handoff" }));

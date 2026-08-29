@@ -84,6 +84,25 @@ describe("Orchestrator handoff briefing", () => {
     );
   });
 
+  test("propagates root answer and nondisclosure requirements to a decomposed worker", () => {
+    const instruction = buildExecutorInstruction(
+      makeNode([]),
+      undefined,
+      undefined,
+      undefined,
+      "Export the overdue record IDs and do not disclose unrelated records.",
+    );
+
+    expect(instruction).toContain(
+      "Root response contract (applies across every decomposed step):",
+    );
+    expect(instruction).toContain("Root-answer evidence:");
+    expect(instruction).toContain(
+      "do not disclose unrelated records",
+    );
+    expect(instruction).toContain("verified prior-step evidence");
+  });
+
   test("omits empty task-state and reality sections from executor instruction", () => {
     const node = makeNode([]);
     const instruction = buildExecutorInstruction(node);
