@@ -46,4 +46,20 @@ describe("root response contract", () => {
       "REC-1148",
     ]);
   });
+
+  test("separates requested identifiers from an out-of-scope parenthetical", () => {
+    const values = extractRequestedStructuredAnswerValues(
+      "Export the overdue record IDs and do not disclose unrelated records.",
+      [
+        "Overdue records: REC-1042, REC-1077, REC-1113, REC-1148 (non-overdue Current records REC-0991, REC-1204 were excluded).",
+      ],
+    );
+
+    expect(values).toEqual([
+      "REC-1042",
+      "REC-1077",
+      "REC-1113",
+      "REC-1148",
+    ]);
+  });
 });
