@@ -813,7 +813,10 @@ export function collapseSameContextSequentialNodes(
       description,
       displayLabel,
       successCriteria: compactText(
-        dedupeStrings(nodes.map((node) => node.successCriteria)).join(" "),
+        // Keep each source node's observable outcome as a distinct rubric
+        // criterion. Joining with spaces fused unrelated transient and terminal
+        // states into one malformed judge criterion after a same-page collapse.
+        dedupeStrings(nodes.map((node) => node.successCriteria)).join("; "),
       ),
       allowedTools: unionTools(nodes),
       assumptions: dedupeStrings(nodes.flatMap((node) => node.assumptions)),
