@@ -14,6 +14,8 @@ export type AssertionOperator =
   | "equals"
   | "includes"
   | "includes-normalized"
+  | "includes-all-normalized"
+  | "excludes-all-normalized"
   | "exists"
   | "not-exists"
   | "array-includes";
