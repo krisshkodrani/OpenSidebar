@@ -47,6 +47,7 @@ import {
   WorkerInstance,
 } from "./types";
 import { buildProgrammaticSummary } from "./task-summary";
+import { recordVerifierAcceptedResult } from "./verifier-accepted-results";
 import { enforceToolProfile } from "./enforced-tool-profile";
 import {
   RecentCompletionTracker,
@@ -3390,6 +3391,7 @@ export class Orchestrator {
               node.status = "completed";
               node.result = compactResultSummary;
               node.userFacingResult = result.summary;
+              recordVerifierAcceptedResult(task, node, result.summary);
               recordCompletedPhase(task, node.description);
               maybeRecordReviewedItem(task, node);
               this.maybeRecordExtractedFacts(task, node, compactResultSummary);

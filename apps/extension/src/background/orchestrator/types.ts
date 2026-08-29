@@ -177,6 +177,13 @@ export interface TaskTabCoordination {
   lastReboundTabId?: number | null;
 }
 
+/** Durable user-facing output from a node accepted by the verifier. */
+export interface VerifierAcceptedResult {
+  nodeId: string;
+  result: string;
+  acceptedAt: number;
+}
+
 export interface OrchestratorTask {
   runId?: string;
   id: string;
@@ -234,6 +241,11 @@ export interface OrchestratorTask {
   /** Recent workspace chat context for follow-up requests. */
   conversationContextBrief?: string;
   structuredProgress?: Record<string, TaskRunProgressInput>;
+  /**
+   * Accepted results survive planner replacement of the mutable node graph and
+   * are checkpointed with the task for final-answer synthesis.
+   */
+  verifierAcceptedResults?: VerifierAcceptedResult[];
   /**
    * How user interactions (approvals) are delivered for this task.
    * `"handoff"` = forwarded over the browser bridge to an external caller
