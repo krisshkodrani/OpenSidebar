@@ -1746,6 +1746,13 @@ function evaluateWorkflowConfirmation(params: {
     snapshot: params.snapshot,
     summary: params.summary,
   });
+  const savedTerminalWorkflowState =
+    inferSavedTerminalWorkflowStateConfirmation({
+      contract,
+      evidence: params.evidence,
+      snapshot: params.snapshot,
+      summary: params.summary,
+    });
   const authenticationState = findAuthenticationCompletionConfirmation(
     params.evidence,
     params.summary,
@@ -1801,6 +1808,15 @@ function evaluateWorkflowConfirmation(params: {
         evidence: [visibleUpdateState],
       };
     }
+    if (savedTerminalWorkflowState) {
+      return {
+        status: "accepted",
+        reason:
+          "Workflow contract is satisfied by visible saved terminal workflow state.",
+        contract,
+        evidence: [savedTerminalWorkflowState],
+      };
+    }
 
     return {
       status: "rejected",
@@ -1854,6 +1870,15 @@ function evaluateWorkflowConfirmation(params: {
         reason: "Update contract is satisfied by visible target value state.",
         contract,
         evidence: [visibleUpdateState],
+      };
+    }
+    if (savedTerminalWorkflowState) {
+      return {
+        status: "accepted",
+        reason:
+          "Workflow contract is satisfied by visible saved terminal workflow state.",
+        contract,
+        evidence: [savedTerminalWorkflowState],
       };
     }
 
@@ -2477,6 +2502,66 @@ function inferWorkflowVisibleTargetStateConfirmation(params: {
         contract.targetLabel,
         statePattern,
       ),
+    },
+  };
+}
+
+function inferSavedTerminalWorkflowStateConfirmation(params: {
+  contract: WorkflowConfirmationContract;
+  evidence: CompletionEvidence[];
+  snapshot?: DomSnapshot | null;
+  summary?: string;
+}): Extract<CompletionEvidence, { type: "confirmation_state" }> | null {
+  const { contract, snapshot } = params;
+  if (!snapshot) return null;
+
+  const visibleText = cleanLabel(
+    [snapshot.visibleContent, snapshot.pageContent].filter(Boolean).join("\n"),
+  );
+  if (
+    !/\bworkflow\s+complete\b/i.test(visibleText) ||
+    !/\bfinal\s+action\s+(?:was\s+|has\s+been\s+)?saved\s+successfully\b/i.test(
+      visibleText,
+    ) ||
+    /\bfinal\s+action\s+is\s+(?:now\s+)?available\b/i.test(visibleText)
+  ) {
+    return null;
+  }
+
+  const pageText = cleanLabel(
+    [snapshot.title, visibleText].filter(Boolean).join("\n"),
+  );
+  if (
+    contract.targetLabel &&
+    !workflowTargetLabelCoveredByText(contract.targetLabel, pageText)
+  ) {
+    return null;
+  }
+
+  if (
+    params.summary &&
+    !summaryConfirmsWorkflowAction(params.summary, contract.action) &&
+    !(
+      /\bworkflow\s+(?:is\s+)?complete\b/i.test(params.summary) &&
+      /\bfinal\s+action\s+(?:was\s+|has\s+been\s+)?saved\s+successfully\b/i.test(
+        params.summary,
+      )
+    )
+  ) {
+    return null;
+  }
+
+  return {
+    type: "confirmation_state",
+    confidence: "medium",
+    logicalKey: `workflow:confirmation:${contract.action}:saved-terminal-state`,
+    observedAtTurn: latestObservedTurn(params.evidence),
+    detail: {
+      action: contract.action,
+      source: "visible_text",
+      ...(contract.targetLabel ? { targetText: contract.targetLabel } : {}),
+      text: "Workflow complete. The final action was saved successfully.",
+      ...(snapshot.url ? { url: snapshot.url } : {}),
     },
   };
 }

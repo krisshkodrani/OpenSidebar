@@ -336,8 +336,6 @@ describe("completion kernel target-aware visible close/reopen workflow state con
         "Workflow confirmation evidence is for a different target than the requested action.",
     });
   });
-
-
   test("accepts action status evidence for decomposed shadow-dom action objective", () => {
     const snap = workflowSnapshot({
       title: "Web Components",
@@ -371,5 +369,98 @@ describe("completion kernel target-aware visible close/reopen workflow state con
       targetLabel: "Privacy Settings",
     });
     expect(decision.status).toBe("accepted");
+  });
+
+  test("accepts the requested action from an already-visible saved terminal workflow state", () => {
+    const snap = workflowSnapshot({
+      title: "Export overdue record IDs safely",
+      visibleContent:
+        "Export overdue record IDs safely. Status complete. Field value safe-export. " +
+        "Saved successfully. The requested change is complete. Workflow complete. " +
+        "The final action was saved successfully.",
+      pageContent:
+        "Export overdue record IDs safely. Status complete. Field value safe-export. " +
+        "Saved successfully. The requested change is complete. Workflow complete. " +
+        "The final action was saved successfully.",
+    });
+    const evidence = deriveCompletionEvidenceFromSnapshot(snap, 12);
+
+    const decision = evaluateCompletionContract({
+      contract: {
+        kind: "workflow_confirmation",
+        action: "export",
+        targetLabel: "overdue record IDs",
+      },
+      evidence,
+      snapshot: snap,
+      candidateSource: "model_done",
+      summary:
+        "The export workflow is complete and the final action was saved successfully.",
+    });
+
+    expect(decision).toMatchObject({
+      status: "accepted",
+      reason:
+        "Workflow contract is satisfied by visible saved terminal workflow state.",
+      evidence: [
+        expect.objectContaining({
+          logicalKey: "workflow:confirmation:export:saved-terminal-state",
+        }),
+      ],
+    });
+  });
+
+  test("does not treat a reviewed workflow with a pending final action as complete", () => {
+    const snap = workflowSnapshot({
+      title: "Export overdue record IDs safely",
+      visibleContent:
+        "Export overdue record IDs safely. Workflow reviewed. " +
+        "All dependent stages are complete; the final action is now available.",
+      pageContent:
+        "Export overdue record IDs safely. Workflow reviewed. " +
+        "All dependent stages are complete; the final action is now available.",
+    });
+    const evidence = deriveCompletionEvidenceFromSnapshot(snap, 12);
+
+    const decision = evaluateCompletionContract({
+      contract: {
+        kind: "workflow_confirmation",
+        action: "export",
+        targetLabel: "overdue record IDs",
+      },
+      evidence,
+      snapshot: snap,
+      candidateSource: "model_done",
+      summary: "The export workflow is complete.",
+    });
+
+    expect(decision.status).not.toBe("accepted");
+  });
+
+  test("does not apply a saved terminal state to a different workflow target", () => {
+    const snap = workflowSnapshot({
+      title: "Export current account IDs",
+      visibleContent:
+        "Export current account IDs. Workflow complete. " +
+        "The final action was saved successfully.",
+      pageContent:
+        "Export current account IDs. Workflow complete. " +
+        "The final action was saved successfully.",
+    });
+    const evidence = deriveCompletionEvidenceFromSnapshot(snap, 12);
+
+    const decision = evaluateCompletionContract({
+      contract: {
+        kind: "workflow_confirmation",
+        action: "export",
+        targetLabel: "overdue record IDs",
+      },
+      evidence,
+      snapshot: snap,
+      candidateSource: "model_done",
+      summary: "The export workflow is complete.",
+    });
+
+    expect(decision.status).not.toBe("accepted");
   });
 });
