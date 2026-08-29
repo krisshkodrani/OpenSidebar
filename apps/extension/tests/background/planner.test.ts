@@ -4140,6 +4140,7 @@ describe("collapseSameContextSequentialNodes (LP-17 P7)", () => {
         expect(merged[0].description).toContain("engraving");
         expect(merged[0].dependencies).toEqual([]);
         expect(merged[0].successCriteria).toContain("cart");
+        expect(merged[0].successCriteria).toContain("; ");
     });
 
     test("redundant ancestor dependencies still collapse a serialized chain", async () => {
