@@ -11,11 +11,18 @@ function display(value: JsonValue | undefined): string {
   return typeof value === "object" ? JSON.stringify(value) : String(value);
 }
 
+export function workflowCompletionMessage(finalActionComplete: boolean): string {
+  return finalActionComplete
+    ? "The final action was saved successfully."
+    : "All dependent stages are complete; the final action is now available.";
+}
+
 export function ScenarioWorkflow({
   workflow,
   workflowState,
   dynamics,
   busy,
+  finalActionComplete,
   onAdvance,
   onRecover,
 }: {
@@ -23,6 +30,7 @@ export function ScenarioWorkflow({
   workflowState: JsonValue | undefined;
   dynamics: JsonValue | undefined;
   busy: boolean;
+  finalActionComplete: boolean;
   onAdvance(stageId: string): void;
   onRecover(): void;
 }) {
@@ -100,8 +108,10 @@ export function ScenarioWorkflow({
       )}
       {completed && (
         <section className="scenario-recovered" role="status">
-          <strong>Workflow reviewed.</strong> All dependent stages are complete;
-          the final action is now available.
+          <strong>
+            {finalActionComplete ? "Workflow complete." : "Workflow reviewed."}
+          </strong>{" "}
+          {workflowCompletionMessage(finalActionComplete)}
         </section>
       )}
     </>

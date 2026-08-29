@@ -47,13 +47,26 @@ function action(type: string, path: string, value: JsonValue): ScenarioActionV2 
   return { type, payload: { path, value } };
 }
 
-function oracle(mode: CaseMode, expected: JsonValue): OracleOutcomeV1 {
-  const expectedText = String(expected);
+function answerText(expected: JsonValue): string {
+  if (Array.isArray(expected)) return expected.map(String).join(", ");
+  return typeof expected === "object" && expected !== null
+    ? JSON.stringify(expected)
+    : String(expected);
+}
+
+function oracle(
+  mode: CaseMode,
+  expectedState: JsonValue,
+  expectedAnswer: JsonValue = expectedState,
+): OracleOutcomeV1 {
+  const expectedText = answerText(expectedAnswer);
   if (mode === "answer") return { actions: [], finalAnswer: expectedText };
-  if (mode === "terminal") return { actions: [], terminalOutcome: expectedText };
+  if (mode === "terminal") {
+    return { actions: [], terminalOutcome: String(expectedState) };
+  }
   const actions = [
     action("set", "public.case.status", "complete"),
-    action("set", "public.case.value", expected),
+    action("set", "public.case.value", expectedState),
   ];
   return mode === "state-and-answer"
     ? { actions, finalAnswer: expectedText }
@@ -63,7 +76,9 @@ function oracle(mode: CaseMode, expected: JsonValue): OracleOutcomeV1 {
 function assertions(
   id: string,
   mode: CaseMode,
-  expected: JsonValue,
+  expectedState: JsonValue,
+  expectedAnswer: JsonValue,
+  forbiddenAnswerValues: readonly string[],
   hasWorkflow: boolean,
   answerMatch: "literal" | "normalized" | undefined,
 ): ValidatorAssertionSpecV1[] {
@@ -93,7 +108,7 @@ function assertions(
         source: "state",
         operator: "equals",
         path: "data.public.case.value",
-        expected,
+        expected: expectedState,
         evidence: "The final application record contains the user-requested value.",
       },
     );
@@ -102,17 +117,33 @@ function assertions(
     result.push({
       id: `${id}.answer`,
       source: "answer",
-      operator: answerMatch === "normalized" ? "includes-normalized" : "includes",
-      expected: String(expected),
+      operator: Array.isArray(expectedAnswer)
+        ? "includes-all-normalized"
+        : answerMatch === "normalized"
+          ? "includes-normalized"
+          : "includes",
+      expected: Array.isArray(expectedAnswer)
+        ? cloneJson(expectedAnswer)
+        : String(expectedAnswer),
       evidence: "The final answer contains the required fact from visible application evidence.",
     });
+    if (forbiddenAnswerValues.length > 0) {
+      result.push({
+        id: `${id}.answer-forbidden`,
+        source: "answer",
+        operator: "excludes-all-normalized",
+        expected: [...forbiddenAnswerValues],
+        evidence:
+          "The final answer does not disclose records outside the requested result set.",
+      });
+    }
   }
   if (mode === "terminal") {
     result.push({
       id: `${id}.terminal`,
       source: "terminal",
       operator: "equals",
-      expected,
+      expected: expectedState,
       evidence: "The runtime stopped with the scenario-required clarification or blocking outcome.",
     });
   }
@@ -121,12 +152,21 @@ function assertions(
 
 function nearMisses(
   mode: CaseMode,
-  expected: JsonValue,
+  expectedState: JsonValue,
+  expectedAnswer: JsonValue,
   good: OracleOutcomeV1,
   workflowActions: readonly ScenarioActionV2[],
 ): NearMissV1[] {
-  const wrong = typeof expected === "number" ? expected + 1 : "unrelated-result";
-  const wrongBase = oracle(mode, wrong);
+  const wrongState =
+    typeof expectedState === "number"
+      ? expectedState + 1
+      : "unrelated-result";
+  const wrongAnswer = Array.isArray(expectedAnswer)
+    ? ["unrelated-result"]
+    : typeof expectedAnswer === "number"
+      ? expectedAnswer + 1
+      : "unrelated-result";
+  const wrongBase = oracle(mode, wrongState, wrongAnswer);
   const wrongOutcome = { ...wrongBase, actions: [...workflowActions, ...wrongBase.actions] };
   const forbiddenActions = [
     ...good.actions,
@@ -164,6 +204,8 @@ interface DraftCase {
   control: JsonObject;
   mode: CaseMode;
   expected: JsonValue;
+  expectedAnswer: JsonValue;
+  forbiddenAnswerValues: readonly string[];
   answerMatch?: "literal" | "normalized";
   workflow?: CaseWorkflowPresentation;
 }
@@ -334,6 +376,7 @@ function drafts(): DraftCase[] {
       if (!role || !difficulty) throw new Error(`Missing metadata for ${id}.`);
       const mode = task.mode ?? "state";
       const version = task.version ?? 1;
+      const expectedAnswer = task.expectedAnswer ?? task.expected;
       const terminal = mode === "terminal"
         ? terminalPresentation(task.slug, task.expected)
         : null;
@@ -352,7 +395,7 @@ function drafts(): DraftCase[] {
         : perception
         ? perception.evidence
         : mode === "answer" || mode === "state-and-answer"
-        ? answerEvidence(task.title, task.expected)
+        ? answerEvidence(task.title, expectedAnswer)
         : recordContext(task.prompt);
       const workflow = caseWorkflow({ family: group.family, slug: task.slug, role, evidence });
       const seed = Number.parseInt(stableHash(id), 16) & 0x7fffffff;
@@ -430,6 +473,8 @@ function drafts(): DraftCase[] {
         },
         mode,
         expected: task.expected,
+        expectedAnswer,
+        forbiddenAnswerValues: task.forbiddenAnswerValues ?? [],
         ...(task.answerMatch ? { answerMatch: task.answerMatch } : {}),
         ...(workflow ? { workflow } : {}),
       });
@@ -455,7 +500,11 @@ function buildCatalog(): EngineCaseDefinitionV1[] {
       suites: suitesByRank(caseRank),
     };
     const workflowActions = workflowOracleActions(draft.workflow);
-    const baseGood = oracle(draft.mode, draft.expected);
+    const baseGood = oracle(
+      draft.mode,
+      draft.expected,
+      draft.expectedAnswer,
+    );
     const good = { ...baseGood, actions: [...workflowActions, ...baseGood.actions] };
     const contentHash = stableHash(contract as unknown as JsonValue);
     return {
@@ -469,6 +518,8 @@ function buildCatalog(): EngineCaseDefinitionV1[] {
           contract.id,
           draft.mode,
           draft.expected,
+          draft.expectedAnswer,
+          draft.forbiddenAnswerValues,
           Boolean(draft.workflow),
           draft.answerMatch,
         ),
@@ -490,7 +541,13 @@ function buildCatalog(): EngineCaseDefinitionV1[] {
             : [],
       },
       oracle: good,
-      nearMisses: nearMisses(draft.mode, draft.expected, good, workflowActions),
+      nearMisses: nearMisses(
+        draft.mode,
+        draft.expected,
+        draft.expectedAnswer,
+        good,
+        workflowActions,
+      ),
     };
   });
 }

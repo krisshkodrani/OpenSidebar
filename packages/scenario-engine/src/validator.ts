@@ -36,6 +36,29 @@ function sourceValue(
   return valueAt(input.finalState as unknown as JsonValue, assertion.path);
 }
 
+function normalizeAnswerText(value: string): string {
+  return value
+    .normalize("NFKC")
+    .toLocaleLowerCase()
+    .replace(/[\p{P}\p{S}]+/gu, " ")
+    .replace(/\s+/gu, " ")
+    .trim();
+}
+
+function normalizedExpectedTerms(expected: JsonValue): string[] | null {
+  if (
+    !Array.isArray(expected) ||
+    expected.some((value) => typeof value !== "string")
+  ) {
+    return null;
+  }
+  return expected.map((value) => normalizeAnswerText(value as string));
+}
+
+function includesNormalizedTerm(actual: string, expected: string): boolean {
+  return ` ${actual} `.includes(` ${expected} `);
+}
+
 function assertionPasses(
   assertion: ValidatorAssertionSpecV1,
   actual: JsonValue | undefined,
@@ -53,14 +76,25 @@ function assertionPasses(
       if (typeof actual !== "string" || typeof assertion.expected !== "string") {
         return false;
       }
-      const normalize = (value: string) =>
-        value
-          .normalize("NFKC")
-          .toLocaleLowerCase()
-          .replace(/[\p{P}\p{S}]+/gu, " ")
-          .replace(/\s+/gu, " ")
-          .trim();
-      return normalize(actual).includes(normalize(assertion.expected));
+      return normalizeAnswerText(actual).includes(
+        normalizeAnswerText(assertion.expected),
+      );
+    }
+    case "includes-all-normalized": {
+      if (typeof actual !== "string") return false;
+      const terms = normalizedExpectedTerms(assertion.expected);
+      if (!terms || terms.length === 0) return false;
+      const normalizedActual = normalizeAnswerText(actual);
+      return terms.every((term) => includesNormalizedTerm(normalizedActual, term));
+    }
+    case "excludes-all-normalized": {
+      if (typeof actual !== "string") return false;
+      const terms = normalizedExpectedTerms(assertion.expected);
+      if (!terms || terms.length === 0) return false;
+      const normalizedActual = normalizeAnswerText(actual);
+      return terms.every(
+        (term) => !includesNormalizedTerm(normalizedActual, term),
+      );
     }
     case "exists":
       return actual !== undefined;
