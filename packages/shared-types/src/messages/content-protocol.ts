@@ -4,7 +4,11 @@
  */
 
 import type { MessageSource, ToolName } from "../enums";
-import type { DomSnapshot, OverlayDescriptor } from "../dom";
+import type {
+  DomSnapshot,
+  OverlayDescriptor,
+  PageDocumentState,
+} from "../dom";
 import type { BaseMessage } from "./base";
 
 /** Background requests a DOM snapshot from the content script */
@@ -29,6 +33,8 @@ export interface DomSnapshotResponse extends BaseMessage {
     snapshot: DomSnapshot;
     /** Time in ms to generate the snapshot */
     durationMs: number;
+    /** Live document identity at the end of snapshot construction. */
+    documentState: PageDocumentState;
   };
 }
 
@@ -40,6 +46,12 @@ export interface ToolExecuteMessage extends BaseMessage {
     toolName: ToolName;
     args: Record<string, unknown>;
     toolCallId: string;
+    /** Trusted runtime metadata; never part of the executor-facing tool schema. */
+    observationBasis?: PageDocumentState & {
+      observationRevision: number;
+      /** Coordinate/visual actions also require unchanged viewport geometry. */
+      requireGeometryMatch?: boolean;
+    };
   };
 }
 
@@ -53,6 +65,9 @@ export interface ToolResultMessage extends BaseMessage {
     result: string;
     /** If the action triggered a navigation */
     navigated: boolean;
+    errorCode?: "stale_observation";
+    /** Live state used for stale-observation diagnostics and re-grounding. */
+    documentState?: PageDocumentState;
   };
 }
 
@@ -60,7 +75,10 @@ export interface ToolResultMessage extends BaseMessage {
 export interface DismissModalsMessage extends BaseMessage {
   type: "DISMISS_MODALS";
   source: MessageSource.BACKGROUND;
-  payload: Record<string, never>;
+  payload: {
+    /** Observation that authorized this page mutation, when stale-action guards are enabled. */
+    observationBasis?: PageDocumentState & { observationRevision: number };
+  };
 }
 
 /** Content script reports how many modals were dismissed */
@@ -83,6 +101,9 @@ export interface DismissModalsResponse extends BaseMessage {
     remainingOverlay: OverlayDescriptor | null;
     /** Text content extracted from dismissed overlays (deduplicated) */
     capturedTexts: string[];
+    errorCode?: "stale_observation";
+    /** Live state returned when the requested mutation was rejected as stale. */
+    documentState?: PageDocumentState;
   };
 }
 
@@ -114,6 +135,8 @@ export interface DomReadyAckMessage extends BaseMessage {
     waitedMs: number;
     /** Number of elements currently in DOM (0 = page still loading) */
     elementCount: number;
+    /** Current identity/epoch after the readiness wait. */
+    documentState: PageDocumentState;
   };
 }
 

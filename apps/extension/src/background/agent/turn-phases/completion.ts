@@ -70,6 +70,7 @@ import {
 } from "../loop-helpers";
 import { ESCALATION_RECOVERY, ESCALATION_REFLECTION } from "../loop-prompts";
 import { ACTION_EFFECT, FRESH_START, ROLLING_DISTILL } from "../constants";
+import type { ActionReceipt } from "../page-state";
 
 export interface CompletionPhaseHost {
   readonly turnCount: number;
@@ -86,6 +87,7 @@ export interface CompletionPhaseHost {
   readonly traceRecorder: TraceRecorder | null;
   readonly perception: {
     getLastScreenshot(): string | null;
+    getLastActionReceipt(): ActionReceipt | null;
     invalidateCache(): void;
   };
   readonly stagnation: {
@@ -373,6 +375,7 @@ export async function runCompletionPhase(
         // P0: Surface action effect — tell the agent whether its last action changed the page
         // Use visuallyModified (not domModified) so read_page doesn't produce misleading deltas
         const actionEffect = host.stagnation.lastActionEffect;
+        const actionReceipt = host.perception.getLastActionReceipt();
         if (
           host.pendingFormSubmissionReset &&
           host.taskId &&
@@ -420,7 +423,8 @@ export async function runCompletionPhase(
           host.context.setLastActionOutcome({
             toolName: turn.lastDomAffectingToolName ?? "unknown",
             deltaPercent: actionEffect.deltaPercent,
-            urlChanged: actionEffect.urlChanged,
+            urlChanged:
+              actionReceipt?.effect.urlChanged ?? actionEffect.urlChanged,
             prevUrl: actionEffect.prevUrl,
             currentUrl: actionEffect.currentUrl,
             elementsAdded: actionEffect.elementsAdded,
@@ -432,6 +436,10 @@ export async function runCompletionPhase(
             urlChanged: actionEffect.urlChanged,
             elementsAdded: actionEffect.elementsAdded,
             elementsRemoved: actionEffect.elementsRemoved,
+            receiptStatus: actionReceipt?.status,
+            receiptEvidenceRefs: actionReceipt?.evidenceRefs,
+            receiptDomChanged: actionReceipt?.effect.domChanged,
+            receiptVisualChanged: actionReceipt?.effect.visualChanged,
           });
           const semanticToolName =
             turn.lastDomAffectingToolName ?? lastToolName ?? null;

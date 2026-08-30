@@ -16,7 +16,7 @@ import type { logger, SessionScopedLogger } from "../../utils";
 import type { PlanStep, TaskPlanner } from "./planner";
 import type { SubtaskSummary, AgentStep } from "../../types";
 import type { StagnationMonitor } from "./stagnation";
-import type { PerceptionScreenshotState } from "../perception/perception-screenshot-state";
+import type { PageStateCoordinator } from "./page-state";
 import { ToolProfile, resolveToolProfile } from "../tools/metadata";
 import { shouldOmitPerceptionForDoneValidation } from "./perception-done-validation";
 import {
@@ -43,7 +43,7 @@ export interface DonePlanValidationHost {
   planSubtasks: SubtaskSummary[];
   planSteps: PlanStep[];
   readonly context: ContextManager;
-  readonly perception: PerceptionScreenshotState;
+  readonly perception: PageStateCoordinator;
   readonly stagnation: StagnationMonitor;
   readonly planner: TaskPlanner;
   readonly traceRecorder: TraceRecorder | null;

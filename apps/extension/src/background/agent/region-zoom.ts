@@ -52,6 +52,8 @@ export interface RegionZoomHost {
   getSnapshot(): DomSnapshot | null | undefined;
   imagePromptBudgetAllows(imageCount: number): boolean;
   recordImagePromptBudgetExhausted(imageCount: number, source: string): void;
+  /** Guard viewport-grounded crops against page changes since model selection. */
+  observationIsCurrent(): Promise<boolean>;
   /** Capture the visible tab (host resolves the window). Throws on failure. */
   captureVisibleTab(options: {
     format: "jpeg" | "png";
@@ -159,6 +161,13 @@ export async function executeInspectRegion(
     );
   }
 
+  if (!(await host.observationIsCurrent())) {
+    return refuse(
+      "stale_observation",
+      "Error: Page state changed after this region was chosen. A fresh observation is required before retrying inspect_region.",
+    );
+  }
+
   // Resolve the region in viewport CSS pixels.
   let cssRect: { x: number; y: number; width: number; height: number };
   if (useIdSugar) {
@@ -229,6 +238,12 @@ export async function executeInspectRegion(
     return refuse(
       "capture_failed",
       "inspect_region: screenshot capture failed. Retry after the page settles, or read the value through DOM tools.",
+    );
+  }
+  if (!(await host.observationIsCurrent())) {
+    return refuse(
+      "stale_observation",
+      "Error: Page state changed while the region image was captured. A fresh observation is required before retrying inspect_region.",
     );
   }
   const imageDims = { width: cropSource.width, height: cropSource.height };

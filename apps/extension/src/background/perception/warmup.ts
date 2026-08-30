@@ -10,7 +10,11 @@
  * Cache is keyed by (tabId, fingerprint) with a 30s staleness guard.
  */
 
-import { DomSnapshot, MessageSource } from "../../types";
+import {
+  DomSnapshot,
+  MessageSource,
+  type PageDocumentState,
+} from "../../types";
 import { logger } from "../../utils";
 import { isTabReady, ensureContentScript } from "../infrastructure/tab-ready";
 import { transformScreenshot } from "./screenshot-transform";
@@ -55,6 +59,14 @@ export interface WarmupEntry {
    */
   perception: null;
   screenshotUrl: string | null;
+  documentState: PageDocumentState;
+  postCaptureDocumentState: PageDocumentState;
+  screenshotMeta: {
+    width: number;
+    height: number;
+    scaleFactor: number;
+    capturedAt: number;
+  };
   fingerprint: string;
   timestamp: number;
 }
@@ -146,28 +158,22 @@ class PerceptionWarmup {
 
       const fingerprint = computeSnapshotFingerprint(snapshot);
 
-      // 3. Take screenshot (only if the tab is active — avoids black frames)
-      //    Scroll to top first so the VLM sees the page beginning, not wherever
-      //    the user happened to be scrolled. This matches refreshPerception() behavior.
+      const documentState = snapResponse?.payload?.documentState as
+        | PageDocumentState
+        | undefined;
+      if (!documentState) {
+        logger.info("warmup", "Snapshot lacks page-state identity", { tabId });
+        return null;
+      }
+
+      // 3. Capture the current viewport without moving it. DOM and pixels must
+      // describe the same geometry, and warmup must not alter the user's scroll.
       let screenshotUrl: string | null = null;
-      const originalScrollY = snapshot.scroll?.y ?? 0;
+      let screenshotMeta: WarmupEntry["screenshotMeta"] | null = null;
+      let postCaptureDocumentState: PageDocumentState | undefined;
       try {
         const tab = await chrome.tabs.get(tabId);
         if (tab.active) {
-          // Scroll to top if not already there
-          if (originalScrollY > 0) {
-            await chrome.tabs.sendMessage(tabId, {
-              type: "TOOL_EXECUTE",
-              requestId: crypto.randomUUID(),
-              source: MessageSource.BACKGROUND,
-              payload: {
-                tool: "scroll_page",
-                args: { y: 0 },
-              },
-            });
-            await new Promise((r) => setTimeout(r, 150));
-          }
-
           // LP-9: same owned pipeline as refreshPerception — q90 capture,
           // then transform (resolution/format/scale) before anything
           // downstream (perceive or the loop's warmup fast path) sees it.
@@ -175,20 +181,22 @@ class PerceptionWarmup {
             format: "jpeg",
             quality: 90,
           });
-          screenshotUrl = (await transformScreenshot(captured)).dataUrl;
-
-          // Restore original scroll position
-          if (originalScrollY > 0) {
+          const transformed = await transformScreenshot(captured);
+          screenshotUrl = transformed.dataUrl;
+          screenshotMeta = {
+            width: transformed.width,
+            height: transformed.height,
+            scaleFactor: transformed.scaleFactor,
+            capturedAt: Date.now(),
+          };
+          postCaptureDocumentState = (
             await chrome.tabs.sendMessage(tabId, {
-              type: "TOOL_EXECUTE",
+              type: "DOM_READY_PROBE",
               requestId: crypto.randomUUID(),
               source: MessageSource.BACKGROUND,
-              payload: {
-                tool: "scroll_page",
-                args: { y: originalScrollY },
-              },
-            });
-          }
+              payload: { timeoutMs: 50, waitForElements: false },
+            })
+          )?.payload?.documentState;
         }
       } catch (e: any) {
         logger.warn("warmup", "Screenshot capture failed (non-fatal)", {
@@ -199,7 +207,7 @@ class PerceptionWarmup {
 
       // 4. Warmup pre-captures the screenshot only — the VL executor does its
       //    own vision, so there is no separate perception model call here.
-      if (!screenshotUrl) {
+      if (!screenshotUrl || !screenshotMeta || !postCaptureDocumentState) {
         logger.info("warmup", "No screenshot — nothing to warm", { tabId });
         return null;
       }
@@ -209,6 +217,9 @@ class PerceptionWarmup {
         snapshot,
         perception: null,
         screenshotUrl,
+        documentState,
+        postCaptureDocumentState,
+        screenshotMeta,
         fingerprint,
         timestamp: Date.now(),
       };

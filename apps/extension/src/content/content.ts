@@ -62,6 +62,12 @@ import {
   autoDismissModals,
   detectViewportCoveringOverlays,
 } from "./overlay-dismissal";
+import {
+  getPageDocumentState,
+  rejectStaleDismissRequest,
+  rejectStaleToolRequest,
+  startPageMutationEpochObserver,
+} from "./page-state-epoch";
 
 // Re-exported for tests and for consumers that historically imported the
 // overlay helpers from content.ts (the code moved to ./overlay-dismissal).
@@ -73,6 +79,7 @@ export {
 } from "./overlay-dismissal";
 
 logger.info("system", "Content Script Loaded");
+startPageMutationEpochObserver();
 
 function runJanitor() {
   const COMMON_selectors = [
@@ -751,6 +758,7 @@ if (typeof chrome !== "undefined" && chrome.runtime?.onMessage) {
       }
 
       if (message.type === "DISMISS_MODALS") {
+        if (rejectStaleDismissRequest(message, sendResponse)) return true;
         const result = autoDismissModals();
         sendResponse({
           type: "DISMISS_MODALS_RESPONSE",
@@ -799,6 +807,7 @@ if (typeof chrome !== "undefined" && chrome.runtime?.onMessage) {
             payload: {
               waitedMs: Math.round(performance.now() - probeStart),
               elementCount: elCount,
+              documentState: getPageDocumentState(),
             },
           });
         };
@@ -929,6 +938,7 @@ if (typeof chrome !== "undefined" && chrome.runtime?.onMessage) {
             payload: {
               snapshot,
               durationMs: Math.round(performance.now() - start),
+              documentState: getPageDocumentState(),
             },
           });
         })();
@@ -949,7 +959,7 @@ if (typeof chrome !== "undefined" && chrome.runtime?.onMessage) {
       }
 
       if (message.type === "TOOL_EXECUTE") {
-        const { toolName, args, toolCallId } = message.payload;
+        const { toolName, args, toolCallId, observationBasis } = message.payload;
         let responded = false;
         const respond = (res: any) => {
           if (responded) return;
@@ -961,6 +971,7 @@ if (typeof chrome !== "undefined" && chrome.runtime?.onMessage) {
             payload: { toolCallId, ...res },
           });
         };
+        if (rejectStaleToolRequest(observationBasis, respond)) return true;
         // Safety timeout: ensure sendResponse is always called
         setTimeout(() => {
           if (!responded) {

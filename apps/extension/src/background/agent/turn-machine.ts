@@ -17,7 +17,7 @@ import type { TurnState } from "./turn-state";
 import type { EscalationTierController } from "./escalation-tier-controller";
 import type { AgentTelemetryController } from "./agent-telemetry-controller";
 import type { CheckpointCoordinator } from "./checkpoint-coordinator";
-import type { PerceptionScreenshotState } from "../perception/perception-screenshot-state";
+import type { PageStateCoordinator } from "./page-state";
 import type { LoopResult } from "./loop-types";
 
 /**
@@ -83,7 +83,7 @@ export interface TurnContext {
   readonly escalation: EscalationTierController;
   readonly telemetry: AgentTelemetryController;
   readonly checkpoints: CheckpointCoordinator;
-  readonly perception: PerceptionScreenshotState;
+  readonly perception: PageStateCoordinator;
 }
 
 /** Narrow helpers for the driver. */

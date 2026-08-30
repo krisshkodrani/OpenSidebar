@@ -1,5 +1,6 @@
 import { chromePersistencePort } from "../environment/chrome";
 import {
+  PageDocumentState,
   ToolName,
   ToolCall,
   ToolDefinition,
@@ -9,11 +10,19 @@ import {
 import { logger } from "../../utils";
 import { getBlockedRuleForUrl } from "../../utils/site-access";
 
+export interface ToolExecutionContext {
+  observationBasis?: PageDocumentState & {
+    observationRevision: number;
+    requireGeometryMatch?: boolean;
+  };
+}
+
 type ToolExecutor = (
   args: Record<string, unknown>,
   tabId: number,
   signal?: AbortSignal,
   toolCallId?: string,
+  context?: ToolExecutionContext,
 ) => Promise<string | ToolExecutionResult>;
 
 function normalizeToolResult(
@@ -57,6 +66,7 @@ export class ToolRegistry {
     toolCall: ToolCall,
     tabId: number,
     signal?: AbortSignal,
+    context?: ToolExecutionContext,
   ): Promise<ToolExecutionResult> {
     const name = toolCall.function.name as ToolName;
     const executor = this.tools.get(name);
@@ -111,7 +121,7 @@ export class ToolRegistry {
       } catch {
         // Non-fatal: if checks fail, continue and let tool execute.
       }
-      const result = await executor(args, tabId, signal, toolCall.id);
+      const result = await executor(args, tabId, signal, toolCall.id, context);
       return normalizeToolResult(result);
     } catch (error: any) {
       if (error.name === "AbortError") throw error;

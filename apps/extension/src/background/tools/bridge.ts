@@ -2,7 +2,12 @@
  * Content script bridge - communication and error recovery for tool execution.
  */
 
-import { ToolName, MessageSource } from "../../types";
+import {
+  ToolName,
+  MessageSource,
+  type PageDocumentState,
+  type ToolExecutionResult,
+} from "../../types";
 import { logger } from "../../utils";
 import {
   probeContentScript,
@@ -326,13 +331,34 @@ async function hardReloadActivePage(
   }
 }
 
+type ContentToolObservationBasis = PageDocumentState & {
+  observationRevision: number;
+  requireGeometryMatch?: boolean;
+};
+
+export function executeContentTool(
+  startName: ToolName,
+  args: any,
+  tabId: number,
+  traceHook?: BridgeRecoveryTraceHook,
+  toolCallId?: string,
+): Promise<string>;
+export function executeContentTool(
+  startName: ToolName,
+  args: any,
+  tabId: number,
+  traceHook: BridgeRecoveryTraceHook | undefined,
+  toolCallId: string | undefined,
+  observationBasis: ContentToolObservationBasis | undefined,
+): Promise<string | ToolExecutionResult>;
 export async function executeContentTool(
   startName: ToolName,
   args: any,
   tabId: number,
   traceHook?: BridgeRecoveryTraceHook,
   toolCallId?: string,
-): Promise<string> {
+  observationBasis?: ContentToolObservationBasis,
+): Promise<string | ToolExecutionResult> {
   if (tabId === chrome.tabs.TAB_ID_NONE) {
     return "Error: No active tab to execute tool on.";
   }
@@ -349,8 +375,26 @@ export async function executeContentTool(
         toolName: startName,
         args,
         toolCallId: presentationId,
+        ...(observationBasis ? { observationBasis } : {}),
       },
     });
+
+  const readResponse = (response: {
+    payload?: {
+      result?: string;
+      errorCode?: "stale_observation";
+    };
+  }): string | ToolExecutionResult => {
+    const result = response.payload?.result;
+    if (typeof result !== "string") {
+      throw new Error(
+        "Empty response from content script - bridge may be disconnected",
+      );
+    }
+    return response.payload?.errorCode
+      ? { result, errorCode: response.payload.errorCode }
+      : result;
+  };
 
   try {
     const response = await Promise.race([
@@ -362,12 +406,7 @@ export async function executeContentTool(
         ),
       ),
     ]);
-    if (!response?.payload?.result && response?.payload?.result !== "") {
-      throw new Error(
-        "Empty response from content script - bridge may be disconnected",
-      );
-    }
-    return response.payload.result;
+    return readResponse(response);
   } catch (e: any) {
     if (!isBridgeDisconnect(e.message)) {
       logger.error("tools", "Bridge execution failed", { error: e.message });
@@ -411,7 +450,7 @@ export async function executeContentTool(
           toolName: startName,
           success: true,
         });
-        return transientRetryResponse.payload.result;
+        return readResponse(transientRetryResponse);
       } catch (retryErr: any) {
         if (!isBridgeDisconnect(retryErr.message || "")) {
           logger.error("tools", "Bridge retry failed after transient probe", {
@@ -465,7 +504,7 @@ export async function executeContentTool(
         tabId,
         tool: startName,
       });
-      return retryResponse.payload.result;
+      return readResponse(retryResponse);
     } catch (retryErr: any) {
       if (isBridgeDisconnect(retryErr.message || "")) {
         const hardRecovered = await hardReloadActivePage(tabId, {
@@ -486,7 +525,7 @@ export async function executeContentTool(
                 tool: startName,
               },
             );
-            return finalRetryResponse.payload.result;
+            return readResponse(finalRetryResponse);
           } catch (finalErr: any) {
             logger.error(
               "tools",

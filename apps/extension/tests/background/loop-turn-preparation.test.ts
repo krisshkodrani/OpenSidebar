@@ -201,4 +201,52 @@ describe("prepareLlmTurnRequest", () => {
       expect.stringContaining("1 buttons"),
     );
   });
+
+  test("backfills a first-turn unified-VL screenshot without an interpretation", async () => {
+    const traceRecorder = {
+      startTurn: vi.fn(),
+      recordPerception: vi.fn(async () => {}),
+    };
+    const perception = makePerception({
+      getLastScreenshot: vi.fn(() => "data:image/jpeg;base64,visual"),
+      getLastTraceMeta: vi.fn(() => ({
+        mode: "vl_screenshot_only",
+        source: "warmup",
+        freshnessReason: "warmup_cache",
+        screenshotStatus: "cached",
+      })),
+      getLastTraceStats: vi.fn(() => ({
+        model: "none (unified VL, warmup)",
+        durationMs: 0,
+        cached: true,
+      })),
+    });
+
+    await prepareLlmTurnRequest({
+      turnCount: 1,
+      previousElementCount: 9,
+      context: makeContext() as never,
+      allTools: [makeTool(ToolName.READ_PAGE)],
+      selectTools: (tools) => tools,
+      llm: {
+        getCurrentModel: () => "executor-model",
+        isPlannerTier: () => false,
+      },
+      perception: perception as never,
+      log: { info: vi.fn() },
+      traceRecorder: traceRecorder as never,
+    });
+
+    expect(traceRecorder.recordPerception).toHaveBeenCalledWith(
+      expect.objectContaining({
+        interpretation: expect.stringContaining("Screenshot sent directly"),
+        mode: "vl_screenshot_only",
+        source: "warmup",
+        screenshotStatus: "cached",
+        cached: true,
+      }),
+      "data:image/jpeg;base64,visual",
+      expect.stringContaining("1 buttons"),
+    );
+  });
 });

@@ -25,8 +25,9 @@ import { clickElementInMainWorld, mirrorTextInputInMainWorld } from "./main-worl
 import { finalizeServiceNowReferenceOnType } from "./servicenow/tool-hooks";
 
 export function registerInteractionTools(toolRegistry: ToolRegistry): void {
-    toolRegistry.register(ToolName.CLICK_ELEMENT, CLICK_DEF, async (args, tabId, _signal, toolCallId) => {
-        const result = await executeContentTool(ToolName.CLICK_ELEMENT, args, tabId, undefined, toolCallId);
+    toolRegistry.register(ToolName.CLICK_ELEMENT, CLICK_DEF, async (args, tabId, _signal, toolCallId, context) => {
+        const result = await executeContentTool(ToolName.CLICK_ELEMENT, args, tabId, undefined, toolCallId, context?.observationBasis);
+        if (typeof result !== "string") return result;
         // Main-world click bridge is a fallback only. A successful content-script
         // click already activates React/Vue handlers on normal pages; mirroring it
         // here would double-submit buttons and double-advance pagination.
@@ -39,8 +40,9 @@ export function registerInteractionTools(toolRegistry: ToolRegistry): void {
         }
         return result;
     });
-    toolRegistry.register(ToolName.TYPE_TEXT, TYPE_TEXT_DEF, async (args, tabId, _signal, toolCallId) => {
-        const result = await executeContentTool(ToolName.TYPE_TEXT, args, tabId, undefined, toolCallId);
+    toolRegistry.register(ToolName.TYPE_TEXT, TYPE_TEXT_DEF, async (args, tabId, _signal, toolCallId, context) => {
+        const result = await executeContentTool(ToolName.TYPE_TEXT, args, tabId, undefined, toolCallId, context?.observationBasis);
+        if (typeof result !== "string") return result;
         // Main-world text bridge: controlled inputs in frameworks such as React can
         // ignore input events created in the extension's isolated world. Mirror the
         // final value and input/change events in MAIN so framework state matches the
@@ -56,27 +58,27 @@ export function registerInteractionTools(toolRegistry: ToolRegistry): void {
         }
         return result;
     });
-    toolRegistry.register(ToolName.SCROLL_PAGE, SCROLL_PAGE_DEF, (args, tabId, _signal, toolCallId) =>
-        executeContentTool(ToolName.SCROLL_PAGE, args, tabId, undefined, toolCallId),
+    toolRegistry.register(ToolName.SCROLL_PAGE, SCROLL_PAGE_DEF, (args, tabId, _signal, toolCallId, context) =>
+        executeContentTool(ToolName.SCROLL_PAGE, args, tabId, undefined, toolCallId, context?.observationBasis),
     );
     toolRegistry.register(ToolName.READ_PAGE, READ_PAGE_DEF, (args, tabId) =>
         executeContentTool(ToolName.READ_PAGE, args, tabId),
     );
 
     // Content Script Tools (already implemented in content/actions.ts)
-    toolRegistry.register(ToolName.HOVER_ELEMENT, HOVER_ELEMENT_DEF, (args, tabId, _signal, toolCallId) =>
-        executeContentTool(ToolName.HOVER_ELEMENT, args, tabId, undefined, toolCallId),
+    toolRegistry.register(ToolName.HOVER_ELEMENT, HOVER_ELEMENT_DEF, (args, tabId, _signal, toolCallId, context) =>
+        executeContentTool(ToolName.HOVER_ELEMENT, args, tabId, undefined, toolCallId, context?.observationBasis),
     );
     toolRegistry.register(ToolName.FIND_ELEMENT, FIND_ELEMENT_DEF, (args, tabId) =>
         executeContentTool(ToolName.FIND_ELEMENT, args, tabId),
     );
-    toolRegistry.register(ToolName.SELECT_OPTION, SELECT_OPTION_DEF, (args, tabId, _signal, toolCallId) =>
-        executeContentTool(ToolName.SELECT_OPTION, args, tabId, undefined, toolCallId),
+    toolRegistry.register(ToolName.SELECT_OPTION, SELECT_OPTION_DEF, (args, tabId, _signal, toolCallId, context) =>
+        executeContentTool(ToolName.SELECT_OPTION, args, tabId, undefined, toolCallId, context?.observationBasis),
     );
-    toolRegistry.register(ToolName.PRESS_KEY, PRESS_KEY_DEF, (args, tabId, _signal, toolCallId) =>
-        executeContentTool(ToolName.PRESS_KEY, args, tabId, undefined, toolCallId),
+    toolRegistry.register(ToolName.PRESS_KEY, PRESS_KEY_DEF, (args, tabId, _signal, toolCallId, context) =>
+        executeContentTool(ToolName.PRESS_KEY, args, tabId, undefined, toolCallId, context?.observationBasis),
     );
-    toolRegistry.register(ToolName.DRAG_AND_DROP, DRAG_AND_DROP_DEF, async (args, tabId, _signal, toolCallId) => {
+    toolRegistry.register(ToolName.DRAG_AND_DROP, DRAG_AND_DROP_DEF, async (args, tabId, _signal, toolCallId, context) => {
         const sourceId = args.sourceId as number;
         const targetId = args.targetId as number;
 
@@ -114,21 +116,31 @@ export function registerInteractionTools(toolRegistry: ToolRegistry): void {
             // Pre-validation failed (non-critical) — proceed with execution anyway
         }
 
-        return executeContentTool(ToolName.DRAG_AND_DROP, args, tabId, undefined, toolCallId);
+        return executeContentTool(ToolName.DRAG_AND_DROP, args, tabId, undefined, toolCallId, context?.observationBasis);
     });
-    toolRegistry.register(ToolName.HIDE_ELEMENT, HIDE_ELEMENT_DEF, (args, tabId) =>
-        executeContentTool(ToolName.HIDE_ELEMENT, args, tabId),
+    toolRegistry.register(ToolName.HIDE_ELEMENT, HIDE_ELEMENT_DEF, (args, tabId, _signal, toolCallId, context) =>
+        executeContentTool(ToolName.HIDE_ELEMENT, args, tabId, undefined, toolCallId, context?.observationBasis),
     );
 
-    toolRegistry.register(ToolName.DISMISS_OVERLAYS, DISMISS_OVERLAYS_DEF, async (_args, tabId) => {
+    toolRegistry.register(ToolName.DISMISS_OVERLAYS, DISMISS_OVERLAYS_DEF, async (_args, tabId, _signal, _toolCallId, context) => {
         logger.info("tools", "dismiss_overlays", { tabId });
         try {
             const response = await chrome.tabs.sendMessage(tabId, {
                 type: "DISMISS_MODALS",
                 requestId: crypto.randomUUID(),
                 source: MessageSource.BACKGROUND,
-                payload: {},
+                payload: {
+                    ...(context?.observationBasis
+                        ? { observationBasis: context.observationBasis }
+                        : {}),
+                },
             });
+            if (response.payload.errorCode === "stale_observation") {
+                return {
+                    result: "Error: Page state changed after this action was chosen. A fresh observation is required before retrying.",
+                    errorCode: "stale_observation" as const,
+                };
+            }
             const { dismissed, clickedClose, cssHidden, remainingOverlay } = response.payload;
             let msg: string;
             if (dismissed > 0) {

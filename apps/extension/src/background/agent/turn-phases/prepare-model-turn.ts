@@ -14,7 +14,7 @@ import { toolRegistry } from "../../tools";
 import { LLM_CONFIG } from "../constants";
 import { LLMClient } from "../../llm";
 import { ContextManager } from "../context";
-import { PerceptionScreenshotState } from "../../perception/perception-screenshot-state";
+import { PageStateCoordinator, type ObservationBasis } from "../page-state";
 import { TraceRecorder } from "../trace";
 import type { TurnCarry } from "../turn-carry";
 import { logger, SessionScopedLogger } from "../../../utils";
@@ -47,7 +47,7 @@ export interface PrepareModelTurnHost {
   readonly turnCount: number;
   readonly context: ContextManager;
   readonly llm: LLMClient;
-  readonly perception: PerceptionScreenshotState;
+  readonly perception: PageStateCoordinator;
   readonly log: typeof logger | SessionScopedLogger;
   readonly traceRecorder: TraceRecorder | null;
   readonly abortController: AbortController | null;
@@ -56,6 +56,7 @@ export interface PrepareModelTurnHost {
   readonly runId: string | null;
   readonly telemetry: { readonly turnCarry: TurnCarry };
   activeToolNamesForTurn: string[];
+  modelTurnObservationBasis: ObservationBasis | null;
   applyToolProfile(tools: ToolDefs): ToolDefs;
   applySkillToolSuppression(tools: ToolDefs): ToolDefs;
   applySkillToolRanking(tools: ToolDefs): ToolDefs;
@@ -94,6 +95,8 @@ export async function runPrepareModelTurnPhase(
   host: PrepareModelTurnHost,
   previousElementCount: number,
 ): Promise<PrepareModelTurnResult> {
+  host.modelTurnObservationBasis =
+    host.perception.getCurrentObservation()?.basis ?? null;
   const allTools = toolRegistry.getDefinitions(host.disabledTools);
   const preparation = await prepareLlmTurnRequest({
     turnCount: host.turnCount,

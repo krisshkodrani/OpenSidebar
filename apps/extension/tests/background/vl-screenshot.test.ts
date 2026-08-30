@@ -26,7 +26,8 @@ import {
   createVLScreenshotState,
   type VLScreenshotHost,
 } from "../../src/background/agent/vl-screenshot";
-import type { DomSnapshot } from "../../src/types";
+import { PageStateCoordinator } from "../../src/background/agent/page-state";
+import type { DomSnapshot, PageDocumentState } from "../../src/types";
 
 globalThis.chrome = {
   ...(globalThis.chrome ?? {}),
@@ -64,15 +65,31 @@ function makeHost(currentSnapshot: DomSnapshot | null) {
   let executorScreenshot: string | null = "unset";
   const captureCalls: unknown[] = [];
   const events: Array<{ type: string }> = [];
+  const documentState: PageDocumentState = {
+    documentInstanceId: "doc-test",
+    mutationEpoch: 1,
+    url: currentSnapshot?.url ?? "https://example.test/apply",
+    viewport: { width: 1280, height: 720 },
+    scroll: { x: 0, y: 0 },
+  };
+  const perception = new PageStateCoordinator();
+  if (currentSnapshot) {
+    perception.acceptDomObservation({
+      snapshot: currentSnapshot,
+      documentState,
+    });
+  }
   const host: VLScreenshotHost = {
+    enforcePageStateConsistency: true,
     context: {
       getSnapshot: () => currentSnapshot,
+      getScreenshotDetailForExecutor: () => "high",
       setScreenshotForExecutor: (dataUrl) => {
         executorScreenshot = dataUrl;
       },
       setPageInterpretation: () => {},
     },
-    perception: { setScreenshotUrl: () => {} },
+    perception,
     traceRecorder: {
       recordEvent: (type) => events.push({ type }),
       recordPerception: () => {},
@@ -84,6 +101,10 @@ function makeHost(currentSnapshot: DomSnapshot | null) {
       captureCalls.push(1);
       return `raw-${captureCalls.length}`;
     }),
+    refreshSnapshot: vi.fn(async () =>
+      currentSnapshot?.elements.length ?? -1,
+    ),
+    probeDocumentState: vi.fn(async () => documentState),
   };
   return {
     host,
@@ -161,7 +182,7 @@ describe("captureVLExecutorScreenshot (LP-17b CM-5)", () => {
     const state = createVLScreenshotState();
     const h = makeHost(snapshot());
     await captureVLExecutorScreenshot(h.host, 7, state);
-    expect(state.lastDataUrl).not.toBeNull();
+    expect(state.lastImage).not.toBeNull();
 
     (h.host.captureVisibleTabWithRetry as any) = vi.fn(async () => {
       throw new Error("capture boom");
@@ -170,7 +191,87 @@ describe("captureVLExecutorScreenshot (LP-17b CM-5)", () => {
     const changed = snapshot({ pageContent: "changed body text here" });
     (h.host.context.getSnapshot as any) = () => changed;
     await captureVLExecutorScreenshot(h.host, 7, state);
-    expect(state.lastDataUrl).toBeNull();
+    expect(state.lastImage).toBeNull();
     expect(h.getExecutorScreenshot()).toBeNull();
+  });
+
+  test("retries once after a capture crosses a page mutation", async () => {
+    const snap = snapshot();
+    const state = createVLScreenshotState();
+    const h = makeHost(snap);
+    const nextState: PageDocumentState = {
+      documentInstanceId: "doc-test",
+      mutationEpoch: 2,
+      url: snap.url,
+      viewport: { width: 1280, height: 720 },
+      scroll: { x: 0, y: 0 },
+    };
+    h.host.probeDocumentState = vi.fn(async () => nextState);
+    h.host.refreshSnapshot = vi.fn(async () => {
+      h.host.perception.acceptDomObservation({
+        snapshot: snap,
+        documentState: nextState,
+      });
+      return snap.elements.length;
+    });
+
+    await captureVLExecutorScreenshot(h.host, 7, state);
+
+    expect(h.captureCalls).toHaveLength(2);
+    expect(h.host.refreshSnapshot).toHaveBeenCalledTimes(1);
+    expect(h.getExecutorScreenshot()).toBe("transformed:raw-2");
+    expect(
+      h.events.some((event) => event.type === "page_observation_consistency_retry"),
+    ).toBe(true);
+  });
+
+  test("falls back to DOM after a second inconsistent capture", async () => {
+    const snap = snapshot();
+    const state = createVLScreenshotState();
+    const h = makeHost(snap);
+    const stateAt = (mutationEpoch: number): PageDocumentState => ({
+      documentInstanceId: "doc-test",
+      mutationEpoch,
+      url: snap.url,
+      viewport: { width: 1280, height: 720 },
+      scroll: { x: 0, y: 0 },
+    });
+    let probe = 1;
+    h.host.probeDocumentState = vi.fn(async () => stateAt(++probe));
+    h.host.refreshSnapshot = vi.fn(async () => {
+      h.host.perception.acceptDomObservation({
+        snapshot: snap,
+        documentState: stateAt(2),
+      });
+      return snap.elements.length;
+    });
+
+    await captureVLExecutorScreenshot(h.host, 7, state);
+
+    expect(h.captureCalls).toHaveLength(2);
+    expect(h.getExecutorScreenshot()).toBeNull();
+    expect(state.lastImage).toBeNull();
+  });
+
+  test("shadow mode records a mismatch without changing executor behavior", async () => {
+    const snap = snapshot();
+    const state = createVLScreenshotState();
+    const h = makeHost(snap);
+    h.host.enforcePageStateConsistency = false;
+    h.host.probeDocumentState = vi.fn(async () => ({
+      documentInstanceId: "doc-test",
+      mutationEpoch: 2,
+      url: snap.url,
+      viewport: { width: 1280, height: 720 },
+      scroll: { x: 0, y: 0 },
+    }));
+
+    await captureVLExecutorScreenshot(h.host, 7, state);
+
+    expect(h.captureCalls).toHaveLength(1);
+    expect(h.getExecutorScreenshot()).toBe("transformed:raw-1");
+    expect(
+      h.events.some((event) => event.type === "page_observation_shadow_mismatch"),
+    ).toBe(true);
   });
 });

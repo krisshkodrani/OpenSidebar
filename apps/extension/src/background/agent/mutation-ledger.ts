@@ -6,6 +6,7 @@ import {
   type SideEffectEntry,
 } from "./checkpoint-types";
 import { djb2, getSnapshotFingerprint } from "./loop-helpers";
+import type { ActionReceipt } from "./page-state";
 
 const MAX_LEDGER_ENTRIES = 50;
 const MAX_SIDE_EFFECTS = 100;
@@ -68,6 +69,7 @@ export class MutationLedger {
   private executedActions = new Map<string, string>();
   private stepMutationLedger: MutationLedgerEntry[] = [];
   private sideEffectsLog: SideEffectEntry[] = [];
+  private actionReceipts: ActionReceipt[] = [];
 
   constructor(
     private readonly now: () => number = () => Date.now(),
@@ -80,6 +82,17 @@ export class MutationLedger {
 
   get sideEffects(): SideEffectEntry[] {
     return this.sideEffectsLog;
+  }
+
+  get receipts(): readonly ActionReceipt[] {
+    return this.actionReceipts;
+  }
+
+  recordReceipt(receipt: ActionReceipt): void {
+    this.actionReceipts.push(receipt);
+    if (this.actionReceipts.length > MAX_SIDE_EFFECTS) {
+      this.actionReceipts = this.actionReceipts.slice(-MAX_SIDE_EFFECTS);
+    }
   }
 
   restore(stepMutationLedger: unknown, sideEffectsLog: unknown): void {
@@ -100,6 +113,7 @@ export class MutationLedger {
   clearReplayState(): void {
     this.clearEphemeral();
     this.clearStepLedger();
+    this.actionReceipts = [];
   }
 
   lookup(

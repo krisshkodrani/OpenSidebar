@@ -3,6 +3,7 @@ import {
   refreshPostToolSnapshot,
   type PostToolSnapshotRefreshHost,
 } from "../../src/background/agent/post-tool-snapshot-refresh";
+import { PageStateCoordinator } from "../../src/background/agent/page-state";
 
 const { waitForDomReadyMock } = vi.hoisted(() => ({
   waitForDomReadyMock: vi.fn(async () => ({
@@ -25,17 +26,20 @@ const snapshot = {
 };
 
 function createHost(): PostToolSnapshotRefreshHost {
+  const setSnapshot = vi.fn();
   return {
     context: {
       addMessage: vi.fn(),
-      setSnapshot: vi.fn(),
+      setSnapshot,
     },
+    acceptPageSnapshot: vi.fn((nextSnapshot) => setSnapshot(nextSnapshot)),
     log: {
       debug: vi.fn(),
       info: vi.fn(),
       warn: vi.fn(),
     },
     offDomainWarned: false,
+    perception: new PageStateCoordinator(),
     recordCitation: vi.fn(),
     recordVerifiedNewUrl: vi.fn(),
     refreshPerceptionAndTriage: vi.fn(),

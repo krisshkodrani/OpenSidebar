@@ -68,7 +68,10 @@ describe("context economy telemetry", () => {
         role: "user",
         content: [
           { type: "text", text: "Screenshot included" },
-          { type: "image_url", image_url: { url: "data:image/png;base64,a" } },
+          {
+            type: "image_url",
+            image_url: { url: "data:image/png;base64,a", detail: "high" },
+          },
         ],
       },
     ];
@@ -89,6 +92,9 @@ describe("context economy telemetry", () => {
     expect(metrics.toolOutputChars).toBe("Large tool result".length);
     expect(metrics.distillationSummaryChars).toBeGreaterThan(0);
     expect(metrics.imagePromptCount).toBe(1);
+    expect(metrics.lowDetailImagePromptCount).toBe(0);
+    expect(metrics.highDetailImagePromptCount).toBe(1);
+    expect(metrics.autoDetailImagePromptCount).toBe(0);
     expect(metrics.estimatedImagePromptTokens).toBe(765);
   });
 
