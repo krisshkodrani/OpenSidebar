@@ -9,6 +9,7 @@ import {
 } from "@opensidebar/scenario-engine";
 import {
   runModelBenchCase,
+  runModelBenchSuite,
   type ModelBenchDriver,
   type ModelBenchRunConfiguration,
 } from "./modelbench-runner-lib.js";
@@ -51,6 +52,7 @@ test("valid model failure is scored and never retried", async () => {
         resolvedSeats: resolved,
         usageByRole: {},
         artifactRefs: [],
+        diagnostics: { imageArtifacts: [] },
       };
     },
   };
@@ -65,6 +67,8 @@ test("valid model failure is scored and never retried", async () => {
   assert.equal(calls, 1);
   assert.equal(attempts[0]?.classification, "valid_model_failure");
   assert.equal(attempts[0]?.scoreEligible, true);
+  assert.equal(attempts[0]?.configurationLabel, "test");
+  assert.deepEqual(attempts[0]?.diagnostics, { imageArtifacts: [] });
 });
 
 test("one provider failure is preserved and retried once", async () => {
@@ -105,6 +109,10 @@ test("one provider failure is preserved and retried once", async () => {
   assert.equal(attempts[0]?.classification, "provider_failure");
   assert.equal(attempts[1]?.classification, "valid_pass");
   assert.equal(attempts[1]?.retryOfAttemptId, attempts[0]?.attemptId);
+  assert.deepEqual(attempts[0]?.diagnostics?.failure, {
+    kind: "provider",
+    reason: "rate limited",
+  });
 });
 
 test("provider failure retries even when no model could be resolved", async () => {
@@ -250,4 +258,32 @@ test("driver evidence participates in the authoritative MB-101 verdict", async (
     )?.passed,
     false,
   );
+});
+
+test("suite blocks preserve explicit repetition labels for balanced A/B ordering", async () => {
+  const observed: number[] = [];
+  const initial = scenarioEngine.initialize(definition.contract.id);
+  await runModelBenchSuite({
+    definitions: [definition],
+    configurations: [configuration],
+    buildRevision: "abc",
+    repeat: 2,
+    repetitionStart: 2,
+    driver: {
+      async execute(input) {
+        observed.push(input.repetition);
+        return {
+          durationMs: 1,
+          finalState: applyOutcome(initial, definition.oracle),
+          finalAnswer: definition.oracle.finalAnswer,
+          terminalOutcome: definition.oracle.terminalOutcome,
+          resolvedSeats: resolved,
+          usageByRole: {},
+          artifactRefs: [],
+        };
+      },
+    },
+  });
+
+  assert.deepEqual(observed, [2, 3]);
 });

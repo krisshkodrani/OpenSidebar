@@ -1,11 +1,14 @@
 import { existsSync, readFileSync } from "node:fs";
-import { resolve } from "node:path";
+import { basename, resolve } from "node:path";
 import type {
   ModelSeat,
+  PerceptionImageArtifactV1,
+  PerceptionImageDetail,
   RequestedSeatV1,
   ResolvedSeatV1,
   RoleUsageV1,
 } from "@opensidebar/scenario-contracts";
+import { inspectPerceptionImage } from "./modelbench-image-artifacts.js";
 
 type JsonRecord = Record<string, any>;
 
@@ -26,12 +29,29 @@ export interface ModelBenchTraceEvidence {
   artifactRefs: string[];
   runIds: string[];
   ambiguousSeats: Partial<Record<ModelSeat, string[]>>;
+  imageArtifacts: PerceptionImageArtifactV1[];
+  pageUrls: string[];
+  canvasObserved: boolean;
   telemetry: {
     turns: number;
     toolExecutions: number;
     perceptions: number;
     replans: number;
     recoveries: number;
+    screenshotsCaptured: number;
+    screenshotsReused: number;
+    imagePrompts: number;
+    lowDetailImagePrompts: number;
+    highDetailImagePrompts: number;
+    autoDetailImagePrompts: number;
+    pageStateCoordinatorMode?: "shadow" | "authoritative";
+    pageObservations: number;
+    consistentPageObservations: number;
+    inconsistentPageObservations: number;
+    coordinatorConsistencyRetries: number;
+    coordinatorShadowMismatches: number;
+    actionReceipts: number;
+    staleActionsBlocked: number;
   };
 }
 
@@ -54,6 +74,22 @@ function lines(path: string): JsonRecord[] {
         return [];
       }
     });
+}
+
+function imageDetail(entry: JsonRecord): PerceptionImageDetail {
+  const sections = entry.llmRequest?.contextMetrics?.promptSections ?? {};
+  if (number(sections.highDetailImagePromptCount) > 0) return "high";
+  if (number(sections.lowDetailImagePromptCount) > 0) return "low";
+  if (number(sections.autoDetailImagePromptCount) > 0) return "auto";
+  return "unknown";
+}
+
+function screenshotStatus(
+  value: unknown,
+): PerceptionImageArtifactV1["screenshotStatus"] {
+  return value === "captured" || value === "cached" || value === "not_requested"
+    ? value
+    : "unknown";
 }
 
 function executorCall(entry: JsonRecord): ObservedCall | null {
@@ -133,18 +169,107 @@ export function collectModelBenchTraceEvidence(input: {
   let perceptions = 0;
   let plannerCalls = 0;
   let recoveries = 0;
+  let screenshotsCaptured = 0;
+  let screenshotsReused = 0;
+  let imagePrompts = 0;
+  let lowDetailImagePrompts = 0;
+  let highDetailImagePrompts = 0;
+  let autoDetailImagePrompts = 0;
+  let pageStateCoordinatorMode: "shadow" | "authoritative" | undefined;
+  let pageObservations = 0;
+  let consistentPageObservations = 0;
+  let inconsistentPageObservations = 0;
+  let coordinatorConsistencyRetries = 0;
+  let coordinatorShadowMismatches = 0;
+  let actionReceipts = 0;
+  let staleActionsBlocked = 0;
+  const imageArtifacts = new Map<string, PerceptionImageArtifactV1>();
+  const pageUrls = new Set<string>();
+  let canvasObserved = false;
 
   for (const traceFile of input.traceFiles) {
     const path = resolve(traceFile);
     artifactRefs.add(path);
     for (const entry of lines(path)) {
       if (typeof entry.runId === "string") runIds.add(entry.runId);
+      if (typeof entry.snapshot?.url === "string") {
+        pageUrls.add(entry.snapshot.url);
+      }
+      if (
+        Array.isArray(entry.elements) &&
+        entry.elements.some(
+          (element: JsonRecord) =>
+            String(element?.tagName ?? "").toLocaleLowerCase() === "canvas",
+        )
+      ) {
+        canvasObserved = true;
+      }
       if (entry.traceKind === "agent.turn" || entry.llmResponse) turns += 1;
       if (Array.isArray(entry.toolExecutions)) toolExecutions += entry.toolExecutions.length;
       if (
         entry.llmRequest?.modelTier === "perception" ||
-        number(entry.contextMetrics?.imagePromptCount) > 0
+        number(entry.llmRequest?.contextMetrics?.promptSections?.imagePromptCount) > 0
       ) perceptions += 1;
+      const sections = entry.llmRequest?.contextMetrics?.promptSections ?? {};
+      imagePrompts += number(sections.imagePromptCount);
+      lowDetailImagePrompts += number(sections.lowDetailImagePromptCount);
+      highDetailImagePrompts += number(sections.highDetailImagePromptCount);
+      autoDetailImagePrompts += number(sections.autoDetailImagePromptCount);
+      if (entry.perception?.screenshotStatus === "captured") {
+        screenshotsCaptured += 1;
+      }
+      const events = Array.isArray(entry.events) ? entry.events : [];
+      for (const event of events) {
+        if (event?.type === "page_observation") {
+          pageObservations += 1;
+          const consistency = String(event?.data?.consistency ?? "");
+          if (consistency === "consistent") consistentPageObservations += 1;
+          if (consistency === "inconsistent") inconsistentPageObservations += 1;
+          const mode = event?.data?.coordinatorMode;
+          if (mode === "shadow" || mode === "authoritative") {
+            pageStateCoordinatorMode = mode;
+          }
+        } else if (event?.type === "page_observation_consistency_retry") {
+          coordinatorConsistencyRetries += 1;
+        } else if (event?.type === "page_observation_shadow_mismatch") {
+          coordinatorShadowMismatches += 1;
+        } else if (event?.type === "action_receipt") {
+          actionReceipts += 1;
+        } else if (event?.type === "stale_action_blocked") {
+          staleActionsBlocked += 1;
+        }
+      }
+      const screenshotReuseEvents = events.filter(
+        (event: JsonRecord) => event?.type === "vl_screenshot_reused",
+      ).length;
+      screenshotsReused += screenshotReuseEvents;
+      if (
+        entry.perception?.screenshotStatus === "cached" &&
+        screenshotReuseEvents === 0
+      ) {
+        screenshotsReused += 1;
+      }
+      const sessionId = typeof entry.sessionId === "string"
+        ? entry.sessionId
+        : basename(path, ".jsonl");
+      const turnNumber = number(entry.turnNumber);
+      if (turnNumber > 0 && entry.perception?.screenshotStatus) {
+        const screenshotPath = resolve(
+          tracesRoot,
+          "screenshots",
+          `${sessionId}-T${turnNumber}.jpg`,
+        );
+        if (existsSync(screenshotPath) && !imageArtifacts.has(screenshotPath)) {
+          const artifact = inspectPerceptionImage({
+            path: screenshotPath,
+            detail: imageDetail(entry),
+            turnNumber,
+            screenshotStatus: screenshotStatus(entry.perception.screenshotStatus),
+          });
+          imageArtifacts.set(screenshotPath, artifact);
+          artifactRefs.add(screenshotPath);
+        }
+      }
       const call = executorCall(entry);
       if (call) calls.push(call);
     }
@@ -198,12 +323,29 @@ export function collectModelBenchTraceEvidence(input: {
     artifactRefs: [...artifactRefs],
     runIds: [...runIds],
     ambiguousSeats,
+    imageArtifacts: [...imageArtifacts.values()],
+    pageUrls: [...pageUrls],
+    canvasObserved,
     telemetry: {
       turns,
       toolExecutions,
       perceptions,
       replans: Math.max(0, plannerCalls - 1),
       recoveries,
+      screenshotsCaptured,
+      screenshotsReused,
+      imagePrompts,
+      lowDetailImagePrompts,
+      highDetailImagePrompts,
+      autoDetailImagePrompts,
+      ...(pageStateCoordinatorMode ? { pageStateCoordinatorMode } : {}),
+      pageObservations,
+      consistentPageObservations,
+      inconsistentPageObservations,
+      coordinatorConsistencyRetries,
+      coordinatorShadowMismatches,
+      actionReceipts,
+      staleActionsBlocked,
     },
   };
 }

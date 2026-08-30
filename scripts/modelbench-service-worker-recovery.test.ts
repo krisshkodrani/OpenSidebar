@@ -115,3 +115,47 @@ test("propagates the second failure when recovery does not help", async () => {
   );
   assert.equal(calls, 2, "retries once, then gives up");
 });
+
+/**
+ * resolveTargetTabId runs its selection inside worker.evaluate, so the fake
+ * worker executes the callback against a stubbed chrome.tabs.
+ */
+function workerWithTabs(tabs: Array<Record<string, unknown>>) {
+  return {
+    evaluate: async (fn: (origin: string) => unknown, origin: string) => {
+      const previous = (globalThis as Record<string, unknown>).chrome;
+      (globalThis as Record<string, unknown>).chrome = {
+        tabs: { query: async () => tabs },
+      };
+      try {
+        return await fn(origin);
+      } finally {
+        (globalThis as Record<string, unknown>).chrome = previous;
+      }
+    },
+  };
+}
+
+const TARGET = "http://127.0.0.1:63382";
+
+test("binds to the scenario target tab, not the focused extension page", async () => {
+  const worker = workerWithTabs([
+    { id: 7, active: true, url: `chrome-extension://abc/e2e-helper.html` },
+    { id: 9, active: false, url: `${TARGET}/scenario-target.html` },
+  ]);
+  const { resolveTargetTabId } = await import(
+    "./modelbench-extension-driver.js"
+  );
+  assert.equal(await resolveTargetTabId(worker as never, TARGET), 9);
+});
+
+test("prefers the active tab when several match the target origin", async () => {
+  const worker = workerWithTabs([
+    { id: 3, active: false, url: `${TARGET}/scenario-target.html` },
+    { id: 4, active: true, url: `${TARGET}/scenario-target.html?view=linked` },
+  ]);
+  const { resolveTargetTabId } = await import(
+    "./modelbench-extension-driver.js"
+  );
+  assert.equal(await resolveTargetTabId(worker as never, TARGET), 4);
+});

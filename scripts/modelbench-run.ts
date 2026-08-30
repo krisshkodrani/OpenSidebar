@@ -94,6 +94,7 @@ try {
     driver,
     buildRevision,
     repeat: positiveInteger(option("--repeat"), 1),
+    repetitionStart: positiveInteger(option("--repetition-start"), 1),
     onAttempt(attempt) {
       attempts.push(attempt);
       writeFileSync(outputPath, `${JSON.stringify({ attempts }, null, 2)}\n`);

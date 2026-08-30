@@ -2,7 +2,10 @@ import { execFileSync } from "node:child_process";
 import { resolve } from "node:path";
 import type { ScenarioRunV2 } from "@opensidebar/scenario-contracts";
 import { createE2EHarness } from "../apps/extension/tests/e2e/helpers/harness.js";
-import { openHelperPage } from "../apps/extension/tests/e2e/helpers/browser.js";
+import {
+  openHelperPage,
+  withLiveServiceWorker,
+} from "../apps/extension/tests/e2e/helpers/browser.js";
 import {
   getActiveTabId,
   getMonitoredEventsWithControlLane,
@@ -82,6 +85,34 @@ async function collectBrowserDriverEvidence(input: {
   };
 }
 
+/**
+ * Bind the case to the scenario target tab by origin, not to whatever happens
+ * to be focused. The harness keeps a chrome-extension:// helper page open for
+ * the whole run, and an active-tab lookup could bind a case to it -- content
+ * scripts cannot be injected there, so every page tool then fails permanently
+ * and no reload can recover it.
+ */
+export async function resolveTargetTabId(
+  worker: Parameters<typeof getActiveTabId>[0],
+  targetOrigin: string,
+): Promise<number> {
+  const byOrigin = await worker.evaluate(async (origin: string) => {
+    const tabs = await chrome.tabs.query({ currentWindow: true });
+    const match =
+      tabs.find(
+        (tab) =>
+          tab.active && typeof tab.url === "string" && tab.url.startsWith(origin),
+      ) ??
+      tabs.find(
+        (tab) => typeof tab.url === "string" && tab.url.startsWith(origin),
+      );
+    return match?.id ?? -1;
+  }, targetOrigin);
+  if (byOrigin > 0) return byOrigin;
+  // Fall back to the previous behavior rather than failing outright.
+  return getActiveTabId(worker);
+}
+
 const E2E_ENV_NAMES = [
   "E2E_PROFILE",
   "E2E_PROVIDER",
@@ -120,6 +151,59 @@ function configureEnvironment(input: ModelBenchDriverInput): () => void {
       else process.env[name] = value;
     }
   };
+}
+
+export function modelBenchSettingsPatch(
+  input: ModelBenchDriverInput,
+): Record<string, string> {
+  const seats = input.configuration.seats;
+  return {
+    providerMode: input.configuration.provider,
+    ...(seats.executor?.model ? { executorModel: seats.executor.model } : {}),
+    ...(seats.planner?.model ? { plannerModel: seats.planner.model } : {}),
+    ...(seats.judge?.model ? { judgeModel: seats.judge.model } : {}),
+    ...(seats.executor?.providerPin
+      ? { executorProviderPin: seats.executor.providerPin }
+      : {}),
+    ...(seats.planner?.providerPin
+      ? { plannerProviderPin: seats.planner.providerPin }
+      : {}),
+    ...(seats.judge?.providerPin
+      ? { judgeProviderPin: seats.judge.providerPin }
+      : {}),
+    ...(input.configuration.perceptionMode
+      ? { perceptionMode: input.configuration.perceptionMode }
+      : {}),
+  };
+}
+
+async function applyModelBenchSettings(
+  ctx: Parameters<typeof openHelperPage>[0],
+  input: ModelBenchDriverInput,
+): Promise<Record<string, string>> {
+  const expected = modelBenchSettingsPatch(input);
+  const helper = await openHelperPage(ctx);
+  const applied = await helper.evaluate(async (patch) => {
+    const stored = await chrome.storage.sync.get("userSettings");
+    const current =
+      stored.userSettings && typeof stored.userSettings === "object"
+        ? stored.userSettings
+        : {};
+    await chrome.storage.sync.set({ userSettings: { ...current, ...patch } });
+    const verified = await chrome.storage.sync.get("userSettings");
+    const settings = (verified.userSettings ?? {}) as Record<string, unknown>;
+    return Object.fromEntries(
+      Object.keys(patch).map((key) => [key, String(settings[key] ?? "")]),
+    );
+  }, expected);
+  for (const [key, value] of Object.entries(expected)) {
+    if (applied[key] !== value) {
+      throw new Error(
+        `ModelBench setting '${key}' did not apply: expected '${value}', received '${applied[key] ?? ""}'.`,
+      );
+    }
+  }
+  return applied;
 }
 
 function workspaceEvents(events: EventRecord[], workspaceId: string): EventRecord[] {
@@ -345,37 +429,39 @@ async function preflightProviderNetwork(
     });
   });
 
-  await ctx.serviceWorker.evaluate(() => {
-    const marker = "__openSidebarE2ENetworkProxyInstalled";
-    const scope = globalThis as typeof globalThis & Record<string, unknown>;
-    if (scope[marker]) return;
-    scope[marker] = true;
-    const nativeFetch = globalThis.fetch.bind(globalThis);
-    globalThis.fetch = async (input, init) => {
-      const request = new Request(input, init);
-      if (new URL(request.url).origin !== "https://openrouter.ai") {
-        return nativeFetch(input, init);
-      }
-      const body = ["GET", "HEAD"].includes(request.method)
-        ? undefined
-        : await request.text();
-      const result = await chrome.runtime.sendMessage({
-        type: "E2E_NETWORK_PROXY_FETCH",
-        url: request.url,
-        method: request.method,
-        headers: Object.fromEntries(request.headers.entries()),
-        body,
-      });
-      if (!result?.ok) {
-        throw new TypeError(result?.detail || "E2E network proxy failed.");
-      }
-      return new Response(result.body, {
-        status: result.status,
-        statusText: result.statusText,
-        headers: result.headers,
-      });
-    };
-  });
+  await withLiveServiceWorker(ctx, (worker) =>
+    worker.evaluate(() => {
+      const marker = "__openSidebarE2ENetworkProxyInstalled";
+      const scope = globalThis as typeof globalThis & Record<string, unknown>;
+      if (scope[marker]) return;
+      scope[marker] = true;
+      const nativeFetch = globalThis.fetch.bind(globalThis);
+      globalThis.fetch = async (input, init) => {
+        const request = new Request(input, init);
+        if (new URL(request.url).origin !== "https://openrouter.ai") {
+          return nativeFetch(input, init);
+        }
+        const body = ["GET", "HEAD"].includes(request.method)
+          ? undefined
+          : await request.text();
+        const result = await chrome.runtime.sendMessage({
+          type: "E2E_NETWORK_PROXY_FETCH",
+          url: request.url,
+          method: request.method,
+          headers: Object.fromEntries(request.headers.entries()),
+          body,
+        });
+        if (!result?.ok) {
+          throw new TypeError(result?.detail || "E2E network proxy failed.");
+        }
+        return new Response(result.body, {
+          status: result.status,
+          statusText: result.statusText,
+          headers: result.headers,
+        });
+      };
+    }),
+  );
 }
 
 async function readRun(origin: string, runId: string): Promise<ScenarioRunV2> {
@@ -412,6 +498,7 @@ export async function createModelBenchDriver(): Promise<ModelBenchDriver> {
       let beforeAllComplete = false;
       let beforeEachComplete = false;
       let workspaceId: string | null = null;
+      let appliedSettings: Record<string, string> = {};
       let approvals: { stop(): Promise<void> } | null = null;
       try {
         const create = await fetch(`${target.origin}/api/v2/modelbench/runs`, {
@@ -429,10 +516,17 @@ export async function createModelBenchDriver(): Promise<ModelBenchDriver> {
         }
         await harness.beforeEachHook();
         beforeEachComplete = true;
+        appliedSettings = await applyModelBenchSettings(harness.ctx, input);
         await preflightProviderNetwork(input.configuration.provider, harness.ctx);
         await navigateAndWait(harness.page, created.launchUrl);
-        const tabId = await getActiveTabId(harness.ctx.serviceWorker);
-        if (tabId <= 0) throw new Error("ModelBench target tab was not active.");
+        const tabId = await withLiveServiceWorker(harness.ctx, (worker) =>
+          resolveTargetTabId(worker, target.origin),
+        );
+        if (tabId <= 0) {
+          throw new Error(
+            `ModelBench target tab (${target.origin}) was not found.`,
+          );
+        }
         workspaceId = await sendUserChat(
           harness.ctx,
           input.definition.contract.prompt,
@@ -447,10 +541,14 @@ export async function createModelBenchDriver(): Promise<ModelBenchDriver> {
         }
 
         const timeoutMs = Number(process.env.MODEL_BENCH_CASE_TIMEOUT_MS ?? 300_000);
-        const outcome = await waitForOutcome(
-          harness.ctx.serviceWorker,
-          workspaceId,
-          Number.isFinite(timeoutMs) && timeoutMs > 0 ? timeoutMs : 300_000,
+        // A case can outlive the MV3 idle timer, so re-attach to a restarted
+        // worker and read the run's real outcome instead of failing the case.
+        const outcome = await withLiveServiceWorker(harness.ctx, (worker) =>
+          waitForOutcome(
+            worker,
+            workspaceId,
+            Number.isFinite(timeoutMs) && timeoutMs > 0 ? timeoutMs : 300_000,
+          ),
         );
         await approvals?.stop();
         approvals = null;
@@ -460,12 +558,16 @@ export async function createModelBenchDriver(): Promise<ModelBenchDriver> {
           requestedSeats: input.configuration.seats,
         });
         const run = await readRun(target.origin, created.runId);
-        const driverEvidence = await collectBrowserDriverEvidence({
-          worker: harness.ctx.serviceWorker,
-          sourceTabId: tabId,
-          targetOrigin: target.origin,
-          turns: traceSummary.turns,
-        });
+        const driverEvidence = await withLiveServiceWorker(
+          harness.ctx,
+          (worker) =>
+            collectBrowserDriverEvidence({
+              worker,
+              sourceTabId: tabId,
+              targetOrigin: target.origin,
+              turns: traceSummary.turns,
+            }),
+        );
         const providerFailure = providerFailureReason(outcome);
         const harnessFailure = harnessFailureReason(outcome);
         return {
@@ -499,6 +601,10 @@ export async function createModelBenchDriver(): Promise<ModelBenchDriver> {
             outcome: outcome.kind,
             runIds: evidence.runIds,
             ambiguousSeats: evidence.ambiguousSeats,
+            imageArtifacts: evidence.imageArtifacts,
+            pageUrls: evidence.pageUrls,
+            canvasObserved: evidence.canvasObserved,
+            appliedSettings,
             driverEvidence,
           },
         };
