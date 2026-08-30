@@ -9,6 +9,13 @@ export const ESCALATION_MAX_REASON_CHARS = 220;
 export const MAX_PERSISTED_MESSAGES = 200;
 export const E2E_SYNTHETIC_QUERY_PREFIX = "__e2e_pending_interaction__:";
 export const E2E_PENDING_INTERACTION_TIMEOUT_MS = 10 * 60 * 1000;
+
+/** Tasks the E2E harness synthesizes to exercise the pending-interaction path. */
+export function isSyntheticPendingInteractionTask(
+  task: OrchestratorTask,
+): boolean {
+  return task.query.startsWith(E2E_SYNTHETIC_QUERY_PREFIX);
+}
 export const LIST_DETAIL_REVIEW_SKILL_ID = "list-detail-review-loop";
 export const NAVIGATE_READ_RETURN_SKILL_ID = "navigate-read-return";
 export const MULTI_TAB_CHECKLIST_SKILL_ID = "multi-tab-checklist-workflow";

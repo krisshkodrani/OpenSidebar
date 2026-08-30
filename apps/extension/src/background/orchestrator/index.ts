@@ -251,6 +251,7 @@ import {
   DEFAULT_MAX_WORKERS,
   E2E_PENDING_INTERACTION_TIMEOUT_MS,
   E2E_SYNTHETIC_QUERY_PREFIX,
+  isSyntheticPendingInteractionTask,
   ESCALATION_MAX_REASON_CHARS,
   ESCALATION_RESPONSE_TIMEOUT_MS,
   EXHAUSTIVE_REVIEW_MAX_TOTAL_TOKENS,
@@ -962,10 +963,6 @@ export class Orchestrator {
     if (paused) sendMessage(paused);
   }
 
-  private isSyntheticPendingInteractionTask(task: OrchestratorTask): boolean {
-    return task.query.startsWith(E2E_SYNTHETIC_QUERY_PREFIX);
-  }
-
   private async finalizeSyntheticPendingInteractionTask(
     task: OrchestratorTask,
   ): Promise<void> {
@@ -1042,7 +1039,7 @@ export class Orchestrator {
   private async resumeTaskAfterInteraction(
     task: OrchestratorTask,
   ): Promise<void> {
-    if (this.isSyntheticPendingInteractionTask(task)) {
+    if (isSyntheticPendingInteractionTask(task)) {
       await this.finalizeSyntheticPendingInteractionTask(task);
       return;
     }
