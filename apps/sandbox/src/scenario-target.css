@@ -33,6 +33,7 @@ button, input, select { font: inherit; }
 .scenario-evidence dt { margin-bottom: 5px; color: #687386; font-size: .82rem; font-weight: 700; }
 .scenario-evidence dd { margin: 0; font-size: 1.05rem; }
 .scenario-visual { overflow: hidden; }
+.scenario-visual canvas { display: block; width: 100%; height: auto; border: 1px solid #dbe3ee; border-radius: 10px; background: #fff; }
 .scenario-visual-list { display: grid; gap: 10px; }
 .scenario-visual-item { display: flex; min-height: 58px; align-items: center; gap: 12px; padding: 12px 14px; border: 1px solid #e2e6eb; border-radius: 9px; }
 .scenario-visual-item > div { flex: 1; min-width: 0; }

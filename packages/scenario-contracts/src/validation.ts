@@ -59,6 +59,20 @@ export interface AttemptTelemetryV1 {
   perceptions: number;
   replans: number;
   recoveries: number;
+  screenshotsCaptured?: number;
+  screenshotsReused?: number;
+  imagePrompts?: number;
+  lowDetailImagePrompts?: number;
+  highDetailImagePrompts?: number;
+  autoDetailImagePrompts?: number;
+  pageStateCoordinatorMode?: "shadow" | "authoritative";
+  pageObservations?: number;
+  consistentPageObservations?: number;
+  inconsistentPageObservations?: number;
+  coordinatorConsistencyRetries?: number;
+  coordinatorShadowMismatches?: number;
+  actionReceipts?: number;
+  staleActionsBlocked?: number;
 }
 
 export interface BenchmarkAttemptV1 {
@@ -70,6 +84,7 @@ export interface BenchmarkAttemptV1 {
   buildRevision: string;
   startedAt: string;
   durationMs: number;
+  configurationLabel?: string;
   classification: AttemptClassification;
   scoreEligible: boolean;
   requestedSeats: Partial<Record<ModelSeat, RequestedSeatV1>>;
@@ -77,6 +92,7 @@ export interface BenchmarkAttemptV1 {
   usageByRole: Partial<Record<ModelSeat, RoleUsageV1>>;
   telemetry?: AttemptTelemetryV1;
   validation: ValidationResultV1 | null;
+  diagnostics?: JsonObject;
   retryOfAttemptId?: string;
   artifactRefs: readonly string[];
 }
