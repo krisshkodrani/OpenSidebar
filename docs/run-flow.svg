@@ -163,7 +163,7 @@
 
   <!-- ── 4-B-2: Structured Perception path ──────────────────── -->
   <rect x="594" y="784" width="440" height="80" rx="10" fill="#16072a" stroke="#9333ea60" stroke-width="1"/>
-  <text x="616" y="804" font-size="11" font-weight="600" fill="#c084fc">Structured Perception Mode  (separate VLM call)</text>
+  <text x="616" y="804" font-size="11" font-weight="600" fill="#c084fc">Structured Mode  (DOM + element summary)</text>
   <text x="616" y="820" font-size="10" fill="#94a3b8">PerceptionAgent.observe() → provider-appropriate model:</text>
   <text x="616" y="835" font-size="10" fill="#94a3b8">  Fireworks: kimi-k2p6-turbo · Moonshot: kimi-k2.6 · Groq: llama-4-scout</text>
   <text x="616" y="850" font-size="10" fill="#94a3b8">5-section prompt: LOCATION · CHANGES · BLOCKERS · VISUAL-ONLY · AFFORDANCES</text>

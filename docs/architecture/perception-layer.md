@@ -9,8 +9,8 @@ model-calling agent:
 | Module | Purpose |
 | --- | --- |
 | `screenshot-transform.ts` | RFC LP-9 pipeline — resolution/format/scale of every screenshot before it reaches the VLM (default profile: 1280-wide JPEG q85, 1568 long-edge cap, recorded `scaleFactor`), plus RFC LP-13 region crop/zoom (`computeRegionCropGeometry` / `cropScreenshotRegion`) |
-| `perception-screenshot-state.ts` | Per-run screenshot state; `getInterpretation()` always returns `null` — no perception model is ever called |
-| `warmup.ts` | Pre-captures a screenshot on side-panel open, keyed by `(tabId, fingerprint)` with a 30s staleness guard; the entry's `perception` field is always `null` |
+| `background/agent/page-state/` | Revisioned `PageStateCoordinator`: canonical per-run DOM/image observations, consistency metadata, grounded-action bases, and action receipts; it is deterministic and makes no model calls |
+| `warmup.ts` | Pre-captures a DOM/image bundle on side-panel open, keyed by `(tabId, fingerprint)` with a 30s staleness guard; the loop accepts its image only when its document epoch and viewport geometry match |
 | `element-summary.ts` | Model-free DOM → text grounding summary the executor reads on text-only turns |
 | `types.ts`, `index.ts` | Contracts and barrel |
 
@@ -43,6 +43,20 @@ model-calling agent:
 The per-turn mode decision, image-budget accounting, and mode tallies are
 recorded in session metrics and traces (`perceptionModeDecision`,
 `structuredTurnCount` / `unifiedVlTurnCount`).
+
+## Observation consistency
+
+Every accepted DOM snapshot gets a run-scoped observation revision plus the
+content document's identity and mutation epoch. A screenshot augments that
+revision only when a post-capture probe still matches the URL, epoch, viewport,
+and scroll geometry. Unchanged screenshot reuse additionally requires the same
+document basis and remains disabled for canvas pages. Capture failure or a
+second consistency mismatch produces an explicit DOM-only fallback.
+
+The coordinator is currently staged behind the internal build variable
+`VITE_PAGE_STATE_COORDINATOR_MODE=authoritative`; the normal build remains in
+shadow mode until LP-38's ModelBench adoption gates pass. This is not a user
+setting and does not change the executor's prompt or tools.
 
 ## Historical: the structured perception contract
 

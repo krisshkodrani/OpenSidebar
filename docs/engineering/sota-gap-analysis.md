@@ -36,7 +36,7 @@ User query
 | **Skill routing** | 3-layer: core workflow → enterprise packs → platform packs, with signal-gated activation | Strong — avoids prompt bloat; platform packs activate only on concrete evidence |
 | **Resource-aware parallel scheduling** | NodeParallelContract with resource hints, dependency resolution, serialization of conflicting mutators | Ahead of most open-source agents |
 | **Plan repair** | `repairPlanCoverage()` automatically patches missing return legs, missing report targets | Rare in open-source; most systems fail silently on incomplete plans |
-| **Perception** | Dual-mode: `unified_vl` (screenshot → executor directly) + `structured` (separate VLM call) with fingerprint-based caching | Matches SOTA trend toward unified multimodal |
+| **Perception** | Dual-mode: `unified_vl` (revision-bound screenshot → executor directly) + model-free `structured` DOM grounding, with fingerprint/document-basis caching | Matches SOTA trend toward unified multimodal |
 | **Durable persistence** | Full task state persisted to backend SQLite; resume from checkpoint across service worker restarts | Ahead of most browser extensions; matches enterprise requirements |
 | **Context distillation** | Trajectory summarization on escalation from executor → planner tier | Good; comparable to Anthropic's approach |
 

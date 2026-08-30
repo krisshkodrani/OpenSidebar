@@ -94,6 +94,12 @@ lifecycle, `judge_call`, completion) keyed by `runId`, stored under
 `traces/runs/` (the POST route is still `/run-traces`). The Story view joins
 the two: run events give the skeleton, session turns fill the segments.
 
+LP-38 session events include portable `page_observation` and `action_receipt`
+records. Observations carry revision, document/epoch, fingerprint, consistency,
+and screenshot artifact metadata; receipts link before/after revisions and
+observed DOM/URL/visual effects. Raw screenshot data URLs and Chrome tab IDs are
+deliberately absent from these event payloads.
+
 ### The span spine
 
 Every trace write is **dual-written to the span spine** under `traces/spans/`

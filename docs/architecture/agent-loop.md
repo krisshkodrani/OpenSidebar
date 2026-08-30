@@ -204,10 +204,18 @@ internal evaluation. All modes draw from `ProviderPool` slots.
 ## Perception
 
 The default perception mode is `unified_vl`: the screenshot goes directly to
-the executor. The structured perception path remains available for targeted
-debugging and fallback; it returns the five-section contract (`LOCATION`,
-`CHANGES`, `BLOCKERS`, `VISUAL-ONLY`, `AFFORDANCES`) with fingerprint-based
-caching. See [Perception Layer](./perception-layer.md).
+the executor. In `structured` mode no screenshot or separate perception-model
+interpretation is sent; the executor works from the DOM snapshot and element
+summary. The revisioned Page State Coordinator owns the DOM/image bundle that
+is projected into either mode. See [Perception Layer](./perception-layer.md).
+
+Before model inference, turn preparation retains the current observation basis
+in trusted runtime state. Grounded tool calls are stamped with it without
+changing their model-visible schemas. In the authoritative LP-38 path, the
+content script rejects a mutation with typed `stale_observation` when the live
+document identity or mutation epoch has changed. Post-tool refresh then emits
+an action receipt connecting the tool result to its before/after observations;
+stagnation and completion still make their own decisions from observed state.
 
 ## Navigation bridge
 
