@@ -2,6 +2,7 @@
 
 import {
   checkModelBenchCatalog,
+  checkPerceptionBenchmarkCases,
   checkRoleProbes,
   MODEL_BENCH_ACCEPTANCE_CASES,
   MODEL_BENCH_CASES,
@@ -56,6 +57,7 @@ function list(): void {
 
 function check(): void {
   const errors = checkModelBenchCatalog(MODEL_BENCH_CASES);
+  errors.push(...checkPerceptionBenchmarkCases());
   errors.push(...checkRoleProbes());
   if (MODEL_BENCH_ACCEPTANCE_CASES.length !== 1) {
     errors.push(`expected one post-headline acceptance case, received ${MODEL_BENCH_ACCEPTANCE_CASES.length}`);

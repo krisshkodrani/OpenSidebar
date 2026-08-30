@@ -4,9 +4,45 @@ import {
   extractModelBenchOutcome,
   extractStoredModelBenchOutcome,
   harnessFailureReason,
+  modelBenchSettingsPatch,
   observedTabOpeningAction,
   providerFailureReason,
 } from "./modelbench-extension-driver.js";
+
+test("maps each benchmark seat into the extension settings contract", () => {
+  assert.deepEqual(
+    modelBenchSettingsPatch({
+      attemptId: "attempt",
+      repetition: 0,
+      definition: {} as never,
+      configuration: {
+        label: "vision",
+        provider: "openrouter",
+        perceptionMode: "auto",
+        seats: {
+          executor: {
+            provider: "openrouter",
+            providerPin: "openai",
+            model: "openai/gpt-5.6-sol",
+          },
+          planner: {
+            provider: "openrouter",
+            providerPin: "z-ai",
+            model: "z-ai/glm-5.2",
+          },
+        },
+      },
+    }),
+    {
+      providerMode: "openrouter",
+      executorModel: "openai/gpt-5.6-sol",
+      plannerModel: "z-ai/glm-5.2",
+      executorProviderPin: "openai",
+      plannerProviderPin: "z-ai",
+      perceptionMode: "auto",
+    },
+  );
+});
 
 test("clarification is a structured terminal outcome", () => {
   const outcome = extractModelBenchOutcome([

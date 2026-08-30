@@ -164,6 +164,7 @@ export async function runModelBenchCase(
       buildRevision: options.buildRevision,
       startedAt,
       durationMs: result.durationMs,
+      configurationLabel: options.configuration.label,
       classification,
       scoreEligible: scoreEligible(classification),
       requestedSeats: options.configuration.seats,
@@ -171,6 +172,14 @@ export async function runModelBenchCase(
       usageByRole: result.usageByRole,
       ...(result.telemetry ? { telemetry: result.telemetry } : {}),
       validation,
+      ...(result.diagnostics || result.failure
+        ? {
+            diagnostics: {
+              ...(result.diagnostics ?? {}),
+              ...(result.failure ? { failure: result.failure } : {}),
+            },
+          }
+        : {}),
       ...(retryOfAttemptId ? { retryOfAttemptId } : {}),
       artifactRefs: result.artifactRefs,
     };
@@ -187,6 +196,8 @@ export interface RunSuiteOptions {
   driver: ModelBenchDriver;
   buildRevision: string;
   repeat: number;
+  /** First repetition label, used when a balanced A/B run is split into blocks. */
+  repetitionStart?: number;
   onAttempt?: (attempt: BenchmarkAttemptV1) => void | Promise<void>;
 }
 
@@ -194,8 +205,13 @@ export async function runModelBenchSuite(
   options: RunSuiteOptions,
 ): Promise<BenchmarkAttemptV1[]> {
   const attempts: BenchmarkAttemptV1[] = [];
+  const repetitionStart = options.repetitionStart ?? 1;
   for (const configuration of options.configurations) {
-    for (let repetition = 1; repetition <= options.repeat; repetition += 1) {
+    for (
+      let repetition = repetitionStart;
+      repetition < repetitionStart + options.repeat;
+      repetition += 1
+    ) {
       for (const definition of options.definitions) {
         const caseAttempts = await runModelBenchCase({
           definition,

@@ -113,3 +113,96 @@ test("attributes a successful pinned OpenRouter call to its enforced upstream", 
 
   assert.equal(result.resolvedSeats.executor?.resolvedProvider, "openai");
 });
+
+test("records the exact screenshot artifact and image-detail telemetry", () => {
+  const root = mkdtempSync(resolve(tmpdir(), "modelbench-evidence-"));
+  mkdirSync(resolve(root, "runs"));
+  mkdirSync(resolve(root, "screenshots"));
+  const trace = resolve(root, "session-visual.jsonl");
+  const png = Buffer.from(
+    "iVBORw0KGgoAAAANSUhEUgAAACAAAAAgCAYAAABzenr0AAAAKUlEQVR4nO3OIQEAAAACIP+f1hkWWEB6FgEBAQEBAQEBAQEBAQEBgXdgl/rw4unIZ5cAAAAASUVORK5CYII=",
+    "base64",
+  );
+  writeFileSync(resolve(root, "screenshots", "session-visual-T1.jpg"), png);
+  writeFileSync(trace, `${JSON.stringify({
+    sessionId: "session-visual",
+    turnNumber: 1,
+    snapshot: { url: "http://127.0.0.1/scenario-target.html" },
+    elements: [{ tagName: "canvas" }],
+    llmRequest: {
+      model: "vision",
+      modelTier: "executor",
+      contextMetrics: {
+        promptSections: {
+          imagePromptCount: 1,
+          highDetailImagePromptCount: 1,
+          lowDetailImagePromptCount: 0,
+          autoDetailImagePromptCount: 0,
+        },
+      },
+    },
+    llmResponse: {
+      actualModel: "vision",
+      actualProviderId: "provider",
+      usage: {},
+    },
+    perception: { screenshotStatus: "captured" },
+  })}\n`);
+
+  const result = collectModelBenchTraceEvidence({
+    traceFiles: [trace],
+    tracesRoot: root,
+    requestedSeats: {
+      executor: { provider: "provider", model: "vision" },
+    },
+  });
+
+  assert.equal(result.imageArtifacts.length, 1);
+  assert.equal(result.imageArtifacts[0]?.width, 32);
+  assert.equal(result.imageArtifacts[0]?.mimeType, "image/png");
+  assert.equal(result.imageArtifacts[0]?.detail, "high");
+  assert.equal(result.telemetry.screenshotsCaptured, 1);
+  assert.equal(result.telemetry.imagePrompts, 1);
+  assert.equal(result.telemetry.highDetailImagePrompts, 1);
+  assert.equal(result.canvasObserved, true);
+  assert.deepEqual(result.pageUrls, ["http://127.0.0.1/scenario-target.html"]);
+});
+
+test("collects page coordinator rollout and stale-action telemetry", () => {
+  const root = mkdtempSync(resolve(tmpdir(), "modelbench-evidence-"));
+  const trace = resolve(root, "session-coordinator.jsonl");
+  writeFileSync(
+    trace,
+    `${JSON.stringify({
+      events: [
+        {
+          type: "page_observation",
+          data: { coordinatorMode: "authoritative", consistency: "consistent" },
+        },
+        {
+          type: "page_observation",
+          data: { coordinatorMode: "authoritative", consistency: "inconsistent" },
+        },
+        { type: "page_observation_consistency_retry", data: {} },
+        { type: "page_observation_shadow_mismatch", data: {} },
+        { type: "action_receipt", data: { status: "stale" } },
+        { type: "stale_action_blocked", data: {} },
+      ],
+    })}\n`,
+  );
+
+  const result = collectModelBenchTraceEvidence({
+    traceFiles: [trace],
+    tracesRoot: root,
+    requestedSeats: {},
+  });
+
+  assert.equal(result.telemetry.pageStateCoordinatorMode, "authoritative");
+  assert.equal(result.telemetry.pageObservations, 2);
+  assert.equal(result.telemetry.consistentPageObservations, 1);
+  assert.equal(result.telemetry.inconsistentPageObservations, 1);
+  assert.equal(result.telemetry.coordinatorConsistencyRetries, 1);
+  assert.equal(result.telemetry.coordinatorShadowMismatches, 1);
+  assert.equal(result.telemetry.actionReceipts, 1);
+  assert.equal(result.telemetry.staleActionsBlocked, 1);
+});
