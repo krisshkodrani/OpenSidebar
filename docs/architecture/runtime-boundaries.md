@@ -65,9 +65,14 @@ Reusable background I/O should use the ports in `apps/extension/src/background/e
 
 Chrome APIs are still expected in production shell and lifecycle code until a specific area is ported. The current architecture is intentionally not a single `BrowserAdapter` tree; prefer the existing small ports over introducing a parallel abstraction.
 
+`background/agent/page-state` is reusable agent-core policy layered over these
+small ports. It owns revisioned page observations and action receipts, while
+capture and content messaging remain port operations. It does not own tab
+lifecycle, storage, planning, tool selection, or completion authority.
+
 ## Replay And Trace Data
 
-Data intended for cross-environment replay should avoid Chrome-specific identifiers and storage details. Trajectories should record tool calls, observations, step labels, and evidence in adapter-neutral terms. Chrome tab ids, `chrome.storage` keys, and extension-only lifecycle details belong in diagnostics when needed, not in replay contracts.
+Data intended for cross-environment replay should avoid Chrome-specific identifiers and storage details. Trajectories should record tool calls, revisioned observations, action receipts, step labels, and evidence in adapter-neutral terms. Observation revisions and screenshot artifact hashes are portable; raw screenshot data URLs, Chrome tab ids, `chrome.storage` keys, and extension-only lifecycle details belong in private runtime state or diagnostics, not in replay contracts.
 
 ## Deferred Work
 

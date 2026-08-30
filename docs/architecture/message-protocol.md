@@ -159,6 +159,13 @@ Service worker ↔ content script: `DOM_SNAPSHOT_REQUEST` (payload
 `SCROLL_TO_POSITION` / `SCROLL_TO_POSITION_RESPONSE`, `PRESENCE_SUSPEND` /
 `PRESENCE_RESUME`.
 
+`DOM_SNAPSHOT_RESPONSE` and `DOM_READY_ACK` include the current document UUID,
+mutation epoch, URL, viewport, and scroll geometry. Trusted background code may
+attach that basis to `TOOL_EXECUTE` or `DISMISS_MODALS`. The content script
+returns typed `stale_observation` without executing a page mutation when the
+live identity/epoch no longer matches; coordinate actions additionally compare
+viewport and scroll geometry.
+
 ### Skills — `messages/skills.ts` (9 variants)
 
 Website-skill recording and CRUD: `SKILL_RECORDING_START/STOP/CANCEL/EVENT/STATUS`,
