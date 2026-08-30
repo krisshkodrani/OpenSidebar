@@ -230,6 +230,48 @@ async function waitForLiveServiceWorker(
 }
 
 /**
+ * Chrome tears down an MV3 service worker when it goes idle, which invalidates
+ * any handle held across a long run. Puppeteer surfaces that as a detached
+ * execution context rather than as a named error type, so match on the message.
+ */
+const DETACHED_WORKER_MESSAGE =
+  /Execution context is not available in detached frame or worker|Execution context was destroyed|Target closed|Session closed|Protocol error.*(Target|Session)/i;
+
+export function isDetachedServiceWorkerError(error: unknown): boolean {
+  const message = error instanceof Error ? error.message : String(error);
+  return DETACHED_WORKER_MESSAGE.test(message);
+}
+
+/**
+ * Run `fn` against the extension service worker, re-acquiring it once if Chrome
+ * evicted the worker mid-run. The refreshed handle is written back onto `ctx`
+ * so later calls reuse it instead of the dead one.
+ *
+ * Only detached-worker failures are retried; every other error propagates
+ * untouched so real product failures are never masked as harness flake.
+ */
+export async function withLiveServiceWorker<T>(
+  ctx: ExtensionContext,
+  fn: (worker: WebWorker) => Promise<T>,
+): Promise<T> {
+  try {
+    return await fn(ctx.serviceWorker);
+  } catch (error) {
+    if (!isDetachedServiceWorkerError(error)) throw error;
+
+    const { target, worker } = await waitForLiveServiceWorker(
+      ctx.browser,
+      ctx.extensionId,
+      SERVICE_WORKER_TARGET_TIMEOUT_MS,
+    );
+    ctx.serviceWorker = worker;
+    ctx.serviceWorkerTarget = target;
+    ctx.serviceWorkerUrl = target.url();
+    return await fn(worker);
+  }
+}
+
+/**
  * Copy the e2e helper pages into the built extension. They are test
  * fixtures (chrome.runtime/storage access from a page context) and are
  * deliberately NOT part of the production build — the harness injects
