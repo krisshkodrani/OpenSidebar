@@ -2404,8 +2404,11 @@ describe("Orchestrator integration join tests", () => {
 
     expect(capturedInstructions).toHaveLength(1);
     expect(capturedInstructions[0].instruction).toContain(`Objective: ${query}`);
+    // Non-navigation tasks prefix the evidence criterion with the whole-request
+    // completion requirement (10de4eb0), so assert on the evidence clause.
+    expect(capturedInstructions[0].instruction).toContain("Success criteria:");
     expect(capturedInstructions[0].instruction).toContain(
-      "Success criteria: Page or tool output shows Warehouse Beta",
+      "Page or tool output shows Warehouse Beta",
     );
   });
 

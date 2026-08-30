@@ -46,141 +46,32 @@ import {
 } from "./provider-headers";
 import type { JudgeUsage } from "../agent/completion/judge";
 
-const OPENROUTER_BASE_URL = "https://openrouter.ai/api/v1/chat/completions";
-
-/**
- * Normalize a raw provider `TokenUsage` into the judge's camelCase `JudgeUsage`
- * and attach an estimated USD cost from the pricing table. Returns undefined
- * when the provider reported no usage (e.g. a cache-only path).
- */
-function toJudgeUsage(
-  usage: TokenUsage | undefined,
-  providerId: ProviderConfig["providerId"],
-  model: string,
-): JudgeUsage | undefined {
-  if (!usage) return undefined;
-  const costUsd = estimateCostUsd(providerId, model, usage);
-  return {
-    promptTokens: usage.prompt_tokens ?? 0,
-    completionTokens: usage.completion_tokens ?? 0,
-    totalTokens: usage.total_tokens ?? 0,
-    ...(usage.cached_tokens != null
-      ? { cachedTokens: usage.cached_tokens }
-      : {}),
-    ...(costUsd != null ? { costUsd } : {}),
-  };
-}
-
-/** Delay that can be cancelled via an AbortSignal. */
-function abortableDelay(ms: number, signal?: AbortSignal): Promise<void> {
-  if (!signal) return new Promise((r) => setTimeout(r, ms));
-  if (signal.aborted)
-    return Promise.reject(new DOMException("Aborted", "AbortError"));
-  return new Promise((resolve, reject) => {
-    const timer = setTimeout(() => {
-      signal.removeEventListener("abort", onAbort);
-      resolve();
-    }, ms);
-    const onAbort = () => {
-      clearTimeout(timer);
-      reject(new DOMException("Aborted", "AbortError"));
-    };
-    signal.addEventListener("abort", onAbort, { once: true });
-  });
-}
 
 // Seat model ids live in ./seat-models (extracted 2026-07-26 for the
 // decomposition budget); re-exported so `from "./client"` imports still work.
+import {
+  cerebrasProvider,
+  deepseekProvider,
+  fireworksProvider,
+  groqProvider,
+  moonshotProvider,
+  openAIProvider,
+  xiaomiProvider,
+} from "./provider-factories";
+
 export * from "./seat-models";
-
-/** OpenAI direct API — redirected to Fireworks */
-const OPENAI_BASE_URL =
-  "https://api.fireworks.ai/inference/v1/chat/completions";
-
-/** Groq direct API */
-const GROQ_BASE_URL = "https://api.groq.com/openai/v1/chat/completions";
-
-/** Moonshot direct API */
-const MOONSHOT_BASE_URL = "https://api.moonshot.ai/v1/chat/completions";
-
-/** Xiaomi MiMo direct API */
-const XIAOMI_BASE_URL = "https://api.xiaomimimo.com/v1/chat/completions";
-
-/** DeepSeek direct API (planner/verifier only; executor remains Fireworks). */
-const DEEPSEEK_BASE_URL = "https://api.deepseek.com/chat/completions";
-
-function openAIProvider(apiKey: string): ProviderConfig {
-  return {
-    baseUrl: OPENAI_BASE_URL,
-    apiKey: sanitizeApiKeyForHeader(apiKey, "fireworks"),
-    headers: {},
-    providerId: "fireworks",
-  };
-}
-
-function groqProvider(apiKey: string): ProviderConfig {
-  return {
-    baseUrl: GROQ_BASE_URL,
-    apiKey: sanitizeApiKeyForHeader(apiKey, "groq"),
-    headers: {},
-    providerId: "groq",
-  };
-}
-
-/** Fireworks AI direct API */
-const FIREWORKS_BASE_URL =
-  "https://api.fireworks.ai/inference/v1/chat/completions";
 
 /** Check if a model supports unified VL executor mode (vision + tool calling). */
 export const isVLCapable = isExecutorVLCapable;
 
-function fireworksProvider(apiKey: string): ProviderConfig {
-  return {
-    baseUrl: FIREWORKS_BASE_URL,
-    apiKey: sanitizeApiKeyForHeader(apiKey, "fireworks"),
-    headers: {},
-    providerId: "fireworks",
-  };
-}
+const OPENROUTER_BASE_URL = "https://openrouter.ai/api/v1/chat/completions";
 
-function moonshotProvider(apiKey: string): ProviderConfig {
-  return {
-    baseUrl: MOONSHOT_BASE_URL,
-    apiKey: sanitizeApiKeyForHeader(apiKey, "moonshot"),
-    headers: {},
-    providerId: "moonshot",
-  };
-}
 
-function xiaomiProvider(apiKey: string): ProviderConfig {
-  return {
-    baseUrl: XIAOMI_BASE_URL,
-    apiKey: sanitizeApiKeyForHeader(apiKey, "xiaomi"),
-    headers: {},
-    providerId: "xiaomi",
-  };
-}
 
-function deepseekProvider(apiKey: string): ProviderConfig {
-  return {
-    baseUrl: DEEPSEEK_BASE_URL,
-    apiKey: sanitizeApiKeyForHeader(apiKey, "deepseek"),
-    headers: {},
-    providerId: "deepseek",
-  };
-}
 
-/** Cerebras direct API (executor only; planner remains Fireworks). */
-const CEREBRAS_BASE_URL = "https://api.cerebras.ai/v1/chat/completions";
 
-function cerebrasProvider(apiKey: string): ProviderConfig {
-  return {
-    baseUrl: CEREBRAS_BASE_URL,
-    apiKey: sanitizeApiKeyForHeader(apiKey, "cerebras"),
-    headers: {},
-    providerId: "cerebras",
-  };
-}
+
+
 
 /** Options for overriding default models in LLMClient */
 export interface LLMClientOptions {
@@ -1582,4 +1473,45 @@ export class LLMClient {
       throw error;
     }
   }
+}
+
+/**
+ * Normalize a raw provider `TokenUsage` into the judge's camelCase `JudgeUsage`
+ * and attach an estimated USD cost from the pricing table. Returns undefined
+ * when the provider reported no usage (e.g. a cache-only path).
+ */
+function toJudgeUsage(
+  usage: TokenUsage | undefined,
+  providerId: ProviderConfig["providerId"],
+  model: string,
+): JudgeUsage | undefined {
+  if (!usage) return undefined;
+  const costUsd = estimateCostUsd(providerId, model, usage);
+  return {
+    promptTokens: usage.prompt_tokens ?? 0,
+    completionTokens: usage.completion_tokens ?? 0,
+    totalTokens: usage.total_tokens ?? 0,
+    ...(usage.cached_tokens != null
+      ? { cachedTokens: usage.cached_tokens }
+      : {}),
+    ...(costUsd != null ? { costUsd } : {}),
+  };
+}
+
+/** Delay that can be cancelled via an AbortSignal. */
+function abortableDelay(ms: number, signal?: AbortSignal): Promise<void> {
+  if (!signal) return new Promise((r) => setTimeout(r, ms));
+  if (signal.aborted)
+    return Promise.reject(new DOMException("Aborted", "AbortError"));
+  return new Promise((resolve, reject) => {
+    const timer = setTimeout(() => {
+      signal.removeEventListener("abort", onAbort);
+      resolve();
+    }, ms);
+    const onAbort = () => {
+      clearTimeout(timer);
+      reject(new DOMException("Aborted", "AbortError"));
+    };
+    signal.addEventListener("abort", onAbort, { once: true });
+  });
 }
