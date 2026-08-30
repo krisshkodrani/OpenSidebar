@@ -29,6 +29,12 @@ function sourceCases(role: ProbeRole) {
 function buildProbe(role: ProbeRole, index: number): RoleProbeV1 {
   const definition = sourceCases(role)[index];
   if (!definition) throw new Error(`Insufficient source cases for ${role} probes.`);
+  const publicData = definition.control.public as JsonObject;
+  const presentation = publicData.presentation &&
+    typeof publicData.presentation === "object" &&
+    !Array.isArray(publicData.presentation)
+      ? publicData.presentation as JsonObject
+      : {};
   const base = {
     schemaVersion: 1 as const,
     id: `${role}.probe-${String(index + 1).padStart(2, "0")}`,
@@ -41,6 +47,12 @@ function buildProbe(role: ProbeRole, index: number): RoleProbeV1 {
       scenarioId: definition.contract.scenarioId,
       approvalPolicy: definition.contract.approvalPolicy,
       difficulty: definition.contract.difficulty,
+      ...(role === "perception"
+        ? {
+            requiresImageArtifact: true,
+            visualCue: presentation.visualCue ?? "",
+          }
+        : {}),
     } as JsonObject,
     expected: {
       validatorId: definition.validator.id,
