@@ -47,19 +47,19 @@ export function registerCoreActionTools(toolRegistry: ToolRegistry): void {
         executeContentTool(ToolName.EXTRACT_FORM_STATE, args, tabId),
     );
 
-    toolRegistry.register(ToolName.RIGHT_CLICK, RIGHT_CLICK_DEF, (args, tabId, _signal, toolCallId) =>
-        executeContentTool(ToolName.RIGHT_CLICK, args, tabId, undefined, toolCallId),
+    toolRegistry.register(ToolName.RIGHT_CLICK, RIGHT_CLICK_DEF, (args, tabId, _signal, toolCallId, context) =>
+        executeContentTool(ToolName.RIGHT_CLICK, args, tabId, undefined, toolCallId, context?.observationBasis),
     );
 
-    toolRegistry.register(ToolName.SET_CHECKBOX, SET_CHECKBOX_DEF, (args, tabId, _signal, toolCallId) =>
-        executeContentTool(ToolName.SET_CHECKBOX, args, tabId, undefined, toolCallId),
+    toolRegistry.register(ToolName.SET_CHECKBOX, SET_CHECKBOX_DEF, (args, tabId, _signal, toolCallId, context) =>
+        executeContentTool(ToolName.SET_CHECKBOX, args, tabId, undefined, toolCallId, context?.observationBasis),
     );
 
-    toolRegistry.register(ToolName.CLICK_COORDINATES, CLICK_COORDINATES_DEF, (args, tabId, _signal, toolCallId) =>
-        executeContentTool(ToolName.CLICK_COORDINATES, args, tabId, undefined, toolCallId),
+    toolRegistry.register(ToolName.CLICK_COORDINATES, CLICK_COORDINATES_DEF, (args, tabId, _signal, toolCallId, context) =>
+        executeContentTool(ToolName.CLICK_COORDINATES, args, tabId, undefined, toolCallId, context?.observationBasis),
     );
 
-    toolRegistry.register(ToolName.UPLOAD_FILE, UPLOAD_FILE_DEF, async (args, tabId, _signal, toolCallId) => {
+    toolRegistry.register(ToolName.UPLOAD_FILE, UPLOAD_FILE_DEF, async (args, tabId, _signal, toolCallId, context) => {
         const url = typeof args.url === "string" ? args.url : "";
         if (!url) return "Error: provide a url for the file to upload.";
         const urlResult = sanitizeUrl(url);
@@ -99,6 +99,7 @@ export function registerCoreActionTools(toolRegistry: ToolRegistry): void {
                 tabId,
                 undefined,
                 toolCallId,
+                context?.observationBasis,
             );
         } catch (e: any) {
             return `Error fetching file: ${e.message}`;

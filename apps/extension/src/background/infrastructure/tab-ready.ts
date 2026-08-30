@@ -14,6 +14,7 @@ import {
   chromeContentBridgePort,
   type ContentBridgePort,
 } from "../environment";
+import type { PageDocumentState } from "../../types";
 
 /** Set of tab IDs whose content scripts have reported ready */
 const readyTabs = new Set<number>();
@@ -155,11 +156,19 @@ export async function waitForDomReady(
   tabId: number,
   options: { timeoutMs?: number; waitForElements?: boolean } = {},
   bridgePort: ContentBridgePort = chromeContentBridgePort,
-): Promise<{ waitedMs: number; elementCount: number }> {
+): Promise<{
+  waitedMs: number;
+  elementCount: number;
+  documentState?: PageDocumentState;
+}> {
   const { timeoutMs = 150, waitForElements = false } = options;
   try {
     const response = await bridgePort.sendMessage<{
-      payload?: { waitedMs: number; elementCount: number };
+      payload?: {
+        waitedMs: number;
+        elementCount: number;
+        documentState?: PageDocumentState;
+      };
     }>(tabId, {
       type: "DOM_READY_PROBE",
       requestId: crypto.randomUUID(),

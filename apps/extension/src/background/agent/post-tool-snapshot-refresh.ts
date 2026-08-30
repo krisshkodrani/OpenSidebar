@@ -1,6 +1,12 @@
-import { DomSnapshot, MessageSource, ToolName } from "../../types";
+import {
+  DomSnapshot,
+  MessageSource,
+  PageDocumentState,
+  ToolName,
+} from "../../types";
 import { waitForDomReady } from "../tab-ready";
 import type { RecentAction } from "./loop-helpers";
+import type { PageStateCoordinator } from "./page-state";
 
 export interface PostToolSnapshotRefreshHost {
   context: {
@@ -13,6 +19,11 @@ export interface PostToolSnapshotRefreshHost {
     warn(area: string, message: string, data?: Record<string, unknown>): void;
   };
   offDomainWarned: boolean;
+  perception: PageStateCoordinator;
+  acceptPageSnapshot(
+    snapshot: DomSnapshot,
+    documentState?: PageDocumentState,
+  ): void;
   recordCitation(url: string, title: string, toolName: ToolName): void;
   recordVerifiedNewUrl(): void;
   refreshPerceptionAndTriage(tabId: number): Promise<void>;
@@ -116,6 +127,7 @@ export async function refreshPostToolSnapshot(
   }
 
   if (!snap) {
+    host.perception.finalizePendingAsUncertain("post_action_observation_failed");
     return { snap: null, prevElementCount };
   }
 
@@ -127,7 +139,7 @@ export async function refreshPostToolSnapshot(
     durationMs: snapResponse.payload.durationMs,
   });
   prevElementCount = snap.elements.length;
-  host.context.setSnapshot(snap);
+  host.acceptPageSnapshot(snap, snapResponse.payload.documentState);
   host.updateMoneyTableAggregateFromSnapshot();
 
   host.traceRecorder?.recordPostToolSnapshot({
@@ -179,6 +191,11 @@ export async function refreshPostToolSnapshot(
 
   if (params.visuallyModified) {
     await host.refreshPerceptionAndTriage(params.tabId);
+  }
+
+  const settledObservation = host.perception.getCurrentObservation();
+  if (settledObservation) {
+    host.perception.finalizePendingActions(settledObservation);
   }
 
   return { snap, prevElementCount };

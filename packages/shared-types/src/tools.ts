@@ -31,6 +31,8 @@ export interface EvidenceEvent {
 export interface ToolExecutionResult {
   result: string;
   evidence?: EvidenceEvent[];
+  /** Trusted runtime classification; never part of the executor tool schema. */
+  errorCode?: "stale_observation";
 }
 
 export function isTrustedEvidence(event: unknown): event is EvidenceEvent {

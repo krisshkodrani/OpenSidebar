@@ -157,6 +157,14 @@ export class ContextManager {
     this.screenshotDataUrl = dataUrl;
   }
 
+  public getScreenshotDetailForExecutor(): "low" | "high" {
+    const url = this.snapshot?.url;
+    const urlChanged = Boolean(url && this.history.length > 0 && !this.history.some(
+      (message) => typeof message.content === "string" && message.content.includes(url),
+    ));
+    return this.isFirstTurn || urlChanged ? "high" : "low";
+  }
+
   /**
    * Stage (or clear) an inspect_region crop for the executor's next prompt.
    * Lives outside history like the screenshot: it survives intra-turn LLM
@@ -653,15 +661,6 @@ export class ContextManager {
 
     // VL executor mode: inject screenshot as a user message before recent history
     if (this.screenshotDataUrl) {
-      const isFirstTurnOrUrlChange =
-        this.isFirstTurn ||
-        (this.snapshot?.url &&
-          this.history.length > 0 &&
-          !this.history.some(
-            (m) =>
-              typeof m.content === "string" &&
-              m.content.includes(this.snapshot!.url),
-          ));
       finalMessages.push({
         role: "user",
         content: [
@@ -669,7 +668,7 @@ export class ContextManager {
             type: "image_url",
             image_url: {
               url: this.screenshotDataUrl,
-              detail: isFirstTurnOrUrlChange ? "high" : "low",
+              detail: this.getScreenshotDetailForExecutor(),
             },
           },
           { type: "text", text: "Current page screenshot." },
