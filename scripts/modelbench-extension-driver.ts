@@ -336,7 +336,7 @@ function terminalOutcome(outcome: DriverOutcome, run: ScenarioRunV2): string | u
 
 function providerError(error: unknown): boolean {
   const detail = error instanceof Error ? error.message : String(error);
-  return /api key|provider|rate limit|(?:http(?: status)?|status|error|response)\b[^\r\n]{0,12}\b429\b|\b429\s+(?:too many requests|rate limit)|quota|model unavailable|failed to fetch/i.test(
+  return /api key|provider|rate limit|(?:http(?: status)?|status|error|response)\b[^\r\n]{0,12}\b429\b|\b429\s+(?:too many requests|rate limit)|quota|model unavailable|failed to fetch|insufficient\s+\w*\s*credit|\bcredits?\s+(?:exhausted|remaining|required)|payment required|\b402\b/i.test(
     detail,
   );
 }

@@ -183,3 +183,38 @@ test("does not discard a completed task that recovered from a bridge disconnect"
   ]);
   assert.equal(outcome && harnessFailureReason(outcome), undefined);
 });
+
+test("billing exhaustion is a provider failure, not a model failure", () => {
+  // Scored as valid_model_failure before this, so a drained account read as the
+  // model getting 13 straight answers wrong. It silently poisons pass@1.
+  const outcome = {
+    kind: "completion" as const,
+    events: [],
+    event: {
+      type: "TASK_COMPLETION",
+      status: "failed",
+      payload: {
+        summary:
+          "Insufficient OpenRouter credits (class=unknown; retriesUsed=1; maxRetries=1; source=executor)",
+      },
+    },
+  };
+  assert.match(
+    providerFailureReason(outcome) ?? "",
+    /Insufficient OpenRouter credits/,
+  );
+  assert.equal(harnessFailureReason(outcome), undefined);
+});
+
+test("a genuine wrong answer is still a model failure", () => {
+  const outcome = {
+    kind: "completion" as const,
+    events: [],
+    event: {
+      type: "TASK_COMPLETION",
+      status: "completed",
+      payload: { summary: "The inventory count is 214." },
+    },
+  };
+  assert.equal(providerFailureReason(outcome), undefined);
+});
