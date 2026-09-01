@@ -248,9 +248,45 @@ describe("captureVLExecutorScreenshot (LP-17b CM-5)", () => {
 
     await captureVLExecutorScreenshot(h.host, 7, state);
 
+    // The retry still runs, but a page that repaints on every capture never
+    // settles. Delivering the marked frame beats blinding the executor.
+    expect(h.captureCalls).toHaveLength(2);
+    expect(h.getExecutorScreenshot()).not.toBeNull();
+    expect(state.lastImage).not.toBeNull();
+  });
+
+  test("falls back to DOM when the second capture crosses a navigation", async () => {
+    const snap = snapshot();
+    const state = createVLScreenshotState();
+    const h = makeHost(snap);
+    const stateAt = (
+      mutationEpoch: number,
+      url: string = snap.url,
+    ): PageDocumentState => ({
+      documentInstanceId: "doc-test",
+      mutationEpoch,
+      url,
+      viewport: { width: 1280, height: 720 },
+      scroll: { x: 0, y: 0 },
+    });
+    let probe = 1;
+    h.host.probeDocumentState = vi.fn(async () =>
+      stateAt(++probe, "https://example.test/elsewhere"),
+    );
+    h.host.refreshSnapshot = vi.fn(async () => {
+      h.host.perception.acceptDomObservation({
+        snapshot: snap,
+        documentState: stateAt(2),
+      });
+      return snap.elements.length;
+    });
+
+    await captureVLExecutorScreenshot(h.host, 7, state);
+
+    // The frame depicts a different page, so it is misleading, not merely
+    // stale: the DOM-only fallback still applies here.
     expect(h.captureCalls).toHaveLength(2);
     expect(h.getExecutorScreenshot()).toBeNull();
-    expect(state.lastImage).toBeNull();
   });
 
   test("shadow mode records a mismatch without changing executor behavior", async () => {

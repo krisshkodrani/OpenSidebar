@@ -47,6 +47,42 @@ export function pageDocumentStatesMatch(
   );
 }
 
+/**
+ * How far a captured frame drifted from the observation it was captured against.
+ *
+ * `epoch_only` means the page merely repainted — a live badge, a canvas
+ * animation, a ticking clock. The frame is microseconds old but still depicts
+ * this document at this scroll position, so it remains usable evidence.
+ *
+ * `invalidating` means the frame no longer depicts what the caller thinks it
+ * does: a different document, a different URL, or a different viewport/scroll.
+ * Only that case makes the image actively misleading.
+ */
+export type DocumentStateMismatch = "none" | "epoch_only" | "invalidating";
+
+export function classifyDocumentStateMismatch(
+  expected: PageDocumentState,
+  actual: PageDocumentState,
+  options: { requireGeometryMatch?: boolean } = {},
+): DocumentStateMismatch {
+  if (
+    expected.documentInstanceId !== actual.documentInstanceId ||
+    expected.url !== actual.url
+  ) {
+    return "invalidating";
+  }
+  if (
+    options.requireGeometryMatch &&
+    (expected.viewport.width !== actual.viewport.width ||
+      expected.viewport.height !== actual.viewport.height ||
+      expected.scroll.x !== actual.scroll.x ||
+      expected.scroll.y !== actual.scroll.y)
+  ) {
+    return "invalidating";
+  }
+  return expected.mutationEpoch === actual.mutationEpoch ? "none" : "epoch_only";
+}
+
 function basisFrom(
   revision: number,
   snapshot: DomSnapshot,
@@ -212,7 +248,11 @@ export class PageStateCoordinator {
     baseRevision: number;
     image: PageImageObservation;
     postCaptureState: PageDocumentState;
-  }): { observation: PageObservation; consistent: boolean } {
+  }): {
+    observation: PageObservation;
+    consistent: boolean;
+    mismatch: DocumentStateMismatch;
+  } {
     const base = this.current;
     if (!base || base.basis.observationRevision !== input.baseRevision) {
       throw new Error("Cannot attach an image to a superseded page observation");
@@ -224,9 +264,12 @@ export class PageStateCoordinator {
       viewport: base.basis.viewport,
       scroll: base.basis.scroll,
     };
-    const consistent = pageDocumentStatesMatch(expected, input.postCaptureState, {
-      requireGeometryMatch: true,
-    });
+    const mismatch = classifyDocumentStateMismatch(
+      expected,
+      input.postCaptureState,
+      { requireGeometryMatch: true },
+    );
+    const consistent = mismatch === "none";
     const revision = ++this.revision;
     const observation: PageObservation = {
       ...base,
@@ -235,16 +278,25 @@ export class PageStateCoordinator {
         observationRevision: revision,
       },
       capturedAt: input.image.capturedAt,
-      ...(consistent ? { image: input.image } : {}),
+      // A frame is retained unless it depicts a different document, URL, or
+      // viewport. A bare repaint leaves the image usable — and a continuously
+      // animating page can never produce an epoch-stable frame, so dropping it
+      // there would blind the executor on exactly the pages needing vision.
+      ...(mismatch === "invalidating" ? {} : { image: input.image }),
       consistency: consistent ? "consistent" : "inconsistent",
       ...(consistent
         ? {}
-        : { consistencyReason: "page_changed_during_multimodal_capture" }),
+        : {
+            consistencyReason:
+              mismatch === "invalidating"
+                ? "page_replaced_during_multimodal_capture"
+                : "page_repainted_during_multimodal_capture",
+          }),
     };
     this.current = observation;
     this.observations.set(revision, observation);
     this.traceSink?.recordEvent("page_observation", traceObservation(observation));
-    return { observation, consistent };
+    return { observation, consistent, mismatch };
   }
 
   recordActionReceipt(input: {

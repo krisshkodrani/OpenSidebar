@@ -337,7 +337,9 @@ parking the RFC. Do not weaken the gates by special-casing benchmark tasks.
 ## Verification
 
 - Unit tests for observation revision advancement, snapshot/screenshot
-  consistency, unchanged-page reuse, canvas reuse exclusion, DOM-only fallback,
+  consistency, unchanged-page reuse, canvas reuse exclusion, graded image
+  consistency (repaint delivered and marked, invalidating change falls back to
+  DOM-only),
   capture failure, and single-retry behavior.
 - Content-protocol tests for document identity, mutation epoch advancement,
   exclusion of OpenSidebar-owned mutations, navigation reset, and stale action
@@ -462,6 +464,40 @@ Evidence required before merge:
 Next action:
 
 - Implement
+
+## Amendment 2026-09-01 — image consistency is graded, not binary
+
+The first implementation treated any `mutationEpoch` change during capture as
+grounds to withhold the screenshot, falling back to DOM-only after a single
+retry. The diagnostic A/B showed that this blinds the executor on exactly the
+pages where vision is the task.
+
+The mutation observer advances the epoch on any page-owned repaint, so a page
+that animates continuously — a live status badge, an animated canvas tooltip —
+can never produce an epoch-stable frame. Both retries always fail and the
+executor receives no image on any turn. In `authoritative-r1`,
+`monitoring.detect-visual-state-change` recorded zero image artifacts with
+`canvasObserved: false`, and `analytics.inspect-canvas-tooltip` burned nine
+artifacts and five times the wall time before going partial. Both pass in
+`shadow`, where the same mismatch is only recorded.
+
+Consistency is therefore graded rather than binary:
+
+- `epoch_only` — the page repainted. The frame is microseconds stale but still
+  depicts this document at this scroll position, so it is delivered and marked
+  `inconsistent` with reason `page_repainted_during_multimodal_capture`.
+- `invalidating` — the frame depicts a different document, URL, or
+  viewport/scroll. It is misleading rather than stale, so the DOM-only fallback
+  still applies, with reason `page_replaced_during_multimodal_capture`.
+
+The single retry is unchanged: one attempt is still made to catch a settled
+frame before a marked one is delivered.
+
+This restores the RFC's stated non-goal — the contract "detects and reports
+inconsistency rather than claiming browser-level transactions" — which
+withholding the pixels had quietly violated. Stale-action rejection is
+unaffected: it is grounded in the DOM basis and the action lifecycle, not in
+whether an image was attached.
 
 ## Implementation status
 
