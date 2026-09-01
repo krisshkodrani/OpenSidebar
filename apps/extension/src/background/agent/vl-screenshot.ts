@@ -124,6 +124,52 @@ function clearScreenshotProjection(host: VLScreenshotHost): void {
   host.context.setPageInterpretation(null);
 }
 
+/**
+ * Deliver a frame the page repainted out from under, after the single retry
+ * failed to catch a settled one.
+ *
+ * A continuously animating page never settles, so withholding here would leave
+ * the executor blind on every turn. The frame still depicts this document at
+ * this scroll position; it is only microseconds stale. The mismatch is recorded
+ * so traces and the verifier can weigh it. Frames that depict a *different*
+ * document, URL, or viewport never reach this path — those still fall back to
+ * DOM-only, because there the image is actively misleading rather than stale.
+ */
+function deliverInconsistentFrame(
+  host: VLScreenshotHost,
+  state: VLScreenshotState,
+  image: PageImageObservation,
+  currentDocumentState: PageDocumentState | undefined,
+  info: {
+    source: "fresh_screenshot" | "reused_screenshot";
+    attempts: number;
+    reason?: string;
+    cached: boolean;
+  },
+): void {
+  state.lastFingerprint = image.sha256;
+  state.lastImage = image;
+  state.lastDocumentState = currentDocumentState ?? null;
+  applyScreenshotProjection(host, image, {
+    meta: {
+      mode: "vl_screenshot_only",
+      source: info.cached ? "cached" : "fresh",
+      freshnessReason: info.cached ? "fingerprint_cache_hit" : "vl_screenshot",
+      screenshotStatus: info.cached ? "cached" : "captured",
+    },
+    stats: {
+      model: "none (unified VL)",
+      durationMs: 0,
+      cached: info.cached,
+    },
+  });
+  host.traceRecorder?.recordEvent("page_observation_inconsistent_delivered", {
+    source: info.source,
+    attempts: info.attempts,
+    ...(info.reason ? { reason: info.reason } : {}),
+  });
+}
+
 /** Capture (or safely reuse) the screenshot for VL executor injection. */
 export async function captureVLExecutorScreenshot(
   host: VLScreenshotHost,
@@ -219,15 +265,26 @@ export async function captureVLExecutorScreenshot(
       });
       return;
     }
-    clearScreenshotProjection(host);
     host.traceRecorder?.recordEvent("page_observation_consistency_retry", {
       attempt: attempt + 1,
       reason: accepted.observation.consistencyReason,
       source: "reused_screenshot",
     });
     if (attempt === 0 && (await host.refreshSnapshot(tabId)) >= 0) {
+      clearScreenshotProjection(host);
       await captureVLExecutorScreenshot(host, tabId, state, attempt + 1);
+      return;
     }
+    if (accepted.mismatch === "invalidating") {
+      clearScreenshotProjection(host);
+      return;
+    }
+    deliverInconsistentFrame(host, state, image, currentDocumentState, {
+      source: "reused_screenshot",
+      attempts: attempt + 1,
+      reason: accepted.observation.consistencyReason,
+      cached: true,
+    });
     return;
   }
 
@@ -306,10 +363,21 @@ export async function captureVLExecutorScreenshot(
         attempt: attempt + 1,
         reason: accepted.observation.consistencyReason,
       });
-      clearScreenshotProjection(host);
       if (attempt === 0 && (await host.refreshSnapshot(tabId)) >= 0) {
+        clearScreenshotProjection(host);
         await captureVLExecutorScreenshot(host, tabId, state, attempt + 1);
+        return;
       }
+      if (accepted.mismatch === "invalidating") {
+        clearScreenshotProjection(host);
+        return;
+      }
+      deliverInconsistentFrame(host, state, image, currentDocumentState, {
+        source: "fresh_screenshot",
+        attempts: attempt + 1,
+        reason: accepted.observation.consistencyReason,
+        cached: false,
+      });
       return;
     }
 

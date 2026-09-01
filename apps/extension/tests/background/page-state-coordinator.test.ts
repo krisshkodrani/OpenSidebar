@@ -71,7 +71,7 @@ describe("PageStateCoordinator", () => {
     expect(dom.image).toBeUndefined();
   });
 
-  test("does not attach screenshot bytes when capture crosses a mutation", async () => {
+  test("keeps screenshot bytes when the page only repainted during capture", async () => {
     const coordinator = new PageStateCoordinator();
     const dom = coordinator.acceptDomObservation({
       snapshot: snapshot(),
@@ -83,13 +83,59 @@ describe("PageStateCoordinator", () => {
       postCaptureState: documentState({ mutationEpoch: 4 }),
     });
 
+    // A repaint leaves the frame microseconds stale but still truthful about
+    // this document at this scroll position. Continuously animating pages never
+    // produce an epoch-stable frame, so dropping it would blind the executor.
     expect(result.consistent).toBe(false);
+    expect(result.mismatch).toBe("epoch_only");
     expect(result.observation.consistency).toBe("inconsistent");
     expect(result.observation.consistencyReason).toBe(
-      "page_changed_during_multimodal_capture",
+      "page_repainted_during_multimodal_capture",
+    );
+    expect(result.observation.image).toBeDefined();
+    expect(coordinator.getLastScreenshot()).not.toBeNull();
+  });
+
+  test("drops screenshot bytes when capture crosses a navigation", async () => {
+    const coordinator = new PageStateCoordinator();
+    const dom = coordinator.acceptDomObservation({
+      snapshot: snapshot(),
+      documentState: documentState(),
+    });
+    const result = coordinator.acceptImageObservation({
+      baseRevision: dom.basis.observationRevision,
+      image: await image(),
+      postCaptureState: documentState({
+        mutationEpoch: 4,
+        url: "https://example.test/somewhere-else",
+      }),
+    });
+
+    // Here the frame depicts a different page, so it is misleading rather than
+    // stale: DOM-only fallback still applies.
+    expect(result.consistent).toBe(false);
+    expect(result.mismatch).toBe("invalidating");
+    expect(result.observation.consistencyReason).toBe(
+      "page_replaced_during_multimodal_capture",
     );
     expect(result.observation.image).toBeUndefined();
     expect(coordinator.getLastScreenshot()).toBeNull();
+  });
+
+  test("drops screenshot bytes when the viewport scrolled during capture", async () => {
+    const coordinator = new PageStateCoordinator();
+    const dom = coordinator.acceptDomObservation({
+      snapshot: snapshot(),
+      documentState: documentState(),
+    });
+    const result = coordinator.acceptImageObservation({
+      baseRevision: dom.basis.observationRevision,
+      image: await image(),
+      postCaptureState: documentState({ scroll: { x: 0, y: 640 } }),
+    });
+
+    expect(result.mismatch).toBe("invalidating");
+    expect(result.observation.image).toBeUndefined();
   });
 
   test("binds actions to the current revision and records observed effects", async () => {
