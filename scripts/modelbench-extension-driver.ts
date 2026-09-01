@@ -598,6 +598,10 @@ export async function createModelBenchDriver(): Promise<ModelBenchDriver> {
           diagnostics: {
             runId: created.runId,
             workspaceId,
+            // Recorded so an A/B cannot silently compare arms that were given
+            // different time budgets; this is env-driven and was previously
+            // invisible in the attempt record.
+            caseTimeoutMs: timeoutMs,
             outcome: outcome.kind,
             runIds: evidence.runIds,
             ambiguousSeats: evidence.ambiguousSeats,
