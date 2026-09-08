@@ -1,11 +1,20 @@
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { createRoot } from "react-dom/client";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import {
-  DASHBOARD_THRESHOLD_DEFAULT_STATE,
-  MESSAGE_WATCH_DEFAULT_STATE,
-  PRICE_WATCH_DEFAULT_STATE,
-  REGISTRATION_DEFAULT_STATE,
+  Badge,
+  Box,
+  Button,
+  Container,
+  Flex,
+  Heading,
+  Input,
+  NativeSelect,
+  SimpleGrid,
+  Stack,
+  Text,
+} from "@chakra-ui/react";
+import {
   RESTOCK_DEFAULT_STATE,
   defaultState,
   reduceRestockState,
@@ -16,15 +25,13 @@ import {
   type SandboxRun,
   type ScenarioDefinition,
 } from "@sandbox-contracts";
-import { loadTargetRun, submitTargetAction } from "./target-api";
 import { controlApi } from "./control-api";
 import { ControlProviders } from "./app/control-providers";
-import "./styles.css";
-import "./guide.css";
 import { AccountPage } from "./account";
 import { DashboardPage } from "./dashboard";
 import { AppShell } from "./app/AppShell";
 import { ViewerPage } from "./viewer";
+import { Notice, PageHeader, SurfaceCard } from "./app/ui";
 
 // The control-session cookie is intentionally host-only. Keep the Control
 // Center on its canonical host so a visit through www cannot create a separate
@@ -107,15 +114,21 @@ function useRuns() {
     enabled: remote,
     refetchInterval: remote ? 1_000 : false,
   });
-  const runs = remote ? (runsQuery.data ?? []) : localRuns;
-  const setRuns = (update: (current: SandboxRun[]) => SandboxRun[]) => {
-    if (remote)
-      queryClient.setQueryData<SandboxRun[]>(
-        ["playground", "runs"],
-        (current) => update(current ?? []),
-      );
-    else setLocalRuns(update);
-  };
+  const runs = useMemo(
+    () => (remote ? (runsQuery.data ?? []) : localRuns),
+    [localRuns, remote, runsQuery.data],
+  );
+  const setRuns = useCallback(
+    (update: (current: SandboxRun[]) => SandboxRun[]) => {
+      if (remote)
+        queryClient.setQueryData<SandboxRun[]>(
+          ["playground", "runs"],
+          (current) => update(current ?? []),
+        );
+      else setLocalRuns(update);
+    },
+    [queryClient, remote],
+  );
   useEffect(() => {
     if (!remote)
       localStorage.setItem("opensidebar:sandbox:runs", JSON.stringify(runs));
@@ -162,7 +175,7 @@ function useRuns() {
       500,
     );
     return () => clearInterval(timer);
-  }, [remote]);
+  }, [remote, setRuns]);
   const create = async (scenarioId: SandboxRun["scenarioId"]) => {
     if (remote) {
       const run = await controlApi.createRun(scenarioId);
@@ -233,22 +246,39 @@ function ScenarioCard({
 }) {
   const available = enabled.has(scenario.id);
   return (
-    <article className="card scenario-card">
-      <span className="eyebrow">{scenario.category}</span>
-      <h2>{scenario.title}</h2>
-      <p>{scenario.description}</p>
-      <div className="meta">
-        <span>{scenario.difficulty}</span>
-        <span>{scenario.duration}</span>
-      </div>
-      <button
-        className="btn btn-primary"
+    <SurfaceCard
+      as="article"
+      display="flex"
+      flexDirection="column"
+      minH="245px"
+    >
+      <Text
+        color="accent"
+        textTransform="uppercase"
+        fontSize="xs"
+        letterSpacing="wide"
+        fontWeight="700"
+      >
+        {scenario.category}
+      </Text>
+      <Heading size="md" mt="2">
+        {scenario.title}
+      </Heading>
+      <Text color="muted" mt="3" flex="1">
+        {scenario.description}
+      </Text>
+      <Flex gap="2" my="4">
+        <Badge>{scenario.difficulty}</Badge>
+        <Badge>{scenario.duration}</Badge>
+      </Flex>
+      <Button
+        colorPalette="blue"
         disabled={!available || starting}
         onClick={onStart}
       >
         {starting ? "Starting…" : available ? "Start scenario" : "Coming soon"}
-      </button>
-    </article>
+      </Button>
+    </SurfaceCard>
   );
 }
 
@@ -301,58 +331,75 @@ const targetSteps = [
 function SandboxGuide({ surface }: { surface: "control" | "target" }) {
   const steps = surface === "control" ? controlSteps : targetSteps;
   return (
-    <section className="guide" aria-labelledby={`${surface}-guide-title`}>
-      <div className="guide-heading">
-        <div>
-          <span className="eyebrow">Step by step</span>
-          <h2 id={`${surface}-guide-title`}>How to use the Playground</h2>
-        </div>
-        <p>
+    <SurfaceCard
+      as="section"
+      mt="10"
+      aria-labelledby={`${surface}-guide-title`}
+    >
+      <SimpleGrid columns={{ base: 1, md: 2 }} gap="6" alignItems="end">
+        <Box>
+          <Text
+            color="accent"
+            textTransform="uppercase"
+            fontSize="xs"
+            letterSpacing="wide"
+            fontWeight="700"
+          >
+            How it works
+          </Text>
+          <Heading id={`${surface}-guide-title`} size="lg" mt="2">
+            Three simple steps
+          </Heading>
+        </Box>
+        <Text color="muted">
           <strong>Two separate rooms:</strong> you operate the private Control
           Center; the agent operates only the target site.
-        </p>
-      </div>
-      <ol className="step-list">
-        {steps.map((step, index) => (
-          <li className="step" key={step.title}>
-            <span className="step-number">{index + 1}</span>
-            <div>
-              <h3>{step.title}</h3>
-              <p>{step.body}</p>
-            </div>
-          </li>
-        ))}
-      </ol>
-    </section>
-  );
-}
-
-function TargetLanding() {
-  return (
-    <main className="empty target-landing">
-      <span className="eyebrow">OpenSidebar Playground · Target site</span>
-      <h1>This is the agent&apos;s side of the Playground.</h1>
-      <p>
-        A scenario appears here only after you create it in the private Control
-        Center. OpenSidebar can interact with this target, but it cannot see the
-        controls used to change the scenario.
-      </p>
-      <div className="landing-actions">
-        <a
-          className="btn btn-primary"
-          href="https://opensidebar.com/playground"
-        >
-          Open Control Center
-        </a>
-        <a
-          className="btn btn-ghost"
-          href="https://opensidebar.com/ideas/the-sandbox-needs-two-rooms"
-        >
-          Read the design idea
-        </a>
-      </div>
-      <SandboxGuide surface="target" />
-    </main>
+        </Text>
+      </SimpleGrid>
+      <SimpleGrid
+        as="ol"
+        columns={{ base: 1, md: 3 }}
+        gap="3"
+        mt="6"
+        listStyleType="none"
+        p="0"
+      >
+        {steps.map((step, index) =>
+          index < 3 ? (
+            <Flex
+              as="li"
+              key={step.title}
+              borderWidth="1px"
+              borderColor="line"
+              borderRadius="card"
+              p="4"
+              gap="3"
+              align="start"
+            >
+              <Flex
+                flex="0 0 auto"
+                w="7"
+                h="7"
+                borderRadius="full"
+                bg="surfaceMuted"
+                color="accent"
+                align="center"
+                justify="center"
+                fontWeight="700"
+              >
+                {index + 1}
+              </Flex>
+              <Box minW="0">
+                <Text fontWeight="700">{step.title}</Text>
+                <Text mt="1" color="muted" fontSize="sm">
+                  {step.body}
+                </Text>
+              </Box>
+            </Flex>
+          ) : null,
+        )}
+      </SimpleGrid>
+    </SurfaceCard>
   );
 }
 
@@ -399,83 +446,93 @@ function SignIn() {
     }
   };
   return (
-    <main className="empty signin-shell">
-      <span className="eyebrow">
-        OpenSidebar Playground · Private Control Center
-      </span>
-      <h1>
-        {challengeId
-          ? "Enter your one-time code."
-          : "Set up the room behind the experiment."}
-      </h1>
-      <p>
-        We’ll send a one-time code. No password is created or stored in this
-        app.
-      </p>
-      <label>
-        Email{" "}
-        <input
-          type="email"
-          value={email}
-          autoComplete="email"
-          placeholder="you@company.com"
-          disabled={Boolean(challengeId) || busy}
-          onChange={(e) => setEmail(e.target.value)}
-          required
-        />
-      </label>
-      {challengeId && (
-        <label>
-          Sign-in code{" "}
-          <input
-            inputMode="numeric"
-            autoComplete="one-time-code"
-            pattern="[0-9]{6,8}"
-            placeholder="Enter code"
-            value={code}
-            disabled={busy}
-            onChange={(e) =>
-              setCode(e.target.value.replace(/\D/g, "").slice(0, 8))
-            }
-            required
-          />
-        </label>
-      )}
-      {message && (
-        <p className="signin-message" role="status">
-          {message}
-        </p>
-      )}
-      <div className="actions">
-        <button
-          className="btn btn-primary"
-          disabled={busy}
-          onClick={() => void (challengeId ? verify() : send())}
+    <Container as="main" maxW="xl" py={{ base: "12", md: "24" }} px="5">
+      <SurfaceCard>
+        <Text
+          color="accent"
+          textTransform="uppercase"
+          fontSize="xs"
+          letterSpacing="wide"
+          fontWeight="700"
         >
-          {busy
-            ? "Working…"
-            : challengeId
-              ? "Verify and enter Playground"
-              : "Send sign-in code"}
-        </button>
-        {challengeId && (
-          <button
-            className="btn btn-ghost"
-            disabled={busy}
-            onClick={() => {
-              setChallengeId(null);
-              setCode("");
-              setMessage("Enter your email to request a new code.");
-            }}
-          >
-            Use another email or request a new code
-          </button>
-        )}
-        <a className="btn btn-ghost" href="/playground">
-          Back to Playground
-        </a>
-      </div>
-    </main>
+          OpenSidebar Playground · Control Center
+        </Text>
+        <Heading size="2xl" mt="3" overflowWrap="anywhere">
+          {challengeId
+            ? "Enter your one-time code."
+            : "Set up the room behind the experiment."}
+        </Heading>
+        <Text color="muted" mt="3">
+          We’ll send a one-time code. No password is created or stored in this
+          app.
+        </Text>
+        <Stack mt="6" gap="4">
+          <Box as="label" fontWeight="600">
+            <Text mb="2" fontSize="sm">
+              Email
+            </Text>
+            <Input
+              type="email"
+              value={email}
+              autoComplete="email"
+              placeholder="you@company.com"
+              disabled={Boolean(challengeId) || busy}
+              onChange={(e) => setEmail(e.target.value)}
+              required
+            />
+          </Box>
+          {challengeId && (
+            <Box as="label" fontWeight="600">
+              <Text mb="2" fontSize="sm">
+                Sign-in code
+              </Text>
+              <Input
+                inputMode="numeric"
+                autoComplete="one-time-code"
+                pattern="[0-9]{6,8}"
+                placeholder="Enter code"
+                value={code}
+                disabled={busy}
+                onChange={(e) =>
+                  setCode(e.target.value.replace(/\D/g, "").slice(0, 8))
+                }
+                required
+              />
+            </Box>
+          )}
+          {message && <Notice>{message}</Notice>}
+          <Stack gap="2">
+            <Button
+              colorPalette="blue"
+              disabled={busy}
+              onClick={() => void (challengeId ? verify() : send())}
+            >
+              {busy
+                ? "Working…"
+                : challengeId
+                  ? "Verify and enter Playground"
+                  : "Send sign-in code"}
+            </Button>
+            {challengeId && (
+              <Button
+                variant="ghost"
+                disabled={busy}
+                onClick={() => {
+                  setChallengeId(null);
+                  setCode("");
+                  setMessage("Enter your email to request a new code.");
+                }}
+              >
+                Use another email or request a new code
+              </Button>
+            )}
+            <Button asChild variant="ghost">
+              <a href="/app/playground">Back to Playground</a>
+            </Button>
+          </Stack>
+        </Stack>
+      </SurfaceCard>
+    </Container>
   );
 }
 
@@ -695,39 +752,62 @@ function ControlCenter() {
   };
   if (!run || creatingRun)
     return (
-      <main className="empty">
-        <span className="eyebrow">OpenSidebar Playground</span>
-        <h1>
-          {creatingRun
-            ? "Choose a new scenario."
-            : "Try your browser agent in a safe, realistic environment."}
-        </h1>
-        <p>
-          {creatingRun
-            ? "Create a separate run with its own hidden controls and target session."
-            : "You control the change; OpenSidebar sees only the target page."}
-        </p>
-        {!remote && <p className="muted">Local playground mode</p>}
+      <Container
+        as="main"
+        maxW="6xl"
+        py={{ base: "10", md: "16" }}
+        px={{ base: "5", md: "8" }}
+      >
+        <PageHeader
+          eyebrow="OpenSidebar Playground"
+          title={
+            creatingRun
+              ? "Choose a new scenario."
+              : "Try your browser agent in a safe, realistic environment."
+          }
+          description={
+            creatingRun
+              ? "Create a separate run with its own hidden controls and target session."
+              : "You control the conditions in the Control Center. OpenSidebar sees and operates only the isolated target site."
+          }
+          action={
+            remote && !authenticated ? (
+              <Button colorPalette="blue" size="lg" onClick={controlApi.login}>
+                Sign in with email
+              </Button>
+            ) : undefined
+          }
+        />
+        {!remote && (
+          <Text color="muted" mt="4">
+            Local Playground mode
+          </Text>
+        )}
         {remote && !authenticated && (
-          <button className="btn btn-ghost" onClick={controlApi.login}>
-            Sign in with email
-          </button>
+          <Text color="muted" mt="4">
+            Sign in to create scenarios and control their hidden state.
+          </Text>
         )}
         {remote && authenticated && (
-          <p className="notice">
-            Signed in as <strong>{signedInEmail ?? "your email"}</strong>. Your
-            Playground access is available across all scenarios for 90 days.
-          </p>
+          <Box mt="6">
+            <Notice>
+              Signed in as <strong>{signedInEmail ?? "your email"}</strong>.
+              Your Playground access is available across all scenarios for 90
+              days.
+            </Notice>
+          </Box>
         )}
         {startError && (
-          <p className="notice" role="alert">
-            {startError}
-          </p>
+          <Box mt="6">
+            <Notice role="alert" tone="danger">
+              {startError}
+            </Notice>
+          </Box>
         )}
         {!creatingRun && <SandboxGuide surface="control" />}
-        <section className="catalog">
-          <h2>Scenarios</h2>
-          <div className="grid">
+        <Box as="section" mt={{ base: "12", md: "16" }}>
+          <Heading size="lg">Scenarios</Heading>
+          <SimpleGrid columns={{ base: 1, sm: 2, xl: 3 }} gap="4" mt="5">
             {scenarios.map((scenario) => (
               <ScenarioCard
                 key={scenario.id}
@@ -736,17 +816,18 @@ function ControlCenter() {
                 starting={startingScenario === scenario.id}
               />
             ))}
-          </div>
-        </section>
+          </SimpleGrid>
+        </Box>
         {creatingRun && (
-          <button
-            className="btn btn-ghost"
+          <Button
+            mt="6"
+            variant="outline"
             onClick={() => setCreatingRun(false)}
           >
             Back to active run
-          </button>
+          </Button>
         )}
-      </main>
+      </Container>
     );
   const state = run.state as Record<string, unknown>;
   const feasibility = state.feasibility as string | undefined;
@@ -822,229 +903,296 @@ function ControlCenter() {
     }
   };
   return (
-    <main className="workspace">
-      <aside>
-        <a className="brand" href="/">
-          OpenSidebar <small>Playground</small>
-        </a>
-        <button
-          className="new-run"
-          disabled={runs.length >= 3}
-          onClick={() => setCreatingRun(true)}
-        >
-          + New run
-        </button>
-        <p className="side-label">ACTIVE RUNS · {runs.length}/3</p>
-        {runs.map((item) => (
-          <button
-            className={`run-item ${item.id === run.id ? "selected" : ""}`}
-            onClick={() => setSelected(item.id)}
-            key={item.id}
+    <Flex
+      as="main"
+      minH="calc(100vh - 57px)"
+      direction={{ base: "column", md: "row" }}
+      minW="0"
+    >
+      <Box
+        as="aside"
+        w={{ base: "full", md: "240px" }}
+        flexShrink="0"
+        borderRightWidth={{ md: "1px" }}
+        borderBottomWidth={{ base: "1px", md: "0" }}
+        borderColor="line"
+        bg="surface"
+        p="4"
+      >
+        <Flex align="center" justify="space-between" gap="3">
+          <Text fontWeight="700">Active runs · {runs.length}/3</Text>
+          <Button
+            size="sm"
+            variant="outline"
+            disabled={runs.length >= 3}
+            onClick={() => setCreatingRun(true)}
           >
-            <span className="dot" />
-            {definition(item.scenarioId).title}
-            <small>{item.lifecycle}</small>
-          </button>
-        ))}
-      </aside>
-      <section className="controls">
-        <header>
-          <div>
-            <span className="eyebrow">Control Center</span>
-            <h1>{definition(run.scenarioId).title}</h1>
-          </div>
-          <div className="status">
-            <span className="dot" /> {run.lifecycle}
-          </div>
-        </header>
-        <div className="notice">
-          <strong>Private controls.</strong> These settings are never rendered
-          or disclosed in the target page.
-        </div>
+            New run
+          </Button>
+        </Flex>
+        <Stack
+          mt="4"
+          gap="1"
+          direction={{ base: "row", md: "column" }}
+          overflowX={{ base: "auto", md: "visible" }}
+        >
+          {runs.map((item) => (
+            <Button
+              variant={item.id === run.id ? "subtle" : "ghost"}
+              h="auto"
+              minW={{ base: "220px", md: "0" }}
+              justifyContent="start"
+              textAlign="left"
+              py="3"
+              onClick={() => setSelected(item.id)}
+              key={item.id}
+            >
+              <Box>
+                <Text fontWeight="700">
+                  {definition(item.scenarioId).title}
+                </Text>
+                <Text fontSize="xs" color="fg" fontWeight="600">
+                  {item.lifecycle}
+                </Text>
+              </Box>
+            </Button>
+          ))}
+        </Stack>
+      </Box>
+      <Container
+        as="section"
+        maxW="6xl"
+        py={{ base: "8", md: "12" }}
+        px={{ base: "5", md: "8" }}
+        minW="0"
+      >
+        <PageHeader
+          eyebrow="Control Center"
+          title={definition(run.scenarioId).title}
+          action={<Badge colorPalette="blue">{run.lifecycle}</Badge>}
+        />
+        <Box mt="6">
+          <Notice>
+            <strong>Private controls.</strong> These settings are never rendered
+            or disclosed in the target page.
+          </Notice>
+        </Box>
         {actionFeedback && (
-          <div className="notice" role="status">
-            {actionFeedback}
-          </div>
+          <Box mt="3">
+            <Notice>{actionFeedback}</Notice>
+          </Box>
         )}
-        <section className="activity-panel" aria-label="Live activity">
-          <div className="activity-heading">
-            <strong>Live activity</strong>
-            <span>
-              <i /> Connected
-            </span>
-          </div>
-          {activity.length ? (
-            activity.map((item) => (
-              <div className="activity-item" key={item.id}>
-                <time>{item.time}</time>
-                <span>{item.message}</span>
-              </div>
-            ))
-          ) : (
-            <p className="muted">
-              Actions, target synchronization, and countdown events will appear
-              here.
-            </p>
-          )}
-        </section>
-        <SandboxGuide surface="control" />
-        <div className="control-grid">
-          <section className="card">
-            <h2>Current target state</h2>
-            <p>{visibleSummary(run)}</p>
-          </section>
-          <section className="card">
-            <h2>Trigger</h2>
-            <label>
-              Countdown{" "}
-              <select
-                value={delay}
-                onChange={(e) => setDelay(Number(e.target.value))}
-              >
-                {[15, 30, 60, 120].map((v) => (
-                  <option key={v} value={v}>
-                    {v} seconds
-                  </option>
-                ))}
-              </select>
-            </label>
-            <div className="actions">
-              <button
-                className="btn btn-ghost"
-                onClick={() => void armCountdown()}
-              >
+        <SurfaceCard as="section" mt="5" aria-label="Live activity">
+          <Flex justify="space-between" align="center">
+            <Heading size="sm">Live activity</Heading>
+            <Badge colorPalette="green">Connected</Badge>
+          </Flex>
+          <Stack mt="3" gap="0">
+            {activity.length ? (
+              activity.map((item) => (
+                <Flex
+                  key={item.id}
+                  gap="3"
+                  py="2"
+                  borderTopWidth="1px"
+                  borderColor="line"
+                  fontSize="sm"
+                >
+                  <Text
+                    as="time"
+                    color="muted"
+                    fontVariantNumeric="tabular-nums"
+                  >
+                    {item.time}
+                  </Text>
+                  <Text>{item.message}</Text>
+                </Flex>
+              ))
+            ) : (
+              <Text color="muted" fontSize="sm">
+                Actions, target synchronization, and countdown events will
+                appear here.
+              </Text>
+            )}
+          </Stack>
+        </SurfaceCard>
+        <SimpleGrid columns={{ base: 1, lg: 2 }} gap="4" mt="5">
+          <SurfaceCard>
+            <Heading size="md">Current target state</Heading>
+            <Text mt="3">{visibleSummary(run)}</Text>
+          </SurfaceCard>
+          <SurfaceCard>
+            <Heading size="md">Trigger</Heading>
+            <Box as="label" display="block" mt="4">
+              <Text fontSize="sm" mb="1">
+                Countdown
+              </Text>
+              <NativeSelect.Root>
+                <NativeSelect.Field
+                  value={delay}
+                  onChange={(e) => setDelay(Number(e.target.value))}
+                >
+                  {[15, 30, 60, 120].map((v) => (
+                    <option key={v} value={v}>
+                      {v} seconds
+                    </option>
+                  ))}
+                </NativeSelect.Field>
+                <NativeSelect.Indicator />
+              </NativeSelect.Root>
+            </Box>
+            <Flex gap="2" mt="4" wrap="wrap">
+              <Button variant="outline" onClick={() => void armCountdown()}>
                 {remainingSeconds && remainingSeconds > 0
                   ? `${remainingSeconds}s remaining`
                   : "Start countdown"}
-              </button>
-              <button
-                className="btn btn-primary"
-                onClick={() => void triggerNow()}
-              >
+              </Button>
+              <Button colorPalette="blue" onClick={() => void triggerNow()}>
                 Trigger now
-              </button>
-            </div>
-          </section>
+              </Button>
+            </Flex>
+          </SurfaceCard>
           {feasibility && (
-            <section className="card">
-              <h2>Challenge mode</h2>
-              <label>
-                Feasibility{" "}
-                <select
-                  value={feasibility}
-                  onChange={(e) => setFeasibility(e.target.value)}
-                >
-                  <option value="feasible">Feasible after trigger</option>
-                  <option value="temporarily_blocked">
-                    Temporarily blocked
-                  </option>
-                  <option value="recoverable">Recoverable</option>
-                  <option value="permanently_impossible">Never happens</option>
-                </select>
-              </label>
-              {isTask ? (
-                <label>
-                  Target available
-                  <input
-                    type="checkbox"
-                    checked={Boolean(
-                      state.checkoutAvailable ??
-                      state.recipientAvailable ??
-                      state.updatesAllowed ??
-                      state.keyFindingVisible,
-                    )}
-                    onChange={(e) => setValue(e.target.checked ? 1 : 0)}
-                  />
-                </label>
-              ) : (
-                run.scenarioId !== "message-watch" && (
-                  <label>
-                    Override value
-                    <input
-                      type="number"
-                      value={
-                        run.scenarioId === "price-watch"
-                          ? Number(state.priceCents)
-                          : run.scenarioId === "dashboard-threshold"
-                            ? Number(state.value)
-                            : run.scenarioId === "registration"
-                              ? Number(state.seatsRemaining)
-                              : Number(state.inventory)
-                      }
-                      onChange={(e) => setValue(Number(e.target.value))}
-                    />
-                  </label>
-                )
-              )}
-              {run.scenarioId === "message-watch" && (
-                <label>
-                  Next message
-                  <select
-                    value={String(state.nextMessagePriority)}
-                    onChange={(e) =>
-                      void runCommand({
-                        type: "watch.setRelevant",
-                        relevant: e.target.value === "P1",
-                      })
-                    }
-                  >
-                    <option value="P1">Relevant P1 incident</option>
-                    <option value="P2">Irrelevant P2 update</option>
-                  </select>
-                </label>
-              )}
-              {run.scenarioId === "restock-alert" && (
-                <>
-                  <label>
-                    Change relevance
-                    <select
-                      value={String(state.relevance)}
-                      onChange={(e) =>
-                        void runCommand({
-                          type: "restock.setRelevance",
-                          relevance: e.target.value as
-                            | "relevant"
-                            | "decorative",
-                        })
-                      }
+            <SurfaceCard>
+              <Heading size="md">Challenge mode</Heading>
+              <Stack mt="4" gap="4">
+                <Box as="label">
+                  <Text fontSize="sm" mb="1">
+                    Feasibility
+                  </Text>
+                  <NativeSelect.Root>
+                    <NativeSelect.Field
+                      value={feasibility}
+                      onChange={(e) => setFeasibility(e.target.value)}
                     >
-                      <option value="relevant">Relevant restock</option>
-                      <option value="decorative">Decorative only</option>
-                    </select>
-                  </label>
-                  <label>
-                    Visual-only update
+                      <option value="feasible">Feasible after trigger</option>
+                      <option value="temporarily_blocked">
+                        Temporarily blocked
+                      </option>
+                      <option value="recoverable">Recoverable</option>
+                      <option value="permanently_impossible">
+                        Never happens
+                      </option>
+                    </NativeSelect.Field>
+                    <NativeSelect.Indicator />
+                  </NativeSelect.Root>
+                </Box>
+                {isTask ? (
+                  <Flex as="label" gap="2" align="center">
                     <input
                       type="checkbox"
-                      checked={Boolean(state.visualOnly)}
-                      onChange={(e) =>
-                        void runCommand({
-                          type: "restock.setVisualOnly",
-                          visualOnly: e.target.checked,
-                        })
-                      }
+                      checked={Boolean(
+                        state.checkoutAvailable ??
+                        state.recipientAvailable ??
+                        state.updatesAllowed ??
+                        state.keyFindingVisible,
+                      )}
+                      onChange={(e) => setValue(e.target.checked ? 1 : 0)}
                     />
-                  </label>
-                </>
-              )}
-            </section>
+                    <Text fontSize="sm">Target available</Text>
+                  </Flex>
+                ) : (
+                  run.scenarioId !== "message-watch" && (
+                    <Box as="label">
+                      <Text fontSize="sm" mb="1">
+                        Override value
+                      </Text>
+                      <Input
+                        type="number"
+                        value={
+                          run.scenarioId === "price-watch"
+                            ? Number(state.priceCents)
+                            : run.scenarioId === "dashboard-threshold"
+                              ? Number(state.value)
+                              : run.scenarioId === "registration"
+                                ? Number(state.seatsRemaining)
+                                : Number(state.inventory)
+                        }
+                        onChange={(e) => setValue(Number(e.target.value))}
+                      />
+                    </Box>
+                  )
+                )}
+                {run.scenarioId === "message-watch" && (
+                  <Box as="label">
+                    <Text fontSize="sm" mb="1">
+                      Next message
+                    </Text>
+                    <NativeSelect.Root>
+                      <NativeSelect.Field
+                        value={String(state.nextMessagePriority)}
+                        onChange={(e) =>
+                          void runCommand({
+                            type: "watch.setRelevant",
+                            relevant: e.target.value === "P1",
+                          })
+                        }
+                      >
+                        <option value="P1">Relevant P1 incident</option>
+                        <option value="P2">Irrelevant P2 update</option>
+                      </NativeSelect.Field>
+                      <NativeSelect.Indicator />
+                    </NativeSelect.Root>
+                  </Box>
+                )}
+                {run.scenarioId === "restock-alert" && (
+                  <>
+                    <Box as="label">
+                      <Text fontSize="sm" mb="1">
+                        Change relevance
+                      </Text>
+                      <NativeSelect.Root>
+                        <NativeSelect.Field
+                          value={String(state.relevance)}
+                          onChange={(e) =>
+                            void runCommand({
+                              type: "restock.setRelevance",
+                              relevance: e.target.value as
+                                | "relevant"
+                                | "decorative",
+                            })
+                          }
+                        >
+                          <option value="relevant">Relevant restock</option>
+                          <option value="decorative">Decorative only</option>
+                        </NativeSelect.Field>
+                        <NativeSelect.Indicator />
+                      </NativeSelect.Root>
+                    </Box>
+                    <Flex as="label" gap="2" align="center">
+                      <input
+                        type="checkbox"
+                        checked={Boolean(state.visualOnly)}
+                        onChange={(e) =>
+                          void runCommand({
+                            type: "restock.setVisualOnly",
+                            visualOnly: e.target.checked,
+                          })
+                        }
+                      />
+                      <Text fontSize="sm">Visual-only update</Text>
+                    </Flex>
+                  </>
+                )}
+              </Stack>
+            </SurfaceCard>
           )}
-          <section className="card">
-            <h2>Try it with OpenSidebar</h2>
-            <p>
+          <SurfaceCard>
+            <Heading size="md">Try it with OpenSidebar</Heading>
+            <Text mt="3" color="muted">
               Open the target, start the suggested task, then arm or trigger the
               change.
-            </p>
-            <div className="actions">
-              <button
-                className="btn btn-primary"
+            </Text>
+            <Flex gap="2" mt="4" wrap="wrap">
+              <Button
+                colorPalette="blue"
                 disabled={launching}
                 onClick={() => void open()}
               >
                 {launching ? "Opening…" : "Open target"}
-              </button>
-              <button
-                className="btn btn-ghost"
+              </Button>
+              <Button
+                variant="outline"
                 onClick={() =>
                   void navigator.clipboard
                     .writeText(definition(run.scenarioId).suggestedTasks[0])
@@ -1058,16 +1206,20 @@ function ControlCenter() {
                 }
               >
                 Copy task
-              </button>
-            </div>
-          </section>
-        </div>
-        <footer>
-          <button className="link-danger" onClick={() => void deleteRun()}>
+              </Button>
+            </Flex>
+          </SurfaceCard>
+        </SimpleGrid>
+        <Flex as="footer" justify="space-between" mt="6" gap="3" wrap="wrap">
+          <Button
+            variant="ghost"
+            colorPalette="red"
+            onClick={() => void deleteRun()}
+          >
             Delete run
-          </button>
-          <button
-            className="btn btn-ghost"
+          </Button>
+          <Button
+            variant="outline"
             onClick={() =>
               void runCommand(
                 { type: "scenario.reset" },
@@ -1076,403 +1228,13 @@ function ControlCenter() {
             }
           >
             Reset with clean state
-          </button>
-        </footer>
-      </section>
-    </main>
+          </Button>
+        </Flex>
+      </Container>
+    </Flex>
   );
 }
 
-function Target() {
-  const id = location.pathname.split("/").pop() ?? "";
-  const [run, setRun] = useState<SandboxRun | null>(null);
-  const [unavailable, setUnavailable] = useState(false);
-  const [shoeSize, setShoeSize] = useState("US 10");
-  const [shoeQuantity, setShoeQuantity] = useState(1);
-  const [targetFeedback, setTargetFeedback] = useState<string | null>(null);
-  const [addingToCart, setAddingToCart] = useState(false);
-  useEffect(() => {
-    let alive = true;
-    const refresh = async () => {
-      try {
-        const next = await loadTargetRun();
-        if (alive) setRun(next as unknown as SandboxRun);
-      } catch {
-        if (!import.meta.env.DEV) {
-          if (alive) setUnavailable(true);
-          return;
-        }
-        try {
-          const runs = JSON.parse(
-            localStorage.getItem("opensidebar:sandbox:runs") ?? "[]",
-          ) as SandboxRun[];
-          if (alive) setRun(runs.find((item) => item.id === id) ?? null);
-        } catch {
-          /* no-op */
-        }
-      }
-    };
-    void refresh();
-    const timer = window.setInterval(() => void refresh(), 1000);
-    return () => {
-      alive = false;
-      clearInterval(timer);
-    };
-  }, [id]);
-  if (unavailable || !run)
-    return (
-      <main className="store target-expired">
-        <h1>That Playground session has ended.</h1>
-        <p>Return to OpenSidebar Playground to create a fresh run.</p>
-      </main>
-    );
-  const s = run.state as Record<string, unknown>;
-  if (run.scenarioId === "online-purchase")
-    return (
-      <main className="store">
-        <header className="store-nav">
-          <b>Peak Outfitters</b>
-          <small>Demo checkout — no payment</small>
-        </header>
-        <section className="product">
-          <p className="crumb">Cart / Checkout</p>
-          <h1>Nimbus Running Shoe</h1>
-          <p className="price">${(Number(s.priceCents) / 100).toFixed(2)}</p>
-          <p>
-            Coupon available: <b>{String(s.coupon ?? "None")}</b>
-          </p>
-          <p className={`availability ${s.checkoutAvailable ? "in" : "out"}`}>
-            {s.checkoutAvailable
-              ? `${String(s.inventory)} in stock`
-              : "Checkout is temporarily unavailable"}
-          </p>
-          <label>
-            Size{" "}
-            <select>
-              <option>US 10</option>
-            </select>
-          </label>
-          <button
-            className="add"
-            disabled={!s.checkoutAvailable || s.orderPlaced === true}
-            onClick={() =>
-              void submitTargetAction("purchase.placeOrder").then((next) =>
-                setRun(next as unknown as SandboxRun),
-              )
-            }
-          >
-            {s.orderPlaced ? "Order placed" : "Place demo order"}
-          </button>
-        </section>
-      </main>
-    );
-  if (run.scenarioId === "email-compose")
-    return (
-      <main className="store">
-        <header className="store-nav">
-          <b>Northstar Mail</b>
-          <small>Demo mailbox</small>
-        </header>
-        <section className="product">
-          <p className="crumb">Inbox / Latest</p>
-          <h1>{String(s.subject)}</h1>
-          <article className="card">
-            <p>
-              <b>{String(s.sender)}</b>
-            </p>
-            <p>{String(s.sourceMessage)}</p>
-          </article>
-          <label>
-            To{" "}
-            <input
-              value={s.recipientAvailable ? "maya.chen@northstar.example" : ""}
-              readOnly
-            />
-          </label>
-          <label>
-            Reply{" "}
-            <textarea defaultValue="Hi Maya, the rollout is on track for the next milestone." />
-          </label>
-          <button
-            className="add"
-            disabled={!s.recipientAvailable || s.emailSent === true}
-            onClick={() =>
-              void submitTargetAction("email.send").then((next) =>
-                setRun(next as unknown as SandboxRun),
-              )
-            }
-          >
-            {s.emailSent ? "Reply sent" : "Send demo reply"}
-          </button>
-        </section>
-      </main>
-    );
-  if (run.scenarioId === "data-table")
-    return (
-      <main className="store">
-        <header className="store-nav">
-          <b>Northstar CRM</b>
-          <small>Demo records</small>
-        </header>
-        <section className="product">
-          <p className="crumb">Accounts / Renewals</p>
-          <h1>Renewal queue</h1>
-          <article className="card">
-            <h2>{String(s.recordName)}</h2>
-            <p>
-              Status: <b>{String(s.recordStatus)}</b>
-            </p>
-            <label>
-              Status{" "}
-              <select defaultValue={String(s.recordStatus)}>
-                <option>Needs review</option>
-                <option>Ready</option>
-              </select>
-            </label>
-            <button
-              className="add"
-              disabled={!s.updatesAllowed || s.updateSaved === true}
-              onClick={() =>
-                void submitTargetAction("table.update").then((next) =>
-                  setRun(next as unknown as SandboxRun),
-                )
-              }
-            >
-              {s.updateSaved ? "Update saved" : "Save update"}
-            </button>
-          </article>
-        </section>
-      </main>
-    );
-  if (run.scenarioId === "article-research")
-    return (
-      <main className="store">
-        <header className="store-nav">
-          <b>OpenSidebar Journal</b>
-          <small>Research library</small>
-        </header>
-        <article className="product">
-          <p className="crumb">Research / Operations</p>
-          <h1>{String(s.title)}</h1>
-          <p>
-            Automation can reduce repetitive work, but the strongest outcomes
-            pair it with deliberate review points and clear ownership.
-          </p>
-          {s.keyFindingVisible ? (
-            <>
-              <h2>Key finding</h2>
-              <p>{String(s.keyFinding)}</p>
-            </>
-          ) : (
-            <p className="muted">
-              The study’s methodology appendix is temporarily unavailable.
-            </p>
-          )}
-          <p>Source: OpenSidebar Journal, Volume 4.</p>
-        </article>
-      </main>
-    );
-  if (run.scenarioId === "price-watch")
-    return (
-      <main className="store">
-        <header className="store-nav">
-          <b>Peak Outfitters</b>
-          <small>Demo store</small>
-        </header>
-        <section className="product">
-          <div className="product-image">👟</div>
-          <div>
-            <p className="crumb">Running / Shoes</p>
-            <h1>Nimbus Running Shoe</h1>
-            <p className="price">${(Number(s.priceCents) / 100).toFixed(2)}</p>
-            <p className="availability in">Available today</p>
-            <p className="description">
-              Lightweight daily trainer in Slate Blue.
-            </p>
-          </div>
-        </section>
-      </main>
-    );
-  if (run.scenarioId === "dashboard-threshold")
-    return (
-      <main className="store">
-        <header className="store-nav">
-          <b>Pulse Operations</b>
-          <small>Live service dashboard</small>
-        </header>
-        <section className="product">
-          <p className="crumb">Operations / Incidents</p>
-          <h1>Service health</h1>
-          <article className="card">
-            <span className="eyebrow">Current metric</span>
-            <h2>{String(s.metric)}</h2>
-            <p className="price">{String(s.value)}</p>
-            <p className="muted">Updated just now</p>
-          </article>
-        </section>
-      </main>
-    );
-  if (run.scenarioId === "message-watch")
-    return (
-      <main className="store">
-        <header className="store-nav">
-          <b>Northstar Support</b>
-          <small>Team inbox</small>
-        </header>
-        <section className="product">
-          <p className="crumb">Inbox / All messages</p>
-          <h1>Support feed</h1>
-          {(
-            s.messages as {
-              id: string;
-              sender: string;
-              subject: string;
-              priority: string;
-              body: string;
-            }[]
-          ).map((m) => (
-            <article className="card" key={m.id}>
-              <span className="eyebrow">{m.priority}</span>
-              <h2>{m.subject}</h2>
-              <p>
-                <b>{m.sender}</b> · {m.body}
-              </p>
-            </article>
-          ))}
-        </section>
-      </main>
-    );
-  if (run.scenarioId === "registration")
-    return (
-      <main className="store">
-        <header className="store-nav">
-          <b>OpenSidebar Events</b>
-          <small>Demo registration</small>
-        </header>
-        <section className="product">
-          <p className="crumb">Events / Workshops</p>
-          <h1>{String(s.event)}</h1>
-          <p className={`availability ${s.registrationOpen ? "in" : "out"}`}>
-            {s.registrationOpen
-              ? `${String(s.seatsRemaining)} seats available`
-              : "Registration is currently closed"}
-          </p>
-          <button
-            className="add"
-            disabled={!s.registrationOpen || s.registered === true}
-            onClick={() =>
-              void submitTargetAction("registration.submit").then((next) =>
-                setRun(next as unknown as SandboxRun),
-              )
-            }
-          >
-            {s.registered ? "Registered" : "Register"}
-          </button>
-        </section>
-      </main>
-    );
-  const inStock = s.availability === "in_stock";
-  const maxQuantity = Math.max(1, Math.min(5, Number(s.inventory) || 1));
-  const addToCart = async () => {
-    setAddingToCart(true);
-    setTargetFeedback(null);
-    try {
-      const next = await submitTargetAction("restock.addToCart", {
-        size: shoeSize,
-        quantity: shoeQuantity,
-      });
-      setRun(next as unknown as SandboxRun);
-      setTargetFeedback(
-        `${shoeQuantity} pair${shoeQuantity === 1 ? "" : "s"} in ${shoeSize} added to your demo cart.`,
-      );
-    } catch (error) {
-      setTargetFeedback(
-        error instanceof Error
-          ? error.message
-          : "Could not add this item to the cart.",
-      );
-    } finally {
-      setAddingToCart(false);
-    }
-  };
-  return (
-    <main className="store">
-      <header className="store-nav">
-        <b>Peak Outfitters</b>
-        <small>Demo store — no real purchase</small>
-      </header>
-      <section className="product">
-        <div className="product-image">👟</div>
-        <div>
-          <p className="crumb">Running / Shoes / Daily trainers</p>
-          <h1>Nimbus Running Shoe</h1>
-          {s.decoration === "featured" && (
-            <p className="muted">Featured in this week’s running edit</p>
-          )}
-          <p className="price">${(Number(s.priceCents) / 100).toFixed(2)}</p>
-          <div className={`availability ${inStock ? "in" : "out"}`}>
-            {inStock ? `${String(s.inventory)} in stock` : "Out of stock"}
-          </div>
-          <div className="product-options">
-            <label>
-              Size
-              <select
-                value={shoeSize}
-                disabled={!inStock}
-                onChange={(event) => setShoeSize(event.target.value)}
-              >
-                {[7, 8, 9, 10, 11, 12].map((size) => (
-                  <option key={size}>US {size}</option>
-                ))}
-              </select>
-            </label>
-            <label>
-              Quantity
-              <select
-                value={shoeQuantity}
-                disabled={!inStock}
-                onChange={(event) =>
-                  setShoeQuantity(Number(event.target.value))
-                }
-              >
-                {Array.from(
-                  { length: maxQuantity },
-                  (_, index) => index + 1,
-                ).map((quantity) => (
-                  <option key={quantity}>{quantity}</option>
-                ))}
-              </select>
-            </label>
-          </div>
-          {Number(s.cartQuantity) > 0 && (
-            <div className="cart-summary">
-              <strong>Cart · {String(s.cartQuantity)}</strong>
-              <span>
-                {String(s.cartSize)} · Demo subtotal $
-                {(
-                  (Number(s.priceCents) * Number(s.cartQuantity)) /
-                  100
-                ).toFixed(2)}
-              </span>
-            </div>
-          )}
-          {targetFeedback && (
-            <p className="target-feedback" role="status">
-              {targetFeedback}
-            </p>
-          )}
-          <button
-            className="add"
-            disabled={!inStock || addingToCart}
-            onClick={() => void addToCart()}
-          >
-            {addingToCart ? "Adding…" : "Add to cart"}
-          </button>
-        </div>
-      </section>
-    </main>
-  );
-}
 function App() {
   return location.pathname === "/app" ||
     location.pathname === "/app/internal/activation" ||
@@ -1491,25 +1253,14 @@ function App() {
     </AppShell>
   ) : location.pathname === "/app/viewer" ? (
     <ViewerPage />
-  ) : location.pathname.startsWith("/run/") ? (
-    <Target />
-  ) : !import.meta.env.DEV && location.pathname === "/" ? (
-    <TargetLanding />
   ) : new URLSearchParams(location.search).has("auth") ? (
     <SignIn />
   ) : (
     <ControlCenter />
   );
 }
-const isTargetSurface =
-  location.pathname.startsWith("/run/") ||
-  (!import.meta.env.DEV && location.pathname === "/");
 createRoot(document.getElementById("root")!).render(
-  isTargetSurface ? (
+  <ControlProviders>
     <App />
-  ) : (
-    <ControlProviders>
-      <App />
-    </ControlProviders>
-  ),
+  </ControlProviders>,
 );

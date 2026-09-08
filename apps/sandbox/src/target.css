@@ -6,6 +6,15 @@
 * {
   box-sizing: border-box;
 }
+html,
+body {
+  max-width: 100%;
+  overflow-x: clip;
+}
+:focus-visible {
+  outline: 3px solid #2563eb;
+  outline-offset: 3px;
+}
 body {
   margin: 0;
 }
@@ -115,9 +124,10 @@ body {
   opacity: 0.5;
 }
 .target-message {
-  max-width: 680px;
+  width: min(680px, calc(100% - 40px));
   margin: 15vh auto;
   padding: 24px;
+  overflow-wrap: anywhere;
 }
 .disclosure {
   color: #64748b;
@@ -131,5 +141,22 @@ body {
   }
   .store-nav {
     padding: 14px 18px;
+  }
+  .store-nav small {
+    display: none;
+  }
+  .product-options {
+    grid-template-columns: 1fr;
+  }
+}
+@media (max-width: 400px) {
+  .target-message {
+    width: calc(100% - 24px);
+    margin-top: 10vh;
+    padding: 20px;
+  }
+  .product {
+    margin-top: 24px;
+    padding: 0 16px;
   }
 }
