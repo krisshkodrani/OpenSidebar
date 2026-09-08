@@ -12,6 +12,13 @@ function isNewChatCommand(text: string): boolean {
   return text.trim() === "/new";
 }
 
+export function isExplicitStopCommand(text: string): boolean {
+  const normalized = text.trim().toLowerCase().replace(/[.!?]+$/g, "").trim();
+  return /^(?:please\s+)?(?:stop|cancel|abort)(?:\s+(?:this|the|current))?(?:\s+(?:task|run|work))?(?:\s+now)?$/.test(
+    normalized,
+  ) || /^(?:please\s+)?(?:do not|don't|dont)\s+continue$/.test(normalized);
+}
+
 function hasActiveRunOrWatch(store: ReturnType<typeof useStore.getState>): boolean {
   return (
     store.isAgentRunning ||
@@ -128,6 +135,19 @@ export function useComposerActions(options: { onSendStarted: () => void }): {
     ],
   );
 
+  const stopActiveRun = useCallback(async () => {
+    await uiRuntime.sendMessage({
+      type: "STOP_AGENT",
+      requestId: crypto.randomUUID(),
+      source: uiRuntime.source,
+      payload: {
+        workspaceId: useStore.getState().activeWorkspaceId,
+      },
+    });
+    setAgentRunning(false);
+    updateStatus(AgentStatus.IDLE, "Stopped by user");
+  }, [setAgentRunning, updateStatus]);
+
   const handleSendFeedback = useCallback(
     async (text: string) => {
       const store = useStore.getState();
@@ -141,6 +161,17 @@ export function useComposerActions(options: { onSendStarted: () => void }): {
           return;
         }
         startNewChat();
+        return;
+      }
+
+      if (isExplicitStopCommand(trimmedText)) {
+        try {
+          await stopActiveRun();
+          setInputText("");
+        } catch (error) {
+          logger.error("ui", "Failed to stop agent", { error });
+          setError("Failed to stop the current task.");
+        }
         return;
       }
 
@@ -177,25 +208,17 @@ export function useComposerActions(options: { onSendStarted: () => void }): {
         setInputText(trimmedText);
       }
     },
-    [addMessage, setError, setInputText, startNewChat],
+    [addMessage, setError, setInputText, startNewChat, stopActiveRun],
   );
 
   const handleStop = useCallback(async () => {
     try {
-      await uiRuntime.sendMessage({
-        type: "STOP_AGENT",
-        requestId: crypto.randomUUID(),
-        source: uiRuntime.source,
-        payload: {
-          workspaceId: useStore.getState().activeWorkspaceId,
-        },
-      });
-      setAgentRunning(false);
-      updateStatus(AgentStatus.IDLE, "Stopped by user");
+      await stopActiveRun();
     } catch (error) {
       logger.error("ui", "Failed to stop agent", { error });
+      setError("Failed to stop the current task.");
     }
-  }, [setAgentRunning, updateStatus]);
+  }, [setError, stopActiveRun]);
 
   return { handleSend, handleSendFeedback, handleStop };
 }

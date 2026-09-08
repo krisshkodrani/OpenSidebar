@@ -15,12 +15,26 @@ describe("RemoteMissionRunner", () => {
     const run = vi.fn().mockResolvedValue({
       status: "completed",
       summary: "Three alerts are active.",
+      target: {
+        context: "isolated_tab",
+        workspaceTitle: "OpenSidebar 1",
+        inWorkspace: true,
+        sidePanelEnabled: true,
+        createdForMission: true,
+      },
     });
     const runner = adaptAgentRunner({ run } as AgentRunner);
 
     await expect(runner.run(payload)).resolves.toEqual({
       state: "succeeded",
       summary: "Three alerts are active.",
+      target: {
+        context: "isolated_tab",
+        workspaceTitle: "OpenSidebar 1",
+        inWorkspace: true,
+        sidePanelEnabled: true,
+        createdForMission: true,
+      },
     });
     expect(run).toHaveBeenCalledWith(
       {

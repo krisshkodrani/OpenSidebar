@@ -127,7 +127,7 @@ export function registerCoreActionTools(toolRegistry: ToolRegistry): void {
             }
 
             // Attempt 2: window.history.back() via scripting (in-page history)
-            if (!currentUrl || currentUrl === "about:blank") {
+            if (!currentUrl) {
                 logger.warn("tools", "tabs.goBack did not change URL, trying in-page history.back()", {
                     tabId,
                     previousUrl,
@@ -157,6 +157,39 @@ export function registerCoreActionTools(toolRegistry: ToolRegistry): void {
             }
 
             if (!currentUrl || currentUrl === "about:blank") {
+                const stranded = await chrome.tabs.get(tabId).catch(() => null);
+                if (stranded?.url === "about:blank" && previousUrl) {
+                    logger.warn("tools", "go_back stranded the tab on about:blank; restoring source page", {
+                        tabId,
+                        previousUrl,
+                    });
+                    try {
+                        clearTabReady(tabId);
+                        await chrome.tabs.update(tabId, { url: previousUrl });
+                        await waitForTabUrlChange(tabId, "about:blank", 3000);
+                        const restored = await ensureContentScript(tabId, 5000);
+                        if (restored) {
+                            await waitForDomReady(tabId, {
+                                timeoutMs: 1000,
+                                waitForElements: true,
+                            });
+                            return `Error going back: no previous page was available. Restored ${previousUrl}.`;
+                        }
+                    } catch (restoreError: unknown) {
+                        logger.warn("tools", "Failed to restore page after go_back reached about:blank", {
+                            tabId,
+                            previousUrl,
+                            error:
+                                restoreError instanceof Error
+                                    ? restoreError.message
+                                    : String(restoreError),
+                        });
+                    }
+                } else if (stranded?.url === previousUrl) {
+                    // A failed history attempt can still detach the content
+                    // script even when Chrome reports the same URL.
+                    await ensureContentScript(tabId, 3000);
+                }
                 return previousUrl
                     ? `Error going back: browser remained on ${previousUrl}. History navigation did not reach a previous page.`
                     : "Error going back: browser history did not advance to a previous page.";

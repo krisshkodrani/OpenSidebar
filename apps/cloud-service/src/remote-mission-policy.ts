@@ -10,7 +10,7 @@ import type {
   MissionEvidenceV1,
   MissionStepV1,
   RemoteMissionTransitionV1,
-} from "@opensidebar/shared-types";
+} from "@shared-types";
 
 export class RemoteMissionPolicyError extends Error {
   constructor(readonly code: "invalid_request" | "invalid_transition") {
@@ -298,6 +298,47 @@ export function parseMissionEvidence(
   }
   if ((input.outcome === "approval_required") !== Boolean(approval))
     throw new RemoteMissionPolicyError("invalid_request");
+  let target: MissionEvidenceV1["target"];
+  if (input.target !== undefined) {
+    if (!input.target || typeof input.target !== "object" || Array.isArray(input.target))
+      throw new RemoteMissionPolicyError("invalid_request");
+    const candidate = input.target as Record<string, unknown>;
+    if (
+      !["active_tab", "existing_tab", "isolated_tab"].includes(String(candidate.context)) ||
+      typeof candidate.inWorkspace !== "boolean" ||
+      typeof candidate.sidePanelEnabled !== "boolean" ||
+      typeof candidate.createdForMission !== "boolean" ||
+      (candidate.expectedUrlMatched !== undefined && typeof candidate.expectedUrlMatched !== "boolean")
+    ) throw new RemoteMissionPolicyError("invalid_request");
+    const pageOrigin = boundedOptional(candidate.pageOrigin, 2_048);
+    if (pageOrigin) {
+      try {
+        const parsed = new URL(pageOrigin);
+        if (
+          !["http:", "https:"].includes(parsed.protocol) ||
+          parsed.username || parsed.password || parsed.origin !== pageOrigin
+        ) throw new Error("invalid origin");
+      } catch {
+        throw new RemoteMissionPolicyError("invalid_request");
+      }
+    }
+    const pageTitle = boundedOptional(candidate.pageTitle, 160);
+    const windowLabel = boundedOptional(candidate.windowLabel, 80);
+    const workspaceTitle = boundedOptional(candidate.workspaceTitle, 80);
+    target = {
+      context: candidate.context as NonNullable<MissionEvidenceV1["target"]>["context"],
+      ...(pageOrigin ? { pageOrigin } : {}),
+      ...(pageTitle ? { pageTitle } : {}),
+      ...(candidate.expectedUrlMatched === undefined
+        ? {}
+        : { expectedUrlMatched: candidate.expectedUrlMatched }),
+      ...(windowLabel ? { windowLabel } : {}),
+      ...(workspaceTitle ? { workspaceTitle } : {}),
+      inWorkspace: candidate.inWorkspace,
+      sidePanelEnabled: candidate.sidePanelEnabled,
+      createdForMission: candidate.createdForMission,
+    };
+  }
   return {
     schemaVersion: 1,
     missionId,
@@ -306,6 +347,7 @@ export function parseMissionEvidence(
     planRevision: Number(input.planRevision),
     outcome: input.outcome as MissionEvidenceV1["outcome"],
     ...(page ? { page } : {}),
+    ...(target ? { target } : {}),
     claims,
     effects,
     uncertainties: boundedStringList(input.uncertainties, 20, 1_000),

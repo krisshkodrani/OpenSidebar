@@ -39,6 +39,36 @@ describe("consequential action policy", () => {
     });
   });
 
+  test.each([
+    'Click [42] button "Delete"',
+    'Click [42] button "Move to trash"',
+    'Click [42] menuitem "Empty trash"',
+  ])("requires approval for destructive UI actions: %s", (actionLabel) => {
+    expect(
+      assessConsequentialActionApproval({
+        toolName: ToolName.CLICK_ELEMENT,
+        args: { id: 42 },
+        taskText: "Delete the selected messages.",
+        actionLabel,
+      }),
+    ).toEqual({
+      requiresApproval: true,
+      kind: "destructive_delete",
+      consentMode: "explicit_go",
+    });
+  });
+
+  test("does not confuse removing a filter with destructive deletion", () => {
+    expect(
+      assessConsequentialActionApproval({
+        toolName: ToolName.CLICK_ELEMENT,
+        args: { id: 42 },
+        taskText: "Clear the search filter.",
+        actionLabel: 'Click [42] button "Remove filter"',
+      }).requiresApproval,
+    ).toBe(false);
+  });
+
   test("classifies prepare-only final-action requests", () => {
     expect(
       classifyConsequentialActionConsentMode(
@@ -104,15 +134,43 @@ describe("consequential action policy", () => {
     expect(result).toContain("draft-only");
   });
 
-  test("allows opening a draft reply editor for draft-only tasks", () => {
+  test("allows reply controls that open or prepare a draft", () => {
+    for (const actionLabel of [
+      'Click [42] button "Reply"',
+      'Click [42] button "Draft a short reply"',
+      'Click [42] button "Compose reply"',
+    ]) {
+      expect(
+        assessConsequentialFinalActionBlock({
+          toolName: ToolName.CLICK_ELEMENT,
+          args: { id: 42 },
+          taskText: "Draft a reply to David and do not send it.",
+          actionLabel,
+        }),
+      ).toBeNull();
+    }
+  });
+
+  test("allows drafting a post without treating the noun as a delivery action", () => {
     expect(
       assessConsequentialFinalActionBlock({
         toolName: ToolName.CLICK_ELEMENT,
-        args: { id: 17 },
-        taskText: "Draft a short reply to David and leave it unsent.",
-        actionLabel: 'Click [17] button "Draft a short reply"',
+        args: { id: 42 },
+        taskText: "Draft a post and leave it unsent.",
+        actionLabel: 'Click [42] button "Compose post"',
       }),
     ).toBeNull();
+  });
+
+  test("blocks explicit delivery controls even when their label includes reply", () => {
+    expect(
+      assessConsequentialFinalActionBlock({
+        toolName: ToolName.CLICK_ELEMENT,
+        args: { id: 42 },
+        taskText: "Draft a reply to David and do not send it.",
+        actionLabel: 'Click [42] button "Send reply"',
+      }),
+    ).toContain("draft-only");
   });
 
   test("allows send clicks when sending is the explicit communication goal", () => {
@@ -120,7 +178,8 @@ describe("consequential action policy", () => {
       assessConsequentialFinalActionBlock({
         toolName: ToolName.CLICK_ELEMENT,
         args: { id: 42 },
-        taskText: "Read David's email and send a short reply confirming Monday.",
+        taskText:
+          "Read David's email and send a short reply confirming Monday.",
         actionLabel: 'Click [42] button "Send"',
       }),
     ).toBeNull();
@@ -134,7 +193,8 @@ describe("consequential action policy", () => {
         title: "Sent",
         url: "https://mail.example/sent",
         elements: [],
-        pageContent: "Message sent to David <david@example.com>. Sent just now.",
+        pageContent:
+          "Message sent to David <david@example.com>. Sent just now.",
       },
     });
 

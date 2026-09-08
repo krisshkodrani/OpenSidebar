@@ -10,6 +10,7 @@ export * from "./PlanStepIcon";
 export * from "./PlanStrip";
 export * from "./RunCard";
 export * from "./TaskStatusRegion";
+export * from "./WorkSurfaceRegion";
 export * from "./WatchModeControl";
 
 export * from "./SavedPromptsDrawer";
@@ -17,4 +18,3 @@ export * from "./WebsiteSkillsDrawer";
 export * from "./PersonalProfileDrawer";
 export * from "./ClarificationOverlay";
 export * from "./TaskActivityHud";
-export * from "./RemoteMissionStatusBanner";

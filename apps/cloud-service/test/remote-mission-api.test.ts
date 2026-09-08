@@ -26,6 +26,7 @@ function world(options: {
   const decisions = new Map<string, unknown>();
   const targetDecisions = new Map<string, unknown>();
   const supervisorDecisions = new Map<string, unknown>();
+  let readyMarks = 0;
   const principal = {
     accountId: "account-1",
     email: "owner@example.test",
@@ -62,6 +63,7 @@ function world(options: {
       ];
     },
     async markRemoteMissionReady(accountId: string, candidateDeviceId: string) {
+      readyMarks += 1;
       return (
         accountId === principal.accountId &&
         candidateDeviceId === principal.deviceId &&
@@ -221,7 +223,17 @@ function world(options: {
       vault: vault as never,
     }),
   );
-  return { app, records, payloads, results, progress, targetDecisions, supervisorDecisions, principal };
+  return {
+    app,
+    records,
+    payloads,
+    results,
+    progress,
+    targetDecisions,
+    supervisorDecisions,
+    principal,
+    readyMarks: () => readyMarks,
+  };
 }
 
 const auth = { authorization: "Bearer token" };
@@ -428,7 +440,7 @@ test("stores a bounded encrypted terminal result for coordinator retrieval", asy
 });
 
 test("returns encrypted live progress and coordinator cancellation is idempotent", async () => {
-  const { app } = world();
+  const { app, readyMarks } = world();
   const created = await app.request("/api/v1/remote-missions", {
     method: "POST",
     headers: { ...auth, "content-type": "application/json", "idempotency-key": "cancel-1" },
@@ -465,6 +477,7 @@ test("returns encrypted live progress and coordinator cancellation is idempotent
     ((await status.json()) as { progress?: { state?: string } }).progress?.state,
     "accepted",
   );
+  assert.equal(readyMarks(), 1);
   const cancelled = await app.request(
     `/api/v1/remote-missions/${mission.missionId}/cancel`,
     {
@@ -491,6 +504,7 @@ test("returns encrypted live progress and coordinator cancellation is idempotent
   };
   assert.equal(terminalBody.progress, undefined);
   assert.equal(terminalBody.result?.outcome, "cancelled");
+  assert.equal(readyMarks(), 2);
 });
 
 test("binds one encrypted approval decision to the pending digest", async () => {

@@ -70,7 +70,7 @@ function assertionPasses(
       return (
         typeof actual === "string" &&
         typeof assertion.expected === "string" &&
-        actual.toLocaleLowerCase().includes(assertion.expected.toLocaleLowerCase())
+        includesExpectedAnswer(actual, assertion.expected)
       );
     case "includes-normalized": {
       if (typeof actual !== "string" || typeof assertion.expected !== "string") {
@@ -108,6 +108,35 @@ function assertionPasses(
         )
       );
   }
+}
+
+function normalizeAnswerClause(value: string): string {
+  const tokens = value
+    .toLocaleLowerCase()
+    .replace(/\b(?:above|exceeding|greater\s+than)\b/g, "over")
+    .replace(/[^\p{L}\p{N}]+/gu, " ")
+    .replace(/\s+/g, " ")
+    .trim()
+    .split(" ")
+    .filter(Boolean)
+    .map((token) =>
+      token.length > 3 && token.endsWith("s") && !/(?:ss|us|is)$/.test(token)
+        ? token.slice(0, -1)
+        : token,
+    );
+  return tokens.join(" ");
+}
+
+function includesExpectedAnswer(actual: string, expected: string): boolean {
+  const normalizedActual = normalizeAnswerClause(actual);
+  const expectedClauses = expected
+    .split(/;|\band\b/i)
+    .map(normalizeAnswerClause)
+    .filter(Boolean);
+  return (
+    expectedClauses.length > 0 &&
+    expectedClauses.every((clause) => normalizedActual.includes(clause))
+  );
 }
 
 function leafPaths(value: JsonValue, prefix = ""): Map<string, string> {

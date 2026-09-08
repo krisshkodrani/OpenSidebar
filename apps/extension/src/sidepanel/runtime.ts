@@ -159,14 +159,16 @@ function chromeStorageArea(
       }
     },
     onChanged(listener) {
+      const changedEvent = chrome.storage.onChanged;
+      if (!changedEvent?.addListener) return () => {};
       const chromeListener = (
         changes: Record<string, chrome.storage.StorageChange>,
         changedArea: string,
       ) => {
         if (changedArea === areaName) listener(changes);
       };
-      chrome.storage.onChanged.addListener(chromeListener);
-      return () => chrome.storage.onChanged.removeListener(chromeListener);
+      changedEvent.addListener(chromeListener);
+      return () => changedEvent.removeListener(chromeListener);
     },
   };
 }
@@ -203,7 +205,12 @@ export const chromeUiRuntimePort: UiRuntimePort = {
 
   connectKeepalive(name, onDisconnect) {
     const port = chrome.runtime.connect({ name });
-    port.onDisconnect.addListener(onDisconnect);
+    port.onDisconnect.addListener(() => {
+      // Reading runtime.lastError inside the callback prevents Chrome from
+      // reporting an "Unchecked runtime.lastError" for transient disconnects.
+      void chrome.runtime.lastError;
+      onDisconnect();
+    });
     return {
       disconnect() {
         port.disconnect();

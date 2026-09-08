@@ -43,6 +43,7 @@ import { perceptionWarmup } from "./perception-warmup";
 import { agentNotifications } from "./notifications";
 import {
   isE2ESeedPendingInteractionMessage,
+  isE2ECreateWorkspaceMessage,
   isE2ETestApiEnabled,
   isE2EExecuteCloudCommandMessage,
   executeE2ECloudCommand,
@@ -71,6 +72,7 @@ import { drainInternalFleetTelemetry } from "./telemetry";
 import { NoWebPageTaskRecovery } from "./no-web-page-task-recovery";
 import { routeCloudRuntimeMessage } from "./cloud-message-router";
 import { buildWorkspaceConversationContext } from "./workspace-conversation-context";
+import { broadcastUserChatAccepted } from "./user-chat-accepted";
 import {
   initRemoteMissionRuntime,
   routeRemoteMissionControlMessage,
@@ -81,6 +83,7 @@ import {
   initPersonalDataSyncRuntime,
   routePersonalDataSyncMessage,
 } from "./personal-data-sync/runtime";
+import { registerSidepanelKeepalivePort } from "./sidepanel-keepalive";
 
 /** Cached settings — populated on side panel open, invalidated on storage change. */
 let cachedSettings: UserSettings | null = null;
@@ -106,6 +109,7 @@ void chrome.storage.local
   .catch(() => {});
 
 logger.info("system", "Service Worker Initialized");
+registerSidepanelKeepalivePort();
 // Internal builds can recover a bounded consented queue after an MV3 worker
 // restart. This is intentionally detached from agent execution and is a no-op
 // in published builds because no endpoint is compiled in.
@@ -185,7 +189,7 @@ setNavigationCallbacks(
 
 // 3. Initialize Keepalive Alarm
 registerAlarmListener();
-initRemoteMissionRuntime();
+initRemoteMissionRuntime(() => orchestrator.hasActiveTasks() || passiveMonitor.hasActiveSessions());
 agentNotifications.registerHandlers();
 
 // 3b. Invalidate perception warmup cache on navigation and tab close
@@ -323,31 +327,6 @@ async function resolveWorkspaceId(
     tabId,
   });
   return "default";
-}
-
-function broadcastUserChatAccepted(
-  message: Extract<RuntimeMessage, { type: "USER_CHAT" }>,
-  workspaceId: string,
-): void {
-  const text = message.payload.text.trim();
-  if (!text) return;
-
-  chrome.runtime
-    .sendMessage({
-      type: "USER_CHAT_ACCEPTED",
-      requestId: crypto.randomUUID(),
-      source: MessageSource.BACKGROUND,
-      workspaceId,
-      payload: {
-        text,
-        tabId: message.payload.tabId,
-        workspaceId,
-        messageId: message.payload.messageId ?? message.requestId,
-        timestamp: message.payload.timestamp ?? Date.now(),
-        isFeedback: message.payload.isFeedback,
-      },
-    })
-    .catch(() => {});
 }
 
 /** Stop keepalive only when all loops are done */
@@ -650,6 +629,34 @@ chrome.runtime.onMessage.addListener(
 
     if (isE2EExecuteCloudCommandMessage(message)) {
       void executeE2ECloudCommand(message).then(sendResponse);
+      return true;
+    }
+
+    const e2eCreateWorkspaceMessage: unknown = message;
+    if (isE2ECreateWorkspaceMessage(e2eCreateWorkspaceMessage)) {
+      (async () => {
+        try {
+          if (
+            import.meta.env.MODE !== "e2e" ||
+            !(await isE2ETestApiEnabled())
+          ) {
+            sendResponse({ ok: false, detail: "E2E test API is disabled" });
+            return;
+          }
+          const workspace = await workspaceManager.createWorkspace(
+            e2eCreateWorkspaceMessage.payload.name ?? "E2E workspace",
+            workspaceManager.getNextColor(),
+            e2eCreateWorkspaceMessage.payload.tabId,
+            e2eCreateWorkspaceMessage.payload.workspaceId,
+          );
+          sendResponse({ ok: true, workspaceId: workspace.id });
+        } catch (error: any) {
+          sendResponse({
+            ok: false,
+            detail: error?.message ?? String(error),
+          });
+        }
+      })();
       return true;
     }
 

@@ -4162,6 +4162,44 @@ describe("collapseSameContextSequentialNodes (LP-17 P7)", () => {
         expect(await collapse(nodes)).toHaveLength(3);
     });
 
+    test("merges serialized cross-view reads that culminate in one answer", async () => {
+        const nodes = makeChain([
+            "Navigate to the support view and read its open count",
+            "Navigate to the marketing view, read its campaign count, and report both values",
+        ]);
+        const result = await collapse(
+            nodes,
+            "Get the two dashboard metrics and give me both numbers",
+        );
+        expect(result).toHaveLength(1);
+        expect(result[0].description).toContain("support view");
+        expect(result[0].description).toContain("marketing view");
+    });
+
+    test("merges a serialized read synthesis with cumulative dependencies", async () => {
+        const nodes = makeChain([
+            "Read the travel policy",
+            "Read the expense policy",
+            "Compare the policies and report when approval is required",
+        ]);
+        nodes[2].dependencies = [nodes[0].id, nodes[1].id];
+        const result = await collapse(
+            nodes,
+            "Compare the travel and expense policies and tell me when approval is required",
+        );
+        expect(result).toHaveLength(1);
+    });
+
+    test("does not merge navigational steps for a mutating request", async () => {
+        const nodes = makeChain([
+            "Navigate to the first settings view and update the name",
+            "Navigate to the second settings view and save the preference",
+        ]);
+        expect(
+            await collapse(nodes, "Update the name and save the preference"),
+        ).toHaveLength(2);
+    });
+
     test("distinct URL origins block the merge", async () => {
         const nodes = makeChain([
             "Read the price at https://a.example/one",

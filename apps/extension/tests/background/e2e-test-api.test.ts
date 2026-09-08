@@ -1,8 +1,10 @@
 import { beforeEach, describe, expect, test, vi } from "vitest";
 import "../setup";
 import {
+  E2E_CREATE_WORKSPACE_MESSAGE_TYPE,
   E2E_SEED_PENDING_INTERACTION_MESSAGE_TYPE,
   E2E_TEST_API_ENABLED_STORAGE_KEY,
+  isE2ECreateWorkspaceMessage,
   isE2ESeedPendingInteractionMessage,
   isE2ETestApiEnabled,
 } from "../../src/background/e2e-test-api";
@@ -36,6 +38,22 @@ describe("E2E test API gate", () => {
 
     expect(
       isE2ESeedPendingInteractionMessage({
+        type: "USER_CHAT",
+        payload: {},
+      }),
+    ).toBe(false);
+  });
+
+  test("recognizes only the workspace creation message", () => {
+    expect(
+      isE2ECreateWorkspaceMessage({
+        type: E2E_CREATE_WORKSPACE_MESSAGE_TYPE,
+        payload: { tabId: 12, workspaceId: "modelbench-1" },
+      }),
+    ).toBe(true);
+
+    expect(
+      isE2ECreateWorkspaceMessage({
         type: "USER_CHAT",
         payload: {},
       }),

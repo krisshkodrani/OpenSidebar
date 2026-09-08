@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { CheckCircle2, ExternalLink, Link2, LogOut } from "lucide-react";
 import type { UserSettings } from "../../../types";
 import {
@@ -13,6 +13,7 @@ import {
   renameCloudDevice,
   remoteWorkStatus,
   signOutCloud,
+  subscribeCloudSession,
   syncCloudPreferences,
   verifyCloudEmailCode,
 } from "../../cloud-client";
@@ -45,19 +46,26 @@ export function CloudAccountSettings({
   const [challengeId, setChallengeId] = useState("");
   const [deviceName, setDeviceName] = useState("");
 
-  const reload = async () => {
+  const reload = useCallback(async () => {
     const session = await cloudSession();
     if (!session) {
       setAccount(EMPTY_ACCOUNT);
+      setDeviceName("");
       return;
     }
     const [statuses, remoteWork] = await Promise.all([
       credentialStatuses().catch(() => []),
       remoteWorkStatus().catch(() => null),
     ]);
+    const currentSession = await cloudSession();
+    if (!currentSession) {
+      setAccount(EMPTY_ACCOUNT);
+      setDeviceName("");
+      return;
+    }
     setAccount({
-      email: session.account.email,
-      deviceName: session.device.displayName,
+      email: currentSession.account.email,
+      deviceName: currentSession.device.displayName,
       providers: new Set(
         statuses
           .filter((item) => item.configured && item.verification === "valid")
@@ -65,18 +73,33 @@ export function CloudAccountSettings({
       ),
       remoteWork,
     });
-    setDeviceName(session.device.displayName);
-  };
+    setDeviceName(currentSession.device.displayName);
+  }, []);
 
   useEffect(() => {
+    let mounted = true;
     void reload().catch(() => undefined);
+    const unsubscribe = subscribeCloudSession((session) => {
+      if (!mounted) return;
+      if (!session) {
+        setAccount(EMPTY_ACCOUNT);
+        setDeviceName("");
+        return;
+      }
+      void reload().catch(() => undefined);
+    });
     void pendingCloudEmailAuth().then((pending) => {
+      if (!mounted) return;
       if (!pending) return;
       setEmail(pending.email);
       setChallengeId(pending.challengeId);
       setMessage("Enter the sign-in code sent to your email.");
     });
-  }, []);
+    return () => {
+      mounted = false;
+      unsubscribe();
+    };
+  }, [reload]);
 
   const perform = async (action: () => Promise<unknown>, success: string) => {
     setBusy(true);

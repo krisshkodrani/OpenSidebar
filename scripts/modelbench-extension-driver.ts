@@ -19,6 +19,10 @@ import type {
   ModelBenchDriverInput,
   ModelBenchDriverResult,
 } from "./modelbench-runner-lib.js";
+import {
+  E2E_CREATE_WORKSPACE_MESSAGE_TYPE,
+  E2E_TEST_API_ENABLED_STORAGE_KEY,
+} from "../apps/extension/src/background/e2e-test-api.js";
 import { startModelBenchTargetServer } from "./modelbench-target-server.js";
 import { collectModelBenchTraceEvidence } from "./modelbench-trace-evidence.js";
 
@@ -81,7 +85,9 @@ async function collectBrowserDriverEvidence(input: {
   );
   return {
     ...browserState,
-    openingActionObserved: observedTabOpeningAction(input.turns),
+    openingActionObserved:
+      browserState.linkedResourceOpened ||
+      observedTabOpeningAction(input.turns),
   };
 }
 
@@ -111,6 +117,39 @@ export async function resolveTargetTabId(
   if (byOrigin > 0) return byOrigin;
   // Fall back to the previous behavior rather than failing outright.
   return getActiveTabId(worker);
+}
+
+async function createGroupedWorkspace(
+  harness: ReturnType<typeof createE2EHarness>,
+  tabId: number,
+): Promise<string> {
+  const workspaceId = `modelbench-${crypto.randomUUID()}`;
+  const helperPage = await openHelperPage(harness.ctx);
+  const response = await helperPage.evaluate(
+    async (input) => {
+      await chrome.storage.local.set({ [input.enabledKey]: true });
+      return chrome.runtime.sendMessage({
+        type: input.messageType,
+        payload: {
+          tabId: input.tabId,
+          workspaceId: input.workspaceId,
+          name: "ModelBench",
+        },
+      });
+    },
+    {
+      enabledKey: E2E_TEST_API_ENABLED_STORAGE_KEY,
+      messageType: E2E_CREATE_WORKSPACE_MESSAGE_TYPE,
+      tabId,
+      workspaceId,
+    },
+  );
+  if (!response?.ok || response.workspaceId !== workspaceId) {
+    throw new Error(
+      response?.detail ?? "Could not create the MB-101 source workspace group.",
+    );
+  }
+  return workspaceId;
 }
 
 const E2E_ENV_NAMES = [
@@ -527,10 +566,12 @@ export async function createModelBenchDriver(): Promise<ModelBenchDriver> {
             `ModelBench target tab (${target.origin}) was not found.`,
           );
         }
+        workspaceId = await createGroupedWorkspace(harness, tabId);
         workspaceId = await sendUserChat(
           harness.ctx,
           input.definition.contract.prompt,
           tabId,
+          workspaceId,
         );
         if (input.definition.contract.approvalPolicy === "confirm-consequential") {
           approvals = startApprovalAutoResponder(
