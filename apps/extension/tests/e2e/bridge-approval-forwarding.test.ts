@@ -135,8 +135,14 @@ describe.skipIf(!enabled)("E2E: browser bridge — approval forwarding", () => {
 
       // The approval question rides the response — this is what pi presents.
       const approval = paused.approval;
-      expect(approval).toBeDefined();
-      expect(approval?.approvalId).toBeTruthy();
+      expect(
+        approval,
+        `bridge pause did not include approval: ${JSON.stringify(paused)}`,
+      ).toBeDefined();
+      expect(
+        approval?.approvalId,
+        `bridge pause did not include approval: ${JSON.stringify(paused)}`,
+      ).toBeTruthy();
       expect(approval?.toolName).toBe("click_element");
 
       // The Phase 8 dry-run diff rides along so the caller can byte-check the
@@ -163,7 +169,10 @@ describe.skipIf(!enabled)("E2E: browser bridge — approval forwarding", () => {
 
       expect(done.reason ?? "").not.toContain("browser tool call timed out");
       expect(done.status).toBe("ok");
-      expect(String(done.result ?? "")).toMatch(/submitted/i);
+      expect(
+        String(done.result ?? ""),
+        `approval response did not include its completion summary: ${JSON.stringify(done)}`,
+      ).toMatch(/submitted/i);
 
       passed = true;
     } finally {

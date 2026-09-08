@@ -24,9 +24,6 @@
  */
 
 import { createServer as createHttpServer } from "node:http";
-import { createHash } from "node:crypto";
-import { readFile, realpath, stat } from "node:fs/promises";
-import { basename, extname, isAbsolute } from "node:path";
 import { resolve } from "path";
 import { fileURLToPath } from "url";
 
@@ -83,16 +80,12 @@ export async function dispatch(
   args: Args,
 ): Promise<BrowserToolResponse> {
   validateArgs(name, args);
-  const forwardedArgs =
-    name === "request_browser_file_upload"
-      ? await prepareLocalFileUpload(args)
-      : args;
   return otelTracer.startActiveSpan(
     `browser_tool ${name}`,
     { attributes: { "opensidebar.tool.name": name } },
     async (span) => {
       try {
-        const response = await bridge.call({ tool: name, args: forwardedArgs });
+        const response = await bridge.call({ tool: name, args });
         span.setAttribute("opensidebar.tool.status", response.status);
         toolCallCounter.add(1, { tool: name, status: response.status });
         if (response.status === "error") {
@@ -117,54 +110,6 @@ export async function dispatch(
       }
     },
   );
-}
-
-const MAX_LOCAL_UPLOAD_BYTES = 10 * 1024 * 1024;
-const LOCAL_UPLOAD_MIME: Record<string, string> = {
-  ".csv": "text/csv",
-  ".doc": "application/msword",
-  ".docx":
-    "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-  ".jpeg": "image/jpeg",
-  ".jpg": "image/jpeg",
-  ".json": "application/json",
-  ".pdf": "application/pdf",
-  ".png": "image/png",
-  ".txt": "text/plain",
-  ".zip": "application/zip",
-};
-
-export async function prepareLocalFileUpload(
-  args: Args,
-): Promise<Args> {
-  const requestedPath =
-    typeof args.file_path === "string" ? args.file_path.trim() : "";
-  if (!requestedPath || !isAbsolute(requestedPath)) {
-    throw new Error("file_path must be an absolute local path");
-  }
-  const canonicalPath = await realpath(requestedPath);
-  const info = await stat(canonicalPath);
-  if (!info.isFile()) throw new Error("file_path must refer to a regular file");
-  if (info.size <= 0) throw new Error("file_path must not be empty");
-  if (info.size > MAX_LOCAL_UPLOAD_BYTES) {
-    throw new Error("local file exceeds the 10MB upload limit");
-  }
-  const bytes = await readFile(canonicalPath);
-  const sha256 = createHash("sha256").update(bytes).digest("hex");
-  const extension = extname(canonicalPath).toLowerCase();
-  return {
-    task_id: args.task_id,
-    tab_id: args.tab_id,
-    origin: args.origin,
-    input_id: args.input_id,
-    _validated_local_file: {
-      filename: basename(canonicalPath),
-      size: bytes.byteLength,
-      sha256,
-      mimeType: LOCAL_UPLOAD_MIME[extension] ?? "application/octet-stream",
-      dataBase64: bytes.toString("base64"),
-    },
-  };
 }
 
 /** Build a configured MCP server bound to the given bridge (no transport yet). */

@@ -618,8 +618,8 @@ function executorToolCalls(
           name: "done",
           args: {
             summary:
-              "Submitted the job application for Sam Rivera at Northstar " +
-              "Analytics; the registration received confirmation is shown.",
+              "Submitted the partner registration for Sam Rivera at Northstar " +
+              "Analytics; the Registration received confirmation is shown.",
           },
         },
       ];
