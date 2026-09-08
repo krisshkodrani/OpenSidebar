@@ -190,6 +190,7 @@ const CLEAN_URL_PAGES = [
   "ideas",
   "ideas/done-means-verified",
   "ideas/the-sandbox-needs-two-rooms",
+  "ideas/a-benchmark-i-can-trust",
 ];
 for (const page of CLEAN_URL_PAGES) {
   const src =
@@ -223,6 +224,7 @@ if (!args.has("--skip-invalidate")) {
     "--paths",
     "/",
     "/index.html",
+    "/ideas/index.html",
     "/robots.txt",
     "/og.png",
     "/favicon.png",

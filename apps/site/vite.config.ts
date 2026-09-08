@@ -13,6 +13,7 @@ const cleanUrlPages: Record<string, string> = {
   "/ideas": "/ideas/index.html",
   "/ideas/done-means-verified": "/ideas/done-means-verified.html",
   "/ideas/the-sandbox-needs-two-rooms": "/ideas/the-sandbox-needs-two-rooms.html",
+  "/ideas/a-benchmark-i-can-trust": "/ideas/a-benchmark-i-can-trust.html",
 };
 
 function cleanUrlRewrites(): Plugin {
@@ -63,6 +64,7 @@ export default defineConfig({
         ideas: resolve(root, "ideas/index.html"),
         doneMeansVerified: resolve(root, "ideas/done-means-verified.html"),
         sandboxNeedsTwoRooms: resolve(root, "ideas/the-sandbox-needs-two-rooms.html"),
+        benchmarkICanTrust: resolve(root, "ideas/a-benchmark-i-can-trust.html"),
       },
     },
   },
