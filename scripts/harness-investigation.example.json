@@ -1,0 +1,60 @@
+{
+  "configurations": [
+    {
+      "label": "baseline-minimax-glm-gptoss",
+      "role": "baseline",
+      "env": {
+        "E2E_PROVIDER": "openrouter",
+        "E2E_MODEL": "minimax/minimax-m3",
+        "E2E_EXECUTOR_PROVIDER_PIN": "groq",
+        "E2E_PLANNER_MODEL": "z-ai/glm-5.2",
+        "E2E_PLANNER_PROVIDER_PIN": "z-ai",
+        "E2E_JUDGE_MODEL": "openai/gpt-oss-120b",
+        "E2E_JUDGE_PROVIDER_PIN": "groq",
+        "E2E_PERCEPTION_MODE": "auto"
+      }
+    },
+    {
+      "label": "planner-luna-openai",
+      "role": "planner",
+      "env": {
+        "E2E_PROVIDER": "openrouter",
+        "E2E_MODEL": "minimax/minimax-m3",
+        "E2E_EXECUTOR_PROVIDER_PIN": "groq",
+        "E2E_PLANNER_MODEL": "openai/gpt-5.6-luna",
+        "E2E_PLANNER_PROVIDER_PIN": "openai",
+        "E2E_JUDGE_MODEL": "openai/gpt-oss-120b",
+        "E2E_JUDGE_PROVIDER_PIN": "groq",
+        "E2E_PERCEPTION_MODE": "auto"
+      }
+    },
+    {
+      "label": "planner-terra-openai",
+      "role": "planner",
+      "env": {
+        "E2E_PROVIDER": "openrouter",
+        "E2E_MODEL": "minimax/minimax-m3",
+        "E2E_EXECUTOR_PROVIDER_PIN": "groq",
+        "E2E_PLANNER_MODEL": "openai/gpt-5.6-terra",
+        "E2E_PLANNER_PROVIDER_PIN": "openai",
+        "E2E_JUDGE_MODEL": "openai/gpt-oss-120b",
+        "E2E_JUDGE_PROVIDER_PIN": "groq",
+        "E2E_PERCEPTION_MODE": "auto"
+      }
+    },
+    {
+      "label": "planner-deepseek",
+      "role": "planner",
+      "env": {
+        "E2E_PROVIDER": "openrouter",
+        "E2E_MODEL": "minimax/minimax-m3",
+        "E2E_EXECUTOR_PROVIDER_PIN": "groq",
+        "E2E_PLANNER_MODEL": "deepseek/deepseek-v4-flash-0731",
+        "E2E_PLANNER_PROVIDER_PIN": "deepseek",
+        "E2E_JUDGE_MODEL": "openai/gpt-oss-120b",
+        "E2E_JUDGE_PROVIDER_PIN": "groq",
+        "E2E_PERCEPTION_MODE": "auto"
+      }
+    }
+  ]
+}

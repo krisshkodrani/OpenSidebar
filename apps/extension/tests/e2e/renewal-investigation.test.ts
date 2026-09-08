@@ -40,7 +40,7 @@ describe.skipIf(!h.apiKey)("E2E: Renewal Investigation", () => {
     expect(tabId).toBeGreaterThan(0);
 
     const prompt =
-      "Treat this as one end-to-end browser workflow: review the Atlas Cloud renewal before the deadline, moving through Invoice, Contract, Usage, Policy, then Draft without revisiting completed evidence. Calculate the corrected annual renewal and potential savings. Prepare a concise dispute to Atlas Cloud that cites the 73 active seats, the missing 15% renewal discount, the corrected $14,892 total, and $13,908 potential savings. Don't send it yet; leave the final approval to me.";
+      "Review the Atlas Cloud renewal before the deadline. Check the invoice against the contract, current usage, and renewal policy, then calculate the corrected annual renewal and potential savings. Prepare a concise dispute to Atlas Cloud that cites the 73 active seats, the missing 15% renewal discount, the corrected $14,892 total, and $13,908 potential savings. Don't send it; leave final approval to me.";
     const workspaceId = await sendUserChat(h.ctx, prompt, tabId);
 
     const outcome = await waitForOutcome(

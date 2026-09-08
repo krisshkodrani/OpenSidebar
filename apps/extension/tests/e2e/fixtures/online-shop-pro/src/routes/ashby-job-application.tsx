@@ -57,6 +57,8 @@ export default function AshbyJobApplication() {
       completeRequestedFields: [
         draft.name,
         draft.email,
+        draft.linkedIn,
+        draft.phone,
         draft.currentLocation,
         draft.euWorkPermit,
         draft.salaryExpectation,
@@ -134,7 +136,9 @@ export default function AshbyJobApplication() {
       <div className="container">
         <div className="card">
           <p className="lede">Powered by Ashby</p>
-          <h1>{role.title} @ {role.company}</h1>
+          <h1>
+            {role.title} @ {role.company}
+          </h1>
           <p>
             Complete the application below. Required fields are marked with an
             asterisk.
@@ -272,7 +276,11 @@ export default function AshbyJobApplication() {
               />
             </div>
 
-            <button className="btn btn-primary" type="submit" disabled={!canSubmit}>
+            <button
+              className="btn btn-primary"
+              type="submit"
+              disabled={!canSubmit}
+            >
               Submit Application
             </button>
           </form>

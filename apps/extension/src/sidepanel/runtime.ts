@@ -33,6 +33,9 @@ export interface UiRuntimeStorageArea {
   get(keys?: UiRuntimeStorageKeys): Promise<Record<string, unknown>>;
   set(items: Record<string, unknown>): Promise<void>;
   remove(keys: string | string[]): Promise<void>;
+  onChanged?(
+    listener: (changes: Record<string, { oldValue?: unknown; newValue?: unknown }>) => void,
+  ): () => void;
 }
 
 export interface UiRuntimeStorage {
@@ -59,6 +62,7 @@ export interface UiRuntimePort {
   ): () => void;
   createTab(url: string, options?: { active?: boolean }): Promise<UiRuntimeTab>;
   requestPermissions(permissions: string[]): Promise<boolean>;
+  getExtensionVersion?(): string;
   storage: UiRuntimeStorage;
 }
 
@@ -96,8 +100,9 @@ export function getE2EPanelConfig(): E2EPanelConfig | null {
 
 function getOverlayExtensionBaseUrl(): string | null {
   if (typeof document === "undefined") return null;
-  const raw = document.getElementById("opensidebar-overlay-config")
-    ?.textContent;
+  const raw = document.getElementById(
+    "opensidebar-overlay-config",
+  )?.textContent;
   if (!raw) return null;
   try {
     const config = JSON.parse(raw) as {
@@ -121,7 +126,9 @@ function resolveFromExtensionBase(baseUrl: string, path: string): string {
   return new URL(path.replace(/^\/+/, ""), baseUrl).toString();
 }
 
-function normalizeTab(tab: chrome.tabs.Tab | null | undefined): UiRuntimeTab | null {
+function normalizeTab(
+  tab: chrome.tabs.Tab | null | undefined,
+): UiRuntimeTab | null {
   if (!tab) return null;
   return {
     id: tab.id,
@@ -150,6 +157,18 @@ function chromeStorageArea(
       if (typeof remove === "function") {
         await remove.call(area, keys);
       }
+    },
+    onChanged(listener) {
+      const changedEvent = chrome.storage.onChanged;
+      if (!changedEvent?.addListener) return () => {};
+      const chromeListener = (
+        changes: Record<string, chrome.storage.StorageChange>,
+        changedArea: string,
+      ) => {
+        if (changedArea === areaName) listener(changes);
+      };
+      changedEvent.addListener(chromeListener);
+      return () => changedEvent.removeListener(chromeListener);
     },
   };
 }
@@ -186,7 +205,12 @@ export const chromeUiRuntimePort: UiRuntimePort = {
 
   connectKeepalive(name, onDisconnect) {
     const port = chrome.runtime.connect({ name });
-    port.onDisconnect.addListener(onDisconnect);
+    port.onDisconnect.addListener(() => {
+      // Reading runtime.lastError inside the callback prevents Chrome from
+      // reporting an "Unchecked runtime.lastError" for transient disconnects.
+      void chrome.runtime.lastError;
+      onDisconnect();
+    });
     return {
       disconnect() {
         port.disconnect();
@@ -266,6 +290,10 @@ export const chromeUiRuntimePort: UiRuntimePort = {
         resolve(false);
       }
     });
+  },
+
+  getExtensionVersion() {
+    return chrome.runtime.getManifest().version;
   },
 
   storage: {

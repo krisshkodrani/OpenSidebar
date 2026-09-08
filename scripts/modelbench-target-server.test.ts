@@ -1,0 +1,103 @@
+import assert from "node:assert/strict";
+import test from "node:test";
+import { MODEL_BENCH_CASES } from "@opensidebar/scenario-engine";
+import { startModelBenchTargetServer } from "./modelbench-target-server.js";
+
+test("local target server uses one-time launch sessions and hides controls", async () => {
+  const server = await startModelBenchTargetServer();
+  try {
+    const definition = MODEL_BENCH_CASES.find((entry) => entry.contract.primaryRole === "executor")!;
+    const create = await fetch(`${server.origin}/api/v2/modelbench/runs`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ caseId: definition.contract.id }),
+    });
+    assert.equal(create.status, 201);
+    const created = await create.json() as { launchUrl: string; runId: string };
+    const launch = await fetch(created.launchUrl, { redirect: "manual" });
+    assert.equal(launch.status, 302);
+    const cookie = launch.headers.get("set-cookie")?.split(";")[0];
+    assert.ok(cookie);
+    assert.equal((await fetch(created.launchUrl, { redirect: "manual" })).status, 410);
+    const stateResponse = await fetch(`${server.origin}/api/v2/target/state`, { headers: { cookie } });
+    const state = await stateResponse.json() as { run: { data: Record<string, unknown> } };
+    assert.equal(stateResponse.status, 200);
+    assert.equal("control" in state.run.data, false);
+    assert.equal(JSON.stringify(state).includes("expected"), false);
+    const action = await fetch(`${server.origin}/api/v2/target/action`, {
+      method: "POST",
+      headers: { cookie, "content-type": "application/json" },
+      body: JSON.stringify({ type: "case.submit", payload: { decision: "apply" } }),
+    });
+    assert.equal(action.status, 200);
+    const updated = await action.json() as { run: { lifecycle: string } };
+    assert.equal(updated.run.lifecycle, "finished");
+    const control = await fetch(`${server.origin}/api/v2/modelbench/runs/${created.runId}`);
+    const stored = await control.json() as { run: { state: { lifecycle: string; data: { control?: unknown } } } };
+    assert.equal(stored.run.state.lifecycle, "finished");
+    assert.ok(stored.run.state.data.control);
+  } finally {
+    await server.close();
+  }
+});
+
+test("local target server runs an interrupted workflow through recovery and completion", async () => {
+  const server = await startModelBenchTargetServer();
+  try {
+    const create = await fetch(`${server.origin}/api/v2/modelbench/runs`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ caseId: "retail.recover-price-refresh" }),
+    });
+    const created = await create.json() as { launchUrl: string };
+    const launch = await fetch(created.launchUrl, { redirect: "manual" });
+    const cookie = launch.headers.get("set-cookie")?.split(";")[0];
+    assert.ok(cookie);
+    const act = (type: string, payload: Record<string, unknown> = {}) => fetch(
+      `${server.origin}/api/v2/target/action`,
+      { method: "POST", headers: { cookie, "content-type": "application/json" }, body: JSON.stringify({ type, payload }) },
+    );
+
+    assert.equal((await act("workflow.advance", { stageId: "stage-1" })).status, 200);
+    const skipped = await act("workflow.advance", { stageId: "stage-2" });
+    assert.equal(skipped.status, 400);
+    assert.match(await skipped.text(), /not currently available/);
+    assert.equal((await act("workflow.recover")).status, 200);
+    assert.equal((await act("workflow.advance", { stageId: "stage-2" })).status, 200);
+    assert.equal((await act("workflow.advance", { stageId: "stage-3" })).status, 200);
+    const completed = await act("case.submit", { decision: "apply" });
+    assert.equal(completed.status, 200);
+    const payload = await completed.json() as { run: { lifecycle: string; data: { workflowState: { status: string } } } };
+    assert.equal(payload.run.lifecycle, "finished");
+    assert.equal(payload.run.data.workflowState.status, "complete");
+  } finally {
+    await server.close();
+  }
+});
+
+test("local target server exposes MB-101 linked evidence without control data", async () => {
+  const server = await startModelBenchTargetServer();
+  try {
+    const create = await fetch(`${server.origin}/api/v2/modelbench/runs`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ caseId: "acceptance.mb-101-workspace-tab" }),
+    });
+    assert.equal(create.status, 201);
+    const created = await create.json() as { launchUrl: string };
+    const launch = await fetch(created.launchUrl, { redirect: "manual" });
+    const cookie = launch.headers.get("set-cookie")?.split(";")[0];
+    assert.ok(cookie);
+    const state = await fetch(`${server.origin}/api/v2/target/state`, {
+      headers: { cookie },
+    });
+    const payload = await state.json() as {
+      run: { data: { linkedResource?: Record<string, unknown>; control?: unknown } };
+    };
+    assert.equal(payload.run.data.linkedResource?.label, "Open order NW-1048");
+    assert.equal("control" in payload.run.data, false);
+    assert.equal(JSON.stringify(payload).includes("acceptedValue"), false);
+  } finally {
+    await server.close();
+  }
+});

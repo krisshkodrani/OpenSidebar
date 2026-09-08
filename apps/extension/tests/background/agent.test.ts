@@ -457,6 +457,24 @@ describe("AgentLoop", () => {
     ).toBe(true);
   });
 
+  test("destructive delete clicks require approval even when the user requested deletion", () => {
+    const agent = new AgentLoop("test-key", {
+      onStatusUpdate: vi.fn(),
+      onMessage: vi.fn(),
+      onStep: vi.fn(),
+    });
+
+    (agent as any).originalQuery = "Delete the selected email messages.";
+    (agent as any).elementResolver = () => 'button "Delete"';
+
+    expect(
+      (agent as any).requiresConsequentialActionApproval(
+        ToolName.CLICK_ELEMENT,
+        { id: 40 },
+      ),
+    ).toBe(true);
+  });
+
   test("blocks typing checkout name into non-text shipping radio input", () => {
     const target: TaggedElement = {
       tag: 15,

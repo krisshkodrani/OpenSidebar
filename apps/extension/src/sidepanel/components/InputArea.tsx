@@ -10,8 +10,11 @@ import {
   type InteractionMode,
 } from "../interaction-mode";
 import { saveSettings } from "../../utils/settings-storage";
+import { logger } from "../../utils";
 import { useComposerTextarea } from "../hooks/useComposerTextarea";
 import { useSpeechRecorder } from "../hooks/useSpeechRecorder";
+import { useComposerDraft } from "../hooks/useComposerDraft";
+import { COMPOSER_DRAFT_MAX_CHARS } from "../composer-draft-storage";
 import { uiRuntime } from "../runtime";
 import { ComposerBox } from "./input/ComposerBox";
 import { InteractionModeMenu } from "./input/InteractionModeMenu";
@@ -20,10 +23,11 @@ import {
   hasUsablePersonalProfile,
   isProfileDigestStale,
 } from "../../utils/personal-profile";
+import { useWorkSurface } from "../use-work-surface";
 
 interface InputAreaProps {
   onSend: (text: string) => void;
-  onSendFeedback: (text: string) => void;
+  onSendFeedback: (text: string) => void | Promise<void>;
   onStop: () => void;
   onOpenPersonalProfile: () => void;
   onOpenSavedPrompts: () => void;
@@ -46,6 +50,7 @@ export function InputArea({
 }: InputAreaProps) {
   const inputText = useStore((s) => s.inputText);
   const setInputText = useStore((s) => s.setInputText);
+  const setError = useStore((s) => s.setError);
   const isAgentRunning = useStore((s) => s.isAgentRunning);
   const pendingApproval = useStore((s) => s.pendingApproval);
   const pendingEscalation = useStore((s) => s.pendingEscalation);
@@ -53,9 +58,11 @@ export function InputArea({
   const settings = useStore((s) => s.settings);
   const updateSettings = useStore((s) => s.updateSettings);
   const personalProfileState = useStore((s) => s.personalProfileState);
+  const activeWorkspaceId = useStore((s) => s.activeWorkspaceId);
   const setPersonalProfileEnabled = useStore(
     (s) => s.setPersonalProfileEnabled,
   );
+  const { composer: composerPolicy } = useWorkSurface();
 
   const interactionMode = getInteractionMode(settings);
   const autonomousMode = interactionMode === "autonomous";
@@ -88,21 +95,43 @@ export function InputArea({
   ]);
 
   const hasText = inputText.trim().length > 0;
+  const draft = useComposerDraft({
+    text: inputText,
+    workspaceId: activeWorkspaceId ?? "default",
+    mode: composerPolicy.mode === "new_task" ? "task" : "guidance",
+    setText: setInputText,
+  });
   const handleSubmit = useCallback(() => {
-    if (!hasText) return;
-    if (isAgentRunning) {
-      onSendFeedback(inputText);
+    if (!hasText || !composerPolicy.enabled) return;
+    if (composerPolicy.command === "resume") {
+      void (async () => {
+        try {
+          await onSendFeedback(inputText);
+          await uiRuntime.sendMessage({
+            type: "RESUME_AGENT",
+            requestId: crypto.randomUUID(),
+            source: uiRuntime.source,
+            payload: { workspaceId: useStore.getState().activeWorkspaceId },
+          });
+        } catch (error) {
+          logger.error("ui", "Failed to resume with guidance", { error });
+          setError("Failed to resume the current task.");
+        }
+      })();
+    } else if (composerPolicy.mode !== "new_task") {
+      void onSendFeedback(inputText);
     } else {
       onSend(inputText);
     }
-    setInputText("");
   }, [
     hasText,
     inputText,
-    isAgentRunning,
+    composerPolicy.enabled,
+    composerPolicy.command,
+    composerPolicy.mode,
     onSend,
     onSendFeedback,
-    setInputText,
+    setError,
   ]);
 
   const composer = useComposerTextarea({
@@ -139,13 +168,18 @@ export function InputArea({
   );
 
   const speech = useSpeechRecorder({
-    disabled: Boolean(pendingApproval || pendingEscalation || pendingClarification),
+    disabled: Boolean(
+      pendingApproval ||
+        pendingEscalation ||
+        pendingClarification ||
+        !composerPolicy.enabled,
+    ),
     onTranscript: insertTranscript,
   });
 
   const handleInputChange = useCallback(
     (event: React.ChangeEvent<HTMLTextAreaElement>) => {
-      setInputText(event.target.value);
+      setInputText(event.target.value.slice(0, COMPOSER_DRAFT_MAX_CHARS));
     },
     [setInputText],
   );
@@ -174,9 +208,28 @@ export function InputArea({
     );
   }
 
+  if (!composerPolicy.enabled) {
+    return (
+      <div className="shrink-0 border-t border-warm-200 bg-warm-50 px-3 py-3 dark:border-warm-800 dark:bg-warm-900">
+        <div className="rounded-xl border border-warm-200 bg-warm-100/70 px-3 py-2.5 dark:border-warm-700 dark:bg-warm-800/60">
+          <div className="text-xs font-semibold text-warm-700 dark:text-warm-200">
+            {composerPolicy.label}
+          </div>
+          {composerPolicy.disabledReason ? (
+            <p className="mt-0.5 text-[11px] leading-relaxed text-warm-500 dark:text-warm-400">
+              {composerPolicy.disabledReason}
+            </p>
+          ) : null}
+        </div>
+      </div>
+    );
+  }
+
+  const isGuidanceComposer = composerPolicy.mode !== "new_task";
+
   return (
     <div className="relative shrink-0 border-t border-warm-200 bg-warm-50 dark:border-warm-800 dark:bg-warm-900">
-      {autonomousMode && !isAgentRunning ? (
+      {autonomousMode && composerPolicy.mode === "new_task" ? (
         <div className="mx-2 mt-1 flex items-center gap-1.5 rounded-md border border-amber-200 bg-amber-50 px-2 py-1 text-[11px] text-amber-700 dark:border-amber-800 dark:bg-amber-900/20 dark:text-amber-300">
           <ShieldAlert size={12} className="shrink-0" />
           <span>Autonomous mode - agent acts without asking</span>
@@ -184,17 +237,16 @@ export function InputArea({
       ) : null}
 
       <div className="p-2">
-        {!isAgentRunning ? <WatchModeControl /> : null}
+        {composerPolicy.mode === "new_task" ? <WatchModeControl /> : null}
         {/* Keep one composer mounted so run-state updates cannot reset its caret. */}
-        <div className={isAgentRunning ? "space-y-1.5" : undefined}>
-          {isAgentRunning ? (
+        <div className={isGuidanceComposer ? "space-y-1.5" : undefined}>
+          {isGuidanceComposer ? (
             <div className="px-1">
               <div className="text-[11px] font-medium text-warm-600 dark:text-warm-300">
-                Guide the agent
+                {composerPolicy.label}
               </div>
               <div className="mt-0.5 text-[11px] leading-relaxed text-warm-500 dark:text-warm-400">
-                Add guidance, a correction, or a new constraint while the
-                current run continues.
+                Your message is routed to the current task.
               </div>
             </div>
           ) : null}
@@ -202,8 +254,11 @@ export function InputArea({
             key="composer"
             hasText={hasText}
             inputRef={composer.textareaRef}
-            isGuidance={isAgentRunning}
-            onBlur={composer.handleBlur}
+            isGuidance={isGuidanceComposer}
+            onBlur={() => {
+              composer.handleBlur();
+              void draft.saveNow();
+            }}
             onChange={handleInputChange}
             onFocus={composer.handleFocus}
             onKeyDown={composer.handleKeyDown}
@@ -212,12 +267,12 @@ export function InputArea({
             }
             onSubmit={handleSubmit}
             placeholder={
-              isAgentRunning ? "Guide the agent..." : "What can I help with?"
+              composerPolicy.placeholder ?? "What can I help with?"
             }
             speechState={speech.state}
             value={inputText}
           />
-          {isAgentRunning ? (
+          {isGuidanceComposer ? (
             <p className="select-none px-1 text-[10px] text-warm-400 dark:text-warm-500">
               Guidance is sent into the current run. Press{" "}
               <kbd className="rounded bg-warm-200/60 px-1 py-0.5 font-mono text-[9px] text-warm-500 dark:bg-warm-700/60 dark:text-warm-400">
@@ -227,6 +282,18 @@ export function InputArea({
             </p>
           ) : (
             <>
+              {hasText ? (
+                <div className="mt-1 flex items-center justify-end gap-2 px-1 text-[10px] text-warm-400 dark:text-warm-500">
+                  <span>{draft.saved ? "Saved on this device" : "Saving locally…"}</span>
+                  <button
+                    type="button"
+                    className="underline underline-offset-2 hover:text-warm-600 dark:hover:text-warm-300"
+                    onClick={() => void draft.discard()}
+                  >
+                    Discard draft
+                  </button>
+                </div>
+              ) : null}
               <div className="relative mt-1.5 flex items-center px-1">
                 <InteractionModeMenu
                   mode={interactionMode}

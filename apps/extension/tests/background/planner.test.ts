@@ -1667,6 +1667,18 @@ describe("OrchestratorPlanner.buildNodes returns BuildNodesResult", () => {
         );
     });
 
+    test("buildFallbackNodes requires the full mixed read/write objective", () => {
+        const query =
+            "Find a 30-minute time when Ana, Marco, and Priya are free tomorrow afternoon and create a tentative release review.";
+
+        const nodes = buildFallbackNodes(query);
+
+        expect(nodes).toHaveLength(1);
+        expect(nodes[0].successCriteria).toMatch(/entire original request/i);
+        expect(nodes[0].successCriteria).toMatch(/every requested action/i);
+        expect(nodes[0].successCriteria).toMatch(/partial answer.*insufficient/i);
+    });
+
     test("buildFallbackNodes collapses the field-value form plan so the planner-failure fallback cannot strand", () => {
         // Regression: when planner.buildNodes throws, the orchestrator falls
         // back to buildFallbackNodes. That path must run the same collapse as
@@ -3396,11 +3408,22 @@ describe("selectPrimarySkill", () => {
     test("matches cross-tab compare workflows", () => {
         expect(
             selectPrimarySkill({
-                query: "Read Overview; read Reports; compare both tabs",
-                objective: "Compare both tabs",
-                successCriteria: "Answer based on both tabs",
+                query: "Compare the two separate browser tabs that are already open",
+                objective: "Switch across the separate tabs and compare their values",
+                successCriteria: "Answer based on both browser tabs",
             })?.id,
         ).toBe("cross-tab-compare");
+    });
+
+    test("does not treat in-page dashboard tabs as browser tabs", () => {
+        expect(
+            selectPrimarySkill({
+                query: "Read Overview; read Reports; compare both tabs",
+                objective: "Compare the Overview and Reports views",
+                successCriteria: "Answer based on both in-page views",
+                pageTitle: "Admin Dashboard",
+            })?.id,
+        ).not.toBe("cross-tab-compare");
     });
 
     test("does not use cross-tab compare for single-page report navigation", () => {
@@ -3649,6 +3672,19 @@ describe("selectPrimarySkill", () => {
                 pageTitle: "Frontend Engineer Application",
             })?.id,
         ).toBe("consequential-action-consent");
+    });
+
+    test("keeps prepare-only reporting out of consent routing", () => {
+        expect(
+            selectPrimarySkill({
+                query:
+                    "Prepare the safest ticket change, but do not purchase or confirm it. Then report the times and fee.",
+                objective: "Report the prepared departure, arrival, buffer, and fee",
+                successCriteria:
+                    "All prepared values are reported and the purchase remains unconfirmed",
+                pageTitle: "Change Review",
+            })?.id,
+        ).not.toBe("consequential-action-consent");
     });
 
     test("keeps cart-modify-checkout for earlier cart step even when query mentions saved profile", () => {
@@ -4104,6 +4140,17 @@ describe("collapseSameContextSequentialNodes (LP-17 P7)", () => {
         expect(merged[0].description).toContain("engraving");
         expect(merged[0].dependencies).toEqual([]);
         expect(merged[0].successCriteria).toContain("cart");
+        expect(merged[0].successCriteria).toContain("; ");
+    });
+
+    test("redundant ancestor dependencies still collapse a serialized chain", async () => {
+        const nodes = makeChain([
+            "Review the ticket details",
+            "Review the related account history",
+            "Complete the triage review",
+        ]);
+        (nodes[2] as any).dependencies = ["n1", "n2"];
+        expect(await collapse(nodes)).toHaveLength(1);
     });
 
     test("a navigation step blocks the merge", async () => {
@@ -4113,6 +4160,44 @@ describe("collapseSameContextSequentialNodes (LP-17 P7)", () => {
             "Enter the payment details",
         ]);
         expect(await collapse(nodes)).toHaveLength(3);
+    });
+
+    test("merges serialized cross-view reads that culminate in one answer", async () => {
+        const nodes = makeChain([
+            "Navigate to the support view and read its open count",
+            "Navigate to the marketing view, read its campaign count, and report both values",
+        ]);
+        const result = await collapse(
+            nodes,
+            "Get the two dashboard metrics and give me both numbers",
+        );
+        expect(result).toHaveLength(1);
+        expect(result[0].description).toContain("support view");
+        expect(result[0].description).toContain("marketing view");
+    });
+
+    test("merges a serialized read synthesis with cumulative dependencies", async () => {
+        const nodes = makeChain([
+            "Read the travel policy",
+            "Read the expense policy",
+            "Compare the policies and report when approval is required",
+        ]);
+        nodes[2].dependencies = [nodes[0].id, nodes[1].id];
+        const result = await collapse(
+            nodes,
+            "Compare the travel and expense policies and tell me when approval is required",
+        );
+        expect(result).toHaveLength(1);
+    });
+
+    test("does not merge navigational steps for a mutating request", async () => {
+        const nodes = makeChain([
+            "Navigate to the first settings view and update the name",
+            "Navigate to the second settings view and save the preference",
+        ]);
+        expect(
+            await collapse(nodes, "Update the name and save the preference"),
+        ).toHaveLength(2);
     });
 
     test("distinct URL origins block the merge", async () => {

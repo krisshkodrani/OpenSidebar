@@ -132,6 +132,71 @@ describe("completeTurnWithRetries", () => {
     expect(recordPromptImageUsage).toHaveBeenCalledWith(messages);
   });
 
+  test("aborts a slow provider request and retries while turn budget remains", async () => {
+    let call = 0;
+    const llm = makeLlm([makeResponse("unused")]);
+    llm.completeStream = vi.fn(async (request) => {
+      call += 1;
+      if (call === 2) return makeResponse("after timeout");
+      return await new Promise<CompletionResponse>((_resolve, reject) => {
+        request.signal?.addEventListener("abort", () => {
+          const error = new Error("aborted");
+          error.name = "AbortError";
+          reject(error);
+        });
+      });
+    });
+    const deps = makeDeps({
+      llm,
+      requestTimeoutMs: 10,
+      turnTimeoutMs: 100,
+      minRetryBudgetMs: 1,
+    });
+
+    const result = await completeTurnWithRetries(deps);
+
+    expect(result.kind).toBe("response");
+    if (result.kind !== "response") return;
+    expect(result.response.content).toBe("after timeout");
+    expect(llm.completeStream).toHaveBeenCalledTimes(2);
+    expect(deps.events).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ name: "llm_call_timeout" }),
+        expect.objectContaining({
+          name: "turn_retry",
+          data: expect.objectContaining({ errorClass: "timeout" }),
+        }),
+      ]),
+    );
+  });
+
+  test("does not start a retry when the remaining turn budget is reserved", async () => {
+    const llm = makeLlm([makeResponse("unused")]);
+    llm.completeStream = vi.fn(async (request) =>
+      await new Promise<CompletionResponse>((_resolve, reject) => {
+        request.signal?.addEventListener("abort", () => {
+          const error = new Error("aborted");
+          error.name = "AbortError";
+          reject(error);
+        });
+      }),
+    );
+    const deps = makeDeps({
+      llm,
+      requestTimeoutMs: 10,
+      turnTimeoutMs: 10,
+      minRetryBudgetMs: 5,
+    });
+
+    await expect(completeTurnWithRetries(deps)).rejects.toThrow(
+      "LLM provider request timed out",
+    );
+    expect(llm.completeStream).toHaveBeenCalledTimes(1);
+    expect(deps.events.map((event) => event.name)).toContain(
+      "llm_call_timeout",
+    );
+  });
+
   test("returns an early error result for exhausted provider credits", async () => {
     const deps = makeDeps({
       llm: makeLlm([{ status: 402 }]),

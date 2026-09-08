@@ -749,11 +749,48 @@ function captureFormField(el: Element): FormStateField {
     isInputElement(el) || isSelectElement(el) || isTextAreaElement(el)
       ? el.disabled
       : false;
+  const required =
+    isInputElement(el) || isSelectElement(el) || isTextAreaElement(el)
+      ? el.required
+      : el.getAttribute("aria-required") === "true";
   let value: string;
   if (isInputElement(el) && (el.type === "checkbox" || el.type === "radio")) {
     value = el.checked ? "checked" : "unchecked";
   } else {
     value = readFormControlValue(el) ?? "";
+  }
+  const filled =
+    isInputElement(el) && el.type === "file"
+      ? (el.files?.length ?? 0) > 0
+      : isInputElement(el) &&
+          (el.type === "checkbox" || el.type === "radio")
+        ? el.checked
+        : value.trim().length > 0;
+  const validatable =
+    isInputElement(el) || isSelectElement(el) || isTextAreaElement(el);
+  const control = validatable
+    ? (el as HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement)
+    : null;
+  const valid = control?.validity.valid ?? true;
+  const validationMessage = control?.validationMessage.trim() ?? "";
+  let options: FormStateField["options"];
+  if (isSelectElement(el)) {
+    options = Array.from(el.options).map((option) => ({
+      value: option.value,
+      label: option.textContent?.trim() || option.value,
+      selected: option.selected,
+    }));
+  } else if (
+    isInputElement(el) &&
+    (el.type === "checkbox" || el.type === "radio")
+  ) {
+    options = [
+      {
+        value: el.value,
+        label: label || el.value,
+        selected: el.checked,
+      },
+    ];
   }
   return {
     name,
@@ -762,6 +799,11 @@ function captureFormField(el: Element): FormStateField {
     kind,
     value,
     disabled,
+    required,
+    filled,
+    valid,
+    ...(validationMessage ? { validationMessage } : {}),
+    ...(options?.length ? { options } : {}),
   };
 }
 
@@ -782,10 +824,12 @@ export function executeExtractFormState(args: ExtractFormStateArgs): {
       form = anchor.closest("form");
     }
   }
-  if (!form) {
+  if (!form && args.scope !== "document") {
     form = document.querySelector("form");
   }
-  const scope: Document | Element = form ?? document;
+  const captureScope = args.scope === "document" ? "document" : "primary_form";
+  const scope: Document | Element =
+    captureScope === "document" ? document : form ?? document;
 
   const formKey =
     (form?.getAttribute("action") ||
@@ -810,6 +854,29 @@ export function executeExtractFormState(args: ExtractFormStateArgs): {
     selector: buildControlSelector(el),
   }));
 
-  const capture: FormStateCapture = { formKey, fields, submitTargets };
+  const inaccessibleFrameCount = Array.from(
+    document.querySelectorAll("iframe"),
+  ).filter((frame) => {
+    try {
+      return frame.contentDocument == null;
+    } catch {
+      return true;
+    }
+  }).length;
+  const limitations = inaccessibleFrameCount > 0
+    ? [
+        `${inaccessibleFrameCount} cross-origin or inaccessible iframe(s) could not be inspected.`,
+      ]
+    : [];
+
+  const capture: FormStateCapture = {
+    formKey,
+    scope: captureScope,
+    formCount: querySelectorAllDeep(document, "form").length,
+    complete: limitations.length === 0,
+    limitations,
+    fields,
+    submitTargets,
+  };
   return { success: true, result: JSON.stringify(capture), navigated: false };
 }

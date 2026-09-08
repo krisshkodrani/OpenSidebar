@@ -68,6 +68,7 @@ function makeHost(overrides: Partial<RegionZoomHost> = {}): {
     getSnapshot: () => makeSnapshot(),
     imagePromptBudgetAllows: () => true,
     recordImagePromptBudgetExhausted: vi.fn(),
+    observationIsCurrent: async () => true,
     captureVisibleTab: async () => "data:image/jpeg;base64,FULL",
     resolveTagRect: async () => ({ x: 40, y: 60, width: 200, height: 120 }),
     recordInspectRegionEvent: (data) => events.push(data),
@@ -229,6 +230,22 @@ describe("executeInspectRegion (LP-13)", () => {
       "inspect_region",
     );
     expect(events[0]).toMatchObject({ refusedReason: "budget" });
+  });
+
+  test("rejects a crop when its model observation is stale", async () => {
+    const observationIsCurrent = vi.fn(async () => false);
+    const { host, events, staged } = makeHost({ observationIsCurrent });
+
+    const result = await executeInspectRegion(
+      host,
+      emptyRegionZoomState(),
+      { x: 100, y: 100, width: 200, height: 100 },
+      tabId,
+    );
+
+    expect(result).toContain("fresh observation");
+    expect(staged).toHaveLength(0);
+    expect(events[0]).toMatchObject({ refusedReason: "stale_observation" });
   });
 
   test("fresh capture crops from the RAW image, not the transformed cache copy", async () => {

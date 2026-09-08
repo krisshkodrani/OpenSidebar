@@ -1,0 +1,793 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Done Means Verified — OpenSidebar Ideas</title>
+    <meta
+      name="description"
+      content="An agent is not finished because it acted. It is finished when it has evidence that the user's objective was achieved."
+    />
+    <meta name="author" content="Kris Shkodrani and Sol (gpt-5.6-sol)" />
+    <meta name="theme-color" content="#F7F7F9" />
+    <link rel="icon" type="image/png" href="/favicon.png" />
+    <link
+      rel="canonical"
+      href="https://opensidebar.com/ideas/done-means-verified"
+    />
+
+    <meta property="og:type" content="article" />
+    <meta property="og:site_name" content="OpenSidebar" />
+    <meta property="og:title" content="Done Means Verified" />
+    <meta
+      property="og:description"
+      content="An agent is not finished because it acted. It is finished when it has evidence that the user's objective was achieved."
+    />
+    <meta
+      property="og:url"
+      content="https://opensidebar.com/ideas/done-means-verified"
+    />
+    <meta property="og:image" content="https://opensidebar.com/og.png" />
+    <meta name="twitter:card" content="summary_large_image" />
+    <meta name="twitter:title" content="Done Means Verified" />
+    <meta
+      name="twitter:description"
+      content="Why reliable browser agents must verify outcomes, not merely report their last action."
+    />
+    <meta name="twitter:image" content="https://opensidebar.com/og.png" />
+
+    <noscript>
+      <style>
+        .idea-progress {
+          display: none;
+        }
+      </style>
+    </noscript>
+  </head>
+  <body class="idea-page">
+    <header class="nav">
+      <div class="wrap nav-inner">
+        <a class="brand" href="/" aria-label="OpenSidebar home">
+          <img src="/logo.png" alt="" width="28" height="28" />
+          <span>OpenSidebar</span>
+        </a>
+        <nav class="nav-links" aria-label="Primary">
+          <a href="/walkthrough">How it works</a>
+          <a href="/ideas" aria-current="page">Ideas</a>
+          <a href="/#features">Features</a>
+          <a href="/#developers">Developers</a>
+          <a href="https://github.com/krisshkodrani/OpenSidebar">GitHub</a>
+          <a class="btn btn-primary nav-cta" href="/#quickstart">Install</a>
+        </nav>
+      </div>
+      <div class="idea-progress" aria-hidden="true">
+        <div class="idea-progress-fill" id="reading-progress"></div>
+      </div>
+    </header>
+
+    <main>
+      <header class="idea-hero">
+        <div
+          class="idea-hero-orbit idea-hero-orbit-one"
+          aria-hidden="true"
+        ></div>
+        <div
+          class="idea-hero-orbit idea-hero-orbit-two"
+          aria-hidden="true"
+        ></div>
+        <div class="idea-hero-inner">
+          <a class="idea-series" href="/ideas">
+            <span>OpenSidebar Ideas</span>
+            <span class="idea-series-separator">/</span>
+            <span>Reliability</span>
+          </a>
+          <h1>Done means <br /><em>verified.</em></h1>
+          <p class="idea-deck">
+            An agent is not finished because it acted. It is finished when it
+            has evidence that the user’s objective was achieved.
+          </p>
+          <div class="idea-meta" aria-label="Article details">
+            <span class="idea-byline"
+              >By <strong>Kris Shkodrani</strong> &amp;
+              <strong>Sol</strong>
+              <span class="idea-model">gpt-5.6-sol</span></span
+            >
+            <span aria-hidden="true">·</span>
+            <time datetime="2026-07-31">July 2026</time>
+            <span aria-hidden="true">·</span>
+            <span>10 minute read</span>
+          </div>
+        </div>
+        <div class="idea-hero-rule" aria-hidden="true">
+          <span></span><i></i><span></span>
+        </div>
+      </header>
+
+      <div class="idea-layout">
+        <aside class="idea-toc" aria-label="In this essay">
+          <p>In this essay</p>
+          <ol>
+            <li><a href="#last-click">The last click</a></li>
+            <li><a href="#plans">Plans are provisional</a></li>
+            <li><a href="#verification-loop">The verification loop</a></li>
+            <li><a href="#under-the-hood">Under the hood</a></li>
+            <li>
+              <a href="#functional-correctness">Functional correctness</a>
+            </li>
+            <li><a href="#traces">Traces and validators</a></li>
+            <li><a href="#uncertainty">Honest uncertainty</a></li>
+            <li><a href="#opensidebar">What it means for us</a></li>
+          </ol>
+        </aside>
+
+        <article class="idea-article" id="article">
+          <p class="idea-opening">
+            There is a small moment in almost every browser task when an agent
+            is tempted to declare victory too early.
+          </p>
+
+          <p>
+            It has found the right page, filled in the fields, and clicked
+            <strong>Save</strong>. The plan is complete. Every action returned
+            without an obvious error. From the agent’s perspective, the work
+            appears finished.
+          </p>
+
+          <p>But did the value actually change?</p>
+
+          <p>
+            Perhaps the form rejected a field further up the page. Perhaps the
+            session expired. Perhaps the server is still processing the request.
+            Perhaps the click landed, but nothing happened.
+          </p>
+
+          <p>
+            The agent knows what it tried to do. It does not yet know what
+            happened.
+          </p>
+
+          <p>
+            That gap—between action and outcome—is where many apparently capable
+            agents become unreliable.
+          </p>
+
+          <section id="last-click" class="idea-section">
+            <div class="idea-section-label">
+              <span>01</span>
+              <span>The finish line</span>
+            </div>
+            <h2>The last click is not the finish line</h2>
+
+            <p>
+              Imagine asking an agent to change the billing address on an
+              account. A reasonable plan might be:
+            </p>
+
+            <ol class="idea-plan">
+              <li><span>01</span>Find the account.</li>
+              <li><span>02</span>Open the billing settings.</li>
+              <li><span>03</span>Enter the new address.</li>
+              <li><span>04</span>Click <strong>Save</strong>.</li>
+              <li><span>05</span>Report success.</li>
+            </ol>
+
+            <p>
+              The problem is not the plan. The problem is treating the plan as
+              evidence.
+            </p>
+
+            <p>
+              Clicking <strong>Save</strong> proves that the agent attempted to
+              save the address. It does not prove that the application accepted
+              it. To establish that, the agent must inspect what came next: a
+              confirmation message, the updated address on the page, or the same
+              value after reopening the record.
+            </p>
+
+            <blockquote class="idea-pullquote">
+              <p>
+                An action is something the agent does.<br />
+                An outcome is a change in the world.
+              </p>
+              <footer>Only the second one completes the task.</footer>
+            </blockquote>
+          </section>
+
+          <section id="plans" class="idea-section">
+            <div class="idea-section-label">
+              <span>02</span>
+              <span>Plans and reality</span>
+            </div>
+            <h2>Plans are useful—and provisional</h2>
+
+            <p>
+              Planning helps an agent keep its bearings. It turns a vague
+              request into manageable steps and gives long tasks some structure.
+              But a plan is still a prediction. It describes how the agent
+              expects the task to unfold.
+            </p>
+
+            <p>The web is rarely so cooperative.</p>
+
+            <p>
+              Pages re-render. Buttons move. Sessions expire. Modals appear over
+              the interface. A server rejects an apparently valid request. A
+              single-page application changes state without navigating anywhere.
+              Sometimes a success message appears even though the underlying
+              record has not changed.
+            </p>
+
+            <p>
+              A browser agent cannot simply execute a plan and count completed
+              steps. It must repeatedly return to the environment and ask:
+              <em>What is true now?</em>
+            </p>
+
+            <div class="idea-margin-note">
+              <span class="idea-margin-note-mark">A</span>
+              <p>
+                The plan proposes the next move. The page supplies the evidence.
+              </p>
+            </div>
+          </section>
+
+          <section id="verification-loop" class="idea-section">
+            <div class="idea-section-label">
+              <span>03</span>
+              <span>The working rhythm</span>
+            </div>
+            <h2>Act, then look again</h2>
+
+            <p>
+              A dependable browser agent follows a simple rhythm:
+              <strong>observe, act, check.</strong>
+            </p>
+
+            <div
+              class="idea-sequence"
+              role="img"
+              aria-label="Action leads to an outcome, which must be supported by evidence"
+            >
+              <div class="idea-sequence-step">
+                <span class="idea-sequence-number">01</span>
+                <div>
+                  <strong>Action</strong>
+                  <small>What the agent attempted</small>
+                </div>
+              </div>
+              <span class="idea-sequence-arrow" aria-hidden="true">→</span>
+              <div class="idea-sequence-step">
+                <span class="idea-sequence-number">02</span>
+                <div>
+                  <strong>Outcome</strong>
+                  <small>What changed in the world</small>
+                </div>
+              </div>
+              <span class="idea-sequence-arrow" aria-hidden="true">→</span>
+              <div class="idea-sequence-step idea-sequence-step-final">
+                <span class="idea-sequence-number">03</span>
+                <div>
+                  <strong>Evidence</strong>
+                  <small>Why the result is believable</small>
+                </div>
+              </div>
+            </div>
+
+            <p>
+              The agent reads the current state, chooses an action, performs it,
+              and then inspects what changed. If the result matches the intended
+              outcome, it can continue. If it does not, the agent must recover,
+              replan, or explain what blocked it.
+            </p>
+
+            <p>
+              The strength of the check should match the importance of the
+              action. Opening a navigation menu may require little more than
+              confirming that the menu appeared. Updating a customer record
+              should involve reading the saved value back. Placing an order
+              calls for stronger evidence: an order number, a confirmation page,
+              or a new entry in the order history.
+            </p>
+
+            <div class="idea-evidence">
+              <p class="idea-evidence-title">Useful evidence can be:</p>
+              <ul>
+                <li>A saved value read back from the application</li>
+                <li>A record appearing in the expected list</li>
+                <li>A status changing from one state to another</li>
+                <li>A server-generated confirmation number</li>
+                <li>An item disappearing after deletion</li>
+                <li>The same result confirmed from another view</li>
+              </ul>
+            </div>
+
+            <p>
+              What matters is that the evidence comes from the environment, not
+              from the agent’s confidence in its own actions.
+            </p>
+          </section>
+
+          <section id="under-the-hood" class="idea-section">
+            <div class="idea-section-label">
+              <span>04</span>
+              <span>Under the hood</span>
+            </div>
+            <h2>Completion is a typed decision</h2>
+
+            <p>
+              This principle is not only a prompt handed to the model. It
+              appears in the runtime as a boundary the model cannot talk its way
+              around.
+            </p>
+
+            <p>
+              The first step is to give completion more than two possible
+              answers. OpenSidebar distinguishes a supported result from a
+              failed result, a result that still needs checking, and a result
+              the available evidence cannot settle.
+            </p>
+
+            <figure class="idea-code-story">
+              <div class="idea-code-frame">
+                <div class="idea-code-bar">
+                  <span class="idea-code-lights" aria-hidden="true"
+                    ><i></i><i></i><i></i
+                  ></span>
+                  <span class="idea-code-file">completion/kernel-types.ts</span>
+                  <span class="idea-code-badge">Runtime excerpt</span>
+                </div>
+                <pre
+                  aria-label="TypeScript completion evaluation states"
+                ><code><span class="idea-code-keyword">export type</span> <span class="idea-code-type">CompletionEvaluation</span> =
+  | {
+      status: <span class="idea-code-string">"accepted"</span>;
+      reason: <span class="idea-code-type">string</span>;
+      contract: <span class="idea-code-type">CompletionContract</span>;
+      evidence: <span class="idea-code-type">CompletionEvidence</span>[];
+    }
+  | {
+      status: <span class="idea-code-string">"rejected"</span>;
+      reason: <span class="idea-code-type">string</span>;
+      contract: <span class="idea-code-type">CompletionContract</span>;
+      evidence: <span class="idea-code-type">CompletionEvidence</span>[];
+    }
+  | {
+      status: <span class="idea-code-string">"needs_verification"</span>;
+      reason: <span class="idea-code-type">string</span>;
+      hint: <span class="idea-code-type">string</span>;
+      contract: <span class="idea-code-type">CompletionContract</span>;
+      evidence: <span class="idea-code-type">CompletionEvidence</span>[];
+    }
+  | {
+      status: <span class="idea-code-string">"inconclusive"</span>;
+      reason: <span class="idea-code-type">string</span>;
+      contract?: <span class="idea-code-type">CompletionContract</span>;
+      evidence: <span class="idea-code-type">CompletionEvidence</span>[];
+    };</code></pre>
+              </div>
+              <figcaption class="idea-code-explanation">
+                <span>01</span>
+                <p>
+                  <strong>The vocabulary matters.</strong> “Needs verification”
+                  is not silently collapsed into success, and “inconclusive” is
+                  not disguised as failure. Every answer carries its evidence.
+                </p>
+              </figcaption>
+            </figure>
+
+            <p>
+              Naming those states is useful; enforcing them is what changes the
+              behavior. When the agent proposes completion, a guard checks the
+              evidence required by the task contract. Missing evidence turns the
+              proposal into a rejection and sends the agent back to verify.
+            </p>
+
+            <figure class="idea-code-story">
+              <div class="idea-code-frame">
+                <div class="idea-code-bar">
+                  <span class="idea-code-lights" aria-hidden="true"
+                    ><i></i><i></i><i></i
+                  ></span>
+                  <span class="idea-code-file"
+                    >completion/guards/contract-guards.ts</span
+                  >
+                  <span class="idea-code-badge">Edited for length</span>
+                </div>
+                <pre
+                  aria-label="TypeScript missing evidence completion guard"
+                ><code><span class="idea-code-keyword">export function</span> <span class="idea-code-function">assessMissingEvidenceGuard</span>(
+  ctx: <span class="idea-code-type">CompletionGuardContext</span>,
+): <span class="idea-code-type">GuardOutcome</span> {
+  <span class="idea-code-keyword">const</span> preflight =
+    <span class="idea-code-function">evaluateCompletionRequiredEvidencePreflight</span>({
+      missingRequiredEvidence: ctx.missingRequiredEvidence,
+    });
+
+  <span class="idea-code-keyword">if</span> (preflight.status === <span class="idea-code-string">"valid"</span>) {
+    <span class="idea-code-keyword">return</span> { kind: <span class="idea-code-string">"pass"</span> };
+  }
+
+  <span class="idea-code-keyword">const</span> missing = preflight.missingRequiredEvidence;
+  <span class="idea-code-keyword">const</span> reason =
+    <span class="idea-code-string">`Missing required typed evidence: ${missing.join(", ")}.`</span>;
+
+  <span class="idea-code-keyword">return</span> {
+    kind: <span class="idea-code-string">"reject"</span>,
+    guardId: <span class="idea-code-string">"missing_evidence"</span>,
+    reason,
+    <span class="idea-code-comment">// Recovery instructions and trace effects follow.</span>
+  };
+}</code></pre>
+              </div>
+              <figcaption class="idea-code-explanation">
+                <span>02</span>
+                <p>
+                  <strong>“Done” is a proposal, not a command.</strong> If the
+                  proof required by the contract is missing, execution continues
+                  with a concrete reason to re-check the page.
+                </p>
+              </figcaption>
+            </figure>
+
+            <div class="idea-code-note">
+              <span>Why show the code?</span>
+              <p>
+                Because reliability claims should be inspectable. These are
+                excerpts from the same completion runtime exercised by
+                OpenSidebar’s tests—not a separate diagram invented for the
+                article.
+              </p>
+            </div>
+          </section>
+
+          <section id="functional-correctness" class="idea-section">
+            <div class="idea-section-label">
+              <span>05</span>
+              <span>Evaluation</span>
+            </div>
+            <h2>Plausible behavior is not functional correctness</h2>
+
+            <p>This distinction also appears in browser-agent research.</p>
+
+            <p>
+              <a
+                href="https://proceedings.iclr.cc/paper_files/paper/2024/hash/4410c0711e9154a7a2d26f9b3816d1ef-Abstract-Conference.html"
+                >WebArena</a
+              >
+              evaluates whether web tasks are functionally correct after
+              execution. Its validators inspect the resulting application state
+              rather than awarding success because an agent followed a
+              convincing sequence of steps.
+            </p>
+
+            <p>
+              <a href="https://servicenow.github.io/WorkArena/">WorkArena</a>
+              brings the same principle to enterprise work in ServiceNow. The
+              agent succeeds when the requested outcome exists in the
+              application—not when its activity merely looks reasonable.
+            </p>
+
+            <p>
+              That difference matters in both directions. A clumsy process can
+              occasionally produce the correct result, while an elegant process
+              can end in failure. If we evaluate only the sequence of actions,
+              we can misjudge both.
+            </p>
+
+            <div
+              class="idea-comparison"
+              aria-label="Two views of agent quality"
+            >
+              <div>
+                <span>Did it work?</span>
+                <strong>The outcome decides.</strong>
+              </div>
+              <div>
+                <span>What happened?</span>
+                <strong>The trajectory explains.</strong>
+              </div>
+            </div>
+          </section>
+
+          <section id="traces" class="idea-section">
+            <div class="idea-section-label">
+              <span>06</span>
+              <span>Evidence and explanation</span>
+            </div>
+            <h2>Traces explain; validators decide</h2>
+
+            <p>
+              A trajectory—or trace—is the record of an agent’s run: what it
+              observed, which tools it used, what those tools returned, where it
+              hesitated, and how it responded to errors.
+            </p>
+
+            <p>
+              Traces are essential. When an agent fails, the trace can show
+              whether it misunderstood the page, acted on stale information,
+              missed an error message, or simply stopped too soon. Without that
+              record, debugging becomes guesswork.
+            </p>
+
+            <p>But a trace is not proof of success.</p>
+
+            <p>
+              An agent can produce a beautifully coherent account of a task it
+              did not complete. It can explain why each action made sense. It
+              can even state, with confidence, that the objective was achieved.
+              None of that changes the application state.
+            </p>
+
+            <div class="idea-principle">
+              <span class="idea-principle-kicker">The principle</span>
+              <p>
+                Validators decide whether the required outcome exists.
+                <br />Traces explain why it does—or why it does not.
+              </p>
+            </div>
+
+            <p>
+              <a
+                href="https://www.anthropic.com/engineering/demystifying-evals-for-ai-agents"
+                >Anthropic’s guidance on agent evaluations</a
+              >
+              draws a similar distinction between evaluating outcomes and
+              evaluating transcripts. Both matter, but they answer different
+              questions.
+            </p>
+
+            <h3>The model does not contain a “done” detector</h3>
+
+            <p>
+              It is tempting to treat premature completion as a model problem:
+              perhaps the agent needs a better prompt, a stronger model, or
+              another reminder to be careful. Sometimes that helps. It is not
+              the whole answer.
+            </p>
+
+            <p>
+              Reliable completion comes from the system around the model: clear
+              goals, useful browser tools, fresh observations, verification
+              rules, approval gates, recovery paths, and traces. Together, these
+              form the agent’s harness.
+            </p>
+
+            <p>
+              <a href="https://addyosmani.com/blog/agent-harness-engineering/"
+                >Addy Osmani describes harness engineering</a
+              >
+              as the work of improving that surrounding system whenever an agent
+              exposes a recurring failure. If agents regularly stop after
+              clicking <strong>Save</strong>, the durable solution is to make
+              post-action checking part of the normal execution loop.
+            </p>
+
+            <p>
+              The goal is not to make the agent sound less certain. It is to
+              give certainty a better foundation.
+            </p>
+          </section>
+
+          <section id="uncertainty" class="idea-section">
+            <div class="idea-section-label">
+              <span>07</span>
+              <span>Knowing the limits</span>
+            </div>
+            <h2>Sometimes the honest answer is “I don’t know yet”</h2>
+
+            <p>Not every outcome can be verified automatically.</p>
+
+            <p>
+              A background operation may take longer than expected. A website
+              may offer no readable confirmation. Another person may need to
+              approve the request. The action may have succeeded even though the
+              page failed to update.
+            </p>
+
+            <p>
+              In those cases, the agent should not turn missing evidence into
+              invented confidence.
+            </p>
+
+            <div class="idea-states">
+              <div class="idea-state idea-state-verified">
+                <span aria-hidden="true">✓</span>
+                <div>
+                  <strong>Verified</strong>
+                  <p>Evidence shows the objective was achieved.</p>
+                </div>
+              </div>
+              <div class="idea-state idea-state-incomplete">
+                <span aria-hidden="true">×</span>
+                <div>
+                  <strong>Not completed</strong>
+                  <p>Evidence shows the objective was not achieved.</p>
+                </div>
+              </div>
+              <div class="idea-state idea-state-uncertain">
+                <span aria-hidden="true">?</span>
+                <div>
+                  <strong>Uncertain</strong>
+                  <p>The available evidence supports neither conclusion.</p>
+                </div>
+              </div>
+            </div>
+
+            <p>
+              Uncertainty is not a weakness. It is a faithful description of the
+              situation.
+            </p>
+
+            <div class="idea-margin-note idea-boundary-note">
+              <span class="idea-margin-note-mark">B</span>
+              <p>
+                <strong>The boundary matters.</strong> Verification should stop
+                at the edge of the user’s objective. If the task is to send a
+                message, evidence that the application accepted and delivered it
+                may be enough. Whether the recipient reads it, understands it,
+                or acts on it is a later outcome—unless the user explicitly made
+                that part of the goal.
+              </p>
+            </div>
+
+            <p>
+              The agent may need to observe again, check another part of the
+              application, wait for an external result, or ask the user what to
+              do next. For consequential or irreversible actions, human
+              confirmation may be the correct final validator.
+            </p>
+
+            <p>
+              This principle extends beyond browser automation.
+              <a
+                href="https://airc.nist.gov/airmf-resources/airmf/3-sec-characteristics/"
+                >NIST’s guidance on trustworthy AI</a
+              >
+              emphasizes objective evidence, ongoing monitoring, and the ability
+              for humans to intervene when a system cannot detect or correct its
+              own errors.
+            </p>
+          </section>
+
+          <section id="opensidebar" class="idea-section">
+            <div class="idea-section-label">
+              <span>08</span>
+              <span>Our approach</span>
+            </div>
+            <h2>What this means for OpenSidebar</h2>
+
+            <p>
+              OpenSidebar is built around a separation between execution and
+              completion.
+            </p>
+
+            <p>
+              The agent can form a plan and operate the browser, but those
+              actions do not grant it authority to declare success. It must
+              return to the page, inspect the resulting state, and compare that
+              state with the user’s original objective.
+            </p>
+
+            <p>
+              Its tools perform actions. Its verification logic evaluates
+              outcomes. Its traces preserve the evidence needed to understand
+              both.
+            </p>
+
+            <blockquote class="idea-closing-quote">
+              <p>
+                Do not report the future the plan predicted. Report the state
+                the browser actually reached.
+              </p>
+            </blockquote>
+
+            <p>
+              That may make the agent slightly more deliberate. It may add
+              another observation, a field readback, or a second view of the
+              result.
+            </p>
+
+            <p>
+              That final check is not wasted motion. It is the point at which
+              automation becomes dependable.
+            </p>
+
+            <p class="idea-final-lines">
+              An agent that clicks quickly can look impressive.<br />
+              <strong
+                >An agent that verifies its work can be trusted with something
+                real.</strong
+              >
+            </p>
+          </section>
+
+          <section class="idea-sources" aria-labelledby="sources-title">
+            <div>
+              <span class="idea-sources-kicker">Notes &amp; references</span>
+              <h2 id="sources-title">Further reading</h2>
+            </div>
+            <ol>
+              <li>
+                <a
+                  href="https://proceedings.iclr.cc/paper_files/paper/2024/hash/4410c0711e9154a7a2d26f9b3816d1ef-Abstract-Conference.html"
+                  >WebArena: A Realistic Web Environment for Building Autonomous
+                  Agents</a
+                >
+                <span>ICLR, 2024</span>
+              </li>
+              <li>
+                <a href="https://servicenow.github.io/WorkArena/"
+                  >WorkArena: How Capable Are Web Agents at Solving Common
+                  Knowledge Work Tasks?</a
+                >
+                <span>ServiceNow Research, 2024</span>
+              </li>
+              <li>
+                <a
+                  href="https://www.anthropic.com/engineering/demystifying-evals-for-ai-agents"
+                  >Demystifying evals for AI agents</a
+                >
+                <span>Anthropic Engineering</span>
+              </li>
+              <li>
+                <a href="https://addyosmani.com/blog/agent-harness-engineering/"
+                  >Agent Harness Engineering</a
+                >
+                <span>Addy Osmani</span>
+              </li>
+              <li>
+                <a
+                  href="https://airc.nist.gov/airmf-resources/airmf/3-sec-characteristics/"
+                  >AI Risks and Trustworthiness</a
+                >
+                <span>NIST AI Risk Management Framework</span>
+              </li>
+            </ol>
+          </section>
+        </article>
+      </div>
+
+      <aside class="idea-next">
+        <div class="wrap idea-next-inner">
+          <div>
+            <span class="idea-next-kicker">See the principle in practice</span>
+            <h2>Follow a real run from prompt to verified result.</h2>
+          </div>
+          <a class="btn btn-primary" href="/walkthrough"
+            >Open the walkthrough <span aria-hidden="true">→</span></a
+          >
+        </div>
+      </aside>
+    </main>
+
+    <footer class="footer">
+      <div class="wrap">
+        <div class="footer-top">
+          <a class="brand" href="/">
+            <img src="/logo.png" alt="" width="28" height="28" />
+            <span>OpenSidebar</span>
+          </a>
+          <nav class="footer-links" aria-label="Footer">
+            <a href="/walkthrough">How it works</a>
+            <a href="/ideas">Ideas</a>
+            <a href="https://github.com/krisshkodrani/OpenSidebar">GitHub</a>
+            <a
+              href="https://github.com/krisshkodrani/OpenSidebar/tree/main/docs"
+              >Docs</a
+            >
+            <a
+              href="https://github.com/krisshkodrani/OpenSidebar/blob/main/PRIVACY_POLICY.md"
+              >Privacy</a
+            >
+          </nav>
+        </div>
+        <div class="footer-note">
+          <span>© <span id="year">2026</span> OpenSidebar</span>
+          <span>Free and open source · MIT License</span>
+        </div>
+      </div>
+    </footer>
+
+    <script type="module" src="/src/ideas.ts"></script>
+  </body>
+</html>

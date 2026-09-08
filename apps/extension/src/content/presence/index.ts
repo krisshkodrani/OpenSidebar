@@ -113,6 +113,7 @@ function scrollDirectionOf(
 export async function presenceBeforeAction(
   toolName: ToolName,
   args: Record<string, unknown>,
+  onActing?: () => void,
 ): Promise<void> {
   try {
     const kind = TOOL_TO_KIND[toolName];
@@ -128,6 +129,7 @@ export async function presenceBeforeAction(
       if (!source || !dropTarget) return;
       await coord.perform(
         buildScript({ kind, target: source, dragTarget: dropTarget }),
+        onActing,
       );
       return;
     }
@@ -157,6 +159,7 @@ export async function presenceBeforeAction(
             ? args.text.length
             : undefined,
       }),
+      onActing,
     );
   } catch {
     /* fail-open — the action dispatches regardless */

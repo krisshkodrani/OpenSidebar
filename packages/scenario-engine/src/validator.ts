@@ -1,0 +1,223 @@
+import type {
+  JsonObject,
+  JsonValue,
+  ScenarioStateV2,
+  ValidationAssertionV1,
+  ValidationResultV1,
+} from "@opensidebar/scenario-contracts";
+import { stableHash, stableJson } from "./stable-json.js";
+import type {
+  ValidationInputV1,
+  ValidatorAssertionSpecV1,
+} from "./types.js";
+
+function valueAt(root: unknown, path: string | undefined): JsonValue | undefined {
+  if (!path) return root as JsonValue | undefined;
+  let value: unknown = root;
+  for (const part of path.split(".").filter(Boolean)) {
+    if (!value || typeof value !== "object" || Array.isArray(value)) return undefined;
+    value = (value as Record<string, unknown>)[part];
+  }
+  return value as JsonValue | undefined;
+}
+
+function sourceValue(
+  input: ValidationInputV1,
+  assertion: ValidatorAssertionSpecV1,
+): JsonValue | undefined {
+  if (assertion.source === "answer") return input.finalAnswer;
+  if (assertion.source === "terminal") return input.terminalOutcome;
+  if (assertion.source === "driver") {
+    return valueAt(input.driverEvidence, assertion.path);
+  }
+  if (assertion.source === "events") {
+    return valueAt(input.finalState.events as unknown as JsonValue, assertion.path);
+  }
+  return valueAt(input.finalState as unknown as JsonValue, assertion.path);
+}
+
+function normalizeAnswerText(value: string): string {
+  return value
+    .normalize("NFKC")
+    .toLocaleLowerCase()
+    .replace(/[\p{P}\p{S}]+/gu, " ")
+    .replace(/\s+/gu, " ")
+    .trim();
+}
+
+function normalizedExpectedTerms(expected: JsonValue): string[] | null {
+  if (
+    !Array.isArray(expected) ||
+    expected.some((value) => typeof value !== "string")
+  ) {
+    return null;
+  }
+  return expected.map((value) => normalizeAnswerText(value as string));
+}
+
+function includesNormalizedTerm(actual: string, expected: string): boolean {
+  return ` ${actual} `.includes(` ${expected} `);
+}
+
+function assertionPasses(
+  assertion: ValidatorAssertionSpecV1,
+  actual: JsonValue | undefined,
+): boolean {
+  switch (assertion.operator) {
+    case "equals":
+      return JSON.stringify(actual) === JSON.stringify(assertion.expected);
+    case "includes":
+      return (
+        typeof actual === "string" &&
+        typeof assertion.expected === "string" &&
+        includesExpectedAnswer(actual, assertion.expected)
+      );
+    case "includes-normalized": {
+      if (typeof actual !== "string" || typeof assertion.expected !== "string") {
+        return false;
+      }
+      return normalizeAnswerText(actual).includes(
+        normalizeAnswerText(assertion.expected),
+      );
+    }
+    case "includes-all-normalized": {
+      if (typeof actual !== "string") return false;
+      const terms = normalizedExpectedTerms(assertion.expected);
+      if (!terms || terms.length === 0) return false;
+      const normalizedActual = normalizeAnswerText(actual);
+      return terms.every((term) => includesNormalizedTerm(normalizedActual, term));
+    }
+    case "excludes-all-normalized": {
+      if (typeof actual !== "string") return false;
+      const terms = normalizedExpectedTerms(assertion.expected);
+      if (!terms || terms.length === 0) return false;
+      const normalizedActual = normalizeAnswerText(actual);
+      return terms.every(
+        (term) => !includesNormalizedTerm(normalizedActual, term),
+      );
+    }
+    case "exists":
+      return actual !== undefined;
+    case "not-exists":
+      return actual === undefined;
+    case "array-includes":
+      return (
+        Array.isArray(actual) &&
+        actual.some(
+          (item) => JSON.stringify(item) === JSON.stringify(assertion.expected),
+        )
+      );
+  }
+}
+
+function normalizeAnswerClause(value: string): string {
+  const tokens = value
+    .toLocaleLowerCase()
+    .replace(/\b(?:above|exceeding|greater\s+than)\b/g, "over")
+    .replace(/[^\p{L}\p{N}]+/gu, " ")
+    .replace(/\s+/g, " ")
+    .trim()
+    .split(" ")
+    .filter(Boolean)
+    .map((token) =>
+      token.length > 3 && token.endsWith("s") && !/(?:ss|us|is)$/.test(token)
+        ? token.slice(0, -1)
+        : token,
+    );
+  return tokens.join(" ");
+}
+
+function includesExpectedAnswer(actual: string, expected: string): boolean {
+  const normalizedActual = normalizeAnswerClause(actual);
+  const expectedClauses = expected
+    .split(/;|\band\b/i)
+    .map(normalizeAnswerClause)
+    .filter(Boolean);
+  return (
+    expectedClauses.length > 0 &&
+    expectedClauses.every((clause) => normalizedActual.includes(clause))
+  );
+}
+
+function leafPaths(value: JsonValue, prefix = ""): Map<string, string> {
+  const result = new Map<string, string>();
+  if (value === null || typeof value !== "object") {
+    result.set(prefix, stableJson(value));
+    return result;
+  }
+  if (Array.isArray(value)) {
+    result.set(prefix, stableJson(value));
+    return result;
+  }
+  for (const [key, child] of Object.entries(value)) {
+    const path = prefix ? `${prefix}.${key}` : key;
+    for (const [leaf, encoded] of leafPaths(child, path)) result.set(leaf, encoded);
+  }
+  return result;
+}
+
+function unexpectedMutations(input: ValidationInputV1): string[] {
+  const before = leafPaths(input.initialState as unknown as JsonValue);
+  const after = leafPaths(input.finalState as unknown as JsonValue);
+  const allowed = input.definition.validator.allowedMutationPaths;
+  const paths = new Set([...before.keys(), ...after.keys()]);
+  return [...paths]
+    .filter((path) => before.get(path) !== after.get(path))
+    .filter(
+      (path) =>
+        ![
+          "revision",
+          "lifecycle",
+          "route",
+          "events",
+        ].some((system) => path === system || path.startsWith(`${system}.`)),
+    )
+    .filter(
+      (path) =>
+        !allowed.some(
+          (candidate) => path === candidate || path.startsWith(`${candidate}.`),
+        ),
+    )
+    .sort();
+}
+
+export function validateCase(input: ValidationInputV1): ValidationResultV1 {
+  const assertions: ValidationAssertionV1[] = input.definition.validator.assertions.map(
+    (spec) => {
+      const actual = sourceValue(input, spec);
+      return {
+        id: spec.id,
+        passed: assertionPasses(spec, actual),
+        expected: spec.expected,
+        actual,
+        evidence: spec.evidence,
+      };
+    },
+  );
+  const mutations = unexpectedMutations(input);
+  const passed = assertions.every((assertion) => assertion.passed) && mutations.length === 0;
+  const hashInput: JsonObject = {
+    state: input.finalState as unknown as JsonValue,
+    answer: input.finalAnswer ?? null,
+    terminal: input.terminalOutcome ?? null,
+    ...(input.driverEvidence ? { driver: input.driverEvidence } : {}),
+  };
+  return {
+    schemaVersion: 1,
+    caseId: input.definition.contract.id,
+    caseVersion: input.definition.contract.version,
+    validatorId: input.definition.validator.id,
+    validatorVersion: input.definition.validator.version,
+    verdict: passed ? "pass" : "fail",
+    assertions,
+    unexpectedMutations: mutations,
+    finalStateHash: stableHash(hashInput),
+  };
+}
+
+export function publicState(state: ScenarioStateV2): JsonObject {
+  const value = state.data.public;
+  return value && typeof value === "object" && !Array.isArray(value)
+    ? (value as JsonObject)
+    : {};
+}

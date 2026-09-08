@@ -137,6 +137,17 @@ describe("task contract helpers", () => {
     expect(coverage.satisfied).toBe(true);
   });
 
+  test("detects two subjects in a natural comparison request", () => {
+    const contract = buildTaskContract(
+      "Compare the travel and expense policies and tell me when manager pre-approval is required.",
+    );
+
+    expect(contract.multiReturnCount).toBe(2);
+    expect(contract.requiredEntities).toEqual(
+      expect.arrayContaining(["travel policy", "expense policy"]),
+    );
+  });
+
   test("ignores conversational filler when building required entities", () => {
     const contract = buildTaskContract(
       "Actually, change the reply. Decline both proposed times and suggest Monday at 11 AM instead.",
@@ -477,6 +488,55 @@ describe("task contract helpers", () => {
 
     expect(contract.exhaustiveScopeCount).toBe(10);
     expect(contract.exhaustiveScopeLabel).toBe("job listings");
+  });
+
+  test("does not reinterpret a quantified beneficiary as the compared collection", () => {
+    const query =
+      "Northstar FC's Saturday kickoff has changed. Verify the official kickoff time and arrival requirement, check whether the current booking still works, and compare the available replacements for all 18 travelers. Prepare the safest compliant change, but do not purchase or confirm it. Then report the new departure and arrival times, arrival buffer, and total change fee.";
+    const contract = buildTaskContract(query);
+
+    expect(contract.exhaustiveScopeLabel).toBeUndefined();
+    expect(contract.exhaustiveScopeCount).toBeUndefined();
+    expect(contract.requiresAggregateReport).toBe(false);
+
+    const originalSteps = [
+      {
+        objective: "Compare the available replacement travel options.",
+        successCriteria:
+          "The safest compliant option for all 18 travelers is identified.",
+        dependencies: [],
+        assumptions: [],
+        toolProfile: "read_only" as const,
+      },
+      {
+        objective: "Report the prepared itinerary and fee.",
+        successCriteria:
+          "The report gives departure, arrival, buffer, and total fee.",
+        dependencies: [0],
+        assumptions: [],
+        toolProfile: "read_only" as const,
+      },
+    ];
+    const repaired = repairPlanCoverage({ query, steps: originalSteps });
+
+    expect(repaired).toHaveLength(originalSteps.length);
+    expect(repaired).not.toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          objective: expect.stringMatching(/reviewed 18 travelers/i),
+        }),
+      ]),
+    );
+  });
+
+  test("still recognizes an explicit exhaustive review of travelers", () => {
+    const contract = buildTaskContract(
+      "Review all 18 travelers, then report which records need attention.",
+    );
+
+    expect(contract.exhaustiveScopeLabel).toBe("travelers");
+    expect(contract.exhaustiveScopeCount).toBe(18);
+    expect(contract.requiresAggregateReport).toBe(true);
   });
 
   test("does not treat vague restart language as exhaustive scope", () => {

@@ -1,0 +1,11 @@
+# yaml-language-server: $schema=https://coderabbit.ai/integrations/schema.v2.json
+
+# Reviews are maintainer-initiated. Do not automatically analyze contributor PRs.
+reviews:
+  slop_detection:
+    enabled: false
+  auto_review:
+    enabled: false
+
+chat:
+  auto_reply: false

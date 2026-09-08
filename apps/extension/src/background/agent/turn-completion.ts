@@ -61,10 +61,20 @@ export type TurnCompletionDeps = {
   sessionAffinityId?: string;
   multiTurnSessionId?: string;
   sleep?: (ms: number) => Promise<void>;
+  /** Maximum wall time for one provider request, including streaming. */
+  requestTimeoutMs?: number;
+  /** Maximum cumulative provider time across retries for one agent turn. */
+  turnTimeoutMs?: number;
+  /** Minimum remaining turn budget required before starting a retry. */
+  minRetryBudgetMs?: number;
 };
 
 const defaultSleep = (ms: number) =>
   new Promise<void>((resolve) => setTimeout(resolve, ms));
+
+export const EXECUTOR_REQUEST_TIMEOUT_MS = 120_000;
+export const EXECUTOR_TURN_TIMEOUT_MS = 180_000;
+export const EXECUTOR_MIN_RETRY_BUDGET_MS = 30_000;
 
 export async function completeTurnWithRetries(
   deps: TurnCompletionDeps,
@@ -75,6 +85,21 @@ export async function completeTurnWithRetries(
   let response: CompletionResponse;
   let turnRetryCount = 0;
   let synthesizedFromHallucination = false;
+  const requestTimeoutMs = Math.max(
+    1,
+    deps.requestTimeoutMs ?? EXECUTOR_REQUEST_TIMEOUT_MS,
+  );
+  const turnTimeoutMs = Math.max(
+    requestTimeoutMs,
+    deps.turnTimeoutMs ?? EXECUTOR_TURN_TIMEOUT_MS,
+  );
+  const minRetryBudgetMs = Math.max(
+    0,
+    deps.minRetryBudgetMs ?? EXECUTOR_MIN_RETRY_BUDGET_MS,
+  );
+  const remainingTurnBudgetMs = () =>
+    Math.max(0, turnTimeoutMs - (Date.now() - llmStart));
+  const hasRetryBudget = () => remainingTurnBudgetMs() >= minRetryBudgetMs;
 
   // eslint-disable-next-line no-constant-condition
   retryLoop: while (true) {
@@ -85,7 +110,24 @@ export async function completeTurnWithRetries(
     const onMainAbort = () => turnAbortController.abort();
     let listenerAttached = true;
     deps.mainAbortSignal.addEventListener("abort", onMainAbort);
-    const cleanupAbortListener = () => {
+    if (deps.mainAbortSignal.aborted) turnAbortController.abort();
+    let requestTimedOut = false;
+    const attemptTimeoutMs = Math.max(
+      1,
+      Math.min(requestTimeoutMs, remainingTurnBudgetMs()),
+    );
+    let requestTimeoutId: ReturnType<typeof setTimeout>;
+    const requestTimeout = new Promise<never>((_resolve, reject) => {
+      requestTimeoutId = setTimeout(() => {
+        requestTimedOut = true;
+        turnAbortController.abort();
+        reject(
+          new Error(`LLM provider request timed out after ${attemptTimeoutMs}ms`),
+        );
+      }, attemptTimeoutMs);
+    });
+    const cleanupAttempt = () => {
+      clearTimeout(requestTimeoutId);
       if (!listenerAttached) return;
       deps.mainAbortSignal.removeEventListener("abort", onMainAbort);
       listenerAttached = false;
@@ -116,21 +158,26 @@ export async function completeTurnWithRetries(
     };
 
     try {
-      response = await deps.llm.completeStream(
-        {
-          messages,
-          tools: deps.tools,
-          max_tokens: deps.maxTokens,
-          stop: ["Observation:"],
-          signal: turnAbortController.signal,
-          sessionAffinityId: deps.sessionAffinityId,
-          multiTurnSessionId: deps.multiTurnSessionId,
-        },
-        onTextDelta,
-      );
+      response = await Promise.race([
+        deps.llm.completeStream(
+          {
+            messages,
+            tools: deps.tools,
+            max_tokens: deps.maxTokens,
+            stop: ["Observation:"],
+            signal: turnAbortController.signal,
+            sessionAffinityId: deps.sessionAffinityId,
+            multiTurnSessionId: deps.multiTurnSessionId,
+          },
+          onTextDelta,
+        ),
+        requestTimeout,
+      ]);
+      cleanupAttempt();
 
       if (isEmptyCompletionResponse(response)) {
         const switchedToFallback =
+          hasRetryBudget() &&
           !deps.llm.isPlannerTier() &&
           deps.llm.activateExecutorFallback("empty_response");
         if (switchedToFallback) {
@@ -165,14 +212,14 @@ export async function completeTurnWithRetries(
             turnRetryCount,
             TURN_RETRY_BACKOFF_MS,
           );
-          cleanupAbortListener();
           if (backoff > 0) await sleep(backoff);
           continue retryLoop;
         }
 
         if (
           turnRetryCount < MAX_TURN_RETRIES &&
-          RETRYABLE_ERRORS.has("empty_response")
+          RETRYABLE_ERRORS.has("empty_response") &&
+          hasRetryBudget()
         ) {
           turnRetryCount++;
           deps.log.warn("agent", "Empty LLM response, retrying", {
@@ -199,21 +246,42 @@ export async function completeTurnWithRetries(
             turnRetryCount,
             TURN_RETRY_BACKOFF_MS,
           );
-          cleanupAbortListener();
           if (backoff > 0) await sleep(backoff);
           continue retryLoop;
         }
       }
 
-      cleanupAbortListener();
       deps.llm.resetExecutorFallback();
       break;
     } catch (llmError: unknown) {
-      cleanupAbortListener();
+      cleanupAttempt();
+      const effectiveError = requestTimedOut
+        ? Object.assign(
+            new Error(
+              `LLM provider request timed out after ${attemptTimeoutMs}ms`,
+            ),
+            { name: "ExecutorRequestTimeoutError" },
+          )
+        : llmError;
       const errorClass = classifyTurnError(llmError, hallucinationDetected);
+      const errorLabel = requestTimedOut ? "timeout" : errorClass;
 
-      if (errorClass === "user_abort" && !hallucinationDetected) {
-        throw llmError;
+      if (requestTimedOut) {
+        deps.traceRecorder?.recordEvent("llm_call_timeout", {
+          turn: deps.turnCount,
+          retry: turnRetryCount,
+          timeoutMs: attemptTimeoutMs,
+          remainingTurnBudgetMs: remainingTurnBudgetMs(),
+          model: deps.llm.getCurrentModel(),
+        });
+      }
+
+      if (
+        errorClass === "user_abort" &&
+        !requestTimedOut &&
+        !hallucinationDetected
+      ) {
+        throw effectiveError;
       }
 
       if (errorClass === "credits_exhausted") {
@@ -249,10 +317,11 @@ export async function completeTurnWithRetries(
 
       if (
         turnRetryCount < MAX_TURN_RETRIES &&
-        RETRYABLE_ERRORS.has(errorClass)
+        (requestTimedOut || RETRYABLE_ERRORS.has(errorClass)) &&
+        hasRetryBudget()
       ) {
         turnRetryCount++;
-        deps.log.warn("agent", `Turn error (${errorClass}), retrying`, {
+        deps.log.warn("agent", `Turn error (${errorLabel}), retrying`, {
           turn: deps.turnCount,
           retry: turnRetryCount,
         });
@@ -270,7 +339,7 @@ export async function completeTurnWithRetries(
         deps.traceRecorder?.recordEvent("turn_retry", {
           turn: deps.turnCount,
           retry: turnRetryCount,
-          errorClass,
+          errorClass: errorLabel,
         });
 
         if (errorClass === "hallucination") {
@@ -310,9 +379,9 @@ export async function completeTurnWithRetries(
         break;
       }
 
-      throw llmError;
+      throw effectiveError;
     } finally {
-      cleanupAbortListener();
+      cleanupAttempt();
     }
   }
 

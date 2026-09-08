@@ -440,6 +440,43 @@ describe("LLMClient construction & tier switching", () => {
     expect(sentModel).toBe("custom/judge");
   });
 
+  test("prefers independent OpenRouter upstreams without blocking fallback", async () => {
+    const client = new LLMClient("test-api-key", {
+      providerMode: "openrouter",
+      executorModel: "minimax/minimax-m3",
+      plannerModel: "openai/gpt-5.6-terra",
+      judgeModel: "openai/gpt-5.6-luna",
+      executorProviderPin: "Groq",
+      plannerProviderPin: "OpenAI",
+      judgeProviderPin: "OpenAI",
+    });
+    const sent: Array<Record<string, unknown>> = [];
+    mockFetch((_url, init) => {
+      sent.push(JSON.parse(init!.body as string));
+      return jsonApiResponse('{"pass": true}');
+    });
+
+    await client.complete(baseRequest());
+    client.switchToPlanner();
+    await client.complete(baseRequest());
+    await client.runJudge({ systemPrompt: "s", userPrompt: "u" });
+
+    expect(sent.map(({ model, provider }) => ({ model, provider }))).toEqual([
+      {
+        model: "minimax/minimax-m3",
+        provider: { order: ["Groq"], allow_fallbacks: true },
+      },
+      {
+        model: "openai/gpt-5.6-terra",
+        provider: { order: ["OpenAI"], allow_fallbacks: true },
+      },
+      {
+        model: "openai/gpt-5.6-luna",
+        provider: { order: ["OpenAI"], allow_fallbacks: true },
+      },
+    ]);
+  });
+
   test("composeText strips think tags from the writer output", async () => {
     const client = makeClient({ writerModel: "custom/writer" });
     mockFetch(() => jsonApiResponse("<think>plan</think>Final text."));
@@ -883,6 +920,22 @@ describe("complete() error handling & retry", () => {
     expect(result.content).toBe("Success");
     // Should have called fetch more than once due to retries
     expect(callCount).toBeGreaterThan(1);
+  });
+
+  test("retries transient OpenRouter timeouts and server errors", async () => {
+    const client = makeClient();
+    let callCount = 0;
+    mockFetch(() => {
+      callCount++;
+      if (callCount === 1) return new Response("Timed out", { status: 408 });
+      if (callCount === 2)
+        return new Response("Temporary router error", { status: 500 });
+      return jsonApiResponse("Recovered");
+    });
+
+    const result = await client.complete(baseRequest());
+    expect(result.content).toBe("Recovered");
+    expect(callCount).toBe(3);
   });
 
   test("does NOT retry on 400/401/404", async () => {

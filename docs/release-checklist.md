@@ -2,21 +2,24 @@
 
 Use this checklist when preparing a new OpenSidebar release.
 
-## Current RC Status - 2026-07-30
+## Current RC Status - 2026-08-08
 
-The version of record is `0.7.0`; `0.6.0` was the previous published package.
+The `0.7.2` update is submitted for Chrome Web Store review under the stable ID
+`hakbnbbkiehiofnafdkcibbnkbdmjiha`; existing users remain on the previously
+published version until Google approves the update.
 
-| Gate | Status | Evidence / next action |
-| --- | --- | --- |
-| Code and UI | Passed | Compact task rail, OpenRouter default/recommendation, provider migration, local reliability summaries, recovery paths, and the staged composer/workspace fixes are present; focused tests passed. |
-| Listing material | Passed | Rebuilt the four customer-only screenshots, promo tile, and marquee under `.artifacts/store/`; OpenRouter is selected in the provider capture and developer-only viewer images are excluded. |
-| Audience videos | Passed | Revalidated both British-female films under `.artifacts/publish/`; rebuilt the customer film with OpenRouter attribution and retained the already accurate developer film. |
-| Manifest/version alignment | Passed | `package.json`, source manifest, and built `dist/manifest.json` declare `0.7.0`. |
-| Site material | Passed | Rebuilt and verified both tours and posters from the cache-immutable `v8` media path; the production site build passed with no failed media requests. |
-| Full release verification | Passed | RFC validation, lint, typecheck, 5,286 extension tests, production build, dist validation, and production audit passed on the reconciled candidate. |
-| Native task completion | Pending | Re-run deterministic native login/navigation and the native side-panel smoke on the exact release commit. |
-| Release package/preflight | Pending exact commit | Preliminary `0.7.0` zip, checksum, notes, and manifest pass `release:preflight --allow-dirty`; regenerate and run the strict preflight after committing. |
-| Chrome Web Store upload | Pending | Upload the verified zip, four screenshots, promo graphics, listing copy, and the public URL of the customer video. |
+| Gate                       | Status               | Evidence / next action                                                                                                                                                                              |
+| -------------------------- | -------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Code and UI                | Passed               | Compact task rail, OpenRouter default/recommendation, provider migration, local reliability summaries, recovery paths, and the staged composer/workspace fixes are present; focused tests passed.   |
+| Listing material           | Passed               | Rebuilt the four customer-only screenshots, promo tile, and marquee under `.artifacts/store/`; OpenRouter is selected in the provider capture and developer-only viewer images are excluded.        |
+| Audience videos            | Passed               | Revalidated both British-female films under `.artifacts/publish/`; rebuilt the customer film with OpenRouter attribution and retained the already accurate developer film.                          |
+| Manifest/version alignment | Passed               | `package.json`, source manifest, and built `dist/manifest.json` declare `0.7.2`; the build contains the exact production Cognito domain/client.                                                     |
+| Site material              | Passed               | Rebuilt and verified both tours and posters from the cache-immutable `v8` media path; the production site build passed with no failed media requests.                                               |
+| Full release verification  | Passed               | RFC validation, lint, typecheck, 5,286 extension tests, production build, dist validation, and production audit passed on the reconciled candidate.                                                 |
+| Native task completion     | Pending              | Re-run deterministic native login/navigation and the native side-panel smoke on the exact release commit.                                                                                           |
+| Release package/preflight  | Pending exact commit | The `0.7.2` zip, checksum, notes, and manifest pass `release:preflight --allow-dirty`; regenerate and run the strict native/preflight gate after committing.                                        |
+| Chrome Web Store upload    | Submitted for review | Package 0.7.2 plus the Cloud-mode privacy and listing disclosures are saved and submitted on the existing item; wait for Published or reviewer feedback.                                            |
+| Production activation      | Blocked on approval  | Follow [cloud-production-activation-runbook.md](engineering/cloud-production-activation-runbook.md); keep credential, preference, relay, session, checkpoint, command, and Temporal flags disabled. |
 
 ## 1. Freeze The Release Candidate
 
@@ -54,11 +57,11 @@ pnpm run test:e2e:smoke
 
 If the release changes are concentrated in a different area, run the relevant purpose suite in addition to smoke:
 
-| Change area | Recommended command |
-| ----------- | ------------------- |
-| Page actions, navigation, overlays, forms, shopping | `pnpm run test:e2e:interactions` |
-| Planner, continuation, recovery, backend durability | `pnpm run test:e2e:runtime` |
-| WorkArena setup, reporting, or ServiceNow handoff changes | `pnpm exec tsx scripts/workarena-doctor.ts` and `pnpm exec tsx scripts/workarena-validate-reports.ts` |
+| Change area                                                           | Recommended command                                                                                                            |
+| --------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------ |
+| Page actions, navigation, overlays, forms, shopping                   | `pnpm run test:e2e:interactions`                                                                                               |
+| Planner, continuation, recovery, backend durability                   | `pnpm run test:e2e:runtime`                                                                                                    |
+| WorkArena setup, reporting, or ServiceNow handoff changes             | `pnpm exec tsx scripts/workarena-doctor.ts` and `pnpm exec tsx scripts/workarena-validate-reports.ts`                          |
 | Real WorkArena confidence after intentional ServiceNow reset approval | `pnpm exec tsx scripts/workarena-handoff.ts --task workarena.servicenow.all-menu --seed 0 --allow-servicenow-reset --no-build` |
 
 Real WorkArena handoff commands may mutate a remote ServiceNow benchmark instance and spend LLM tokens. Run them deliberately, and keep generated reports under `.artifacts/e2e/`.

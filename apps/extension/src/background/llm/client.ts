@@ -17,10 +17,14 @@ import {
   CompletionResponse,
   LLMMessage,
   LLMToolCall,
-  PromptCacheTelemetry,
   ProviderConfig,
   TokenUsage,
 } from "./types";
+import {
+  mergeCacheTelemetry,
+  readProviderCacheTelemetry,
+  withUsageCacheTelemetry,
+} from "./cache-telemetry";
 import {
   DEEPSEEK_MODEL_PLANNER,
   FIREWORKS_MODEL_PLANNER,
@@ -33,6 +37,7 @@ import {
   XIAOMI_MODEL_PLANNER,
 } from "./seat-models";
 import { estimateCostUsd } from "./pricing";
+import { cloudRelayFetch } from "./cloud-relay";
 import {
   buildJsonHeaders,
   getProviderCreditsUrl,
@@ -41,219 +46,32 @@ import {
 } from "./provider-headers";
 import type { JudgeUsage } from "../agent/completion/judge";
 
-const OPENROUTER_BASE_URL = "https://openrouter.ai/api/v1/chat/completions";
-
-/**
- * Normalize a raw provider `TokenUsage` into the judge's camelCase `JudgeUsage`
- * and attach an estimated USD cost from the pricing table. Returns undefined
- * when the provider reported no usage (e.g. a cache-only path).
- */
-function toJudgeUsage(
-  usage: TokenUsage | undefined,
-  providerId: ProviderConfig["providerId"],
-  model: string,
-): JudgeUsage | undefined {
-  if (!usage) return undefined;
-  const costUsd = estimateCostUsd(providerId, model, usage);
-  return {
-    promptTokens: usage.prompt_tokens ?? 0,
-    completionTokens: usage.completion_tokens ?? 0,
-    totalTokens: usage.total_tokens ?? 0,
-    ...(usage.cached_tokens != null ? { cachedTokens: usage.cached_tokens } : {}),
-    ...(costUsd != null ? { costUsd } : {}),
-  };
-}
-
-/** Delay that can be cancelled via an AbortSignal. */
-function abortableDelay(ms: number, signal?: AbortSignal): Promise<void> {
-  if (!signal) return new Promise((r) => setTimeout(r, ms));
-  if (signal.aborted)
-    return Promise.reject(new DOMException("Aborted", "AbortError"));
-  return new Promise((resolve, reject) => {
-    const timer = setTimeout(() => {
-      signal.removeEventListener("abort", onAbort);
-      resolve();
-    }, ms);
-    const onAbort = () => {
-      clearTimeout(timer);
-      reject(new DOMException("Aborted", "AbortError"));
-    };
-    signal.addEventListener("abort", onAbort, { once: true });
-  });
-}
 
 // Seat model ids live in ./seat-models (extracted 2026-07-26 for the
 // decomposition budget); re-exported so `from "./client"` imports still work.
+import {
+  cerebrasProvider,
+  deepseekProvider,
+  fireworksProvider,
+  groqProvider,
+  moonshotProvider,
+  openAIProvider,
+  xiaomiProvider,
+} from "./provider-factories";
+
 export * from "./seat-models";
-
-/** OpenAI direct API — redirected to Fireworks */
-const OPENAI_BASE_URL =
-  "https://api.fireworks.ai/inference/v1/chat/completions";
-
-/** Groq direct API */
-const GROQ_BASE_URL = "https://api.groq.com/openai/v1/chat/completions";
-
-
-function parsePositiveIntHeader(headers: Headers, name: string): number | undefined {
-  const raw = headers.get(name);
-  if (!raw) return undefined;
-  const parsed = Number.parseInt(raw, 10);
-  return Number.isFinite(parsed) && parsed >= 0 ? parsed : undefined;
-}
-
-function readProviderCacheTelemetry(
-  providerId: ProviderConfig["providerId"],
-  headers: Headers,
-): PromptCacheTelemetry | undefined {
-  if (providerId !== "fireworks") return undefined;
-  const promptTokens = parsePositiveIntHeader(headers, "fireworks-prompt-tokens");
-  const cachedPromptTokens = parsePositiveIntHeader(
-    headers,
-    "fireworks-cached-prompt-tokens",
-  );
-  if (promptTokens == null && cachedPromptTokens == null) {
-    logger.debug("agent", "Fireworks cache telemetry headers absent");
-    return undefined;
-  }
-  const cacheHitPct =
-    promptTokens && cachedPromptTokens != null
-      ? Math.round((cachedPromptTokens / promptTokens) * 10000) / 100
-      : undefined;
-  return {
-    provider: providerId,
-    promptTokens,
-    cachedPromptTokens,
-    cacheHitPct,
-    source: "response_headers",
-  };
-}
-
-function mergeCacheTelemetry(
-  usage: TokenUsage | undefined,
-  telemetry: PromptCacheTelemetry | undefined,
-): TokenUsage | undefined {
-  if (!usage) return usage;
-  if (!telemetry) return usage;
-  const promptTokens = telemetry.promptTokens ?? usage.prompt_tokens;
-  const cachedTokens = telemetry.cachedPromptTokens ?? usage.cached_tokens;
-  return {
-    ...usage,
-    prompt_tokens: promptTokens,
-    cached_tokens: cachedTokens,
-    cacheTelemetry: {
-      ...telemetry,
-      promptTokens,
-      cachedPromptTokens: cachedTokens,
-      cacheHitPct:
-        promptTokens > 0 && cachedTokens != null
-          ? Math.round((cachedTokens / promptTokens) * 10000) / 100
-          : telemetry.cacheHitPct,
-    },
-  };
-}
-
-function withUsageCacheTelemetry(
-  usage: TokenUsage | undefined,
-  providerId: ProviderConfig["providerId"],
-): TokenUsage | undefined {
-  if (!usage || usage.cached_tokens == null) return usage;
-  const cacheHitPct =
-    usage.prompt_tokens > 0
-      ? Math.round((usage.cached_tokens / usage.prompt_tokens) * 10000) / 100
-      : undefined;
-  return {
-    ...usage,
-    cacheTelemetry: {
-      provider: providerId,
-      promptTokens: usage.prompt_tokens,
-      cachedPromptTokens: usage.cached_tokens,
-      cacheHitPct,
-      source: "usage",
-    },
-  };
-}
-
-/** Moonshot direct API */
-const MOONSHOT_BASE_URL = "https://api.moonshot.ai/v1/chat/completions";
-
-/** Xiaomi MiMo direct API */
-const XIAOMI_BASE_URL = "https://api.xiaomimimo.com/v1/chat/completions";
-
-/** DeepSeek direct API (planner/verifier only; executor remains Fireworks). */
-const DEEPSEEK_BASE_URL = "https://api.deepseek.com/chat/completions";
-
-function openAIProvider(apiKey: string): ProviderConfig {
-  return {
-    baseUrl: OPENAI_BASE_URL,
-    apiKey: sanitizeApiKeyForHeader(apiKey, "fireworks"),
-    headers: {},
-    providerId: "fireworks",
-  };
-}
-
-function groqProvider(apiKey: string): ProviderConfig {
-  return {
-    baseUrl: GROQ_BASE_URL,
-    apiKey: sanitizeApiKeyForHeader(apiKey, "groq"),
-    headers: {},
-    providerId: "groq",
-  };
-}
-
-/** Fireworks AI direct API */
-const FIREWORKS_BASE_URL =
-  "https://api.fireworks.ai/inference/v1/chat/completions";
 
 /** Check if a model supports unified VL executor mode (vision + tool calling). */
 export const isVLCapable = isExecutorVLCapable;
 
-function fireworksProvider(apiKey: string): ProviderConfig {
-  return {
-    baseUrl: FIREWORKS_BASE_URL,
-    apiKey: sanitizeApiKeyForHeader(apiKey, "fireworks"),
-    headers: {},
-    providerId: "fireworks",
-  };
-}
+const OPENROUTER_BASE_URL = "https://openrouter.ai/api/v1/chat/completions";
 
-function moonshotProvider(apiKey: string): ProviderConfig {
-  return {
-    baseUrl: MOONSHOT_BASE_URL,
-    apiKey: sanitizeApiKeyForHeader(apiKey, "moonshot"),
-    headers: {},
-    providerId: "moonshot",
-  };
-}
 
-function xiaomiProvider(apiKey: string): ProviderConfig {
-  return {
-    baseUrl: XIAOMI_BASE_URL,
-    apiKey: sanitizeApiKeyForHeader(apiKey, "xiaomi"),
-    headers: {},
-    providerId: "xiaomi",
-  };
-}
 
-function deepseekProvider(apiKey: string): ProviderConfig {
-  return {
-    baseUrl: DEEPSEEK_BASE_URL,
-    apiKey: sanitizeApiKeyForHeader(apiKey, "deepseek"),
-    headers: {},
-    providerId: "deepseek",
-  };
-}
 
-/** Cerebras direct API (executor only; planner remains Fireworks). */
-const CEREBRAS_BASE_URL = "https://api.cerebras.ai/v1/chat/completions";
 
-function cerebrasProvider(apiKey: string): ProviderConfig {
-  return {
-    baseUrl: CEREBRAS_BASE_URL,
-    apiKey: sanitizeApiKeyForHeader(apiKey, "cerebras"),
-    headers: {},
-    providerId: "cerebras",
-  };
-}
+
+
 
 /** Options for overriding default models in LLMClient */
 export interface LLMClientOptions {
@@ -270,6 +88,14 @@ export interface LLMClientOptions {
    * judge pool transparently reuses the planner pool.
    */
   judgeModel?: string;
+  /**
+   * Preferred OpenRouter upstreams, applied independently per model seat.
+   * Requests retain OpenRouter's fallback routing when a preferred upstream is
+   * transiently unavailable.
+   */
+  executorProviderPin?: string;
+  plannerProviderPin?: string;
+  judgeProviderPin?: string;
   /** Append :nitro routing suffix to all model IDs (OpenRouter only) */
   useNitro?: boolean;
   /** Provider mode: how executor and planner providers are combined */
@@ -319,8 +145,6 @@ function openRouterProvider(apiKey: string): ProviderConfig {
     providerId: "openrouter",
   };
 }
-
-
 function shapePayloadForProvider(
   providerId: ProviderConfig["providerId"],
   payload: Record<string, unknown>,
@@ -565,7 +389,6 @@ function sanitizeToolCallMessages(
  * LLM Client for OpenSidebar
  * Handles communication with LLM APIs via priority-based provider failover
  */
-
 export class LLMClient {
   private provider: ProviderConfig;
   private model: string;
@@ -587,6 +410,9 @@ export class LLMClient {
   private judgePool: ProviderPool;
   /** Which model role is currently active for completion routing */
   private _activeTier: "executor" | "planner" | "writer" | "judge" = "executor";
+  private readonly providerPins: Partial<
+    Record<"executor" | "planner" | "writer" | "judge", string>
+  >;
   private executorModelOverride: string | null = null;
   private defaultTemperature: number = 0.0;
   private executorFallbackModel: string | null = null;
@@ -599,6 +425,11 @@ export class LLMClient {
   constructor(openRouterApiKey: string, options?: LLMClientOptions) {
     this.openRouterApiKey = openRouterApiKey;
     this.defaultTemperature = options?.temperature ?? 0.0;
+    this.providerPins = {
+      executor: options?.executorProviderPin,
+      planner: options?.plannerProviderPin,
+      judge: options?.judgeProviderPin,
+    };
 
     // Resolve providerMode (supports legacy `provider` field for backward compat)
     let mode: ProviderMode = options?.providerMode ?? "openrouter";
@@ -613,7 +444,9 @@ export class LLMClient {
     const nitro = options?.useNitro;
     const hasGroq = !!options?.groqApiKey;
     const hasOpenAI = !!options?.openaiApiKey;
-    const hasFireworks = !!options?.fireworksApiKey;
+    const hasFireworks =
+      openRouterApiKey === "__opensidebar_cloud__" ||
+      !!options?.fireworksApiKey;
     const hasMoonshot = !!options?.kimiApiKey;
     const hasXiaomi = !!options?.xiaomiApiKey;
 
@@ -671,7 +504,10 @@ export class LLMClient {
         executorFallbackModel: options?.executorFallbackModel,
       });
     } else if (mode === "fireworks" && hasFireworks) {
-      const fwKey = options!.fireworksApiKey!;
+      const fwKey =
+        openRouterApiKey === "__opensidebar_cloud__"
+          ? openRouterApiKey
+          : options!.fireworksApiKey!;
       const fwProv = fireworksProvider(fwKey);
       const executorModel = normalizeExecutorModel({
         providerMode: "fireworks",
@@ -759,10 +595,7 @@ export class LLMClient {
       // is a Fireworks accounts/... id and 404s here.
       this.plannerPool = openRouterProviderPool(
         openRouterApiKey,
-        applyNitro(
-          options?.plannerModel || OPENROUTER_MODEL_PLANNER,
-          nitro,
-        ),
+        applyNitro(options?.plannerModel || OPENROUTER_MODEL_PLANNER, nitro),
       );
     }
 
@@ -1036,7 +869,10 @@ export class LLMClient {
     const body = JSON.parse(init.body as string);
     body.model = slot.model;
     delete body.provider;
-    const shapedBody = shapePayloadForProvider(slot.provider.providerId, body);
+    const shapedBody = this.shapePayloadForActiveTier(
+      slot.provider.providerId,
+      body,
+    );
     return {
       url: slot.provider.baseUrl,
       init: {
@@ -1045,6 +881,21 @@ export class LLMClient {
         body: JSON.stringify(shapedBody),
       },
     };
+  }
+
+  private shapePayloadForActiveTier(
+    providerId: ProviderConfig["providerId"],
+    payload: Record<string, unknown>,
+  ): Record<string, unknown> {
+    const shaped = shapePayloadForProvider(providerId, payload);
+    const pin = this.providerPins[this._activeTier]?.trim();
+    if (providerId === "openrouter" && pin) {
+      // `only` makes a transient upstream failure terminal by excluding every
+      // other eligible host. `order` preserves the preference while allowing
+      // OpenRouter to recover through its normal provider fallback path.
+      shaped.provider = { order: [pin], allow_fallbacks: true };
+    }
+    return shaped;
   }
 
   private async fetchWithRetry(
@@ -1059,7 +910,21 @@ export class LLMClient {
     actualProviderId: ProviderConfig["providerId"];
     actualModel: string;
   }> {
-    const RETRYABLE = new Set([429, 502, 503, 504]);
+    if (this.openRouterApiKey === "__opensidebar_cloud__")
+      return {
+        response: await cloudRelayFetch(
+          JSON.parse(String(init.body ?? "{}")) as Record<string, unknown>,
+          providerId,
+          this._activeTier,
+          signal,
+        ),
+        actualProviderId: providerId,
+        actualModel: model,
+      };
+    // OpenRouter classifies 408 as a request timeout and 500 as a transient
+    // router/upstream error. Retrying either is materially safer than failing
+    // an agent turn immediately; permanent 4xx failures still return directly.
+    const RETRYABLE = new Set([408, 429, 500, 502, 503, 504]);
     let lastError: Error | null = null;
 
     for (let attempt = 1; attempt <= maxRetries; attempt++) {
@@ -1171,7 +1036,7 @@ export class LLMClient {
     // Fireworks routers require streaming — force it and collect the response
     const forceStream = provider.providerId === "fireworks";
 
-    const payload = shapePayloadForProvider(provider.providerId, {
+    const payload = this.shapePayloadForActiveTier(provider.providerId, {
       model: request.model || activeModel,
       messages: sanitizeToolCallMessages(
         annotateCacheControl(request.messages, provider.providerId),
@@ -1233,7 +1098,7 @@ export class LLMClient {
           isImageUrlUnsupported(response.status, errorText)
         ) {
           imageFallbackRetried = true;
-          activePayload = shapePayloadForProvider(provider.providerId, {
+          activePayload = this.shapePayloadForActiveTier(provider.providerId, {
             ...activePayload,
             messages: toTextOnlyMessages(request.messages),
           });
@@ -1266,10 +1131,13 @@ export class LLMClient {
             );
             provider = fallback.provider;
             activeModel = fallback.model;
-            activePayload = shapePayloadForProvider(provider.providerId, {
-              ...activePayload,
-              model: activeModel,
-            });
+            activePayload = this.shapePayloadForActiveTier(
+              provider.providerId,
+              {
+                ...activePayload,
+                model: activeModel,
+              },
+            );
             requestInitBase = {
               method: "POST",
               headers: buildJsonHeaders(provider, request),
@@ -1433,7 +1301,7 @@ export class LLMClient {
       );
     }
 
-    const payload = shapePayloadForProvider(provider.providerId, {
+    const payload = this.shapePayloadForActiveTier(provider.providerId, {
       model: request.model || activeModel,
       messages: sanitizeToolCallMessages(
         annotateCacheControl(request.messages, provider.providerId),
@@ -1494,7 +1362,7 @@ export class LLMClient {
           isImageUrlUnsupported(response.status, errorText)
         ) {
           imageFallbackRetried = true;
-          activePayload = shapePayloadForProvider(provider.providerId, {
+          activePayload = this.shapePayloadForActiveTier(provider.providerId, {
             ...activePayload,
             messages: toTextOnlyMessages(request.messages),
           });
@@ -1527,10 +1395,13 @@ export class LLMClient {
             );
             provider = fallback.provider;
             activeModel = fallback.model;
-            activePayload = shapePayloadForProvider(provider.providerId, {
-              ...activePayload,
-              model: activeModel,
-            });
+            activePayload = this.shapePayloadForActiveTier(
+              provider.providerId,
+              {
+                ...activePayload,
+                model: activeModel,
+              },
+            );
             requestInitBase = {
               method: "POST",
               headers: buildJsonHeaders(provider, request),
@@ -1602,4 +1473,45 @@ export class LLMClient {
       throw error;
     }
   }
+}
+
+/**
+ * Normalize a raw provider `TokenUsage` into the judge's camelCase `JudgeUsage`
+ * and attach an estimated USD cost from the pricing table. Returns undefined
+ * when the provider reported no usage (e.g. a cache-only path).
+ */
+function toJudgeUsage(
+  usage: TokenUsage | undefined,
+  providerId: ProviderConfig["providerId"],
+  model: string,
+): JudgeUsage | undefined {
+  if (!usage) return undefined;
+  const costUsd = estimateCostUsd(providerId, model, usage);
+  return {
+    promptTokens: usage.prompt_tokens ?? 0,
+    completionTokens: usage.completion_tokens ?? 0,
+    totalTokens: usage.total_tokens ?? 0,
+    ...(usage.cached_tokens != null
+      ? { cachedTokens: usage.cached_tokens }
+      : {}),
+    ...(costUsd != null ? { costUsd } : {}),
+  };
+}
+
+/** Delay that can be cancelled via an AbortSignal. */
+function abortableDelay(ms: number, signal?: AbortSignal): Promise<void> {
+  if (!signal) return new Promise((r) => setTimeout(r, ms));
+  if (signal.aborted)
+    return Promise.reject(new DOMException("Aborted", "AbortError"));
+  return new Promise((resolve, reject) => {
+    const timer = setTimeout(() => {
+      signal.removeEventListener("abort", onAbort);
+      resolve();
+    }, ms);
+    const onAbort = () => {
+      clearTimeout(timer);
+      reject(new DOMException("Aborted", "AbortError"));
+    };
+    signal.addEventListener("abort", onAbort, { once: true });
+  });
 }

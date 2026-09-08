@@ -1,0 +1,260 @@
+import type {
+  AttemptClassification,
+  BenchmarkAttemptV1,
+  JsonObject,
+  ModelSeat,
+  RequestedSeatV1,
+  ResolvedSeatV1,
+  RoleUsageV1,
+  ScenarioStateV2,
+} from "@opensidebar/scenario-contracts";
+import {
+  scenarioEngine,
+  type EngineCaseDefinitionV1,
+} from "@opensidebar/scenario-engine";
+
+export interface ModelBenchRunConfiguration {
+  label: string;
+  provider: string;
+  seats: Partial<Record<ModelSeat, RequestedSeatV1>>;
+  perceptionMode?: string;
+}
+
+export interface ModelBenchDriverInput {
+  definition: EngineCaseDefinitionV1;
+  configuration: ModelBenchRunConfiguration;
+  attemptId: string;
+  repetition: number;
+}
+
+export interface ModelBenchDriverResult {
+  durationMs: number;
+  finalState?: ScenarioStateV2;
+  finalAnswer?: string;
+  terminalOutcome?: string;
+  driverEvidence?: JsonObject;
+  resolvedSeats: Partial<Record<ModelSeat, ResolvedSeatV1>>;
+  usageByRole: Partial<Record<ModelSeat, RoleUsageV1>>;
+  telemetry?: BenchmarkAttemptV1["telemetry"];
+  artifactRefs: readonly string[];
+  failure?: {
+    kind: "provider" | "harness" | "indeterminate";
+    reason: string;
+  };
+  diagnostics?: JsonObject;
+}
+
+export interface ModelBenchDriver {
+  execute(input: ModelBenchDriverInput): Promise<ModelBenchDriverResult>;
+  close?(): Promise<void>;
+}
+
+export interface RunCaseOptions {
+  definition: EngineCaseDefinitionV1;
+  configuration: ModelBenchRunConfiguration;
+  driver: ModelBenchDriver;
+  buildRevision: string;
+  repetition: number;
+  now?: () => Date;
+  id?: () => string;
+}
+
+function seatMismatch(
+  requested: Partial<Record<ModelSeat, RequestedSeatV1>>,
+  resolved: Partial<Record<ModelSeat, ResolvedSeatV1>>,
+  usage: Partial<Record<ModelSeat, RoleUsageV1>>,
+): string[] {
+  const mismatches: string[] = [];
+  for (const [seat, wanted] of Object.entries(requested) as Array<
+    [ModelSeat, RequestedSeatV1]
+  >) {
+    const actual = resolved[seat];
+    if (!actual) {
+      if ((usage[seat]?.calls ?? 0) === 0) continue;
+      mismatches.push(`${seat}: no resolved model recorded`);
+      continue;
+    }
+    if (actual.resolvedModel !== wanted.model) {
+      mismatches.push(
+        `${seat}: requested ${wanted.model}, resolved ${actual.resolvedModel}`,
+      );
+    }
+    if (
+      wanted.providerPin &&
+      actual.resolvedProvider.toLocaleLowerCase() !==
+        wanted.providerPin.toLocaleLowerCase()
+    ) {
+      mismatches.push(
+        `${seat}: provider pin ${wanted.providerPin}, resolved ${actual.resolvedProvider}`,
+      );
+    }
+  }
+  return mismatches;
+}
+
+function classificationFor(
+  result: ModelBenchDriverResult,
+  validationPassed: boolean | null,
+  modelMismatch: boolean,
+): AttemptClassification {
+  if (result.failure?.kind === "provider") return "provider_failure";
+  if (result.failure?.kind === "harness") return "harness_failure";
+  if (modelMismatch) return "indeterminate";
+  if (result.failure) return "indeterminate";
+  return validationPassed ? "valid_pass" : "valid_model_failure";
+}
+
+function scoreEligible(classification: AttemptClassification): boolean {
+  return (
+    classification === "valid_pass" || classification === "valid_model_failure"
+  );
+}
+
+function retryable(classification: AttemptClassification): boolean {
+  return (
+    classification === "provider_failure" ||
+    classification === "harness_failure"
+  );
+}
+
+function sanitizeFailureReason(reason: string): string {
+  return reason
+    .replace(/\bBearer\s+[^\s,;]+/gi, "Bearer [redacted]")
+    .replace(/\b(?:sk|or|fw|gsk)_[A-Za-z0-9_-]{12,}\b/g, "[redacted]")
+    .replace(/([?&](?:api[_-]?key|token)=)[^&\s]+/gi, "$1[redacted]")
+    .replace(
+      /(\b(?:api[_-]?key|access[_-]?token)\s*[=:]\s*)[^\s,;]+/gi,
+      "$1[redacted]",
+    )
+    .replace(/\s+/g, " ")
+    .trim()
+    .slice(0, 500);
+}
+
+export async function runModelBenchCase(
+  options: RunCaseOptions,
+): Promise<BenchmarkAttemptV1[]> {
+  const now = options.now ?? (() => new Date());
+  const id = options.id ?? (() => crypto.randomUUID());
+  const attempts: BenchmarkAttemptV1[] = [];
+  let retryOfAttemptId: string | undefined;
+  for (let tryIndex = 0; tryIndex < 2; tryIndex += 1) {
+    const attemptId = id();
+    const startedAt = now().toISOString();
+    const result = await options.driver.execute({
+      definition: options.definition,
+      configuration: options.configuration,
+      attemptId,
+      repetition: options.repetition,
+    });
+    const mismatches = seatMismatch(
+      options.configuration.seats,
+      result.resolvedSeats,
+      result.usageByRole,
+    );
+    const validation = result.finalState
+      ? scenarioEngine.validate({
+          definition: options.definition,
+          initialState: scenarioEngine.initialize(
+            options.definition.contract.id,
+          ),
+          finalState: result.finalState,
+          finalAnswer: result.finalAnswer,
+          terminalOutcome: result.terminalOutcome,
+          driverEvidence: result.driverEvidence,
+        })
+      : null;
+    const classification = classificationFor(
+      result,
+      validation?.verdict === "pass",
+      mismatches.length > 0,
+    );
+    const attempt: BenchmarkAttemptV1 = {
+      schemaVersion: 1,
+      attemptId,
+      caseId: options.definition.contract.id,
+      caseVersion: options.definition.contract.version,
+      caseContentHash: options.definition.contentHash,
+      buildRevision: options.buildRevision,
+      startedAt,
+      durationMs: result.durationMs,
+      configurationLabel: options.configuration.label,
+      classification,
+      scoreEligible: scoreEligible(classification),
+      requestedSeats: options.configuration.seats,
+      resolvedSeats: result.resolvedSeats,
+      usageByRole: result.usageByRole,
+      ...(result.telemetry ? { telemetry: result.telemetry } : {}),
+      validation,
+      ...(result.diagnostics || result.failure
+        ? {
+            diagnostics: {
+              ...(result.diagnostics ?? {}),
+              ...(result.failure
+                ? {
+                    failure: {
+                      kind: result.failure.kind,
+                      reason: sanitizeFailureReason(result.failure.reason),
+                    },
+                  }
+                : {}),
+            },
+          }
+        : {}),
+      ...(result.failure
+        ? {
+            failure: {
+              kind: result.failure.kind,
+              reason: sanitizeFailureReason(result.failure.reason),
+            },
+          }
+        : {}),
+      ...(retryOfAttemptId ? { retryOfAttemptId } : {}),
+      artifactRefs: result.artifactRefs,
+    };
+    attempts.push(attempt);
+    if (!retryable(classification) || tryIndex === 1) break;
+    retryOfAttemptId = attempt.attemptId;
+  }
+  return attempts;
+}
+
+export interface RunSuiteOptions {
+  definitions: readonly EngineCaseDefinitionV1[];
+  configurations: readonly ModelBenchRunConfiguration[];
+  driver: ModelBenchDriver;
+  buildRevision: string;
+  repeat: number;
+  /** First repetition label, used when a balanced A/B run is split into blocks. */
+  repetitionStart?: number;
+  onAttempt?: (attempt: BenchmarkAttemptV1) => void | Promise<void>;
+}
+
+export async function runModelBenchSuite(
+  options: RunSuiteOptions,
+): Promise<BenchmarkAttemptV1[]> {
+  const attempts: BenchmarkAttemptV1[] = [];
+  const repetitionStart = options.repetitionStart ?? 1;
+  for (const configuration of options.configurations) {
+    for (
+      let repetition = repetitionStart;
+      repetition < repetitionStart + options.repeat;
+      repetition += 1
+    ) {
+      for (const definition of options.definitions) {
+        const caseAttempts = await runModelBenchCase({
+          definition,
+          configuration,
+          driver: options.driver,
+          buildRevision: options.buildRevision,
+          repetition,
+        });
+        for (const attempt of caseAttempts) {
+          attempts.push(attempt);
+          await options.onAttempt?.(attempt);
+        }
+      }
+    }
+  }
+  return attempts;
+}

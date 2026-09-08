@@ -15,6 +15,7 @@ type InitialSnapshotWarmupCache = {
 export type InitialSnapshotResolution = {
   snapshot?: DomSnapshot;
   warmupScreenshot: string | null;
+  warmupEntry: WarmupEntry | null;
 };
 
 export type ResolveInitialSnapshotDeps = {
@@ -41,6 +42,7 @@ export async function resolveInitialSnapshot({
 }: ResolveInitialSnapshotDeps): Promise<InitialSnapshotResolution> {
   let snapshot = initialSnapshot;
   let warmupScreenshot: string | null = null;
+  let warmupEntry: WarmupEntry | null = null;
 
   try {
     if (!snapshot) {
@@ -53,6 +55,7 @@ export async function resolveInitialSnapshot({
         log.info("agent", "Awaiting perception warmup", { tabId });
         const entry = await pending;
         if (entry) {
+          warmupEntry = entry;
           snapshot = entry.snapshot;
           warmupScreenshot = entry.screenshotUrl;
           log.info("agent", "Using warmup snapshot + screenshot", {
@@ -63,6 +66,7 @@ export async function resolveInitialSnapshot({
       } else {
         const cached = warmupCache.get(tabId);
         if (cached) {
+          warmupEntry = cached;
           snapshot = cached.snapshot;
           warmupScreenshot = cached.screenshotUrl;
           log.info("agent", "Using cached warmup snapshot + screenshot", {
@@ -93,6 +97,7 @@ export async function resolveInitialSnapshot({
     return {
       snapshot,
       warmupScreenshot,
+      warmupEntry,
     };
   } finally {
     warmupCache.consume(tabId);

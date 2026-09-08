@@ -2,7 +2,10 @@
 
 This roadmap defines the documentation and release-readiness work for a broad GitHub-first open-source launch of OpenSidebar as a bring-your-own-key browser agent.
 
-The target is a public source release with manual unpacked Chrome installation and a GitHub release artifact. Chrome Web Store submission is a later distribution path, not the first launch gate.
+The original target was a public source release with manual unpacked Chrome
+installation and a GitHub artifact. That gate is complete and the signed Chrome
+Web Store item is now published; this document remains the source-launch
+readiness record.
 
 ## Launch Goal
 

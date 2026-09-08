@@ -14,7 +14,7 @@ loaded, no timing impact. The gate is `OTEL_EXPORTER_OTLP_ENDPOINT`.
 | --- | --- | --- |
 | Staged e2e runner (`scripts/run-e2e-staged.ts`) | `opensidebar-e2e-harness` | Span per staged run + per suite (outcome: passed / flaky-passed / failed / collection-error), suite-outcome counter. Hands `TRACEPARENT` to the vitest children. |
 | Vitest e2e reporter (`apps/extension/tests/e2e/helpers/otel-reporter.ts`) | `opensidebar-e2e-harness` | Span per test (status, duration, retryCount — pass-on-retry shows as `flaky-pass`), ERROR log record with the exact failure text, test counter + duration histogram. Joins the runner's trace via `TRACEPARENT`. |
-| Browser MCP host (`scripts/browser-mcp/server.ts`) | `opensidebar-browser-mcp` | Span per thick tool call (`browser_tool <name>`, status), tool-call counter, ERROR log per failed call. |
+| Browser MCP host (`scripts/browser-mcp/server.ts`), MCP identity `opensidebar-agent` | `opensidebar-agent-mcp` | Span per thick tool call (`browser_tool <name>`, status), tool-call counter, ERROR log per failed call. |
 
 Not instrumented, deliberately: the Chrome extension (browser context — ingest
 tokens must never ship in a bundle; its telemetry stays in the in-house trace

@@ -5,7 +5,7 @@
  * cut (see build-promo-cut.mjs / build-demo-montage.mjs), so every line has a
  * hard start offset and a max window it must fit.
  *
- *   node scripts/add-voiceover.mjs --video customer|developer|promo|pitch|store|jobs
+ *   node scripts/add-voiceover.mjs --video customer|developer|linkedin|promo|pitch|store|vendor|jobs
  *     [--provider gemini|elevenlabs]    default: gemini
  *     [--voice <voice id/name>]         default: Sulafat (Gemini) / Matilda (EL)
  *     [--accent <voice direction>]       default: contemporary neutral British English
@@ -50,6 +50,94 @@ const GEMINI_MODEL = "gemini-3.1-flash-tts-preview";
 // ---- narration specs --------------------------------------------------------
 // at: line start (s) · maxSec: hard window the audio must fit (atempo ≤1.1 helps)
 const SPECS = {
+  "linkedin-multi": {
+    in: "opensidebar-linkedin-launch-56s-bed.mp4",
+    out: "opensidebar-linkedin-launch-56s.mp4",
+    lines: [
+      { at: 0.6, maxSec: 6.2, text: "OpenSidebar is an open-source browser agent for Chrome. Bring your own API key." },
+      { at: 7.6, maxSec: 7.0, text: "It reads live dashboard metrics and carries them into a useful email draft." },
+      { at: 15.0, maxSec: 7.4, text: "It can then revise the message while leaving the final send under human control." },
+      { at: 23.3, maxSec: 7.6, text: "The same agent completes a multi-step vendor access request, including conditional fields." },
+      { at: 31.5, maxSec: 8.5, text: "It reviews the completed request, confirms the declaration, and submits with visible evidence." },
+      { at: 41.1, maxSec: 8.3, text: "Because OpenSidebar is open source, it can be extended for enterprise SaaS. This ServiceNow extension shows how." },
+      { at: 50.2, maxSec: 5.5, text: "OpenSidebar. Three workflows. One open-source agent." },
+    ],
+  },
+  vendor: {
+    in: "opensidebar-linkedin-vendor-workflow-47s-bed.mp4",
+    out: "opensidebar-linkedin-vendor-workflow-47s.mp4",
+    direction:
+      `Voice direction: a warm, technically confident female narrator speaking with ${ACCENT}. ` +
+      "This is a concise open-source product demo for a professional audience. Sound observant, capable, and calm. " +
+      "Use crisp consonants and natural pacing; never sound salesy.",
+    lines: [
+      {
+        at: 0.6, maxSec: 7.0,
+        text: "Here is OpenSidebar completing a real vendor access request, from first field to final submission.",
+        gnote: "Open cleanly and confidently. Make the full workflow scope clear without rushing.",
+      },
+      {
+        at: 8.0, maxSec: 7.3,
+        text: "It fills the requester details, then moves into the conditional request step.",
+        gnote: "Matter-of-fact momentum, with light emphasis on conditional request.",
+      },
+      {
+        at: 15.8, maxSec: 8.0,
+        text: "The agent selects the request type and department, adds the vendor information, and handles the required checks.",
+        gnote: "Precise and controlled. Keep the list flowing naturally.",
+      },
+      {
+        at: 24.2, maxSec: 7.5,
+        text: "Before submitting, it reviews the completed request and confirms the security declaration.",
+        gnote: "Reassuring and evidence-focused. Land security declaration clearly.",
+      },
+      {
+        at: 32.2, maxSec: 7.6,
+        text: "The request is submitted, and the confirmation page provides the evidence.",
+        gnote: "Brighten slightly on submitted, then settle on evidence.",
+      },
+      {
+        at: 40.2, maxSec: 6.5,
+        text: "OpenSidebar. Visible actions, reviewed state, verified result.",
+        gnote: "Warm, definitive sign-off with a measured three-part rhythm.",
+      },
+    ],
+  },
+  linkedin: {
+    in: "opensidebar-linkedin-work-38s-bed.mp4",
+    out: "opensidebar-linkedin-work-38s.mp4",
+    direction:
+      `Voice direction: a warm, confident female narrator speaking with ${ACCENT}. ` +
+      "This is a concise product film for a professional audience. Sound natural, capable, and calm. " +
+      "Use crisp consonants and a relaxed pace; never sound salesy.",
+    lines: [
+      {
+        at: 0.6, maxSec: 5.8,
+        text: "OpenSidebar is an AI agent that works alongside you in the browser.",
+        gnote: "Open cleanly and confidently. Let OpenSidebar land clearly; do not rush the first word.",
+      },
+      {
+        at: 6.5, maxSec: 7.0,
+        text: "It can take information from one page and turn it into a clear draft on another.",
+        gnote: "Matter-of-fact and effortless, with light emphasis on one page and another.",
+      },
+      {
+        at: 14.2, maxSec: 7.6,
+        text: "Leave it watching, and it tells you when something important changes.",
+        gnote: "Start gently, then brighten slightly on important changes.",
+      },
+      {
+        at: 22.9, maxSec: 8.0,
+        text: "For more involved work, it follows the workflow while showing you exactly what it is doing.",
+        gnote: "Grounded and reassuring. Keep the delivery plain and unhurried.",
+      },
+      {
+        at: 31.7, maxSec: 5.7,
+        text: "OpenSidebar. Open source, powered by your key.",
+        gnote: "Warm, definitive sign-off. Give each benefit a little space.",
+      },
+    ],
+  },
   promo: {
     in: "opensidebar-promo-60s.mp4",
     out: "opensidebar-promo-60s-voiced.mp4",
@@ -540,13 +628,18 @@ for (const [i, line] of spec.lines.entries()) {
 }
 console.log(`  total ${chars} characters sent to TTS`);
 
-// Build the mix: each line delayed to its offset, then all mixed.
+// Build the mix: each line gets 120ms of pre-roll after its scheduled offset,
+// then all lines are mixed. TTS files can begin on a non-zero sample; the
+// pre-roll prevents players and AAC priming from making the first consonant
+// sound clipped while preserving the intended visual beat.
 const inputs = ["-i", inFile];
 const parts = [];
+const VOICE_PREROLL_MS = 120;
 prepared.forEach((l, i) => {
   inputs.push("-i", l.file);
+  const delayMs = Math.round(l.at * 1000) + VOICE_PREROLL_MS;
   parts.push(
-    `[${i + 1}:a]adelay=${Math.round(l.at * 1000)}|${Math.round(l.at * 1000)},apad[v${i}]`,
+    `[${i + 1}:a]adelay=${delayMs}|${delayMs},apad[v${i}]`,
   );
 });
 // Mix all lines, then master the VO bus: gentle compression for presence, then

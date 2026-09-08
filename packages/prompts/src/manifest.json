@@ -85,9 +85,9 @@
   },
   {
     "id": "agent.system",
-    "version": "v8",
-    "hash": "ac64ee3d",
-    "description": "Core executor system prompt for browser automation turns. v8 (LP-21): volatile page state splits out of the system message at {{volatileSplit}} and is emitted as a trailing user message, so the system message stays byte-stable for a whole run and the prompt prefix survives; element IDs now target {{validElementIds}} instead of colliding with the static '## Page Interpretation' heading.",
+    "version": "v10",
+    "hash": "dfdf5d2a",
+    "description": "Core executor system prompt for browser automation turns. v10: preserve requested facts before prioritizing an action that replaces their visible page state.",
     "sourcePath": "prompts/runtime/agent/system.md"
   },
   {
@@ -127,9 +127,9 @@
   },
   {
     "id": "planner.decompose.system",
-    "version": "v7",
-    "hash": "1ec120a9",
-    "description": "Planner decomposition system prompt for the task planner. v7: per-step display label for the UI. v6: no literal-value restatement, at most 5 one-line assumptions (LP-17b CM-4).",
+    "version": "v8",
+    "hash": "ce0d4298",
+    "description": "Planner decomposition system prompt for the task planner. v8: structured whole-document form inspection. v7: per-step display label for the UI.",
     "sourcePath": "prompts/runtime/planner/decompose_system.md"
   },
   {
