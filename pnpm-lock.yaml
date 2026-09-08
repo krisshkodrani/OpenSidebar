@@ -89,6 +89,9 @@ importers:
         specifier: ^4.5.4
         version: 4.5.7(@types/react@18.3.28)(immer@10.2.0)(react@18.3.1)
     devDependencies:
+      "@axe-core/puppeteer":
+        specifier: ^4.12.1
+        version: 4.12.1(puppeteer@24.43.1(typescript@5.9.3))
       "@crxjs/vite-plugin":
         specifier: ^2.3.0
         version: 2.3.0
@@ -1132,6 +1135,15 @@ packages:
         integrity: sha512-sl4Bm6yiMNYrZKkqqDFWN0UfnWhlS8ivKxrYl+6t0gCLrqr8y3B2IqZZbFRkfaVVp7C/baApyh71P+LeE1A2sQ==,
       }
     engines: { node: ">=18.0.0" }
+
+  "@axe-core/puppeteer@4.12.1":
+    resolution:
+      {
+        integrity: sha512-AO2UX/lYGDIaKL39uk0gIWOQLdzBvoGIsxGWwIW6ZQ2X5Tsb10xszJHGTL5V505I0HwHRuMOZsGC/dZwHMSY6A==,
+      }
+    engines: { node: ">=6.4.0" }
+    peerDependencies:
+      puppeteer: ">=1.10.0"
 
   "@babel/code-frame@7.29.0":
     resolution:
@@ -5142,6 +5154,13 @@ packages:
       }
     engines: { node: ">= 18.0.0" }
     hasBin: true
+
+  axe-core@4.12.1:
+    resolution:
+      {
+        integrity: sha512-s7iGf5GaVMxEG0ENN9x+xTr7GFZCb1ZP/1uATUpCEK2X78nDB3RwbtFCo9pGAf9ru+VwoQ464DkaLEeRM08wJA==,
+      }
+    engines: { node: ">=4" }
 
   axios@1.15.0:
     resolution:
@@ -10180,6 +10199,11 @@ snapshots:
 
   "@aws/lambda-invoke-store@0.3.0": {}
 
+  "@axe-core/puppeteer@4.12.1(puppeteer@24.43.1(typescript@5.9.3))":
+    dependencies:
+      axe-core: 4.12.1
+      puppeteer: 24.43.1(typescript@5.9.3)
+
   "@babel/code-frame@7.29.0":
     dependencies:
       "@babel/helper-validator-identifier": 7.28.5
@@ -13088,6 +13112,8 @@ snapshots:
       constructs: 10.7.1
 
   aws-cdk@2.1132.0: {}
+
+  axe-core@4.12.1: {}
 
   axios@1.15.0:
     dependencies:

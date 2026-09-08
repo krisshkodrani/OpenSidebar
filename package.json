@@ -56,6 +56,8 @@
     "site:deploy": "node scripts/deploy-site.mjs",
     "sandbox:build": "node node_modules/vite/bin/vite.js build --config apps/sandbox/vite.config.ts",
     "sandbox:typecheck": "node node_modules/typescript/bin/tsc -b packages/sandbox-contracts/tsconfig.json apps/sandbox/tsconfig.json && node node_modules/typescript/bin/tsc -p infra/sandbox/tsconfig.json",
+    "sandbox:ui:check": "node scripts/sandbox-ui-regression.mjs",
+    "sandbox:ui:update": "node scripts/sandbox-ui-regression.mjs --update",
     "playground:boundaries": "node scripts/verify-playground-boundaries.mjs",
     "sandbox:synth": "corepack pnpm --dir infra/sandbox synth",
     "sandbox:deploy": "node scripts/deploy-sandbox.mjs",
@@ -176,6 +178,7 @@
     "zustand": "^4.5.4"
   },
   "devDependencies": {
+    "@axe-core/puppeteer": "^4.12.1",
     "@crxjs/vite-plugin": "^2.3.0",
     "@happy-dom/global-registrator": "^20.5.0",
     "@hono/node-server": "^2.0.5",

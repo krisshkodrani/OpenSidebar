@@ -7,6 +7,7 @@ import {
   Flex,
   Heading,
   Input,
+  NativeSelect,
   SimpleGrid,
   Stack,
   Text,
@@ -16,6 +17,7 @@ import { useForm } from "react-hook-form";
 import type { CloudPreferencesV1 } from "@opensidebar/shared-types";
 import { accountApi } from "./account-api";
 import { AppShell } from "./app/AppShell";
+import { applyColorMode } from "./app/color-mode";
 
 export function AccountPage() {
   const queryClient = useQueryClient();
@@ -54,15 +56,20 @@ export function AccountPage() {
     preferences,
     remoteWork,
   } = accountQuery.data ?? {};
+  useEffect(() => {
+    if (preferences?.theme) applyColorMode(preferences.theme);
+  }, [preferences?.theme]);
   const error = accountQuery.error ?? mutation.error;
   const errorMessage =
     error instanceof Error ? error.message : error ? String(error) : null;
   const act = (operation: () => Promise<unknown>) => mutation.mutate(operation);
   const connectedBrowsers = devices.filter(
-    (device) => device.connectionKind === "browser_extension" && !device.revokedAt,
+    (device) =>
+      device.connectionKind === "browser_extension" && !device.revokedAt,
   );
   const connectedIntegrations = devices.filter(
-    (device) => device.connectionKind === "codex_integration" && !device.revokedAt,
+    (device) =>
+      device.connectionKind === "codex_integration" && !device.revokedAt,
   );
   const connectionHistory = devices.filter(
     (device) =>
@@ -141,8 +148,36 @@ export function AccountPage() {
             <Text color="danger">{errorMessage}</Text>
           </Box>
         ) : null}
-        <SimpleGrid columns={{ base: 1, md: 2 }} gap="5" mt="8">
+        <Flex
+          as="nav"
+          aria-label="Settings sections"
+          mt="8"
+          gap="2"
+          overflowX="auto"
+          pb="1"
+        >
+          {[
+            ["General", "general"],
+            ["AI providers", "providers"],
+            ["Remote work", "remote-work"],
+            ["Devices", "devices"],
+            ["Usage", "usage"],
+          ].map(([label, id]) => (
+            <Button key={id} asChild size="sm" variant="outline" flexShrink="0">
+              <a href={`#${id}`}>{label}</a>
+            </Button>
+          ))}
+        </Flex>
+        <SimpleGrid
+          id="general"
+          scrollMarginTop="4"
+          columns={{ base: 1, md: 2 }}
+          gap="5"
+          mt="8"
+        >
           <Box
+            id="usage"
+            scrollMarginTop="4"
             bg="surface"
             borderWidth="1px"
             borderColor="line"
@@ -210,10 +245,16 @@ export function AccountPage() {
           preferences={preferences ?? null}
           busy={mutation.isPending}
           save={(value, expected) =>
-            act(() => accountApi.savePreferences(value, expected))
+            act(async () => {
+              const saved = await accountApi.savePreferences(value, expected);
+              applyColorMode(saved.theme);
+              return saved;
+            })
           }
         />
         <Box
+          id="remote-work"
+          scrollMarginTop="4"
           mt="5"
           bg="surface"
           borderWidth="1px"
@@ -226,18 +267,27 @@ export function AccountPage() {
             <Box>
               <Heading size="md">Remote browser work</Heading>
               <Text mt="1" color="muted" fontSize="sm">
-                Allow authorized Codex integrations to send visible, cancellable tasks to linked browsers.
+                Allow authorized Codex integrations to send visible, cancellable
+                tasks to linked browsers.
               </Text>
             </Box>
             <Button
               colorPalette={remoteWork?.enabled ? "red" : "blue"}
               variant={remoteWork?.enabled ? "outline" : "solid"}
               disabled={!remoteWork || mutation.isPending}
-              onClick={() => remoteWork && void act(() =>
-                accountApi.saveRemoteWork(!remoteWork.enabled, remoteWork.revision),
-              )}
+              onClick={() =>
+                remoteWork &&
+                void act(() =>
+                  accountApi.saveRemoteWork(
+                    !remoteWork.enabled,
+                    remoteWork.revision,
+                  ),
+                )
+              }
             >
-              {remoteWork?.enabled ? "Disable remote work" : "Enable remote work"}
+              {remoteWork?.enabled
+                ? "Disable remote work"
+                : "Enable remote work"}
             </Button>
           </Flex>
           <Text mt="3" fontSize="xs" color="muted">
@@ -247,6 +297,8 @@ export function AccountPage() {
           </Text>
         </Box>
         <Box
+          id="providers"
+          scrollMarginTop="4"
           mt="5"
           bg="surface"
           borderWidth="1px"
@@ -299,7 +351,7 @@ export function AccountPage() {
                   ) : null}
                 </Flex>
                 <Flex gap="2" w={{ base: "full", md: "420px" }}>
-                  <input
+                  <Input
                     aria-label={`${credential.provider} API key`}
                     type="password"
                     autoComplete="off"
@@ -315,7 +367,6 @@ export function AccountPage() {
                         [credential.provider]: event.target.value,
                       }))
                     }
-                    className="account-secret-input"
                   />
                   <Button
                     size="sm"
@@ -345,6 +396,8 @@ export function AccountPage() {
           </Stack>
         </Box>
         <Box
+          id="devices"
+          scrollMarginTop="4"
           mt="5"
           bg="surface"
           borderWidth="1px"
@@ -368,15 +421,27 @@ export function AccountPage() {
               Sign out extension devices
             </Button>
           </Flex>
-          <Heading size="sm" mt="5">Connected browsers</Heading>
+          <Heading size="sm" mt="5">
+            Connected browsers
+          </Heading>
           <Stack mt="3" gap="3">
             {connectedBrowsers.length ? (
               connectedBrowsers.map((device) => (
-                <Flex key={device.id} justify="space-between" align="center" gap="3" wrap="wrap">
+                <Flex
+                  key={device.id}
+                  justify="space-between"
+                  align="center"
+                  gap="3"
+                  wrap="wrap"
+                >
                   <Box>
                     <Flex align="center" gap="2">
                       <Text fontWeight="700">{device.displayName}</Text>
-                      <Badge colorPalette={device.availability === "online" ? "green" : "gray"}>
+                      <Badge
+                        colorPalette={
+                          device.availability === "online" ? "green" : "gray"
+                        }
+                      >
                         {device.availability}
                       </Badge>
                     </Flex>
@@ -392,21 +457,35 @@ export function AccountPage() {
                       aria-label={`Name for ${device.displayName}`}
                       value={deviceNames[device.id] ?? device.displayName}
                       onChange={(event) =>
-                        setDeviceNames((current) => ({ ...current, [device.id]: event.target.value }))
+                        setDeviceNames((current) => ({
+                          ...current,
+                          [device.id]: event.target.value,
+                        }))
                       }
                     />
                     <Button
                       size="sm"
                       variant="outline"
-                      disabled={!(deviceNames[device.id] ?? device.displayName).trim()}
-                      onClick={() => void act(() => accountApi.renameDevice(device, deviceNames[device.id] ?? device.displayName))}
+                      disabled={
+                        !(deviceNames[device.id] ?? device.displayName).trim()
+                      }
+                      onClick={() =>
+                        void act(() =>
+                          accountApi.renameDevice(
+                            device,
+                            deviceNames[device.id] ?? device.displayName,
+                          ),
+                        )
+                      }
                     >
                       Rename
                     </Button>
                     <Button
                       size="sm"
                       variant="outline"
-                      onClick={() => void act(() => accountApi.revokeDevice(device.id))}
+                      onClick={() =>
+                        void act(() => accountApi.revokeDevice(device.id))
+                      }
                     >
                       Revoke
                     </Button>
@@ -417,19 +496,38 @@ export function AccountPage() {
               <Text color="muted">No connected browsers.</Text>
             )}
           </Stack>
-          <Heading size="sm" mt="6">Connected integrations</Heading>
+          <Heading size="sm" mt="6">
+            Connected integrations
+          </Heading>
           <Stack mt="3" gap="3">
-            {connectedIntegrations.length ? connectedIntegrations.map((device) => (
-              <Flex key={device.id} justify="space-between" align="center" gap="3">
-                <Box>
-                  <Text fontWeight="700">{device.displayName}</Text>
-                  <Text color="muted" fontSize="sm">Connected to Codex</Text>
-                </Box>
-                <Button size="sm" variant="outline" onClick={() => void act(() => accountApi.revokeDevice(device.id))}>
-                  Revoke
-                </Button>
-              </Flex>
-            )) : <Text color="muted">No connected integrations.</Text>}
+            {connectedIntegrations.length ? (
+              connectedIntegrations.map((device) => (
+                <Flex
+                  key={device.id}
+                  justify="space-between"
+                  align="center"
+                  gap="3"
+                >
+                  <Box>
+                    <Text fontWeight="700">{device.displayName}</Text>
+                    <Text color="muted" fontSize="sm">
+                      Connected to Codex
+                    </Text>
+                  </Box>
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={() =>
+                      void act(() => accountApi.revokeDevice(device.id))
+                    }
+                  >
+                    Revoke
+                  </Button>
+                </Flex>
+              ))
+            ) : (
+              <Text color="muted">No connected integrations.</Text>
+            )}
           </Stack>
           <Flex mt="6" justify="space-between" align="center">
             <Box>
@@ -438,7 +536,11 @@ export function AccountPage() {
                 {connectionHistory.length} revoked or development connection(s)
               </Text>
             </Box>
-            <Button size="sm" variant="ghost" onClick={() => setShowConnectionHistory((value) => !value)}>
+            <Button
+              size="sm"
+              variant="ghost"
+              onClick={() => setShowConnectionHistory((value) => !value)}
+            >
               {showConnectionHistory ? "Hide" : "Show"}
             </Button>
           </Flex>
@@ -448,31 +550,44 @@ export function AccountPage() {
                 <Flex justify="space-between" align="center" gap="3">
                   <Box>
                     <Flex align="center" gap="2">
-                      <Text fontWeight="700">Development and acceptance tests</Text>
+                      <Text fontWeight="700">
+                        Development and acceptance tests
+                      </Text>
                       <Badge colorPalette="gray">Test history</Badge>
                     </Flex>
                     <Text color="muted" fontSize="sm">
                       {testConnectionHistory.length} run(s) · last seen{" "}
-                      {new Date(latestTestConnection.lastSeenAt).toLocaleString()}
+                      {new Date(
+                        latestTestConnection.lastSeenAt,
+                      ).toLocaleString()}
                     </Text>
                   </Box>
                 </Flex>
               ) : null}
               {revokedConnectionHistory.map((device) => (
-                <Flex key={device.id} justify="space-between" align="center" gap="3">
+                <Flex
+                  key={device.id}
+                  justify="space-between"
+                  align="center"
+                  gap="3"
+                >
                   <Box>
                     <Flex align="center" gap="2">
                       <Text fontWeight="700">{device.displayName}</Text>
-                      <Badge colorPalette="gray">
-                        Revoked
-                      </Badge>
+                      <Badge colorPalette="gray">Revoked</Badge>
                     </Flex>
                     <Text color="muted" fontSize="sm">
                       Last seen {new Date(device.lastSeenAt).toLocaleString()}
                     </Text>
                   </Box>
                   {!device.revokedAt ? (
-                    <Button size="sm" variant="outline" onClick={() => void act(() => accountApi.revokeDevice(device.id))}>
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      onClick={() =>
+                        void act(() => accountApi.revokeDevice(device.id))
+                      }
+                    >
                       Revoke
                     </Button>
                   ) : null}
@@ -536,7 +651,6 @@ function PreferencesCard({
       </Text>
       <Box
         as="form"
-        className="account-preferences"
         mt="4"
         onSubmit={handleSubmit((value) =>
           save(
@@ -551,52 +665,61 @@ function PreferencesCard({
         )}
       >
         <SimpleGrid columns={{ base: 1, md: 2 }} gap="4">
-          <label>
+          <Box as="label">
             <Text fontSize="sm" mb="1">
               Inference mode
             </Text>
-            <select {...register("inferenceMode")}>
-              <option value="local">Direct from this browser</option>
-              <option value="cloud">Use account connection</option>
-            </select>
-          </label>
-          <label>
+            <NativeSelect.Root>
+              <NativeSelect.Field {...register("inferenceMode")}>
+                <option value="local">Direct from this browser</option>
+                <option value="cloud">Use account connection</option>
+              </NativeSelect.Field>
+              <NativeSelect.Indicator />
+            </NativeSelect.Root>
+          </Box>
+          <Box as="label">
             <Text fontSize="sm" mb="1">
               Provider
             </Text>
-            <select {...register("providerMode")}>
-              <option value="openrouter">OpenRouter</option>
-              <option value="fireworks">Fireworks</option>
-            </select>
-          </label>
-          <label>
+            <NativeSelect.Root>
+              <NativeSelect.Field {...register("providerMode")}>
+                <option value="openrouter">OpenRouter</option>
+                <option value="fireworks">Fireworks</option>
+              </NativeSelect.Field>
+              <NativeSelect.Indicator />
+            </NativeSelect.Root>
+          </Box>
+          <Box as="label">
             <Text fontSize="sm" mb="1">
               Theme
             </Text>
-            <select {...register("theme")}>
-              <option value="system">System</option>
-              <option value="light">Light</option>
-              <option value="dark">Dark</option>
-            </select>
-          </label>
-          <label>
+            <NativeSelect.Root>
+              <NativeSelect.Field {...register("theme")}>
+                <option value="system">System</option>
+                <option value="light">Light</option>
+                <option value="dark">Dark</option>
+              </NativeSelect.Field>
+              <NativeSelect.Indicator />
+            </NativeSelect.Root>
+          </Box>
+          <Box as="label">
             <Text fontSize="sm" mb="1">
               Maximum turns
             </Text>
-            <input
+            <Input
               type="number"
               min="1"
               max="200"
               {...register("maxTurns", { valueAsNumber: true })}
             />
-          </label>
+          </Box>
         </SimpleGrid>
-        <label>
+        <Box as="label">
           <Flex mt="4" gap="2" align="center">
             <input type="checkbox" {...register("showSessionMetrics")} />
             <Text fontSize="sm">Show session metrics</Text>
           </Flex>
-        </label>
+        </Box>
         <Button type="submit" mt="5" colorPalette="blue" loading={busy}>
           Save synced preferences
         </Button>
