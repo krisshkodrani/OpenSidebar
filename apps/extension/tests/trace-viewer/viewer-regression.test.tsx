@@ -57,18 +57,15 @@ async function flushAsyncWork() {
   });
 }
 
-async function waitFor(check: () => void, attempts = 20) {
-  let lastError: unknown;
-  for (let index = 0; index < attempts; index += 1) {
-    try {
-      check();
-      return;
-    } catch (error) {
-      lastError = error;
+async function waitFor(check: () => void) {
+  // Lazy panels may still be transforming under CI load after a few ticks.
+  await vi.waitFor(
+    async () => {
       await flushAsyncWork();
-    }
-  }
-  throw lastError;
+      check();
+    },
+    { timeout: 3000, interval: 20 },
+  );
 }
 
 const sessions = [
