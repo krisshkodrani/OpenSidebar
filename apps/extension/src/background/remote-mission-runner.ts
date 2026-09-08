@@ -4,6 +4,7 @@ import type {
   RemoteMissionTargetDecisionV1,
 } from "@shared-types/remote-missions";
 import type {
+  AgentRunOptions,
   AgentRunOutcome,
   AgentRunner,
 } from "./browser-bridge/handler";
@@ -12,7 +13,11 @@ import { createDefaultBrowserAgentRunner } from "./browser-bridge/orchestrator-d
 export interface RemoteMissionRunner {
   run(
     payload: RemoteMissionPayloadV1,
-    options?: { signal?: AbortSignal },
+    options?: {
+      signal?: AbortSignal;
+      onTargetBound?: AgentRunOptions["onTargetBound"];
+      onProgress?: AgentRunOptions["onProgress"];
+    },
   ): Promise<RemoteMissionRunResultV1>;
   respondApproval?(
     missionId: string,
@@ -28,8 +33,9 @@ export interface RemoteMissionRunner {
 }
 
 const result = (outcome: AgentRunOutcome): RemoteMissionRunResultV1 => {
+  const target = outcome.target ? { target: outcome.target } : {};
   if (outcome.status === "completed")
-    return { state: "succeeded", ...(outcome.summary ? { summary: outcome.summary } : {}) };
+    return { state: "succeeded", ...(outcome.summary ? { summary: outcome.summary } : {}), ...target };
   if (outcome.status === "needs_human" && outcome.approval)
     return {
       state: "approval_required",
@@ -42,6 +48,7 @@ const result = (outcome: AgentRunOutcome): RemoteMissionRunResultV1 => {
           ? { actionDigest: outcome.approval.dryRun.diffHash }
           : {}),
       },
+      ...target,
     };
   if (outcome.status === "needs_human" && outcome.targetSelection)
     return {
@@ -53,6 +60,7 @@ const result = (outcome: AgentRunOutcome): RemoteMissionRunResultV1 => {
     ...(outcome.summary || outcome.reason
       ? { summary: outcome.summary ?? outcome.reason }
       : {}),
+    ...target,
   };
 };
 

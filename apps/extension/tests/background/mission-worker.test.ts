@@ -10,7 +10,10 @@ import {
   MemoryRemoteMissionTransport,
   ScriptedMissionSupervisor,
 } from "../../src/background/remote-missions/in-memory-ports";
-import { MissionWorker } from "../../src/background/remote-missions/mission-worker";
+import {
+  MissionWorker,
+  sanitizeRemoteEvidenceClaim,
+} from "../../src/background/remote-missions/mission-worker";
 import { LocalMissionAttemptJournal } from "../../src/background/remote-missions/local-attempt-journal";
 import { createFakePersistencePort } from "../fakes/persistence";
 
@@ -49,6 +52,19 @@ const decision = (
 });
 
 describe("MissionWorker", () => {
+  test("removes Chrome-local identifiers from agent-authored evidence", () => {
+    expect(sanitizeRemoteEvidenceClaim([
+      "Title: Example Domain",
+      "Tab ID: 1652526121 (current)",
+      "workspace_id: ws-secret",
+      "Chrome.storage session key: remote-targets",
+      "URL: https://example.com/",
+    ].join("\n"))).toBe([
+      "Title: Example Domain",
+      "URL: https://example.com/",
+    ].join("\n"));
+  });
+
   test("persists a bounded attempt journal across worker instances", async () => {
     const { port, sync, session } = createFakePersistencePort();
     const first = new LocalMissionAttemptJournal(port);
@@ -69,7 +85,16 @@ describe("MissionWorker", () => {
   });
 
   test("journals, publishes evidence, and acknowledges only after supervisor completion", async () => {
-    const run = vi.fn().mockResolvedValue({ state: "succeeded", summary: "Heading: Example Domain" });
+    const run = vi.fn().mockImplementation(async (_payload, options) => {
+      await options?.onProgress?.("Discovering the existing OpenSidebar workspace.");
+      await options?.onTargetBound?.({
+        context: "isolated_tab",
+        inWorkspace: true,
+        sidePanelEnabled: true,
+        createdForMission: true,
+      });
+      return { state: "succeeded", summary: "Heading: Example Domain" };
+    });
     const journal = new MemoryMissionAttemptJournal();
     const transport = new MemoryRemoteMissionTransport();
     const worker = new MissionWorker(
@@ -79,11 +104,28 @@ describe("MissionWorker", () => {
       transport,
     );
 
-    await expect(worker.run(mission(), { sequence: 7 })).resolves.toEqual({
+    const onEvidence = vi.fn();
+    const onProgress = vi.fn();
+    await expect(worker.run(mission(), {
+      sequence: 7,
+      onEvidence,
+      onProgress,
+    })).resolves.toEqual({
       state: "succeeded",
       summary: "Heading: Example Domain",
     });
     expect(run).toHaveBeenCalledOnce();
+    expect(onProgress).toHaveBeenCalledWith(
+      "Discovering the existing OpenSidebar workspace.",
+    );
+    expect(onEvidence).toHaveBeenCalledWith(expect.objectContaining({
+      outcome: "unknown",
+      target: expect.objectContaining({
+        context: "isolated_tab",
+        inWorkspace: true,
+        sidePanelEnabled: true,
+      }),
+    }));
     expect(transport.evidence[0]?.claims[0]?.claim).toBe("Heading: Example Domain");
     expect(transport.acknowledgements).toEqual([7]);
     expect(await journal.read("mission-1")).toBeNull();
@@ -206,6 +248,71 @@ describe("MissionWorker", () => {
     expect(respondApproval).not.toHaveBeenCalled();
   });
 
+  test("hands achieved evidence to Codex after target selection", async () => {
+    const journal = new MemoryMissionAttemptJournal();
+    await journal.write({
+      schemaVersion: 1,
+      missionId: "mission-1",
+      stepId: "step-1",
+      attemptId: "attempt-target",
+      planRevision: 1,
+      state: "target_selection_required",
+      mayHaveConsequentialEffect: false,
+      updatedAt: new Date().toISOString(),
+    });
+    const selectTarget = vi.fn().mockResolvedValue({
+      state: "succeeded",
+      summary: "Heading: Example Domain",
+      target: {
+        context: "isolated_tab",
+        workspaceTitle: "Acceptance",
+        inWorkspace: true,
+        sidePanelEnabled: true,
+        createdForMission: true,
+      },
+    });
+    const transport = new MemoryRemoteMissionTransport();
+    const worker = new MissionWorker(
+      { run: vi.fn(), selectTarget } as RemoteMissionRunner,
+      new ScriptedMissionSupervisor([decision("request_user_input")]),
+      journal,
+      transport,
+    );
+
+    await expect(worker.resumeTargetSelection(
+      mission(),
+      {
+        schemaVersion: 1,
+        missionId: "mission-1",
+        executionClass: "read_only",
+        instruction: "Read the visible heading",
+        targetContext: "isolated_tab",
+      },
+      {
+        schemaVersion: 1,
+        missionId: "mission-1",
+        targetHandle: "target-acceptance",
+        decidedAt: new Date().toISOString(),
+      },
+    )).resolves.toMatchObject({
+      state: "supervision_required",
+      evidence: {
+        outcome: "achieved",
+        claims: [{ claim: "Heading: Example Domain" }],
+        target: {
+          workspaceTitle: "Acceptance",
+          inWorkspace: true,
+          sidePanelEnabled: true,
+        },
+      },
+      pendingStep: { stepId: "step-1" },
+    });
+    expect(transport.evidence).toHaveLength(1);
+    expect(await journal.read("mission-1")).toMatchObject({
+      state: "supervision_required",
+    });
+  });
+
   test("denial resumes only to stop the pending action and never claims completion", async () => {
     const journal = new MemoryMissionAttemptJournal();
     await journal.write({
@@ -245,14 +352,32 @@ describe("MissionWorker", () => {
   test("hands browser evidence to Codex and completes only after its revision-bound decision", async () => {
     const journal = new MemoryMissionAttemptJournal();
     const worker = new MissionWorker(
-      { run: vi.fn().mockResolvedValue({ state: "succeeded", summary: "Example Domain" }) } as RemoteMissionRunner,
+      { run: vi.fn().mockResolvedValue({
+        state: "succeeded",
+        summary: "Example Domain",
+        target: {
+          context: "isolated_tab",
+          workspaceTitle: "OpenSidebar 1",
+          inWorkspace: true,
+          sidePanelEnabled: true,
+          createdForMission: true,
+        },
+      }) } as RemoteMissionRunner,
       new ScriptedMissionSupervisor([decision("request_user_input")]),
       journal,
     );
     const waiting = await worker.run(mission());
     expect(waiting).toMatchObject({
       state: "supervision_required",
-      evidence: { outcome: "achieved", claims: [{ claim: "Example Domain" }] },
+      evidence: {
+        outcome: "achieved",
+        claims: [{ claim: "Example Domain" }],
+        target: {
+          workspaceTitle: "OpenSidebar 1",
+          inWorkspace: true,
+          sidePanelEnabled: true,
+        },
+      },
     });
     expect((await journal.read("mission-1"))?.state).toBe("supervision_required");
     const evidence = (waiting as Extract<typeof waiting, { state: "supervision_required" }>).evidence;

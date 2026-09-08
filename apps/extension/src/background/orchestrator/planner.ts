@@ -22,6 +22,7 @@ import {
 } from "../agent/task-contract";
 import { BuildNodesResult, PlannerAssignment, TaskNode } from "./types";
 import { annotateParallelContracts } from "./parallel-contract";
+import { requiresSeparateNavigation } from "./read-synthesis-policy";
 // Re-exported so the ratcheted orchestrator/index.ts can import it from its
 // existing "./planner" group (LP-17 P6).
 export { qualifiesForDirectSingleNode } from "./planner-gate-policy";
@@ -697,8 +698,6 @@ export function dropTrailingVerifyOnlyNode(nodes: TaskNode[]): TaskNode[] {
 
 const SAME_PAGE_COLLAPSE_MAX_NODES = 5;
 const SAME_PAGE_COLLAPSE_MAX_DESCRIPTION_CHARS = 700;
-const NODE_NAVIGATION_VERB =
-  /\b(?:navigate to|go(?:ing)? to|open(?:ing)? (?:a )?new tab|visit\w*|return\w* to|back to)\b/i;
 // "Buy the FIRST item" / "buy the SECOND item" — an itemwise iteration whose
 // per-item navigation is implied, never spelled out. Two or more ordinal-
 // target steps mean the chain spans item pages, not one page.
@@ -706,17 +705,17 @@ const ITEMWISE_ORDINAL_TARGET =
   /\b(?:first|second|third|fourth|fifth|next|another)\b[\w\s-]{0,24}\b(?:item|record|entry|row|product|listing|application|ticket|task)s?\b/i;
 
 /**
- * LP-17 P7: merge a serialized chain of same-page, same-skill nodes into one.
+ * LP-17 P7: merge a serialized chain that should retain one executor context.
  * Live plans split sequential single-page work (add-to-cart → coupon →
  * checkout) into 4-5 serialized nodes, each spawning a fresh executor
  * session (~12-35K tokens of context) and each a link in a dependency chain
  * whose failure kills everything downstream. Serialized + same page + same
  * skill = no parallelism gained, pure overhead.
  *
- * Load-bearing guard: cross-view plans always contain a navigation step (the
- * prompt's VIEW-STATE rule), so refusing to merge across navigation verbs or
- * distinct origins keeps genuinely multi-page plans intact. The user's
- * explicit "separate updates" phrasing also opts out.
+ * Load-bearing guard: navigation normally keeps genuinely multi-page plans
+ * intact. The exception is a read-only chain culminating in one synthesized
+ * answer, where splitting workers loses evidence as the shared tab advances.
+ * Distinct origins and explicit "separate updates" phrasing still opt out.
  */
 export function collapseSameContextSequentialNodes(
   nodes: TaskNode[],
@@ -734,13 +733,7 @@ export function collapseSameContextSequentialNodes(
     return nodes;
   }
   if (!isSerializedDependencyChain(nodes)) return nodes;
-  if (
-    nodes.some(
-      (node) =>
-        node.toolProfile === "navigate" ||
-        NODE_NAVIGATION_VERB.test(node.description),
-    )
-  ) {
+  if (requiresSeparateNavigation(nodes, query)) {
     return nodes;
   }
   if (nodeUrlOrigins(nodes).size > 1) return nodes;

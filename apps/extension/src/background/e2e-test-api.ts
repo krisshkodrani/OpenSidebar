@@ -12,9 +12,16 @@ export const E2E_VISIBLE_RAIL_STORAGE_KEY =
 export const E2E_SEED_PENDING_INTERACTION_MESSAGE_TYPE =
   "E2E_SEED_PENDING_INTERACTION";
 
+export const E2E_CREATE_WORKSPACE_MESSAGE_TYPE = "E2E_CREATE_WORKSPACE";
+
 export type E2ESeedPendingInteractionMessage = {
   type: typeof E2E_SEED_PENDING_INTERACTION_MESSAGE_TYPE;
   payload: unknown;
+};
+
+export type E2ECreateWorkspaceMessage = {
+  type: typeof E2E_CREATE_WORKSPACE_MESSAGE_TYPE;
+  payload: { tabId: number; workspaceId: string; name?: string };
 };
 
 export type E2EExecuteCloudCommandMessage = {
@@ -30,6 +37,16 @@ export function isE2ESeedPendingInteractionMessage(
     message !== null &&
     (message as { type?: unknown }).type ===
       E2E_SEED_PENDING_INTERACTION_MESSAGE_TYPE
+  );
+}
+
+export function isE2ECreateWorkspaceMessage(
+  message: unknown,
+): message is E2ECreateWorkspaceMessage {
+  return (
+    typeof message === "object" &&
+    message !== null &&
+    (message as { type?: unknown }).type === E2E_CREATE_WORKSPACE_MESSAGE_TYPE
   );
 }
 

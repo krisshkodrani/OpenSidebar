@@ -59,12 +59,17 @@ const writeStatus = async (status: RemoteMissionLocalStatus) => {
   });
 };
 
+let isBrowserBusy: () => boolean | Promise<boolean> = () => false;
+
 const controller = new RemoteMissionDeliveryController(
   transport,
   new LocalRemoteMissionDeliveryJournal(chromePersistencePort.local),
   worker,
   readDeviceId,
   writeStatus,
+  undefined,
+  undefined,
+  () => isBrowserBusy(),
 );
 
 export const pollRemoteMissions = () => controller.pollOnce();
@@ -124,7 +129,10 @@ async function reconcilePolling() {
   await pollRemoteMissions();
 }
 
-export function initRemoteMissionRuntime() {
+export function initRemoteMissionRuntime(
+  browserBusyCheck: () => boolean | Promise<boolean> = () => false,
+) {
+  isBrowserBusy = browserBusyCheck;
   chromeSchedulerPort.onAlarm((alarm) => {
     if (alarm.name === ALARM_NAME) void pollRemoteMissions().catch(() => {});
   });

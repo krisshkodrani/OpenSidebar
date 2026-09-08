@@ -33,6 +33,23 @@ export type MissionWorkerOutcome =
 const bounded = (values: string[] | undefined, limit = 20) =>
   (values ?? []).slice(0, limit).map((value) => value.trim()).filter(Boolean);
 
+const INTERNAL_BROWSER_IDENTIFIER =
+  /\b(?:tab|group|window|workspace)[\s_-]*ids?\b|\bchrome\.storage\b|\bstorage[\s_-]*keys?\b/i;
+
+/** Keep agent-authored evidence useful without forwarding Chrome-local identifiers. */
+export const sanitizeRemoteEvidenceClaim = (value: string): string =>
+  value
+    .split(/\r?\n/)
+    .filter((line) => !INTERNAL_BROWSER_IDENTIFIER.test(line))
+    .join("\n")
+    .trim();
+
+const claimsFor = (result: RemoteMissionRunResultV1): MissionEvidenceV1["claims"] => {
+  if (!("summary" in result) || !result.summary) return [];
+  const claim = sanitizeRemoteEvidenceClaim(result.summary).slice(0, 4_000);
+  return claim ? [{ claim, source: "agent_summary" }] : [];
+};
+
 const instructionFor = (step: MissionStepV1, guidance?: string) =>
   [
     step.objective,
@@ -69,15 +86,16 @@ const evidenceFor = (
         : result.state === "approval_required"
           ? "approval_required"
           : "unknown",
-  claims: "summary" in result && result.summary
-    ? [{ claim: result.summary.slice(0, 4_000), source: "agent_summary" }]
-    : [],
+  claims: claimsFor(result),
   effects: [],
   uncertainties:
     result.state === "outcome_unknown"
       ? [("summary" in result ? result.summary?.slice(0, 1_000) : undefined) ?? "The browser outcome could not be verified."]
       : [],
   ...(result.state === "approval_required" ? { approval: result.approval } : {}),
+  ...(result.state !== "target_selection_required" && result.target
+    ? { target: result.target }
+    : {}),
 });
 
 const validateDecision = (
@@ -198,6 +216,14 @@ export class MissionWorker {
     if (result.state === "outcome_unknown") return { state: "outcome_unknown", reason: result.summary };
     const supervisor = await this.supervisor.decide(mission, evidence, options);
     validateDecision(mission, step, supervisor);
+    if (supervisor.kind === "request_user_input") {
+      await this.journal.write({
+        ...attempt,
+        state: "supervision_required",
+        updatedAt: new Date().toISOString(),
+      });
+      return { state: "supervision_required", evidence, pendingStep: step };
+    }
     if (supervisor.kind !== "complete" || evidence.outcome !== "achieved")
       return { state: "outcome_unknown", reason: supervisor.guidance ?? "Target continuation lacked verified completion." };
     await this.journal.remove(mission.missionId);
@@ -258,7 +284,13 @@ export class MissionWorker {
 
   async run(
     mission: MissionSpecV1,
-    options?: { signal?: AbortSignal; sequence?: number; initialUrl?: string },
+    options?: {
+      signal?: AbortSignal;
+      sequence?: number;
+      initialUrl?: string;
+      onEvidence?: (evidence: MissionEvidenceV1) => Promise<void> | void;
+      onProgress?: (summary: string) => Promise<void> | void;
+    },
   ): Promise<MissionWorkerOutcome> {
     if (new Date(mission.expiresAt).getTime() <= Date.now())
       return { state: "cancelled", reason: "Mission expired before execution." };
@@ -298,7 +330,24 @@ export class MissionWorker {
         ...(options?.initialUrl ? { initialUrl: options.initialUrl } : {}),
         targetContext: mission.targetContext,
       };
-      const result = await this.runner.run(payload, { signal: options?.signal });
+      const result = await this.runner.run(payload, {
+        signal: options?.signal,
+        onProgress: options?.onProgress,
+        onTargetBound: options?.onEvidence
+          ? async (target) => {
+              await options.onEvidence!(evidenceFor(
+                mission,
+                step,
+                attemptId,
+                {
+                  state: "outcome_unknown",
+                  summary: "Browser execution is still in progress.",
+                  target,
+                },
+              ));
+            }
+          : undefined,
+      });
       if (result.state === "target_selection_required") {
         await this.journal.write({
           ...accepted,

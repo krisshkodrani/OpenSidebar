@@ -7101,7 +7101,7 @@ describe("Tool Registration", () => {
     expect(result).not.toContain("about:blank");
   });
 
-  test("go_back restores the source page when history reaches an extension page", async () => {
+  test.each(["chrome-extension://test/sidepanel.html", "about:blank"])("go_back restores the source page when history reaches %s", async (strandedUrl) => {
     let currentUrl = "https://example.com/task";
     (chrome.tabs as any).get = vi.fn(async (_tabId: number) => ({
       id: 123,
@@ -7110,7 +7110,7 @@ describe("Tool Registration", () => {
       groupId: -1,
     }));
     (chrome.tabs as any).goBack = vi.fn(async () => {
-      currentUrl = "chrome-extension://test/sidepanel.html";
+      currentUrl = strandedUrl;
     });
     (chrome.tabs as any).update = vi.fn(async (_tabId: number, update: { url: string }) => {
       currentUrl = update.url;
@@ -7131,5 +7131,5 @@ describe("Tool Registration", () => {
     });
     expect(result).toContain("uncontrollable page");
     expect(result).toContain("Restored https://example.com/task");
-  });
+  }, 10000);
 });

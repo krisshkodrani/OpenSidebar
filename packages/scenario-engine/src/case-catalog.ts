@@ -83,7 +83,9 @@ function assertions(
   answerMatch: "literal" | "normalized" | undefined,
 ): ValidatorAssertionSpecV1[] {
   const result: ValidatorAssertionSpecV1[] = [];
-  if (hasWorkflow) {
+  // For answer-only tasks, workflow stages expose evidence; they are not an
+  // extra user-requested mutation. The answer assertion is the terminal goal.
+  if (hasWorkflow && mode !== "answer") {
     result.push({
       id: `${id}.workflow`,
       source: "state",

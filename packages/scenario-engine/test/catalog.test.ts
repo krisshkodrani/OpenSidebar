@@ -332,3 +332,63 @@ test("canvas answers tolerate punctuation without accepting a wrong value", () =
   assert.equal(validateAnswer("Aurora: $82"), "pass");
   assert.equal(validateAnswer("Aurora: $28"), "fail");
 });
+
+test("answer-only cases accept equivalent formatting without an unrequested finalization click", () => {
+  const definition = MODEL_BENCH_CASES.find(
+    (entry) => entry.contract.id === "analytics.cross-dashboard-brief",
+  )!;
+  const initialState = scenarioEngine.initialize(definition.contract.id);
+  let finalState = scenarioEngine.apply(initialState, {
+    type: "workflow.advance",
+    payload: { stageId: "stage-1" },
+  });
+  finalState = scenarioEngine.apply(finalState, {
+    type: "workflow.advance",
+    payload: { stageId: "stage-2" },
+  });
+
+  const validation = scenarioEngine.validate({
+    definition,
+    initialState,
+    finalState,
+    finalAnswer:
+      "- Support dashboard - Open Tickets: 42\n- Marketing dashboard - Active Campaigns: 7",
+  });
+
+  assert.equal(validation.verdict, "pass");
+  assert.equal(
+    definition.validator.assertions.some((assertion) =>
+      assertion.id.endsWith(".workflow"),
+    ),
+    false,
+  );
+});
+
+test("formatted answer matching still rejects a missing expected clause", () => {
+  const definition = MODEL_BENCH_CASES.find(
+    (entry) => entry.contract.id === "analytics.cross-dashboard-brief",
+  )!;
+  const initialState = scenarioEngine.initialize(definition.contract.id);
+  const validation = scenarioEngine.validate({
+    definition,
+    initialState,
+    finalState: initialState,
+    finalAnswer: "Support dashboard - Open Tickets: 42",
+  });
+  assert.equal(validation.verdict, "fail");
+});
+
+test("answer matching accepts separated conjunctive facts and light plurals", () => {
+  const definition = MODEL_BENCH_CASES.find(
+    (entry) => entry.contract.id === "knowledge.synthesize-two-policies",
+  )!;
+  const initialState = scenarioEngine.initialize(definition.contract.id);
+  const validation = scenarioEngine.validate({
+    definition,
+    initialState,
+    finalState: initialState,
+    finalAnswer:
+      "International travel requires approval. Any single expense above $1,000 also requires approval.",
+  });
+  assert.equal(validation.verdict, "pass");
+});

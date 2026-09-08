@@ -7,7 +7,6 @@ import type {
   ResolvedSeatV1,
   RoleUsageV1,
   ScenarioStateV2,
-  JsonObject,
 } from "@opensidebar/scenario-contracts";
 import {
   scenarioEngine,
@@ -107,8 +106,7 @@ function classificationFor(
 
 function scoreEligible(classification: AttemptClassification): boolean {
   return (
-    classification === "valid_pass" ||
-    classification === "valid_model_failure"
+    classification === "valid_pass" || classification === "valid_model_failure"
   );
 }
 
@@ -117,6 +115,20 @@ function retryable(classification: AttemptClassification): boolean {
     classification === "provider_failure" ||
     classification === "harness_failure"
   );
+}
+
+function sanitizeFailureReason(reason: string): string {
+  return reason
+    .replace(/\bBearer\s+[^\s,;]+/gi, "Bearer [redacted]")
+    .replace(/\b(?:sk|or|fw|gsk)_[A-Za-z0-9_-]{12,}\b/g, "[redacted]")
+    .replace(/([?&](?:api[_-]?key|token)=)[^&\s]+/gi, "$1[redacted]")
+    .replace(
+      /(\b(?:api[_-]?key|access[_-]?token)\s*[=:]\s*)[^\s,;]+/gi,
+      "$1[redacted]",
+    )
+    .replace(/\s+/g, " ")
+    .trim()
+    .slice(0, 500);
 }
 
 export async function runModelBenchCase(
@@ -143,7 +155,9 @@ export async function runModelBenchCase(
     const validation = result.finalState
       ? scenarioEngine.validate({
           definition: options.definition,
-          initialState: scenarioEngine.initialize(options.definition.contract.id),
+          initialState: scenarioEngine.initialize(
+            options.definition.contract.id,
+          ),
           finalState: result.finalState,
           finalAnswer: result.finalAnswer,
           terminalOutcome: result.terminalOutcome,
@@ -176,7 +190,22 @@ export async function runModelBenchCase(
         ? {
             diagnostics: {
               ...(result.diagnostics ?? {}),
-              ...(result.failure ? { failure: result.failure } : {}),
+              ...(result.failure
+                ? {
+                    failure: {
+                      kind: result.failure.kind,
+                      reason: sanitizeFailureReason(result.failure.reason),
+                    },
+                  }
+                : {}),
+            },
+          }
+        : {}),
+      ...(result.failure
+        ? {
+            failure: {
+              kind: result.failure.kind,
+              reason: sanitizeFailureReason(result.failure.reason),
             },
           }
         : {}),

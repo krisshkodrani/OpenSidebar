@@ -107,12 +107,49 @@ test("one provider failure is preserved and retried once", async () => {
   });
   assert.equal(calls, 2);
   assert.equal(attempts[0]?.classification, "provider_failure");
+  assert.deepEqual(attempts[0]?.failure, {
+    kind: "provider",
+    reason: "rate limited",
+  });
   assert.equal(attempts[1]?.classification, "valid_pass");
   assert.equal(attempts[1]?.retryOfAttemptId, attempts[0]?.attemptId);
   assert.deepEqual(attempts[0]?.diagnostics?.failure, {
     kind: "provider",
     reason: "rate limited",
   });
+});
+
+test("driver failure diagnostics are sanitized before persistence", async () => {
+  const attempts = await runModelBenchCase({
+    definition,
+    configuration,
+    driver: {
+      async execute() {
+        return {
+          durationMs: 5,
+          resolvedSeats: {},
+          usageByRole: {},
+          artifactRefs: [],
+          failure: {
+            kind: "provider",
+            reason:
+              "Authorization: Bearer secret-token-123 api_key=sk_test_abcdefghijklmnopqrstuvwxyz",
+          },
+        };
+      },
+    },
+    buildRevision: "test",
+    repetition: 1,
+    id: idFactory(),
+  });
+
+  assert.equal(attempts.length, 2);
+  for (const attempt of attempts) {
+    assert.equal(attempt.failure?.kind, "provider");
+    assert.doesNotMatch(attempt.failure?.reason ?? "", /secret-token|sk_test/);
+    assert.match(attempt.failure?.reason ?? "", /\[redacted\]/);
+    assert.deepEqual(attempt.diagnostics?.failure, attempt.failure);
+  }
 });
 
 test("provider failure retries even when no model could be resolved", async () => {
