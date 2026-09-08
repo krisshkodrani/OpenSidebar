@@ -11,6 +11,7 @@
   "references": [
     { "path": "../../packages/shared-types/tsconfig.json" },
     { "path": "../../packages/observability-schema/tsconfig.json" },
-    { "path": "../../packages/prompts/tsconfig.json" }
+    { "path": "../../packages/prompts/tsconfig.json" },
+    { "path": "../../packages/trace-sync/tsconfig.json" }
   ]
 }

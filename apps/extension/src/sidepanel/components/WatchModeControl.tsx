@@ -1,7 +1,7 @@
 import React, { useCallback, useEffect, useMemo, useState } from "react";
 import { ChevronDown, Eye, Monitor, Square, Volume2 } from "lucide-react";
 import { clsx } from "clsx";
-import type { PassiveInputSource } from "../../types";
+import type { ChatEntry, PassiveInputSource } from "../../types";
 import { uiRuntime } from "../runtime";
 import { useStore } from "../store";
 
@@ -11,6 +11,8 @@ export function WatchModeControl({ disabled }: { disabled?: boolean }) {
   const activeWorkspaceId = useStore((s) => s.activeWorkspaceId);
   const passiveStatus = useStore((s) => s.passiveStatus);
   const passiveStatusDetail = useStore((s) => s.passiveStatusDetail);
+  const passiveLastObservationAt = useStore((s) => s.passiveLastObservationAt);
+  const passiveSessionId = useStore((s) => s.passiveSessionId);
   const passiveInstructions = useStore((s) => s.passiveInstructions);
   const passiveInputSources = useStore((s) => s.passiveInputSources);
   const speechAvailable = useStore((s) =>
@@ -19,6 +21,7 @@ export function WatchModeControl({ disabled }: { disabled?: boolean }) {
   const setPassiveInstructions = useStore((s) => s.setPassiveInstructions);
   const setPassiveInputSources = useStore((s) => s.setPassiveInputSources);
   const setPassiveMonitorStatus = useStore((s) => s.setPassiveMonitorStatus);
+  const addMessage = useStore((s) => s.addMessage);
   const setError = useStore((s) => s.setError);
   const [expanded, setExpanded] = useState(false);
   const [draft, setDraft] = useState(passiveInstructions);
@@ -55,20 +58,32 @@ export function WatchModeControl({ disabled }: { disabled?: boolean }) {
   const stop = useCallback(async () => {
     setPending(true);
     try {
-      await uiRuntime.sendMessage({
+      const response = await uiRuntime.sendMessage<{ ok?: boolean; stopped?: boolean }>({
         type: "PASSIVE_MONITOR_STOP",
         requestId: crypto.randomUUID(),
         source: uiRuntime.source,
         workspaceId: activeWorkspaceId,
-        payload: { workspaceId: activeWorkspaceId },
+        payload: { workspaceId: activeWorkspaceId, sessionId: passiveSessionId },
       });
+      if (response?.ok === false || response?.stopped === false) {
+        throw new Error("The active Watch session could not be stopped. Try again.");
+      }
       setPassiveMonitorStatus("stopped", "Watch mode stopped.");
+      addMessage({
+        id: crypto.randomUUID(),
+        role: "assistant",
+        content: "Watch mode stopped. I’m no longer listening for page changes.",
+        timestamp: Date.now(),
+        toolCalls: [],
+        isStreaming: false,
+        isPassive: true,
+      });
     } catch (error: any) {
       setError(error?.message ?? "Failed to stop Watch Mode.");
     } finally {
       setPending(false);
     }
-  }, [activeWorkspaceId, setError, setPassiveMonitorStatus]);
+  }, [activeWorkspaceId, addMessage, passiveSessionId, setError, setPassiveMonitorStatus]);
 
   const start = useCallback(async () => {
     const instructions = draft.trim();
@@ -100,7 +115,7 @@ export function WatchModeControl({ disabled }: { disabled?: boolean }) {
           workspaceId: activeWorkspaceId,
           instructions,
           inputSources,
-          minIntervalMs: 4_000,
+          minIntervalMs: 30_000,
           maxSuggestionsPerMinute: 6,
         },
       });
@@ -110,10 +125,20 @@ export function WatchModeControl({ disabled }: { disabled?: boolean }) {
       }
       setPassiveMonitorStatus(
         "watching",
-        "Watching page changes.",
+        "Trigger set. Listening for page changes; safety check every 30 seconds.",
         null,
         response?.sessionId ?? null,
       );
+      const confirmation: ChatEntry = {
+        id: crypto.randomUUID(),
+        role: "assistant",
+        content: `Watch trigger set: ${instructions}\n\nI’m listening for page changes immediately and running a safety check every 30 seconds. I’ll only notify you when the full condition is met.`,
+        timestamp: Date.now(),
+        toolCalls: [],
+        isStreaming: false,
+        isPassive: true,
+      };
+      addMessage(confirmation);
       setExpanded(false);
     } catch (error: any) {
       setError(error?.message ?? "Failed to start Watch Mode.");
@@ -122,6 +147,7 @@ export function WatchModeControl({ disabled }: { disabled?: boolean }) {
     }
   }, [
     activeWorkspaceId,
+    addMessage,
     disabled,
     draft,
     inputSources,
@@ -170,6 +196,18 @@ export function WatchModeControl({ disabled }: { disabled?: boolean }) {
           {passiveStatusDetail ||
             (active ? "Watching page changes." : "Monitor page changes")}
         </span>
+        {active && passiveLastObservationAt ? (
+          <span
+            className="shrink-0 text-[10px] tabular-nums opacity-70"
+            title={new Date(passiveLastObservationAt).toLocaleString()}
+          >
+            Last checked {new Date(passiveLastObservationAt).toLocaleTimeString([], {
+              hour: "2-digit",
+              minute: "2-digit",
+              second: "2-digit",
+            })}
+          </span>
+        ) : null}
         {active ? (
           <button
             type="button"

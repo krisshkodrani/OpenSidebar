@@ -22,6 +22,7 @@ import {
   type DigestItem,
   type DigestKind,
 } from "../../utils/personal-profile";
+import { PersonalDataSyncBadge } from "./PersonalDataSyncBadge";
 
 interface Props {
   isOpen: boolean;
@@ -401,6 +402,7 @@ export function PersonalProfileDrawer({ isOpen, onClose }: Props) {
                 <h2 className="text-lg font-semibold text-warm-900 dark:text-warm-100">
                   Personalize
                 </h2>
+                <PersonalDataSyncBadge category="profile" />
                 <p className="mt-0.5 text-xs text-warm-500 dark:text-warm-400">
                   Keep user-owned notes and review the extracted digest.
                 </p>

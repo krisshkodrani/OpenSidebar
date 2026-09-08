@@ -3,9 +3,11 @@ import {
   AgentLoopState,
   AgentStep,
   Citation,
+  DomSnapshot,
   MessageSource,
   PartialHandoffReason,
   PartialProgressHandoff,
+  PageDocumentState,
   PerceptionRuntimeMode,
   RiskLevel,
   SessionMetrics,
@@ -22,7 +24,6 @@ import {
 import {
   emptyRegionZoomState,
   executeInspectRegion,
-  type RegionZoomHost,
 } from "./region-zoom";
 import {
   extractPerceptionPageSignals,
@@ -32,7 +33,7 @@ import {
 } from "../../utils/perception-mode";
 import { LLMClient } from "../llm";
 import { toolRegistry } from "../tools";
-import type { ToolProfile } from "../tools/metadata";
+import { type ToolProfile } from "../tools/metadata";
 import { waitForDomReady } from "../tab-ready";
 import {
   isBridgeDisconnect,
@@ -48,18 +49,25 @@ import type { ForwardedApprovalDryRun } from "@shared-types/browser-bridge";
 import { workspaceManager } from "../workspaces/manager";
 import { ContextManager } from "./context";
 import { StagnationMonitor } from "./stagnation";
-import { PerceptionScreenshotState } from "../perception/perception-screenshot-state";
+import {
+  PageStateCoordinator,
+  legacyDocumentState,
+  PAGE_STATE_COORDINATOR_MODE,
+  type ObservationBasis,
+} from "./page-state";
+import { createRegionZoomHost, type RegionZoomLoopHost } from "./page-state/region-zoom-host";
+import {
+  adoptWarmupScreenshot,
+  type WarmupAdoptionHost,
+} from "./page-state/warmup-adoption";
+import * as pageActionLifecycle from "./page-state/action-lifecycle";
 import {
   captureVLExecutorScreenshot,
   createVLScreenshotState,
   type VLScreenshotHost,
 } from "./vl-screenshot";
-import {
-  captureVisibleTabWithQuotaRetry,
-  withPresenceSuspended,
-} from "./capture-guard";
+import { captureVisibleTabWithQuotaRetry } from "./capture-guard";
 import type { PerceptionTaskContext } from "../perception/types";
-import { DomSnapshot } from "../../types";
 import {
   CompletionResponse,
   LLMMessage,
@@ -219,6 +227,7 @@ import {
 } from "./turn-controller";
 import {
   getActiveSubtaskDescription,
+  captureRecentSubtaskResult,
   getMatchingApprovalInteraction,
   getMatchingClarificationInteraction,
   getWorkspaceTabs,
@@ -228,10 +237,8 @@ import {
   type LoopQueriesHost,
 } from "./loop-queries";
 import type { MoneyTableAggregate } from "./money-table-aggregate";
-import {
-  isTextLikeInputElement,
-  normalizeGuardText,
-} from "./text-entry-guards";
+import { normalizeGuardText } from "./text-entry-guards";
+import { getUncommittedInlineEditDoneRejection } from "./inline-edit-policy";
 import { assessRepeatedAddItemClick } from "./repeated-add-item-policy";
 export {
   rewriteAutocompleteTextEntry,
@@ -514,15 +521,17 @@ export class AgentLoop {
     | "openrouter-groq"
     | "openai-groq"
     | "fireworks"
-    | "fireworks-deepseek" | "cerebras-fireworks"
+    | "fireworks-deepseek"
+    | "cerebras-fireworks"
     | "moonshot"
     | "xiaomi";
   /** When true, mutation replay guard persists across turns (set after done() rejection) */
   private guardAfterDoneRejection = false;
-  /** Pending hint from the user, picked up on the next turn */
   private pendingFeedback: string | null = null;
-  /** Stateful perception agent — accumulates observations across turns */
-  private perception = new PerceptionScreenshotState();
+  private perception = new PageStateCoordinator();
+  private modelTurnObservationBasis: ObservationBasis | null = null;
+  private readonly enforcePageStateConsistency =
+    PAGE_STATE_COORDINATOR_MODE === "authoritative";
   /** LP-17b CM-5: reuse state for the VL executor screenshot (vl-screenshot.ts). */
   private vlScreenshotState = createVLScreenshotState();
   /** Whether the resolved executor model accepts images (gates unified_vl). */
@@ -747,6 +756,10 @@ export class AgentLoop {
       approvalTimeoutMs?: number;
       executorModel?: string;
       plannerModel?: string;
+      judgeModel?: string;
+      executorProviderPin?: string;
+      plannerProviderPin?: string;
+      judgeProviderPin?: string;
       writerModel?: string;
       useNitro?: boolean;
       providerMode?:
@@ -754,7 +767,8 @@ export class AgentLoop {
         | "openrouter-groq"
         | "openai-groq"
         | "fireworks"
-        | "fireworks-deepseek" | "cerebras-fireworks"
+        | "fireworks-deepseek"
+        | "cerebras-fireworks"
         | "moonshot"
         | "xiaomi";
       provider?: "openrouter" | "openai" | "groq"; // legacy compat
@@ -763,7 +777,8 @@ export class AgentLoop {
       fireworksApiKey?: string;
       deepseekApiKey?: string;
       kimiApiKey?: string;
-      xiaomiApiKey?: string; cerebrasApiKey?: string;
+      xiaomiApiKey?: string;
+      cerebrasApiKey?: string;
       temperature?: number;
       perceptionMode?: PerceptionRuntimeMode;
       maxImagePromptTokenEstimate?: number;
@@ -773,6 +788,7 @@ export class AgentLoop {
       resumeInteraction?: PendingUserInteraction | null;
     },
   ) {
+    this.perception.setReceiptSink((receipt) => this.checkpoints.ledger.recordReceipt(receipt));
     this.perceptionModeOption = options?.perceptionMode;
     this.providerModeOption = options?.providerMode;
     this.telemetry = new AgentTelemetryController({
@@ -832,6 +848,10 @@ export class AgentLoop {
     const modelOverrides: import("../llm").LLMClientOptions = {
       executorModel: options?.executorModel,
       plannerModel: options?.plannerModel,
+      judgeModel: options?.judgeModel,
+      executorProviderPin: options?.executorProviderPin,
+      plannerProviderPin: options?.plannerProviderPin,
+      judgeProviderPin: options?.judgeProviderPin,
       writerModel: options?.writerModel,
       useNitro: options?.useNitro,
       providerMode: options?.providerMode,
@@ -841,7 +861,8 @@ export class AgentLoop {
       fireworksApiKey: options?.fireworksApiKey,
       deepseekApiKey: options?.deepseekApiKey,
       kimiApiKey: options?.kimiApiKey,
-      xiaomiApiKey: options?.xiaomiApiKey, cerebrasApiKey: options?.cerebrasApiKey,
+      xiaomiApiKey: options?.xiaomiApiKey,
+      cerebrasApiKey: options?.cerebrasApiKey,
       temperature: options?.temperature,
     };
     this.llm = new LLMClient(openRouterApiKey, modelOverrides);
@@ -2509,7 +2530,12 @@ export class AgentLoop {
       return true;
     }
     const context = formatStepLabel(toolName, args, this.elementResolver);
-    const approved = await this.requestApproval(toolName, args, context, dryRun);
+    const approved = await this.requestApproval(
+      toolName,
+      args,
+      context,
+      dryRun,
+    );
     if (!approved) {
       this.log.warn("policy", "High-risk tool denied or timed out", {
         turn: this.turnCount,
@@ -2612,6 +2638,7 @@ export class AgentLoop {
     this.perception.reset();
     this.telemetry.reset();
     this.traceRecorder = new TraceRecorder(crypto.randomUUID());
+    this.perception.setTraceSink(this.traceRecorder);
     this.log = logger.withSessionId(this.traceRecorder.sessionId);
     this.traceRecorder.setSessionInfo(
       initialUserText,
@@ -2648,7 +2675,6 @@ export class AgentLoop {
       runId: this.runId,
       correlationId: this.correlationId,
     });
-
     // Clear or restore context
     if (options?.clearHistory) {
       this.context.clear();
@@ -2705,6 +2731,7 @@ export class AgentLoop {
     });
     const snapshot = initialSnapshotResolution.snapshot;
     const warmupScreenshot = initialSnapshotResolution.warmupScreenshot;
+    const warmupEntry = initialSnapshotResolution.warmupEntry;
 
     const perceptionDecision = resolvePerceptionRuntimeModeDecision({
       perceptionMode: this.perceptionModeOption,
@@ -2734,6 +2761,13 @@ export class AgentLoop {
     });
 
     if (snapshot) {
+      if (this.perception.getCurrentObservation()?.dom.snapshot !== snapshot) {
+        const documentState =
+          warmupEntry?.snapshot === snapshot
+            ? warmupEntry.documentState
+            : (await waitForDomReady(tabId, { timeoutMs: 50 })).documentState;
+        this.acceptPageSnapshot(snapshot, documentState);
+      }
       this.context.setSnapshot(snapshot);
       this.elementResolver = buildElementResolver(snapshot.elements);
       // If snapshot was fetched via fallback/warmup, update trace startUrl
@@ -2768,43 +2802,12 @@ export class AgentLoop {
         this.hasReadPage = true;
       }
 
-      if (
-        this.useVLExecutor &&
-        warmupScreenshot &&
-        this.imagePromptBudgetAllows(1)
-      ) {
-        // VL mode: use warmup screenshot directly — skip VLM call
-        this.context.setScreenshotForExecutor(warmupScreenshot);
-        this.context.setPageInterpretation(null);
-        this.perception.setScreenshotUrl(warmupScreenshot);
-        this.recordCachedVisionUsage();
-        this.traceRecorder?.recordPerception(
-          {
-            interpretation:
-              "[VL mode] Screenshot from warmup cache — no perception call.",
-            model: "none (unified VL, warmup)",
-            durationMs: 0,
-            cached: true,
-            mode: "vl_screenshot_only",
-            source: "warmup",
-            freshnessReason: "warmup_cache",
-            screenshotStatus: "cached",
-          },
-          warmupScreenshot,
-        );
-        this.log.info(
-          "agent",
-          "VL mode: using warmup screenshot (skipped VLM)",
-          { tabId },
-        );
-      } else if (this.useVLExecutor && warmupScreenshot) {
-        // Warmup screenshot present but the image budget is exhausted.
-        this.recordImagePromptBudgetExhausted(1, "vl_warmup_screenshot");
-        this.context.setScreenshotForExecutor(null);
-        this.context.setPageInterpretation(null);
-        this.perception.setScreenshotUrl(null);
-      } else {
-        // No usable warmup — run the normal perception refresh.
+      const warmupResult = await adoptWarmupScreenshot(
+        this as unknown as WarmupAdoptionHost,
+        { screenshot: warmupScreenshot, entry: warmupEntry },
+      );
+      if (warmupResult !== "handled") {
+        if (warmupResult === "rejected") await this.refreshSnapshot(tabId);
         await this.refreshPerceptionAndTriage(tabId);
       }
     } else {
@@ -2820,7 +2823,7 @@ export class AgentLoop {
             viewport: { width: 0, height: 0 },
             scroll: { x: 0, y: 0, maxY: 0, viewportHeight: 0 },
           };
-          this.context.setSnapshot(minimalSnapshot);
+          this.acceptPageSnapshot(minimalSnapshot);
           this.traceRecorder.setSessionInfo(initialUserText, tab.url);
           try {
             this.startingOrigin = new URL(tab.url).origin;
@@ -3208,6 +3211,23 @@ export class AgentLoop {
   }
 
   /** Refresh DOM snapshot and update context. Returns element count or -1 on failure. */
+  private acceptPageSnapshot(
+    snapshot: DomSnapshot,
+    documentState?: PageDocumentState,
+    options: {
+      consistency?: "dom_only" | "inconsistent";
+      consistencyReason?: string;
+    } = {},
+  ): void {
+    this.perception.acceptDomObservation({
+      snapshot,
+      documentState: documentState ?? legacyDocumentState(snapshot),
+      ...options,
+    });
+    this.context.setSnapshot(snapshot);
+    this.elementResolver = buildElementResolver(snapshot.elements);
+  }
+
   private async refreshSnapshot(tabId: number): Promise<number> {
     const recordBridgeRecovery: BridgeRecoveryTraceHook = (event) => {
       if (event.stage === "attempt") {
@@ -3241,9 +3261,9 @@ export class AgentLoop {
     try {
       const snapResponse = await sendRequest();
       if (snapResponse?.payload?.snapshot) {
-        this.context.setSnapshot(snapResponse.payload.snapshot);
-        this.elementResolver = buildElementResolver(
-          snapResponse.payload.snapshot.elements,
+        this.acceptPageSnapshot(
+          snapResponse.payload.snapshot,
+          snapResponse.payload.documentState,
         );
         return snapResponse.payload.snapshot.elements.length;
       }
@@ -3267,9 +3287,9 @@ export class AgentLoop {
           try {
             const retryResponse = await sendRequest();
             if (retryResponse?.payload?.snapshot) {
-              this.context.setSnapshot(retryResponse.payload.snapshot);
-              this.elementResolver = buildElementResolver(
-                retryResponse.payload.snapshot.elements,
+              this.acceptPageSnapshot(
+                retryResponse.payload.snapshot,
+                retryResponse.payload.documentState,
               );
               this.log.info("agent", "Snapshot recovered after reinjection", {
                 turn: this.turnCount,
@@ -4125,84 +4145,75 @@ export class AgentLoop {
     return true;
   }
 
-  /** Build the narrow host inspect_region runs against (LP-13). */
-  private buildRegionZoomHost(tabId: number): RegionZoomHost {
-    return {
-      turnCount: this.turnCount,
-      useVLExecutor: this.useVLExecutor,
-      getSnapshot: () => this.context.getSnapshot(),
-      imagePromptBudgetAllows: (imageCount) =>
-        this.imagePromptBudgetAllows(imageCount),
-      recordImagePromptBudgetExhausted: (imageCount, source) =>
-        this.recordImagePromptBudgetExhausted(imageCount, source),
-      captureVisibleTab: async (options) =>
-        withPresenceSuspended(tabId, async () => {
-          const tab = await chrome.tabs.get(tabId);
-          return this.captureVisibleTabWithRetry(tab.windowId, options);
-        }),
-      resolveTagRect: async (id) => {
-        try {
-          const results = await chrome.scripting.executeScript({
-            target: { tabId },
-            func: (tagId: number) => {
-              const el = document.querySelector(`[data-os-tag="${tagId}"]`);
-              if (!el) return null;
-              const r = el.getBoundingClientRect();
-              return { x: r.x, y: r.y, width: r.width, height: r.height };
-            },
-            args: [id],
-          });
-          const live = results?.[0]?.result;
-          if (live) return live;
-        } catch {
-          // Fall through to the snapshot rect (may be stale after scroll).
-        }
-        const el = this.context
-          .getSnapshot()
-          ?.elements.find((element) => element.tag === id);
-        return el
-          ? {
-              x: el.rect.x,
-              y: el.rect.y,
-              width: el.rect.width,
-              height: el.rect.height,
-            }
-          : null;
-      },
-      recordInspectRegionEvent: (data) =>
-        this.traceRecorder?.recordEvent("inspect_region", data),
-      setRegionZoomForExecutor: (zoom) =>
-        this.context.setRegionZoomForExecutor(zoom),
-    };
-  }
-
   /** Execute a tool call via the tool registry. */
   private async executeToolCall(
     toolCall: ToolCall,
     tabId: number,
   ): Promise<string> {
+    const toolName = toolCall.function.name as ToolName;
+    const observationBasis = pageActionLifecycle.stageGroundedAction(
+      this.perception,
+      toolCall.id,
+      this.modelTurnObservationBasis,
+    );
+    const staleResult = await pageActionLifecycle.preflightDirectPageAction({
+      coordinator: this.perception,
+      traceRecorder: this.traceRecorder,
+      actionId: toolCall.id,
+      toolName,
+      basis: observationBasis,
+      enforceConsistency: this.enforcePageStateConsistency,
+      tabId,
+    });
+    if (staleResult) return staleResult;
     // LP-13: inspect_region needs loop-owned state (screenshot cache
     // metadata, zoom cap, budget, delivery) — intercept before the registry
     // so both the sequential and parallel dispatch paths are covered.
-    if (toolCall.function.name === ToolName.INSPECT_REGION) {
+    if (toolName === ToolName.INSPECT_REGION) {
       let args: Record<string, unknown> = {};
       try {
         args = JSON.parse(toolCall.function.arguments || "{}");
       } catch {
         // Empty args fail validation inside with a bad_args refusal.
       }
-      return executeInspectRegion(
-        this.buildRegionZoomHost(tabId),
+      const result = await executeInspectRegion(
+        createRegionZoomHost(
+          this as unknown as RegionZoomLoopHost,
+          tabId,
+          observationBasis,
+        ),
         this.regionZoomState,
         args,
         tabId,
       );
+      pageActionLifecycle.settleInspectAction({
+        coordinator: this.perception,
+        traceRecorder: this.traceRecorder,
+        actionId: toolCall.id,
+        toolName,
+        basis: observationBasis,
+        result,
+      });
+      return result;
     }
     const execution = await toolRegistry.executeDetailed(
       toolCall,
       tabId,
       this.abortController!.signal,
+      pageActionLifecycle.actionExecutionContext(
+        observationBasis,
+        toolName,
+        this.enforcePageStateConsistency,
+      ),
     );
+    pageActionLifecycle.settleToolAction({
+      coordinator: this.perception,
+      traceRecorder: this.traceRecorder,
+      actionId: toolCall.id,
+      toolName,
+      basis: observationBasis,
+      execution,
+    });
     const added = this.evidenceAccumulator.addMany(execution.evidence);
     if (added > 0) {
       this.traceRecorder?.recordEvent("tool_evidence_accumulated", {
@@ -5070,32 +5081,11 @@ export class AgentLoop {
   private getUncommittedInlineEditDoneRejection(
     currentStepIndex: number,
   ): string | null {
-    if (this.getActiveToolProfileForStep(currentStepIndex) !== "edit_surface") {
-      return null;
-    }
-
-    const snapshot = this.context.getSnapshot();
-    if (!snapshot?.elements?.length) return null;
-
-    const hasVisibleTextInput = snapshot.elements.some(
-      (element) =>
-        element.isVisible !== false && isTextLikeInputElement(element),
-    );
-    if (!hasVisibleTextInput) return null;
-
-    const pageText = `${snapshot.visibleContent || ""}\n${snapshot.pageContent || ""}`;
-    const inlineEditTask =
-      /\b(spreadsheet|grid|cell|row|column|rename|filename|file name|document|inline)\b/i.test(
-        `${this.originalQuery}\n${this.planSubtasks[currentStepIndex]?.description || ""}\n${this.planSteps[currentStepIndex]?.successCriteria || ""}`,
-      );
-    if (!inlineEditTask && !/\(editing\)/i.test(pageText)) {
-      return null;
-    }
-
-    return (
-      "An inline edit field is still active on the page. Commit the edit " +
-      "(for example with Enter or by applying the rename) before calling done()."
-    );
+    return getUncommittedInlineEditDoneRejection({
+      toolProfile: this.getActiveToolProfileForStep(currentStepIndex),
+      snapshot: this.context.getSnapshot(),
+      taskText: `${this.originalQuery}\n${this.planSubtasks[currentStepIndex]?.description || ""}\n${this.planSteps[currentStepIndex]?.successCriteria || ""}`,
+    });
   }
 
   private getPendingInlineEditVerificationBlock(
@@ -5135,18 +5125,7 @@ export class AgentLoop {
    * as a subtask result string.
    */
   private captureSubtaskResult(): string {
-    const history = this.context.getMessages();
-    for (let i = history.length - 1; i >= 0; i--) {
-      const msg = history[i];
-      if (
-        msg.role === "tool" &&
-        typeof msg.content === "string" &&
-        msg.content.length > 0
-      ) {
-        return msg.content.slice(0, 200);
-      }
-    }
-    return "Completed";
+    return captureRecentSubtaskResult(this.context.getMessages());
   }
 
   /**
@@ -5437,13 +5416,14 @@ export class AgentLoop {
     // Restore context from saved state
     this.context.restoreFromState(savedState.messages);
 
+    const tabId = savedState.activeTabId;
+
     if (newSnapshot) {
-      this.context.setSnapshot(newSnapshot);
+      const readiness = await waitForDomReady(tabId, { timeoutMs: 50 });
+      this.acceptPageSnapshot(newSnapshot, readiness.documentState);
     }
 
     this.statusHandler(AgentStatus.THINKING, "Resuming after navigation...");
-
-    const tabId = savedState.activeTabId;
 
     try {
       await this.loop(tabId);

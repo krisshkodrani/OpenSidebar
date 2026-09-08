@@ -30,6 +30,7 @@ export default defineConfig({
   resolve: {
     alias: {
       "@": path.resolve(appRoot, "./src"),
+      "@shared-types": path.resolve(appRoot, "../../packages/shared-types/src"),
     },
   },
 });

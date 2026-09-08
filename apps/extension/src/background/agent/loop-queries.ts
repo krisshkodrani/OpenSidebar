@@ -153,3 +153,18 @@ export async function getWorkspaceTabs(
   }
   return tabs;
 }
+
+export function captureRecentSubtaskResult(
+  history: ReadonlyArray<{ role: string; content?: unknown }>,
+): string {
+  for (let index = history.length - 1; index >= 0; index -= 1) {
+    const message = history[index];
+    if (
+      message.role === "tool" &&
+      typeof message.content === "string" &&
+      message.content.length > 0
+    )
+      return message.content.slice(0, 200);
+  }
+  return "Completed";
+}

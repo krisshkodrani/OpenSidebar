@@ -54,6 +54,9 @@ export interface TracePromptSectionMetrics {
   actualPromptTokens?: number;
   estimatorErrorPct?: number;
   imagePromptCount?: number;
+  lowDetailImagePromptCount?: number;
+  highDetailImagePromptCount?: number;
+  autoDetailImagePromptCount?: number;
   estimatedImagePromptTokens?: number;
 }
 
@@ -569,6 +572,7 @@ export interface TraceEventPayloadByType {
       | "turn_cap"
       | "budget"
       | "bad_args"
+      | "stale_observation"
       | "capture_failed"
       | "crop_failed";
   };

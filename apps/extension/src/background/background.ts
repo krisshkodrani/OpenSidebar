@@ -5,7 +5,6 @@ import {
   MessageSource,
   AgentStatus,
   UserSettings,
-  ChatEntry,
   SkillRecordingEvent,
 } from "../types";
 import { loadSettings } from "../utils/settings-storage";
@@ -30,6 +29,11 @@ import {
 import { registerContentScriptReadyListener } from "./tab-ready";
 import { resolveValidTabId } from "./infrastructure/tab-resolution";
 import { isUiMessageSource } from "./ui-message-source";
+import {
+  belongsToVisibleWorkspace,
+  installUngroupedTabPanelGuards,
+  setWorkspacePanelVisibility,
+} from "./side-panel-visibility";
 import { orchestrator } from "./orchestrator";
 import { setDisabledSkillIds } from "./orchestrator/skills";
 import { PassiveMonitorController } from "./passive-monitor";
@@ -39,7 +43,10 @@ import { perceptionWarmup } from "./perception-warmup";
 import { agentNotifications } from "./notifications";
 import {
   isE2ESeedPendingInteractionMessage,
+  isE2ECreateWorkspaceMessage,
   isE2ETestApiEnabled,
+  isE2EExecuteCloudCommandMessage,
+  executeE2ECloudCommand,
 } from "./e2e-test-api";
 import {
   RECORD_COMPLETION_DECISIONS_STORAGE_KEY,
@@ -51,8 +58,6 @@ import {
   startCorpusLegacySync,
 } from "./memory/corpus-runtime";
 import {
-  RECORD_SKILL_INTRO_DISMISSED_KEY,
-  WEBSITE_SKILLS_STORAGE_KEY,
   deleteUserWebsiteSkill,
   findMatchingUserWebsiteSkill,
   formatSkillRecordingTimeline,
@@ -65,6 +70,20 @@ import { shouldShowPageActivityCue } from "./page-activity-cue";
 import { chromePersistencePort } from "./environment/chrome";
 import { drainInternalFleetTelemetry } from "./telemetry";
 import { NoWebPageTaskRecovery } from "./no-web-page-task-recovery";
+import { routeCloudRuntimeMessage } from "./cloud-message-router";
+import { buildWorkspaceConversationContext } from "./workspace-conversation-context";
+import { broadcastUserChatAccepted } from "./user-chat-accepted";
+import {
+  initRemoteMissionRuntime,
+  routeRemoteMissionControlMessage,
+} from "./remote-mission-runtime";
+import { clearLocalExtensionData } from "./local-data-cleanup";
+import { routeActionPresentation } from "./action-presentation-relay";
+import {
+  initPersonalDataSyncRuntime,
+  routePersonalDataSyncMessage,
+} from "./personal-data-sync/runtime";
+import { registerSidepanelKeepalivePort } from "./sidepanel-keepalive";
 
 /** Cached settings — populated on side panel open, invalidated on storage change. */
 let cachedSettings: UserSettings | null = null;
@@ -90,13 +109,34 @@ void chrome.storage.local
   .catch(() => {});
 
 logger.info("system", "Service Worker Initialized");
+registerSidepanelKeepalivePort();
 // Internal builds can recover a bounded consented queue after an MV3 worker
 // restart. This is intentionally detached from agent execution and is a no-op
 // in published builds because no endpoint is compiled in.
 void drainInternalFleetTelemetry(chromePersistencePort.local).catch(() => {});
+initPersonalDataSyncRuntime();
 
 const passiveMonitor = new PassiveMonitorController({
   isWorkspaceActive: (workspaceId) => orchestrator.hasActiveTask(workspaceId),
+  executeAction: async ({ action, tabId, workspaceId }) => {
+    const requestId = crypto.randomUUID();
+    const text = `Watch trigger matched. Execute this pre-confirmed action now: ${action}`;
+    const message: Extract<RuntimeMessage, { type: "USER_CHAT" }> = {
+      type: "USER_CHAT",
+      requestId,
+      source: MessageSource.SIDEPANEL,
+      workspaceId,
+      payload: {
+        text,
+        tabId,
+        workspaceId,
+        messageId: requestId,
+        timestamp: Date.now(),
+      },
+    };
+    broadcastUserChatAccepted(message, workspaceId);
+    await handleUserChat(message.payload, workspaceId);
+  },
   pageActivity: (event) => {
     chrome.tabs
       .sendMessage(event.tabId, {
@@ -149,6 +189,7 @@ setNavigationCallbacks(
 
 // 3. Initialize Keepalive Alarm
 registerAlarmListener();
+initRemoteMissionRuntime(() => orchestrator.hasActiveTasks() || passiveMonitor.hasActiveSessions());
 agentNotifications.registerHandlers();
 
 // 3b. Invalidate perception warmup cache on navigation and tab close
@@ -180,9 +221,6 @@ type UserChatPayload = Extract<
 >["payload"];
 const queuedUserChat = new Map<string, UserChatPayload>(); // latest follow-up per workspace
 const e2eOverlayTabsByWorkspace = new Map<string, number>();
-const MAX_WORKSPACE_CONTEXT_MESSAGES = 8;
-const MAX_WORKSPACE_CONTEXT_CHARS = 1600;
-const MAX_WORKSPACE_CONTEXT_LINE_CHARS = 260;
 const skillRecordingSessions = new Map<
   number,
   {
@@ -289,31 +327,6 @@ async function resolveWorkspaceId(
     tabId,
   });
   return "default";
-}
-
-function broadcastUserChatAccepted(
-  message: Extract<RuntimeMessage, { type: "USER_CHAT" }>,
-  workspaceId: string,
-): void {
-  const text = message.payload.text.trim();
-  if (!text) return;
-
-  chrome.runtime
-    .sendMessage({
-      type: "USER_CHAT_ACCEPTED",
-      requestId: crypto.randomUUID(),
-      source: MessageSource.BACKGROUND,
-      workspaceId,
-      payload: {
-        text,
-        tabId: message.payload.tabId,
-        workspaceId,
-        messageId: message.payload.messageId ?? message.requestId,
-        timestamp: message.payload.timestamp ?? Date.now(),
-        isFeedback: message.payload.isFeedback,
-      },
-    })
-    .catch(() => {});
 }
 
 /** Stop keepalive only when all loops are done */
@@ -494,27 +507,10 @@ async function handleSidePanelOpened(
       } else {
         logger.warn(
           "workspace",
-          "Panel opened without user interaction (switching tabs?) - CLOSING",
+          "Panel opened outside an OpenSidebar workspace - hiding it",
           { tabId },
         );
-
-        await chrome.sidePanel.setOptions({
-          tabId,
-          enabled: false,
-        });
-
-        if (windowId) {
-          // Force close via message (workaround for setOptions not closing open panels)
-          await chrome.runtime
-            .sendMessage({
-              type: "CLOSE_SIDE_PANEL",
-              source: MessageSource.BACKGROUND,
-              payload: { tabId, windowId },
-            })
-            .catch(() => {
-              // Ignore errors (e.g. no receiver if panel is already closed)
-            });
-        }
+        await setWorkspacePanelVisibility(chrome.sidePanel, tabId, false);
       }
     }
   } catch (error) {
@@ -525,22 +521,33 @@ async function handleSidePanelOpened(
   return null;
 }
 
-// Handle tab activation - show/hide panel based on workspace status
-chrome.tabs.onActivated.addListener(async ({ tabId, windowId: _windowId }) => {
-  const workspace = await workspaceManager.getWorkspaceForTab(tabId);
+installUngroupedTabPanelGuards(
+  chrome.sidePanel,
+  chrome.tabs,
+  (event, tabId, error) =>
+    logger.debug("sidebar", "Failed to enforce ungrouped-tab panel boundary", {
+      event,
+      tabId,
+      error,
+    }),
+);
 
-  if (workspace) {
+// Handle tab activation - show/hide panel based on Chrome's live group state
+// plus the matching workspace record. Chrome is authoritative if the two race.
+chrome.tabs.onActivated.addListener(async ({ tabId, windowId: _windowId }) => {
+  const tab = await chrome.tabs.get(tabId).catch(() => null);
+  const workspace = await workspaceManager.getWorkspaceForTab(tabId);
+  const panelVisible = belongsToVisibleWorkspace(tab?.groupId, workspace);
+
+  if (panelVisible && workspace) {
     // Tab IS in a workspace -> Enable side panel, but do not auto-open.
     // Per-tab sidebar policy: user must click extension icon to open.
     try {
-      await chrome.sidePanel.setOptions({
-        tabId,
-        path: "src/sidepanel/index.html",
-        enabled: true,
-      });
+      await setWorkspacePanelVisibility(chrome.sidePanel, tabId, true);
 
       logger.debug("sidebar", "Panel enabled for workspace tab (manual open)", {
         tabId,
+        groupId: tab?.groupId,
         workspace: workspace.name,
       });
       // Warm perception on tab switch so first message is instant
@@ -552,23 +559,19 @@ chrome.tabs.onActivated.addListener(async ({ tabId, windowId: _windowId }) => {
       });
     }
   } else {
-    // Tab is NOT in a workspace -> Disable side panel for this tab.
-    // We intentionally do NOT send CLOSE_SIDE_PANEL / globalThis.close() here.
-    // Chrome hides the panel via setOptions({ enabled: false }), but the React
-    // app stays alive in memory so Zustand state (messages, progress, overlays)
-    // survives tab switches. The panel reappears with full context when the
-    // user returns to a workspace tab.
+    // A non-workspace tab must not inherit the manifest's global side panel.
+    // Chrome hides this tab-specific disabled panel and restores the open panel
+    // automatically when the user returns to an enabled workspace tab.
     try {
-      await chrome.sidePanel.setOptions({
-        tabId,
-        enabled: false,
-      });
+      await setWorkspacePanelVisibility(chrome.sidePanel, tabId, false);
 
-      logger.debug("sidebar", "Panel disabled for non-workspace tab", {
+      logger.debug("sidebar", "Panel hidden for non-workspace tab", {
         tabId,
+        groupId: tab?.groupId,
+        staleWorkspaceId: workspace?.id,
       });
     } catch (e) {
-      logger.debug("sidebar", "Failed to disable panel for non-workspace tab", {
+      logger.debug("sidebar", "Failed to hide panel for non-workspace tab", {
         tabId,
         error: e,
       });
@@ -581,9 +584,8 @@ chrome.tabs.onRemoved.addListener(async (tabId) => {
   // Workspace auto-delete is handled by WorkspaceManager
   logger.debug("sidebar", "Tab closed", { tabId });
 
-  // Robustness: If the now-active tab is not in a workspace, disable the
-  // side panel for it. Same as onActivated — we do NOT destroy the panel,
-  // just let Chrome hide it so state is preserved across tab switches.
+  // Robustness: if closing a workspace tab exposes an unrelated tab, ensure
+  // that tab does not inherit the global side panel.
   try {
     const [activeTab] = await chrome.tabs.query({
       active: true,
@@ -595,13 +597,14 @@ chrome.tabs.onRemoved.addListener(async (tabId) => {
       if (!workspace) {
         logger.debug(
           "sidebar",
-          "Active tab not in workspace after tab removal - disabling panel",
+          "Active tab not in workspace after tab removal - hiding panel",
           { activeTabId: activeTab.id },
         );
-        await chrome.sidePanel.setOptions({
-          tabId: activeTab.id,
-          enabled: false,
-        });
+        await setWorkspacePanelVisibility(
+          chrome.sidePanel,
+          activeTab.id,
+          false,
+        );
       }
     }
   } catch (e) {
@@ -616,6 +619,45 @@ chrome.runtime.onMessage.addListener(
     if (tabAudioCapture.isOffscreenMessage(message)) {
       tabAudioCapture.handleMessage(message);
       return false;
+    }
+
+    const cloudRoute = routeCloudRuntimeMessage(message, sendResponse);
+    if (cloudRoute) return cloudRoute === "async";
+
+    if (routeActionPresentation(message, sender, sendResponse, resolveWorkspaceId))
+      return false;
+
+    if (isE2EExecuteCloudCommandMessage(message)) {
+      void executeE2ECloudCommand(message).then(sendResponse);
+      return true;
+    }
+
+    const e2eCreateWorkspaceMessage: unknown = message;
+    if (isE2ECreateWorkspaceMessage(e2eCreateWorkspaceMessage)) {
+      (async () => {
+        try {
+          if (
+            import.meta.env.MODE !== "e2e" ||
+            !(await isE2ETestApiEnabled())
+          ) {
+            sendResponse({ ok: false, detail: "E2E test API is disabled" });
+            return;
+          }
+          const workspace = await workspaceManager.createWorkspace(
+            e2eCreateWorkspaceMessage.payload.name ?? "E2E workspace",
+            workspaceManager.getNextColor(),
+            e2eCreateWorkspaceMessage.payload.tabId,
+            e2eCreateWorkspaceMessage.payload.workspaceId,
+          );
+          sendResponse({ ok: true, workspaceId: workspace.id });
+        } catch (error: any) {
+          sendResponse({
+            ok: false,
+            detail: error?.message ?? String(error),
+          });
+        }
+      })();
+      return true;
     }
 
     if (isE2ESeedPendingInteractionMessage(message)) {
@@ -640,6 +682,9 @@ chrome.runtime.onMessage.addListener(
       })();
       return true;
     }
+
+    if (routeRemoteMissionControlMessage(message, sendResponse)) return true;
+    if (routePersonalDataSyncMessage(message, sendResponse)) return true;
 
     if (
       isUiMessageSource(message.source) &&
@@ -839,6 +884,17 @@ chrome.runtime.onMessage.addListener(
     }
 
     if (
+      message.source === MessageSource.CONTENT &&
+      message.type === "PASSIVE_MONITOR_PAGE_CHANGED"
+    ) {
+      const accepted = sender.tab?.id != null
+        ? passiveMonitor.notifyPageChanged(sender.tab.id, message.payload.sessionId)
+        : false;
+      sendResponse({ ok: accepted });
+      return false;
+    }
+
+    if (
       isUiMessageSource(message.source) &&
       message.type === "PASSIVE_MONITOR_STOP"
     ) {
@@ -847,7 +903,8 @@ chrome.runtime.onMessage.addListener(
           message.workspaceId ??
           message.payload.workspaceId ??
           (message.payload.workspaceId === null ? null : undefined);
-        const stopped = passiveMonitor.stopSession(wsId);
+        const stopped = passiveMonitor.stopSessionById(message.payload.sessionId) ||
+          passiveMonitor.stopSession(wsId);
         await tabAudioCapture.stop(wsId);
         await maybeStopKeepalive();
         sendResponse({ ok: true, stopped });
@@ -1060,17 +1117,7 @@ chrome.runtime.onMessage.addListener(
             return;
           }
           if (action === "clear_local_data") {
-            await chrome.storage.local.remove([
-              "opensidebar:savedPrompts",
-              "opensidebar:savedPromptsSeeded",
-              "opensidebar:savedPromptsVersion",
-              WEBSITE_SKILLS_STORAGE_KEY,
-              RECORD_SKILL_INTRO_DISMISSED_KEY,
-              "opensidebar_logs",
-              "opensidebar:workspaces",
-              "opensidebar:nextWorkspaceNum",
-              "opensidebar:checkpoints:v1",
-            ]);
+            await clearLocalExtensionData(chromePersistencePort.local);
             sendResponse({
               ok: true,
               detail: "Local extension data cleared.",
@@ -1224,69 +1271,6 @@ function broadcastUserSkillList(
     .catch(() => {});
 }
 
-function normalizeWorkspaceContextText(text: unknown): string {
-  return typeof text === "string" ? text.replace(/\s+/g, " ").trim() : "";
-}
-
-function getStoredChatEntryText(entry: Partial<ChatEntry>): string {
-  const completionSummary =
-    typeof entry.completionData?.summary === "string"
-      ? entry.completionData.summary
-      : "";
-  return normalizeWorkspaceContextText(entry.content || completionSummary);
-}
-
-async function buildWorkspaceConversationContext(
-  workspaceId: string,
-  currentPayload: UserChatPayload,
-): Promise<string> {
-  const storageKey = `chatMessages:${workspaceId}`;
-  try {
-    const result = await chrome.storage.local.get(storageKey);
-    const stored = result[storageKey];
-    if (!Array.isArray(stored)) return "";
-
-    const currentText = normalizeWorkspaceContextText(currentPayload.text);
-    const priorMessages = (stored as Partial<ChatEntry>[])
-      .filter((entry) => {
-        if (entry.isStreaming) return false;
-        if (entry.role !== "user" && entry.role !== "assistant") return false;
-        if (currentPayload.messageId && entry.id === currentPayload.messageId) {
-          return false;
-        }
-        if (
-          entry.role === "user" &&
-          currentPayload.timestamp &&
-          typeof entry.timestamp === "number" &&
-          entry.timestamp >= currentPayload.timestamp &&
-          getStoredChatEntryText(entry) === currentText
-        ) {
-          return false;
-        }
-        return getStoredChatEntryText(entry).length > 0;
-      })
-      .slice(-MAX_WORKSPACE_CONTEXT_MESSAGES);
-
-    return priorMessages
-      .map((entry) => {
-        const role = entry.role === "user" ? "User" : "Assistant";
-        const text = getStoredChatEntryText(entry).slice(
-          0,
-          MAX_WORKSPACE_CONTEXT_LINE_CHARS,
-        );
-        return `- ${role}: ${text}`;
-      })
-      .join("\n")
-      .slice(0, MAX_WORKSPACE_CONTEXT_CHARS);
-  } catch (error) {
-    logger.debug("agent", "Failed to load workspace conversation context", {
-      workspaceId,
-      error,
-    });
-    return "";
-  }
-}
-
 async function handleUserChat(payload: UserChatPayload, workspaceId: string) {
   // Per-workspace guard: serialize concurrent requests instead of dropping them.
   if (pendingUserChat.has(workspaceId)) {
@@ -1324,9 +1308,16 @@ async function handleUserChat(payload: UserChatPayload, workspaceId: string) {
 
       logger.debug("agent", "User message", { text, tabId, workspaceId });
       const conversationContextBrief = await buildWorkspaceConversationContext(
+        chromePersistencePort.local,
         workspaceId,
         currentPayload,
-      );
+      ).catch((error) => {
+        logger.debug("agent", "Failed to load workspace conversation context", {
+          workspaceId,
+          error,
+        });
+        return "";
+      });
 
       // 1. Get Settings (API Keys) — use cache if populated, else load fresh
       const settings =

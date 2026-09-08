@@ -10,6 +10,8 @@ The content script is OpenSidebar's "eyes and hands" — it runs in every tab an
   auto-dismiss), readiness signaling, plus the presence layer (LP-24 agent
   cursor), agent border, skill recording, and E2E rail surfaces
 - `snapshot.ts` — DOM snapshot generation, page-content distillation
+- `page-state-epoch.ts` — per-document identity, monotonic page mutation epoch,
+  and stale-request guards
 - `tagging/` — element discovery and tagging (`index.ts` barrel +
   `stable-ids.ts`, `dom-traversal.ts`, `scoring.ts`, `structural.ts`, `utils.ts`)
 - `actions/` — tool execution (`index.ts` barrel + `interaction.ts`,
@@ -33,6 +35,12 @@ The content script produces a `DomSnapshot` (authoritative shape:
 rect/visibility, and `isNew?` — elements that appeared since the previous
 snapshot are marked (rendered with a `*` prefix) so the model can spot what
 changed (LP-10).
+
+Snapshot and readiness responses also carry `PageDocumentState`: a UUID scoped
+to the loaded document, a monotonic mutation epoch, URL, viewport, and scroll
+geometry. The observer ignores OpenSidebar-owned UI and the internal
+`data-os-tag` annotation, and synchronously flushes pending website mutations
+when state is read. A navigation creates a new content-script document identity.
 
 ## Element Discovery
 
@@ -112,6 +120,12 @@ Highlights:
 
 Param convention: element tools take `id` (integer, the tag ID) — never
 `tag`. Names must match the `ToolDefinition` schema and the shared args types.
+
+When a grounded action includes an observation basis, the content listener
+compares its document identity/epoch immediately before dispatch. A mismatch
+returns `stale_observation` without calling `executeAction`; coordinate actions
+also require matching viewport and scroll geometry. `DISMISS_MODALS` uses the
+same guard even though it has its own message type.
 
 ## Janitor (overlay auto-dismiss)
 

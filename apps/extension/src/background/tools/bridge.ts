@@ -2,7 +2,12 @@
  * Content script bridge - communication and error recovery for tool execution.
  */
 
-import { ToolName, MessageSource } from "../../types";
+import {
+  ToolName,
+  MessageSource,
+  type PageDocumentState,
+  type ToolExecutionResult,
+} from "../../types";
 import { logger } from "../../utils";
 import {
   probeContentScript,
@@ -149,9 +154,13 @@ export async function reinjectContentScript(
   }
 
   if (!allowReloadFallback) {
-    logger.warn("tools", "Content script reinjection failed without reload fallback", {
-      tabId,
-    });
+    logger.warn(
+      "tools",
+      "Content script reinjection failed without reload fallback",
+      {
+        tabId,
+      },
+    );
     traceHook?.({
       stage: "result",
       phase: "reinject",
@@ -322,18 +331,41 @@ async function hardReloadActivePage(
   }
 }
 
+type ContentToolObservationBasis = PageDocumentState & {
+  observationRevision: number;
+  requireGeometryMatch?: boolean;
+};
+
+export function executeContentTool(
+  startName: ToolName,
+  args: any,
+  tabId: number,
+  traceHook?: BridgeRecoveryTraceHook,
+  toolCallId?: string,
+): Promise<string>;
+export function executeContentTool(
+  startName: ToolName,
+  args: any,
+  tabId: number,
+  traceHook: BridgeRecoveryTraceHook | undefined,
+  toolCallId: string | undefined,
+  observationBasis: ContentToolObservationBasis | undefined,
+): Promise<string | ToolExecutionResult>;
 export async function executeContentTool(
   startName: ToolName,
   args: any,
   tabId: number,
   traceHook?: BridgeRecoveryTraceHook,
-): Promise<string> {
+  toolCallId?: string,
+  observationBasis?: ContentToolObservationBasis,
+): Promise<string | ToolExecutionResult> {
   if (tabId === chrome.tabs.TAB_ID_NONE) {
     return "Error: No active tab to execute tool on.";
   }
 
   logger.debug("tools", `bridge -> ${startName}`, { tabId, args });
 
+  const presentationId = toolCallId ?? `bridge:${crypto.randomUUID()}`;
   const sendMessage = () =>
     chrome.tabs.sendMessage(tabId, {
       type: "TOOL_EXECUTE",
@@ -342,21 +374,39 @@ export async function executeContentTool(
       payload: {
         toolName: startName,
         args,
-        toolCallId: "internal",
+        toolCallId: presentationId,
+        ...(observationBasis ? { observationBasis } : {}),
       },
     });
+
+  const readResponse = (response: {
+    payload?: {
+      result?: string;
+      errorCode?: "stale_observation";
+    };
+  }): string | ToolExecutionResult => {
+    const result = response.payload?.result;
+    if (typeof result !== "string") {
+      throw new Error(
+        "Empty response from content script - bridge may be disconnected",
+      );
+    }
+    return response.payload?.errorCode
+      ? { result, errorCode: response.payload.errorCode }
+      : result;
+  };
 
   try {
     const response = await Promise.race([
       sendMessage(),
       new Promise<never>((_, reject) =>
-        setTimeout(() => reject(new Error("Tool execution timed out (15s)")), 15_000),
+        setTimeout(
+          () => reject(new Error("Tool execution timed out (15s)")),
+          15_000,
+        ),
       ),
     ]);
-    if (!response?.payload?.result && response?.payload?.result !== "") {
-      throw new Error("Empty response from content script - bridge may be disconnected");
-    }
-    return response.payload.result;
+    return readResponse(response);
   } catch (e: any) {
     if (!isBridgeDisconnect(e.message)) {
       logger.error("tools", "Bridge execution failed", { error: e.message });
@@ -385,10 +435,14 @@ export async function executeContentTool(
     if (await probeContentScript(tabId, 150)) {
       try {
         const transientRetryResponse = await sendMessage();
-        logger.info("tools", "Bridge reconnect successful after transient probe", {
-          tabId,
-          tool: startName,
-        });
+        logger.info(
+          "tools",
+          "Bridge reconnect successful after transient probe",
+          {
+            tabId,
+            tool: startName,
+          },
+        );
         traceHook?.({
           stage: "result",
           phase: "transient_probe",
@@ -396,7 +450,7 @@ export async function executeContentTool(
           toolName: startName,
           success: true,
         });
-        return transientRetryResponse.payload.result;
+        return readResponse(transientRetryResponse);
       } catch (retryErr: any) {
         if (!isBridgeDisconnect(retryErr.message || "")) {
           logger.error("tools", "Bridge retry failed after transient probe", {
@@ -450,7 +504,7 @@ export async function executeContentTool(
         tabId,
         tool: startName,
       });
-      return retryResponse.payload.result;
+      return readResponse(retryResponse);
     } catch (retryErr: any) {
       if (isBridgeDisconnect(retryErr.message || "")) {
         const hardRecovered = await hardReloadActivePage(tabId, {
@@ -463,16 +517,24 @@ export async function executeContentTool(
         if (hardRecovered) {
           try {
             const finalRetryResponse = await sendMessage();
-            logger.info("tools", "Bridge reconnect successful after hard page reload", {
-              tabId,
-              tool: startName,
-            });
-            return finalRetryResponse.payload.result;
+            logger.info(
+              "tools",
+              "Bridge reconnect successful after hard page reload",
+              {
+                tabId,
+                tool: startName,
+              },
+            );
+            return readResponse(finalRetryResponse);
           } catch (finalErr: any) {
-            logger.error("tools", "Bridge retry failed after hard page reload", {
-              tabId,
-              error: finalErr.message,
-            });
+            logger.error(
+              "tools",
+              "Bridge retry failed after hard page reload",
+              {
+                tabId,
+                error: finalErr.message,
+              },
+            );
           }
         }
       }

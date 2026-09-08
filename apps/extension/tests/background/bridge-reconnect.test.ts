@@ -392,4 +392,45 @@ describe("Content script reinjection flow", () => {
     ).resolves.toBe("clicked-after-hard-reload");
     expect(chrome.tabs.update).toHaveBeenCalled();
   }, 15000);
+
+  test("passes the observation basis and preserves typed stale rejection", async () => {
+    const observationBasis = {
+      observationRevision: 7,
+      documentInstanceId: "doc-7",
+      mutationEpoch: 11,
+      url: "https://example.com/form",
+      viewport: { width: 1280, height: 720 },
+      scroll: { x: 0, y: 0 },
+    };
+    (chrome.tabs as any).sendMessage = vi.fn(async () => ({
+      payload: {
+        result: "Error: Page state changed after this action was chosen.",
+        errorCode: "stale_observation",
+      },
+    }));
+
+    const result = await executeContentTool(
+      ToolName.CLICK_ELEMENT,
+      { id: 4 },
+      113,
+      undefined,
+      "call-stale",
+      observationBasis,
+    );
+
+    expect(result).toEqual({
+      result: "Error: Page state changed after this action was chosen.",
+      errorCode: "stale_observation",
+    });
+    expect((chrome.tabs as any).sendMessage).toHaveBeenCalledWith(
+      113,
+      expect.objectContaining({
+        type: "TOOL_EXECUTE",
+        payload: expect.objectContaining({
+          toolCallId: "call-stale",
+          observationBasis,
+        }),
+      }),
+    );
+  });
 });

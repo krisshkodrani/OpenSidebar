@@ -615,13 +615,14 @@ export const SKILL_CATALOG: SkillDescriptor[] = [
       "click_element",
       "clarify",
     ],
-    discouragedTools: ["done", "click_coordinates", "press_key"],
+    discouragedTools: ["click_coordinates", "press_key"],
     contextScope: "turn",
     verifierMode: "hybrid",
     notes: [
       "Treat consequential final actions as approval-gated unless the user clearly authorized them.",
       "If the user's policy is unclear, ask whether to execute final actions or stop for approval.",
       "Preparation and verification may continue; final execution must wait for consent when requested or ambiguous.",
+      "Once preparation is verified and the consequential action remains unexecuted, finish with done() and report the approval boundary.",
     ],
   },
   {

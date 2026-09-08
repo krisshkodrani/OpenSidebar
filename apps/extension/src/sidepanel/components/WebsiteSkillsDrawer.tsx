@@ -11,6 +11,7 @@ import {
 } from "lucide-react";
 import { useStore } from "../store";
 import type { UserWebsiteSkill, UserWebsiteSkillDraft } from "../../types";
+import { PersonalDataSyncBadge } from "./PersonalDataSyncBadge";
 
 interface Props {
   isOpen: boolean;
@@ -94,6 +95,7 @@ export function WebsiteSkillsDrawer({
             <h2 className="font-semibold text-lg dark:text-warm-100">
               Website Skills
             </h2>
+            <PersonalDataSyncBadge category="website_skills" />
             <p className="text-xs text-warm-500 dark:text-warm-400">
               Recorded workflows grouped by site
             </p>

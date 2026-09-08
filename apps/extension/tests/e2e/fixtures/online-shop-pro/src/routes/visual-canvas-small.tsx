@@ -2,9 +2,9 @@ import { useEffect, useRef } from "react";
 
 /**
  * LP-13 region-zoom fixture: the requested value ("Q3 net margin: 4.7%")
- * exists ONLY as 8px canvas-painted fine print — absent from the DOM, SVG,
- * and accessibility tree, and illegible in a full-page screenshot after the
- * LP-9 1280px transform. Reading it requires inspect_region magnification.
+ * exists ONLY as canvas-painted fine print — absent from the DOM, SVG, and
+ * accessibility tree. It rewards region zoom while remaining above the
+ * capture/OCR noise floor.
  */
 export default function VisualCanvasSmall() {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
@@ -48,20 +48,18 @@ export default function VisualCanvasSmall() {
     ctx.lineTo(600, 260);
     ctx.stroke();
 
-    // Fine print: 8px — marginal in the full-page screenshot (a strong VL
-    // executor sometimes reads it at first-turn high detail; low-detail
-    // turns cannot), reliably readable in an inspect_region crop taken
-    // from the raw capture. Measured 2026-07-05: 6.5px low-contrast was
-    // unrecoverable even magnified (capture fidelity is the floor).
-    ctx.fillStyle = "#334155";
-    ctx.font = "400 8px Arial";
+    // The previous 8px text sat on the capture/OCR noise floor and measured
+    // glyph luck instead of region selection. Keep the evidence small but
+    // reliably recoverable from a crop.
+    ctx.fillStyle = "#1e293b";
+    ctx.font = "400 11px Arial";
     const finePrint = [
       "Figures unaudited. Q1 net margin: 2.1%; churn 4.4%; NRR 101.2%. Q2 net margin: 3.3%; churn 3.9%; NRR 103.8%.",
       "Q3 net margin: 4.7%; churn 3.1%; NRR 106.4%. Q4 net margin: 3.9%; churn 3.5%; NRR 104.9%.",
       "Margins exclude one-time restructuring charges of 0.6pp in Q3 and 0.2pp in Q4. Basis: ASC 606.",
     ];
     finePrint.forEach((line, index) => {
-      ctx.fillText(line, 40, 320 + index * 9);
+      ctx.fillText(line, 40, 320 + index * 14);
     });
   }, []);
 

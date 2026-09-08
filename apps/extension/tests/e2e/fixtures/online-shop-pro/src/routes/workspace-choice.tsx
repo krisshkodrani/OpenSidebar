@@ -14,7 +14,9 @@ const WORKSPACES = [
 ];
 
 export default function WorkspaceChoice() {
-  const [selectedWorkspace, setSelectedWorkspace] = useState<string | null>(null);
+  const [selectedWorkspace, setSelectedWorkspace] = useState<string | null>(
+    null,
+  );
 
   useEffect(() => {
     (window as any).__workspaceSelection = selectedWorkspace
@@ -37,23 +39,6 @@ export default function WorkspaceChoice() {
         style={{ maxWidth: 860, margin: "32px auto", padding: "0 24px" }}
       >
         <div className="card" style={{ padding: 32 }}>
-          <div
-            id="workspace-guidance"
-            data-testid="workspace-guidance"
-            style={{
-              background: "#fff7ed",
-              border: "1px solid #fdba74",
-              borderRadius: 12,
-              color: "#9a3412",
-              marginBottom: 24,
-              padding: 20,
-            }}
-          >
-            <strong>Important:</strong> The correct workspace is intentionally not
-            specified on this page. Ask the user which workspace to open before
-            clicking either button.
-          </div>
-
           <div style={{ display: "grid", gap: 16 }}>
             {WORKSPACES.map((workspace) => (
               <section

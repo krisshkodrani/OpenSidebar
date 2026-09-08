@@ -19,6 +19,7 @@ globalThis.chrome = {
 // Import after mocking
 import { ContextManager } from "../../src/background/agent/context";
 import { LLMMessage } from "../../src/background/llm/types";
+import { pageContentRedTeamCases } from "../fixtures/page-content-redteam";
 
 /**
  * LP-21: volatile page state no longer lives in the system message — it is
@@ -1262,6 +1263,19 @@ describe("Page-content unchanged marker (LP-17)", () => {
     expect(second).toContain("BODY-TWO");
     expect(second).not.toContain("«Page Content unchanged");
   });
+
+  test.each(pageContentRedTeamCases)(
+    "sanitizes $id page text in the rendered prompt",
+    ({ attack, expectedSanitizedMarkers }) => {
+      const ctx = new ContextManager();
+      ctx.setSnapshot(pageSnapshot(attack) as any);
+
+      const prompt = renderedPrompt(ctx.getPrompt());
+      for (const marker of expectedSanitizedMarkers) {
+        expect(prompt).toContain(marker);
+      }
+    },
+  );
 
   test("clearHistory forces a full re-emit (fresh subtask never saw the block)", () => {
     const ctx = new ContextManager();

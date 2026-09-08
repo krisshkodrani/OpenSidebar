@@ -16,6 +16,7 @@ describe("tool capability catalog", () => {
       ToolName.TYPE_TEXT,
       ToolName.CLICK_ELEMENT,
       ToolName.SET_CHECKBOX,
+      ToolName.EXTRACT_FORM_STATE,
     ]);
 
     expect(capabilities.has("read_page_state")).toBe(true);
@@ -23,6 +24,7 @@ describe("tool capability catalog", () => {
     expect(capabilities.has("click_elements")).toBe(true);
     expect(capabilities.has("set_binary_controls")).toBe(true);
     expect(capabilities.has("submit_forms")).toBe(true);
+    expect(capabilities.has("inspect_form_state")).toBe(true);
   });
 
   test("builds a concise prompt catalog from active tool names", () => {

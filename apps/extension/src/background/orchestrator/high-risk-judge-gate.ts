@@ -109,10 +109,15 @@ export async function runHighRiskJudgeGate(
     const evidenceLines = evidence
       .map((item) => item.claim ?? item.event?.detail ?? item.event?.type ?? "")
       .filter((line): line is string => Boolean(line));
+    const acceptedEvidence = [...new Set([...evidenceLines, summary.trim()])]
+      .filter(Boolean);
     return await verifier.judgeGate({
       claim: node.description,
       successCriteria: node.successCriteria,
-      evidence: evidenceLines.length > 0 ? evidenceLines : [summary],
+      // Structured events establish tool/runtime facts, while the summary
+      // preserves verifier-accepted facts observed on earlier workflow views.
+      // Dropping either source makes sequential terminal-state judgment blind.
+      evidence: acceptedEvidence,
       corpusFacts,
     });
   } catch (error) {

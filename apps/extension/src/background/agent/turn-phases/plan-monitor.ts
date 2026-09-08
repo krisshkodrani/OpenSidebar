@@ -13,13 +13,13 @@
 import type { ContextManager } from "../context";
 import type { RuntimeLimits } from "../constants";
 import type { PlanStep, PlanMonitorResult } from "../planner";
-import type { PerceptionScreenshotState } from "../../perception/perception-screenshot-state";
+import type { PageStateCoordinator } from "../page-state";
 
 export interface PlanMonitorPhaseHost {
   turnsSinceLastMonitor: number;
   readonly taskId: string | null;
   readonly planSteps: PlanStep[];
-  readonly perception: PerceptionScreenshotState;
+  readonly perception: PageStateCoordinator;
   readonly abortController: AbortController | null;
   readonly replanCount: number;
   readonly limits: RuntimeLimits;

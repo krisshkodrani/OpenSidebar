@@ -5,7 +5,7 @@ import type { logger } from "../../utils";
 import type { LLMClient } from "../llm";
 import type { LLMMessage } from "../llm/types";
 import { buildElementSummary } from "../perception";
-import type { PerceptionScreenshotState } from "../perception/perception-screenshot-state";
+import type { PageStateCoordinator } from "./page-state";
 import type { ContextManager } from "./context";
 import type { ContextMetrics } from "./context-types";
 import {
@@ -47,7 +47,7 @@ export type LlmTurnPreparationDeps = {
   selectTools: (tools: ToolDefinition[]) => ToolDefinition[];
   llm: Pick<LLMClient, "getCurrentModel" | "isPlannerTier">;
   perception: Pick<
-    PerceptionScreenshotState,
+    PageStateCoordinator,
     | "getInterpretation"
     | "getLastTraceMeta"
     | "getLastTraceStats"
@@ -146,7 +146,10 @@ export async function prepareLlmTurnRequest(
       promptSections,
       messages,
     });
-    const contextMode = resolveContextModeTelemetry({ messages, snapshot: snap });
+    const contextMode = resolveContextModeTelemetry({
+      messages,
+      snapshot: snap,
+    });
     const domPromptDelta = buildDomPromptDeltaMetrics({
       previous: deps.previousSnapshotForDelta ?? null,
       current: snap ?? null,
@@ -206,17 +209,20 @@ export async function prepareLlmTurnRequest(
     );
 
     const interpretation = deps.perception.getInterpretation();
-    if (deps.turnCount === 1 && interpretation) {
+    const screenshot = deps.perception.getLastScreenshot();
+    if (deps.turnCount === 1 && (interpretation || screenshot)) {
       const elSummary = snap ? buildElementSummary(snap.elements) : undefined;
       const perceptionMeta = deps.perception.getLastTraceMeta();
       const perceptionStats = deps.perception.getLastTraceStats();
       await deps.traceRecorder.recordPerception(
         {
-          interpretation,
+          interpretation:
+            interpretation ??
+            "[VL mode] Screenshot sent directly to executor — no separate perception call.",
           ...perceptionStats,
           ...perceptionMeta,
         },
-        deps.perception.getLastScreenshot() || undefined,
+        screenshot || undefined,
         elSummary,
       );
     }

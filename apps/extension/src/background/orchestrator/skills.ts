@@ -18,8 +18,9 @@ import type {
   SkillMatcher,
   LoadedSkillContract,
 } from "./skill-types";
+import { classifyNodeEffect } from "./node-effect-policy";
+import { buildCorpus, buildRoutingCorpus } from "./skill-routing-corpus";
 export * from "./skill-types";
-
 
 const MAX_ROUTED_SKILL_CANDIDATES = 32;
 
@@ -52,7 +53,6 @@ const BUILT_IN_SKILL_PACKS: SkillPack[] = [
     skillIds: ["servicenow-module-navigation", "servicenow-record-form"],
   },
 ];
-
 
 const comparePattern =
   /\b(compare|based on both|across both|both tabs?|two tabs?|multiple tabs?|two pages?|multiple pages?|support dashboard.*marketing dashboard|marketing dashboard.*support dashboard)\b/i;
@@ -111,8 +111,6 @@ const conditionalFormPattern =
   /\b(?:conditional|depends on|reveals?|appears?|hidden|required if|only if)\b[\s\S]{0,120}\b(?:field|fields|section|question|checkbox|dropdown|radio|select)\b|\b(?:field|fields|section|question)\b[\s\S]{0,120}\b(?:appears?|reveals?|required if|only if)\b/i;
 const consequentialActionConsentPattern =
   /\b(?:wait for|ask for|request|get)\s+(?:my\s+|user\s+)?(?:approval|confirmation|permission|go-ahead)\b|\b(?:prepare|fill|draft|stage|review)\b[\s\S]{0,100}\b(?:but\s+)?(?:do not|don't|without)\s+(?:submit|send|post|publish|buy|purchase|place|delete|confirm|approve)\b|\b(?:final approval|required approval|approval required|ask before)\b/i;
-const finalConsequentialActionPattern =
-  /\b(?:submit|send|post|publish|buy|purchase|place order|delete|confirm|approve|apply)\b/i;
 const jobApplicationPattern =
   /\b(?:job|career|position|vacancy|resume|cv)\b[\s\S]{0,160}\b(?:apply|application|submit|form|cover letter|resume|cv)\b|\b(?:apply|application|submit)\b[\s\S]{0,160}\b(?:job|career|position|vacancy|resume|cv)\b/i;
 const jobApplicationPageUrlPattern =
@@ -153,26 +151,6 @@ const repeatedItemPattern =
   /\b(?:first\s+\w+|first\s+\d+|\d+|two|three|four|five|six|seven|eight|nine|ten|all|each|every)\s+(?:items?|rows?|links?|listings?|articles?|dashboards?|dashboard\s+tabs?|reports?|jobs?)\b/i;
 const overlayRecoveryPattern =
   /\b(close .* (?:banner|popup|modal|overlay|dialog)|dismiss .* (?:popup|modal|overlay|banner)|cookie (?:banner|consent|popup)|newsletter (?:popup|modal)|can'?t see the page|blocking (?:modal|overlay|popup)|popups? (?:blocking|covering|obscuring)|clear (?:the )?(?:popup|modal|overlay)s?)\b/i;
-
-function buildCorpus(parts: Array<string | undefined>): string {
-  return parts
-    .filter(
-      (part): part is string => typeof part === "string" && part.length > 0,
-    )
-    .join("\n")
-    .toLowerCase();
-}
-
-function buildRoutingCorpus(input: SkillMatcherInput): string {
-  return buildCorpus([
-    input.query,
-    input.objective,
-    input.successCriteria,
-    input.pageTitle,
-    ...(input.pageMarkers ?? []),
-    ...(input.runtimeContext ?? []),
-  ]);
-}
 
 function hasJobApplicationSignal(
   input: SkillMatcherInput,
@@ -231,9 +209,7 @@ function hasServiceNowUrlSignal(pageUrl?: string): boolean {
       return true;
     }
     // Custom-hosted ServiceNow: recognize the platform by its URL fingerprints.
-    return SERVICENOW_URL_PATH_FINGERPRINT.test(
-      `${url.pathname}${url.search}`,
-    );
+    return SERVICENOW_URL_PATH_FINGERPRINT.test(`${url.pathname}${url.search}`);
   } catch {
     return (
       /\b(?:service-now|servicenow)\.com\b/i.test(pageUrl) ||
@@ -427,10 +403,7 @@ export function setDisabledSkillIds(ids?: readonly string[]): void {
   runtimeDisabledSkillIds = new Set(ids ?? []);
 }
 
-function isSkillDisabled(
-  id: string,
-  options?: SkillCatalogOptions,
-): boolean {
+function isSkillDisabled(id: string, options?: SkillCatalogOptions): boolean {
   if (runtimeDisabledSkillIds.has(id)) return true;
   return options?.disabledSkillIds?.includes(id) ?? false;
 }
@@ -652,7 +625,6 @@ export function resolveSkillToolProfile(
   return currentProfile;
 }
 
-
 export function getSkillToolSuppressionPolicy(
   id?: string,
   options?: SkillCatalogOptions,
@@ -842,7 +814,11 @@ function selectPrimarySkillWithKeywordMatcher(
 
   if (
     consequentialActionConsentPattern.test(corpus) &&
-    finalConsequentialActionPattern.test(stepCorpus)
+    classifyNodeEffect({
+      description: input.objective ?? "",
+      successCriteria: input.successCriteria ?? "",
+      allowedTools: [],
+    }) === "consequential_write"
   ) {
     const selection = selectEnabledSkill(
       input,
@@ -1078,7 +1054,7 @@ function selectPrimarySkillWithKeywordMatcher(
     if (selection) return selection;
   }
 
-  if (comparePattern.test(corpus)) {
+  if (comparePattern.test(corpus) && explicitTabIntentPattern.test(corpus)) {
     const selection = selectEnabledSkill(
       input,
       "cross-tab-compare",

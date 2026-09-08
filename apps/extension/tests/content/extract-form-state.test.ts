@@ -35,14 +35,27 @@ describe("extract_form_state content action", () => {
 
     const cap = await capture();
     expect(cap.formKey).toBe("/partner-registration");
+    expect(cap.scope).toBe("primary_form");
+    expect(cap.formCount).toBe(1);
+    expect(cap.complete).toBe(true);
+    expect(cap.limitations).toEqual([]);
 
     const byName = Object.fromEntries(cap.fields.map((f) => [f.name, f]));
     // hidden inputs are excluded
     expect(byName.secret).toBeUndefined();
-    expect(byName.fullName).toMatchObject({ kind: "text", value: "Sam Rivera" });
+    expect(byName.fullName).toMatchObject({
+      kind: "text",
+      value: "Sam Rivera",
+      required: false,
+      filled: true,
+      valid: true,
+    });
     expect(byName.terms).toMatchObject({ kind: "checkbox", value: "checked" });
     expect(byName.promo).toMatchObject({ kind: "checkbox", value: "unchecked" });
     expect(byName.plan).toMatchObject({ kind: "select", value: "pro" });
+    expect(byName.plan.options).toEqual([
+      { value: "pro", label: "Pro", selected: true },
+    ]);
     expect(byName.notes).toMatchObject({ kind: "textarea", disabled: true });
     expect(byName.fullName.selector).toBe('input[name="fullName"]');
 
@@ -62,5 +75,44 @@ describe("extract_form_state content action", () => {
     document.body.innerHTML = `<input name="loose" value="v" />`;
     const cap = await capture();
     expect(cap.fields.map((f) => f.name)).toContain("loose");
+  });
+
+  test("document scope inventories controls across forms and reports completeness", async () => {
+    document.body.innerHTML = `
+      <form id="basic"><input name="name" required value="Kris" /></form>
+      <form id="questions">
+        <textarea name="motivation" required></textarea>
+        <select name="location" required>
+          <option value="">Choose one</option>
+          <option value="eu">European Union</option>
+        </select>
+      </form>
+      <input name="linkedin" value="https://www.linkedin.com/in/example" />
+    `;
+
+    const res = await executeAction(ToolName.EXTRACT_FORM_STATE, {
+      scope: "document",
+    });
+    expect(res.success).toBe(true);
+    const cap = JSON.parse(res.result) as FormStateCapture;
+
+    expect(cap.scope).toBe("document");
+    expect(cap.formCount).toBe(2);
+    expect(cap.fields.map((field) => field.name)).toEqual([
+      "name",
+      "motivation",
+      "location",
+      "linkedin",
+    ]);
+    expect(cap.fields.find((field) => field.name === "motivation")).toMatchObject({
+      required: true,
+      filled: false,
+      valid: false,
+    });
+    expect(cap.fields.find((field) => field.name === "location")).toMatchObject({
+      required: true,
+      filled: false,
+      valid: false,
+    });
   });
 });

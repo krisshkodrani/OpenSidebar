@@ -59,6 +59,29 @@ export class PresenceEffects {
     this.spawn(el, 300);
   }
 
+  acquisition(at: Point, cinematic: boolean): void {
+    const doc = this.getLayer()?.ownerDocument;
+    if (!doc) return;
+    const el = doc.createElement("div");
+    el.className = `acquisition${cinematic ? " cinematic" : ""}`;
+    el.style.left = `${at.x}px`;
+    el.style.top = `${at.y}px`;
+    this.spawn(el, cinematic ? 420 : 280);
+  }
+
+  motionTrail(points: Point[]): void {
+    const doc = this.getLayer()?.ownerDocument;
+    if (!doc || points.length < 3) return;
+    for (const [index, point] of points.slice(-2).entries()) {
+      const el = doc.createElement("div");
+      el.className = "motion-trail";
+      el.style.left = `${point.x}px`;
+      el.style.top = `${point.y}px`;
+      el.style.opacity = `${0.12 + index * 0.08}`;
+      this.spawn(el, 180);
+    }
+  }
+
   /**
    * Selection / status chip ("Business ✓", "file attached"). Anchored to the
    * ELEMENT when given one: the rect is read at spawn time — after the page
@@ -139,7 +162,13 @@ export function formatKeyCap(key: string): string {
   if (normalized === "backspace") return "⌫";
   if (normalized.startsWith("arrow")) {
     const dir = normalized.slice(5);
-    return dir === "up" ? "↑" : dir === "down" ? "↓" : dir === "left" ? "←" : "→";
+    return dir === "up"
+      ? "↑"
+      : dir === "down"
+        ? "↓"
+        : dir === "left"
+          ? "←"
+          : "→";
   }
   return key.length > 8 ? key.slice(0, 8) : key;
 }

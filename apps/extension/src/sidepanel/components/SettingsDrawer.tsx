@@ -20,9 +20,15 @@ import { useOpenRouterModels } from "../hooks/useOpenRouterModels";
 import { GeneralSettingsTab } from "./settings/GeneralSettingsTab";
 import { ModelsSettingsTab } from "./settings/ModelsSettingsTab";
 import type { SettingsChangeHandler, SettingsTab } from "./settings/types";
+import { CloudAccountSettings } from "./settings/CloudAccountSettings";
+import { cloudSession, syncCloudPreferences } from "../cloud-client";
+import { cloudPreferenceSyncEnabled } from "../cloud-client";
+import { SyncSettingsTab } from "./settings/SyncSettingsTab";
 
 interface Props {
   isOpen: boolean;
+  activeTab: SettingsTab;
+  onActiveTabChange: (tab: SettingsTab) => void;
   onClose: () => void;
 }
 
@@ -33,7 +39,12 @@ const PROVIDER_CREDENTIAL_KEYS: readonly (keyof UserSettings)[] = [
   "fireworksApiKey",
 ];
 
-export function SettingsDrawer({ isOpen, onClose }: Props) {
+export function SettingsDrawer({
+  isOpen,
+  activeTab,
+  onActiveTabChange,
+  onClose,
+}: Props) {
   const settings = useStore((s) => s.settings);
   const updateSettings = useStore((s) => s.updateSettings);
 
@@ -41,11 +52,10 @@ export function SettingsDrawer({ isOpen, onClose }: Props) {
   const [isDirty, setIsDirty] = useState(false);
   const [siteBlocklistText, setSiteBlocklistText] = useState("");
   const [saveStatus, setSaveStatus] = useState<string | null>(null);
+  const [syncNeedsRetry, setSyncNeedsRetry] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
   const [notificationPermissionError, setNotificationPermissionError] =
     useState<string | null>(null);
-  const [activeTab, setActiveTab] = useState<SettingsTab>("general");
-
   const drawerRef = useRef<HTMLDivElement>(null);
   const closeButtonRef = useRef<HTMLButtonElement>(null);
   const activeProviderMode = resolveAvailableProviderMode(formState);
@@ -56,7 +66,7 @@ export function SettingsDrawer({ isOpen, onClose }: Props) {
     models,
     loading: modelsLoading,
   } = useOpenRouterModels(
-    activeTab === "models" && openRouterCatalogActive
+    activeTab === "agent" && openRouterCatalogActive
       ? formState.openRouterApiKey
       : "",
   );
@@ -67,6 +77,7 @@ export function SettingsDrawer({ isOpen, onClose }: Props) {
     setIsDirty(JSON.stringify(nextSettings) !== JSON.stringify(settings));
     setSiteBlocklistText((settings.siteAccessBlocklist ?? []).join("\n"));
     setSaveStatus(null);
+    setSyncNeedsRetry(false);
     setIsSaving(false);
     setNotificationPermissionError(null);
   }, [settings, isOpen]);
@@ -189,6 +200,20 @@ export function SettingsDrawer({ isOpen, onClose }: Props) {
         if (error?.includes("API key")) setError(null);
       }
 
+      if ((await cloudSession()) && (await cloudPreferenceSyncEnabled())) {
+        try {
+          await syncCloudPreferences(savedState);
+        } catch (error) {
+          setSaveStatus(
+            `Saved on this browser; account sync needs attention: ${
+              error instanceof Error ? error.message : String(error)
+            }`,
+          );
+          setSyncNeedsRetry(true);
+          return;
+        }
+      }
+      setSyncNeedsRetry(false);
       onClose();
     } catch (error: unknown) {
       setSaveStatus(
@@ -234,10 +259,24 @@ export function SettingsDrawer({ isOpen, onClose }: Props) {
           </button>
         </header>
 
-        <SettingsTabBar activeTab={activeTab} onChange={setActiveTab} />
+        <SettingsTabBar
+          activeTab={activeTab}
+          onChange={onActiveTabChange}
+        />
 
         <div className="flex-1 space-y-6 overflow-y-auto p-4">
-          {activeTab === "general" ? (
+          {activeTab === "account" ? (
+            <CloudAccountSettings
+              formState={formState}
+              onChange={handleChange}
+            />
+          ) : null}
+
+          {activeTab === "sync" ? (
+            <SyncSettingsTab formState={formState} onChange={handleChange} />
+          ) : null}
+
+          {activeTab === "browser" ? (
             <GeneralSettingsTab
               formState={formState}
               notificationPermissionError={notificationPermissionError}
@@ -248,21 +287,55 @@ export function SettingsDrawer({ isOpen, onClose }: Props) {
               onSiteBlocklistTextChange={setSiteBlocklistText}
               onSkillPackToggle={handleSkillPackToggle}
               siteBlocklistText={siteBlocklistText}
+              surface="browser"
             />
           ) : null}
 
-          {activeTab === "models" ? (
-            <ModelsSettingsTab
-              formState={formState}
-              models={models}
-              modelsError={modelsError}
-              modelsLoading={modelsLoading}
-              onChange={handleChange}
-            />
+          {activeTab === "agent" ? (
+            <>
+              <ModelsSettingsTab
+                formState={formState}
+                models={models}
+                modelsError={modelsError}
+                modelsLoading={modelsLoading}
+                onChange={handleChange}
+                showConnections={false}
+              />
+              <GeneralSettingsTab
+                formState={formState}
+                notificationPermissionError={notificationPermissionError}
+                onBrowserNotificationToggle={(checked) =>
+                  void handleBrowserNotificationToggle(checked)
+                }
+                onChange={handleChange}
+                onSiteBlocklistTextChange={setSiteBlocklistText}
+                onSkillPackToggle={handleSkillPackToggle}
+                siteBlocklistText={siteBlocklistText}
+                surface="agent"
+              />
+            </>
+          ) : null}
+
+          {activeTab === "advanced" ? (
+            <>
+              <section className="rounded-lg border border-warm-200 p-3 text-xs text-warm-500 dark:border-warm-700 dark:text-warm-400">
+                Direct provider keys stay only in this browser. Use this when
+                you do not want requests routed through your OpenSidebar
+                account.
+              </section>
+              <ModelsSettingsTab
+                formState={formState}
+                models={models}
+                modelsError={modelsError}
+                modelsLoading={modelsLoading}
+                onChange={handleChange}
+                connectionsOnly
+              />
+            </>
           ) : null}
         </div>
 
-        <div className="border-t border-warm-200 bg-warm-100/50 p-4 dark:border-warm-800 dark:bg-warm-900/50">
+        {activeTab !== "sync" ? <div className="border-t border-warm-200 bg-warm-100/50 p-4 dark:border-warm-800 dark:bg-warm-900/50">
           {saveStatus ? (
             <p className="mb-2 text-xs text-red-600 dark:text-red-400">
               {saveStatus}
@@ -270,13 +343,17 @@ export function SettingsDrawer({ isOpen, onClose }: Props) {
           ) : null}
           <button
             onClick={() => void handleSave()}
-            disabled={!isDirty || isSaving}
+            disabled={(!isDirty && !syncNeedsRetry) || isSaving}
             className="flex w-full items-center justify-center gap-2 rounded-lg bg-primary-600 px-4 py-2.5 font-medium text-white shadow-sm transition-colors hover:bg-primary-700 disabled:cursor-not-allowed disabled:opacity-50"
           >
             <Save size={18} />
-            {isSaving ? "Saving..." : "Save Changes"}
+            {isSaving
+              ? "Saving..."
+              : syncNeedsRetry
+                ? "Retry account sync"
+                : "Save Changes"}
           </button>
-        </div>
+        </div> : null}
       </div>
     </div>
   );
@@ -295,13 +372,13 @@ function SettingsTabBar({
       aria-label="Settings sections"
       className="flex border-b border-warm-200 px-4 dark:border-warm-800"
     >
-      {(["general", "models"] as const).map((tab) => (
+      {(["account", "sync", "agent", "browser", "advanced"] as const).map((tab) => (
         <button
           key={tab}
           type="button"
           role="tab"
           aria-selected={activeTab === tab}
-          className={`border-b-2 px-3 py-2 text-sm font-medium capitalize transition-colors ${
+          className={`border-b-2 px-2 py-2 text-xs font-medium capitalize transition-colors ${
             activeTab === tab
               ? "border-primary-500 text-primary-600 dark:text-primary-400"
               : "border-transparent text-warm-500 hover:text-warm-700 dark:text-warm-400 dark:hover:text-warm-300"

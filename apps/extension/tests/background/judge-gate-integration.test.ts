@@ -100,6 +100,31 @@ describe("high-risk judge gate against a seeded corpus fact", () => {
     expect(outcome?.decision).toBe("accept");
   });
 
+  test("judges structured events together with the verifier-accepted summary", async () => {
+    seedCorpus([]);
+    const seat: JudgeSeat = {
+      runJudge: vi.fn(async () => ({
+        text: '{"pass": true, "confidence": 0.9, "perCriterion": [{"id":"c1","pass":true}]}',
+        model: "glm-5p2",
+        providerId: "fireworks",
+      })),
+    };
+
+    await runHighRiskJudgeGate(
+      task,
+      node,
+      verifierWithJudgeSeat(seat),
+      [{ claim: "terminal confirmation visible" }],
+      "Earlier workflow view preserved overdue IDs REC-1042 and REC-1077.",
+    );
+
+    const call = vi.mocked(seat.runJudge).mock.calls[0]?.[0];
+    expect(call?.userPrompt).toContain("terminal confirmation visible");
+    expect(call?.userPrompt).toContain(
+      "Earlier workflow view preserved overdue IDs REC-1042 and REC-1077.",
+    );
+  });
+
   test("returns null when the verifier has no judge seat (gate skipped)", async () => {
     seedCorpus([]);
     const outcome = await runHighRiskJudgeGate(

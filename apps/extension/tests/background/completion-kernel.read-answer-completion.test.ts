@@ -9,13 +9,14 @@ import {
   evaluateCompletionContract,
   generateCompletionContract,
 } from "../../src/background/agent/completion-kernel";
-import { ToolName, type DomSnapshot, type TaggedElement } from "../../src/types";
+import { inferRequestedWorkflowConfirmationAction } from "../../src/background/agent/completion/workflow-request-intent";
+import {
+  ToolName,
+  type DomSnapshot,
+  type TaggedElement,
+} from "../../src/types";
 
-function choice(
-  tag: number,
-  label: string,
-  checked: boolean,
-): TaggedElement {
+function choice(tag: number, label: string, checked: boolean): TaggedElement {
   return {
     tag,
     tagName: "input",
@@ -68,6 +69,111 @@ function workflowSnapshot(overrides: Partial<DomSnapshot> = {}): DomSnapshot {
 }
 
 describe("completion kernel read-answer completion", () => {
+  test("keeps a mixed find-and-create objective under workflow confirmation", () => {
+    const snap = workflowSnapshot({
+      title: "Coordinate meeting",
+      visibleContent: "Step 2 of 3. Conversation details. Continue to update.",
+      pageContent:
+        "Attendee calendars: Ana free 13:00–15:00; Marco 14:00–16:00; Priya 13:30–14:30. Event requirements: tomorrow afternoon; 30 minutes; tentative release review. Workspace update pending.",
+    });
+    const request =
+      "Find a 30-minute time when Ana, Marco, and Priya are free tomorrow afternoon and create a tentative release review.";
+    const generated = generateCompletionContract({
+      userRequest: request,
+      activeObjective: request,
+      successCriteria:
+        "The entire original request is completed and verified, including every requested action.",
+      snapshot: snap,
+    });
+    const decision = evaluateCompletionContract({
+      contract: generated?.contract,
+      evidence: deriveCompletionEvidenceFromSnapshot(snap, 3),
+      snapshot: snap,
+      candidateSource: "model_done",
+      summary: "The common time is 14:00–14:30.",
+    });
+
+    expect(generated?.contract).toMatchObject({
+      kind: "workflow_confirmation",
+      action: "create",
+    });
+    expect(decision.status).not.toBe("accepted");
+  });
+
+  test("allows the focused read phase of a mixed objective to use read-answer completion", () => {
+    const snap = workflowSnapshot({
+      title: "Coordinate meeting",
+      visibleContent:
+        "Ana free 13:00–15:00; Marco 14:00–16:00; Priya 13:30–14:30.",
+      pageContent:
+        "Attendee calendars. Ana free 13:00–15:00; Marco 14:00–16:00; Priya 13:30–14:30.",
+    });
+    const generated = generateCompletionContract({
+      userRequest:
+        "Find a 30-minute time when Ana, Marco, and Priya are free tomorrow afternoon and create a tentative release review.",
+      activeObjective:
+        "Find the requested result for the common 30-minute meeting window and report the answer.",
+      successCriteria:
+        "The shared available time is grounded in all three attendee calendars.",
+      snapshot: snap,
+    });
+
+    expect(generated?.contract).toMatchObject({ kind: "read_answer" });
+  });
+
+  test("does not leak root read intent into a focused navigation phase", () => {
+    const snap = workflowSnapshot({
+      title: "Coordinate meeting",
+      visibleContent: "Step 2 of 3. Conversation details. Continue to update.",
+      pageContent:
+        "Event requirements: tomorrow afternoon; 30 minutes; tentative release review. Workspace update pending.",
+    });
+    const generated = generateCompletionContract({
+      userRequest:
+        "Find a 30-minute time when Ana, Marco, and Priya are free tomorrow afternoon and create a tentative release review.",
+      activeObjective:
+        "Navigate to tomorrow's date in the calendar and locate the scheduling tool.",
+      successCriteria:
+        "The scheduling view showing all three attendee calendars is visible.",
+      snapshot: snap,
+    });
+
+    expect(generated?.contract).not.toMatchObject({ kind: "read_answer" });
+  });
+
+  test("keeps option comparison read-only despite a prohibited root purchase", () => {
+    const snap = workflowSnapshot({
+      title: "Replacement options",
+      visibleContent:
+        "Early train 06:10 10:42 EUR 216 Compliant. Later train 07:20 12:05 EUR 576 Too late. Charter coach 05:30 11:35 EUR 810 Too late.",
+      pageContent:
+        "Replacement options for 18 travelers. Choose the safest policy-compliant option.",
+    });
+    const generated = generateCompletionContract({
+      userRequest:
+        "Compare the available replacements for all 18 travelers. Prepare the safest compliant change, but do not purchase or confirm it.",
+      activeObjective: "Compare the available replacement travel options.",
+      successCriteria:
+        "All replacement options are compared and the safest compliant option is identified.",
+      snapshot: snap,
+    });
+
+    expect(generated?.contract).toMatchObject({ kind: "read_answer" });
+  });
+
+  test("does not infer a workflow action from an explicitly prohibited purchase", () => {
+    const generated = generateCompletionContract({
+      userRequest: "Do not purchase or confirm it.",
+      activeObjective: "Compare the available replacement options.",
+      successCriteria: "The options and fees are reported.",
+      snapshot: workflowSnapshot(),
+    });
+
+    expect(generated?.contract).not.toMatchObject({
+      kind: "workflow_confirmation",
+    });
+  });
+
   test("requires page evidence before read-answer completion", () => {
     const snap = workflowSnapshot({
       title: "Sparse",
@@ -153,6 +259,37 @@ describe("completion kernel read-answer completion", () => {
 
     expect(generated?.source).toBe("task_contract");
     expect(decision.status).toBe("accepted");
+  });
+
+  test("rejects a comparison answer that covers only one requested policy", () => {
+    const snap = workflowSnapshot({
+      title: "Policy comparison",
+      url: "https://example.test/policies",
+      visibleContent:
+        "Source comparison active. Expense policy: manager pre-approval is required above $500. Continue to conclusion.",
+      pageContent:
+        "Step 2 of 3. Travel policy pending. Expense policy: manager pre-approval is required above $500.",
+    });
+    const generated = generateCompletionContract({
+      userRequest:
+        "Compare the travel and expense policies and tell me when manager pre-approval is required.",
+      snapshot: snap,
+    });
+    const decision = evaluateCompletionContract({
+      contract: generated?.contract,
+      evidence: deriveCompletionEvidenceFromSnapshot(snap, 2),
+      snapshot: snap,
+      candidateSource: "model_done",
+      summary:
+        "The expense policy requires manager pre-approval for expenses above $500.",
+    });
+
+    expect(generated?.contract).toMatchObject({
+      kind: "read_answer",
+      taskContract: { multiReturnCount: 2 },
+    });
+    expect(decision.status).toBe("rejected");
+    expect(decision.reason).toContain("travel policy");
   });
 
   test("derives read-answer evidence from read_page results", () => {
@@ -333,13 +470,20 @@ describe("completion kernel read-answer completion", () => {
       pageContent:
         "Post #35 by Eve K. The Secret Formula for Productivity. The answer to maximum productivity is: CODE-OMEGA-42. Remember this code - it unlocks the productivity dashboard.",
     });
+    const activeObjective =
+      "Navigate to Post #35 and read the requested result there.";
+    const successCriteria =
+      "The requested result is reported from the matching post.";
+    expect(
+      inferRequestedWorkflowConfirmationAction(
+        `${activeObjective}\n${successCriteria}`,
+      ),
+    ).toBeNull();
     const generated = generateCompletionContract({
       userRequest:
         "Find Post #35 'The Secret Formula for Productivity' in the feed and tell me the secret code mentioned in it.",
-      activeObjective:
-        "Navigate to Post #35 and read the requested result there.",
-      successCriteria:
-        "The requested result is reported from the matching post.",
+      activeObjective,
+      successCriteria,
       snapshot: snap,
     });
 
@@ -368,4 +512,3 @@ describe("completion kernel read-answer completion", () => {
     expect(generated?.contract).toMatchObject({ kind: "read_answer" });
   });
 });
-

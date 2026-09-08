@@ -44,7 +44,9 @@ browser agent rather than guaranteed production automation.
 
 ## Distribution
 
-- The first broad launch target is GitHub source plus a manually loaded
-  unpacked `dist/` extension. Chrome Web Store distribution is a later gate.
-- Users need Node.js 22+, pnpm via Corepack, Chrome, and at least one supported
-  provider key to build and run the preview.
+- A signed Chrome Web Store build is published. The repository's reproducible
+  `dist/` build remains available for development and audit; unpacked builds use
+  a different extension identity unless the developer-dashboard public key is
+  supplied.
+- Source-build users need Node.js 22+, pnpm via Corepack, Chrome, and at least
+  one supported provider key. Cloud accounts remain an allowlisted test feature.
