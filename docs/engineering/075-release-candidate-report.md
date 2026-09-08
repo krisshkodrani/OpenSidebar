@@ -2,7 +2,37 @@
 
 Date: 2026-08-15
 
-Status: release verification pending.
+Status: historical release candidate; reconciled integration verified on 2026-09-08.
+
+## September 8 integration
+
+`integration/modelbench-release-20260908` reconciles ModelBench head `837f02bb`
+with release head `1747c147`, including the five formerly unpushed release fixes.
+The merge commit is `ea5840cc`. This is the current integration candidate;
+the August PR #144 and the artifacts described below predate it.
+
+Fresh verification on the merged source passed repository lint, all 11 project
+typechecks, 570 extension test files / 5,599 tests, script tests, the production
+extension build, and all 21 distribution checks. Cloud tests passed 124 cases
+with two PostgreSQL-dependent tests skipped. Focused benchmark checks passed
+34 tests, including every catalog gold oracle and declared near miss.
+Local logs are under `.artifacts/branch-reconciliation/`.
+
+The Windows environment required the pnpm `.cmd` entry point and a rebuild of
+the missing `better-sqlite3` native binary. The complete verification rerun passed
+after that repair. No test assertions or benchmark verdicts were bypassed.
+
+This verification does not refresh the signed-in production-browser acceptance,
+manual Settings persistence spot-check, production audit, release packaging,
+or native sidepanel smoke against this new commit. Complete those gates before
+publication; historical ZIP hashes and existing tags do not identify this merge.
+ModelBench headline baselines/manual review and LP-38 production cutover remain
+subject to their existing gates. The legacy suite remains present and LP-38
+remains in shadow mode by default.
+
+The Chakra UI migration is separately preserved on
+`feat/cloud-ui-chakra-migration` at unverified checkpoint `11b070a9`.
+Trace-viewer and telemetry rework are separate follow-ups to this integration.
 
 ## Purpose
 
