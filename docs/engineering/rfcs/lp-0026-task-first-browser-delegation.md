@@ -68,6 +68,9 @@ Native Messaging, use a temporary `chrome.debugger` attachment with
 exit path, and complete permission/store-disclosure review. The Roomora AAB is a
 supervised validation artifact, never a runtime special case.
 
+Current implementation status: deferred. The task-first v1 MCP surface does not
+expose a local-file upload tool.
+
 ## Decision
 
 Status: Approved

@@ -286,6 +286,7 @@ export function createBrowserAgentRunner(deps: BrowserTaskDeps): AgentRunner {
     start: () => Promise<void>,
     navigationPolicy?: { workspaceId: string; allowedDomains: string[] },
     onProgress?: (update: AgentProgressUpdate) => void,
+    requireCompletionSummary = false,
   ): Promise<AgentRunOutcome> {
     return new Promise<AgentRunOutcome>((resolve) => {
       let settled = false;
@@ -318,7 +319,20 @@ export function createBrowserAgentRunner(deps: BrowserTaskDeps): AgentRunner {
         });
       }, deps.timeoutMs ?? DEFAULT_RUN_TIMEOUT_MS);
       const offCompletion = deps.addCompletionListener((ws, payload) => {
-        if (ws === workspaceId) finish(mapCompletion(payload));
+        if (ws !== workspaceId) return;
+        // Inner agent loops and the root orchestrator share a workspace and can
+        // both broadcast TASK_COMPLETION. During an approval replay the inner
+        // loop may emit an empty success envelope before the root completion
+        // report is ready. Do not let that transient message erase the verified
+        // result returned to the bridge caller.
+        if (
+          requireCompletionSummary &&
+          payload.status === "completed" &&
+          (typeof payload.summary !== "string" || !payload.summary.trim())
+        ) {
+          return;
+        }
+        finish(mapCompletion(payload));
       });
       const offPause = deps.addPauseListener((ws, payload) => {
         if (ws !== workspaceId) return;
@@ -474,7 +488,7 @@ export function createBrowserAgentRunner(deps: BrowserTaskDeps): AgentRunner {
               "no pending approval (unknown, expired, or already answered)",
             );
           }
-        }, navigationPolicies.get(workspaceId), opts?.onProgress);
+        }, navigationPolicies.get(workspaceId), opts?.onProgress, true);
       if (!entry) return resume();
       // Join the session queue so a queued mission cannot start mid-resume.
       const run = entry.queue.then(resume);
@@ -504,7 +518,7 @@ export function createBrowserAgentRunner(deps: BrowserTaskDeps): AgentRunner {
               "no pending clarification (unknown, expired, or already answered)",
             );
           }
-        }, navigationPolicies.get(workspaceId), opts?.onProgress);
+        }, navigationPolicies.get(workspaceId), opts?.onProgress, true);
       if (!entry) return resume();
       const run = entry.queue.then(resume);
       entry.queue = run.catch(() => {});

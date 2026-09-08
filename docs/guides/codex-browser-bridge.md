@@ -48,8 +48,6 @@ the pairing token.
 - Delegated tasks require an explicit domain allowlist, orchestrator-enforced
   cost/turn/time budgets, mandatory checkpoints, and optional model-role
   restrictions.
-- Local files are limited to 10 MB, canonicalized, hashed, transferred only over
-  the authenticated loopback channel, held only in memory, and attached only
-  after a one-time approval bound to the task, tab, origin, and file-input ID.
-- Persisted task history is bounded and redacted; local file paths and bytes are
-  never persisted.
+- Local-file attachment is not exposed by the bridge. It remains a separately
+  gated follow-up under RFC LP-26.
+- Persisted task history is bounded and redacted.

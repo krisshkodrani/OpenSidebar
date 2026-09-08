@@ -18,8 +18,6 @@ import {
 } from "./ws-client";
 import type { DelegatedTaskPersistence } from "./delegated-task-service";
 import { MessageSource } from "../../types";
-import { ToolName } from "../../types";
-import { executeContentTool } from "../tools/bridge";
 import { startKeepalive, stopKeepalive } from "../keepalive";
 import { DelegatedTaskFeedback } from "./delegated-task-feedback";
 
@@ -135,24 +133,6 @@ export async function startBrowserBridge(): Promise<boolean> {
           title: tab.title ?? "",
           windowId: tab.windowId,
         };
-      },
-      fileUploader: {
-        async getTabUrl(tabId) {
-          const tab = await chrome.tabs.get(tabId);
-          return tab.url ?? tab.pendingUrl ?? "";
-        },
-        async upload(input) {
-          return executeContentTool(
-            ToolName.UPLOAD_FILE,
-            {
-              id: input.inputId,
-              data: input.dataBase64,
-              filename: input.filename,
-              mimeType: input.mimeType,
-            },
-            input.tabId,
-          );
-        },
       },
     },
   });

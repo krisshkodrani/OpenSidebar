@@ -580,6 +580,37 @@ describe("createBrowserAgentRunner approval forwarding", () => {
     expect(await answer).toMatchObject({ status: "completed", summary: "submitted" });
   });
 
+  test("respondApproval ignores an empty inner-loop completion and waits for the root report", async () => {
+    const d = deps();
+    const runner = createBrowserAgentRunner(d);
+    const first = runner.run({ instruction: "apply", session: "s1" });
+    await tick();
+    const ws = d.started[0].workspaceId;
+    d.firePause(ws, pausePayload("appr-1"));
+    await first;
+
+    const answer = runner.respondApproval!({
+      tool: "browser_respond_approval",
+      args: { approvalId: "appr-1", approved: true },
+      session: "s1",
+    });
+    await tick();
+
+    let settled = false;
+    void answer.then(() => {
+      settled = true;
+    });
+    d.fire(ws, { status: "completed", summary: "" });
+    await tick();
+    expect(settled).toBe(false);
+
+    d.fire(ws, { status: "completed", summary: "submitted" });
+    expect(await answer).toMatchObject({
+      status: "completed",
+      summary: "submitted",
+    });
+  });
+
   test("respondApproval on an unknown approvalId errors immediately", async () => {
     const d = deps();
     const runner = createBrowserAgentRunner(d);
