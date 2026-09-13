@@ -11,6 +11,8 @@ services:
       CONTROL_DATABASE_URL: postgresql://opensidebar_service:${CONTROL_DB_PASSWORD:?set CONTROL_DB_PASSWORD}@db:5432/opensidebar
       CONTROL_ORIGIN: ${CONTROL_ORIGIN:-https://opensidebar.com}
       TARGET_ORIGIN: ${TARGET_ORIGIN:-https://play.opensidebar.com}
+      PLAYGROUND_V2_ENABLED: ${PLAYGROUND_V2_ENABLED:-false}
+      PLAYGROUND_MAINTENANCE: ${PLAYGROUND_MAINTENANCE:-false}
       COOKIE_SECURE: "true"
       COGNITO_DOMAIN: ${COGNITO_DOMAIN:?set COGNITO_DOMAIN}
       COGNITO_ISSUER: ${COGNITO_ISSUER:-}

@@ -1,3 +1,6 @@
+import { createPlaygroundV2Api } from "./playground-v2-api.js";
+import { createPlaygroundV2TargetApi } from "./playground-v2-target-api.js";
+import type { PlaygroundV2Repository } from "./playground-v2-repository.js";
 import { timingSafeEqual } from "node:crypto";
 import { Hono, type Context, type MiddlewareHandler } from "hono";
 import { bodyLimit } from "hono/body-limit";
@@ -32,7 +35,7 @@ type Variables = { accountId: string; email: string; csrfHash: string };
 const noStore = (c: Context) => c.header("Cache-Control", "no-store");
 const problem = (
   c: Context,
-  status: 400 | 401 | 403 | 404 | 409 | 410 | 429 | 500,
+  status: 400 | 401 | 403 | 404 | 409 | 410 | 429 | 500 | 503,
   code: string,
   message: string,
 ) => {
@@ -157,6 +160,7 @@ export function createApp(
     hostedBrowserMcpOperations?: HostedBrowserMcpOperations;
   },
   temporalShadowOutbox?: TemporalShadowOutbox,
+  playgroundV2?: PlaygroundV2Repository,
 ) {
   const app = new Hono<{ Variables: Variables }>();
   app.use("*", async (c, next) => {
@@ -555,6 +559,14 @@ export function createApp(
     return next();
   };
 
+  if (playgroundV2) {
+    const publicApi = new Hono<{ Variables: Variables }>();
+    publicApi.use("*", authenticate, mutationGuard);
+    publicApi.route("/", createPlaygroundV2Api(playgroundV2, config.targetOrigin, Boolean(config.playgroundV2Enabled && !config.playgroundMaintenance)));
+    app.route("/api/v2/playground", publicApi);
+    app.route("/", createPlaygroundV2TargetApi(playgroundV2, config));
+  }
+
   const api = new Hono<{ Variables: Variables }>();
   api.use("*", authenticate, mutationGuard);
   api.post("/auth/logout", async (c) => {
@@ -574,6 +586,7 @@ export function createApp(
     }),
   );
   api.post("/runs", async (c) => {
+    if (config.playgroundMaintenance || config.playgroundV2Enabled) return problem(c, 503, "playground_updating", "Playground scenarios are being updated. Refresh Playground to start a new run.");
     const body = await c.req
       .json<{ scenarioId?: string }>()
       .catch((): { scenarioId?: string } => ({}));

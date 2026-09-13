@@ -1,4 +1,6 @@
 export type CloudConfig = {
+  playgroundV2Enabled?: boolean;
+  playgroundMaintenance?: boolean;
   port: number;
   databaseUrl: string;
   controlOrigin: string;
@@ -291,6 +293,8 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): CloudConfig {
       "CLOUD_SESSION_TESTER_SUBJECTS requires at least one named tester when cloud sessions are enabled",
     );
   return {
+    playgroundV2Enabled: enabled("PLAYGROUND_V2_ENABLED"),
+    playgroundMaintenance: enabled("PLAYGROUND_MAINTENANCE"),
     port,
     databaseUrl,
     controlOrigin,

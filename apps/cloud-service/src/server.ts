@@ -1,4 +1,5 @@
 import { serve } from "@hono/node-server";
+import { PostgresPlaygroundV2Repository } from "./postgres-playground-v2-repository.js";
 import { createApp } from "./app.js";
 import { loadConfig } from "./config.js";
 import { PostgresPlaygroundRepository } from "./postgres-repository.js";
@@ -35,6 +36,9 @@ const passwordlessAuth = config.cognitoClientId
   : undefined;
 await repository.migrate();
 await repository.cleanupExpired();
+const playgroundV2Repository = new PostgresPlaygroundV2Repository(repository.pool);
+await playgroundV2Repository.migrate();
+await playgroundV2Repository.cleanupExpired();
 const controlRepository = new PostgresControlRepository(
   config.controlDatabaseUrl,
 );
@@ -154,6 +158,7 @@ const server = serve(
       passwordlessAuth,
       control,
       temporalShadowOutbox,
+      playgroundV2Repository,
     ).fetch,
     port: config.port,
   },
@@ -163,6 +168,7 @@ const server = serve(
 );
 const cleanupTimer = setInterval(
   () => {
+    void playgroundV2Repository.cleanupExpired().catch((error) => console.error("public scenario cleanup failed", error));
     void repository
       .cleanupExpired()
       .catch((error) => console.error("expired-record cleanup failed", error));
