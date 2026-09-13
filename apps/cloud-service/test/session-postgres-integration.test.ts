@@ -26,6 +26,32 @@ test(
       await control.upsertAccount("account-1", "one@example.com", true);
       await control.upsertAccount("account-2", "two@example.com", true);
 
+      // Restart with a state introduced after migration 16. Replaying that
+      // migration must not narrow the constraint or alter existing missions.
+      const restartMissionId = crypto.randomUUID();
+      await sessions.pool.query(
+        `INSERT INTO sessions.remote_missions
+         (account_id,mission_id,device_id,sequence,state,idempotency_hash,
+          payload_object_key,payload_ciphertext_size_bytes,payload_ciphertext_sha256,
+          created_at,updated_at,expires_at)
+         VALUES ('account-1',$1,'restart-device',1,'supervision_required',
+          'restart-mission','restart-payload',1,$2,now(),now(),now()+interval '1 hour')`,
+        [restartMissionId, "a".repeat(64)],
+      );
+      await sessions.migrate();
+      await sessions.migrate();
+      assert.equal(
+        (await sessions.pool.query(
+          "SELECT state FROM sessions.remote_missions WHERE mission_id=$1",
+          [restartMissionId],
+        )).rows[0].state,
+        "supervision_required",
+      );
+      await assert.rejects(sessions.pool.query(
+        "UPDATE sessions.remote_missions SET state='invalid' WHERE mission_id=$1",
+        [restartMissionId],
+      ), { code: "23514" });
+
       const initialPreferences = {
         schemaVersion: 1 as const,
         revision: 1,
