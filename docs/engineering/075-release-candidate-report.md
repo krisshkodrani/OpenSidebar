@@ -4,6 +4,41 @@ Date: 2026-08-15
 
 Status: historical release candidate; reconciled integration verified on 2026-09-08.
 
+## September 13 working-tree verification
+
+The next integration release is `0.7.6`; the existing `v0.7.5` tag is preserved.
+Issue #157 is addressed by loading untouched `dist/` for native smoke and
+requiring matching build contents, version, commit, and a rendered panel in
+release preflight. Production `0.7.6` native-panel rendering and Settings
+navigation persistence after remount passed locally. Final-commit evidence
+must be regenerated after merge. Signed-in remote acceptance remains pending.
+
+The integration working tree based on `3d8bbf97` passed full repository
+verification: lint, 11 project typechecks, 572 extension test files / 5,620
+tests, production build, and 21 distribution checks. After the final
+driver-only corrections, all 61 script tests and changed-file lint passed.
+Cloud verification passed all 126 tests without skips against an isolated
+PostgreSQL 16 instance; all 100 ModelBench cases matched memory/PostgreSQL
+initial state, oracle final state, and verdict. Scenario/contract tests,
+target quality, gold/near-miss oracles, Playground boundaries, and the
+production dependency audit also passed.
+
+Verification fixed vulnerable dependency pins, unbounded optional telemetry
+Git lookups, unnecessary dev-port cleanup during builds, redundant browser
+reset during ModelBench disposal, and API provider display-name/slug mapping.
+The final MB-101 diagnostic recorded `valid_pass` with every assertion passing,
+no routing mismatch, and normal teardown. An earlier indeterminate attempt
+remains preserved and is not pooled across driver changes.
+
+The initial native sidepanel handshake passed on `dist-dev`. The old smoke command
+loads that development build despite documenting `dist`, so this does not
+certify the exact production artifact. Signed-in production remote-work
+acceptance, Settings persistence, release packaging, headline benchmark
+baselines/manual review, deployment smoke, rollback, and legacy cutover remain
+open at that initial checkpoint; the production smoke correction above supersedes
+the build-identity limitation. Local evidence and source fingerprints are
+under `.artifacts/integration-verification-20260913/`.
+
 ## September 8 integration
 
 `integration/modelbench-release-20260908` reconciles ModelBench head `837f02bb`

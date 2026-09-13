@@ -1,3 +1,5 @@
+import { providerRoutingOptions } from "../llm/provider-routing-policy";
+import { partialHandoffTerminationReason } from "./partial-handoff-reason";
 import { chromePersistencePort } from "../environment/chrome";
 import { getTrustedCorpusStore } from "../memory/corpus-runtime";
 import { extractedFactToCorpusEntry } from "../memory/trusted-corpus-migration";
@@ -1905,9 +1907,7 @@ export class Orchestrator {
           executorModel: input.settings.executorModel,
           plannerModel: input.settings.plannerModel,
           judgeModel: input.settings.judgeModel,
-          executorProviderPin: input.settings.executorProviderPin,
-          plannerProviderPin: input.settings.plannerProviderPin,
-          judgeProviderPin: input.settings.judgeProviderPin,
+          ...providerRoutingOptions(input.settings),
           writerModel: input.settings.writerModel,
           useNitro: input.settings.useNitro,
           providerMode: input.settings.providerMode,
@@ -2155,9 +2155,7 @@ export class Orchestrator {
               executorModel: input.settings.executorModel,
               plannerModel: input.settings.plannerModel,
               judgeModel: input.settings.judgeModel,
-              executorProviderPin: input.settings.executorProviderPin,
-              plannerProviderPin: input.settings.plannerProviderPin,
-              judgeProviderPin: input.settings.judgeProviderPin,
+              ...providerRoutingOptions(input.settings),
               useNitro: input.settings.useNitro,
               providerMode: input.settings.providerMode,
               provider: input.settings.provider,
@@ -2258,9 +2256,7 @@ export class Orchestrator {
       executorModel: input.settings.executorModel,
       plannerModel: input.settings.plannerModel,
       judgeModel: input.settings.judgeModel,
-      executorProviderPin: input.settings.executorProviderPin,
-      plannerProviderPin: input.settings.plannerProviderPin,
-      judgeProviderPin: input.settings.judgeProviderPin,
+      ...providerRoutingOptions(input.settings),
       writerModel: input.settings.writerModel,
       useNitro: input.settings.useNitro,
       providerMode: input.settings.providerMode,
@@ -2761,9 +2757,7 @@ export class Orchestrator {
           executorModel: input.settings.executorModel,
           plannerModel: input.settings.plannerModel,
           judgeModel: input.settings.judgeModel,
-          executorProviderPin: input.settings.executorProviderPin,
-          plannerProviderPin: input.settings.plannerProviderPin,
-          judgeProviderPin: input.settings.judgeProviderPin,
+          ...providerRoutingOptions(input.settings),
           writerModel: input.settings.writerModel,
           useNitro: input.settings.useNitro,
           providerMode: input.settings.providerMode,
@@ -3715,8 +3709,7 @@ export class Orchestrator {
           node.error = result.summary;
           task.partialHandoff = result.partialHandoff;
           task.terminationReason =
-            task.terminationReason ||
-            `Turn limit reached (${result.turnCount}/${result.partialHandoff.maxTurns})`;
+            task.terminationReason || partialHandoffTerminationReason(result.partialHandoff);
           this.emitTraceEvent(
             task,
             "partial_handoff_created",

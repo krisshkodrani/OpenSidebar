@@ -162,9 +162,9 @@
   },
   {
     "id": "agent.reflection.escalation",
-    "version": "v2",
-    "hash": "395707d7",
-    "description": "Escalation reflection for planner-model takeover when stalled.",
+    "version": "v3",
+    "hash": "87afabcb",
+    "description": "Same-model reassessment when stalled.",
     "sourcePath": "prompts/runtime/reflections/escalation.md"
   },
   {

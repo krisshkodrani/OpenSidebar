@@ -86,7 +86,7 @@ test("does not invent a resolved seat when traces contain multiple identities", 
   assert.deepEqual(result.ambiguousSeats.executor, ["provider:model-a", "provider:model-b"]);
 });
 
-test("attributes a successful pinned OpenRouter call to its enforced upstream", () => {
+test("does not invent the served upstream from a requested OpenRouter pin", () => {
   const root = mkdtempSync(resolve(tmpdir(), "modelbench-evidence-"));
   const trace = resolve(root, "turns.jsonl");
   writeFileSync(trace, `${JSON.stringify({
@@ -111,7 +111,7 @@ test("attributes a successful pinned OpenRouter call to its enforced upstream", 
     },
   });
 
-  assert.equal(result.resolvedSeats.executor?.resolvedProvider, "openai");
+  assert.equal(result.resolvedSeats.executor?.resolvedProvider, "openrouter");
 });
 
 test("records the exact screenshot artifact and image-detail telemetry", () => {

@@ -446,13 +446,13 @@ export const ESCALATE_DEF: ToolDefinition = {
   function: {
     name: ToolName.ESCALATE,
     description:
-      "Switch to the planner model for complex reasoning. Use when stuck on riddles, puzzles, math, or multi-step logic. Do not use this only because an action tool seems missing until you have checked the Available Tool Capabilities catalog at the end of this conversation.",
+      "Reassess a difficult reasoning or interaction problem with the current model; this does not ask the user or switch models. If the page leaves multiple valid targets or a required user preference unknown, use clarify instead: more reasoning cannot supply the user's choice. Do not use this only because an action tool seems missing until you have checked the Available Tool Capabilities catalog at the end of this conversation.",
     parameters: {
       type: "object",
       properties: {
         reason: {
           type: "string",
-          description: "Why the current model can't handle this.",
+          description: "The reasoning or interaction problem requiring reassessment.",
         },
         reasonCode: {
           type: "string",
@@ -517,7 +517,7 @@ export const CLARIFY_DEF: ToolDefinition = {
   function: {
     name: ToolName.CLARIFY,
     description:
-      "Ask the user a question when you encounter ambiguity that cannot be resolved from the page. Use when multiple valid interpretations exist or user preferences are unknown.",
+      "Ask the user a question when page evidence cannot resolve multiple valid targets, interpretations, or a missing user preference. Ask before acting on an arbitrary choice, even if the eventual action control is not yet located. Include the observed alternatives when available. For a navigation or tool failure without a missing user decision, investigate or escalate instead.",
     parameters: {
       type: "object",
       properties: {

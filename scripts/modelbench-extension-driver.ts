@@ -10,7 +10,6 @@ import {
   getActiveTabId,
   getMonitoredEventsWithControlLane,
   navigateAndWait,
-  resetExtensionState,
   sendUserChat,
   startApprovalAutoResponder,
 } from "../apps/extension/tests/e2e/helpers/utils.js";
@@ -25,6 +24,7 @@ import {
 } from "../apps/extension/src/background/e2e-test-api.js";
 import { startModelBenchTargetServer } from "./modelbench-target-server.js";
 import { collectModelBenchTraceEvidence } from "./modelbench-trace-evidence.js";
+import { observeProviderCall, providerSlugsFromCatalog, summarizeProviderCalls, type ProviderCallEvidence } from "./modelbench-provider-evidence.js";
 
 type EventRecord = Record<string, any>;
 
@@ -194,10 +194,12 @@ function configureEnvironment(input: ModelBenchDriverInput): () => void {
 
 export function modelBenchSettingsPatch(
   input: ModelBenchDriverInput,
-): Record<string, string> {
+): Record<string, string | boolean> {
   const seats = input.configuration.seats;
   return {
     providerMode: input.configuration.provider,
+    strictModelRouting: true,
+    useNitro: false,
     ...(seats.executor?.model ? { executorModel: seats.executor.model } : {}),
     ...(seats.planner?.model ? { plannerModel: seats.planner.model } : {}),
     ...(seats.judge?.model ? { judgeModel: seats.judge.model } : {}),
@@ -236,7 +238,7 @@ async function applyModelBenchSettings(
     );
   }, expected);
   for (const [key, value] of Object.entries(expected)) {
-    if (applied[key] !== value) {
+    if (applied[key] !== String(value)) {
       throw new Error(
         `ModelBench setting '${key}' did not apply: expected '${value}', received '${applied[key] ?? ""}'.`,
       );
@@ -276,6 +278,27 @@ export function extractModelBenchOutcome(events: EventRecord[]): DriverOutcome |
   return terminalStatus
     ? { kind: "completion", event: terminalStatus, events }
     : null;
+}
+
+/** Preserve user-visible terminal evidence even when the trace transport fails. */
+export function terminalInteractionEvidence(outcome: DriverOutcome) {
+  const event = outcome.event;
+  if (!event) return undefined;
+  const payload = event.payload ?? event;
+  return {
+    type: event.type,
+    status: eventStatus(event),
+    ...(outcome.kind === "clarification" ? {
+      clarificationId: payload.clarificationId,
+      question: typeof payload.question === "string" ? payload.question : undefined,
+      suggestions: Array.isArray(payload.suggestions)
+        ? payload.suggestions.filter((value: unknown) => typeof value === "string")
+        : [],
+    } : {
+      summary: typeof payload.summary === "string" ? payload.summary : undefined,
+      terminationReason: payload.terminationReason,
+    }),
+  };
 }
 
 export function extractStoredModelBenchOutcome(
@@ -351,12 +374,25 @@ async function waitForOutcome(
     : { kind: "timeout", events };
 }
 
-function finalAnswer(outcome: DriverOutcome): string | undefined {
+function terminalSummary(outcome: DriverOutcome): string | undefined {
   const value =
     outcome.event?.payload?.summary ??
     outcome.event?.summary ??
     outcome.event?.detail ??
     outcome.event?.payload?.detail;
+  return typeof value === "string" && value.trim() ? value.trim() : undefined;
+}
+
+export function finalAnswer(outcome: DriverOutcome): string | undefined {
+  // Failed/partial/stopped summaries and status details are diagnostic prose:
+  // they may quote a rejected answer without actually delivering that answer.
+  // State-based and clarification verdicts remain independent of this field.
+  if (
+    outcome.kind !== "completion" ||
+    outcome.event?.type !== "TASK_COMPLETION" ||
+    eventStatus(outcome.event) !== "completed"
+  ) return undefined;
+  const value = outcome.event.payload?.summary ?? outcome.event.summary;
   return typeof value === "string" && value.trim() ? value.trim() : undefined;
 }
 
@@ -381,13 +417,13 @@ function providerError(error: unknown): boolean {
 }
 
 export function providerFailureReason(outcome: DriverOutcome): string | undefined {
-  const answer = finalAnswer(outcome);
+  const answer = terminalSummary(outcome);
   return answer && providerError(answer) ? answer : undefined;
 }
 
 export function harnessFailureReason(outcome: DriverOutcome): string | undefined {
   if (eventStatus(outcome.event ?? {}) === "completed") return undefined;
-  const answer = finalAnswer(outcome);
+  const answer = terminalSummary(outcome);
   return answer &&
     /content script disconnected|reinjection failed|extension context invalidated|receiving end does not exist|message port closed/i.test(
       answer,
@@ -399,19 +435,25 @@ export function harnessFailureReason(outcome: DriverOutcome): string | undefined
 async function preflightProviderNetwork(
   provider: string,
   ctx: Parameters<typeof openHelperPage>[0],
-): Promise<void> {
-  if (provider !== "openrouter") return;
+  calls: ProviderCallEvidence[],
+): Promise<Record<string, string>> {
+  if (provider !== "openrouter") return {};
   const page = await openHelperPage(ctx);
+  await page.exposeFunction("recordModelBenchProviderCall", (request: string, response: string, status: number, durationMs: number) => {
+    calls.push(observeProviderCall(request, response, status, durationMs));
+  });
   const result = await page.evaluate(async () => {
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), 10_000);
     try {
-      const response = await fetch("https://openrouter.ai/api/v1/models", {
-        method: "HEAD",
+      const response = await fetch("https://openrouter.ai/api/v1/providers", {
         cache: "no-store",
         signal: controller.signal,
       });
-      return { ok: true, status: response.status };
+      if (!response.ok) throw new Error(`Provider catalog HTTP ${response.status}`);
+      const catalog = await response.json();
+      if (!Array.isArray(catalog.data)) throw new Error("Invalid provider catalog response");
+      return { ok: true, providers: catalog.data };
     } catch (error) {
       return {
         ok: false,
@@ -440,6 +482,7 @@ async function preflightProviderNetwork(
       void (async () => {
         const controller = new AbortController();
         const timer = setTimeout(() => controller.abort(), 120_000);
+        const startedAt = Date.now();
         try {
           const response = await fetch(message.url, {
             method: message.method,
@@ -448,12 +491,15 @@ async function preflightProviderNetwork(
             cache: "no-store",
             signal: controller.signal,
           });
+          const responseBody = await response.text();
+          const recordCall = scope.recordModelBenchProviderCall as (request: string, response: string, status: number, durationMs: number) => Promise<void>;
+          await recordCall(message.body, responseBody, response.status, Date.now() - startedAt);
           sendResponse({
             ok: true,
             status: response.status,
             statusText: response.statusText,
             headers: [...response.headers.entries()],
-            body: await response.text(),
+            body: responseBody,
           });
         } catch (error) {
           sendResponse({
@@ -501,6 +547,7 @@ async function preflightProviderNetwork(
       };
     }),
   );
+  return providerSlugsFromCatalog(result.providers);
 }
 
 async function readRun(origin: string, runId: string): Promise<ScenarioRunV2> {
@@ -538,6 +585,8 @@ export async function createModelBenchDriver(): Promise<ModelBenchDriver> {
       let beforeEachComplete = false;
       let workspaceId: string | null = null;
       let appliedSettings: Record<string, string> = {};
+      const providerCalls: ProviderCallEvidence[] = [];
+      let providerSlugs: Record<string, string> = {};
       let approvals: { stop(): Promise<void> } | null = null;
       try {
         const create = await fetch(`${target.origin}/api/v2/modelbench/runs`, {
@@ -556,7 +605,7 @@ export async function createModelBenchDriver(): Promise<ModelBenchDriver> {
         await harness.beforeEachHook();
         beforeEachComplete = true;
         appliedSettings = await applyModelBenchSettings(harness.ctx, input);
-        await preflightProviderNetwork(input.configuration.provider, harness.ctx);
+        providerSlugs = await preflightProviderNetwork(input.configuration.provider, harness.ctx, providerCalls);
         await navigateAndWait(harness.page, created.launchUrl);
         const tabId = await withLiveServiceWorker(harness.ctx, (worker) =>
           resolveTargetTabId(worker, target.origin),
@@ -611,21 +660,24 @@ export async function createModelBenchDriver(): Promise<ModelBenchDriver> {
         );
         const providerFailure = providerFailureReason(outcome);
         const harnessFailure = harnessFailureReason(outcome);
+        const routing = input.configuration.provider === "openrouter"
+          ? summarizeProviderCalls(providerCalls, input.configuration.seats, providerSlugs)
+          : { ...evidence, issues: [], providerFailures: [] };
         return {
           durationMs: Date.now() - startedAt,
           finalState: run.state,
           finalAnswer: finalAnswer(outcome),
           terminalOutcome: terminalOutcome(outcome, run),
           driverEvidence,
-          resolvedSeats: evidence.resolvedSeats,
-          usageByRole: evidence.usageByRole,
+          resolvedSeats: routing.resolvedSeats,
+          usageByRole: routing.usageByRole,
           telemetry: evidence.telemetry,
           artifactRefs: evidence.artifactRefs,
-          ...(providerFailure
+          ...(providerFailure || routing.providerFailures.length > 0
             ? {
                 failure: {
                   kind: "provider" as const,
-                  reason: providerFailure,
+                  reason: providerFailure || routing.providerFailures.join("; "),
                 },
               }
             : harnessFailure
@@ -635,11 +687,21 @@ export async function createModelBenchDriver(): Promise<ModelBenchDriver> {
                   reason: harnessFailure,
                 },
               }
+            : traceSummary.traceFiles.length === 0
+            ? { failure: { kind: "harness" as const, reason: "No agent trace was captured; terminal evidence alone is not an auditable trajectory." } }
+            : routing.issues.length > 0
+            ? { failure: { kind: "indeterminate" as const, reason: routing.issues.join("; ") } }
             : {}),
           diagnostics: {
+            providerCalls: providerCalls.map((call) => ({ ...call, usage: { ...call.usage } })),
+            providerSlugs,
+            routingIssues: routing.issues,
             runId: created.runId,
             workspaceId,
             outcome: outcome.kind,
+            terminalInteraction: terminalInteractionEvidence(outcome),
+            agentTraceCaptured: traceSummary.traceFiles.length > 0,
+            completionStatus: eventStatus(outcome.event ?? {}),
             runIds: evidence.runIds,
             ambiguousSeats: evidence.ambiguousSeats,
             imageArtifacts: evidence.imageArtifacts,
@@ -650,16 +712,19 @@ export async function createModelBenchDriver(): Promise<ModelBenchDriver> {
           },
         };
       } catch (error) {
+        const partialRouting = input.configuration.provider === "openrouter"
+          ? summarizeProviderCalls(providerCalls, input.configuration.seats, providerSlugs)
+          : undefined;
         return {
           durationMs: Date.now() - startedAt,
-          resolvedSeats: {},
-          usageByRole: {},
+          resolvedSeats: partialRouting?.resolvedSeats ?? {},
+          usageByRole: partialRouting?.usageByRole ?? {},
           artifactRefs: [],
           failure: {
             kind: providerError(error) ? "provider" : "harness",
             reason: error instanceof Error ? error.message : String(error),
           },
-          diagnostics: { workspaceId },
+          diagnostics: { workspaceId, providerCalls, providerSlugs, routingIssues: partialRouting?.issues ?? [] },
         };
       } finally {
         await approvals?.stop().catch(() => {});
@@ -669,7 +734,8 @@ export async function createModelBenchDriver(): Promise<ModelBenchDriver> {
           ).catch(() => {});
         }
         if (beforeAllComplete) {
-          await resetExtensionState(harness.ctx).catch(() => {});
+          // Each attempt owns a fresh browser; resetting for a next test would
+          // open another page and can stall delivery of the completed verdict.
           await harness.afterAllHook().catch(() => {});
         }
         restoreEnvironment();

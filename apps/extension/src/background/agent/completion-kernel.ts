@@ -2,7 +2,7 @@ import type { DomSnapshot, TaggedElement, ToolName } from "../../types";
 import {
   hasDraftPreservedEvidence,
   hasStrongCommunicationSentEvidence,
-  isDraftOnlyCommunicationTask,
+  requiresDraftOnlyCompletion,
 } from "./consequential-action-policy";
 import { assessTaskContractCoverage, buildTaskContract } from "./task-contract";
 import {
@@ -260,7 +260,7 @@ function generateDraftOnlyContract(params: {
   ]
     .filter(Boolean)
     .join("\n");
-  if (!isDraftOnlyCommunicationTask(requestText)) return null;
+  if (!requiresDraftOnlyCompletion(requestText)) return null;
 
   return {
     contract: {

@@ -11,6 +11,7 @@ import {
 import { createHash } from "node:crypto";
 import { basename, dirname, relative, resolve } from "node:path";
 import { execFileSync } from "node:child_process";
+import { releaseBuildSha256 } from "./release-build-identity.js";
 
 const rootPath = process.cwd();
 const distPath = resolve(rootPath, "dist");
@@ -220,8 +221,10 @@ OpenSidebar v${version} adds supervised remote browser work to the normal produc
 - Direct from this browser remains available for local provider use, and local browser tasks continue independently of remote work.
 - Settings navigation survives tab switches and sidepanel remounts for the current Chrome session.
 - Remote takeover, device-command execution, checkpoint restore, and Temporal coordination remain disabled for this release.
-- The extension remains compatible with the audited 0.7.4 backend contract; the production dependency audit reports no known vulnerabilities.
-- DOMPurify is updated to \`3.4.13\`, and the container runtime dependency manifest is checked against the audited lockfile during release verification.
+- ModelBench100 now includes deterministic validators, strict provider-routing evidence, and workspace acceptance diagnostics. Headline model baselines remain pending; diagnostic passes are not a model-performance claim.
+- Read-only communication completion, partial-handoff reasons, and trace writer shutdown are corrected.
+- Production dependency overrides and the cloud runtime manifest are aligned with the audited lockfile.
+- Native side-panel smoke loads the production build and binds rendered-panel evidence to its contents, version, and commit.
 - Release packaging builds \`dist/\`, verifies manifest/package version alignment, and writes a deterministic ZIP with a SHA-256 checksum.
 
 ## Verification
@@ -280,6 +283,7 @@ function writeReleaseManifest({ commit, distManifest, hash, zipSize }) {
     name: distManifest.name ?? "OpenSidebar",
     version,
     commit,
+    distSha256: releaseBuildSha256(distPath),
     date: new Date().toISOString().slice(0, 10),
     packageVersion: version,
     extensionManifestVersion: distManifest.version ?? null,

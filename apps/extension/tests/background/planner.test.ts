@@ -150,6 +150,30 @@ describe("TaskPlanner.decompose", () => {
         expect(result!.requiresTabManagement).toBeUndefined();
     });
 
+    test("does not add draft requirements to read-only communication plans", async () => {
+        completeImpl = () => Promise.resolve({
+            role: "assistant",
+            content: JSON.stringify({
+                isMultiStep: true, difficulty: "moderate",
+                steps: [{ objective: "Open the vendor email thread.",
+                    successCriteria: "The vendor email is visible.", dependencies: [], assumptions: [] },
+                    { objective: "Read the vendor email and report its delivery date.",
+                    successCriteria: "The delivery date is reported with email evidence.",
+                    dependencies: [0], assumptions: [] }],
+            }),
+            tool_calls: undefined, finish_reason: "stop",
+        });
+        const planner = new TaskPlanner("test-key");
+        const result = await planner.decompose(
+            "Tell me when the vendor expects delivery. Do not send or forward anything.",
+            "Vendor email", "https://mail.example/thread",
+        );
+        // Preparatory navigation collapses to one read-only task, not a forced draft plan.
+        expect(result).not.toBeNull();
+        expect(result?.steps).toBeUndefined();
+        expect(result?.subtasks).toEqual([]);
+    });
+
     test("stops review-first message drafts after the unsent copy is visible", async () => {
         completeImpl = () => Promise.resolve({
             role: "assistant",

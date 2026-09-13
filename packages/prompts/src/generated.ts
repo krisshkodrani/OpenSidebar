@@ -145,9 +145,9 @@ export const GENERATED_PROMPTS = {
   }, // prompts/runtime/reflections/deescalation.md
   "agent.reflection.escalation": {
     id: "agent.reflection.escalation",
-    version: "v2",
-    description: "Escalation reflection for planner-model takeover when stalled.",
-    template: "You are the reasoning model. Escalation reason: {{escalationReason}}\n\nContext was distilled — you are seeing a compact timeline, not raw history. Do not reference specific earlier messages.\n\nBefore acting:\n1. Analyze the attempt log above: what was tried and why it failed?\n2. Use investigation tools (inspect_hidden, xray_page, execute_js, read_element) to gather missing information.\n3. Formulate a strategy that differs from what was already tried.\n4. You have at least 2 turns before de-escalation. Make each count.\n\nIf the page state is unclear, start with read_page.",
+    version: "v3",
+    description: "Same-model reassessment when stalled.",
+    template: "Reassess with the current model. Escalation reason: {{escalationReason}}\n\nContext was distilled — you are seeing a compact timeline, not raw history. Do not reference specific earlier messages.\n\nBefore acting:\n1. Analyze the attempt log above: what was tried and why it failed?\n2. Distinguish missing page evidence from a missing user decision. If observed alternatives remain equally valid and only the user can choose, call clarify with the question and alternatives before acting. Otherwise use investigation tools (inspect_hidden, xray_page, execute_js, read_element) to gather missing page information.\n3. Formulate a strategy that differs from what was already tried.\n4. You have at least 2 turns before de-escalation. Make each count.\n\nIf the page state is unclear, start with read_page.",
   }, // prompts/runtime/reflections/escalation.md
   "agent.reflection.handoff": {
     id: "agent.reflection.handoff",
@@ -211,7 +211,7 @@ export const GENERATED_PROMPT_DESCRIPTORS = {
   "planner.replan.system": { id: "planner.replan.system", version: "v1", hash: "acf19392" },
   "planner.validate_done.system": { id: "planner.validate_done.system", version: "v1", hash: "c905dafa" },
   "agent.reflection.deescalation": { id: "agent.reflection.deescalation", version: "v2", hash: "70a2897a" },
-  "agent.reflection.escalation": { id: "agent.reflection.escalation", version: "v2", hash: "395707d7" },
+  "agent.reflection.escalation": { id: "agent.reflection.escalation", version: "v3", hash: "87afabcb" },
   "agent.reflection.handoff": { id: "agent.reflection.handoff", version: "v2", hash: "d066417c" },
   "agent.reflection.pivot": { id: "agent.reflection.pivot", version: "v2", hash: "37b517d3" },
   "agent.reflection.text_only_correction": { id: "agent.reflection.text_only_correction", version: "v2", hash: "839e5e1d" },

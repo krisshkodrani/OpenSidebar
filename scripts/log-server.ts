@@ -62,6 +62,7 @@ import {
   readTraceRawJsonlFromSqlite,
   readTraceSessionsFromSqlite,
   recordTraceArtifactInSqlite,
+  retainTraceSqliteWriter,
   upsertRunTraceManifestToSqlite,
   upsertTraceSessionToSqlite,
 } from "./trace-sqlite-store";
@@ -1460,6 +1461,8 @@ const server = createServer(
   },
 );
 
+const releaseTraceWriter = retainTraceSqliteWriter(PROJECT_ROOT);
+
 server.listen(PORT, HOST, () => {
   console.log(`Local server listening on http://${HOST}:${PORT}`);
   console.log(`Writing to ${LOG_FILE}`);
@@ -1516,7 +1519,10 @@ const shutdown = (signal: string) => {
   console.log(`\n[local-server] Received ${signal}. Shutting down...`);
   // Best-effort flush of queued OTLP spans within the 2s grace window.
   void flushSpineOtelExport().catch(() => {});
-  server.close(() => process.exit(0));
+  server.close(() => {
+    releaseTraceWriter();
+    process.exit(0);
+  });
   setTimeout(() => process.exit(0), 2000).unref();
 };
 

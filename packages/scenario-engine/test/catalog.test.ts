@@ -313,7 +313,22 @@ test("a target-owned terminal decision is not treated as collateral mutation", (
   assert.deepEqual(validation.unexpectedMutations, []);
 });
 
-test("canvas answers tolerate punctuation without accepting a wrong value", () => {
+test("undefined metric clarification requires a calculation rather than reporting a missing configured value", () => {
+  const definition = MODEL_BENCH_CASES.find(
+    (entry) => entry.contract.id === "analytics.clarify-metric-definition",
+  )!;
+  assert.equal(definition.contract.version, 3);
+  assert.equal(definition.contract.prompt, "Calculate the dashboard's overall health score.");
+  const initialState = scenarioEngine.initialize(definition.contract.id);
+  const validate = (terminalOutcome?: string, finalAnswer?: string) => scenarioEngine.validate({
+    definition, initialState, finalState: initialState, terminalOutcome, finalAnswer,
+  });
+  assert.equal(validate("clarification").verdict, "pass");
+  assert.equal(validate(undefined, "The health score is not configured.").verdict, "fail");
+  assert.equal(validate(undefined, "The health score is 95.").verdict, "fail");
+});
+
+test("canvas answers accept prose containing both facts without accepting wrong values", () => {
   const definition = MODEL_BENCH_CASES.find(
     (entry) => entry.contract.id === "analytics.inspect-canvas-tooltip",
   )!;
@@ -326,11 +341,17 @@ test("canvas answers tolerate punctuation without accepting a wrong value", () =
       finalAnswer,
     }).verdict;
 
-  assert.equal(definition.contract.version, 2);
-  assert.equal(definition.contract.validatorId, `${definition.contract.id}.v2`);
-  assert.equal(definition.validator.version, 2);
+  assert.equal(definition.contract.version, 3);
+  assert.equal(definition.contract.validatorId, `${definition.contract.id}.v3`);
+  assert.equal(definition.validator.version, 3);
   assert.equal(validateAnswer("Aurora: $82"), "pass");
+  assert.equal(validateAnswer("Aurora has the highest cost per acquisition in the Campaign CPA chart, with a value of $82."), "pass");
+  assert.equal(validateAnswer("The highest CPA is $82, for Aurora."), "pass");
   assert.equal(validateAnswer("Aurora: $28"), "fail");
+  assert.equal(validateAnswer("Aurora: $182"), "fail");
+  assert.equal(validateAnswer("Borealis: $82"), "fail");
+  assert.equal(validateAnswer("Aurora"), "fail");
+  assert.equal(validateAnswer("$82"), "fail");
 });
 
 test("answer-only cases accept equivalent formatting without an unrequested finalization click", () => {

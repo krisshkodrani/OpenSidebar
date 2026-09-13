@@ -4,6 +4,7 @@ import { createHash } from "node:crypto";
 import { existsSync, readFileSync, readdirSync, statSync } from "node:fs";
 import { basename, relative, resolve } from "node:path";
 import { execFileSync } from "node:child_process";
+import { releaseBuildSha256, matchesProductionSmoke } from "./release-build-identity.js";
 
 const rootPath = process.cwd();
 const args = new Set(process.argv.slice(2));
@@ -117,6 +118,11 @@ const nativeSmokeCommand = "corepack pnpm run release:smoke:native-panel";
 const strictNativeSmokePreflightCommand =
   "corepack pnpm run release:preflight --require-native-smoke";
 const releaseManifest = readJson(manifestPath);
+const distSha256 = existsSync(resolve(rootPath, "dist"))
+  ? releaseBuildSha256(resolve(rootPath, "dist")) : null;
+if (releaseManifest?.distSha256 !== distSha256) {
+  fail("release manifest build hash does not match dist; rebuild the release package");
+}
 const headCommit = git(["rev-parse", "HEAD"]);
 const tagName = version ? `v${version}` : null;
 let zipHash = null;
@@ -258,10 +264,7 @@ const nativeSmokeEvidence = nativeSmokeFiles
   })
   .filter(Boolean);
 const matchingNativeSmoke = nativeSmokeEvidence.find(
-  (entry) =>
-    entry.report?.result === "passed" &&
-    headCommit &&
-    entry.report?.commit === headCommit,
+  (entry) => matchesProductionSmoke(entry.report, { commit: headCommit, version, distSha256 }),
 );
 if (!matchingNativeSmoke) {
   const latestNativeSmoke = nativeSmokeEvidence
