@@ -103,7 +103,7 @@ const controlPolicy = ensurePolicy("CONTROL_API_ORIGIN_REQUEST_POLICY_ID", polic
 ));
 const targetPolicy = ensurePolicy("TARGET_API_ORIGIN_REQUEST_POLICY_ID", policyConfig(
   "OpenSidebarPlaygroundTargetToLightsail",
-  ["__Host-os_playground_target", "__Host-os_modelbench_target"],
+  ["__Host-os_playground_target", "__Host-os_modelbench_target", "__Host-os_scenario_target"],
   ["Accept", "Content-Type", "Origin"],
   "none",
 ));
@@ -115,7 +115,7 @@ const mcpPolicy = ensurePolicy("MCP_ORIGIN_REQUEST_POLICY_ID", policyConfig(
 ));
 updateDistribution(
   process.env.PLAYGROUND_CONTROL_DISTRIBUTION_ID,
-  ["/api/v1/*", "/mcp", "/.well-known/oauth-protected-resource/mcp"],
+  ["/api/v1/*", "/api/v2/playground/*", "/mcp", "/.well-known/oauth-protected-resource/mcp"],
   controlPolicy,
   new Map([
     ["/mcp", mcpPolicy],
@@ -124,6 +124,6 @@ updateDistribution(
 );
 updateDistribution(
   process.env.PLAYGROUND_TARGET_DISTRIBUTION_ID,
-  ["/api/v1/target/*", "/api/v2/target/*", "/launch/*", "/modelbench/launch/*"],
+  ["/api/v1/target/*", "/api/v2/target/*", "/launch/*", "/modelbench/launch/*", "/api/v2/playground-target/*", "/scenario/launch/*"],
   targetPolicy,
 );

@@ -5,7 +5,7 @@
 
 api-origin.opensidebar.com {
   encode zstd gzip
-  @api path /api/* /health/* /launch/*
+  @api path /api/* /health/* /launch/* /modelbench/launch/* /scenario/launch/*
   handle @api {
     header Cache-Control "no-store"
     header Strict-Transport-Security "max-age=31536000; includeSubDomains"

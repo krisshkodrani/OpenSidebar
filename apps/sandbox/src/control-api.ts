@@ -26,13 +26,13 @@ async function ensureCsrf(): Promise<string> {
   csrfToken = payload.csrfToken;
   return csrfToken;
 }
-async function request<T>(path: string, init?: RequestInit): Promise<T> {
+export async function request<T>(path: string, init?: RequestInit, prefix = "/api/v1/playground"): Promise<T> {
   const method = init?.method ?? "GET";
   const csrf =
     ["POST", "DELETE", "PATCH"].includes(method) && !path.startsWith("/auth/")
       ? await ensureCsrf()
       : null;
-  const response = await fetch(`/api/v1/playground${path}`, {
+  const response = await fetch(`${prefix}${path}`, {
     ...init,
     credentials: "include",
     cache: "no-store",
