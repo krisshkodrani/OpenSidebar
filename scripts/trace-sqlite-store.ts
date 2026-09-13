@@ -1,6 +1,6 @@
 import Database from "better-sqlite3";
 import { existsSync, mkdirSync } from "fs";
-import { dirname, join } from "path";
+import { dirname, join, resolve } from "path";
 import {
   type TraceInsightsFilters,
   type TraceInsightsFacets,
@@ -354,8 +354,39 @@ function initSchema(db: Database.Database): void {
   );
 }
 
+const retainedWriters = new Map<string, { db: Database.Database; leases: number }>();
+const retainedConnections = new WeakSet<Database.Database>();
+
+/** Keep a server's writer open so each ingest does not checkpoint and close WAL. */
+export function retainTraceSqliteWriter(projectRoot: string, path?: string): () => void {
+  const key = resolve(dbPath(projectRoot, path));
+  let writer = retainedWriters.get(key);
+  if (!writer) {
+    writer = { db: openWritable(projectRoot, path), leases: 0 };
+    retainedWriters.set(key, writer);
+    retainedConnections.add(writer.db);
+  }
+  writer.leases++;
+  let released = false;
+  return () => {
+    if (released) return;
+    released = true;
+    if (--writer.leases === 0) {
+      retainedWriters.delete(key);
+      retainedConnections.delete(writer.db);
+      writer.db.close();
+    }
+  };
+}
+
+function releaseWritable(db: Database.Database): void {
+  if (!retainedConnections.has(db)) db.close();
+}
+
 function openWritable(projectRoot: string, path?: string): Database.Database {
-  const pathToDb = dbPath(projectRoot, path);
+  const pathToDb = resolve(dbPath(projectRoot, path));
+  const retained = retainedWriters.get(pathToDb);
+  if (retained) return retained.db;
   mkdirSync(dirname(pathToDb), { recursive: true });
   const db = new Database(pathToDb);
   db.pragma("journal_mode = WAL");
@@ -434,7 +465,7 @@ export function upsertTraceSessionToSqlite(
       "INSERT OR REPLACE INTO trace_index_meta (key, value) VALUES (?, ?)",
     ).run("indexed_at", String(indexedAt));
   } finally {
-    db.close();
+    releaseWritable(db);
   }
 }
 
@@ -553,7 +584,7 @@ export function insertTraceTurnToSqlite(
     });
     tx();
   } finally {
-    db.close();
+    releaseWritable(db);
   }
 }
 
@@ -591,7 +622,7 @@ export function insertRunTraceEventToSqlite(
       "INSERT OR REPLACE INTO trace_index_meta (key, value) VALUES (?, ?)",
     ).run("indexed_at", String(Date.now()));
   } finally {
-    db.close();
+    releaseWritable(db);
   }
 }
 
@@ -616,7 +647,7 @@ export function upsertRunTraceManifestToSqlite(
       "INSERT OR REPLACE INTO trace_index_meta (key, value) VALUES (?, ?)",
     ).run("indexed_at", String(indexedAt));
   } finally {
-    db.close();
+    releaseWritable(db);
   }
 }
 
@@ -647,7 +678,7 @@ export function recordTraceArtifactInSqlite(
       artifact.mtimeMs ?? Date.now(),
     );
   } finally {
-    db.close();
+    releaseWritable(db);
   }
 }
 

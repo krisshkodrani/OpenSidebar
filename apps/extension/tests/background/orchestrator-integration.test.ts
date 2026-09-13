@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, vi, test } from "vitest";
 import "../setup";
-import { SessionMetrics, ToolName, UserSettings } from "../../src/types";
+import { PartialProgressHandoff, SessionMetrics, ToolName, UserSettings } from "../../src/types";
 import {
   TURN_CHECKPOINT_VERSION,
   TurnCheckpoint,
@@ -66,8 +66,11 @@ let loopStartImpl: (
     | "error"
     | "stopped"
     | "awaiting_approval"
+    | "max_turns"
     | "awaiting_clarification";
   summary: string;
+  turnCount?: number;
+  partialHandoff?: PartialProgressHandoff;
   metrics?: SessionMetrics;
   pendingInteraction?: Record<string, unknown>;
   sideEffectsLog?: Array<Record<string, unknown>>;
@@ -2172,6 +2175,30 @@ describe("Orchestrator integration join tests", () => {
     const subtaskResults = completion?.payload?.subtaskResults || [];
     expect(subtaskResults.length).toBeGreaterThan(0);
     expect(String(subtaskResults[0]?.result || "")).toContain("class=blocked");
+  });
+
+  test("reports escalation failure without inventing turn exhaustion", async () => {
+    plannerBuildNodesImpl = async () => [makeNode("n1", "Investigate a blocked action")];
+    loopStartImpl = async () => ({
+      outcome: "max_turns",
+      summary: "Unable to recover from the blocked action",
+      turnCount: 7,
+      partialHandoff: {
+        schemaVersion: "2026-05-26", reason: "escalation_failed",
+        status: "partial_handoff", task: "Investigate a blocked action",
+        generatedAt: new Date().toISOString(), turnsUsed: 7, maxTurns: 28,
+        completed: [], evidence: [], currentState: {}, remaining: [],
+        uncertainty: [], suggestedContinuationPrompt: "Inspect the blocked action",
+      },
+    });
+    const orchestrator = new Orchestrator(orchestratorDeps);
+    activeOrchestrator = orchestrator;
+    await orchestrator.startTask(makeInput("Investigate a blocked action"));
+    const messages = (globalThis as any).__runtimeMessages as Array<{
+      type?: string; payload?: any;
+    }>;
+    const completion = messages.find((message) => message.type === "TASK_COMPLETION");
+    expect(completion?.payload?.terminationReason).toBe("Escalation failed (7/28)");
   });
 
   test("terminates task when global token budget is exceeded", async () => {

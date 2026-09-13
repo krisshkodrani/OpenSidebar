@@ -304,12 +304,8 @@ export function collectModelBenchTraceEvidence(input: {
     const requested = input.requestedSeats[seat];
     if (!requested) continue;
     const [transportProvider, resolvedModel] = identities[0].split("\u0000");
-    const resolvedProvider =
-      transportProvider === "openrouter" &&
-      requested.provider === "openrouter" &&
-      requested.providerPin
-        ? requested.providerPin
-        : transportProvider;
+    // A transport name is not proof that a requested upstream pin was served.
+    const resolvedProvider = transportProvider;
     resolvedSeats[seat] = {
       ...requested,
       resolvedProvider,

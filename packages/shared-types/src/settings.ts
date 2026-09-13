@@ -94,6 +94,8 @@ export interface UserSettings {
   judgeModel?: string;
   /** OpenRouter upstream provider pins, applied independently per model seat. */
   executorProviderPin?: string;
+  /** Opt-in exact model/provider routing; disables automatic fallback. */
+  strictModelRouting?: boolean;
   plannerProviderPin?: string;
   judgeProviderPin?: string;
   /**

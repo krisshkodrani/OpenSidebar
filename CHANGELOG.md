@@ -1,5 +1,23 @@
 # Changelog
 
+## [0.7.6] - 2026-09-13
+
+### Added
+
+- Integrated the ModelBench100 catalog, deterministic validators, provider-routing
+  evidence, and workspace acceptance diagnostics. Headline model baselines remain
+  pending; diagnostic results are not a benchmark performance claim.
+- Reconciled supervised remote work with workspace targeting and account settings.
+  Remote rollout remains limited to authorized named testers.
+
+### Fixed
+
+- Distinguished read-only communication requests from requests to prepare drafts.
+- Preserved strict provider/model routing and accurate partial-handoff reasons.
+- Corrected trace writer shutdown and bounded optional telemetry Git discovery.
+- Bound release smoke evidence to the actual production build, version, and commit.
+- Updated production dependency overrides and the cloud runtime manifest.
+
 ## [0.7.4] - 2026-08-13
 
 ### Added

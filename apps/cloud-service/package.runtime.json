@@ -7,7 +7,7 @@
     "@aws-sdk/client-kms": "3.1106.0",
     "@aws-sdk/client-s3": "3.1106.0",
     "@hono/node-server": "2.1.0",
-    "hono": "4.13.1",
+    "hono": "4.13.5",
     "pg": "8.22.0"
   }
 }
