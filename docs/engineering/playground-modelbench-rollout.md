@@ -62,5 +62,11 @@ service before v2 sessions drain ends those sessions. Use the database snapshot
 only if required, accounting for subsequent account activity. Re-enable v1
 creation only after the drained state and restored routes have been verified.
 
+Rehearse the rollback image against retained remote-mission states before use.
+Images without the migration 016 replay guard cannot restart when a
+`supervision_required` mission exists: the older migration temporarily narrows
+the state constraint. Keep the guarded recovery image as the rollback candidate;
+do not rewrite mission records to make an older image start.
+
 Do not remove the legacy implementation as part of this public-page connection.
 Its removal remains part of LP-36's acceptance-gated harness cutover.
