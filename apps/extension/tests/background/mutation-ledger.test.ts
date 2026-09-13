@@ -118,6 +118,38 @@ describe("MutationLedger", () => {
     });
   });
 
+  test("consumes coordinator receipts as observed mutation evidence", () => {
+    const ledger = new MutationLedger();
+    ledger.recordReceipt({
+      actionId: "call-1",
+      status: "executed",
+      before: {
+        observationRevision: 1,
+        documentInstanceId: "doc-1",
+        mutationEpoch: 2,
+        snapshotFingerprint: "before",
+        url: "https://example.com",
+        viewport: { width: 1000, height: 700 },
+        scroll: { x: 0, y: 0 },
+      },
+      effect: {
+        documentChanged: false,
+        urlChanged: false,
+        domChanged: true,
+        visualChanged: "not_observed",
+      },
+      evidenceRefs: ["observation:2"],
+    });
+
+    expect(ledger.receipts).toEqual([
+      expect.objectContaining({
+        actionId: "call-1",
+        effect: expect.objectContaining({ domChanged: true }),
+        evidenceRefs: ["observation:2"],
+      }),
+    ]);
+  });
+
   test("uses ephemeral replay only when done-rejection guard is enabled", () => {
     const ledger = new MutationLedger(() => 10, () => "effect-1");
     const snap = snapshot();

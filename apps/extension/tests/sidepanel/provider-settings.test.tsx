@@ -34,7 +34,7 @@ describe("key-driven provider settings", () => {
       );
     });
 
-    expect(container.textContent).toContain("Add a full-stack provider key");
+    expect(container.textContent).toContain("Connect an AI provider");
     expect(
       container.querySelectorAll('button[aria-pressed="false"]'),
     ).toHaveLength(0);

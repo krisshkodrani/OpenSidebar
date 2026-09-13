@@ -20,6 +20,7 @@ import {
   TaskOwnedTab,
   TaskTabCoordination,
   TaskTabRole,
+  VerifierAcceptedResult,
 } from "./types";
 import type {
   PartialProgressHandoff,
@@ -629,6 +630,30 @@ export function sanitizeTask(raw: unknown): OrchestratorTask | null {
     }
     if (Object.keys(structuredProgress).length > 0) {
       task.structuredProgress = structuredProgress;
+    }
+  }
+  if (raw.verifierAcceptedResults !== undefined) {
+    if (!Array.isArray(raw.verifierAcceptedResults)) return null;
+    const verifierAcceptedResults: VerifierAcceptedResult[] = [];
+    for (const entry of raw.verifierAcceptedResults) {
+      if (
+        !isRecord(entry) ||
+        typeof entry.nodeId !== "string" ||
+        entry.nodeId.length === 0 ||
+        typeof entry.result !== "string" ||
+        entry.result.length === 0 ||
+        !isNonNegativeInteger(entry.acceptedAt)
+      ) {
+        return null;
+      }
+      verifierAcceptedResults.push({
+        nodeId: entry.nodeId,
+        result: entry.result,
+        acceptedAt: entry.acceptedAt,
+      });
+    }
+    if (verifierAcceptedResults.length > 0) {
+      task.verifierAcceptedResults = verifierAcceptedResults;
     }
   }
 

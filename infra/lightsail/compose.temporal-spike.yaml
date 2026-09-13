@@ -1,0 +1,103 @@
+name: opensidebar-temporal-spike
+services:
+  temporal:
+    image: temporalio/server:1.30.4@sha256:a8b99ed4d48b01604f1ed05318f14457dd84bf5fda2bd2bb3992e7297c48baa1
+    profiles: ["temporal-spike"]
+    restart: "no"
+    depends_on:
+      temporal-schema:
+        condition: service_completed_successfully
+    environment:
+      DB: postgres12
+      DB_PORT: "5432"
+      POSTGRES_SEEDS: db
+      POSTGRES_USER: ${TEMPORAL_DB_USER:?set TEMPORAL_DB_USER}
+      POSTGRES_PWD: ${TEMPORAL_DB_PASSWORD:?set TEMPORAL_DB_PASSWORD}
+      DBNAME: temporal
+      VISIBILITY_DBNAME: temporal_visibility
+      SKIP_SCHEMA_SETUP: "true"
+    volumes:
+      - ./temporal-dynamicconfig.yaml:/etc/temporal/config/dynamicconfig/docker.yaml:ro
+    expose: ["7233"]
+    mem_limit: 640m
+    cpus: 0.6
+    security_opt: ["no-new-privileges:true"]
+    logging:
+      driver: json-file
+      options: { max-size: "10m", max-file: "2" }
+    networks: [playscenario]
+
+  temporal-schema:
+    image: temporalio/admin-tools:1.30.4@sha256:0e5da5cb6714e457b10e4015d4b2091f3d822a21912de733a512832ae3baadb5
+    profiles: ["temporal-spike"]
+    restart: "no"
+    entrypoint: ["/bin/sh", "-ec"]
+    command:
+      - >-
+        temporal-sql-tool --plugin postgres12 --ep db -p 5432
+        -u "$${TEMPORAL_DB_USER}" -pw "$${TEMPORAL_DB_PASSWORD}"
+        --db temporal setup-schema -v 0.0 &&
+        temporal-sql-tool --plugin postgres12 --ep db -p 5432
+        -u "$${TEMPORAL_DB_USER}" -pw "$${TEMPORAL_DB_PASSWORD}"
+        --db temporal update-schema
+        -d /etc/temporal/schema/postgresql/v12/temporal/versioned &&
+        temporal-sql-tool --plugin postgres12 --ep db -p 5432
+        -u "$${TEMPORAL_DB_USER}" -pw "$${TEMPORAL_DB_PASSWORD}"
+        --db temporal_visibility setup-schema -v 0.0 &&
+        temporal-sql-tool --plugin postgres12 --ep db -p 5432
+        -u "$${TEMPORAL_DB_USER}" -pw "$${TEMPORAL_DB_PASSWORD}"
+        --db temporal_visibility update-schema
+        -d /etc/temporal/schema/postgresql/v12/visibility/versioned
+    environment:
+      TEMPORAL_DB_USER: ${TEMPORAL_DB_USER:?set TEMPORAL_DB_USER}
+      TEMPORAL_DB_PASSWORD: ${TEMPORAL_DB_PASSWORD:?set TEMPORAL_DB_PASSWORD}
+    mem_limit: 96m
+    cpus: 0.2
+    networks: [playscenario]
+
+  temporal-namespace:
+    image: temporalio/admin-tools:1.30.4@sha256:0e5da5cb6714e457b10e4015d4b2091f3d822a21912de733a512832ae3baadb5
+    profiles: ["temporal-spike"]
+    restart: "no"
+    depends_on:
+      temporal-schema:
+        condition: service_completed_successfully
+      temporal:
+        condition: service_started
+    entrypoint: ["/bin/sh", "-ec"]
+    command:
+      - >-
+        until temporal operator namespace describe --address temporal:7233
+        opensidebar-spike >/dev/null 2>&1; do
+        temporal operator namespace create --address temporal:7233
+        --retention 24h opensidebar-spike && break; sleep 2; done
+    mem_limit: 64m
+    cpus: 0.1
+    networks: [playscenario]
+
+  temporal-worker:
+    image: ${OPENSIDEBAR_TEMPORAL_WORKER_IMAGE:-opensidebar-temporal-spike:research}
+    profiles: ["temporal-spike"]
+    restart: "no"
+    depends_on:
+      temporal-namespace:
+        condition: service_completed_successfully
+    environment:
+      NODE_OPTIONS: "--max-old-space-size=144"
+      TEMPORAL_ADDRESS: temporal:7233
+      TEMPORAL_NAMESPACE: opensidebar-spike
+      TEMPORAL_TASK_QUEUE: opensidebar-spike-v1
+    mem_limit: 192m
+    cpus: 0.3
+    read_only: true
+    tmpfs: ["/tmp:size=32m"]
+    security_opt: ["no-new-privileges:true"]
+    logging:
+      driver: json-file
+      options: { max-size: "10m", max-file: "2" }
+    networks: [playscenario]
+
+networks:
+  playscenario:
+    external: true
+    name: playscenario_default

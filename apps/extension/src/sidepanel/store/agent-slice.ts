@@ -80,6 +80,7 @@ export const createAgentSlice: SliceCreator<AgentSlice> = (set, get) => ({
   sessionMetrics: null,
   laneTelemetry: null,
   latestStepLabel: null,
+  actionPresentation: null,
   isPlanning: false,
 
   updateStatus: (status, detail) => {
@@ -240,6 +241,33 @@ export const createAgentSlice: SliceCreator<AgentSlice> = (set, get) => ({
   clearLatestStepLabel: () =>
     set((state) => {
       state.latestStepLabel = null;
+    }),
+
+  setActionPresentation: (next) =>
+    set((state) => {
+      const phaseRank = {
+        acquiring: 0,
+        acting: 1,
+        applied: 2,
+        failed: 2,
+        interrupted: 2,
+      } as const;
+      if (
+        state.actionPresentation &&
+        (next.sequence < state.actionPresentation.sequence ||
+          (next.sequence === state.actionPresentation.sequence &&
+            phaseRank[next.phase] < phaseRank[state.actionPresentation.phase]))
+      ) {
+        return;
+      }
+      state.actionPresentation = next;
+    }),
+
+  clearActionPresentation: (sequence) =>
+    set((state) => {
+      if (sequence != null && state.actionPresentation?.sequence !== sequence)
+        return;
+      state.actionPresentation = null;
     }),
 
   setTaskRecovery: (recovery) =>

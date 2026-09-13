@@ -1,6 +1,7 @@
 import type { StateCreator } from "zustand";
 import type {
   AgentStatus,
+  ActionPresentationState,
   AgentStep,
   ChatEntry,
   Citation,
@@ -75,6 +76,7 @@ export interface AgentSlice {
   sessionMetrics: SessionMetrics | null;
   laneTelemetry: LaneTelemetrySnapshot | null;
   latestStepLabel: string | null;
+  actionPresentation: ActionPresentationState | null;
   isPlanning: boolean;
   updateStatus: (status: AgentStatus, detail: string) => void;
   setAgentRunning: (isRunning: boolean) => void;
@@ -96,6 +98,8 @@ export interface AgentSlice {
   clearPendingClarification: () => void;
   setLatestStepLabel: (label: string) => void;
   clearLatestStepLabel: () => void;
+  setActionPresentation: (state: ActionPresentationState) => void;
+  clearActionPresentation: (sequence?: number) => void;
   setTaskRecovery: (recovery: TaskRecoveryState) => void;
   clearTaskRecovery: () => void;
   setDurableRunStatus: (

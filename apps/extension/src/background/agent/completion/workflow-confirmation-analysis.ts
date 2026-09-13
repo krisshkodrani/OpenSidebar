@@ -13,7 +13,13 @@ import {
   type WorkflowConfirmationAction,
 } from "./workflow-confirmation-types";
 import type { ControlStateWorkflowAction } from "./workflow-control-state";
-import { cleanLabel, normalizeText, tokenizeCompletionText } from "./text-utils";
+import {
+  cleanLabel,
+  isModalDismissalWorkflowRequest,
+  normalizeText,
+  stripProhibitedWorkflowClauses,
+  tokenizeCompletionText,
+} from "./text-utils";
 import { valueTokenCoveredBySummary } from "./label-value-types";
 
 type WorkflowConfirmationTextMode = "summary" | "visible";
@@ -24,7 +30,7 @@ const TARGET_AWARE_VISIBLE_WORKFLOW_ACTION_SET: ReadonlySet<WorkflowConfirmation
 export function inferWorkflowConfirmationAction(
   value: string,
 ): WorkflowConfirmationAction | null {
-  const text = normalizeText(value);
+  const text = stripProhibitedWorkflowClauses(value);
   if (isModalDismissalWorkflowRequest(text)) return "dismiss";
   if (/\b(?:delete|deleted|deletion|remove|removed|removal)\b/i.test(text)) {
     return "delete";
@@ -239,7 +245,7 @@ export function inferWorkflowConfirmationAction(
     return "create";
   }
   if (
-    /\b(?:create(?:d)?|add(?:ed)?|register(?:ed)?)\s+(?:the\s+)?(?:record|item|task|ticket|request|entry|row|template|report|page|document|file|workflow|rule|dashboard|view|list|policy|profile|account|user|order|case|issue|incident|project|contact|customer)\b/i.test(
+    /\b(?:create(?:d)?|add(?:ed)?|register(?:ed)?)\s+(?:(?:a|an|the)\s+)?(?:[\w-]+\s+){0,3}(?:record|item|task|ticket|request|entry|row|template|report|page|document|file|workflow|rule|dashboard|view|list|policy|profile|account|user|order|case|issue|incident|project|contact|customer|meeting|event|appointment|review)\b/i.test(
       text,
     )
   ) {
@@ -635,7 +641,7 @@ export function inferWorkflowConfirmationTargetLabel(
   return null;
 }
 
-function workflowTargetActionPattern(
+export function workflowTargetActionPattern(
   action: WorkflowConfirmationAction,
 ): string | null {
   switch (action) {
@@ -1539,17 +1545,6 @@ function normalizeWorkflowTargetTokenSlice(
   return normalizeWorkflowTargetLabel(selected.join(" "), {
     allowShort: tokenCount <= 1 || allowGenericObjectShortTarget,
   });
-}
-
-function isModalDismissalWorkflowRequest(value: string): boolean {
-  return (
-    /\b(?:modal|dialog|popup|pop-up|overlay|banner|toast|notice|alert)\b/i.test(
-      value,
-    ) &&
-    /\b(?:dismiss|dismissed|close|closed|cancel|canceled|cancelled|hide|hidden|remove|removed|clear|cleared)\b/i.test(
-      value,
-    )
-  );
 }
 
 function isCompleteWorkflowRequest(value: string): boolean {
@@ -2721,7 +2716,9 @@ function workflowActionTextIsNegated(
   return failureAfterAction.test(text);
 }
 
-export function workflowActionTermPattern(action: WorkflowConfirmationAction): string {
+export function workflowActionTermPattern(
+  action: WorkflowConfirmationAction,
+): string {
   switch (action) {
     case "delete":
       return "(?:deleted|removed|deletion|removal|delete|remove)";
@@ -2964,7 +2961,9 @@ function workflowTargetHasSpecificTransactionalToken(
   return workflowTargetSpecificTransactionalTokens(targetLabel).length > 0;
 }
 
-export function extractTransactionalConfirmationSnippet(value: string): string | null {
+export function extractTransactionalConfirmationSnippet(
+  value: string,
+): string | null {
   const text = cleanLabel(value);
   if (!text) return null;
   if (/\b(?:cart|basket|bag)\s+(?:is\s+)?empty\b/i.test(text)) return null;

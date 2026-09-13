@@ -15,12 +15,8 @@ import { ARRIVAL_DWELL_MS, sampleGlide } from "./motion";
 import { PresenceCursor } from "./cursor";
 import { PresenceEffects } from "./effects";
 
-/** Cinematic covers the previous action's linger + a full glide + dwell. */
-export const WATCHDOG_MS = { subtle: 600, cinematic: 2800 } as const;
-
-/** Deterministic rest offset: after a batch, drift off the last control into
- *  nearby whitespace instead of hovering over it (owner feedback). */
-const REST_DRIFT = { x: 28, y: 64 } as const;
+/** Presence can never delay a real action beyond this bounded window. */
+export const WATCHDOG_MS = { subtle: 600, cinematic: 600 } as const;
 
 export interface CoordinatorOptions {
   doc?: Document;
@@ -115,7 +111,7 @@ export class PresenceCoordinator {
    * Play the pre-dispatch choreography for a script. Resolves at the
    * dispatch point. Never rejects.
    */
-  perform(script: ChoreographyScript): Promise<void> {
+  perform(script: ChoreographyScript, onActing?: () => void): Promise<void> {
     if (this.mode === "off" || script.kind === "none") {
       return Promise.resolve();
     }
@@ -124,26 +120,22 @@ export class PresenceCoordinator {
     }
     const watchdogMs =
       this.mode === "cinematic" ? WATCHDOG_MS.cinematic : WATCHDOG_MS.subtle;
-    const generation = ++this.performGeneration;
-    const run = this.queue.then(() => this.runScript(script)).catch(() => {});
-    // The shared queue keeps visuals ordered; the watchdog bounds the wait.
-    // The post-action linger/rest-drift rides the queue AFTER the dispatch
-    // point, so it paces the next glide without delaying this dispatch.
-    this.queue = run.then(() => this.postAction(script, generation)).catch(() => {});
+    const run = this.queue
+      .then(() => this.runScript(script, onActing))
+      .catch(() => {});
+    // Travel stays ordered; outcome effects run independently and never hold
+    // the next action behind a decorative linger.
+    this.queue = run;
+    void run.then(() => this.postAction(script)).catch(() => {});
     return Promise.race([
       run,
       new Promise<void>((resolve) => setTimeout(resolve, watchdogMs)),
     ]);
   }
 
-  private performGeneration = 0;
-
   /** Post-dispatch settle: the page has reacted by now, so effects that
    *  narrate the OUTCOME (chips) anchor against fresh element geometry. */
-  private async postAction(
-    script: ChoreographyScript,
-    generation: number,
-  ): Promise<void> {
+  private async postAction(script: ChoreographyScript): Promise<void> {
     if (script.chipText) {
       // Two frames: let the framework re-render before reading the rect.
       await this.frame();
@@ -151,29 +143,13 @@ export class PresenceCoordinator {
       const anchor = script.anchorTarget ?? script.point;
       if (anchor) this.effects.chip(anchor, script.chipText);
     }
-    if (this.mode !== "cinematic" || this.reducedMotion()) return;
-    if (script.lingerMs > 0) {
-      await new Promise((resolve) => setTimeout(resolve, script.lingerMs));
-    }
     // A newer action arrived during the linger — it glides from here.
-    if (generation !== this.performGeneration) return;
-    if (script.point) {
-      const view = this.cursor.getLayer()?.ownerDocument.defaultView;
-      const rest = {
-        x: Math.min(
-          (view?.innerWidth ?? 1200) - 40,
-          this.cursor.position.x + REST_DRIFT.x,
-        ),
-        y: Math.min(
-          (view?.innerHeight ?? 800) - 40,
-          this.cursor.position.y + REST_DRIFT.y,
-        ),
-      };
-      await this.glideTo(rest, 200);
-    }
   }
 
-  private async runScript(script: ChoreographyScript): Promise<void> {
+  private async runScript(
+    script: ChoreographyScript,
+    onActing?: () => void,
+  ): Promise<void> {
     const wasHidden = this.cursor.wake();
 
     if (script.point) {
@@ -182,10 +158,16 @@ export class PresenceCoordinator {
         // land first so the viewer sees the cursor LEAVE, not arrive.
         await new Promise((resolve) => setTimeout(resolve, 240));
       }
-      await this.glideTo(script.point, script.targetWidth);
+      await this.glideTo(
+        script.point,
+        script.targetWidth,
+        null,
+        script.acquisition,
+      );
       await this.dwell();
     }
 
+    onActing?.();
     switch (script.kind) {
       case "click":
       case "right_click":
@@ -216,7 +198,10 @@ export class PresenceCoordinator {
       }
       case "scroll": {
         if (script.scrollDirection) {
-          this.effects.scrollGlyph(this.cursor.position, script.scrollDirection);
+          this.effects.scrollGlyph(
+            this.cursor.position,
+            script.scrollDirection,
+          );
         }
         break;
       }
@@ -237,7 +222,11 @@ export class PresenceCoordinator {
       ? this.effects.createDragGhost(script.dragSourceRect)
       : null;
     // Weighted glide: ×1.4 duration via a narrower virtual target (RFC §5).
-    await this.glideTo(script.dragTo, Math.max(6, script.targetWidth / 3), ghost);
+    await this.glideTo(
+      script.dragTo,
+      Math.max(6, script.targetWidth / 3),
+      ghost,
+    );
     ghost?.remove();
     this.cursor.pressUp();
     this.effects.ripple(script.dragTo, "accent");
@@ -247,6 +236,7 @@ export class PresenceCoordinator {
     to: Point,
     targetWidth: number,
     follower: HTMLElement | null = null,
+    showAcquisition = false,
   ): Promise<void> {
     if (this.reducedMotion()) {
       // Accessibility floor (RFC §7): instant reposition, no glide.
@@ -259,6 +249,19 @@ export class PresenceCoordinator {
       targetWidth,
       this.mode === "cinematic" ? "cinematic" : "subtle",
     );
+    if (points.length > 5) {
+      const trailPoints = points.slice(Math.max(0, points.length - 6), -1);
+      setTimeout(
+        () => this.effects.motionTrail(trailPoints),
+        Math.max(0, durationMs - 80),
+      );
+    }
+    if (showAcquisition) {
+      setTimeout(
+        () => this.effects.acquisition(to, this.mode === "cinematic"),
+        Math.max(0, durationMs - 60),
+      );
+    }
     // Preferred path: compositor-driven WAAPI glide — the x,y travel renders
     // smoothly even while agent actions jank the main thread. The drag ghost
     // follower still needs the rAF path to track the cursor.

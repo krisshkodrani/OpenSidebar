@@ -29,8 +29,21 @@ export function isNavigationGoalShortcutSkip(node: TaskNode): boolean {
   );
 }
 
+export function isRootReconciliationGoalShortcutSkip(node: TaskNode): boolean {
+  return (
+    node.status === "skipped" &&
+    String(node.result || "").includes(
+      "Skipped: grounded root objective already achieved",
+    )
+  );
+}
+
 export function isUnpenalizedGoalShortcutSkip(node: TaskNode): boolean {
-  return isGlobalGoalShortcutSkip(node) || isNavigationGoalShortcutSkip(node);
+  return (
+    isGlobalGoalShortcutSkip(node) ||
+    isNavigationGoalShortcutSkip(node) ||
+    isRootReconciliationGoalShortcutSkip(node)
+  );
 }
 
 

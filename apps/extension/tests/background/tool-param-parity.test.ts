@@ -152,6 +152,12 @@ function parseDispatchCases(): DispatchCase[] {
   const cases: DispatchCase[] = [];
   const visit = (node: ts.Node): void => {
     if (
+      ts.isFunctionDeclaration(node) &&
+      node.name?.text !== "executeActionInner"
+    ) {
+      return;
+    }
+    if (
       ts.isCaseClause(node) &&
       ts.isPropertyAccessExpression(node.expression) &&
       node.expression.expression.getText(source) === "ToolName"

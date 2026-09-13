@@ -15,12 +15,23 @@ import type {
   ForwardedApprovalRequest,
 } from "@shared-types/browser-bridge";
 import type { PartialProgressHandoff } from "@shared-types/progress";
+import type { ToolProfile } from "../tools/metadata";
+import type {
+  RemoteMissionTargetBindingV1,
+  RemoteMissionTargetSelectionV1,
+} from "@shared-types/remote-missions";
 
 export interface AgentTask {
   instruction: string;
   url?: string;
+  /** Hard runtime ceiling applied after planning and replanning. */
+  executionToolProfile?: ToolProfile;
   /** Session key: calls sharing it reuse one workspace + tab (see wire contract). */
   session?: string;
+  /** Remote missions may explicitly use the user's active tab. */
+  targetContext?: "active_tab" | "existing_tab" | "isolated_tab";
+  /** Mission-scoped opaque handle chosen after an ambiguous existing-tab match. */
+  targetHandle?: string;
 }
 
 export interface AgentRunOutcome {
@@ -32,16 +43,28 @@ export interface AgentRunOutcome {
   handoff?: PartialProgressHandoff;
   /** Present when `needs_human` because a consequential action awaits approval. */
   approval?: ForwardedApprovalRequest;
+  targetSelection?: RemoteMissionTargetSelectionV1;
+  /** Sanitized target/workspace state captured by the device before execution. */
+  target?: RemoteMissionTargetBindingV1;
 }
 
 export interface AgentRunOptions {
   /** Aborting requests a stop of the running task; the run settles normally. */
   signal?: AbortSignal;
+  /** Report a verified, sanitized target binding before agent execution. */
+  onTargetBound?: (target: RemoteMissionTargetBindingV1) => Promise<void> | void;
+  /** Report a bounded target-binding phase without exposing browser IDs. */
+  onProgress?: (summary: string) => Promise<void> | void;
 }
 
 /** Runs one internal agent task. Implemented by the orchestrator in Stage 2b. */
 export interface AgentRunner {
   run(task: AgentTask, opts?: AgentRunOptions): Promise<AgentRunOutcome>;
+  /** Continue an existing-tab mission after the coordinator chose an opaque target. */
+  selectTarget?(
+    task: AgentTask & { session: string; targetHandle: string },
+    opts?: AgentRunOptions,
+  ): Promise<AgentRunOutcome>;
   /**
    * Answer a forwarded approval (pi-backend Phase 4), resuming the paused
    * mission. Optional so a runner without the capability can decline cleanly.

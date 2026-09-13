@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, vi, test } from "vitest";
 import "../setup";
-import { SessionMetrics, ToolName, UserSettings } from "../../src/types";
+import { PartialProgressHandoff, SessionMetrics, ToolName, UserSettings } from "../../src/types";
 import {
   TURN_CHECKPOINT_VERSION,
   TurnCheckpoint,
@@ -66,8 +66,11 @@ let loopStartImpl: (
     | "error"
     | "stopped"
     | "awaiting_approval"
+    | "max_turns"
     | "awaiting_clarification";
   summary: string;
+  turnCount?: number;
+  partialHandoff?: PartialProgressHandoff;
   metrics?: SessionMetrics;
   pendingInteraction?: Record<string, unknown>;
   sideEffectsLog?: Array<Record<string, unknown>>;
@@ -770,6 +773,74 @@ describe("Orchestrator integration join tests", () => {
           entry.body.data?.status === "sibling_ignored" &&
           Array.isArray(entry.body.data?.skippedNodeIds) &&
           (entry.body.data.skippedNodeIds as string[]).includes("n2"),
+      ),
+    ).toBe(true);
+  });
+
+  test("reconciles a prepared objective before a redundant final report", async () => {
+    const prepare = makeNode(
+      "prepare",
+      "Prepare the safest compliant ticket change for all 18 travelers",
+    );
+    prepare.successCriteria =
+      "The early train is prepared for all 18 travelers without purchase confirmation";
+    const report = makeNode(
+      "report",
+      "Report the departure, arrival, arrival buffer, and total fee",
+      ["prepare"],
+    );
+    report.successCriteria =
+      "Report 06:10, 10:42, 1h 48m, and EUR 216 while purchase remains unconfirmed";
+    plannerBuildNodesImpl = async () => [prepare, report];
+    verifierDecisionImpl = async () => ({ decision: "accept", reason: "ok" });
+    loopStartImpl = async () => ({
+      outcome: "completed",
+      summary:
+        "Northstar FC early train prepared for all 18 travelers: departure 06:10, arrival 10:42, arrival buffer 1h 48m, total fee EUR 216. No purchase or confirmation was made.",
+    });
+    (chrome.tabs as any).sendMessage = vi.fn(async () => ({
+      payload: {
+        snapshot: {
+          title: "OpenSports Live Desk",
+          url: "http://127.0.0.1:61549/sports?tab=review",
+          visibleContent:
+            "Northstar FC itinerary change prepared. Early train 06:10 to 10:42, buffer 1h 48m, EUR 216 for 18 travelers. No charge has been made.",
+          pageContent:
+            "Northstar FC itinerary change prepared. Early train 06:10 to 10:42, buffer 1h 48m, EUR 216 for 18 travelers. No charge has been made.",
+          elements: [],
+          viewport: { width: 1200, height: 800 },
+          scroll: { x: 0, y: 0, maxY: 0 },
+        },
+      },
+    }));
+
+    const orchestrator = new Orchestrator(orchestratorDeps);
+    activeOrchestrator = orchestrator;
+    await orchestrator.startTask(
+      makeInput(
+        "For Northstar FC, prepare the safest ticket change for all 18 travelers, but do not purchase or confirm it. Report departure 06:10, arrival 10:42, buffer 1h 48m, and total fee EUR 216.",
+      ),
+    );
+
+    expect(createdLoopNodeIds).toEqual(["prepare"]);
+    const messages = (globalThis as any).__runtimeMessages as Array<{
+      type?: string;
+      payload?: any;
+    }>;
+    const completion = messages.find((message) => message.type === "TASK_COMPLETION");
+    expect(completion?.payload?.status).toBe("completed");
+    expect(completion?.payload?.subtaskResults?.[1]).toMatchObject({
+      status: "skipped",
+      result: "Skipped: grounded root objective already achieved",
+    });
+    const traces = (globalThis as any).__runTraceEvents as Array<{
+      body: { type?: string; data?: Record<string, unknown> };
+    }>;
+    expect(
+      traces.some(
+        (entry) =>
+          entry.body.type === "root_reconciliation" &&
+          entry.body.data?.decision === "complete",
       ),
     ).toBe(true);
   });
@@ -2106,6 +2177,30 @@ describe("Orchestrator integration join tests", () => {
     expect(String(subtaskResults[0]?.result || "")).toContain("class=blocked");
   });
 
+  test("reports escalation failure without inventing turn exhaustion", async () => {
+    plannerBuildNodesImpl = async () => [makeNode("n1", "Investigate a blocked action")];
+    loopStartImpl = async () => ({
+      outcome: "max_turns",
+      summary: "Unable to recover from the blocked action",
+      turnCount: 7,
+      partialHandoff: {
+        schemaVersion: "2026-05-26", reason: "escalation_failed",
+        status: "partial_handoff", task: "Investigate a blocked action",
+        generatedAt: new Date().toISOString(), turnsUsed: 7, maxTurns: 28,
+        completed: [], evidence: [], currentState: {}, remaining: [],
+        uncertainty: [], suggestedContinuationPrompt: "Inspect the blocked action",
+      },
+    });
+    const orchestrator = new Orchestrator(orchestratorDeps);
+    activeOrchestrator = orchestrator;
+    await orchestrator.startTask(makeInput("Investigate a blocked action"));
+    const messages = (globalThis as any).__runtimeMessages as Array<{
+      type?: string; payload?: any;
+    }>;
+    const completion = messages.find((message) => message.type === "TASK_COMPLETION");
+    expect(completion?.payload?.terminationReason).toBe("Escalation failed (7/28)");
+  });
+
   test("terminates task when global token budget is exceeded", async () => {
     plannerBuildNodesImpl = async () => [
       makeNode("n1", "high token step"),
@@ -2336,8 +2431,11 @@ describe("Orchestrator integration join tests", () => {
 
     expect(capturedInstructions).toHaveLength(1);
     expect(capturedInstructions[0].instruction).toContain(`Objective: ${query}`);
+    // Non-navigation tasks prefix the evidence criterion with the whole-request
+    // completion requirement (10de4eb0), so assert on the evidence clause.
+    expect(capturedInstructions[0].instruction).toContain("Success criteria:");
     expect(capturedInstructions[0].instruction).toContain(
-      "Success criteria: Page or tool output shows Warehouse Beta",
+      "Page or tool output shows Warehouse Beta",
     );
   });
 

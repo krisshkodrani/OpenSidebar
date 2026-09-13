@@ -258,18 +258,20 @@ function normalizeWorkflowGuardText(value: unknown): string {
 }
 
 function extractWorkflowGuardPrimaryRequest(queryText: string): string {
-  const originalRequest = /original user request[^:]*:\s*(.+)$/i.exec(
-    queryText,
-  )?.[1];
+  const originalRequest =
+    /original user request[^:]*:\s*([\s\S]+?)(?=\n\s*(?:page history from prior steps on this tab|pre-execution advisory|recent workspace conversation):|$)/i.exec(
+      queryText,
+    )?.[1];
   if (originalRequest?.trim()) return originalRequest.trim();
 
+  const normalizedQueryText = normalizeWorkflowGuardText(queryText);
   const workflowRequest =
     /complete the workflow for the original request:\s*(.+?)(?:\s+success criteria:|\s+planner assumptions|\s+selected workflow skill:|\s+handoff context:|\s+execution policy:|\s+reality check signal:|$)/i.exec(
-      queryText,
+      normalizedQueryText,
     )?.[1];
   if (workflowRequest?.trim()) return workflowRequest.trim();
 
-  return queryText;
+  return normalizedQueryText;
 }
 
 function workflowSkillOrQueryMatches(
@@ -428,15 +430,18 @@ function extractRequestedSortLabels(queryText: string): string[] {
 export function assessWorkflowDoneGuard(
   input: WorkflowDoneGuardInput,
 ): WorkflowDoneGuardResult {
+  const rawQueryText = String(input.query ?? "");
   const queryText = normalizeWorkflowGuardText(
-    `${input.query}\n${input.pageTitle ?? ""}\n${input.pageUrl ?? ""}`,
+    `${rawQueryText}\n${input.pageTitle ?? ""}\n${input.pageUrl ?? ""}`,
   );
   const currentPageText = normalizeWorkflowGuardText(
     `${input.pageTitle ?? ""}\n${input.pageUrl ?? ""}`,
   );
   const summary = normalizeWorkflowGuardText(input.summary);
   const skillId = input.selectedSkillId ?? null;
-  const primaryRequestText = extractWorkflowGuardPrimaryRequest(queryText);
+  const primaryRequestText = normalizeWorkflowGuardText(
+    extractWorkflowGuardPrimaryRequest(rawQueryText),
+  );
   const guardIntentText = normalizeWorkflowGuardText(
     `${primaryRequestText}\n${currentPageText}`,
   );

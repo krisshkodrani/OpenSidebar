@@ -6118,12 +6118,13 @@ describe("Tool Registration", () => {
     ).toContain("fill_text_fields");
   });
 
-  test("escalate tool description mentions planner model and puzzles/riddles", () => {
+  test("escalate describes same-model reassessment and routes user decisions to clarify", () => {
     const defs = toolRegistry.getDefinitions();
     const escalate = defs.find((d) => d.function.name === ToolName.ESCALATE);
     expect(escalate).toBeDefined();
-    expect(escalate!.function.description).toContain("planner model");
-    expect(escalate!.function.description).toContain("riddles");
+    expect(escalate!.function.description).toContain("current model");
+    expect(escalate!.function.description).toContain("does not ask the user or switch models");
+    expect(escalate!.function.description).toContain("use clarify instead");
   });
 
   test("clarify tool requires question parameter", () => {
@@ -7100,4 +7101,36 @@ describe("Tool Registration", () => {
     expect(result).toContain("Navigated back to https://example.com/step-2");
     expect(result).not.toContain("about:blank");
   });
+
+  test.each(["chrome-extension://test/sidepanel.html", "about:blank"])("go_back restores the source page when history reaches %s", async (strandedUrl) => {
+    let currentUrl = "https://example.com/task";
+    (chrome.tabs as any).get = vi.fn(async (_tabId: number) => ({
+      id: 123,
+      url: currentUrl,
+      title: "Task",
+      groupId: -1,
+    }));
+    (chrome.tabs as any).goBack = vi.fn(async () => {
+      currentUrl = strandedUrl;
+    });
+    (chrome.tabs as any).update = vi.fn(async (_tabId: number, update: { url: string }) => {
+      currentUrl = update.url;
+      return { id: 123, url: currentUrl };
+    });
+
+    const result = await toolRegistry.execute(
+      {
+        id: "tool-4",
+        type: "function",
+        function: { name: ToolName.GO_BACK, arguments: "{}" },
+      } as any,
+      123,
+    );
+
+    expect(chrome.tabs.update).toHaveBeenCalledWith(123, {
+      url: "https://example.com/task",
+    });
+    expect(result).toContain("uncontrollable page");
+    expect(result).toContain("Restored https://example.com/task");
+  }, 10000);
 });

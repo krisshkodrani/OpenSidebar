@@ -36,6 +36,19 @@ export interface DomSnapshot {
   framework?: string;
 }
 
+/**
+ * Adapter-neutral identity for the live document that produced an observation.
+ * The instance id changes on document replacement; the epoch advances whenever
+ * page-owned DOM or location state changes within that document.
+ */
+export interface PageDocumentState {
+  documentInstanceId: string;
+  mutationEpoch: number;
+  url: string;
+  viewport: { width: number; height: number };
+  scroll: { x: number; y: number };
+}
+
 /** A structural (non-interactive) DOM node for page skeleton */
 export interface PageSkeletonNode {
   /** HTML tag name, e.g. "h1", "nav", "p" */

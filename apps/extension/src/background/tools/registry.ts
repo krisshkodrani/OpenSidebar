@@ -1,5 +1,6 @@
 import { chromePersistencePort } from "../environment/chrome";
 import {
+  PageDocumentState,
   ToolName,
   ToolCall,
   ToolDefinition,
@@ -9,13 +10,24 @@ import {
 import { logger } from "../../utils";
 import { getBlockedRuleForUrl } from "../../utils/site-access";
 
+export interface ToolExecutionContext {
+  observationBasis?: PageDocumentState & {
+    observationRevision: number;
+    requireGeometryMatch?: boolean;
+  };
+}
+
 type ToolExecutor = (
   args: Record<string, unknown>,
   tabId: number,
   signal?: AbortSignal,
+  toolCallId?: string,
+  context?: ToolExecutionContext,
 ) => Promise<string | ToolExecutionResult>;
 
-function normalizeToolResult(result: string | ToolExecutionResult): ToolExecutionResult {
+function normalizeToolResult(
+  result: string | ToolExecutionResult,
+): ToolExecutionResult {
   return typeof result === "string" ? { result } : result;
 }
 
@@ -54,6 +66,7 @@ export class ToolRegistry {
     toolCall: ToolCall,
     tabId: number,
     signal?: AbortSignal,
+    context?: ToolExecutionContext,
   ): Promise<ToolExecutionResult> {
     const name = toolCall.function.name as ToolName;
     const executor = this.tools.get(name);
@@ -62,9 +75,7 @@ export class ToolRegistry {
       logger.error("tools", `Tool not found: ${name}`);
       // This fires exactly when the model hallucinated a tool name, so the
       // error is the one place a corrective list is guaranteed to be read.
-      const available = this.definitions
-        .map((d) => d.function.name)
-        .join(", ");
+      const available = this.definitions.map((d) => d.function.name).join(", ");
       return {
         result: `Error: Tool ${name} not found. Available tools: ${available}.`,
       };
@@ -84,9 +95,10 @@ export class ToolRegistry {
           (def?.function.parameters as { properties?: Record<string, unknown> })
             ?.properties ?? {},
         );
-        const hint = params.length > 0
-          ? ` Expected parameters: ${params.join(", ")}.`
-          : "";
+        const hint =
+          params.length > 0
+            ? ` Expected parameters: ${params.join(", ")}.`
+            : "";
         return {
           result: `Error: Invalid JSON arguments for ${name}.${hint} Retry with a valid JSON object.`,
         };
@@ -109,7 +121,7 @@ export class ToolRegistry {
       } catch {
         // Non-fatal: if checks fail, continue and let tool execute.
       }
-      const result = await executor(args, tabId, signal);
+      const result = await executor(args, tabId, signal, toolCall.id, context);
       return normalizeToolResult(result);
     } catch (error: any) {
       if (error.name === "AbortError") throw error;

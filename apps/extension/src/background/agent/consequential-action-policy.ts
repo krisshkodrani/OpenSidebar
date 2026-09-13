@@ -2,7 +2,8 @@ import { DomSnapshot, ToolName } from "../../types";
 
 export type ConsequentialActionKind =
   | "job_application_submit"
-  | "communication_send";
+  | "communication_send"
+  | "destructive_delete";
 
 export type ConsequentialActionConsentMode =
   | "explicit_go"
@@ -84,11 +85,33 @@ export function assessConsequentialActionApproval(
     };
   }
 
+  if (
+    isDestructiveDeleteAction(input.toolName, input.args, input.actionLabel)
+  ) {
+    return {
+      requiresApproval: true,
+      kind: "destructive_delete",
+      consentMode,
+    };
+  }
+
   return {
     requiresApproval: false,
     kind: null,
     consentMode,
   };
+}
+
+function isDestructiveDeleteAction(
+  toolName: ToolName,
+  args: Record<string, unknown>,
+  actionLabel: string,
+): boolean {
+  if (toolName !== ToolName.CLICK_ELEMENT || args.id == null) return false;
+
+  return /\b(?:delete|trash|move to trash|empty trash|remove permanently)\b/i.test(
+    actionLabel,
+  );
 }
 
 export function assessConsequentialFinalActionBlock(
@@ -183,7 +206,26 @@ function isCommunicationSendAction(
   if (args.id == null) return false;
 
   const label = actionLabel.toLowerCase();
-  return /\b(send|post|reply)\b/.test(label);
+  if (
+    /\b(?:draft|compose|write|prepare|create|start|open)\b[^\n]{0,60}\b(?:reply|response|message|email|comment|post)\b/.test(
+      label,
+    )
+  ) {
+    return false;
+  }
+  // "Reply" controls normally open a composer; they do not send anything.
+  // Treat only labels with an explicit delivery verb as final actions so
+  // preparatory controls such as "Draft a short reply" remain usable.
+  return /\b(send|post|publish|submit)\b/.test(label);
+}
+
+/** A no-send constraint alone does not request an unsent draft as an output. */
+export function requiresDraftOnlyCompletion(taskText: string): boolean {
+  if (!isDraftOnlyCommunicationTask(taskText)) return false;
+  return isDraftOnlyCommunicationTask(taskText.replace(
+    /\b(?:do not|don't|dont|never)\s+(?:click\s+)?(?:send|post|reply|submit|publish)\b/gi,
+    "",
+  )) || /\b(?:type|enter|fill)\b[^\n.]{0,100}\b(?:message|reply|email|composer|editor)\b/i.test(taskText);
 }
 
 export function isDraftOnlyCommunicationTask(taskText: string): boolean {
@@ -233,15 +275,17 @@ function hasReviewBeforeSendIntent(taskText: string): boolean {
 }
 
 export function hasStrongCommunicationSentEvidence(text: string): boolean {
-  return /\b(?:message|reply|email|e-mail|comment|post)\b[\s\S]{0,50}\b(?:sent|posted|submitted|published)\b/i.test(
-    text,
-  ) ||
+  return (
+    /\b(?:message|reply|email|e-mail|comment|post)\b[\s\S]{0,50}\b(?:sent|posted|submitted|published)\b/i.test(
+      text,
+    ) ||
     /\b(?:sent|posted|submitted|published)\b[\s\S]{0,50}\b(?:message|reply|email|e-mail|comment|post)\b/i.test(
       text,
     ) ||
     /\b(?:sent just now|message sent|sent mail|send confirmation|successfully sent|successfully posted)\b/i.test(
       text,
-    );
+    )
+  );
 }
 
 export function hasDraftPreservedEvidence(text: string): boolean {

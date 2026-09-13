@@ -1,4 +1,5 @@
 ﻿node_modules/
+.pnpm-store/
 .nx/
 dist/
 dist-dev/
@@ -70,6 +71,7 @@ OpenSidebar-deck.md
 
 # Local artifacts
 .artifacts/
+.worktrees/
 .promptfoo/
 /outputs/
 infra/telemetry/cdk.out/

@@ -19,12 +19,14 @@ import {
   TracePerceptionScreenshotStatus,
   TracePerceptionSource,
   PartialProgressHandoff,
+  UserSettings,
 } from "../../types";
 import { TokenUsage } from "../llm/types";
 import { LLMMessage } from "../llm/types";
 import { logger } from "../../utils";
 import { redactTracePayload } from "../../utils/trace-protection";
 import { attachActualPromptTokens } from "./context-economy";
+import { enqueueCompletedTrace } from "../cloud-trace-queue";
 
 const TRACE_SERVER_URL =
   typeof __LOCAL_OBSERVABILITY_SERVER_URL__ === "string"
@@ -58,6 +60,15 @@ export class TraceRecorder {
   private turnToolExecutions: TraceToolExecution[] = [];
   private turnEvents: TraceEvent[] = [];
   private sessionEvents: TraceEvent[] = [];
+  private completedEntries: TraceEntry[] = [];
+  private traceSyncEnabled = chrome.storage.sync
+    .get("userSettings")
+    .then(
+      (stored) =>
+        (stored.userSettings as UserSettings | undefined)?.traceSyncEnabled ===
+        true,
+    )
+    .catch(() => false);
 
   // Retry queue for failed flushes
   private pendingQueue: Array<{ path: string; data: string }> = [];
@@ -410,7 +421,8 @@ export class TraceRecorder {
       : "preDecision";
     const pageState = this.currentTurn.pageState;
     const capture = pageState?.[pageStateRef];
-    const redactedElementSummary = this.redactSensitiveTraceValue(elementSummary);
+    const redactedElementSummary =
+      this.redactSensitiveTraceValue(elementSummary);
     if (capture) {
       if (redactedElementSummary) {
         capture.domDistillation = redactedElementSummary;
@@ -437,9 +449,7 @@ export class TraceRecorder {
       }
     }
     this.currentTurn.perception = {
-      interpretation: this.redactSensitiveTraceValue(
-        perception.interpretation,
-      ),
+      interpretation: this.redactSensitiveTraceValue(perception.interpretation),
       model: perception.model,
       providerId: perception.providerId,
       durationMs: perception.durationMs,
@@ -484,11 +494,10 @@ export class TraceRecorder {
       : undefined;
     this.currentTurn.postToolSnapshot = redactedSnapshotMeta;
     this.currentTurn.pageState = {
-      preDecision:
-        this.currentTurn.pageState?.preDecision ?? {
-          ...this.currentTurn.snapshot!,
-          domSnapshot: this.currentTurn.elements,
-        },
+      preDecision: this.currentTurn.pageState?.preDecision ?? {
+        ...this.currentTurn.snapshot!,
+        domSnapshot: this.currentTurn.elements,
+      },
       postTool: {
         ...redactedSnapshotMeta,
         ...(redactedElements ? { domSnapshot: redactedElements } : {}),
@@ -564,6 +573,7 @@ export class TraceRecorder {
     };
 
     this.currentTurn = null;
+    if (await this.traceSyncEnabled) this.completedEntries.push(entry);
     await this.flush("/traces", entry);
   }
 
@@ -652,6 +662,9 @@ export class TraceRecorder {
     };
 
     await this.flush("/traces/session", session);
+    await enqueueCompletedTrace(session, this.completedEntries).catch((error) =>
+      logger.warn("trace", "Encrypted trace queueing failed", { error }),
+    );
     await this.drainPending({
       attempts: FINAL_PENDING_DRAIN_ATTEMPTS,
       delayMs: FINAL_PENDING_DRAIN_DELAY_MS,

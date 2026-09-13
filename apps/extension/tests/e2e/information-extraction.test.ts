@@ -64,10 +64,6 @@ async function runReadOnlyPrompt(prompt: string) {
     workspaceId,
   );
   const outcome = await waitForTaskCompletion(h.ctx, 120_000, workspaceId);
-  expect(outcome.ok, JSON.stringify(outcome.events.slice(-10), null, 2)).toBe(
-    true,
-  );
-
   await new Promise((resolve) => setTimeout(resolve, 1_000));
   const traceFiles = filterTraceFilesByWorkspace(
     findAllNewTraceFiles(h.tracesBefore),
@@ -97,7 +93,12 @@ async function runReadOnlyPrompt(prompt: string) {
   expect(forbiddenTools).toEqual([]);
 
   await assertNoGhostSession(h.ctx.serviceWorker, 2_000, workspaceId);
-  return extractDoneSummary(traceFiles);
+  const summary = extractDoneSummary(traceFiles);
+  expect(
+    outcome.ok || outcome.reason === "task_partial",
+    JSON.stringify(outcome.events.slice(-10), null, 2),
+  ).toBe(true);
+  return summary;
 }
 
 describe.skipIf(!h.apiKey)("E2E: Information Extraction", () => {

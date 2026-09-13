@@ -459,6 +459,7 @@ export const TOOL_PROFILES: Record<ToolProfile, ToolName[]> = {
     ToolName.READ_PAGE,
     ToolName.SEARCH_KNOWLEDGE_BASE,
     ToolName.READ_ELEMENT,
+    ToolName.EXTRACT_FORM_STATE,
     ToolName.FIND_ELEMENT,
     ToolName.INSPECT_HIDDEN,
     ToolName.INSPECT_CHART,
@@ -480,6 +481,7 @@ export const TOOL_PROFILES: Record<ToolProfile, ToolName[]> = {
     ToolName.READ_PAGE,
     ToolName.SEARCH_KNOWLEDGE_BASE,
     ToolName.READ_ELEMENT,
+    ToolName.EXTRACT_FORM_STATE,
     ToolName.FIND_ELEMENT,
     ToolName.INSPECT_HIDDEN,
     ToolName.INSPECT_TABLE,
@@ -562,6 +564,7 @@ export const TOOL_PROFILES: Record<ToolProfile, ToolName[]> = {
   submit_form: [
     ToolName.READ_PAGE,
     ToolName.READ_ELEMENT,
+    ToolName.EXTRACT_FORM_STATE,
     ToolName.CLICK_ELEMENT,
     ToolName.TYPE_TEXT,
     ToolName.UPLOAD_FILE,

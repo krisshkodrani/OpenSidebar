@@ -21,7 +21,7 @@ import {
   synthesizeBatchedExhaustivePlan,
   synthesizePlanFromTaskContract,
 } from "./task-contract";
-import { isDraftOnlyCommunicationTask } from "./consequential-action-policy";
+import { requiresDraftOnlyCompletion } from "./consequential-action-policy";
 
 import { ensureObservableCriteria } from "./plan-criteria";
 
@@ -275,7 +275,7 @@ function enforceDraftOnlyCommunicationStop(
   query: string,
   steps: PlanStep[],
 ): PlanStep[] {
-  if (!isDraftOnlyCommunicationTask(query)) return steps;
+  if (!requiresDraftOnlyCompletion(query)) return steps;
 
   const sanitized: Array<{ originalIndex: number; step: PlanStep }> = [];
   for (let i = 0; i < steps.length; i++) {
@@ -1277,7 +1277,7 @@ export class TaskPlanner {
         steps?.map((step) => step.objective) ||
         (legacySubtasks.length >= 2 ? legacySubtasks : []);
       const acceptsSingleStructuredPlan =
-        !!steps && steps.length === 1 && isDraftOnlyCommunicationTask(query);
+        !!steps && steps.length === 1 && requiresDraftOnlyCompletion(query);
       if (subtasks.length < 2 && !acceptsSingleStructuredPlan) {
         // Only fall back to synthesis when the planner returned NO parsed
         // steps at all, or when the task requires a round-trip and the planner

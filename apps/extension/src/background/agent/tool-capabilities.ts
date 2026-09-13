@@ -3,6 +3,7 @@ import type { LLMMessage } from "../llm/types";
 
 export const TOOL_CAPABILITY_VALUES = [
   "read_page_state",
+  "inspect_form_state",
   "find_elements",
   "inspect_hidden_structure",
   "interact_with_page",
@@ -28,6 +29,11 @@ export type ToolCapability = (typeof TOOL_CAPABILITY_VALUES)[number];
 const TOOL_CAPABILITIES: Partial<Record<ToolName, ToolCapability[]>> = {
   [ToolName.READ_PAGE]: ["read_page_state", "find_elements"],
   [ToolName.READ_ELEMENT]: ["read_page_state", "find_elements"],
+  [ToolName.EXTRACT_FORM_STATE]: [
+    "read_page_state",
+    "inspect_form_state",
+    "find_elements",
+  ],
   [ToolName.FIND_ELEMENT]: ["find_elements"],
   [ToolName.INSPECT_HIDDEN]: ["inspect_hidden_structure", "find_elements"],
   [ToolName.XRAY_PAGE]: ["inspect_hidden_structure", "find_elements"],
@@ -112,6 +118,11 @@ const CAPABILITY_PHRASES: Array<{
     pattern:
       /\b(?:find|locate|identify)\s+(?:the\s+)?(?:element|field|button|input)\b/i,
     capability: "find_elements",
+  },
+  {
+    pattern:
+      /\b(?:inspect|inventory|review|list|identify)\s+(?:the\s+)?(?:form|fields|questions)\b/i,
+    capability: "inspect_form_state",
   },
   {
     pattern: /\b(?:hidden|dom|x-ray|xray|structure)\b/i,

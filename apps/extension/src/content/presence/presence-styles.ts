@@ -57,6 +57,31 @@ export const PRESENCE_STYLE_TEXT = `
 .ripple.error { border-color: ${PRESENCE_ERROR}; }
 .ripple.square { border-radius: 4px; }
 
+.acquisition {
+  position: absolute;
+  width: 22px;
+  height: 22px;
+  margin: -11px 0 0 -11px;
+  border: 1.5px solid ${PRESENCE_ACCENT};
+  border-radius: 50%;
+  animation: presence-acquisition 280ms ease-out forwards;
+}
+.acquisition.cinematic {
+  width: 28px;
+  height: 28px;
+  margin: -14px 0 0 -14px;
+  animation-duration: 420ms;
+}
+.motion-trail {
+  position: absolute;
+  width: 5px;
+  height: 5px;
+  margin: -2.5px 0 0 -2.5px;
+  border-radius: 50%;
+  background: ${PRESENCE_ACCENT};
+  animation: presence-trail 180ms ease-out forwards;
+}
+
 
 .chip {
   position: absolute;
@@ -94,6 +119,14 @@ export const PRESENCE_STYLE_TEXT = `
 @keyframes presence-ripple {
   from { transform: scale(0.5); opacity: 0.9; }
   to { transform: scale(2.6); opacity: 0; }
+}
+@keyframes presence-acquisition {
+  from { transform: scale(1.3); opacity: 0; }
+  35% { opacity: 0.75; }
+  to { transform: scale(0.72); opacity: 0; }
+}
+@keyframes presence-trail {
+  to { transform: scale(0.4); opacity: 0; }
 }
 @keyframes presence-chip {
   0% { opacity: 0; transform: translateY(4px); }

@@ -1,0 +1,4 @@
+services:
+  frontend:
+    volumes:
+      - /opt/opensidebar/infra/lightsail/nginx-api-origin.conf:/etc/nginx/conf.d/opensidebar.conf:ro

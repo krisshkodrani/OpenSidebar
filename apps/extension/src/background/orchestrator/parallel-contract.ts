@@ -267,13 +267,30 @@ export function inferNodeParallelContract(
     | "parallelContract"
   >,
 ): NodeParallelContract {
-  if (node.parallelContract) return node.parallelContract;
-
   const text = `${node.description}\n${node.successCriteria}`;
   const toolProfile =
     node.toolProfile ??
     inferToolProfileForStep(node.description, node.successCriteria);
   const access = inferAccess(text, toolProfile);
+  // Semantic planner hints do not establish browser-state isolation. Unless
+  // the planner names a tab explicitly, the node also owns the shared root
+  // tab. Separate-tab plans retain their distinct declared tab keys.
+  if (node.parallelContract?.resourceHints.length) {
+    if (node.parallelContract.resourceHints.some((hint) => hint.kind === "tab")) {
+      return node.parallelContract;
+    }
+    return {
+      ...node.parallelContract,
+      resourceHints: [
+        ...node.parallelContract.resourceHints,
+        defaultTabHint(access),
+      ],
+    };
+  }
+
+  // Empty planner/restored hints are not an actionable ownership contract.
+  // Re-infer them so scheduler diagnostics identify the conservative root-tab
+  // resource instead of reporting an opaque empty lock.
   const resourceHints = inferResourceHints({ text, access });
   const hasDependencies = node.dependencies.length > 0;
   const toolUnsafeParallelism = profileRequiresSerialization(toolProfile);

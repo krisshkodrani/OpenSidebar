@@ -493,6 +493,7 @@ export class WorkspaceManager {
     name: string,
     color: chrome.tabGroups.ColorEnum = GROUP_COLOR,
     initialTabId?: number,
+    workspaceId?: string,
   ): Promise<Workspace> {
     await this.ensureInitialized();
     return this.withMutationLock(async () => {
@@ -513,7 +514,7 @@ export class WorkspaceManager {
       }
 
       const workspace: Workspace = {
-        id: crypto.randomUUID(),
+        id: workspaceId ?? crypto.randomUUID(),
         name,
         baseName: name,
         color,
@@ -628,6 +629,12 @@ export class WorkspaceManager {
     await this.mutationTail;
     const workspace =
       this.workspaces.find((ws) => ws.tabGroupId === groupId) || null;
+    return workspace ? { ...workspace, tabIds: [...workspace.tabIds] } : null;
+  }
+
+  /** Non-blocking metadata snapshot for paths already grounded in live Chrome state. */
+  public peekWorkspaceByGroupId(groupId: number): Workspace | null {
+    const workspace = this.workspaces.find((ws) => ws.tabGroupId === groupId) || null;
     return workspace ? { ...workspace, tabIds: [...workspace.tabIds] } : null;
   }
 

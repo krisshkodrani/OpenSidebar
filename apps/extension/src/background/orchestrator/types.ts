@@ -177,6 +177,13 @@ export interface TaskTabCoordination {
   lastReboundTabId?: number | null;
 }
 
+/** Durable user-facing output from a node accepted by the verifier. */
+export interface VerifierAcceptedResult {
+  nodeId: string;
+  result: string;
+  acceptedAt: number;
+}
+
 export interface OrchestratorTask {
   runId?: string;
   id: string;
@@ -235,6 +242,11 @@ export interface OrchestratorTask {
   conversationContextBrief?: string;
   structuredProgress?: Record<string, TaskRunProgressInput>;
   /**
+   * Accepted results survive planner replacement of the mutable node graph and
+   * are checkpointed with the task for final-answer synthesis.
+   */
+  verifierAcceptedResults?: VerifierAcceptedResult[];
+  /**
    * How user interactions (approvals) are delivered for this task.
    * `"handoff"` = forwarded over the browser bridge to an external caller
    * (pi-backend Phase 4): selects the longer approval timeout. Absent =
@@ -261,9 +273,13 @@ export interface OrchestratorStartInput {
   query: string;
   tabId: number;
   workspaceId: string;
+  /** Preallocated only by validated restore flows; normal tasks mint their own. */
+  runId?: string;
   settings: UserSettings;
   openRouterApiKey: string;
   conversationContextBrief?: string;
   /** See OrchestratorTask.interactionDelivery. Set by the browser bridge. */
   interactionDelivery?: "handoff";
+  /** Hard ceiling for every executor node, including replans. */
+  executionToolProfile?: ToolProfile;
 }
