@@ -240,34 +240,40 @@ try {
       ),
       "rgb(11, 17, 32)",
     );
-    const contrast = await page.$eval("#app-navigation a", (element) => {
-      const rgb = (value: string) =>
-        value
-          .match(/[\d.]+/g)!
-          .slice(0, 3)
-          .map(Number);
-      const luminance = (values: number[]) =>
-        values
-          .map((v) => {
-            const c = v / 255;
-            return c <= 0.04045 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4;
-          })
-          .reduce((sum, c, i) => sum + c * [0.2126, 0.7152, 0.0722][i], 0);
+    await page.waitForFunction(
+      () =>
+        !document
+          .querySelector("#app-navigation a")!
+          .getAnimations()
+          .some((animation) => animation.playState === "running"),
+    );
+    const colors = await page.$eval("#app-navigation a", (element) => {
       let parent: Element | null = element;
       while (
         parent &&
         getComputedStyle(parent).backgroundColor === "rgba(0, 0, 0, 0)"
       )
         parent = parent.parentElement;
-      const foreground = luminance(rgb(getComputedStyle(element).color));
-      const background = luminance(
-        rgb(getComputedStyle(parent!).backgroundColor),
-      );
-      return (
-        (Math.max(foreground, background) + 0.05) /
-        (Math.min(foreground, background) + 0.05)
-      );
+      return {
+        foreground: getComputedStyle(element).color,
+        background: getComputedStyle(parent!).backgroundColor,
+      };
     });
+    const luminance = (value: string) =>
+      value
+        .match(/[\d.]+/g)!
+        .slice(0, 3)
+        .map(Number)
+        .map((v) => {
+          const c = v / 255;
+          return c <= 0.04045 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4;
+        })
+        .reduce((sum, c, i) => sum + c * [0.2126, 0.7152, 0.0722][i], 0);
+    const foreground = luminance(colors.foreground),
+      background = luminance(colors.background);
+    const contrast =
+      (Math.max(foreground, background) + 0.05) /
+      (Math.min(foreground, background) + 0.05);
     assert.ok(
       contrast >= 4.5,
       route + " dark navigation contrast: " + contrast,
