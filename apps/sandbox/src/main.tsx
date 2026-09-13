@@ -1,3 +1,11 @@
+import {
+  Box as UiBox,
+  Button as UiButton,
+  Input as UiInput,
+  Stack as UiStack,
+  Text as UiText,
+} from "@chakra-ui/react";
+import { PageLayout, PageHeader, card } from "./app/page-ui";
 import { PlaygroundPage } from "./playground-page";
 import { useEffect, useRef, useState } from "react";
 import { createRoot } from "react-dom/client";
@@ -20,8 +28,10 @@ import {
 import { loadTargetRun, submitTargetAction } from "./target-api";
 import { controlApi } from "./control-api";
 import { ControlProviders } from "./app/control-providers";
-import "./styles.css";
-import "./guide.css";
+if (!location.pathname.startsWith("/app")) {
+  void import("./styles.css");
+  void import("./guide.css");
+}
 import { AccountPage } from "./account";
 import { DashboardPage } from "./dashboard";
 import { AppShell } from "./app/AppShell";
@@ -407,83 +417,81 @@ function SignIn() {
     }
   };
   return (
-    <main className="empty signin-shell">
-      <span className="eyebrow">
-        OpenSidebar Playground · Private Control Center
-      </span>
-      <h1>
-        {challengeId
-          ? "Enter your one-time code."
-          : "Set up the room behind the experiment."}
-      </h1>
-      <p>
-        We’ll send a one-time code. No password is created or stored in this
-        app.
-      </p>
-      <label>
-        Email{" "}
-        <input
-          type="email"
-          value={email}
-          autoComplete="email"
-          placeholder="you@company.com"
-          disabled={Boolean(challengeId) || busy}
-          onChange={(e) => setEmail(e.target.value)}
-          required
-        />
-      </label>
-      {challengeId && (
-        <label>
-          Sign-in code{" "}
-          <input
-            inputMode="numeric"
-            autoComplete="one-time-code"
-            pattern="[0-9]{6,8}"
-            placeholder="Enter code"
-            value={code}
-            disabled={busy}
-            onChange={(e) =>
-              setCode(e.target.value.replace(/\D/g, "").slice(0, 8))
-            }
-            required
-          />
-        </label>
-      )}
-      {message && (
-        <p className="signin-message" role="status">
-          {message}
-        </p>
-      )}
-      <div className="actions">
-        <button
-          className="btn btn-primary"
-          disabled={busy}
-          onClick={() => void (challengeId ? verify() : send())}
-        >
-          {busy
-            ? "Working…"
-            : challengeId
-              ? "Verify and enter Playground"
-              : "Send sign-in code"}
-        </button>
-        {challengeId && (
-          <button
-            className="btn btn-ghost"
-            disabled={busy}
-            onClick={() => {
-              setChallengeId(null);
-              setCode("");
-              setMessage("Enter your email to request a new code.");
-            }}
-          >
-            Use another email or request a new code
-          </button>
-        )}
-        <a className="btn btn-ghost" href="/playground">
-          Back to Playground
-        </a>
-      </div>
-    </main>
+    <PageLayout maxW="xl">
+      <PageHeader
+        title={challengeId ? "Check your email" : "Welcome to OpenSidebar"}
+        description="Sign in with a one-time email code to access your browser workspace."
+      />
+      <UiBox
+        {...card}
+        p={{ base: "5", md: "8" }}
+        as="form"
+        onSubmit={(e) => {
+          e.preventDefault();
+          void (challengeId ? verify() : send());
+        }}
+      >
+        <UiStack gap="5">
+          <label>
+            <UiText mb="2" fontWeight="600">
+              Email address
+            </UiText>
+            <UiInput
+              type="email"
+              value={email}
+              autoComplete="email"
+              placeholder="you@company.com"
+              disabled={Boolean(challengeId) || busy}
+              onChange={(e) => setEmail(e.target.value)}
+              required
+            />
+          </label>
+          {challengeId && (
+            <label>
+              <UiText mb="2" fontWeight="600">
+                Sign-in code
+              </UiText>
+              <UiInput
+                inputMode="numeric"
+                autoComplete="one-time-code"
+                pattern="[0-9]{6,8}"
+                placeholder="Enter your code"
+                value={code}
+                disabled={busy}
+                onChange={(e) =>
+                  setCode(e.target.value.replace(/\D/g, "").slice(0, 8))
+                }
+                required
+              />
+            </label>
+          )}
+          {message && (
+            <UiText role="status" color="muted">
+              {message}
+            </UiText>
+          )}
+          <UiButton type="submit" loading={busy}>
+            {challengeId ? "Verify and sign in" : "Send sign-in code"}
+          </UiButton>
+          {challengeId && (
+            <UiButton
+              variant="ghost"
+              disabled={busy}
+              onClick={() => {
+                setChallengeId(null);
+                setCode("");
+                setMessage("Enter your email to request a new code.");
+              }}
+            >
+              Use another email or request a new code
+            </UiButton>
+          )}
+          <UiButton asChild variant="ghost">
+            <a href="/app/playground">Back to Playground</a>
+          </UiButton>
+        </UiStack>
+      </UiBox>
+    </PageLayout>
   );
 }
 
