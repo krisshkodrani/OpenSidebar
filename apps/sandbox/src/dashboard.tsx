@@ -1,9 +1,9 @@
+import { PageLayout, PageHeader, card } from "./app/page-ui";
 import { useState } from "react";
 import {
   Badge,
   Box,
   Button,
-  Container,
   Flex,
   Heading,
   SimpleGrid,
@@ -15,14 +15,6 @@ import { useQuery } from "@tanstack/react-query";
 import type { CloudSessionV1 } from "@opensidebar/shared-types";
 import { accountApi } from "./account-api";
 import { AppShell } from "./app/AppShell";
-
-const card = {
-  bg: "surface",
-  borderWidth: "1px",
-  borderColor: "line",
-  borderRadius: "card",
-  boxShadow: "card",
-} as const;
 
 function StatusCard({
   label,
@@ -153,28 +145,34 @@ function Overview() {
   const data = query.data;
   return (
     <AppShell>
-      <Container maxW="6xl" py={{ base: "8", md: "12" }}>
-        <Flex justify="space-between" align="start" gap="4" wrap="wrap">
-          <Box>
-            <Text
-              color="accent"
-              fontWeight="700"
-              fontSize="xs"
-              letterSpacing="wide"
+      <PageLayout>
+        <PageHeader
+          title="Overview"
+          description={
+            data?.account.email ??
+            "Your browser work, connections and recent activity."
+          }
+          actions={
+            <Badge
+              colorPalette={
+                query.isPending || query.error
+                  ? "gray"
+                  : data?.account.cloudAccess
+                    ? "green"
+                    : "gray"
+              }
+              role="status"
             >
-              OPENSIDEBAR CLOUD
-            </Text>
-            <Heading size="2xl" mt="2">
-              Overview
-            </Heading>
-            <Text mt="2" color="muted">
-              {data?.account.email ?? "Your OpenSidebar workspace"}
-            </Text>
-          </Box>
-          <Badge colorPalette={data?.account.cloudAccess ? "green" : "gray"}>
-            {data?.account.cloudAccess ? "Connected" : "Unavailable"}
-          </Badge>
-        </Flex>
+              {query.isPending
+                ? "Checking connection"
+                : query.error
+                  ? "Connection not checked"
+                  : data?.account.cloudAccess
+                    ? "Connected"
+                    : "Unavailable"}
+            </Badge>
+          }
+        />
         <Box mt="8">
           {query.isPending ? (
             <Loading />
@@ -230,7 +228,7 @@ function Overview() {
             </>
           )}
         </Box>
-      </Container>
+      </PageLayout>
     </AppShell>
   );
 }
@@ -250,12 +248,11 @@ function SessionsPage() {
   });
   return (
     <AppShell>
-      <Container maxW="6xl" py={{ base: "8", md: "12" }}>
-        <Heading size="2xl">Sessions</Heading>
-        <Text mt="2" color="muted">
-          Cloud metadata and operational events. Page content and detailed
-          traces are not loaded.
-        </Text>
+      <PageLayout>
+        <PageHeader
+          title="Sessions"
+          description="Continue your work and review activity across linked browsers."
+        />
         <Box mt="8">
           {summary.isPending ? (
             <Loading />
@@ -325,7 +322,7 @@ function SessionsPage() {
             </SimpleGrid>
           )}
         </Box>
-      </Container>
+      </PageLayout>
     </AppShell>
   );
 }
@@ -338,7 +335,7 @@ function ActivationPage() {
   });
   return (
     <AppShell>
-      <Container maxW="5xl" py={{ base: "8", md: "12" }}>
+      <PageLayout>
         <Flex justify="space-between" align="center" gap="4">
           <Box>
             <Text color="accent" fontWeight="700" fontSize="xs">
@@ -404,7 +401,7 @@ function ActivationPage() {
             </>
           )}
         </Box>
-      </Container>
+      </PageLayout>
     </AppShell>
   );
 }

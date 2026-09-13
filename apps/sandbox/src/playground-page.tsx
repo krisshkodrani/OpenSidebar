@@ -1,8 +1,9 @@
+import { PageLayout, PageHeader, card } from "./app/page-ui";
 import { useState } from "react";
 import {
   Box,
+  Badge,
   Button,
-  Container,
   Flex,
   Heading,
   SimpleGrid,
@@ -18,16 +19,10 @@ import { controlApi, request } from "./control-api";
 
 const api = <T,>(path: string, init?: RequestInit) =>
   request<T>(path, init, "/api/v2/playground");
-const card = {
-  bg: "surface",
-  borderWidth: "1px",
-  borderColor: "line",
-  borderRadius: "card",
-  p: "5",
-} as const;
 
 export function PlaygroundPage() {
   const client = useQueryClient();
+  const [filter, setFilter] = useState("all");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
@@ -91,22 +86,24 @@ export function PlaygroundPage() {
     catalog.error?.message ||
     runs.error?.message;
   return (
-    <Container maxW="6xl" py="8">
+    <PageLayout>
       <Stack gap="6">
-        <Box>
-          <Heading size="2xl">Playground</Heading>
-          <Text color="muted" mt="2">
-            Practice browser tasks on simulated applications powered by the
-            shared ModelBench fixtures.
+        <PageHeader
+          title="Playground"
+          description="Build confidence with 12 realistic browser tasks, powered by ModelBench."
+        />
+        <Box {...card} p="5" borderLeftWidth="3px" borderLeftColor="accent">
+          <Heading size="md">
+            Choose a task. Open the app. Let your agent try.
+          </Heading>
+          <Text mt="2" color="muted">
+            Create a private run, copy its task, then open the simulated
+            application. Runs expire after two hours. Your prompts, answers and
+            traces are not collected.
           </Text>
         </Box>
-        <Text>
-          Runs are private and expire after two hours. Your prompts, agent
-          answers and traces are not collected here. Read-only tasks are for
-          practice; their answers are not graded.
-        </Text>
         {failure && (
-          <Text role="alert" color="red.600">
+          <Text role="alert" color="danger">
             {failure}
           </Text>
         )}
@@ -132,7 +129,7 @@ export function PlaygroundPage() {
         )}
         {catalog.data?.enabled && (
           <>
-            <Box>
+            <Box id="your-runs" tabIndex={-1}>
               <Heading size="lg" mb="3">
                 Your runs
               </Heading>
@@ -164,12 +161,30 @@ export function PlaygroundPage() {
                             {new Date(run.expiresAt).toLocaleTimeString()}
                           </Text>
                         </Box>
-                        <Flex gap="2">
+                        <Flex gap="2" wrap="wrap">
                           <Button
                             disabled={busy}
                             onClick={() => launch(run.id)}
                           >
                             Open application
+                          </Button>
+                          <Button
+                            variant="outline"
+                            disabled={busy || !scenario}
+                            onClick={() =>
+                              void act(async () => {
+                                if (scenario) {
+                                  await navigator.clipboard.writeText(
+                                    scenario.task,
+                                  );
+                                  setNotice(
+                                    "Task copied. Paste it into your agent in the application tab.",
+                                  );
+                                }
+                              })
+                            }
+                          >
+                            Copy task
                           </Button>
                           <Button
                             variant="outline"
@@ -196,54 +211,104 @@ export function PlaygroundPage() {
               <Heading size="lg" mb="3">
                 Choose a scenario
               </Heading>
-              <SimpleGrid columns={{ base: 1, md: 2 }} gap="4">
-                {catalog.data.scenarios.map((scenario) => (
-                  <Stack {...card} key={scenario.id} gap="3">
-                    <Heading size="md">{scenario.title}</Heading>
-                    <Text color="muted" fontSize="sm">
-                      {scenario.difficulty} ·{" "}
-                      {scenario.observationOnly
-                        ? "Read-only practice"
-                        : "Interactive task"}
-                    </Text>
-                    <Text>{scenario.task}</Text>
-                    <Flex gap="2" mt="auto" flexWrap="wrap">
-                      <Button
-                        disabled={busy}
-                        onClick={() =>
-                          void act(async () => {
-                            await api("/runs", {
-                              method: "POST",
-                              body: JSON.stringify({ scenarioId: scenario.id }),
-                            });
-                            setNotice(
-                              "Run created. Open the application, then give your agent the suggested task.",
-                            );
-                          })
-                        }
-                      >
-                        Create run
-                      </Button>
-                      <Button
-                        variant="outline"
-                        disabled={busy}
-                        onClick={() =>
-                          void act(async () => {
-                            await navigator.clipboard.writeText(scenario.task);
-                            setNotice("Suggested task copied.");
-                          })
-                        }
-                      >
-                        Copy task
-                      </Button>
-                    </Flex>
-                  </Stack>
+              <Flex
+                gap="2"
+                wrap="wrap"
+                mb="4"
+                role="group"
+                aria-label="Filter scenarios"
+              >
+                {[
+                  ["all", "All tasks"],
+                  ["interactive", "Interactive"],
+                  ["read", "Read-only practice"],
+                ].map(([id, label]) => (
+                  <Button
+                    key={id}
+                    variant={filter === id ? "subtle" : "outline"}
+                    aria-pressed={filter === id}
+                    onClick={() => setFilter(id)}
+                  >
+                    {label}
+                  </Button>
                 ))}
+              </Flex>
+              <SimpleGrid columns={{ base: 1, md: 2 }} gap="4">
+                {catalog.data.scenarios
+                  .filter(
+                    (scenario) =>
+                      filter === "all" ||
+                      (filter === "read"
+                        ? scenario.observationOnly
+                        : !scenario.observationOnly),
+                  )
+                  .sort(
+                    (a, b) =>
+                      Number(b.id === "price-watch") -
+                      Number(a.id === "price-watch"),
+                  )
+                  .map((scenario) => (
+                    <Stack {...card} key={scenario.id} gap="3">
+                      {scenario.id === "price-watch" && (
+                        <Badge colorPalette="blue" alignSelf="start">
+                          Recommended first task
+                        </Badge>
+                      )}
+                      <Heading size="md">{scenario.title}</Heading>
+                      <Text color="muted" fontSize="sm">
+                        {scenario.difficulty} ·{" "}
+                        {scenario.observationOnly
+                          ? "Read-only practice"
+                          : "Interactive task"}
+                      </Text>
+                      <Text>{scenario.task}</Text>
+                      <Flex gap="2" mt="auto" flexWrap="wrap">
+                        <Button
+                          disabled={busy}
+                          onClick={() =>
+                            void act(async () => {
+                              await api("/runs", {
+                                method: "POST",
+                                body: JSON.stringify({
+                                  scenarioId: scenario.id,
+                                }),
+                              });
+                              requestAnimationFrame(() => {
+                                const section =
+                                  document.getElementById("your-runs");
+                                section?.focus({ preventScroll: true });
+                                section?.scrollIntoView({ block: "start" });
+                              });
+                              setNotice(
+                                "Run created. Open the application, then give your agent the suggested task.",
+                              );
+                            })
+                          }
+                        >
+                          Create run
+                        </Button>
+                        <Button
+                          variant="outline"
+                          disabled={busy}
+                          onClick={() =>
+                            void act(async () => {
+                              await navigator.clipboard.writeText(
+                                scenario.task,
+                              );
+                              setNotice("Suggested task copied.");
+                            })
+                          }
+                        >
+                          Copy task
+                        </Button>
+                      </Flex>
+                    </Stack>
+                  ))}
               </SimpleGrid>
             </Box>
           </>
         )}
       </Stack>
-    </Container>
+    </PageLayout>
   );
 }

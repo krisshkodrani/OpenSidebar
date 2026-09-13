@@ -1,9 +1,9 @@
+import { PageLayout, PageHeader, card } from "./app/page-ui";
 import { useEffect, useRef, useState } from "react";
 import {
   Badge,
   Box,
   Button,
-  Container,
   Flex,
   Heading,
   Input,
@@ -129,26 +129,12 @@ export function ViewerPage() {
 
   return (
     <AppShell>
-      <Container as="main" maxW="6xl" py={{ base: "8", md: "14" }}>
+      <PageLayout>
         <Flex justify="space-between" align="start" gap="5" wrap="wrap">
-          <Box>
-            <Text
-              color="accent"
-              fontWeight="700"
-              letterSpacing="wide"
-              textTransform="uppercase"
-              fontSize="xs"
-            >
-              Run Viewer
-            </Text>
-            <Heading size="2xl" mt="2">
-              Understand every agent run.
-            </Heading>
-            <Text color="muted" mt="3" maxW="2xl">
-              Open an exported run to inspect its steps, screenshots, and
-              technical details on this device.
-            </Text>
-          </Box>
+          <PageHeader
+            title="Run viewer"
+            description="Inspect a run's steps, screenshots and results. Your imported files stay on this device."
+          />
           <Button
             colorPalette="blue"
             loading={busy}
@@ -351,7 +337,7 @@ export function ViewerPage() {
             {error}
           </Text>
         ) : null}
-      </Container>
+      </PageLayout>
     </AppShell>
   );
 }
