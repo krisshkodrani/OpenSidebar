@@ -31,6 +31,7 @@ export default defineConfig({
       input: {
         control: resolve(__dirname, "index.html"),
         target: resolve(__dirname, "target.html"),
+        publicScenarioTarget: resolve(__dirname, "public-scenario-target.html"),
         scenarioTarget: resolve(__dirname, "scenario-target.html"),
       },
     },

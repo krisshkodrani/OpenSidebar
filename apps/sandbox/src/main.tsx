@@ -1,3 +1,4 @@
+import { PlaygroundPage } from "./playground-page";
 import { useEffect, useRef, useState } from "react";
 import { createRoot } from "react-dom/client";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
@@ -1485,7 +1486,7 @@ function App() {
     </AppShell>
   ) : location.pathname === "/app/playground" ? (
     <AppShell>
-      <ControlCenter />
+      <PlaygroundPage />
     </AppShell>
   ) : location.pathname === "/app/viewer" ? (
     <ViewerPage />

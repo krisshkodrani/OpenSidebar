@@ -31,6 +31,8 @@ services:
       DATABASE_URL: postgresql://playground_service:${PLAYGROUND_DB_PASSWORD}@postgres:5432/opensidebar
       CONTROL_ORIGIN: ${CONTROL_ORIGIN:-https://opensidebar.com}
       TARGET_ORIGIN: ${TARGET_ORIGIN:-https://play.opensidebar.com}
+      PLAYGROUND_V2_ENABLED: ${PLAYGROUND_V2_ENABLED:-false}
+      PLAYGROUND_MAINTENANCE: ${PLAYGROUND_MAINTENANCE:-false}
       COOKIE_SECURE: "true"
       COGNITO_DOMAIN: ${COGNITO_DOMAIN:?set COGNITO_DOMAIN}
       COGNITO_CLIENT_ID: ${COGNITO_CLIENT_ID:?set COGNITO_CLIENT_ID}
