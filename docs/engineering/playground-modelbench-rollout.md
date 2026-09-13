@@ -22,9 +22,11 @@ cases remain internal.
 ## Deployment order
 
 This change does not activate itself. Both feature flags default to false.
-The acceptance evidence in [LP-36](rfcs/lp-0036-modelbench-100.md#acceptance-evidence)
-remains the merge/cutover gate; local tests do not substitute for the reference
-runs, deployment smoke or rollback rehearsal.
+The owner approved a separate public Playground release in
+[LP-36](rfcs/lp-0036-modelbench-100.md#decision) on 2026-09-13. Its merge gate is
+the public fixture, privacy, browser and CI evidence. Snapshot, drain, deployment
+smoke and rollback checks still precede public activation. The three full
+reference baselines remain required for the full ModelBench harness cutover.
 
 1. Record the current service image, database backup, CloudFront configuration
    and versioned control/target HTML and assets for rollback.
