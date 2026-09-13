@@ -34,8 +34,8 @@ async function run(): Promise<void> {
     return;
   }
 
-  // Clear port 5173 before spawning Vite
-  await clearPort(5173);
+  // A build does not bind the dev-server port or own an existing listener.
+  if (!args.includes("build")) await clearPort(5173);
 
   // Spawn Node directly (no cmd.exe shell) to avoid Windows "Terminate batch job?" prompt
   const child = IS_WINDOWS

@@ -1,4 +1,5 @@
 ﻿import { AgentStatus, RuntimeMessage, MessageSource } from "../types";
+import { SIDEPANEL_KEEPALIVE_PORT_NAME } from "../lib/sidepanel-keepalive";
 import { logger } from "../utils";
 import { useStore } from "./store";
 import { getE2EPanelConfig, uiRuntime } from "./runtime";
@@ -62,9 +63,7 @@ function appendAcceptedUserChat(
   });
 }
 
-function formatPassiveSuggestion(
-  payload: PassiveSuggestionPayload,
-): string {
+function formatPassiveSuggestion(payload: PassiveSuggestionPayload): string {
   return payload.answer.trim();
 }
 
@@ -190,8 +189,9 @@ export function initializeBridge(
           const duplicateRecentPassiveSuggestion =
             lastPassiveMessage != null &&
             lastPassiveFingerprint === observationFingerprint &&
-            Math.abs(message.payload.observedAt - lastPassiveMessage.timestamp) <=
-              PASSIVE_SUGGESTION_DEDUPE_TTL_MS;
+            Math.abs(
+              message.payload.observedAt - lastPassiveMessage.timestamp,
+            ) <= PASSIVE_SUGGESTION_DEDUPE_TTL_MS;
           const duplicateSuggestionId = state.messages.some(
             (entry) => entry.id === message.payload.suggestionId,
           );
@@ -259,6 +259,7 @@ export function initializeBridge(
               durableRunStatus: null,
               laneTelemetry: null,
               latestStepLabel: null,
+              actionPresentation: null,
               isPlanning: false,
               ...(current.taskProgress
                 ? { taskProgress: null, taskCompletion: null }
@@ -275,6 +276,7 @@ export function initializeBridge(
               taskCompletion: null,
               sessionMetrics: null,
               durableRunStatus: null,
+              actionPresentation: null,
               isPlanning: true,
             };
           }
@@ -351,6 +353,23 @@ export function initializeBridge(
           state.setLatestStepLabel(message.payload.step.label);
         }
         break;
+
+      case "ACTION_PRESENTATION": {
+        const presentation = { ...message.payload, receivedAt: Date.now() };
+        state.setActionPresentation(presentation);
+        if (
+          presentation.phase === "applied" ||
+          presentation.phase === "failed" ||
+          presentation.phase === "interrupted"
+        ) {
+          const ttl = presentation.phase === "interrupted" ? 0 : 350;
+          setTimeout(
+            () => state.clearActionPresentation(presentation.sequence),
+            ttl,
+          );
+        }
+        break;
+      }
 
       case "SCREENSHOT_CAPTURED":
         callbacks.onScreenshot(message.payload);
@@ -465,7 +484,7 @@ export function initializeBridge(
   function connectPort() {
     if (tornDown) return;
     try {
-      port = uiRuntime.connectKeepalive("sidepanel-keepalive", () => {
+      port = uiRuntime.connectKeepalive(SIDEPANEL_KEEPALIVE_PORT_NAME, () => {
         port = null;
         if (tornDown) return;
         const state = store.getState();

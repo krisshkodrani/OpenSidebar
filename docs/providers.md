@@ -1,16 +1,18 @@
 # Providers
 
-OpenSidebar is bring-your-own-key: you configure one (or two) provider API
-keys in Settings and all model traffic goes directly from your browser to that
-provider. Provider behavior, pricing, quotas, data retention, and rate limits
-are governed by the provider you select.
+OpenSidebar is bring-your-own-key. In local mode, the configured key stays in
+Chrome and model traffic goes directly from the browser to the provider. In
+optional cloud mode, the user explicitly verifies and KMS-encrypts an OpenRouter
+or Fireworks key on their OpenSidebar account; model traffic streams through a
+non-retaining OpenSidebar relay to that provider. Provider behavior, pricing,
+quotas, and downstream retention remain governed by the selected provider.
 
 ## Provider matrix
 
-Settings derives this list from the keys stored locally. Single-provider
-stacks appear when their key is present; hybrid stacks appear only when both
-required keys are present. Removing a required key selects another usable
-stack when possible and clears incompatible model overrides.
+In local mode, Settings derives this list from keys stored locally. In cloud
+mode, only the account's verified OpenRouter or Fireworks credential is usable,
+and the relay enforces a reviewed model allowlist. Legacy hybrid stacks remain
+local-only.
 
 | Provider mode | Required key(s) | Role             | Status              | Notes                                   |
 | ------------- | --------------- | ---------------- | ------------------- | --------------------------------------- |
@@ -24,10 +26,12 @@ or model is promoted only after `pnpm models:check` and the release smoke pass.
 ## What gets sent to the provider
 
 When a task needs it, page context (element lists, extracted text) and
-screenshots may be sent to the selected model provider. Model traffic is not
-routed through OpenSidebar, and the published extension contains no
-first-party telemetry upload endpoint. The optional reliability-summary
-preview in Settings remains local-only in this release.
+screenshots may be sent to the selected model provider. Local mode connects
+directly. Cloud mode processes the request transiently through OpenSidebar's
+streaming relay; request/response content is not retained, while aggregate
+request and token counts are retained for quota enforcement. The optional
+reliability-summary preview in Settings remains local-only and is not linked to
+the cloud account.
 
 ## Failure expectations
 

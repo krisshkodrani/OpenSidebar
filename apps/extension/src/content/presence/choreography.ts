@@ -29,6 +29,8 @@ export interface ChoreographyScript {
   /** Width of the visual target — feeds Fitts duration scaling. */
   targetWidth: number;
   ripple: "accent" | "square" | "none";
+  /** Destination cue; disabled for fields that rely on native focus UI. */
+  acquisition: boolean;
   /** Element the settle-phase chip anchors to (fields, selects, uploads). */
   anchorTarget: Element | null;
   /** Chip text narrating an effect the page won't render (select value, upload). */
@@ -172,6 +174,7 @@ export function buildScript(params: {
     point: params.point ?? null,
     targetWidth: 24,
     ripple: "none",
+    acquisition: true,
     anchorTarget: null,
     chipText: null,
     keyLabel: null,
@@ -197,6 +200,7 @@ export function buildScript(params: {
       // ripple on top reads as a double highlight (owner report). The focus
       // ring IS the feedback there; ripples are for non-focus-ring controls.
       script.ripple = target && isTextEntry(target) ? "none" : "accent";
+      script.acquisition = !(target && isTextEntry(target));
       if (params.kind === "upload") script.chipText = "file attached";
       break;
     case "right_click":
@@ -209,11 +213,13 @@ export function buildScript(params: {
       // No ripple: the field's native focus ring (from the real focus) is
       // the one and only highlight (owner reports x3).
       script.ripple = "none";
+      script.acquisition = false;
       if (target && isTextEntry(target)) script.anchorTarget = target;
       script.lingerMs = typeLingerMs(params.typedTextLength ?? 10);
       break;
     case "select":
       script.ripple = "none";
+      script.acquisition = false;
       script.anchorTarget = target;
       script.lingerMs = 500;
       // Honesty over mime: the OS picker never renders in-page, so narrate

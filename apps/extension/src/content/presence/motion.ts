@@ -14,14 +14,14 @@ export interface Point {
 }
 
 /** Cinematic pacing multiplier over subtle-mode durations (RFC §4). */
-export const CINEMATIC_PACE = 1.8;
+export const CINEMATIC_PACE = 1;
 
 /** Cinematic glide floor: short hops at 1.8×90ms ≈ 162ms are ~5 video frames
  *  — nearly a jump on camera. Every cinematic movement must be perceivable. */
-export const CINEMATIC_MIN_GLIDE_MS = 300;
+export const CINEMATIC_MIN_GLIDE_MS = 90;
 
 /** Dwell after arrival before the press begins, ms (RFC §4). */
-export const ARRIVAL_DWELL_MS = { subtle: 60, cinematic: 90 } as const;
+export const ARRIVAL_DWELL_MS = { subtle: 30, cinematic: 40 } as const;
 
 /** Glides longer than this get an overshoot-and-settle (cinematic only). */
 export const OVERSHOOT_MIN_DISTANCE_PX = 300;
@@ -55,8 +55,8 @@ export function glideDurationMs(
   const dist = distance(from, to);
   if (dist < 1) return 0;
   const width = Math.max(8, targetWidth);
-  const base = 60 + 70 * Math.log2(dist / width + 1);
-  const clamped = Math.round(Math.min(420, Math.max(90, base)));
+  const base = 55 + 45 * Math.log2(dist / width + 1);
+  const clamped = Math.round(Math.min(320, Math.max(90, base)));
   return mode === "cinematic"
     ? Math.max(CINEMATIC_MIN_GLIDE_MS, Math.round(clamped * CINEMATIC_PACE))
     : clamped;
@@ -71,7 +71,7 @@ export function arcControlPoint(from: Point, to: Point): Point {
   const dist = distance(from, to);
   const mid = { x: (from.x + to.x) / 2, y: (from.y + to.y) / 2 };
   if (dist < 1) return mid;
-  const bulge = Math.min(0.18 * dist, 60);
+  const bulge = Math.min(0.1 * dist, 25);
   const side = pathSeed(from, to) % 2 === 0 ? 1 : -1;
   // Unit perpendicular to the chord.
   const px = -(to.y - from.y) / dist;
@@ -98,11 +98,22 @@ export function easeInOut(t: number): number {
   return 0.5 - 0.5 * Math.cos(Math.PI * Math.min(1, Math.max(0, t)));
 }
 
+/** Fast-launch, controlled-deceleration curve used by visible cursor travel. */
+export function ballisticEase(t: number): number {
+  const clamped = Math.min(1, Math.max(0, t));
+  const u = 1 - clamped;
+  return 3 * u * u * clamped * 0.72 + 3 * u * clamped * clamped + clamped ** 3;
+}
+
 /**
  * Whether this glide gets a 2-3px overshoot-and-settle (cinematic, long
  * moves only — the settle is what reads as "a hand stopped here", RFC §4).
  */
-export function hasOvershoot(from: Point, to: Point, mode: PresenceMode): boolean {
+export function hasOvershoot(
+  from: Point,
+  to: Point,
+  mode: PresenceMode,
+): boolean {
   return mode === "cinematic" && distance(from, to) > OVERSHOOT_MIN_DISTANCE_PX;
 }
 
@@ -136,7 +147,9 @@ export function sampleGlide(
   const glideTarget = overshoot ? overshootPoint(from, to) : to;
   const points: Point[] = [];
   for (let i = 1; i <= frames; i++) {
-    points.push(bezierPoint(from, control, glideTarget, easeInOut(i / frames)));
+    points.push(
+      bezierPoint(from, control, glideTarget, ballisticEase(i / frames)),
+    );
   }
   if (overshoot) points.push(to); // settle frame back onto the true target
   return { points, durationMs };

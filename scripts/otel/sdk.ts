@@ -75,6 +75,8 @@ function gitValue(cmd: string): string | null {
       cwd: REPO_ROOT,
       stdio: ["ignore", "pipe", "ignore"],
       windowsHide: true,
+      // Optional VCS metadata must not indefinitely block server readiness.
+      timeout: 1_000,
     })
       .toString()
       .trim();

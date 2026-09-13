@@ -34,6 +34,9 @@ export interface PromptSectionMetrics {
   actualPromptTokens?: number;
   estimatorErrorPct?: number;
   imagePromptCount?: number;
+  lowDetailImagePromptCount?: number;
+  highDetailImagePromptCount?: number;
+  autoDetailImagePromptCount?: number;
   estimatedImagePromptTokens?: number;
 }
 
@@ -273,6 +276,9 @@ export function buildPromptSectionMetrics(args: {
     historyChars: historyCharCount(args.messages),
     estimatedPromptTokens: args.estimatedPromptTokens,
     imagePromptCount: imageUsage.imageCount,
+    lowDetailImagePromptCount: imageUsage.lowDetailCount,
+    highDetailImagePromptCount: imageUsage.highDetailCount,
+    autoDetailImagePromptCount: imageUsage.autoDetailCount,
     estimatedImagePromptTokens: imageUsage.estimatedTokens,
   };
 

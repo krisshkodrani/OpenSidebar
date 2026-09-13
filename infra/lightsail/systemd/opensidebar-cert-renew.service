@@ -1,0 +1,10 @@
+[Unit]
+Description=Renew shared-host Let's Encrypt certificates
+Requires=docker.service
+After=docker.service network-online.target
+
+[Service]
+Type=oneshot
+ExecStart=/usr/bin/docker run --rm --network playscenario_default -v /home/deploy/playscenario/certbot/conf:/etc/letsencrypt -v /home/deploy/playscenario/certbot/www:/var/www/certbot certbot/certbot:v5.6.0 renew --webroot --webroot-path /var/www/certbot --quiet
+ExecStartPost=/usr/bin/docker exec playscenario-frontend-1 nginx -s reload
+

@@ -4,6 +4,13 @@
       "command": "node",
       "args": ["--import", "tsx", "scripts/obs/mcp-server.ts"],
       "env": {}
+    },
+    "opensidebar-agent": {
+      "command": "node",
+      "args": ["--import", "tsx", "scripts/browser-mcp/server.ts"],
+      "env": {
+        "BROWSER_MCP_WS_PORT": "8787"
+      }
     }
   }
 }

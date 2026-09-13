@@ -1,6 +1,7 @@
 import { useMemo } from "react";
 import {
   AgentStatus,
+  type ActionPresentationState,
   type DurableRunStatusMessage,
   type PendingApproval,
   type PendingClarification,
@@ -78,6 +79,7 @@ export interface TaskUiStateInput {
   pendingClarification: PendingClarification | null;
   durableRunStatus: DurableRunStatusMessage["payload"] | null;
   latestStepLabel: string | null;
+  actionPresentation: ActionPresentationState | null;
   isPlanning: boolean;
 }
 
@@ -165,6 +167,7 @@ function resolvePrimaryLabel(input: TaskUiStateInput): string {
   if (!input.isAgentRunning && input.durableRunStatus?.canResume) {
     return "Recoverable durable run";
   }
+  if (input.actionPresentation) return input.actionPresentation.label;
   const latestStepLabel = usefulProgressLabel(input.latestStepLabel);
   if (latestStepLabel) return latestStepLabel;
   const subtaskLabel = currentSubtaskLabel(input.taskProgress);
@@ -178,6 +181,12 @@ function resolveSecondaryLabel(input: TaskUiStateInput): string {
   if (input.pendingEscalation) return "Choose how the agent should proceed";
   if (input.pendingClarification)
     return "Answer the question below to continue";
+  if (input.actionPresentation?.phase === "acquiring")
+    return "Locating the target";
+  if (input.actionPresentation?.phase === "acting")
+    return "Applying the action";
+  if (input.actionPresentation?.phase === "applied") return "Applied";
+  if (input.actionPresentation?.phase === "failed") return "Action failed";
   if (input.taskProgress) {
     return `Step ${input.taskProgress.currentIndex + 1} of ${
       input.taskProgress.subtasks.length
@@ -286,6 +295,7 @@ export function useTaskUiState(): TaskUiState {
   const pendingClarification = useStore((s) => s.pendingClarification);
   const durableRunStatus = useStore((s) => s.durableRunStatus);
   const latestStepLabel = useStore((s) => s.latestStepLabel);
+  const actionPresentation = useStore((s) => s.actionPresentation);
   const isPlanning = useStore((s) => s.isPlanning);
 
   return useMemo(
@@ -305,6 +315,7 @@ export function useTaskUiState(): TaskUiState {
         pendingClarification,
         durableRunStatus,
         latestStepLabel,
+        actionPresentation,
         isPlanning,
       }),
     [
@@ -322,6 +333,7 @@ export function useTaskUiState(): TaskUiState {
       pendingClarification,
       durableRunStatus,
       latestStepLabel,
+      actionPresentation,
       isPlanning,
     ],
   );

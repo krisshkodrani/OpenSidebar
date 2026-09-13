@@ -11,13 +11,21 @@ import {
 import { createHash } from "node:crypto";
 import { basename, dirname, relative, resolve } from "node:path";
 import { execFileSync } from "node:child_process";
+import { releaseBuildSha256 } from "./release-build-identity.js";
 
 const rootPath = process.cwd();
 const distPath = resolve(rootPath, "dist");
 const artifactDir = resolve(rootPath, ".artifacts", "releases");
 const fixedDosTime = 0;
 const fixedDosDate = (1 << 5) | 1; // 1980-01-01
-const nxCliPath = resolve(rootPath, "node_modules", "nx", "dist", "bin", "nx.js");
+const nxCliPath = resolve(
+  rootPath,
+  "node_modules",
+  "nx",
+  "dist",
+  "bin",
+  "nx.js",
+);
 
 const packageJson = JSON.parse(
   readFileSync(resolve(rootPath, "package.json"), "utf-8"),
@@ -32,10 +40,28 @@ execFileSync(process.execPath, [nxCliPath, "run", "extension:build"], {
   stdio: "inherit",
 });
 
-execFileSync(process.execPath, [resolve(rootPath, "scripts", "check-dist.js")], {
-  cwd: rootPath,
-  stdio: "inherit",
-});
+const builtJavaScript = readdirSync(resolve(distPath, "assets"))
+  .filter((name) => name.endsWith(".js"))
+  .map((name) => readFileSync(resolve(distPath, "assets", name), "utf8"))
+  .join("\n");
+for (const marker of [
+  "https://opensidebar.com",
+  "/api/v1/extension/auth/code",
+  "/api/v1/extension/auth/verify",
+])
+  if (!builtJavaScript.includes(marker))
+    throw new Error(
+      `Passwordless account sign-in marker is missing: ${marker}`,
+    );
+
+execFileSync(
+  process.execPath,
+  [resolve(rootPath, "scripts", "check-dist.js")],
+  {
+    cwd: rootPath,
+    stdio: "inherit",
+  },
+);
 
 const outputName = `opensidebar-v${version}.zip`;
 const outputPath = resolve(artifactDir, outputName);
@@ -157,7 +183,11 @@ function makeZip(files) {
     writeUInt16(0),
   ]);
 
-  return Buffer.concat([...localParts, centralDirectory, endOfCentralDirectory]);
+  return Buffer.concat([
+    ...localParts,
+    centralDirectory,
+    endOfCentralDirectory,
+  ]);
 }
 
 function readJson(path) {
@@ -177,23 +207,25 @@ function readGitCommit() {
 }
 
 function writeReleaseNotes({ commit, distManifest, hash }) {
-  const notes = `# OpenSidebar v${version} OSS BYOK Preview
+  const notes = `# OpenSidebar v${version}
 
-OpenSidebar v${version} is the GitHub-first OSS BYOK preview release candidate. It ships as source plus a reproducible unpacked-extension zip for manual Chrome installation.
+OpenSidebar v${version} adds supervised remote browser work to the normal production extension while preserving local browser tasks and Direct from this browser. It ships as a reproducible Chrome Web Store update candidate and unpacked-extension zip.
 
 ## Highlights
 
-- OpenRouter is the recommended default BYOK provider, with Fireworks retained as the supported alternative.
-- A compact unified task timeline keeps planner-authored steps readable without repeating the primary task label.
-- A visible in-page agent cursor makes active browser work easier to follow.
-- Optional reliability summaries stay local, off by default, inspectable, and clearable; the public build contains no telemetry upload endpoint.
-- Workspace grouping, no-page recovery, composer focus, and duplicate-action handling are more durable.
-- Release package builds \`dist/\` and writes a SHA-256 checksum.
-- Manifest/package version alignment enforced by \`ci:dist\`.
-- Public install docs use Corepack-managed pnpm and a safe read-only first task.
-- Native side-panel launch can be driven through the default \`Ctrl+Shift+Y\` extension action shortcut.
-- Known limitations are documented for agent reliability, Done/verifier behavior, permissions, traces, providers, and distribution.
-- DOMPurify is updated to \`3.4.12\`, and the production dependency audit is clean.
+- Linked named-tester devices can receive supervised read-only browser missions from opensidebar.com and compatible MCP clients.
+- Remote targets are bound to an existing OpenSidebar tab group with the sidepanel enabled; detached or stale targets fail closed before execution and are rechecked at completion.
+- Active-tab, existing-tab, duplicate-tab selection, and isolated-tab creation return bounded workspace, window, URL, title, and sidepanel evidence without raw Chrome identifiers.
+- The task-centered workbench presents local tasks, plans, decisions, watch mode, and remote missions as one state-driven workflow with bounded history.
+- Account sign-in uses Cognito email OTP and revocable device sessions; serialized refresh preserves the session across extension contexts and token rotation.
+- Direct from this browser remains available for local provider use, and local browser tasks continue independently of remote work.
+- Settings navigation survives tab switches and sidepanel remounts for the current Chrome session.
+- Remote takeover, device-command execution, checkpoint restore, and Temporal coordination remain disabled for this release.
+- ModelBench100 now includes deterministic validators, strict provider-routing evidence, and workspace acceptance diagnostics. Headline model baselines remain pending; diagnostic passes are not a model-performance claim.
+- Read-only communication completion, partial-handoff reasons, and trace writer shutdown are corrected.
+- Production dependency overrides and the cloud runtime manifest are aligned with the audited lockfile.
+- Native side-panel smoke loads the production build and binds rendered-panel evidence to its contents, version, and commit.
+- Release packaging builds \`dist/\`, verifies manifest/package version alignment, and writes a deterministic ZIP with a SHA-256 checksum.
 
 ## Verification
 
@@ -223,12 +255,9 @@ ${hash}  ${outputName}
 
 ## Install
 
-1. Download and unzip \`${outputName}\`.
-2. Open \`chrome://extensions/\`.
-3. Enable Developer mode.
-4. Click Load unpacked.
-5. Select the unzipped extension folder.
-6. Open the side panel and add your provider key in Settings.
+1. Upload \`${outputName}\` as an update to the existing OpenSidebar Chrome Web Store item, or unzip it for local review.
+2. For unpacked review, open \`chrome://extensions/\`, enable Developer mode, click Load unpacked, and select the unzipped folder.
+3. Open the side panel, sign in to your OpenSidebar account, and connect a supported provider. Direct from this browser remains available under Advanced.
 
 Start with a read-only task such as "Summarize this page" on a non-sensitive page.
 
@@ -254,6 +283,7 @@ function writeReleaseManifest({ commit, distManifest, hash, zipSize }) {
     name: distManifest.name ?? "OpenSidebar",
     version,
     commit,
+    distSha256: releaseBuildSha256(distPath),
     date: new Date().toISOString().slice(0, 10),
     packageVersion: version,
     extensionManifestVersion: distManifest.version ?? null,
@@ -334,4 +364,6 @@ writeReleaseManifest({
 console.log(`[release:package] Wrote ${relative(rootPath, outputPath)}`);
 console.log(`[release:package] Wrote ${relative(rootPath, checksumPath)}`);
 console.log(`[release:package] Wrote ${relative(rootPath, releaseNotesPath)}`);
-console.log(`[release:package] Wrote ${relative(rootPath, releaseManifestPath)}`);
+console.log(
+  `[release:package] Wrote ${relative(rootPath, releaseManifestPath)}`,
+);

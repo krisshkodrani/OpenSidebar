@@ -136,6 +136,16 @@ export interface AgentStep {
   screenshotUrl?: string;
 }
 
+export interface ActionPresentationState {
+  toolCallId: string;
+  sequence: number;
+  phase: import("./messages").ActionPresentationPhase;
+  label: string;
+  toolName: ToolName;
+  error?: string;
+  receivedAt: number;
+}
+
 // --- Saved Prompts ---
 
 /** A user-saved reusable prompt template */
@@ -265,7 +275,11 @@ export interface PendingEscalation extends EscalationPacket {
 /** Pending plan confirmation state for sidepanel store */
 export interface PendingPlanConfirmation {
   confirmationId: string;
-  nodes: { description: string; successCriteria: string; selectedSkillId?: string }[];
+  nodes: {
+    description: string;
+    successCriteria: string;
+    selectedSkillId?: string;
+  }[];
   difficulty?: string;
   query: string;
   requestedAt: number;

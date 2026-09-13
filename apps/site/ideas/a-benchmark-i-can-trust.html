@@ -1,0 +1,535 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Building a Benchmark I Can Trust — OpenSidebar Ideas</title>
+    <meta
+      name="description"
+      content="A sixteen-turn false finish, an honest retry, and the case for evaluating your own browser-agent harness alongside public benchmarks."
+    />
+    <meta
+      name="author"
+      content="Kris Shkodrani, with AI editorial assistance"
+    />
+    <link
+      rel="canonical"
+      href="https://opensidebar.com/ideas/a-benchmark-i-can-trust"
+    />
+    <meta
+      property="og:url"
+      content="https://opensidebar.com/ideas/a-benchmark-i-can-trust"
+    />
+    <meta name="theme-color" content="#F7F7F9" />
+    <link rel="icon" type="image/png" href="/favicon.png" />
+    <link rel="stylesheet" href="/src/benchmark-essay.css" />
+    <meta property="og:type" content="article" />
+    <meta property="og:title" content="Building a Benchmark I Can Trust" />
+    <meta
+      property="og:description"
+      content="When I’m also building the agent. An OpenSidebar field note on evaluation, transfer, and useful failures."
+    />
+    <meta property="og:image" content="https://opensidebar.com/og.png" />
+  </head>
+  <body class="idea-page benchmark-page">
+    <header class="nav">
+      <div class="wrap nav-inner">
+        <a class="brand" href="/" aria-label="OpenSidebar home"
+          ><img src="/logo.png" alt="" width="28" height="28" /><span
+            >OpenSidebar</span
+          ></a
+        >
+        <nav class="nav-links" aria-label="Primary">
+          <a href="/walkthrough">How it works</a
+          ><a href="/ideas" aria-current="page">Ideas</a
+          ><a href="/#features">Features</a><a href="/#developers">Developers</a
+          ><a href="https://github.com/krisshkodrani/OpenSidebar">GitHub</a
+          ><a class="btn btn-primary nav-cta" href="/#quickstart">Install</a>
+        </nav>
+      </div>
+      <div class="idea-progress" aria-hidden="true">
+        <div class="idea-progress-fill" id="reading-progress"></div>
+      </div>
+    </header>
+    <main>
+      <header class="idea-hero">
+        <div
+          class="idea-hero-orbit idea-hero-orbit-one"
+          aria-hidden="true"
+        ></div>
+        <div
+          class="idea-hero-orbit idea-hero-orbit-two"
+          aria-hidden="true"
+        ></div>
+        <div class="idea-hero-inner">
+          <svg
+            class="bench-doodle"
+            viewBox="0 0 200 110"
+            fill="none"
+            aria-hidden="true"
+          >
+            <g
+              stroke="currentColor"
+              stroke-width="1.8"
+              stroke-linecap="round"
+              stroke-linejoin="round"
+            >
+              <path
+                d="M22 30 Q20 24 28 24 L121 26 Q128 26 127 34 L126 96 Q126 101 118 100 L26 98 Q20 98 21 91 Z"
+                fill="#fbfbfc"
+              />
+              <path d="M23 40 L126 42 M32 33h1 m7 0h1 m7 0h1" />
+              <rect x="33" y="53" width="11" height="11" rx="2" />
+              <path d="m35 58 3 3 5-6 M54 58h51" />
+              <rect
+                x="33"
+                y="77"
+                width="11"
+                height="11"
+                rx="2"
+                stroke="#a87536"
+              />
+              <path d="M54 82h36" />
+              <path
+                d="M139 14 Q180 7 183 28 Q184 47 148 44 L133 53 L136 40 Q121 24 139 14Z"
+                fill="#edf3fa"
+              />
+              <path
+                d="M143 64q14 9 5 19 M148 83l-1-8 m1 8 7-3"
+                stroke="#a87536"
+              />
+            </g>
+            <text
+              x="136"
+              y="33"
+              fill="#345f8d"
+              font-family="Georgia, serif"
+              font-style="italic"
+              font-size="16"
+            >
+              done?
+            </text>
+          </svg>
+          <a class="idea-series" href="/ideas"
+            ><span>OpenSidebar Ideas</span
+            ><span class="idea-series-separator">/</span
+            ><span>Evaluation · Essay 03</span></a
+          >
+          <h1>Building a benchmark<br /><em>I can trust.</em></h1>
+          <p class="idea-deck">When I’m also building the agent.</p>
+          <div class="idea-meta" aria-label="Article details">
+            <span class="idea-byline"
+              >By <strong>Kris Shkodrani</strong> · with AI editorial
+              assistance</span
+            ><span aria-hidden="true">·</span
+            ><time datetime="2026-09-08">September 2026</time
+            ><span aria-hidden="true">·</span><span>6 minute read</span>
+          </div>
+        </div>
+        <div class="idea-hero-rule" aria-hidden="true">
+          <span></span><i></i><span></span>
+        </div>
+      </header>
+      <div class="idea-layout">
+        <aside class="idea-toc" aria-label="In this essay">
+          <p>In this essay</p>
+          <ol>
+            <li><a href="#false-finish">The false finish</a></li>
+            <li><a href="#passing-run">What a pass conceals</a></li>
+            <li><a href="#transfer">Does it travel?</a></li>
+            <li><a href="#live-web">The test keeps changing</a></li>
+            <li><a href="#boundaries">Boundaries for my own test</a></li>
+            <li><a href="#publish">Evidence worth sharing</a></li>
+          </ol>
+        </aside>
+        <article class="idea-article" id="article">
+          <section id="false-finish">
+            <p class="idea-opening">
+              OpenSidebar had spent sixteen turns working through an application
+              form. Then it called <code>done()</code>.
+            </p>
+            <p>
+              It had typed into fields, selected options, uploaded a file, and
+              checked boxes. The test’s field assertions disagreed with its
+              conclusion. Required work remained.
+            </p>
+            <p>
+              A retry eventually completed the task, carrying forward the form
+              state from the first attempt. The run passed, but describing it
+              simply as a success would have hidden the most useful part of the
+              result: the agent had stopped too early, and its completion checks
+              had failed to catch that.
+            </p>
+            <figure class="bench-figure">
+              <p class="bench-kicker">Field note 01 / A pass with a footnote</p>
+              <div
+                class="bench-timeline"
+                aria-label="First attempt: 16 turns. Retry: 31 turns. Total: 47 turns."
+              >
+                <div class="bench-first">
+                  <strong>16 turns</strong><span>Premature finish</span>
+                </div>
+                <div class="bench-retry">
+                  <strong>+ 31 turns</strong
+                  ><span>Retry with existing form state</span>
+                </div>
+              </div>
+              <p class="bench-note">
+                <strong>47 turns. Eventually passed.</strong><br />The second
+                attempt did not start from an empty form.
+              </p>
+              <figcaption>
+                Bar widths represent turn counts, not elapsed time. One
+                documented run, not an aggregate benchmark result.
+                <a
+                  href="https://github.com/krisshkodrani/OpenSidebar/blob/main/docs/engineering/lp17-efficiency-validation-2026-07-18.md"
+                  >July 18 validation report, addendum 2 ↗</a
+                >
+              </figcaption>
+            </figure>
+            <p>
+              That is the kind of problem I want an internal benchmark to
+              expose.
+            </p>
+            <p>
+              It also creates an uncomfortable question. If I build both the
+              agent and the benchmark, why should anyone trust the result?
+            </p>
+            <p>
+              I choose the tasks. I know the system’s weaknesses. I can change
+              the software, the test, or the definition of success. Even without
+              deliberately manipulating anything, I can build an evaluation that
+              becomes increasingly comfortable for my own system.
+            </p>
+            <p>
+              I think an internal benchmark is still necessary. But its value
+              depends on how willing I am to let it contradict me.
+            </p>
+          </section>
+          <h2 id="passing-run">A passing run can conceal the wrong lesson</h2>
+          <p>
+            The application-form investigation contained several different kinds
+            of failure.
+          </p>
+          <p>
+            In some attempts, the verifier rejected premature completion because
+            a CV was missing or a phone field was empty. That was a useful
+            distinction: the task failed, but the system recognized that it had
+            failed.
+          </p>
+          <p>
+            In the sixteen-turn attempt, the external test caught unfinished
+            work that the agent’s completion checks should have caught. A
+            subsequent retry passed, but the combined run took 47 turns and
+            inherited partially completed state. It could not fairly be compared
+            with an earlier clean, single-attempt success.
+          </p>
+          <p>Other attempts were interrupted by provider errors.</p>
+          <p>
+            Collapsing those outcomes into one success rate would have made the
+            report easier to read and harder to use. I needed to distinguish
+            incomplete execution, incorrect completion judgment, recovery with
+            carried-over state, and infrastructure failure. Each pointed toward
+            a different engineering decision.
+          </p>
+          <p>
+            OpenSidebar’s harness—the software around the model that presents
+            observations, executes actions, manages context, and checks
+            completion—is responsible for much of this behavior. When I change
+            it, I need evidence about what actually changed.
+          </p>
+          <p>
+            I’m not alone in running into this.
+            <a href="https://arxiv.org/abs/2407.01502"
+              ><em>AI Agents That Matter</em></a
+            >
+            describes a similar gap between what model benchmarks measure and
+            what developers need to know when building products. Accuracy alone
+            can hide differences in cost and practical usefulness.
+          </p>
+          <p>
+            The form failure made that argument concrete for me. Knowing that an
+            agent eventually passed was insufficient. I needed to understand how
+            it got there and what it had incorrectly believed along the way.
+          </p>
+          <h2 id="transfer">How far does an improvement travel?</h2>
+          <p>
+            WorkArena provides a useful external test. Its ServiceNow workflows
+            cover forms, lists, knowledge bases, service catalogs, and
+            dashboards. It offers substantial depth within a real enterprise
+            platform.
+            <a href="https://github.com/ServiceNow/WorkArena">WorkArena ↗</a>
+          </p>
+          <p>
+            But suppose I improve OpenSidebar’s handling of a ServiceNow
+            reference field. What have I learned about its ability to fill a
+            similar field elsewhere?
+          </p>
+          <p>
+            Perhaps the fix captures a transferable behavior: enter a value,
+            select a resolved result, and read back the selection. Perhaps it
+            depends on something particular to that platform.
+          </p>
+          <p>Both can be useful. They support different claims.</p>
+          <p>
+            A strong WorkArena score does not establish transfer to unfamiliar
+            applications on its own. Equally, its platform focus does not prove
+            that improvements learned there fail to generalize. Transfer is
+            something I have to test.
+          </p>
+          <p>
+            For OpenSidebar, I want the same workflow to appear in different
+            implementations. A form might validate on blur, after submission, or
+            through a delayed server response. A table might expose filters in a
+            toolbar or a separate dialog.
+          </p>
+          <p>
+            If a change helps across those differences, I have stronger evidence
+            that I improved a browser capability.
+          </p>
+          <h2 id="live-web">The live web changes the test</h2>
+          <p>
+            Testing across live websites introduces another problem: the
+            environment can change between runs.
+          </p>
+          <p>
+            The Mind2Web family illustrates this. Original Mind2Web uses
+            recorded website data. Its live counterparts must also maintain task
+            validity as websites evolve.
+          </p>
+          <p>
+            When constructing Mind2Web-Live, researchers removed 96 of 780
+            candidate tasks because website changes had made them inapplicable.
+            Another 142 were excluded for ambiguity or difficulties defining
+            evaluation checkpoints. These were construction-time exclusions, not
+            the current failure rate of the released suite.
+            <a href="https://arxiv.org/html/2406.12373v3#S3"
+              >WebCanvas paper, §3 ↗</a
+            >
+          </p>
+          <p>
+            Separately, Online-Mind2Web’s maintainers reported updating 36 of
+            300 tasks in November 2025 because they were invalid or involved
+            CAPTCHA verification. Their update history documents continued
+            maintenance.
+            <a
+              href="https://github.com/OSU-NLP-Group/Online-Mind2Web#update-tasks"
+              >Official update history ↗</a
+            >
+          </p>
+          <p>
+            My initial description was “broken fixtures.” Looking closer, I’d
+            describe it differently: live tasks become stale, access conditions
+            change, and evaluation requires maintenance.
+          </p>
+          <p>
+            A redesigned interface is a reasonable challenge for an agent. A
+            requested product that no longer exists creates a different task. An
+            evaluator expecting an obsolete element may need repair.
+          </p>
+          <p>
+            These distinctions matter when deciding what to fix. They also
+            explain why I want controlled, reproducible cases alongside live
+            evaluation.
+          </p>
+          <h2 id="boundaries">An internal benchmark needs boundaries</h2>
+          <p>
+            For OpenSidebar, I would build around the behaviors these failures
+            reveal: reading back form values, checking persistent state,
+            recovering after interruptions, and recognizing when evidence is
+            insufficient to claim completion.
+          </p>
+          <figure class="bench-figure">
+            <p class="bench-kicker">
+              Field note 02 / Three views of the same agent
+            </p>
+            <div class="bench-lenses">
+              <div>
+                <svg
+                  viewBox="0 0 64 64"
+                  fill="none"
+                  stroke="currentColor"
+                  stroke-width="1.6"
+                  stroke-linecap="round"
+                  aria-hidden="true"
+                >
+                  <rect x="9" y="9" width="44" height="45" rx="5" />
+                  <path
+                    d="M10 21h42 M17 15h2m4 0h2 M19 32h24M19 40h17M19 48h22"
+                  /></svg
+                ><strong>Controlled cases</strong>
+                <p>Can I reproduce and fix this failure?</p>
+                <small>Watch for tidy, familiar worlds.</small>
+              </div>
+              <div>
+                <svg
+                  viewBox="0 0 64 64"
+                  fill="none"
+                  stroke="currentColor"
+                  stroke-width="1.6"
+                  stroke-linecap="round"
+                  aria-hidden="true"
+                >
+                  <rect x="5" y="17" width="23" height="34" rx="3" />
+                  <rect x="37" y="9" width="22" height="34" rx="3" />
+                  <path
+                    d="M11 26h11m-11 8h7m25-16h10m-10 8h7M24 57q22 3 26-8m0 0-6 2m6-2 1 6"
+                  /></svg
+                ><strong>Held-out apps</strong>
+                <p>Does the improvement travel?</p>
+                <small>Keep them out of daily tuning.</small>
+              </div>
+              <div>
+                <svg
+                  viewBox="0 0 64 64"
+                  fill="none"
+                  stroke="currentColor"
+                  stroke-width="1.6"
+                  stroke-linecap="round"
+                  aria-hidden="true"
+                >
+                  <circle cx="31" cy="30" r="22" />
+                  <ellipse cx="31" cy="30" rx="10" ry="22" />
+                  <path d="M10 24h42M11 38h39" />
+                  <path d="m47 48 4 4 9-11" stroke="#a87536" /></svg
+                ><strong>Live websites</strong>
+                <p>Does it work as the world changes?</p>
+                <small>Recheck task validity.</small>
+              </div>
+            </div>
+            <figcaption>
+              An evaluation design, not three measured scores. Public benchmarks
+              can contribute to these views; no single view covers every
+              question.
+            </figcaption>
+          </figure>
+          <p>
+            Controlled cases would let me reproduce specific conditions.
+            Unfamiliar applications would test transfer. Public benchmarks would
+            expose the system to tasks I did not select.
+          </p>
+          <p>
+            The internal suite would still be vulnerable to overfitting. I can
+            tune prompts, tools, and recovery rules around familiar cases
+            without ever changing model weights. Eventually, a benchmark I
+            inspect every day becomes development material.
+          </p>
+          <p>
+            Recent research on automatic harness evolution reinforces this
+            concern. In its Terminal-Bench experiments, one study found limited
+            generalization and no consistent advantage over simpler search
+            methods under comparable budgets. Its findings concern a particular
+            optimization setting, but the warning is relevant: improvements on
+            the tasks used to guide changes need independent testing.
+            <a href="https://arxiv.org/abs/2607.12227v2"
+              ><em
+                >Rethinking the Evaluation of Harness Evolution for Agents</em
+              >
+              ↗</a
+            >
+          </p>
+          <p>
+            That means separating regression cases from held-out evaluation.
+            Claims about unfamiliar applications require holding out
+            applications, not merely changing names and values in familiar
+            forms.
+          </p>
+          <p>
+            It also means checking the judges. A validator should reject
+            plausible near misses, including the application that looks complete
+            until someone notices the missing attachment. Ambiguous verdicts
+            need review. Declaring a task impossible must require evidence.
+          </p>
+          <blockquote>
+            <p>
+              An internal benchmark gains relevance by representing users’
+              needs. It loses credibility when tasks are selected because the
+              agent already handles them well.
+            </p>
+          </blockquote>
+          <h2 id="publish">The result I want to publish</h2>
+          <p>
+            The strongest evidence would be a small, inspectable sequence: a
+            failure, a harness change, a successful regression test, and a
+            comparable task in an unfamiliar application.
+          </p>
+          <p>
+            I would keep the model and execution conditions comparable, repeat
+            trials, and report cost, interventions, and incorrect success claims
+            alongside completion.
+          </p>
+          <p>
+            If the improvement fails to transfer, that belongs in the result. If
+            success requires a retry with carried-over state, that belongs there
+            too.
+          </p>
+          <p>
+            Owning an evaluation suite does not require inventing every task or
+            keeping it private. Public components can be reused. Methods and
+            traces can be shared. Its first job is to guide engineering;
+            publishing its scores adds a responsibility to make the evidence
+            understandable to others.
+          </p>
+          <p>
+            I still want public benchmarks. I also want tests close enough to
+            OpenSidebar’s actual behavior to catch the sixteen-turn run that
+            confidently stopped one step too early.
+          </p>
+          <p>
+            That failed completion claim told me something a green result would
+            have concealed. A benchmark I can trust needs to keep telling me
+            those things as the system improves—and as I become more invested in
+            believing that it has.
+          </p>
+          <aside class="bench-source-note" aria-label="About the evidence">
+            <p>
+              <strong>About this field note.</strong> The opening is drawn from
+              OpenSidebar’s July 18 validation report. It describes a test run,
+              not a submitted job application. The illustrations summarize the
+              evidence and proposed evaluation design; they are not screenshots
+              or claims of benchmark acceptance.
+            </p>
+          </aside>
+        </article>
+      </div>
+      <aside class="idea-next">
+        <div class="wrap idea-next-inner">
+          <div>
+            <span class="idea-next-kicker">Continue the thread</span>
+            <h2>What should “done” actually mean?</h2>
+          </div>
+          <a class="btn btn-primary" href="/ideas/done-means-verified"
+            >Read Done Means Verified <span aria-hidden="true">→</span></a
+          >
+        </div>
+      </aside>
+    </main>
+    <footer class="footer">
+      <div class="wrap">
+        <div class="footer-top">
+          <a class="brand" href="/"
+            ><img src="/logo.png" alt="" width="28" height="28" /><span
+              >OpenSidebar</span
+            ></a
+          >
+          <nav class="footer-links" aria-label="Footer">
+            <a href="/walkthrough">How it works</a><a href="/ideas">Ideas</a
+            ><a href="https://github.com/krisshkodrani/OpenSidebar">GitHub</a
+            ><a
+              href="https://github.com/krisshkodrani/OpenSidebar/tree/main/docs"
+              >Docs</a
+            ><a
+              href="https://github.com/krisshkodrani/OpenSidebar/blob/main/PRIVACY_POLICY.md"
+              >Privacy</a
+            >
+          </nav>
+        </div>
+        <div class="footer-note">
+          <span>© <span id="year">2026</span> OpenSidebar</span
+          ><span>Free and open source · MIT License</span>
+        </div>
+      </div>
+    </footer>
+    <script type="module" src="/src/ideas.ts"></script>
+  </body>
+</html>

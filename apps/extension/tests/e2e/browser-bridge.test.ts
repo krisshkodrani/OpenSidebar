@@ -33,8 +33,13 @@ import type { CDPSession, WebWorker } from "puppeteer";
 import { describe, expect, test } from "vitest";
 
 import { WebSocketBridge } from "../../../../scripts/browser-mcp/ws-bridge";
+import {
+  E2E_CREATE_WORKSPACE_MESSAGE_TYPE,
+  E2E_TEST_API_ENABLED_STORAGE_KEY,
+} from "../../src/background/e2e-test-api";
 import { getFixtureUrl } from "./helpers/fixture-server";
 import { createE2EHarness } from "./helpers/harness";
+import { openHelperPage } from "./helpers/browser";
 import {
   installLocalMockProviderInterceptor,
   localMockProviderScenarios,
@@ -111,13 +116,42 @@ describe.skipIf(!enabled)("E2E: browser bridge", () => {
       await armBridgePort(h.ctx.serviceWorker, bridge.port);
       await waitForBridgeConnection(bridge, 15_000);
 
+      const sourceTabId = await h.ctx.serviceWorker.evaluate(async () => {
+        const source = await chrome.tabs.create({ url: "about:blank", active: true });
+        if (typeof source.id !== "number") throw new Error("No source tab for workspace");
+        return source.id;
+      });
+      const helperPage = await openHelperPage(h.ctx);
+      const workspaceId = "e2e-browser-bridge-workspace";
+      const createResult = await helperPage.evaluate(
+        async (input) => {
+          await chrome.storage.local.set({ [input.enabledKey]: true });
+          return chrome.runtime.sendMessage({
+            type: input.messageType,
+            payload: {
+              tabId: input.tabId,
+              workspaceId: input.workspaceId,
+              name: "OpenSidebar E2E",
+            },
+          });
+        },
+        {
+          enabledKey: E2E_TEST_API_ENABLED_STORAGE_KEY,
+          messageType: E2E_CREATE_WORKSPACE_MESSAGE_TYPE,
+          tabId: sourceTabId,
+          workspaceId,
+        },
+      );
+      expect(createResult).toMatchObject({ ok: true, workspaceId });
+
       // The task opens its own background tab at this url, so the test drives no
       // page itself — this is exactly the path pi will take.
+      const targetUrl = getFixtureUrl(scenario.fixture);
       const response = await bridge.call({
         tool: "browser_run_task",
         args: {
           instruction: scenario.prompt,
-          url: getFixtureUrl(scenario.fixture),
+          url: targetUrl,
         },
       });
 
@@ -136,6 +170,40 @@ describe.skipIf(!enabled)("E2E: browser bridge", () => {
       expect(response.handoff?.schemaVersion).toBeTruthy();
       expect(response.handoff?.suggestedContinuationPrompt).toBeTruthy();
       expect(response.handoff?.remaining?.length ?? 0).toBeGreaterThan(0);
+
+      const placement = await h.ctx.serviceWorker.evaluate(async (input) => {
+        const { url, sourceTabId } = input;
+        const expected = new URL(url).href;
+        const matches = (await chrome.tabs.query({})).filter((tab) => {
+          try {
+            return Boolean(tab.url && new URL(tab.url).href === expected);
+          } catch {
+            return false;
+          }
+        });
+        const source = await chrome.tabs.get(sourceTabId);
+        const target = matches.find((tab) => tab.id !== sourceTabId);
+        if (typeof target?.id !== "number") return { matches: matches.length };
+        const panel = await chrome.sidePanel.getOptions({ tabId: target.id });
+        const group = target.groupId === chrome.tabGroups.TAB_GROUP_ID_NONE
+          ? null
+          : await chrome.tabGroups.get(target.groupId);
+        return {
+          matches: matches.length,
+          sourceGroupId: source.groupId,
+          targetGroupId: target.groupId,
+          groupTitle: group?.title,
+          panelEnabled: panel.enabled,
+          panelPath: panel.path,
+        };
+      }, { url: targetUrl, sourceTabId });
+      expect(placement).toMatchObject({
+        matches: 1,
+        panelEnabled: true,
+        panelPath: "src/sidepanel/index.html",
+      });
+      expect(placement.groupTitle).toEqual(expect.any(String));
+      expect(placement.targetGroupId).toBe(placement.sourceGroupId);
 
       passed = true;
     } finally {

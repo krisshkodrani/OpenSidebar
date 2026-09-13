@@ -20,6 +20,24 @@ export function dedupeStrings(values: string[]): string[] {
   return [...new Set(values.map((value) => value.trim()).filter(Boolean))];
 }
 
+/** True when every node follows its predecessor, allowing redundant ancestors. */
+export function isSerializedDependencyChain(nodes: TaskNode[]): boolean {
+  const precedingIds = new Set<string>();
+  for (let i = 0; i < nodes.length; i++) {
+    const dependencies = nodes[i].dependencies;
+    if (
+      i === 0
+        ? dependencies.length !== 0
+        : !dependencies.includes(nodes[i - 1].id) ||
+          dependencies.some((dependency) => !precedingIds.has(dependency))
+    ) {
+      return false;
+    }
+    precedingIds.add(nodes[i].id);
+  }
+  return true;
+}
+
 /** Every http(s) origin named in the nodes' descriptions (lowercased). */
 export function nodeUrlOrigins(nodes: TaskNode[]): Set<string> {
   const origins = new Set<string>();

@@ -1,0 +1,139 @@
+.benchmark-page .idea-hero h1 {
+  font-size: clamp(3.2rem, 7.6vw, 6.5rem);
+  line-height: 0.98;
+}
+
+.benchmark-page .idea-hero {
+  padding-top: 84px;
+}
+.benchmark-page .idea-article h2 {
+  scroll-margin-top: 100px;
+}
+.benchmark-page .bench-doodle {
+  display: block;
+  width: 200px;
+  height: 110px;
+  margin: 0 auto 22px;
+  color: var(--accent);
+}
+
+.bench-figure {
+  margin: 42px 0;
+  padding: clamp(20px, 4vw, 36px);
+  border: 1px solid var(--idea-rule);
+  border-radius: 16px;
+  background: linear-gradient(135deg, #f1f5fa, #fcfcfd);
+  font-family: var(--font);
+  line-height: 1.5;
+}
+
+.bench-figure .bench-kicker {
+  margin: 0 0 22px;
+  font-size: 0.7rem;
+  font-weight: 700;
+  color: var(--accent-2);
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+
+.bench-timeline {
+  display: grid;
+  grid-template-columns: 16fr 31fr;
+  gap: 3px;
+  margin-bottom: 20px;
+}
+
+.bench-timeline > div {
+  padding: 16px 12px;
+}
+.bench-timeline strong {
+  display: block;
+  font-size: 1.6rem;
+  font-weight: 500;
+}
+.bench-timeline span {
+  font-size: 0.76rem;
+}
+.bench-first {
+  background: #f6e5ce;
+  color: #704b23;
+  border-radius: 8px 0 0 8px;
+}
+.bench-retry {
+  background: #dce9f4;
+  color: #294d71;
+  border-radius: 0 8px 8px 0;
+}
+.bench-figure .bench-note {
+  font-size: 0.88rem;
+  margin-bottom: 14px;
+}
+.bench-figure figcaption {
+  color: #555d69;
+  font-size: 0.76rem;
+}
+
+.bench-lenses {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 20px;
+  margin-bottom: 24px;
+}
+.bench-lenses svg {
+  width: 62px;
+  height: 62px;
+  color: var(--accent);
+  margin-bottom: 12px;
+}
+.bench-lenses strong {
+  display: block;
+  font-size: 0.92rem;
+  margin-bottom: 8px;
+}
+.bench-lenses p {
+  font-size: 0.8rem;
+  color: #555d69;
+  margin: 0;
+}
+.bench-lenses small {
+  display: block;
+  margin-top: 12px;
+  font-size: 0.7rem;
+  color: #704b23;
+}
+.bench-source-note {
+  padding: 18px 22px;
+  border-left: 2px solid var(--accent);
+  font-family: var(--font);
+  font-size: 0.78rem;
+  line-height: 1.7;
+  background: var(--idea-blue-soft);
+}
+.benchmark-page .bench-source-note p:last-child {
+  margin-bottom: 0;
+}
+
+@media (max-width: 560px) {
+  .benchmark-page .idea-hero {
+    padding-top: 58px;
+  }
+  .bench-lenses {
+    grid-template-columns: 1fr;
+    gap: 22px;
+  }
+  .bench-lenses > div {
+    border-bottom: 1px solid var(--idea-rule);
+    padding-bottom: 18px;
+  }
+  .bench-lenses > div:last-child {
+    border: 0;
+    padding-bottom: 0;
+  }
+  .bench-lenses svg {
+    float: left;
+    margin: 0 18px 22px 0;
+  }
+  .bench-timeline strong {
+    font-size: 1.3rem;
+  }
+}

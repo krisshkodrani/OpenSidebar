@@ -446,13 +446,13 @@ export const ESCALATE_DEF: ToolDefinition = {
   function: {
     name: ToolName.ESCALATE,
     description:
-      "Switch to the planner model for complex reasoning. Use when stuck on riddles, puzzles, math, or multi-step logic. Do not use this only because an action tool seems missing until you have checked the Available Tool Capabilities catalog at the end of this conversation.",
+      "Reassess a difficult reasoning or interaction problem with the current model; this does not ask the user or switch models. If the page leaves multiple valid targets or a required user preference unknown, use clarify instead: more reasoning cannot supply the user's choice. Do not use this only because an action tool seems missing until you have checked the Available Tool Capabilities catalog at the end of this conversation.",
     parameters: {
       type: "object",
       properties: {
         reason: {
           type: "string",
-          description: "Why the current model can't handle this.",
+          description: "The reasoning or interaction problem requiring reassessment.",
         },
         reasonCode: {
           type: "string",
@@ -517,7 +517,7 @@ export const CLARIFY_DEF: ToolDefinition = {
   function: {
     name: ToolName.CLARIFY,
     description:
-      "Ask the user a question when you encounter ambiguity that cannot be resolved from the page. Use when multiple valid interpretations exist or user preferences are unknown.",
+      "Ask the user a question when page evidence cannot resolve multiple valid targets, interpretations, or a missing user preference. Ask before acting on an arbitrary choice, even if the eventual action control is not yet located. Include the observed alternatives when available. For a navigation or tool failure without a missing user decision, investigate or escalate instead.",
     parameters: {
       type: "object",
       properties: {
@@ -608,7 +608,7 @@ export const EXTRACT_FORM_STATE_DEF: ToolDefinition = {
   function: {
     name: ToolName.EXTRACT_FORM_STATE,
     description:
-      "Capture the current field values and submit buttons of a form as structured data, to verify it before submitting. Read-only.",
+      "Capture structured form state without changing the page: labels, values, required/filled/valid status, choices, and submit buttons. Use scope=\"document\" to inventory all application questions; use the default primary_form scope to verify one form before submitting. Prefer this over read_page for field-by-field form reviews.",
     parameters: {
       type: "object",
       properties: {
@@ -616,6 +616,12 @@ export const EXTRACT_FORM_STATE_DEF: ToolDefinition = {
           type: "integer",
           description:
             "Tag ID of a field or submit button inside the form. Omit for the primary form on the page.",
+        },
+        scope: {
+          type: "string",
+          enum: ["primary_form", "document"],
+          description:
+            "primary_form (default) captures one form for submit verification; document captures all traversable form controls for a complete inventory.",
         },
       },
       required: [],

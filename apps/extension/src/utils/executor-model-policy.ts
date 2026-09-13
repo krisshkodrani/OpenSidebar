@@ -79,12 +79,14 @@ const CEREBRAS_EXECUTOR_MODELS = new Set(["gemma-4-31b"]);
  * alias, which is not a routable id.
  */
 const OPENROUTER_EXECUTOR_MODELS = new Set([
+  "stealth/ox-alpha",
   "minimax/minimax-m3",
   "moonshotai/kimi-k2.7-code",
   "moonshotai/kimi-k2.6",
   "moonshotai/kimi-k2.5",
   "qwen/qwen3.7-plus",
   "qwen/qwen3-vl-30b-a3b-instruct",
+  "openai/gpt-5.6-luna",
   "openai/gpt-5.4-mini",
   "x-ai/grok-4.5",
 ]);
@@ -139,7 +141,7 @@ export function getExecutorEligibleModelIds(
 const VL_CAPABLE_MODELS: ReadonlySet<string> = EXECUTOR_ELIGIBLE_MODELS;
 
 function stripRoutingSuffix(model: string): string {
-  return model.replace(/:nitro$/, "");
+  return model.replace(/:(?:nitro|floor)$/, "");
 }
 
 export function getDefaultExecutorModel(

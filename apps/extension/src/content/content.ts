@@ -17,12 +17,10 @@ import {
   type AgentActivitySignalState,
 } from "./agent-cue";
 import { logger } from "../utils";
-import {
-  RuntimeMessage,
-  MessageSource,
-} from "../types";
+import { RuntimeMessage, MessageSource } from "../types";
 import { buildSnapshot } from "./snapshot";
 import { executeAction } from "./actions";
+import { reportSandboxTaskCompletion } from "./sandbox-completion";
 import {
   initPresence,
   resumePresence,
@@ -54,9 +52,7 @@ import {
   removeAgentBorder,
   type AgentBorderVisualState,
 } from "./in-page-ui/agent-border";
-import {
-  FLOATING_WRAP_ID,
-} from "./in-page-ui/floating-action-hud";
+import { FLOATING_WRAP_ID } from "./in-page-ui/floating-action-hud";
 import {
   removeE2ERail,
   renderE2ERail as renderE2ERailElement,
@@ -66,6 +62,12 @@ import {
   autoDismissModals,
   detectViewportCoveringOverlays,
 } from "./overlay-dismissal";
+import {
+  getPageDocumentState,
+  rejectStaleDismissRequest,
+  rejectStaleToolRequest,
+  startPageMutationEpochObserver,
+} from "./page-state-epoch";
 
 // Re-exported for tests and for consumers that historically imported the
 // overlay helpers from content.ts (the code moved to ./overlay-dismissal).
@@ -77,7 +79,7 @@ export {
 } from "./overlay-dismissal";
 
 logger.info("system", "Content Script Loaded");
-
+startPageMutationEpochObserver();
 
 function runJanitor() {
   const COMMON_selectors = [
@@ -541,13 +543,24 @@ function unmountE2EOverlay(): { ok: true } {
   return { ok: true };
 }
 
-
 // --- Message Handler ---
 
 if (typeof chrome !== "undefined" && chrome.runtime?.onMessage) {
   chrome.runtime.onMessage.addListener(
     (message: RuntimeMessage, _sender, sendResponse) => {
       const messageType = message.type as string;
+      if (
+        messageType === "SANDBOX_TASK_COMPLETION" &&
+        window.location.hostname === "play.opensidebar.com"
+      ) {
+        const payload = (
+          message as unknown as {
+            payload?: { status?: string; terminationReason?: string };
+          }
+        ).payload;
+        void reportSandboxTaskCompletion(payload).catch(() => undefined);
+        return false;
+      }
       if (messageType === "E2E_CONTENT_READY_PING") {
         sendResponse?.({
           ok: true,
@@ -582,7 +595,10 @@ if (typeof chrome !== "undefined" && chrome.runtime?.onMessage) {
           message.source !== MessageSource.SIDEPANEL &&
           message.source !== MessageSource.UI
         ) {
-          sendResponse?.({ ok: false, detail: "Invalid overlay control source." });
+          sendResponse?.({
+            ok: false,
+            detail: "Invalid overlay control source.",
+          });
           return true;
         }
         void mountE2EOverlay(
@@ -603,7 +619,10 @@ if (typeof chrome !== "undefined" && chrome.runtime?.onMessage) {
           message.source !== MessageSource.SIDEPANEL &&
           message.source !== MessageSource.UI
         ) {
-          sendResponse?.({ ok: false, detail: "Invalid overlay control source." });
+          sendResponse?.({
+            ok: false,
+            detail: "Invalid overlay control source.",
+          });
           return true;
         }
         sendResponse?.(unmountE2EOverlay());
@@ -650,7 +669,10 @@ if (typeof chrome !== "undefined" && chrome.runtime?.onMessage) {
           !previousSignalState.sessionActive
         ) {
           removeFloatingAgentCue();
-        } else if (previousSignalState.sessionActive && !message.payload.active) {
+        } else if (
+          previousSignalState.sessionActive &&
+          !message.payload.active
+        ) {
           setAgentBorder(false, message.payload.outcome);
         }
         return;
@@ -658,6 +680,10 @@ if (typeof chrome !== "undefined" && chrome.runtime?.onMessage) {
 
       if (message.type === "PASSIVE_MONITOR_PAGE_ACTIVITY") {
         applyWatchPageActivity(message.payload.active);
+        configurePassivePageListener(
+          message.payload.active,
+          message.payload.sessionId,
+        );
         return;
       }
 
@@ -732,6 +758,7 @@ if (typeof chrome !== "undefined" && chrome.runtime?.onMessage) {
       }
 
       if (message.type === "DISMISS_MODALS") {
+        if (rejectStaleDismissRequest(message, sendResponse)) return true;
         const result = autoDismissModals();
         sendResponse({
           type: "DISMISS_MODALS_RESPONSE",
@@ -780,6 +807,7 @@ if (typeof chrome !== "undefined" && chrome.runtime?.onMessage) {
             payload: {
               waitedMs: Math.round(performance.now() - probeStart),
               elementCount: elCount,
+              documentState: getPageDocumentState(),
             },
           });
         };
@@ -910,6 +938,7 @@ if (typeof chrome !== "undefined" && chrome.runtime?.onMessage) {
             payload: {
               snapshot,
               durationMs: Math.round(performance.now() - start),
+              documentState: getPageDocumentState(),
             },
           });
         })();
@@ -930,7 +959,7 @@ if (typeof chrome !== "undefined" && chrome.runtime?.onMessage) {
       }
 
       if (message.type === "TOOL_EXECUTE") {
-        const { toolName, args, toolCallId } = message.payload;
+        const { toolName, args, toolCallId, observationBasis } = message.payload;
         let responded = false;
         const respond = (res: any) => {
           if (responded) return;
@@ -942,6 +971,7 @@ if (typeof chrome !== "undefined" && chrome.runtime?.onMessage) {
             payload: { toolCallId, ...res },
           });
         };
+        if (rejectStaleToolRequest(observationBasis, respond)) return true;
         // Safety timeout: ensure sendResponse is always called
         setTimeout(() => {
           if (!responded) {
@@ -954,7 +984,7 @@ if (typeof chrome !== "undefined" && chrome.runtime?.onMessage) {
           }
         }, 10_000);
         try {
-          const res = executeAction(toolName, args);
+          const res = executeAction(toolName, args, toolCallId);
           Promise.resolve(res)
             .then(respond)
             .catch((err: any) => {
@@ -1249,9 +1279,7 @@ function readAgentActivitySignalState(): AgentActivitySignalState {
   };
 }
 
-function applyAgentActivitySignalState(
-  state: AgentActivitySignalState,
-): void {
+function applyAgentActivitySignalState(state: AgentActivitySignalState): void {
   agentSessionActive = state.sessionActive;
   agentPageActivityActive = state.pageActivityActive;
   e2eRailState = {
@@ -1349,6 +1377,71 @@ function removeFloatingHudOnly() {
 function removeFloatingAgentCue() {
   removeFloatingHudOnly();
   removeAgentBorder();
+}
+
+let passivePageObserver: MutationObserver | null = null;
+let passivePageChangeTimer: ReturnType<typeof setTimeout> | null = null;
+let passivePageSessionId: string | null = null;
+
+function configurePassivePageListener(
+  active: boolean,
+  sessionId: string,
+): void {
+  passivePageObserver?.disconnect();
+  passivePageObserver = null;
+  passivePageSessionId = active ? sessionId : null;
+  if (passivePageChangeTimer) clearTimeout(passivePageChangeTimer);
+  passivePageChangeTimer = null;
+  if (!active || !document.documentElement) return;
+
+  passivePageObserver = new MutationObserver((records) => {
+    const meaningful = records.some((record) => {
+      const element =
+        record.target instanceof Element
+          ? record.target
+          : record.target.parentElement;
+      if (element && isOwnElement(element)) return false;
+      if (record.type !== "childList") return true;
+      const changedNodes = [...record.addedNodes, ...record.removedNodes];
+      return (
+        changedNodes.length === 0 ||
+        changedNodes.some((node) => {
+          const changedElement =
+            node instanceof Element ? node : node.parentElement;
+          return !changedElement || !isOwnElement(changedElement);
+        })
+      );
+    });
+    if (!meaningful || passivePageChangeTimer) return;
+    passivePageChangeTimer = setTimeout(() => {
+      passivePageChangeTimer = null;
+      const currentSessionId = passivePageSessionId;
+      if (!currentSessionId) return;
+      void chrome.runtime
+        .sendMessage({
+          type: "PASSIVE_MONITOR_PAGE_CHANGED",
+          source: MessageSource.CONTENT,
+          requestId: crypto.randomUUID(),
+          payload: { sessionId: currentSessionId },
+        } satisfies RuntimeMessage)
+        .catch(() => undefined);
+    }, 250);
+  });
+  passivePageObserver.observe(document.documentElement, {
+    subtree: true,
+    childList: true,
+    characterData: true,
+    attributes: true,
+    attributeFilter: [
+      "aria-disabled",
+      "aria-label",
+      "class",
+      "disabled",
+      "hidden",
+      "style",
+      "value",
+    ],
+  });
 }
 
 function applyWatchPageActivity(active: boolean): void {

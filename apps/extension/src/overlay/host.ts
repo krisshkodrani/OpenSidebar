@@ -5,6 +5,7 @@ const OVERLAY_PORTAL_ID = "opensidebar-overlay-portal";
 const OVERLAY_ACTIVITY_HUD_ID = "opensidebar-overlay-activity-hud";
 const TITLEBAR_HEIGHT = 34;
 const MIN_VIEWPORT_GUTTER = 16;
+const KEYBOARD_MOVE_STEP = 24;
 const INITIAL_HEIGHT_VIEWPORT_RATIO = 0.95;
 const PREFERRED_OVERLAY_WIDTH = 430;
 
@@ -51,6 +52,11 @@ const OVERLAY_FRAME_CSS = `
 
 .osb-overlay-titlebar:active {
   cursor: grabbing;
+}
+
+.osb-overlay-titlebar:focus-visible {
+  outline: 2px solid #2dd4bf;
+  outline-offset: -2px;
 }
 
 .osb-overlay-title {
@@ -264,7 +270,7 @@ export function createOpenSidebarOverlayHost(
   frame.setAttribute("role", "region");
   frame.setAttribute("aria-label", "OpenSidebar overlay");
   frame.innerHTML = `
-    <div class="osb-overlay-titlebar" data-osb-drag-handle>
+    <div class="osb-overlay-titlebar" data-osb-drag-handle tabindex="0" aria-keyshortcuts="W A S D" title="Drag or use W A S D to move">
       <div class="osb-overlay-title">
         <span class="osb-overlay-dot" aria-hidden="true"></span>
         <span>OpenSidebar</span>
@@ -310,24 +316,31 @@ export function createOpenSidebarOverlayHost(
     startTop: number;
   } | null = null;
 
-  const onMouseMove = (event: MouseEvent) => {
-    if (!dragState) return;
+  const moveOverlay = (left: number, top: number) => {
     const width = numberFromPixels(host.style.width, metrics.width);
-    const height = numberFromPixels(host.style.height, metrics.height);
+    const height = numberFromPixels(
+      host.dataset.expandedHeight ?? host.style.height,
+      metrics.height,
+    );
     const viewport = viewportSize(doc);
-    const nextLeft = dragState.startLeft + event.clientX - dragState.startX;
-    const nextTop = dragState.startTop + event.clientY - dragState.startY;
     host.style.left = `${clamp(
-      nextLeft,
+      left,
       MIN_VIEWPORT_GUTTER,
       viewport.width - width - MIN_VIEWPORT_GUTTER,
     )}px`;
     host.style.top = `${clamp(
-      nextTop,
+      top,
       MIN_VIEWPORT_GUTTER,
       viewport.height - height - MIN_VIEWPORT_GUTTER,
     )}px`;
     host.dataset.dock = "custom";
+  };
+
+  const onMouseMove = (event: MouseEvent) => {
+    if (!dragState) return;
+    const nextLeft = dragState.startLeft + event.clientX - dragState.startX;
+    const nextTop = dragState.startTop + event.clientY - dragState.startY;
+    moveOverlay(nextLeft, nextTop);
   };
 
   const onMouseUp = () => {
@@ -350,9 +363,37 @@ export function createOpenSidebarOverlayHost(
       startLeft: numberFromPixels(host.style.left, metrics.left),
       startTop: numberFromPixels(host.style.top, metrics.top),
     };
+    if (titlebar instanceof HTMLElement) titlebar.focus({ preventScroll: true });
     doc.addEventListener("mousemove", onMouseMove);
     doc.addEventListener("mouseup", onMouseUp);
     mouseEvent.preventDefault();
+  };
+
+  const onKeyDown = (event: Event) => {
+    const keyboardEvent = event as KeyboardEvent;
+    if (keyboardEvent.altKey || keyboardEvent.ctrlKey || keyboardEvent.metaKey) return;
+    if (
+      keyboardEvent.target instanceof Element &&
+      keyboardEvent.target.closest("button, input, textarea, select, [contenteditable='true']")
+    ) {
+      return;
+    }
+    const direction = keyboardEvent.key.toLowerCase();
+    const delta = KEYBOARD_MOVE_STEP * (keyboardEvent.shiftKey ? 3 : 1);
+    const offsets: Record<string, [number, number]> = {
+      w: [0, -delta],
+      a: [-delta, 0],
+      s: [0, delta],
+      d: [delta, 0],
+    };
+    const offset = offsets[direction];
+    if (!offset) return;
+    moveOverlay(
+      numberFromPixels(host.style.left, metrics.left) + offset[0],
+      numberFromPixels(host.style.top, metrics.top) + offset[1],
+    );
+    keyboardEvent.preventDefault();
+    keyboardEvent.stopPropagation();
   };
 
   const onMinimize = () => {
@@ -415,6 +456,7 @@ export function createOpenSidebarOverlayHost(
   };
 
   titlebar?.addEventListener("mousedown", onMouseDown);
+  titlebar?.addEventListener("keydown", onKeyDown);
   dockButton?.addEventListener("click", onDock);
   minimizeButton?.addEventListener("click", onMinimize);
   closeButton?.addEventListener("click", dispose);

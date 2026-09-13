@@ -10,6 +10,7 @@ export * from "./PlanStepIcon";
 export * from "./PlanStrip";
 export * from "./RunCard";
 export * from "./TaskStatusRegion";
+export * from "./WorkSurfaceRegion";
 export * from "./WatchModeControl";
 
 export * from "./SavedPromptsDrawer";

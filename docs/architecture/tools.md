@@ -114,11 +114,12 @@ sequenceDiagram
     participant DOM
 
     LLM->>AgentLoop: Tool call(s)
-    AgentLoop->>ToolRegistry: execute(toolCall, tabId, signal)
+    AgentLoop->>ToolRegistry: execute(toolCall, tabId, signal, trusted basis)
     Note over ToolRegistry: site-access block check first
 
     alt Content-script tool
-        ToolRegistry->>ContentScript: TOOL_EXECUTE
+        ToolRegistry->>ContentScript: TOOL_EXECUTE + document basis
+        ContentScript->>ContentScript: Validate identity / mutation epoch
         ContentScript->>DOM: Perform action
         ContentScript-->>ToolRegistry: TOOL_RESULT
     else Service-worker tool
@@ -127,11 +128,18 @@ sequenceDiagram
     end
 
     ToolRegistry-->>AgentLoop: string | ToolExecutionResult
+    AgentLoop->>AgentLoop: Observe after-state + emit ActionReceipt
     AgentLoop->>ContextManager: Add tool result
 ```
 
 Parallel vs sequential batching, batch snapshot refresh, and circuit breakers
 are the agent loop's job — see [Agent Loop](./agent-loop.md).
+
+The observation basis is injected by trusted runtime code and never appears in
+the LLM-facing `ToolDefinition`. In the authoritative coordinator path, stale
+content actions and direct background DOM mutations return the typed
+`stale_observation` error before changing the page. Browser-level navigation
+that is not grounded in the current DOM is not epoch-gated.
 
 ## Adding a new tool
 

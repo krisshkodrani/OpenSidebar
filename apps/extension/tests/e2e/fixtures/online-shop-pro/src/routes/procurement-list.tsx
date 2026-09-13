@@ -2,8 +2,7 @@ import { useState, useEffect } from "react";
 
 /**
  * Procurement List fixture — a "docs list" page that tells the agent
- * what to buy and from which store page. The agent must open each store
- * in a new tab, add the item to cart, then come back and check it off.
+ * what to buy and from which store page.
  *
  * Each store page is a minimal self-contained shop (inline on this route
  * via query-param ?store=<id>) so we don't need external sites.
@@ -14,10 +13,10 @@ import { useState, useEffect } from "react";
 interface ProcurementItem {
   id: string;
   name: string;
-  store: string;       // human-readable store name
-  storeSlug: string;   // used in ?store= param
+  store: string; // human-readable store name
+  storeSlug: string; // used in ?store= param
   quantity: number;
-  maxPrice: number;     // budget ceiling
+  maxPrice: number; // budget ceiling
 }
 
 const ITEMS: ProcurementItem[] = [
@@ -56,22 +55,57 @@ interface StoreProduct {
   inStock: boolean;
 }
 
-const STORE_CATALOGS: Record<string, { name: string; products: StoreProduct[] }> = {
+const PROCUREMENT_ORDERS_KEY = "__procurementOrders";
+
+const STORE_CATALOGS: Record<
+  string,
+  { name: string; products: StoreProduct[] }
+> = {
   techdirect: {
     name: "TechDirect",
     products: [
-      { id: "td-kb-1", name: "Ergonomic Keyboard", price: 79.99, inStock: true },
-      { id: "td-kb-2", name: "Mechanical Keyboard", price: 129.99, inStock: true },
-      { id: "td-cable-1", name: "USB-C Monitor Cable", price: 12.99, inStock: true },
+      {
+        id: "td-kb-1",
+        name: "Ergonomic Keyboard",
+        price: 79.99,
+        inStock: true,
+      },
+      {
+        id: "td-kb-2",
+        name: "Mechanical Keyboard",
+        price: 129.99,
+        inStock: true,
+      },
+      {
+        id: "td-cable-1",
+        name: "USB-C Monitor Cable",
+        price: 12.99,
+        inStock: true,
+      },
       { id: "td-cable-2", name: "HDMI Cable 6ft", price: 9.99, inStock: true },
-      { id: "td-mouse-1", name: "Wireless Mouse", price: 34.99, inStock: false },
+      {
+        id: "td-mouse-1",
+        name: "Wireless Mouse",
+        price: 34.99,
+        inStock: false,
+      },
     ],
   },
   officehub: {
     name: "OfficeHub",
     products: [
-      { id: "oh-mat-1", name: "Standing Desk Mat", price: 39.99, inStock: true },
-      { id: "oh-chair-1", name: "Lumbar Support Cushion", price: 29.99, inStock: true },
+      {
+        id: "oh-mat-1",
+        name: "Standing Desk Mat",
+        price: 39.99,
+        inStock: true,
+      },
+      {
+        id: "oh-chair-1",
+        name: "Lumbar Support Cushion",
+        price: 29.99,
+        inStock: true,
+      },
       { id: "oh-org-1", name: "Desk Organizer", price: 19.99, inStock: true },
     ],
   },
@@ -81,7 +115,9 @@ const STORE_CATALOGS: Record<string, { name: string; products: StoreProduct[] }>
 
 function MiniStore({ slug }: { slug: string }) {
   const catalog = STORE_CATALOGS[slug];
-  const [cart, setCart] = useState<{ productId: string; name: string; qty: number; price: number }[]>([]);
+  const [cart, setCart] = useState<
+    { productId: string; name: string; qty: number; price: number }[]
+  >([]);
   const [orderPlaced, setOrderPlaced] = useState(false);
   const [orderNumber, setOrderNumber] = useState("");
 
@@ -109,12 +145,41 @@ function MiniStore({ slug }: { slug: string }) {
           c.productId === product.id ? { ...c, qty: c.qty + qty } : c,
         );
       }
-      return [...prev, { productId: product.id, name: product.name, qty, price: product.price }];
+      return [
+        ...prev,
+        {
+          productId: product.id,
+          name: product.name,
+          qty,
+          price: product.price,
+        },
+      ];
     });
   };
 
   const placeOrder = () => {
     const num = `ORD-${Date.now().toString(36).toUpperCase()}`;
+    try {
+      const existing = JSON.parse(
+        window.localStorage.getItem(PROCUREMENT_ORDERS_KEY) ?? "[]",
+      );
+      const orders = Array.isArray(existing) ? existing : [];
+      window.localStorage.setItem(
+        PROCUREMENT_ORDERS_KEY,
+        JSON.stringify([
+          ...orders,
+          {
+            slug,
+            orderPlaced: true,
+            orderNumber: num,
+            cart,
+            placedAt: Date.now(),
+          },
+        ]),
+      );
+    } catch {
+      // The per-tab window mirror remains available when storage is disabled.
+    }
     setOrderNumber(num);
     setOrderPlaced(true);
   };
@@ -123,7 +188,10 @@ function MiniStore({ slug }: { slug: string }) {
 
   if (orderPlaced) {
     return (
-      <div className="fixture-static" style={{ padding: "2rem", maxWidth: 700, margin: "0 auto" }}>
+      <div
+        className="fixture-static"
+        style={{ padding: "2rem", maxWidth: 700, margin: "0 auto" }}
+      >
         <h1>{catalog.name}</h1>
         <div
           data-testid="order-confirmation"
@@ -138,7 +206,8 @@ function MiniStore({ slug }: { slug: string }) {
         >
           <h2 style={{ color: "#059669" }}>Order Confirmed!</h2>
           <p>
-            Order number: <strong data-testid="order-number">{orderNumber}</strong>
+            Order number:{" "}
+            <strong data-testid="order-number">{orderNumber}</strong>
           </p>
           <p>Items: {cart.map((c) => `${c.name} x${c.qty}`).join(", ")}</p>
           <p>Total: ${total.toFixed(2)}</p>
@@ -148,7 +217,10 @@ function MiniStore({ slug }: { slug: string }) {
   }
 
   return (
-    <div className="fixture-static" style={{ padding: "2rem", maxWidth: 700, margin: "0 auto" }}>
+    <div
+      className="fixture-static"
+      style={{ padding: "2rem", maxWidth: 700, margin: "0 auto" }}
+    >
       <h1>{catalog.name}</h1>
       <p style={{ color: "#6b7280", marginBottom: "1.5rem" }}>
         Browse our products and add items to your cart.
@@ -174,7 +246,9 @@ function MiniStore({ slug }: { slug: string }) {
               <div style={{ color: "#6b7280", fontSize: 14 }}>
                 ${product.price.toFixed(2)}
                 {!product.inStock && (
-                  <span style={{ color: "#ef4444", marginLeft: 8 }}>Out of stock</span>
+                  <span style={{ color: "#ef4444", marginLeft: 8 }}>
+                    Out of stock
+                  </span>
                 )}
               </div>
             </div>
@@ -246,17 +320,16 @@ export default function ProcurementList() {
   // Check if we're rendering a store view
   const params = new URLSearchParams(window.location.search);
   const storeSlug = params.get("store");
-
-  if (storeSlug) {
-    return <MiniStore slug={storeSlug} />;
-  }
-
   const [checkedItems, setCheckedItems] = useState<Set<string>>(new Set());
 
   // Expose state for test verification
   useEffect(() => {
     (window as any).__procurementChecked = [...checkedItems];
   }, [checkedItems]);
+
+  if (storeSlug) {
+    return <MiniStore slug={storeSlug} />;
+  }
 
   const toggleItem = (itemId: string) => {
     setCheckedItems((prev) => {
@@ -270,11 +343,14 @@ export default function ProcurementList() {
   const allDone = checkedItems.size === ITEMS.length;
 
   return (
-    <div className="fixture-static" style={{ padding: "2rem", maxWidth: 800, margin: "0 auto" }}>
+    <div
+      className="fixture-static"
+      style={{ padding: "2rem", maxWidth: 800, margin: "0 auto" }}
+    >
       <h1>Procurement List</h1>
       <p style={{ color: "#6b7280", marginBottom: "0.5rem" }}>
-        Open each store in a <strong>new tab</strong>, purchase the listed items,
-        then come back here and check them off. Use the store links below.
+        Purchase the listed items from their stores, then mark each completed
+        item below.
       </p>
       <p style={{ color: "#9ca3af", fontSize: 14, marginBottom: "1.5rem" }}>
         {checkedItems.size} of {ITEMS.length} items completed
@@ -321,7 +397,11 @@ export default function ProcurementList() {
                   />
                 </td>
                 <td style={{ padding: "0.75rem" }}>
-                  <span style={{ textDecoration: checked ? "line-through" : "none" }}>
+                  <span
+                    style={{
+                      textDecoration: checked ? "line-through" : "none",
+                    }}
+                  >
                     {item.name}
                   </span>
                 </td>
@@ -336,7 +416,9 @@ export default function ProcurementList() {
                     {item.store}
                   </a>
                 </td>
-                <td style={{ padding: "0.75rem", textAlign: "center" }}>{item.quantity}</td>
+                <td style={{ padding: "0.75rem", textAlign: "center" }}>
+                  {item.quantity}
+                </td>
                 <td style={{ padding: "0.75rem", textAlign: "right" }}>
                   ${item.maxPrice.toFixed(2)}
                 </td>

@@ -440,6 +440,43 @@ describe("LLMClient construction & tier switching", () => {
     expect(sentModel).toBe("custom/judge");
   });
 
+  test("prefers independent OpenRouter upstreams without blocking fallback", async () => {
+    const client = new LLMClient("test-api-key", {
+      providerMode: "openrouter",
+      executorModel: "minimax/minimax-m3",
+      plannerModel: "openai/gpt-5.6-terra",
+      judgeModel: "openai/gpt-5.6-luna",
+      executorProviderPin: "Groq",
+      plannerProviderPin: "OpenAI",
+      judgeProviderPin: "OpenAI",
+    });
+    const sent: Array<Record<string, unknown>> = [];
+    mockFetch((_url, init) => {
+      sent.push(JSON.parse(init!.body as string));
+      return jsonApiResponse('{"pass": true}');
+    });
+
+    await client.complete(baseRequest());
+    client.switchToPlanner();
+    await client.complete(baseRequest());
+    await client.runJudge({ systemPrompt: "s", userPrompt: "u" });
+
+    expect(sent.map(({ model, provider }) => ({ model, provider }))).toEqual([
+      {
+        model: "minimax/minimax-m3",
+        provider: { order: ["Groq"], allow_fallbacks: true },
+      },
+      {
+        model: "openai/gpt-5.6-terra",
+        provider: { order: ["OpenAI"], allow_fallbacks: true },
+      },
+      {
+        model: "openai/gpt-5.6-luna",
+        provider: { order: ["OpenAI"], allow_fallbacks: true },
+      },
+    ]);
+  });
+
   test("composeText strips think tags from the writer output", async () => {
     const client = makeClient({ writerModel: "custom/writer" });
     mockFetch(() => jsonApiResponse("<think>plan</think>Final text."));
@@ -515,6 +552,58 @@ describe("LLMClient construction & tier switching", () => {
     expect(client.getCurrentModel()).toBe(MODEL_EXECUTOR);
     client.switchToPlanner();
     expect(client.getCurrentModel()).toBe("custom/planner");
+  });
+
+  test("strict routing prevents runtime model fallback and request overrides", async () => {
+    const client = makeClient({ strictModelRouting: true, executorProviderPin: "coreweave" });
+    const model = client.getCurrentModel();
+    expect(client.activateExecutorFallback("empty_response")).toBe(false);
+    expect(client.getCurrentModel()).toBe(model);
+    let calls = 0;
+    mockFetch(() => { calls += 1; return jsonApiResponse("ok"); });
+    await expect(client.complete(baseRequest({ model: "other/model" }))).rejects.toThrow("forbids a request model override");
+    expect(calls).toBe(0);
+  });
+
+  test("strict routing uses only the pinned upstream for executor and planner", async () => {
+    const client = makeClient({ strictModelRouting: true, executorProviderPin: "coreweave", plannerProviderPin: "deepinfra" });
+    const payloads: any[] = [];
+    mockFetch((_url, init) => { payloads.push(JSON.parse(String(init?.body))); return jsonApiResponse("ok"); });
+    await client.complete(baseRequest());
+    client.switchToPlanner();
+    await client.complete(baseRequest());
+    expect(payloads.map((p) => p.provider)).toEqual([
+      { only: ["coreweave"], allow_fallbacks: false },
+      { only: ["deepinfra"], allow_fallbacks: false },
+    ]);
+  });
+
+  test("strict routing fails before fetching when an active seat has no pin", async () => {
+    const client = makeClient({ strictModelRouting: true });
+    let calls = 0;
+    mockFetch(() => { calls += 1; return jsonApiResponse("ok"); });
+    await expect(client.complete(baseRequest())).rejects.toThrow("requires an OpenRouter provider pin");
+    expect(calls).toBe(0);
+  });
+
+  test("strict writer routing inherits the executor pin when it reuses that seat", async () => {
+    const client = makeClient({ strictModelRouting: true, executorProviderPin: "coreweave" });
+    const payloads: any[] = [];
+    mockFetch((_url, init) => { payloads.push(JSON.parse(String(init?.body))); return jsonApiResponse("Composed."); });
+    const result = await client.composeText({ systemPrompt: "Write prose.", userPrompt: "Draft a short reply." });
+    expect(result.text).toBe("Composed.");
+    expect(payloads[0].model).toBe(MODEL_EXECUTOR);
+    expect(payloads[0].provider).toEqual({ only: ["coreweave"], allow_fallbacks: false });
+    expect(client.getCurrentModel()).toBe(MODEL_EXECUTOR);
+  });
+
+  test("strict routing does not silently route an unpinned dedicated writer", async () => {
+    const client = makeClient({ strictModelRouting: true, executorProviderPin: "coreweave", writerModel: "custom/writer" });
+    let calls = 0;
+    mockFetch(() => { calls++; return jsonApiResponse("Composed."); });
+    await expect(client.composeText({ systemPrompt: "Write prose.", userPrompt: "Draft a reply." })).rejects.toThrow("requires an OpenRouter provider pin");
+    expect(calls).toBe(0);
+    expect(client.getCurrentModel()).toBe(MODEL_EXECUTOR);
   });
 
   test("activateExecutorFallback switches executor model for runtime anomalies", () => {
@@ -883,6 +972,22 @@ describe("complete() error handling & retry", () => {
     expect(result.content).toBe("Success");
     // Should have called fetch more than once due to retries
     expect(callCount).toBeGreaterThan(1);
+  });
+
+  test("retries transient OpenRouter timeouts and server errors", async () => {
+    const client = makeClient();
+    let callCount = 0;
+    mockFetch(() => {
+      callCount++;
+      if (callCount === 1) return new Response("Timed out", { status: 408 });
+      if (callCount === 2)
+        return new Response("Temporary router error", { status: 500 });
+      return jsonApiResponse("Recovered");
+    });
+
+    const result = await client.complete(baseRequest());
+    expect(result.content).toBe("Recovered");
+    expect(callCount).toBe(3);
   });
 
   test("does NOT retry on 400/401/404", async () => {

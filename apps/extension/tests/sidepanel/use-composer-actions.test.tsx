@@ -3,7 +3,10 @@ import { act } from "react";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 import { createRoot, type Root } from "react-dom/client";
 import "../setup";
-import { useComposerActions } from "../../src/sidepanel/hooks/useComposerActions";
+import {
+  isExplicitStopCommand,
+  useComposerActions,
+} from "../../src/sidepanel/hooks/useComposerActions";
 import {
   setUiRuntimePortForTesting,
   type UiRuntimePort,
@@ -186,6 +189,38 @@ describe("useComposerActions /new command", () => {
     expect(chrome.runtime.sendMessage).not.toHaveBeenCalled();
   });
 
+  test.each([
+    "stop",
+    "Stop the task",
+    "please cancel this run now",
+    "abort current work",
+    "do not continue",
+  ])("routes explicit stop guidance through the stop control: %s", async (text) => {
+    useStore.setState({ isAgentRunning: true, inputText: text });
+
+    await act(async () => {
+      await actions.handleSendFeedback(text);
+    });
+
+    expect(chrome.runtime.sendMessage).toHaveBeenCalledWith(
+      expect.objectContaining({
+        type: "STOP_AGENT",
+        payload: { workspaceId: "ws-test" },
+      }),
+    );
+    expect(useStore.getState().messages).toEqual([]);
+    expect(useStore.getState().inputText).toBe("");
+    expect(useStore.getState().isAgentRunning).toBe(false);
+  });
+
+  test.each([
+    "do not stop",
+    "stop deleting only after the current page",
+    "cancel the newsletter subscription",
+  ])("does not misroute ordinary guidance as a stop control: %s", (text) => {
+    expect(isExplicitStopCommand(text)).toBe(false);
+  });
+
   test("blocks normal sends without a configured provider key", async () => {
     await act(async () => {
       await actions.handleSend("Summarize the page");
@@ -240,5 +275,13 @@ describe("useComposerActions /new command", () => {
         }),
       }),
     );
+
+    useStore.setState({ isAgentRunning: false, inputText: "" });
+    sendMessage.mockRejectedValueOnce(new Error("runtime unavailable"));
+    await act(async () => {
+      await actions.handleSend("Keep this draft");
+    });
+    expect(useStore.getState().inputText).toBe("Keep this draft");
+    expect(useStore.getState().error).toBe("Failed to communicate with the agent.");
   });
 });

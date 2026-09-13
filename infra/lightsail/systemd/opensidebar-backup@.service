@@ -1,0 +1,14 @@
+[Unit]
+Description=OpenSidebar encrypted PostgreSQL backup (%i)
+Requires=docker.service
+After=docker.service opensidebar-stack.service opensidebar-shared.service network-online.target
+
+[Service]
+Type=oneshot
+User=root
+WorkingDirectory=/opt/opensidebar/infra/lightsail
+EnvironmentFile=/etc/opensidebar/playground.env
+ExecStart=/bin/sh ./backup.sh %i
+Nice=10
+IOSchedulingClass=best-effort
+IOSchedulingPriority=7

@@ -41,6 +41,21 @@ describe("judgeCacheKey", () => {
 });
 
 describe("runRubricJudge", () => {
+  test("allows preserved evidence for prerequisite views replaced by terminal state", async () => {
+    const seat = seatReturning(
+      '{"pass": true, "confidence": 0.9, "perCriterion": [{"id":"c1","pass":true},{"id":"c2","pass":true}]}',
+    );
+    await runRubricJudge(rubric, { seat });
+
+    const call = vi.mocked(seat.runJudge).mock.calls[0]?.[0];
+    expect(call?.systemPrompt).toContain(
+      "preserved trajectory evidence may establish that criterion",
+    );
+    expect(call?.systemPrompt).toContain(
+      "not require the old control or table to coexist with terminal confirmation",
+    );
+  });
+
   test("parses a passing verdict", async () => {
     const seat = seatReturning(
       'Here you go: {"pass": true, "confidence": 0.9, "perCriterion": [{"id":"c1","pass":true},{"id":"c2","pass":true}], "entailment": [{"claimKey":"fact:primary-email","label":"entailed"}]}',

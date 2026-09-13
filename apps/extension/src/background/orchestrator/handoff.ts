@@ -14,6 +14,7 @@ import {
   summarizeSkillForVerifier,
 } from "./skills";
 import { ToolName } from "../../types";
+import { buildRootResponseContractSection } from "./root-response-contract";
 
 const MAX_HANDOFF_ARTIFACTS = 4;
 const MAX_NOTE_LEN = 240;
@@ -634,6 +635,10 @@ export function buildExecutorInstruction(
         ]
       : ["- Call done() only when success criteria are satisfied."]),
   );
+
+  if (originalQuery) {
+    sections.push("", ...buildRootResponseContractSection(originalQuery));
+  }
 
   sections.push(...buildExecutorParallelContextSection(parallelContext));
 

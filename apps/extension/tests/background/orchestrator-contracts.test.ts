@@ -54,6 +54,8 @@ describe("Orchestrator role contracts", () => {
     expect(contract.allowedTools.includes(ToolName.READ_PAGE)).toBe(true);
     expect(contract.allowedTools.includes(ToolName.CLICK_ELEMENT)).toBe(true);
     expect(contract.allowedTools.includes(ToolName.DONE)).toBe(true);
+    expect(contract.allowedTools.includes(ToolName.CLARIFY)).toBe(true);
+    expect(contract.disabledTools.has(ToolName.CLARIFY)).toBe(false);
     expect(contract.disabledTools.has(ToolName.NAVIGATE)).toBe(true);
   });
 

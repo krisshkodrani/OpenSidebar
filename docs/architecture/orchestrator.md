@@ -122,6 +122,18 @@ This scoping prevents false retries where the verifier rejects a node because th
 
 An optimization that skips the last remaining node when its success criteria are already satisfied on the page. Constraints:
 
+Root completion also uses a conservative effect-aware reconciliation pass. It
+combines accepted node results with a fresh page snapshot and the root task
+contract, and may suppress only redundant read-only reporting or
+reverification work. Preparatory, consequential, and ambiguous writes must
+settle normally. Explicit prepare-only constraints must remain true.
+
+The authority order is: tool-level approval enforcement for the concrete
+action; grounded page and side-effect evidence; root task reconciliation;
+node verifier/judge evidence; planner and skill hints. A judge can invalidate
+unsupported evidence, but a skill label cannot authorize a consequential
+action or keep a grounded, fully covered root objective alive by itself.
+
 - Only fires when exactly 1 pending node remains
 - Must pass task contract coverage check
 - Blocked for round-trip and multi-obligation tasks

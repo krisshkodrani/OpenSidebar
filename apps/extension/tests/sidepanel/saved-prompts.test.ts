@@ -43,7 +43,8 @@ describe("Saved Prompts CRUD", () => {
     expect(prompts[0].category).toBe("Research");
     // Seeded flag should be set
     expect(stored[SEEDED_KEY]).toBe(true);
-    expect(stored[VERSION_KEY]).toBe(4);
+    expect(stored[VERSION_KEY]).toBe(5);
+    expect(prompts[0].id).toBe("builtin:summarize-page");
     expect(prompts[0].content).not.toContain("done()");
   });
 
@@ -85,7 +86,8 @@ describe("Saved Prompts CRUD", () => {
     expect(prompts).toHaveLength(1);
     expect(prompts[0].title).toBe("Summarize this page");
     expect(prompts[0].content).not.toContain("done()");
-    expect(stored[VERSION_KEY]).toBe(4);
+    expect(stored[VERSION_KEY]).toBe(5);
+    expect(prompts[0].id).toBe("builtin:summarize-page");
   });
 
   test("v3->v4 migration preserves edited default prompts", async () => {
@@ -107,7 +109,7 @@ describe("Saved Prompts CRUD", () => {
     expect(prompts[0].content).toBe(
       "Summarize this page in exactly five bullets.",
     );
-    expect(stored[VERSION_KEY]).toBe(4);
+    expect(stored[VERSION_KEY]).toBe(5);
   });
 
   test("addSavedPrompt creates a prompt and persists it", async () => {

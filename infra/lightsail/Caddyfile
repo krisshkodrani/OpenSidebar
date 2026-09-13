@@ -1,0 +1,29 @@
+{
+  email {$ACME_EMAIL}
+  admin off
+}
+
+api-origin.opensidebar.com {
+  encode zstd gzip
+  @api path /api/* /health/* /launch/*
+  handle @api {
+    header Cache-Control "no-store"
+    header Strict-Transport-Security "max-age=31536000; includeSubDomains"
+    header X-Content-Type-Options "nosniff"
+    header Referrer-Policy "no-referrer"
+    header Permissions-Policy "camera=(), microphone=(), geolocation=()"
+    reverse_proxy api:8787
+  }
+  respond 404
+  log {
+    output stdout
+    format filter {
+      wrap json
+      fields {
+        request>headers>Authorization delete
+        request>headers>Cookie delete
+        request>headers>X-Os-Csrf delete
+      }
+    }
+  }
+}

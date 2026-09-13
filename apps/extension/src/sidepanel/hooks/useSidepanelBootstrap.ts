@@ -3,6 +3,7 @@ import { type Workspace } from "../../types";
 import { logger } from "../../utils";
 import { useStore } from "../store";
 import { getE2EPanelConfig, uiRuntime } from "../runtime";
+import { migrateLegacyWorkSurfaceState } from "../work-surface-storage";
 
 export function useSidepanelBootstrap(): void {
   const loadSettingsFromStorage = useStore((s) => s.loadSettingsFromStorage);
@@ -19,6 +20,15 @@ export function useSidepanelBootstrap(): void {
     logger.info("ui", "Side Panel Mounted");
 
     (async () => {
+      // 0.7.4 intentionally starts the redesigned work surface fresh. The
+      // marker makes this destructive UI-only migration run exactly once.
+      try {
+        await migrateLegacyWorkSurfaceState(uiRuntime.storage.local);
+      } catch (error) {
+        logger.warn("ui", "Work surface migration could not be completed", {
+          error,
+        });
+      }
       await loadSettingsFromStorage();
       const e2ePanelConfig = getE2EPanelConfig();
       if (e2ePanelConfig?.workspaceId) {

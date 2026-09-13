@@ -3,10 +3,10 @@ import { existsSync, mkdirSync, readFileSync, writeFileSync } from "fs";
 import { dirname, relative, resolve } from "path";
 import { fileURLToPath } from "url";
 import type { Page } from "puppeteer";
+import { releaseBuildSha256 } from "./release-build-identity.js";
 import {
   closeExtension,
   launchWithExtension,
-  openHelperPage,
 } from "../apps/extension/tests/e2e/helpers/browser";
 import {
   getFixtureUrl,
@@ -123,7 +123,7 @@ async function pressShortcut(page: Page, shortcut: string): Promise<void> {
 }
 
 async function openNativePanelFromHelper(
-  helper: Awaited<ReturnType<typeof openHelperPage>>,
+  helper: Page,
   tabId: number,
 ): Promise<NativePanelOpenResult> {
   await helper.evaluate((targetTabId: number) => {
@@ -223,7 +223,7 @@ function artifactPath(): string {
 }
 
 async function readSmokeState(
-  helper: Awaited<ReturnType<typeof openHelperPage>>,
+  helper: Page,
   tabId: number,
 ): Promise<SmokeState> {
   return helper.evaluate(async (targetTabId: number) => {
@@ -301,6 +301,9 @@ async function main(): Promise<void> {
     : undefined;
   const startedAt = new Date().toISOString();
   const outputPath = artifactPath();
+  const distPath = resolve(repoRoot, "dist");
+  const version = JSON.parse(readFileSync(resolve(distPath, "manifest.json"), "utf8")).version;
+  const distSha256 = releaseBuildSha256(distPath);
   let lastState: SmokeState | null = null;
   let trigger: "shortcut" | "helper_open" | "manual" = manualOnly
     ? "manual"
@@ -308,7 +311,7 @@ async function main(): Promise<void> {
   let helperOpenResult: NativePanelOpenResult | null = null;
 
   await startFixtureServer();
-  const ctx = await launchWithExtension();
+  const ctx = await launchWithExtension("production");
   try {
     const page = await ctx.browser.newPage();
     await page.goto(getFixtureUrl(route), {
@@ -316,7 +319,9 @@ async function main(): Promise<void> {
       timeout: 30_000,
     });
     const fixtureUrl = page.url();
-    const helper = await openHelperPage(ctx);
+    // Use a shipped extension document for the user gesture. Never inject E2E files into dist.
+    const helper = await ctx.browser.newPage();
+    await helper.goto(`chrome-extension://${ctx.extensionId}/manifest.json`);
     const tabId = await helper.evaluate(async (url: string) => {
       const tabs = await chrome.tabs.query({});
       return tabs.find((tab) => tab.url === url)?.id ?? -1;
@@ -406,8 +411,47 @@ async function main(): Promise<void> {
         lastState.workspace &&
         lastState.sidePanelOptions?.path === "src/sidepanel/index.html"
       ) {
+        const nativeTarget = await ctx.browser.waitForTarget(
+          (target) => target.url() === `chrome-extension://${ctx.extensionId}/src/sidepanel/index.html`,
+          { timeout: 10_000 },
+        );
+        const nativePage = await nativeTarget.asPage();
+        await nativePage.waitForFunction(
+          () => Boolean(document.querySelector("#root")?.childElementCount),
+          { timeout: 10_000 },
+        );
+        await nativePage.click('button[aria-label="Settings"]');
+        await nativePage.waitForSelector('[role="tablist"][aria-label="Settings sections"]');
+        await nativePage.evaluate(() => {
+          const tab = [...document.querySelectorAll<HTMLButtonElement>('[role="tab"]')]
+            .find((element) => element.textContent?.trim() === "advanced");
+          if (!tab) throw new Error("Advanced Settings tab missing");
+          tab.click();
+        });
+        await nativePage.waitForFunction(() =>
+          document.querySelector('[role="tab"][aria-selected="true"]')?.textContent?.trim() === "advanced",
+        );
+        // Observe the persisted state before remounting; do not seed it.
+        await helper.waitForFunction(async () => {
+          const stored = await chrome.storage.session.get(null);
+          return Object.entries(stored).some(([key, value]) =>
+            key.startsWith("opensidebar:settingsView:v1:") && value?.open && value?.activeTab === "advanced",
+          );
+        });
+        await nativePage.reload({ waitUntil: "domcontentloaded" });
+        await nativePage.waitForFunction(() =>
+          document.querySelector('[role="tab"][aria-selected="true"]')?.textContent?.trim() === "advanced",
+        );
+        if (releaseBuildSha256(distPath) !== distSha256) {
+          throw new Error("Production build changed during native smoke");
+        }
         const evidence = {
           result: "passed",
+          build: "production",
+          version,
+          distSha256,
+          nativePanelRendered: true,
+          settingsPersistedAfterRemount: true,
           startedAt,
           completedAt: new Date().toISOString(),
           commit: readGitCommit(),

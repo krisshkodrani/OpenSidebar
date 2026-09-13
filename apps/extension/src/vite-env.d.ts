@@ -1,0 +1,16 @@
+interface ImportMetaEnv {
+  readonly MODE: string;
+  readonly VITE_CLOUD_SESSIONS_ENABLED?: string;
+  readonly VITE_REMOTE_MISSIONS_ENABLED?: string;
+  readonly VITE_REMOTE_MISSION_DIAGNOSTICS_ENABLED?: string;
+  readonly VITE_CHECKPOINT_RESTORE_ENABLED?: string;
+  readonly VITE_DEVICE_COMMANDS_ENABLED?: string;
+  readonly VITE_DEVICE_TAKEOVER_ENABLED?: string;
+  readonly VITE_PAGE_STATE_COORDINATOR_MODE?: "shadow" | "authoritative";
+}
+
+declare const __REMOTE_MISSIONS_RELEASE_ENABLED__: boolean;
+
+interface ImportMeta {
+  readonly env: ImportMetaEnv;
+}
