@@ -57,6 +57,7 @@ describe("log-server helpers", () => {
       outcome: "completed",
       turnCount: 4,
       summary: "done",
+      skillToolMetrics: { skillId: "form-fill" },
       metrics: {
         modelBreakdown: {
           "openai/gpt-5.4-mini:nitro": { calls: 4 },
@@ -78,6 +79,7 @@ describe("log-server helpers", () => {
           outcome: "completed",
           mode: "agent",
           model: "openai/gpt-5.4-mini:nitro",
+          skill: "form-fill",
           tier: "planner",
           runId: "run-12",
           q: "billing",
@@ -85,6 +87,10 @@ describe("log-server helpers", () => {
         entries as any,
       ),
     ).toBe(true);
+
+    expect(
+      matchesTraceFilters(session, { skill: "catalog-order" }, entries as any),
+    ).toBe(false);
 
     expect(
       matchesTraceFilters(

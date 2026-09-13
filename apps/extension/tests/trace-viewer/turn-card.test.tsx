@@ -103,5 +103,12 @@ describe("TurnCard", () => {
     expect(container.textContent).toContain("Completion rejected");
     expect(container.textContent).toContain("Degraded perception");
     expect(container.textContent).toContain("Context pressure");
+    const expandedLabels = Array.from(
+      container.querySelectorAll('button[aria-expanded="true"]'),
+    ).map((button) => button.textContent ?? "");
+    expect(expandedLabels.some((label) => label.includes("Results"))).toBe(true);
+    expect(expandedLabels.some((label) => label.includes("Page evidence"))).toBe(
+      true,
+    );
   });
 });

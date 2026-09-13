@@ -79,6 +79,9 @@ function computeRunGroups(sessions: TraceSession[]): RunGroup[] {
 
 export const createTracesSlice: SliceCreator<TracesSlice> = (set) => ({
   sessions: [],
+  sessionsTotal: 0,
+  sessionsNextCursor: null,
+  sessionsHasMore: false,
   runGroups: [],
   activeTopLevelView: "runs",
   availableDays: [],
@@ -124,6 +127,30 @@ export const createTracesSlice: SliceCreator<TracesSlice> = (set) => ({
       }
       s.runGroups = groups;
     }),
+  appendSessions: (sessions) =>
+    set((s) => {
+      const byId = new Map(
+        s.sessions.map((session) => [session.sessionId, session]),
+      );
+      for (const session of sessions) byId.set(session.sessionId, session);
+      s.sessions = [...byId.values()].sort(
+        (a, b) => (b.startTime ?? 0) - (a.startTime ?? 0),
+      );
+      const prevExpanded = new Set(
+        s.runGroups.filter((group) => group.expanded).map((group) => group.runId),
+      );
+      const groups = computeRunGroups(s.sessions);
+      for (const group of groups) {
+        if (prevExpanded.has(group.runId)) group.expanded = true;
+      }
+      s.runGroups = groups;
+    }),
+  setSessionsPage: (page) =>
+    set((s) => {
+      s.sessionsTotal = page.total;
+      s.sessionsNextCursor = page.nextCursor;
+      s.sessionsHasMore = page.hasMore;
+    }),
   setAvailableDays: (days) =>
     set((s) => {
       s.availableDays = days;
@@ -147,6 +174,7 @@ export const createTracesSlice: SliceCreator<TracesSlice> = (set) => ({
       if (s.currentSessionId !== id) {
         s.focusTurnRequest = null;
         s.focusTurnNumber = null;
+        s.modelIOFocus = null;
       }
       s.currentSessionId = id;
     }),
@@ -181,9 +209,11 @@ export const createTracesSlice: SliceCreator<TracesSlice> = (set) => ({
   setActiveSubview: (view) =>
     set((s) => {
       s.activeSubview = view;
+      s.modelIOFocus = null;
     }),
   focusTurnNumber: null,
   focusTurnRequest: null,
+  modelIOFocus: null,
   nextFocusRequestId: 0,
   clearFocusTurnRequest: (requestId) =>
     set((s) => {
@@ -193,7 +223,6 @@ export const createTracesSlice: SliceCreator<TracesSlice> = (set) => ({
         s.focusTurnRequest.id === requestId
       ) {
         s.focusTurnRequest = null;
-        s.focusTurnNumber = null;
       }
     }),
   navigateToTurn: (turnNumber) =>
@@ -215,6 +244,11 @@ export const createTracesSlice: SliceCreator<TracesSlice> = (set) => ({
         turnNumber,
       };
       s.focusTurnNumber = turnNumber;
+    }),
+  navigateToModelIO: (turnNumber, section) =>
+    set((s) => {
+      s.activeSubview = "prompts";
+      s.modelIOFocus = { turnNumber, section };
     }),
   setTracesLoading: (loading) =>
     set((s) => {

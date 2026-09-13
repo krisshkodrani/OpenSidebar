@@ -9,6 +9,8 @@ import type {
   NewAnnotationInput,
 } from "./store/types";
 import type { EvalCase } from "./analysis/adjudication-export";
+import type { TraceTrendPoint } from "@observability-schema";
+export type { TraceTrendPoint } from "@observability-schema";
 
 async function fetchJson<T>(url: string, init?: RequestInit): Promise<T> {
   const r = await fetch(url, init);
@@ -19,12 +21,17 @@ async function fetchJson<T>(url: string, init?: RequestInit): Promise<T> {
   return r.json();
 }
 
-export const TRACE_SESSION_SEARCH_LIMIT = 1000;
+export const TRACE_SESSION_SEARCH_LIMIT = 200;
 
-export async function fetchTraceSessions(
-  filters: TraceFilters,
-  signal?: AbortSignal,
-): Promise<TraceSession[]> {
+export interface TraceSessionsPage {
+  items: TraceSession[];
+  total: number;
+  returned: number;
+  hasMore: boolean;
+  nextCursor: string | null;
+}
+
+function traceSearchParams(filters: TraceFilters): URLSearchParams {
   const params = new URLSearchParams();
   if (filters.outcome && filters.outcome !== "all")
     params.set("outcome", filters.outcome);
@@ -37,11 +44,48 @@ export async function fetchTraceSessions(
   if (filters.skill && filters.skill !== "all")
     params.set("skill", filters.skill);
   if (filters.runId) params.set("runId", filters.runId);
+  return params;
+}
+
+export async function fetchTraceSessionsPage(
+  filters: TraceFilters,
+  options: { cursor?: string; limit?: number; signal?: AbortSignal } = {},
+): Promise<TraceSessionsPage> {
+  const params = traceSearchParams(filters);
+  params.set("limit", String(options.limit ?? TRACE_SESSION_SEARCH_LIMIT));
+  params.set("meta", "1");
+  if (options.cursor) params.set("cursor", options.cursor);
+  return fetchJson(
+    `/api/traces/search?${params.toString()}`,
+    options.signal ? { signal: options.signal } : undefined,
+  );
+}
+
+export async function fetchTraceSessions(
+  filters: TraceFilters,
+  signal?: AbortSignal,
+): Promise<TraceSession[]> {
+  const params = traceSearchParams(filters);
   params.set("limit", String(TRACE_SESSION_SEARCH_LIMIT));
   return fetchJson(
     `/api/traces/search?${params.toString()}`,
     signal ? { signal } : undefined,
   );
+}
+
+export async function fetchTraceSessionSummary(
+  sessionId: string,
+  signal?: AbortSignal,
+): Promise<TraceSession | null> {
+  const params = new URLSearchParams({
+    sessionIdPrefix: sessionId,
+    limit: "1",
+  });
+  const sessions = await fetchJson<TraceSession[]>(
+    `/api/traces/search?${params.toString()}`,
+    signal ? { signal } : undefined,
+  );
+  return sessions.find((session) => session.sessionId === sessionId) ?? null;
 }
 
 export async function fetchTraceDays(
@@ -235,6 +279,23 @@ export async function fetchTraceInsights(
   );
 }
 
+export async function fetchTraceTrends(
+  filters: TraceInsightsQuery,
+  limit = 30,
+  signal?: AbortSignal,
+): Promise<TraceTrendPoint[]> {
+  const params = new URLSearchParams();
+  for (const [key, value] of Object.entries(filters)) {
+    if (!value || value === "all" || key === "day") continue;
+    params.set(key, value);
+  }
+  params.set("limit", String(limit));
+  return fetchJson(
+    `/api/trace-trends?${params.toString()}`,
+    signal ? { signal } : undefined,
+  );
+}
+
 export async function fetchTraceIndexStatus(): Promise<TraceIndexStatus> {
   return fetchJson("/api/trace-index/status");
 }
@@ -356,4 +417,3 @@ export async function fetchSkillContract(
 ): Promise<SkillContract> {
   return fetchJson(`/api/skills/${encodeURIComponent(skillId)}`);
 }
-

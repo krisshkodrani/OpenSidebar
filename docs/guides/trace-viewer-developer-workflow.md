@@ -23,13 +23,12 @@ The developer should start in the viewer and stay in the viewer until there is a
 
 ### 1. Start In The Viewer
 
-Open the Trace Viewer. It lands on the **Attention** inbox: unreviewed
-failures, stops, and harness-ratchet flags, ordered so the most suspicious
-runs surface first. If the inbox has entries, start there — each one is a run
-that either failed or completed in a way that deserves a human look.
+Open the Trace Viewer. It lands on **Runs**. Enable the **needs review** chip to
+show unreviewed failures, stops, and harness-ratchet flags, ordered so the most
+suspicious runs surface first. Each result either failed or completed in a way
+that deserves a human look.
 
-For broader questions, switch to the sessions or runs list and use the
-top-level surface to answer:
+For broader questions, use the Runs list or Analytics to answer:
 
 - what failed recently
 - what regressed
@@ -40,14 +39,15 @@ Useful first moves:
 - filter by outcome or adjudication state
 - filter by website / domain
 - filter by day or recent window
-- switch between `runs` and `sessions`
+- switch between Runs and Analytics
 
-Opening a trace lands on the **Story** subview — the run replayed as plan →
-node segments → verification and judge verdicts → completion. Read the story
-first to locate *where* the run went wrong, then drop into the raw evidence.
+Opening a trace lands on **Evidence**. It puts key-turn screenshots, exact
+source URLs, tool outcomes, and failure excerpts before the run narrative and
+judge verdicts. Inspect those artifacts first; use Codex for broad querying and
+synthesis, then use the Viewer to verify the claims against raw evidence.
 When you have formed a view on whether the outcome was actually right, record
 it in the adjudication panel — verdicts persist to `evals/annotations.jsonl`
-and drain the Attention inbox.
+and drain the needs-review queue.
 
 ## 2. Triage The Failure
 
@@ -56,8 +56,8 @@ Before reading every turn, decide what kind of issue you are looking at.
 Use:
 
 - the fleet overview for hotspots and regressions
-- the sessions table for quick scanning
-- the compare queue if two sessions already look related
+- the Runs table for quick scanning
+- `compare_runs` through the observability MCP when two sessions look related
 
 At this step, the developer should try to classify the problem as one of:
 
@@ -72,11 +72,13 @@ When a candidate session is selected, use the raw viewer detail first.
 
 Read in this order:
 
-1. `TraceDetailHeader`
-2. `Plan`
-3. `Turns`
-4. `Perception`
-5. `Logs`
+1. `Evidence` — key screenshots, URLs, tool outcomes, and run rulings
+2. `Timeline` — every turn and its exact payloads
+3. `Plan`
+4. `Model I/O` — inspect the exact recorded request, response, tool calls, and
+   outcomes for a suspicious turn.
+5. `Raw > Page state`
+6. `Raw > Logs`
 
 Use the raw trace surface to answer:
 

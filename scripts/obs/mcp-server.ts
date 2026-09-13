@@ -2,7 +2,7 @@
  * Observability MCP server (RFC LP-7, Stage A).
  *
  * A stdio Model Context Protocol server that exposes the existing trace store
- * to agents (e.g. Claude Code) so they can search traces "with ease". Every
+ * to agents (including Codex) so they can search traces "with ease". Every
  * tool is a thin wrapper over `core.ts`, which itself only reuses the functions
  * the log-server HTTP API already uses — no new query logic lives here.
  *
@@ -30,6 +30,7 @@ import {
   getRlTrajectory,
   getTrace,
   getTrajectory,
+  investigateTrace,
   indexStatus,
   listToolUsage,
   queryInsights,
@@ -91,6 +92,12 @@ const tools = [
   {
     name: "get_trace",
     description: "Get one session's full turn-by-turn entries.",
+    inputSchema: SESSION_ID_SCHEMA,
+  },
+  {
+    name: "investigate_trace",
+    description:
+      "Get a compact diagnosis for one session: headline, likely failure class, first suspicious turn, findings, recommended action, and a direct Viewer link. Prefer this over get_trace for initial triage.",
     inputSchema: SESSION_ID_SCHEMA,
   },
   {
@@ -175,6 +182,8 @@ function runTool(name: string, args: Args): unknown {
       return searchTraces(store, args);
     case "get_trace":
       return getTrace(store, str(args, "sessionId"));
+    case "investigate_trace":
+      return investigateTrace(store, str(args, "sessionId"));
     case "get_run":
       return getRun(store, str(args, "runId"));
     case "query_insights":

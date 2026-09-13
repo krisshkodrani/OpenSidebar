@@ -1,6 +1,7 @@
 import type { StateCreator } from "zustand";
 import type { TraceSession, TraceEntry } from "../../types/traces";
 import type { RunTraceEvent } from "../../utils/run-trace";
+import type { ViewerModelIOSection } from "@observability-schema";
 
 // ── Viewer-only types ──────────────────────────────────────────
 
@@ -98,10 +99,18 @@ export interface FocusTurnRequest {
   turnNumber: number;
 }
 
+export interface ModelIOFocus {
+  turnNumber: number;
+  section?: ViewerModelIOSection;
+}
+
 // ── Slice Interfaces ───────────────────────────────────────────
 
 export interface TracesSlice {
   sessions: TraceSession[];
+  sessionsTotal: number;
+  sessionsNextCursor: string | null;
+  sessionsHasMore: boolean;
   runGroups: RunGroup[];
   activeTopLevelView: TopLevelView;
   availableDays: DayBucket[];
@@ -122,6 +131,12 @@ export interface TracesSlice {
   tracesLoading: boolean;
   tracesError: string | null;
   setSessions: (sessions: TraceSession[]) => void;
+  appendSessions: (sessions: TraceSession[]) => void;
+  setSessionsPage: (page: {
+    total: number;
+    nextCursor: string | null;
+    hasMore: boolean;
+  }) => void;
   setAvailableDays: (days: DayBucket[]) => void;
   setAvailableModels: (models: ModelBucket[]) => void;
   setFilter: (key: keyof TraceFilters, value: string) => void;
@@ -137,12 +152,18 @@ export interface TracesSlice {
   /** Turn number to scroll to after a tab switch (cleared after scroll completes) */
   focusTurnNumber: number | null;
   focusTurnRequest: FocusTurnRequest | null;
+  modelIOFocus: ModelIOFocus | null;
   nextFocusRequestId: number;
   clearFocusTurnRequest: (requestId?: number) => void;
   /** Switch to Turns tab and scroll to a specific turn */
   navigateToTurn: (turnNumber: number) => void;
   /** Switch to Perception tab and scroll to a specific turn's perception */
   navigateToPerception: (turnNumber: number) => void;
+  /** Switch to Model I/O and focus one recorded request or response. */
+  navigateToModelIO: (
+    turnNumber: number,
+    section?: ViewerModelIOSection,
+  ) => void;
   setTracesLoading: (loading: boolean) => void;
   setTracesError: (error: string | null) => void;
   toggleRunGroup: (runId: string) => void;

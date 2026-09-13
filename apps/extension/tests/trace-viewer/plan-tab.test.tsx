@@ -58,6 +58,7 @@ describe("PlanTab", () => {
               total_tokens: 150,
               cost: 0.001,
             },
+            rawResponse: '{"isMultiStep":true,"steps":[{"objective":"Inspect all records"}]}',
           },
         },
         {
@@ -178,6 +179,8 @@ describe("PlanTab", () => {
     expect(container.textContent).toContain("Planner LLM Calls");
     expect(container.textContent).toContain("plan_decomposition");
     expect(container.textContent).toContain("kimi-k2p5-turbo");
+    expect(container.textContent).toContain("Raw Planner Response");
+    expect(container.textContent).toContain("Inspect all records");
     expect(container.textContent).toContain("paginated-record-lookup");
     expect(container.textContent).toContain("Parallel Workers");
     expect(container.textContent).toContain("overlap observed");

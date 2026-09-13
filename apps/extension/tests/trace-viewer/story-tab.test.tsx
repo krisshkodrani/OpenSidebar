@@ -44,6 +44,15 @@ function entry(turnNumber: number): TraceEntry {
     turnNumber,
     timestamp: Date.UTC(2026, 6, 10, 0, 0, 30),
     snapshot: { url: "x", title: "x", elementCount: 0, visibleContentLength: 0, scrollY: 0 },
+    pageState: {
+      preDecision: {
+        url: "x",
+        title: "x",
+        elementCount: 0,
+        scrollY: 0,
+        screenshots: [{ kind: "viewport", dataUrl: "data:image/png;base64,AAAA" }],
+      },
+    },
     elements: [],
     llmRequest: { model: "m", messageCount: 1, toolCount: 0, compressionLevel: "none" },
     llmResponse: { content: null, toolCalls: [], finishReason: "stop", usage: null, durationMs: 1 },

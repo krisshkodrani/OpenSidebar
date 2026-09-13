@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import * as api from "../api";
 import { useStore } from "../store";
 import { isDefaultTraceWindow } from "../utils";
@@ -7,12 +7,18 @@ export function useTraceData() {
   const filters = useStore((s) => s.filters);
   const sessions = useStore((s) => s.sessions);
   const currentSessionId = useStore((s) => s.currentSessionId);
+  const activeSubview = useStore((s) => s.activeSubview);
+  const sessionsNextCursor = useStore((s) => s.sessionsNextCursor);
+  const sessionsHasMore = useStore((s) => s.sessionsHasMore);
   const setSessions = useStore((s) => s.setSessions);
+  const appendSessions = useStore((s) => s.appendSessions);
+  const setSessionsPage = useStore((s) => s.setSessionsPage);
   const setAvailableDays = useStore((s) => s.setAvailableDays);
   const setAvailableModels = useStore((s) => s.setAvailableModels);
   const setCurrentEntries = useStore((s) => s.setCurrentEntries);
   const setCurrentRunEvents = useStore((s) => s.setCurrentRunEvents);
   const setSessionLogs = useStore((s) => s.setSessionLogs);
+  const setSessionLogsLoading = useStore((s) => s.setSessionLogsLoading);
   const setLogsWarning = useStore((s) => s.setLogsWarning);
   const setTracesLoading = useStore((s) => s.setTracesLoading);
   const setTracesError = useStore((s) => s.setTracesError);
@@ -24,8 +30,11 @@ export function useTraceData() {
   const didAutoRelax = useRef(false);
   const abortRef = useRef<AbortController | null>(null);
   const detailAbortRef = useRef<AbortController | null>(null);
+  const logsAbortRef = useRef<AbortController | null>(null);
+  const loadMoreAbortRef = useRef<AbortController | null>(null);
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const filtersRef = useRef(filters);
+  const [sessionsPageLoading, setSessionsPageLoading] = useState(false);
 
   // The selected session's runId, derived separately so the detail-loading
   // effect can depend on it instead of the whole sessions array. A plain
@@ -50,6 +59,8 @@ export function useTraceData() {
 
   const refreshSessions = useCallback(async () => {
     // Cancel any in-flight request
+    loadMoreAbortRef.current?.abort();
+    setSessionsPageLoading(false);
     if (abortRef.current) {
       abortRef.current.abort();
     }
@@ -59,13 +70,26 @@ export function useTraceData() {
     setTracesLoading(true);
     setTracesError(null);
     try {
-      const [sessionsData, daysData, modelsData] = await Promise.all([
-        api.fetchTraceSessions(filtersRef.current, signal),
+      const [page, daysData, modelsData] = await Promise.all([
+        api.fetchTraceSessionsPage(filtersRef.current, { signal }),
         api.fetchTraceDays(signal),
         api.fetchTraceModels(signal),
       ]);
       if (signal.aborted) return;
-      setSessions(sessionsData || []);
+      let sessionsData = page.items || [];
+      if (
+        currentSessionId &&
+        !sessionsData.some((session) => session.sessionId === currentSessionId)
+      ) {
+        const linkedSession = await api.fetchTraceSessionSummary(
+          currentSessionId,
+          signal,
+        );
+        if (signal.aborted) return;
+        if (linkedSession) sessionsData = [linkedSession, ...sessionsData];
+      }
+      setSessions(sessionsData);
+      setSessionsPage(page);
       setAvailableDays(daysData || []);
       setAvailableModels(modelsData || []);
 
@@ -108,8 +132,38 @@ export function useTraceData() {
     setCurrentRunEvents,
     setSessionLogs,
     setSessions,
+    setSessionsPage,
     setTracesError,
     setTracesLoading,
+  ]);
+
+  const loadMoreSessions = useCallback(async () => {
+    if (!sessionsHasMore || !sessionsNextCursor) return;
+    loadMoreAbortRef.current?.abort();
+    const controller = new AbortController();
+    loadMoreAbortRef.current = controller;
+    setSessionsPageLoading(true);
+    try {
+      const page = await api.fetchTraceSessionsPage(filtersRef.current, {
+        cursor: sessionsNextCursor,
+        signal: controller.signal,
+      });
+      if (controller.signal.aborted) return;
+      appendSessions(page.items || []);
+      setSessionsPage(page);
+    } catch (err) {
+      if (!controller.signal.aborted) setTracesError(String(err));
+    } finally {
+      if (loadMoreAbortRef.current === controller) {
+        setSessionsPageLoading(false);
+      }
+    }
+  }, [
+    appendSessions,
+    sessionsHasMore,
+    sessionsNextCursor,
+    setSessionsPage,
+    setTracesError,
   ]);
 
   // Debounce filter changes: refresh sessions 200ms after last filter change
@@ -135,6 +189,8 @@ export function useTraceData() {
     return () => {
       abortRef.current?.abort();
       detailAbortRef.current?.abort();
+      logsAbortRef.current?.abort();
+      loadMoreAbortRef.current?.abort();
       if (debounceRef.current) clearTimeout(debounceRef.current);
     };
   }, []);
@@ -158,19 +214,8 @@ export function useTraceData() {
       runId
         ? api.fetchRunTraceEvents(runId, signal).catch(() => [])
         : Promise.resolve([]),
-      api.fetchSessionLogs(currentSessionId, undefined, signal).catch((err) => {
-        if (
-          signal.aborted ||
-          detailRequestSeq.current !== requestId ||
-          useStore.getState().currentSessionId !== currentSessionId
-        ) {
-          return [] as never[];
-        }
-        setLogsWarning(`Failed to load logs: ${err}`);
-        return [] as never[];
-      }),
     ])
-      .then(([entries, runEvents, logs]) => {
+      .then(([entries, runEvents]) => {
         if (
           signal.aborted ||
           detailRequestSeq.current !== requestId ||
@@ -180,7 +225,6 @@ export function useTraceData() {
         }
         setCurrentEntries(entries || []);
         setCurrentRunEvents(runEvents || []);
-        setSessionLogs(logs || []);
       })
       .catch((err) => {
         if (
@@ -206,9 +250,43 @@ export function useTraceData() {
     setTracesError,
   ]);
 
+  useEffect(() => {
+    if (!currentSessionId || activeSubview !== "logs") return;
+    logsAbortRef.current?.abort();
+    const controller = new AbortController();
+    logsAbortRef.current = controller;
+    setSessionLogsLoading(true);
+    setLogsWarning(null);
+    api
+      .fetchSessionLogs(currentSessionId, undefined, controller.signal)
+      .then((logs) => {
+        if (!controller.signal.aborted) setSessionLogs(logs || []);
+      })
+      .catch((err) => {
+        if (!controller.signal.aborted) {
+          setLogsWarning(`Failed to load logs: ${err}`);
+        }
+      })
+      .finally(() => {
+        if (!controller.signal.aborted) setSessionLogsLoading(false);
+      });
+    return () => {
+      controller.abort();
+      setSessionLogsLoading(false);
+    };
+  }, [
+    activeSubview,
+    currentSessionId,
+    setLogsWarning,
+    setSessionLogs,
+    setSessionLogsLoading,
+  ]);
+
   return {
     sessions,
     currentSessionId,
     refreshSessions,
+    loadMoreSessions,
+    sessionsPageLoading,
   };
 }

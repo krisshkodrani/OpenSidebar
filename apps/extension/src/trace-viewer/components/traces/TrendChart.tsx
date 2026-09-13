@@ -24,7 +24,7 @@ function shortDay(day: string): string {
  */
 export default function TrendChart({ points }: { points: TrendPoint[] }) {
   const maxCost = useMemo(
-    () => Math.max(0, ...points.map((p) => p.estimatedRequestCost)),
+    () => Math.max(0, ...points.map((p) => p.recordedCost)),
     [points],
   );
 
@@ -126,7 +126,7 @@ export default function TrendChart({ points }: { points: TrendPoint[] }) {
 
         {/* cost bars */}
         {points.map((p, i) => {
-          const top = yCostTop(p.estimatedRequestCost);
+          const top = yCostTop(p.recordedCost);
           const h = M_TOP + PLOT_H - top;
           return (
             <rect
@@ -140,7 +140,7 @@ export default function TrendChart({ points }: { points: TrendPoint[] }) {
               opacity={0.5}
             >
               <title>
-                {p.day}: {formatCost(p.estimatedRequestCost) || "$0"} •{" "}
+                {p.day}: {formatCost(p.recordedCost) || "$0"} •{" "}
                 {p.totalSessions} traces
               </title>
             </rect>

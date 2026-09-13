@@ -461,6 +461,7 @@ function PlannerLlmCalls({ runEvents }: { runEvents: RunTraceEvent[] }) {
           const duration = numberValue(data?.durationMs);
           const totalTokens = numberValue(usage?.total_tokens);
           const cost = numberValue(usage?.cost);
+          const rawResponse = stringValue(data?.rawResponse);
           return (
             <div
               key={`${event.ts}-${index}`}
@@ -482,6 +483,19 @@ function PlannerLlmCalls({ runEvents }: { runEvents: RunTraceEvent[] }) {
                 )}
                 {cost != null && <span>{formatCost(cost)}</span>}
               </div>
+              {rawResponse != null && (
+                <details className="mt-2 rounded border border-trace-border/70 bg-trace-panel px-2.5 py-2">
+                  <summary className="cursor-pointer text-[11px] font-medium text-trace-accent-light">
+                    Raw Planner Response
+                  </summary>
+                  <div className="mt-1 text-[10px] text-trace-muted">
+                    Dev-only verbatim model output; may contain sensitive task data.
+                  </div>
+                  <pre className="mt-2 max-h-96 overflow-auto whitespace-pre-wrap break-words text-[11px] leading-relaxed text-trace-text">
+                    {rawResponse}
+                  </pre>
+                </details>
+              )}
             </div>
           );
         })}
