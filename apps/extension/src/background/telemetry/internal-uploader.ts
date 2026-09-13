@@ -1,7 +1,12 @@
 import type { FleetTelemetryEnvelopeV1 } from "@observability-schema";
-import type { FleetTelemetryStorageArea } from "../../utils/fleet-telemetry";
+import {
+  loadFleetTelemetryQueue,
+  type FleetTelemetryStorageArea,
+} from "../../utils/fleet-telemetry";
 import {
   drainFleetTelemetryToTransport,
+  type FleetTelemetryDrainResult,
+  type FleetTelemetryRetryPolicy,
   type FleetTelemetryTransport,
 } from "./local-controller";
 
@@ -29,44 +34,64 @@ export function createInternalFleetTelemetryTransport(
 ): FleetTelemetryTransport | null {
   if (!endpoint) return null;
   return {
-    async send(envelopes: readonly FleetTelemetryEnvelopeV1[]): Promise<void> {
-      for (const envelope of envelopes) {
-        const controller = new AbortController();
-        const timeout = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
-        try {
-          const response = await fetchImpl(endpoint, {
-            method: "POST",
-            headers: { "content-type": "application/json" },
-            body: JSON.stringify(envelope),
-            credentials: "omit",
-            referrerPolicy: "no-referrer",
-            cache: "no-store",
-            signal: controller.signal,
-          });
-          if (response.status !== 202) {
-            throw new Error(`Fleet telemetry ingest rejected (${response.status})`);
-          }
-        } finally {
-          clearTimeout(timeout);
+    async send(envelope: FleetTelemetryEnvelopeV1): Promise<void> {
+      const controller = new AbortController();
+      const timeout = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
+      try {
+        const response = await fetchImpl(endpoint, {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify(envelope),
+          credentials: "omit",
+          referrerPolicy: "no-referrer",
+          cache: "no-store",
+          signal: controller.signal,
+        });
+        if (response.status !== 202) {
+          throw new Error(
+            `Fleet telemetry ingest rejected (${response.status})`,
+          );
         }
+      } finally {
+        clearTimeout(timeout);
       }
     },
   };
 }
 
-/** Best-effort MV3 recovery drain. Rejections leave the bounded queue intact. */
+const EMPTY_DRAIN_RESULT: FleetTelemetryDrainResult = {
+  attempted: 0,
+  delivered: 0,
+  dropped: 0,
+  remaining: 0,
+};
+
+/** Best-effort MV3 recovery drain. Delivery failures never escape to callers. */
 export async function drainInternalFleetTelemetry(
   storage: FleetTelemetryStorageArea,
   options: {
     endpoint?: string;
     fetchImpl?: FleetFetch;
     now?: number;
+    random?: () => number;
+    retryPolicy?: FleetTelemetryRetryPolicy;
   } = {},
-): Promise<number> {
+): Promise<FleetTelemetryDrainResult> {
   const transport = createInternalFleetTelemetryTransport(
     options.endpoint,
     options.fetchImpl,
   );
-  if (!transport) return 0;
-  return drainFleetTelemetryToTransport(storage, transport, options.now);
+  if (!transport) {
+    try {
+      const queue = await loadFleetTelemetryQueue(storage, options.now);
+      return { ...EMPTY_DRAIN_RESULT, remaining: queue.length };
+    } catch {
+      return { ...EMPTY_DRAIN_RESULT };
+    }
+  }
+  return drainFleetTelemetryToTransport(storage, transport, {
+    now: options.now,
+    random: options.random,
+    retryPolicy: options.retryPolicy,
+  });
 }
