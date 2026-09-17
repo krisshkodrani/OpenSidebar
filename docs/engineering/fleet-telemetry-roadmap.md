@@ -1,6 +1,6 @@
 # Fleet telemetry roadmap
 
-Status: implementation roadmap for approved RFC LP-25. Last updated 2026-07-27.
+Status: implementation roadmap for approved RFC LP-25. Last updated 2026-09-08.
 
 The goal is an explicit-opt-in, privacy-bounded way to learn why browser-agent
 tasks finish, fail, or continue after their real-world objective is met. S3 and
@@ -46,6 +46,22 @@ investigative layer.
   upload is detached from agent task execution.
 
 ## Remaining roadmap
+
+### Delivery hardening (issue #145)
+
+Internal upload acknowledges and removes each accepted record separately, so a
+later failure does not replay an already acknowledged batch. Requests time out
+after five seconds. Failed records retain their retry count and next eligible
+time across worker restarts: exponential backoff starts at 30–60 seconds with
+equal jitter, is capped at one hour, and drops a record after six failed attempts.
+Legacy three-field queue records remain readable and immediately eligible.
+The existing 20-record, 512 KiB, seven-day queue bounds still apply.
+
+Overlapping drains using the same storage port share one in-flight drain. Consent
+is rechecked before each record; revocation clears the queue and prevents the next
+upload. Network delivery remains at-least-once if a worker stops after server
+acceptance but before local acknowledgement. No new upload trigger, endpoint,
+consent default, or collection field is introduced.
 
 | Phase | Outcome | Gate / evidence |
 | --- | --- | --- |
