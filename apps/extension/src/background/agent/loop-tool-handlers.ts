@@ -441,7 +441,7 @@ export async function handleEscalateToolCall(
         type: "info",
         label: reason
           ? `Escalating: "${reason.slice(0, STRING_LIMITS.ESCALATION_REASON)}"`
-          : "Escalating to smarter model",
+          : "Reassessing with the current model",
         status: "done",
         timestamp: Date.now(),
       },
@@ -456,7 +456,7 @@ export async function handleEscalateToolCall(
     loop.context.addMessage({
       role: "tool",
       tool_call_id: toolCallId,
-      content: `Already using the most capable model (${loop.llm.getCurrentModel()}). Escalation won't help further. Try a fundamentally different approach:\n- Use read_page to force a fresh page perception\n- Try a completely different interaction strategy`,
+      content: `Already reassessed with the current model (${loop.llm.getCurrentModel()}). Repeating escalation does not switch models or obtain user input. If page evidence leaves a required user choice unresolved, call clarify with the question and observed alternatives. Otherwise try a different interaction strategy or use read_page for fresh page evidence.`,
     });
   }
   loop.log.info("agent", "ESCALATE called", {

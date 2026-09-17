@@ -2,6 +2,7 @@ export * from "./acceptance-cases.js";
 export * from "./case-catalog.js";
 export * from "./catalog-check.js";
 export * from "./engine.js";
+export * from "./public-playground.js";
 export * from "./oracle.js";
 export * from "./perception-benchmark.js";
 export * from "./role-probes.js";

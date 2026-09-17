@@ -6118,12 +6118,13 @@ describe("Tool Registration", () => {
     ).toContain("fill_text_fields");
   });
 
-  test("escalate tool description mentions planner model and puzzles/riddles", () => {
+  test("escalate describes same-model reassessment and routes user decisions to clarify", () => {
     const defs = toolRegistry.getDefinitions();
     const escalate = defs.find((d) => d.function.name === ToolName.ESCALATE);
     expect(escalate).toBeDefined();
-    expect(escalate!.function.description).toContain("planner model");
-    expect(escalate!.function.description).toContain("riddles");
+    expect(escalate!.function.description).toContain("current model");
+    expect(escalate!.function.description).toContain("does not ask the user or switch models");
+    expect(escalate!.function.description).toContain("use clarify instead");
   });
 
   test("clarify tool requires question parameter", () => {

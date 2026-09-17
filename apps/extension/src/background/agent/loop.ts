@@ -1,3 +1,4 @@
+import { providerRoutingOptions } from "../llm/provider-routing-policy";
 import {
   AgentStatus,
   AgentLoopState,
@@ -758,6 +759,7 @@ export class AgentLoop {
       plannerModel?: string;
       judgeModel?: string;
       executorProviderPin?: string;
+      strictModelRouting?: boolean;
       plannerProviderPin?: string;
       judgeProviderPin?: string;
       writerModel?: string;
@@ -849,9 +851,7 @@ export class AgentLoop {
       executorModel: options?.executorModel,
       plannerModel: options?.plannerModel,
       judgeModel: options?.judgeModel,
-      executorProviderPin: options?.executorProviderPin,
-      plannerProviderPin: options?.plannerProviderPin,
-      judgeProviderPin: options?.judgeProviderPin,
+      ...providerRoutingOptions(options),
       writerModel: options?.writerModel,
       useNitro: options?.useNitro,
       providerMode: options?.providerMode,

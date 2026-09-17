@@ -250,10 +250,10 @@ export class PostgresPlaygroundRepository implements PlaygroundRepository {
     const client = await this.pool.connect();
     try {
       await client.query("BEGIN");
-      await this.consumeDailyQuota(client, quotaSubjectHash, 25);
       await client.query("SELECT pg_advisory_xact_lock(hashtext($1))", [
         run.accountId,
       ]);
+      await this.consumeDailyQuota(client, quotaSubjectHash, 25);
       const active = await client.query<{ count: string }>(
         `SELECT count(*) FROM playground.runs
          WHERE account_id=$1 AND lifecycle <> 'expired' AND expires_at > now()`,

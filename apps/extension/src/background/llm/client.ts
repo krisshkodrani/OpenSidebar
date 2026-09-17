@@ -1,4 +1,5 @@
 import { ToolCall, ToolName } from "../../types";
+import { applyOpenRouterRouting, providerPinsForOptions, type ProviderRoutingOptions } from "./provider-routing-policy";
 import { logger } from "../../utils";
 import {
   isVLCapable as isExecutorVLCapable,
@@ -74,7 +75,7 @@ const OPENROUTER_BASE_URL = "https://openrouter.ai/api/v1/chat/completions";
 
 
 /** Options for overriding default models in LLMClient */
-export interface LLMClientOptions {
+export interface LLMClientOptions extends ProviderRoutingOptions {
   executorModel?: string;
   executorFallbackModel?: string;
   plannerModel?: string;
@@ -88,14 +89,6 @@ export interface LLMClientOptions {
    * judge pool transparently reuses the planner pool.
    */
   judgeModel?: string;
-  /**
-   * Preferred OpenRouter upstreams, applied independently per model seat.
-   * Requests retain OpenRouter's fallback routing when a preferred upstream is
-   * transiently unavailable.
-   */
-  executorProviderPin?: string;
-  plannerProviderPin?: string;
-  judgeProviderPin?: string;
   /** Append :nitro routing suffix to all model IDs (OpenRouter only) */
   useNitro?: boolean;
   /** Provider mode: how executor and planner providers are combined */
@@ -414,6 +407,7 @@ export class LLMClient {
     Record<"executor" | "planner" | "writer" | "judge", string>
   >;
   private executorModelOverride: string | null = null;
+  private readonly strictModelRouting: boolean;
   private defaultTemperature: number = 0.0;
   private executorFallbackModel: string | null = null;
 
@@ -424,12 +418,9 @@ export class LLMClient {
    */
   constructor(openRouterApiKey: string, options?: LLMClientOptions) {
     this.openRouterApiKey = openRouterApiKey;
+    this.strictModelRouting = options?.strictModelRouting === true;
     this.defaultTemperature = options?.temperature ?? 0.0;
-    this.providerPins = {
-      executor: options?.executorProviderPin,
-      planner: options?.plannerProviderPin,
-      judge: options?.judgeProviderPin,
-    };
+    this.providerPins = providerPinsForOptions(options);
 
     // Resolve providerMode (supports legacy `provider` field for backward compat)
     let mode: ProviderMode = options?.providerMode ?? "openrouter";
@@ -700,7 +691,7 @@ export class LLMClient {
   public activateExecutorFallback(
     reason: "empty_response" = "empty_response",
   ): boolean {
-    if (this._activeTier !== "executor") return false;
+    if (this.strictModelRouting || this._activeTier !== "executor") return false;
     if (!this.executorFallbackModel) return false;
     if (this.executorModelOverride === this.executorFallbackModel) return false;
 
@@ -888,13 +879,11 @@ export class LLMClient {
     payload: Record<string, unknown>,
   ): Record<string, unknown> {
     const shaped = shapePayloadForProvider(providerId, payload);
-    const pin = this.providerPins[this._activeTier]?.trim();
-    if (providerId === "openrouter" && pin) {
-      // `only` makes a transient upstream failure terminal by excluding every
-      // other eligible host. `order` preserves the preference while allowing
-      // OpenRouter to recover through its normal provider fallback path.
-      shaped.provider = { order: [pin], allow_fallbacks: true };
+    if (this.strictModelRouting && shaped.model !== this.getActiveProviderInfo().model) {
+      throw new Error("Strict model routing forbids a request model override.");
     }
+    const pin = this.providerPins[this._activeTier]?.trim();
+    if (providerId === "openrouter") return applyOpenRouterRouting(shaped, pin, this.strictModelRouting);
     return shaped;
   }
 
@@ -941,7 +930,7 @@ export class LLMClient {
         if (response.status === 429 && providerId) {
           const pool = this.activePool();
           pool.cooldown(providerId);
-          const fallback = pool.getNextFallback(providerId);
+          const fallback = !this.strictModelRouting && pool.getNextFallback(providerId);
           if (fallback) {
             logger.warn("agent", "Provider rate-limited, failing over", {
               from: providerId,
@@ -979,7 +968,7 @@ export class LLMClient {
             "Provider permanently disabled for session (credit exhaustion)",
             { providerId },
           );
-          const fallback = pool.getNextFallback(providerId);
+          const fallback = !this.strictModelRouting && pool.getNextFallback(providerId);
           if (fallback && !pool.isDisabled(fallback.provider.providerId)) {
             this.onProviderFailover?.(providerId, fallback.provider.providerId);
             const fb = this.rebuildForProvider(init, fallback);
@@ -1093,7 +1082,7 @@ export class LLMClient {
         if (response.ok) break;
         const errorText = await response.text();
         if (
-          !imageFallbackRetried &&
+          !this.strictModelRouting && !imageFallbackRetried &&
           hasImageUrlContent(request.messages) &&
           isImageUrlUnsupported(response.status, errorText)
         ) {
@@ -1123,7 +1112,7 @@ export class LLMClient {
           );
 
           // Try failover to next provider
-          const fallback = pool.getNextFallback(provider.providerId);
+          const fallback = !this.strictModelRouting && pool.getNextFallback(provider.providerId);
           if (fallback && !pool.isDisabled(fallback.provider.providerId)) {
             this.onProviderFailover?.(
               provider.providerId,
@@ -1357,7 +1346,7 @@ export class LLMClient {
         if (response.ok) break;
         const errorText = await response.text();
         if (
-          !imageFallbackRetried &&
+          !this.strictModelRouting && !imageFallbackRetried &&
           hasImageUrlContent(request.messages) &&
           isImageUrlUnsupported(response.status, errorText)
         ) {
@@ -1387,7 +1376,7 @@ export class LLMClient {
           );
 
           // Try failover to next provider
-          const fallback = pool.getNextFallback(provider.providerId);
+          const fallback = !this.strictModelRouting && pool.getNextFallback(provider.providerId);
           if (fallback && !pool.isDisabled(fallback.provider.providerId)) {
             this.onProviderFailover?.(
               provider.providerId,

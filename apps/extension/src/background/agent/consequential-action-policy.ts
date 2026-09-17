@@ -219,6 +219,15 @@ function isCommunicationSendAction(
   return /\b(send|post|publish|submit)\b/.test(label);
 }
 
+/** A no-send constraint alone does not request an unsent draft as an output. */
+export function requiresDraftOnlyCompletion(taskText: string): boolean {
+  if (!isDraftOnlyCommunicationTask(taskText)) return false;
+  return isDraftOnlyCommunicationTask(taskText.replace(
+    /\b(?:do not|don't|dont|never)\s+(?:click\s+)?(?:send|post|reply|submit|publish)\b/gi,
+    "",
+  )) || /\b(?:type|enter|fill)\b[^\n.]{0,100}\b(?:message|reply|email|composer|editor)\b/i.test(taskText);
+}
+
 export function isDraftOnlyCommunicationTask(taskText: string): boolean {
   if (!isCommunicationWorkflow(taskText)) return false;
 

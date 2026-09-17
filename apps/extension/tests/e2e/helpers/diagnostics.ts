@@ -26,7 +26,6 @@ const PROJECT_ROOT = resolve(__dirname, "../../../../..");
 export const TRACE_DIR = join(PROJECT_ROOT, "traces");
 const RUN_TRACE_DIR = join(TRACE_DIR, "runs");
 const LOG_SERVER_SCRIPT = join(PROJECT_ROOT, "scripts", "log-server.ts");
-const TSX_CLI = join(PROJECT_ROOT, "node_modules", "tsx", "dist", "cli.mjs");
 const LOG_SERVER_PORT = Number(process.env.E2E_LOG_SERVER_PORT) || 7589;
 const LOG_SERVER_START_TIMEOUT_MS =
   Number(process.env.E2E_LOG_SERVER_START_TIMEOUT_MS) || 30_000;
@@ -49,8 +48,13 @@ export async function startLogServer(): Promise<void> {
     return;
   }
 
-  let stderr = "";
-  logServerProcess = spawn(process.execPath, [TSX_CLI, LOG_SERVER_SCRIPT], {
+  let startupOutput = "";
+  const captureStartupOutput = (chunk: Buffer) => {
+    startupOutput = (startupOutput + String(chunk)).slice(-16_384);
+  };
+  // Own the actual server process, not a tsx CLI wrapper with another child.
+  // This makes teardown and exit observation refer to the process holding the port.
+  logServerProcess = spawn(process.execPath, ["--import", "tsx", LOG_SERVER_SCRIPT], {
     cwd: PROJECT_ROOT,
     env: {
       ...process.env,
@@ -60,9 +64,11 @@ export async function startLogServer(): Promise<void> {
     stdio: ["ignore", "pipe", "pipe"],
     windowsHide: true,
   });
-  logServerProcess.stdout?.resume();
-  logServerProcess.stderr?.on("data", (chunk) => {
-    stderr += String(chunk);
+  logServerProcess.stdout?.on("data", captureStartupOutput);
+  logServerProcess.stderr?.on("data", captureStartupOutput);
+  const startedProcess = logServerProcess;
+  startedProcess.once("exit", () => {
+    if (logServerProcess === startedProcess) logServerProcess = null;
   });
 
   const started = await waitForServer(
@@ -71,7 +77,7 @@ export async function startLogServer(): Promise<void> {
   );
   if (!started) {
     await stopLogServer();
-    const detail = stderr.trim();
+    const detail = startupOutput.trim();
     throw new Error(
       detail
         ? `Log server failed to start within ${LOG_SERVER_START_TIMEOUT_MS}ms: ${detail}`
@@ -85,6 +91,7 @@ export async function stopLogServer(): Promise<void> {
   if (!logServerProcess) return;
   const proc = logServerProcess;
   logServerProcess = null;
+  if (proc.exitCode !== null || proc.signalCode !== null) return;
 
   const exited = new Promise<void>((resolve) => {
     proc.once("exit", () => resolve());
@@ -93,15 +100,12 @@ export async function stopLogServer(): Promise<void> {
 
   proc.kill("SIGTERM");
 
-  await Promise.race([
-    exited,
-    new Promise<void>((resolve) => {
-      setTimeout(() => {
-        proc.kill("SIGKILL");
-        resolve();
-      }, 3_000);
-    }),
-  ]);
+  const forceKill = setTimeout(() => proc.kill("SIGKILL"), 3_000);
+  try {
+    await exited;
+  } finally {
+    clearTimeout(forceKill);
+  }
   console.log("[e2e] Log server stopped");
 }
 
