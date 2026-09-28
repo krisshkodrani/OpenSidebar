@@ -25,7 +25,7 @@ import {
 } from "../apps/extension/src/background/e2e-test-api.js";
 import { startModelBenchTargetServer } from "./modelbench-target-server.js";
 import { collectModelBenchTraceEvidence } from "./modelbench-trace-evidence.js";
-import { observeProviderCall, providerSlugsFromCatalog, summarizeProviderCalls, type ProviderCallEvidence } from "./modelbench-provider-evidence.js";
+import { observeProviderCall, providerSlugsFromCatalog, reconcileProviderAndTraceUsage, summarizeProviderCalls, type ProviderCallEvidence } from "./modelbench-provider-evidence.js";
 
 type EventRecord = Record<string, any>;
 
@@ -711,9 +711,14 @@ export async function createModelBenchDriver(): Promise<ModelBenchDriver> {
         );
         const providerFailure = providerFailureReason(outcome);
         const harnessFailure = harnessFailureReason(outcome);
-        const routing = input.configuration.provider === "openrouter"
+        const providerRouting = input.configuration.provider === "openrouter"
           ? summarizeProviderCalls(providerCalls, input.configuration.seats, providerSlugs)
-          : { ...evidence, unattributedUsage: undefined, issues: [], providerFailures: [] };
+          : null;
+        const routing = providerRouting ?? { ...evidence, unattributedUsage: undefined, issues: [], providerFailures: [] };
+        const costReconciliation = providerRouting
+          ? reconcileProviderAndTraceUsage(providerRouting, evidence.usageByRole, evidence.orchestratorTotalCostUsd)
+          : undefined;
+        const routingIssues = [...routing.issues, ...(costReconciliation?.issues ?? [])];
         return {
           durationMs: Date.now() - startedAt,
           finalState: run.state,
@@ -741,13 +746,14 @@ export async function createModelBenchDriver(): Promise<ModelBenchDriver> {
               }
             : traceSummary.traceFiles.length === 0
             ? { failure: { kind: "harness" as const, reason: "No agent trace was captured; terminal evidence alone is not an auditable trajectory." } }
-            : routing.issues.length > 0
-            ? { failure: { kind: "indeterminate" as const, reason: routing.issues.join("; ") } }
+            : routingIssues.length > 0
+            ? { failure: { kind: "indeterminate" as const, reason: routingIssues.join("; ") } }
             : {}),
           diagnostics: {
             providerCalls: providerCalls.map((call) => ({ ...call, usage: { ...call.usage } })),
             providerSlugs,
-            routingIssues: routing.issues,
+            routingIssues,
+            ...(costReconciliation ? { costReconciliation } : {}),
             runId: created.runId,
             workspaceId,
             outcome: outcome.kind,

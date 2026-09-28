@@ -26,6 +26,8 @@ interface ObservedCall {
 export interface ModelBenchTraceEvidence {
   resolvedSeats: Partial<Record<ModelSeat, ResolvedSeatV1>>;
   usageByRole: Partial<Record<ModelSeat, RoleUsageV1>>;
+  /** Terminal orchestrator accounting, including calls absent from per-role trace events. */
+  orchestratorTotalCostUsd?: number;
   artifactRefs: string[];
   runIds: string[];
   ambiguousSeats: Partial<Record<ModelSeat, string[]>>;
@@ -164,6 +166,7 @@ export function collectModelBenchTraceEvidence(input: {
   const runIds = new Set<string>();
   const artifactRefs = new Set<string>();
   const calls: ObservedCall[] = [];
+  let orchestratorTotalCostUsd: number | undefined;
   let turns = 0;
   let toolExecutions = 0;
   let perceptions = 0;
@@ -278,11 +281,20 @@ export function collectModelBenchTraceEvidence(input: {
     const path = resolve(tracesRoot, "runs", `${runId}.jsonl`);
     if (!existsSync(path)) continue;
     artifactRefs.add(path);
+    let runTotalCostUsd: number | undefined;
     for (const entry of lines(path)) {
       if (entry.type === "planner_llm_call") plannerCalls += 1;
       if (String(entry.type ?? "").toLocaleLowerCase().includes("recovery")) recoveries += 1;
+      if (entry.type === "task_completed" &&
+        typeof entry.data?.totalCostUsd === "number" &&
+        Number.isFinite(entry.data.totalCostUsd) && entry.data.totalCostUsd >= 0) {
+        runTotalCostUsd = entry.data.totalCostUsd;
+      }
       const call = orchestratorCall(entry);
       if (call) calls.push(call);
+    }
+    if (runTotalCostUsd !== undefined) {
+      orchestratorTotalCostUsd = (orchestratorTotalCostUsd ?? 0) + runTotalCostUsd;
     }
   }
 
@@ -316,6 +328,7 @@ export function collectModelBenchTraceEvidence(input: {
   return {
     resolvedSeats,
     usageByRole,
+    ...(orchestratorTotalCostUsd !== undefined ? { orchestratorTotalCostUsd } : {}),
     artifactRefs: [...artifactRefs],
     runIds: [...runIds],
     ambiguousSeats,

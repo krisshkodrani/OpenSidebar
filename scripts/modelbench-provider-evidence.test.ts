@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { observeProviderCall, providerSlugsFromCatalog, summarizeProviderCalls } from "./modelbench-provider-evidence.js";
+import { observeProviderCall, providerSlugsFromCatalog, reconcileProviderAndTraceUsage, summarizeProviderCalls } from "./modelbench-provider-evidence.js";
 
 const seats = { executor: { provider: "openrouter", providerPin: "coreweave", model: "test/model" } };
 
@@ -118,4 +118,51 @@ test("same-model retries, unserved roles and an unconfigured writer stay attribu
   const unserved = summarizeProviderCalls([failed, writer], shared);
   assert.match(unserved.providerFailures[0], /planner.*429/);
   assert.equal(unserved.unattributedUsage.costUsd, 0);
+});
+
+test("cost audit exposes missing planner and judge captures before scoring", () => {
+  const calls = [observeProviderCall(
+    '{"model":"test/model"}',
+    '{"model":"test/model","provider":"CoreWeave","usage":{"cost":0.01}}',
+    200, 10, { role: "executor", requestId: "executor-1" },
+  )];
+  const provider = summarizeProviderCalls(calls, { executor: seats.executor });
+  const audit = reconcileProviderAndTraceUsage(provider, {
+    executor: { calls: 1, promptTokens: 0, completionTokens: 0, cachedTokens: 0, costUsd: 0.01, llmTimeMs: 0 },
+    planner: { calls: 2, promptTokens: 0, completionTokens: 0, cachedTokens: 0, costUsd: 0.02, llmTimeMs: 0 },
+    judge: { calls: 1, promptTokens: 0, completionTokens: 0, cachedTokens: 0, costUsd: 0.005, llmTimeMs: 0 },
+  });
+  assert.equal(audit.providerReportedCostUsd, 0.01);
+  assert.ok(Math.abs(audit.traceRecordedCostUsd - 0.035) < 1e-9);
+  assert.equal(audit.issues.length, 2);
+  assert.match(audit.issues[0], /2 planner call/);
+  assert.match(audit.issues[1], /1 judge call/);
+});
+
+test("cost audit tolerates extra API retries and does not treat price estimates as missing calls", () => {
+  const calls = [0.01, 0.02].map((cost, index) => observeProviderCall(
+    '{"model":"test/model"}',
+    JSON.stringify({ model: "test/model", provider: "CoreWeave", usage: { cost } }),
+    200, 10, { role: "executor", requestId: `retry-${index}` },
+  ));
+  const provider = summarizeProviderCalls(calls, { executor: seats.executor });
+  const audit = reconcileProviderAndTraceUsage(provider, {
+    executor: { calls: 1, promptTokens: 0, completionTokens: 0, cachedTokens: 0, costUsd: 0.04, llmTimeMs: 0 },
+  });
+  assert.deepEqual(audit.issues, []);
+  assert.ok(audit.costDifferenceUsd < 0);
+});
+
+test("cost audit flags an orchestrator total that includes uncaptured model spend", () => {
+  const call = observeProviderCall(
+    '{"model":"test/model"}',
+    '{"model":"test/model","provider":"CoreWeave","usage":{"cost":0.02}}',
+    200, 10, { role: "executor", requestId: "executor-1" },
+  );
+  const provider = summarizeProviderCalls([call], { executor: seats.executor });
+  const audit = reconcileProviderAndTraceUsage(provider, {
+    executor: { calls: 1, promptTokens: 0, completionTokens: 0, cachedTokens: 0, costUsd: 0.02, llmTimeMs: 0 },
+  }, 0.024);
+  assert.ok(Math.abs((audit.providerVsOrchestratorCostUsd ?? 0) + 0.004) < 1e-9);
+  assert.match(audit.issues[0], /cost attribution is unverified/);
 });
