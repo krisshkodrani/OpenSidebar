@@ -11,7 +11,7 @@ import {
 import { createHash } from "node:crypto";
 import { basename, dirname, relative, resolve } from "node:path";
 import { execFileSync } from "node:child_process";
-import { releaseBuildSha256 } from "./release-build-identity.js";
+import { isReleaseFile, releaseBuildSha256 } from "./release-build-identity.js";
 
 const rootPath = process.cwd();
 const distPath = resolve(rootPath, "dist");
@@ -339,9 +339,11 @@ if (!existsSync(distPath) || !statSync(distPath).isDirectory()) {
 }
 
 mkdirSync(dirname(outputPath), { recursive: true });
-const files = collectFiles(distPath).sort((left, right) =>
-  left.localeCompare(right, "en"),
-);
+const files = collectFiles(distPath)
+  .filter((file) => isReleaseFile(relative(distPath, file)))
+  .sort((left, right) =>
+    left.localeCompare(right, "en"),
+  );
 if (files.length === 0) {
   throw new Error("dist folder is empty");
 }
