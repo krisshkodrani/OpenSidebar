@@ -531,7 +531,7 @@ async function preflightProviderNetwork(
         try {
           const response = await fetch(message.url, {
             method: message.method,
-            headers: message.headers,
+            headers: { ...message.headers, "X-OpenRouter-Metadata": "enabled" },
             body: message.body,
             cache: "no-store",
             signal: controller.signal,

@@ -6,6 +6,7 @@ export interface ProviderCallEvidence {
   requestedModel: string;
   model: string;
   provider: string;
+  routeEvidenceConflict?: boolean;
   status: number;
   durationMs: number;
   usageReported: boolean;
@@ -29,17 +30,44 @@ export function observeProviderCall(
     }
   }
   let model = "", provider = "";
+  const reportedModels = new Set<string>();
+  const reportedProviders = new Set<string>();
+  const selectedRoutes = new Set<string>();
+  let routeEvidenceConflict = false;
   let usage: Record<string, any> = {};
   for (const record of records) {
-    if (typeof record.model === "string") model = record.model;
-    if (typeof record.provider === "string") provider = record.provider.toLowerCase();
+    if (typeof record.model === "string") reportedModels.add(record.model);
+    if (typeof record.provider === "string") reportedProviders.add(record.provider.toLowerCase());
+    const endpoints = record.openrouter_metadata?.endpoints?.available;
+    if (Array.isArray(endpoints)) {
+      const selected = endpoints.filter((endpoint) => endpoint?.selected === true);
+      if (selected.length !== 1 || typeof selected[0].model !== "string" ||
+          typeof selected[0].provider !== "string") {
+        routeEvidenceConflict = true;
+      } else {
+        selectedRoutes.add(JSON.stringify([selected[0].model, selected[0].provider.toLowerCase()]));
+      }
+    }
     if (record.usage) usage = record.usage;
+  }
+  if (reportedModels.size > 1 || reportedProviders.size > 1 || selectedRoutes.size > 1) {
+    routeEvidenceConflict = true;
+  }
+  model = [...reportedModels][0] ?? "";
+  provider = [...reportedProviders][0] ?? "";
+  if (selectedRoutes.size === 1) {
+    const [selectedModel, selectedProvider] = JSON.parse([...selectedRoutes][0]) as [string, string];
+    if ((model && model !== selectedModel) || (provider && provider !== selectedProvider)) {
+      routeEvidenceConflict = true;
+    }
+    model = selectedModel;
+    provider = selectedProvider;
   }
   return {
     ...(["executor", "planner", "perception", "judge", "writer"].includes(observation?.role ?? "") &&
       typeof observation?.requestId === "string" && observation.requestId.length > 0
       ? { role: observation.role as ModelSeat | "writer", requestId: observation.requestId } : {}),
-    requestedModel, model, provider, status, durationMs,
+    requestedModel, model, provider, routeEvidenceConflict, status, durationMs,
     usageReported: typeof usage.cost === "number" && Number.isFinite(usage.cost),
     usage: {
       calls: 1,
@@ -101,6 +129,10 @@ export function summarizeProviderCalls(calls: ProviderCallEvidence[], seats: Par
     usageByRole[role] = total;
     if (call.status < 200 || call.status >= 300) continue;
     if (!call.usageReported) issues.push(`Missing reported cost for ${role}.`);
+    if (call.routeEvidenceConflict) {
+      issues.push(`Conflicting route evidence for ${role}.`);
+      continue;
+    }
     const provider = Object.hasOwn(providerSlugs, call.provider)
       ? providerSlugs[call.provider] : call.provider;
     if (!call.model || !provider || call.requestedModel !== requested.model || call.model !== requested.model ||
