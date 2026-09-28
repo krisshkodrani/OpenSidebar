@@ -1,13 +1,12 @@
 (async () => {
-  const CONFIG_ID = "opensidebar-overlay-config";
   const HOST_ID = "opensidebar-harness-host";
 
   function readConfig() {
-    const raw = document.getElementById(CONFIG_ID)?.textContent;
-    if (!raw) {
+    const config = window.__opensidebarOverlayConfig;
+    if (!config) {
       throw new Error("OpenSidebar overlay config was not found.");
     }
-    return JSON.parse(raw);
+    return config;
   }
 
   async function waitForHost() {

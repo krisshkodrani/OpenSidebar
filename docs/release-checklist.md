@@ -78,6 +78,7 @@ When you run the E2E suite or prepare the summary, write the dated report to:
 
 - Confirm `corepack pnpm run ci:dist` passes.
 - Confirm `dist/manifest.json` has the expected version.
+- Compare the built `dist/manifest.json` security fields with `apps/extension/manifest.json` before Chrome Web Store submission: permissions, content scripts, `web_accessible_resources`, and absence of `externally_connectable`.
 - Confirm `corepack pnpm run ci:audit` reports no production vulnerabilities.
 - Run `corepack pnpm run release:package` and confirm it builds `dist/`, then writes a release zip, `.sha256`, release notes, and artifact manifest under `.artifacts/releases/`.
 - While iterating on release changes, `corepack pnpm run release:preflight --allow-dirty` can validate the generated artifacts.

@@ -39,7 +39,7 @@ export interface OverlayRuntimeSendResponseEventDetail {
 }
 
 export type StorageAreaName = "local" | "sync" | "session";
-export type OverlayStorageMode = "memory" | "chrome-bridge";
+export type OverlayStorageMode = "memory" | "chrome-bridge" | "chrome-direct";
 
 export interface OverlayStorageRequestEventDetail {
   requestId: string;
@@ -219,6 +219,7 @@ export function createOverlayUiRuntimeHarness(
   options: OverlayUiRuntimeOptions = {},
 ): OverlayUiRuntimeHarness {
   const bridgeToken = options.bridgeToken;
+  const useChromeDirect = options.storageMode === "chrome-direct";
   const storageData: Record<StorageAreaName, Record<string, unknown>> = {
     local: { ...(options.storage?.local ?? {}) },
     sync: { ...(options.storage?.sync ?? {}) },
@@ -334,13 +335,23 @@ export function createOverlayUiRuntimeHarness(
     pending.resolve(detail.response ?? {});
   };
 
-  if (typeof window !== "undefined") {
+  if (typeof window !== "undefined" && !useChromeDirect) {
     window.addEventListener(OVERLAY_RECEIVE_MESSAGE_EVENT, onRuntimeMessageEvent);
     window.addEventListener(OVERLAY_SEND_RESPONSE_EVENT, onSendResponseEvent);
     window.addEventListener(OVERLAY_STORAGE_RESPONSE_EVENT, onStorageResponseEvent);
   }
 
   const useChromeBridgeStorage = options.storageMode === "chrome-bridge";
+  const onChromeRuntimeMessage = (message: RuntimeMessage): void => {
+    if (message?.source === MessageSource.BACKGROUND) emitMessage(message);
+  };
+  if (useChromeDirect) chrome.runtime.onMessage.addListener(onChromeRuntimeMessage);
+  const directStorageArea = (area: StorageAreaName): UiRuntimeStorageArea => ({
+    get: async (keys) =>
+      (await chrome.storage[area].get(keys as string | string[] | Record<string, unknown> | null)) as Record<string, unknown>,
+    set: async (items) => chrome.storage[area].set(items),
+    remove: async (keys) => chrome.storage[area].remove(keys),
+  });
 
   const port: UiRuntimePort = {
     source: MessageSource.UI,
@@ -354,6 +365,14 @@ export function createOverlayUiRuntimeHarness(
       message: unknown,
     ): Promise<TResponse> {
       sentMessages.push(message);
+      if (useChromeDirect) {
+        const record = message as Record<string, unknown>;
+        return (await chrome.runtime.sendMessage({
+          ...record,
+          source: MessageSource.UI,
+          requestId: typeof record.requestId === "string" ? record.requestId : crypto.randomUUID(),
+        })) as TResponse;
+      }
       const requestId = createBridgeRequestId();
       if (options.onSendMessage) {
         dispatchOverlaySendMessage(message, requestId, bridgeToken);
@@ -421,9 +440,13 @@ export function createOverlayUiRuntimeHarness(
     storage: {
       local: useChromeBridgeStorage
         ? createBridgeStorageArea("local", bridgeToken, pendingStorageResponses)
+        : useChromeDirect
+          ? directStorageArea("local")
         : createStorageArea(storageData.local),
       sync: useChromeBridgeStorage
         ? createBridgeStorageArea("sync", bridgeToken, pendingStorageResponses)
+        : useChromeDirect
+          ? directStorageArea("sync")
         : createStorageArea(storageData.sync),
       session: useChromeBridgeStorage
         ? createBridgeStorageArea("session", bridgeToken, pendingStorageResponses)
@@ -440,6 +463,7 @@ export function createOverlayUiRuntimeHarness(
       return { ...storageData[area] };
     },
     dispose() {
+      if (useChromeDirect) chrome.runtime.onMessage.removeListener(onChromeRuntimeMessage);
       if (typeof window !== "undefined") {
         window.removeEventListener(
           OVERLAY_RECEIVE_MESSAGE_EVENT,
