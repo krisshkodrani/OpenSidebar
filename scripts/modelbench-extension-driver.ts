@@ -484,7 +484,7 @@ async function preflightProviderNetwork(
 ): Promise<Record<string, string>> {
   if (provider !== "openrouter") return {};
   const page = await openHelperPage(ctx);
-  await page.exposeFunction("recordModelBenchProviderCall", (request: string, response: string, status: number, durationMs: number, observation?: { role?: string; requestId?: string }) => {
+  await page.exposeFunction("recordModelBenchProviderCall", (request: string, response: string, status: number, durationMs: number, observation?: { role?: string; requestId?: string; providerName?: string }) => {
     calls.push(observeProviderCall(request, response, status, durationMs, observation));
   });
   const result = await page.evaluate(async () => {
@@ -515,8 +515,8 @@ async function preflightProviderNetwork(
   // Chrome for Testing can indefinitely suspend external fetches made by an
   // attached MV3 service worker even though the same extension-origin request
   // succeeds in a page. Keep this workaround in the E2E driver: it transports
-  // the model request through the helper page, opts into route metadata, and
-  // reconstructs the response in the worker. No task data is changed.
+  // the model request through the helper page and reconstructs the response
+  // in the worker. No task data is changed.
   await page.evaluate(() => {
     const marker = "__openSidebarE2ENetworkProxyInstalled";
     const scope = globalThis as typeof globalThis & Record<string, unknown>;
@@ -531,14 +531,17 @@ async function preflightProviderNetwork(
         try {
           const response = await fetch(message.url, {
             method: message.method,
-            headers: { ...message.headers, "X-OpenRouter-Metadata": "enabled" },
+            headers: message.headers,
             body: message.body,
             cache: "no-store",
             signal: controller.signal,
           });
           const responseBody = await response.text();
-          const recordCall = scope.recordModelBenchProviderCall as (request: string, response: string, status: number, durationMs: number, observation?: { role?: string; requestId?: string }) => Promise<void>;
-          await recordCall(message.body, responseBody, response.status, Date.now() - startedAt, message.observation);
+          const recordCall = scope.recordModelBenchProviderCall as (request: string, response: string, status: number, durationMs: number, observation?: { role?: string; requestId?: string; providerName?: string }) => Promise<void>;
+          await recordCall(message.body, responseBody, response.status, Date.now() - startedAt, {
+            ...message.observation,
+            providerName: response.headers.get("X-Provider-Name") ?? undefined,
+          });
           sendResponse({
             ok: true,
             status: response.status,
