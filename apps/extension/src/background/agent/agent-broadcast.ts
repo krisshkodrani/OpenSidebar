@@ -271,6 +271,8 @@ export function planTerminationMessage(args: {
       terminationReason:
         args.outcome === "stopped"
           ? "Stopped by user"
+          : args.partialHandoff?.reason === "escalation_failed"
+            ? `Escalation failed (${args.turnCount}/${args.maxTurns})`
           : args.outcome === "max_turns"
             ? `Turn limit reached (${args.turnCount}/${args.maxTurns})`
             : args.summary,
