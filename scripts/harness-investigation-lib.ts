@@ -39,9 +39,10 @@ export interface InvestigationAttempt {
   configFingerprint: string;
   buildRevision: string;
   worktreeDirty: boolean;
+  allSessionsErrored?: boolean;
 }
 
-const PROVIDER_FAILURE = /\b(401|403|429)\b|unauthori[sz]ed|forbidden|rate.?limit|quota|credit|model.{0,30}(not found|unavailable)|provider[_ -]error/i;
+const PROVIDER_FAILURE = /\b(401|402|403|429)\b|\b(?:HTTP|status|response)\s*[:=]?\s*5\d\d\b|unauthori[sz]ed|forbidden|rate.?limit|quota|credit|model.{0,30}(not found|unavailable)|provider[_ -]error/i;
 const HARNESS_FAILURE = /runner_error|beforeall|afterall|browser.{0,30}(closed|launch|disconnected)|fixture.{0,30}(failed|unavailable)|service worker.{0,30}(missing|closed)|no agent traces|failed to get an active tab/i;
 const INDETERMINATE = /timeout|timed out|stopped by user|cancelled|canceled|empty response|unparseable/i;
 
@@ -65,6 +66,24 @@ export function classifyAttempt(input: {
   return input.passed
     ? { classification: "valid_pass", eligibleForScoring: true }
     : { classification: "valid_model_failure", eligibleForScoring: true };
+}
+
+/** Stop a paid comparison when continued attempts cannot produce fair evidence. */
+export function campaignStopReason(attempts: readonly Pick<InvestigationAttempt, "classification" | "reason">[]): string | null {
+  const last = attempts.at(-1);
+  if (!last) return null;
+  if (last.classification === "provider_failure" && /\b(401|402|403)\b|unauthori[sz]ed|forbidden|quota|credit/i.test(last.reason)) {
+    return "Provider authorization or credit failure; stop before further paid attempts.";
+  }
+  if (attempts.length >= 2 && attempts.slice(-2).every((attempt) =>
+    attempt.classification === "provider_failure" || attempt.classification === "harness_failure")) {
+    return "Two consecutive provider or harness failures; stop before further paid attempts.";
+  }
+  return null;
+}
+
+export function allAgentSessionsErrored(outcomes: readonly string[]): boolean {
+  return outcomes.length > 0 && outcomes.every((outcome) => outcome === "error");
 }
 
 export function fingerprintConfig(config: InvestigationConfig): string {

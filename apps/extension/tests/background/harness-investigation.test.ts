@@ -1,6 +1,8 @@
 import { describe, expect, test } from "vitest";
 import {
+  allAgentSessionsErrored,
   buildInvestigationReport,
+  campaignStopReason,
   classifyAttempt,
   fingerprintConfig,
   modelIdentityMismatch,
@@ -32,6 +34,25 @@ describe("harness investigation", () => {
       classification: "indeterminate",
       eligibleForScoring: false,
     });
+    expect(classifyAttempt({ passed: false, reason: "HTTP 503 from provider" }).classification).toBe("provider_failure");
+    expect(classifyAttempt({ passed: false, reason: "Expected 500 rows" }).classification).toBe("valid_model_failure");
+  });
+
+  test("stops a paid campaign after credit failure or repeated systemic failures", () => {
+    const provider = { classification: "provider_failure" as const, reason: "HTTP 503" };
+    const harness = { classification: "harness_failure" as const, reason: "runtime session error" };
+    const model = { classification: "valid_model_failure" as const, reason: "assertion failed" };
+    expect(campaignStopReason([provider])).toBeNull();
+    expect(campaignStopReason([provider, model, provider])).toBeNull();
+    expect(campaignStopReason([provider, harness])).toMatch(/Two consecutive/);
+    expect(campaignStopReason([{ classification: "provider_failure", reason: "HTTP 402 credit exhausted" }]))
+      .toMatch(/credit failure/);
+  });
+
+  test("recognizes a complete agent-session collapse without treating mixed outcomes as one", () => {
+    expect(allAgentSessionsErrored([])).toBe(false);
+    expect(allAgentSessionsErrored(["error", "error"])).toBe(true);
+    expect(allAgentSessionsErrored(["error", "completed"])).toBe(false);
   });
 
   test("counts ordinary assertion failures as model evidence", () => {
