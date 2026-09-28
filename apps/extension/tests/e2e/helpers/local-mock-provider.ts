@@ -9,6 +9,7 @@ export type LocalMockProviderScenarioName =
   | "done-form-submit-gating"
   | "done-summary-incomplete-recovery"
   | "first-turn-clarification"
+  | "ambiguous-owner-escalation"
   | "partial-handoff-max-turns"
   | "bridge-approval-forwarding"
   | "watch-restock"
@@ -112,6 +113,13 @@ export const localMockProviderScenarios: Record<
     label: "terminal-first-turn-clarification",
     prompt:
       "Please assign this article review to the right owner. It could be Design Ops or Platform; ask me which one I mean before changing anything.",
+    maxTurns: 4,
+    timeoutMs: 60_000,
+  },
+  "ambiguous-owner-escalation": {
+    fixture: "article",
+    label: "terminal-ambiguous-owner-escalation",
+    prompt: "Assign this article review to the appropriate owner.",
     maxTurns: 4,
     timeoutMs: 60_000,
   },
@@ -418,6 +426,18 @@ function plannerJson(
       }],
     });
   }
+  if (scenarioName === "ambiguous-owner-escalation") {
+    return JSON.stringify({
+      isMultiStep: false,
+      difficulty: "simple",
+      steps: [{
+        objective: "Identify the appropriate owner for this article review before assigning it.",
+        successCriteria: "The owner is established or the missing choice is clarified.",
+        dependencies: [], assumptions: [],
+        toolProfile: "full",
+      }],
+    });
+  }
   if (scenarioName === "partial-handoff-max-turns") {
     return JSON.stringify({
       isMultiStep: false,
@@ -650,6 +670,15 @@ function executorToolCalls(
       args: {
         question: "Should I assign the article review to Design Ops or Platform?",
         suggestions: ["Design Ops", "Platform"],
+      },
+    }];
+  }
+  if (scenarioName === "ambiguous-owner-escalation") {
+    return [{
+      name: "escalate",
+      args: {
+        reason: "Multiple plausible owners could receive this review, and I cannot choose the target from the page evidence.",
+        reasonCode: "blocked",
       },
     }];
   }
