@@ -60,6 +60,46 @@ test("missing provider metadata and wrong routes are never inferred from the pin
   }
 });
 
+test("OpenRouter selected endpoint metadata verifies JSON and streamed routes", () => {
+  const selected = { endpoints: { available: [
+    { model: "test/model", provider: "CoreWeave", selected: true },
+    { model: "test/model", provider: "OtherHost", selected: false },
+  ] } };
+  for (const response of [
+    JSON.stringify({ model: "test/model", openrouter_metadata: selected, usage: { cost: 0.01 } }),
+    `data: ${JSON.stringify({ model: "test/model" })}\n` +
+      `data: ${JSON.stringify({ openrouter_metadata: selected, usage: { cost: 0.01 } })}\n` +
+      "data: [DONE]\n",
+  ]) {
+    const call = observeProviderCall('{"model":"test/model"}', response, 200, 1);
+    assert.equal(call.provider, "coreweave");
+    assert.equal(call.routeEvidenceConflict, false);
+    assert.deepEqual(summarizeProviderCalls([call], seats).issues, []);
+  }
+});
+
+test("conflicting or ambiguous selected endpoint metadata cannot verify a route", () => {
+  const endpoints = [
+    [{ model: "other/model", provider: "CoreWeave", selected: true }],
+    [{ model: "test/model", provider: "OtherHost", selected: true }],
+    [
+      { model: "test/model", provider: "CoreWeave", selected: true },
+      { model: "test/model", provider: "OtherHost", selected: true },
+    ],
+  ];
+  for (const available of endpoints) {
+    const response = JSON.stringify({
+      model: "test/model", provider: "CoreWeave", usage: { cost: 0.01 },
+      openrouter_metadata: { endpoints: { available } },
+    });
+    const call = observeProviderCall('{"model":"test/model"}', response, 200, 1);
+    const result = summarizeProviderCalls([call], seats);
+    assert.equal(call.routeEvidenceConflict, true);
+    assert.equal(result.resolvedSeats.executor, undefined);
+    assert.match(result.issues[0], /Conflicting route evidence/);
+  }
+});
+
 test("retains every role's reported costs and detects unconfigured models", () => {
   const calls = ["test/model", "planner/model", "judge/model", "other/model"].map((model) =>
     observeProviderCall(JSON.stringify({ model }), JSON.stringify({ model, provider: "CoreWeave", usage: { cost: 0.01 } }), 200, 1));
