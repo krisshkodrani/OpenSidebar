@@ -71,6 +71,8 @@ OpenSidebar-deck.md
 
 # Local artifacts
 .artifacts/
+/books/
+/docs/engineering/*release-candidate-report.md
 .worktrees/
 .promptfoo/
 /outputs/

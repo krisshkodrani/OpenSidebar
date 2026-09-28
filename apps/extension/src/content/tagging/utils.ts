@@ -113,10 +113,10 @@ export function getVisibleText(el: Element): string {
   if (text) return text;
 
   if (isInputElement(el)) {
-    return el.value || el.placeholder || "";
+    return el.value;
   }
   if (isTextAreaElement(el)) {
-    return el.value || el.placeholder || "";
+    return el.value;
   }
 
   return "";

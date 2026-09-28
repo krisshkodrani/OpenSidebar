@@ -19,6 +19,7 @@ import {
 import { logger } from "../utils";
 import { RuntimeMessage, MessageSource } from "../types";
 import { buildSnapshot } from "./snapshot";
+import { installFrameGeometryRelay } from "./frame-geometry-relay";
 import { executeAction } from "./actions";
 import { reportSandboxTaskCompletion } from "./sandbox-completion";
 import {
@@ -80,7 +81,7 @@ export {
 
 logger.info("system", "Content Script Loaded");
 startPageMutationEpochObserver();
-
+installFrameGeometryRelay();
 function runJanitor() {
   const COMMON_selectors = [
     // Generic aria-labels (consent-specific only — avoid broad labels like "Close"

@@ -10,6 +10,29 @@ import { MessageSource } from "../../types";
 import type { TaskCompletionMessage } from "../../types";
 import type { NodeHandoffArtifact, TaskNode } from "./types";
 import type { OrchestratorTask } from "./types";
+import { toSubtasks } from "./utils";
+
+export function sendTaskProgress(task: OrchestratorTask): void {
+  const payload = {
+    taskId: task.id,
+    subtasks: toSubtasks(task.nodes),
+    currentIndex: task.currentIndex,
+    totalTurnsUsed: 0,
+  };
+  sendMessage({
+    type: "TASK_PROGRESS",
+    workspaceId: task.workspaceId,
+    payload,
+  });
+  chrome.tabs
+    .sendMessage(task.rootTabId, {
+      type: "TASK_PROGRESS",
+      requestId: crypto.randomUUID(),
+      source: MessageSource.BACKGROUND,
+      payload,
+    })
+    .catch(() => {});
+}
 
 export function appendHandoffArtifact(
   node: TaskNode,

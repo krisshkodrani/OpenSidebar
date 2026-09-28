@@ -75,7 +75,7 @@ describe.skipIf(!h.apiKey)("E2E: Partner Registration Validation", () => {
 
     const prompt =
       "Register Sam Rivera for the partner portal. Use sam.rivera@example.com, phone 415-555-0134, " +
-      "company Northstar Analytics, role Data analyst, team Customer Success, and invite code pn-4821 exactly as provided. " +
+      "company Northstar Analytics, role Data analyst, team Customer Success, and invite code PN-4821 exactly as provided. " +
       "Accept the partner terms and submit the registration.";
 
     const workspaceId = await sendUserChat(h.ctx, prompt, tabId);

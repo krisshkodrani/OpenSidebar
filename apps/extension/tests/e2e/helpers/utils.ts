@@ -522,6 +522,7 @@ export async function setupEventMonitor(worker: WebWorker): Promise<void> {
     const CONTROL_EVENT_TYPES = [
       "USER_CHAT_ACCEPTED",
       "APPROVAL_REQUEST",
+      "TASK_PAUSED",
       "CLARIFICATION_REQUEST",
       "TASK_COMPLETION",
       "TASK_RECOVERY",
@@ -539,6 +540,7 @@ export async function setupEventMonitor(worker: WebWorker): Promise<void> {
           t === "TASK_COMPLETION" ||
           t === "STREAM_CHUNK" ||
           t === "APPROVAL_REQUEST" ||
+          t === "TASK_PAUSED" ||
           t === "CLARIFICATION_REQUEST" ||
           t === "TASK_RECOVERY" ||
           lowerType.includes("memory")
@@ -1112,7 +1114,7 @@ export async function sendApprovalResponse(
 }
 
 /**
- * Start a background responder that auto-approves APPROVAL_REQUEST events for the
+ * Start a background responder that auto-approves TASK_PAUSED approval events for the
  * given workspace as they arrive.
  *
  * The arena suite runs with `requireApprovals: false` — it has already opted into
@@ -1141,7 +1143,11 @@ export function startApprovalAutoResponder(
       try {
         const events = await getMonitoredEventsWithControlLane(worker, 120);
         for (const event of events) {
-          if (event?.type !== "APPROVAL_REQUEST") continue;
+          // TASK_PAUSED is emitted after the orchestrator has registered the
+          // interaction. APPROVAL_REQUEST can arrive too early to resolve it.
+          if (event?.type !== "TASK_PAUSED") continue;
+          const interaction = event.payload?.interaction;
+          if (interaction?.kind !== "approval") continue;
           if (
             workspaceId != null &&
             event.workspaceId != null &&
@@ -1149,14 +1155,14 @@ export function startApprovalAutoResponder(
           ) {
             continue;
           }
-          const approvalId = event.approvalId ?? event.payload?.approvalId;
+          const approvalId = interaction.approvalId;
           if (!approvalId || answered.has(approvalId)) continue;
           answered.add(approvalId);
           try {
             await sendApprovalResponse(ctx, approvalId, true, workspaceId);
             console.log(
               `[arena] auto-approved approval ${approvalId} ` +
-                `(tool=${event.payload?.toolName ?? "?"})`,
+                `(tool=${interaction.toolName ?? "?"})`,
             );
           } catch {
             // Worker may be mid-restart; allow a later poll to retry.
@@ -1795,6 +1801,7 @@ export async function waitForOutcome<T>(
   checkFn: () => Promise<T | null | undefined>,
   timeoutMs: number,
   workspaceId?: string | null,
+  options?: { acceptPageResultWhileRunning?: boolean },
 ): Promise<{ ok: boolean; reason: string; result: T | null; events: any[] }> {
   const start = Date.now();
   let lastResult: T | null = null;
@@ -1834,6 +1841,10 @@ export async function waitForOutcome<T>(
     const lastStatus = [...events]
       .reverse()
       .find((e: any) => e.type === "AGENT_STATUS");
+
+    if (lastResult && options?.acceptPageResultWhileRunning) {
+      return { ok: true, reason: "page_result", result: lastResult, events };
+    }
 
     // Page state is execution truth. Do not let a model's conservative
     // terminal self-assessment overwrite a fixture state that already proves

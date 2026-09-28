@@ -16,6 +16,7 @@ import type {
   PendingUserInteraction,
 } from "./loop-types";
 import { buildMutationKey } from "./checkpoint-types";
+import { getWorkspaceTabIds } from "./workflow-tab-routing";
 
 export interface LoopQueriesHost {
   readonly limits: RuntimeLimits;
@@ -45,11 +46,13 @@ export interface LoopQueriesHost {
       guardAfterDoneRejection: boolean,
     ): { result: string; source: "ledger" | "ephemeral" } | null;
   };
-  getWorkspaceTabIds(): Promise<number[] | null | undefined>;
+  readonly workspaceId: string | null;
 }
 
 /** Whether a done() rejection at the mid-point threshold should escalate tier. */
-export function shouldEscalateOnDoneRejection(host: LoopQueriesHost): boolean {
+export function shouldEscalateOnDoneRejection(
+  host: Pick<LoopQueriesHost, "limits" | "doneRejections" | "llm">,
+): boolean {
   if (host.limits.maxDoneRejections < 2) return false;
   const midPoint = Math.ceil(host.limits.maxDoneRejections / 2);
   return host.doneRejections === midPoint && !host.llm.isPlannerTier();
@@ -57,7 +60,7 @@ export function shouldEscalateOnDoneRejection(host: LoopQueriesHost): boolean {
 
 /** Whether the task is a pure list/filter read (no mutating/aggregating verbs). */
 export function isPureListFilterWorkflowRequest(
-  host: LoopQueriesHost,
+  host: Pick<LoopQueriesHost, "originalQuery" | "planSteps">,
 ): boolean {
   const taskText = `${host.originalQuery}\n${host.planSteps
     .map((step) => `${step.objective}\n${step.successCriteria ?? ""}`)
@@ -70,7 +73,7 @@ export function isPureListFilterWorkflowRequest(
 
 /** The running (or current) plan subtask's description, if any. */
 export function getActiveSubtaskDescription(
-  host: LoopQueriesHost,
+  host: Pick<LoopQueriesHost, "planSubtasks" | "context" | "lastPlanIndex">,
 ): string | undefined {
   const running = host.planSubtasks.find(
     (subtask) => subtask.status === "running",
@@ -86,7 +89,7 @@ export function getActiveSubtaskDescription(
 
 /** The pending approval interaction matching this tool call, if it is a resume. */
 export function getMatchingApprovalInteraction(
-  host: LoopQueriesHost,
+  host: Pick<LoopQueriesHost, "resumeInteraction">,
   toolName: ToolName,
   args: Record<string, unknown>,
   context: string,
@@ -103,7 +106,7 @@ export function getMatchingApprovalInteraction(
 
 /** The pending clarification interaction matching this question, if a resume. */
 export function getMatchingClarificationInteraction(
-  host: LoopQueriesHost,
+  host: Pick<LoopQueriesHost, "resumeInteraction">,
   question: string,
   suggestions?: string[],
 ): PendingClarificationInteraction | null {
@@ -122,7 +125,7 @@ export function getMatchingClarificationInteraction(
 
 /** The replay result for a tool call if the checkpoint ledger/ephemeral has one. */
 export function lookupMutationReplay(
-  host: LoopQueriesHost,
+  host: Pick<LoopQueriesHost, "context" | "checkpoints" | "guardAfterDoneRejection">,
   toolName: ToolName,
   args: Record<string, unknown>,
 ): { result: string; source: "ledger" | "ephemeral" } | null {
@@ -137,9 +140,9 @@ export function lookupMutationReplay(
 
 /** The workspace's tabs (or all tabs when no workspace scoping is active). */
 export async function getWorkspaceTabs(
-  host: LoopQueriesHost,
+  host: Pick<LoopQueriesHost, "workspaceId">,
 ): Promise<chrome.tabs.Tab[]> {
-  const wsTabIds = await host.getWorkspaceTabIds();
+  const wsTabIds = await getWorkspaceTabIds(host.workspaceId);
   if (!wsTabIds) {
     return await chrome.tabs.query({});
   }

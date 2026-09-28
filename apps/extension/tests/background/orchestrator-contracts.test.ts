@@ -117,7 +117,6 @@ describe("Orchestrator role contracts", () => {
         ToolName.CLICK_ELEMENT,
         ToolName.TYPE_TEXT,
         ToolName.NAVIGATE,
-        ToolName.OPEN_SERVICENOW_MODULE,
         ToolName.PRESS_KEY,
         ToolName.CLICK_COORDINATES,
         ToolName.UPDATE_NOTES,
@@ -132,9 +131,6 @@ describe("Orchestrator role contracts", () => {
     expect(contract.allowedTools.includes(ToolName.CLICK_ELEMENT)).toBe(true);
     expect(contract.allowedTools.includes(ToolName.TYPE_TEXT)).toBe(true);
     expect(contract.allowedTools.includes(ToolName.NAVIGATE)).toBe(false);
-    expect(contract.allowedTools.includes(ToolName.OPEN_SERVICENOW_MODULE)).toBe(
-      false,
-    );
     expect(contract.allowedTools.includes(ToolName.PRESS_KEY)).toBe(false);
     expect(contract.allowedTools.includes(ToolName.CLICK_COORDINATES)).toBe(false);
     expect(contract.allowedTools.includes(ToolName.UPDATE_NOTES)).toBe(true);

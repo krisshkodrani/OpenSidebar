@@ -1,4 +1,8 @@
-import { describe, expect, test } from "vitest";
+import { describe, expect, test, vi } from "vitest";
+import {
+  runFeedbackPhase,
+  type FeedbackPhaseHost,
+} from "../../src/background/agent/turn-phases/feedback";
 import {
   isTerminalResult,
   TURN_PHASE_ORDER,
@@ -41,4 +45,38 @@ describe("turn-machine vocabulary", () => {
       false,
     );
   });
+});
+
+test("feedback phase consumes a user hint once", () => {
+  let pendingFeedback: string | null = "Use the monthly view";
+  const messages: Array<{ role: string; content: string }> = [];
+  const noteUserIntervention = vi.fn();
+  const host: FeedbackPhaseHost = {
+    get pendingFeedback() {
+      return pendingFeedback;
+    },
+    clearPendingFeedback: () => {
+      pendingFeedback = null;
+    },
+    turnCount: 2,
+    traceRecorder: null,
+    context: {
+      getMessages: () => messages,
+      addMessage: (message: { role: string; content: string }) => {
+        messages.push(message);
+      },
+      consumeChecklistFeedbackLine: () => null,
+    } as FeedbackPhaseHost["context"],
+    escalationRescue: { noteUserIntervention } as unknown as FeedbackPhaseHost["escalationRescue"],
+  };
+
+  runFeedbackPhase(host);
+  runFeedbackPhase(host);
+
+  expect(messages).toEqual([
+    { role: "user", content: "[User feedback]: Use the monthly view" },
+  ]);
+  expect(noteUserIntervention).toHaveBeenCalledOnce();
+  expect(noteUserIntervention).toHaveBeenCalledWith(2);
+  expect(pendingFeedback).toBeNull();
 });

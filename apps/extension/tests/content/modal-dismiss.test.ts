@@ -6,6 +6,7 @@ import {
     findCloseButton,
     extractOverlayText,
 } from "../../src/content/content";
+import { autoDismissModals } from "../../src/content/overlay-dismissal";
 
 // Mock viewport dimensions (happy-dom defaults to 0x0)
 Object.defineProperty(window, "innerWidth", { value: 1024, writable: true });
@@ -356,6 +357,22 @@ describe("autoDismissModals (integrated via DISMISS_MODALS handler)", () => {
         document.body.appendChild(div);
         const overlays = detectViewportCoveringOverlays();
         expect(overlays).toEqual([]);
+    });
+
+    test("does not click an asynchronously closing overlay twice or report it as surviving", () => {
+        const backdrop = createFixedOverlay();
+        backdrop.setAttribute("role", "dialog");
+        const close = document.createElement("button");
+        close.setAttribute("aria-label", "Close dialog");
+        backdrop.appendChild(close);
+        let clicks = 0;
+        close.addEventListener("click", () => { clicks++; });
+
+        const result = autoDismissModals();
+
+        expect(clicks).toBe(1);
+        expect(result.clickedClose).toBe(1);
+        expect(result.remainingOverlay).toBeNull();
     });
 
     test("detects dialog role elements", () => {

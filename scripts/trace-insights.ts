@@ -139,8 +139,8 @@ export interface TraceInsightsResponse {
 
 interface BuildTraceInsightsInput {
   sessions: TraceSessionLike[];
-  entriesBySession: Map<string, TraceEntryLike[]>;
-  runEventsByRun?: Map<string, TraceEntryLike[]>;
+  entriesBySession: Pick<Map<string, TraceEntryLike[]>, "get">;
+  runEventsByRun?: Pick<Map<string, TraceEntryLike[]>, "get">;
   filters?: TraceInsightsFilters;
 }
 
@@ -193,7 +193,7 @@ function asNumber(value: unknown): number {
   return typeof value === "number" && Number.isFinite(value) ? value : 0;
 }
 
-function truncateText(value: string, maxLength = MAX_TEXT_FIELD_LENGTH): string {
+export function truncateText(value: string, maxLength = MAX_TEXT_FIELD_LENGTH): string {
   if (value.length <= maxLength) return value;
   return `${value.slice(0, maxLength - 3)}...`;
 }
@@ -589,16 +589,24 @@ export function buildTraceInsights({
   runEventsByRun = new Map(),
   filters = {},
 }: BuildTraceInsightsInput): TraceInsightsResponse {
+  const needsEntryFilter = Boolean(
+    (filters.tier && filters.tier !== "all") || filters.tool ||
+    (filters.toolStatus && filters.toolStatus !== "all") ||
+    (filters.eventType && filters.eventType !== "all"),
+  );
   const selected = sessions.filter((session) => {
     const sessionId = asString(session.sessionId);
     const runId = asString(session.runId);
     return matchesExtendedFilters(
       session,
-      entriesBySession.get(sessionId) ?? [],
-      runId ? (runEventsByRun.get(runId) ?? []) : [],
+      needsEntryFilter ? (entriesBySession.get(sessionId) ?? []) : [],
+      needsEntryFilter && runId ? (runEventsByRun.get(runId) ?? []) : [],
       filters,
     );
-  });
+  }).sort((a, b) =>
+    asNumber(b.startTime) - asNumber(a.startTime) ||
+    asString(a.sessionId).localeCompare(asString(b.sessionId)),
+  );
 
   const tools = new Map<string, MutableMetric>();
   const skills = new Map<string, MutableMetric>();
@@ -957,7 +965,8 @@ export function buildTraceInsights({
   const runRows = Array.from(runs.values())
     .map((run): TraceInsightsRunRow => {
       const sortedSessions = [...run.sessions].sort(
-        (a, b) => asNumber(a.startTime) - asNumber(b.startTime),
+        (a, b) => asNumber(a.startTime) - asNumber(b.startTime) ||
+          asString(a.sessionId).localeCompare(asString(b.sessionId)),
       );
       const earliest = Math.min(...sortedSessions.map((s) => asNumber(s.startTime)));
       const latest = Math.max(...sortedSessions.map((s) => asNumber(s.endTime)));

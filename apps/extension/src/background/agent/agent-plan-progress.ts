@@ -1,8 +1,22 @@
 import { SubtaskSummary } from "../../types";
 import type { PlanStatus } from "./context-types";
 import type { PlanStep } from "./planner";
+import type { ContextManager } from "./context";
+import type { TraceRecorder } from "./trace";
+import type { logger, SessionScopedLogger } from "../../utils";
 
 type PlanStatusSubtask = PlanStatus["subtasks"][number];
+export type PlanStatusTraceEvent =
+  | "step_advanced_by_gate"
+  | "step_advanced_by_done_rejection"
+  | "structural_step_advance"
+  | "passive_step_advance"
+  | "text_admission_criteria_advance"
+  | "multi_return_step_advanced"
+  | "submit_form_reset_success"
+  | "trusted_form_submit_success"
+  | "trusted_list_sort_success"
+  | "trusted_list_filter_success";
 type MutablePlanSubtask = Pick<
   SubtaskSummary,
   "status" | "result" | "completedAtUrl"
@@ -152,6 +166,44 @@ export function buildPlanStatusSnapshot(args: {
 
   subtasks[repairedIndex].status = "running";
   return { subtasks, repairedIndex };
+}
+
+export function syncPlanStatus(
+  host: {
+    context: Pick<ContextManager, "getPlanStatusRaw" | "setPlanStatus">;
+    planSubtasks: SubtaskSummary[];
+    planSteps: PlanStep[];
+    turnCount: number;
+    log: Pick<typeof logger | SessionScopedLogger, "warn">;
+    traceRecorder: Pick<TraceRecorder, "recordEvent"> | null;
+  },
+  currentIndex: number,
+  traceEvent?: PlanStatusTraceEvent,
+  traceData: Record<string, unknown> = {},
+): void {
+  const { subtasks, repairedIndex } = buildPlanStatusSnapshot({
+    existingPlan: host.context.getPlanStatusRaw(),
+    planSubtasks: host.planSubtasks,
+    planSteps: host.planSteps,
+    currentIndex,
+  });
+
+  if (repairedIndex !== null) {
+    host.log.warn("agent", "Plan status missing running subtask", {
+      turn: host.turnCount,
+      currentIndex,
+      repairedIndex,
+    });
+    host.traceRecorder?.recordEvent("plan_status_missing_running_subtask", {
+      currentIndex,
+      repairedIndex,
+    });
+  }
+
+  host.context.setPlanStatus(subtasks, currentIndex);
+  if (traceEvent) {
+    host.traceRecorder?.recordEvent(traceEvent, traceData);
+  }
 }
 
 export function replacePlanFromIndex(args: {

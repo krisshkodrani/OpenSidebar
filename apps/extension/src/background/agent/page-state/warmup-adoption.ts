@@ -1,6 +1,7 @@
 import type { WarmupEntry } from "../../perception/warmup";
 import type { ContextManager } from "../context";
 import type { TraceRecorder } from "../trace";
+import type { AgentTelemetryController } from "../agent-telemetry-controller";
 import { PageStateCoordinator, sha256DataUrl } from "./coordinator";
 
 export interface WarmupAdoptionHost {
@@ -12,8 +13,7 @@ export interface WarmupAdoptionHost {
   readonly log: {
     info(category: string, message: string, data?: Record<string, unknown>): void;
   };
-  imagePromptBudgetAllows(count: number): boolean;
-  recordImagePromptBudgetExhausted(count: number, source: string): void;
+  readonly telemetry: Pick<AgentTelemetryController, "imagePromptBudgetAllows" | "recordImagePromptBudgetExhausted">;
   recordCachedVisionUsage(): void;
 }
 
@@ -23,8 +23,8 @@ export async function adoptWarmupScreenshot(
   input: { screenshot: string | null; entry: WarmupEntry | null },
 ): Promise<"handled" | "rejected" | "unavailable"> {
   if (!host.useVLExecutor || !input.screenshot) return "unavailable";
-  if (!host.imagePromptBudgetAllows(1)) {
-    host.recordImagePromptBudgetExhausted(1, "vl_warmup_screenshot");
+  if (!host.telemetry.imagePromptBudgetAllows(1)) {
+    host.telemetry.recordImagePromptBudgetExhausted(1, "vl_warmup_screenshot");
     host.context.setScreenshotForExecutor(null);
     host.context.setPageInterpretation(null);
     host.perception.setScreenshotTrace({

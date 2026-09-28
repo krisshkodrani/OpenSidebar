@@ -70,12 +70,6 @@ const TOOL_METADATA: Record<ToolName, ToolMeta> = {
     sequential: true,
     mutationSensitive: true,
   },
-  [ToolName.OPEN_SERVICENOW_MODULE]: {
-    risk: RiskLevel.HIGH,
-    domModifying: false,
-    sequential: true,
-    mutationSensitive: true,
-  },
   [ToolName.SEARCH_KNOWLEDGE_BASE]: {
     risk: RiskLevel.LOW,
     domModifying: false,
@@ -279,12 +273,6 @@ const TOOL_METADATA: Record<ToolName, ToolMeta> = {
     sequential: true,
     mutationSensitive: true,
   },
-  [ToolName.CONFIGURE_SERVICENOW_FORM]: {
-    risk: RiskLevel.MEDIUM,
-    domModifying: true,
-    sequential: true,
-    mutationSensitive: true,
-  },
   [ToolName.XRAY_PAGE]: {
     risk: RiskLevel.LOW,
     domModifying: true,
@@ -349,10 +337,6 @@ const TOOL_NODE_CONCURRENCY: Record<ToolName, ToolNodeConcurrencyMeta> = {
   [ToolName.DRAG_AND_DROP]: { scope: "separate_tab", access: "write" },
   [ToolName.HIDE_ELEMENT]: { scope: "separate_tab", access: "write" },
   [ToolName.NAVIGATE]: { scope: "separate_tab", access: "navigate" },
-  [ToolName.OPEN_SERVICENOW_MODULE]: {
-    scope: "separate_tab",
-    access: "navigate",
-  },
   [ToolName.SEARCH_KNOWLEDGE_BASE]: { scope: "same_origin", access: "read" },
   [ToolName.DONE]: { scope: "same_page", access: "read" },
   [ToolName.READ_PAGE]: { scope: "same_page", access: "read" },
@@ -388,10 +372,6 @@ const TOOL_NODE_CONCURRENCY: Record<ToolName, ToolNodeConcurrencyMeta> = {
   [ToolName.APPLY_LIST_ACTION]: { scope: "separate_tab", access: "write" },
   [ToolName.INSPECT_CATALOG_ITEM]: { scope: "same_page", access: "read" },
   [ToolName.CONFIGURE_CATALOG_ITEM]: { scope: "separate_tab", access: "write" },
-  [ToolName.CONFIGURE_SERVICENOW_FORM]: {
-    scope: "separate_tab",
-    access: "write",
-  },
   [ToolName.XRAY_PAGE]: { scope: "separate_tab", access: "read" },
   [ToolName.DISMISS_OVERLAYS]: { scope: "separate_tab", access: "write" },
   [ToolName.CLARIFY]: { scope: "never", access: "approval" },
@@ -490,7 +470,6 @@ export const TOOL_PROFILES: Record<ToolProfile, ToolName[]> = {
     ToolName.APPLY_LIST_SORT,
     ToolName.APPLY_LIST_ACTION,
     ToolName.INSPECT_CATALOG_ITEM,
-    ToolName.CONFIGURE_SERVICENOW_FORM,
     ToolName.XRAY_PAGE,
     ToolName.SCROLL_PAGE,
     // Interact (form-relevant)
@@ -533,7 +512,6 @@ export const TOOL_PROFILES: Record<ToolProfile, ToolName[]> = {
     ToolName.FIND_ELEMENT,
     ToolName.SCROLL_PAGE,
     // Navigate
-    ToolName.OPEN_SERVICENOW_MODULE,
     ToolName.NAVIGATE,
     ToolName.GO_BACK,
     ToolName.CREATE_TAB,
@@ -554,7 +532,6 @@ export const TOOL_PROFILES: Record<ToolProfile, ToolName[]> = {
     ToolName.CLICK_ELEMENT,
     ToolName.TYPE_TEXT,
     ToolName.PRESS_KEY,
-    ToolName.CONFIGURE_SERVICENOW_FORM,
     ToolName.SCROLL_PAGE,
     ToolName.DONE,
     ToolName.ESCALATE,
@@ -585,7 +562,6 @@ export const TOOL_PROFILES: Record<ToolProfile, ToolName[]> = {
     ToolName.INSPECT_FILTER_STATE,
     ToolName.APPLY_LIST_ACTION,
     ToolName.INSPECT_CATALOG_ITEM,
-    ToolName.CONFIGURE_SERVICENOW_FORM,
     ToolName.XRAY_PAGE,
     ToolName.EXECUTE_JS,
     ToolName.SCROLL_PAGE,
@@ -618,7 +594,6 @@ export const TOOL_PROFILES: Record<ToolProfile, ToolName[]> = {
     ToolName.READ_PAGE,
     ToolName.SCROLL_PAGE,
     ToolName.CLICK_ELEMENT,
-    ToolName.OPEN_SERVICENOW_MODULE,
     ToolName.NAVIGATE,
     ToolName.GO_BACK,
     ToolName.CREATE_TAB,
@@ -741,7 +716,6 @@ export function buildDomAwareProfile(
     ToolName.WAIT,
     // Navigate — always available; agent may need go_back from any page
     ToolName.NAVIGATE,
-    ToolName.OPEN_SERVICENOW_MODULE,
     ToolName.GO_BACK,
     ToolName.CREATE_TAB,
     ToolName.SWITCH_TAB,
@@ -753,7 +727,6 @@ export function buildDomAwareProfile(
     ToolName.CLARIFY,
     ToolName.UPDATE_NOTES,
     ToolName.GET_PROFILE_FIELDS,
-    ToolName.CONFIGURE_SERVICENOW_FORM,
     // Inspection — low-risk, help recovery
     ToolName.INSPECT_HIDDEN,
     ToolName.INSPECT_CHART,

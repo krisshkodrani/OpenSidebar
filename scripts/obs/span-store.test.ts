@@ -9,9 +9,13 @@ import {
   readSessionEntries,
   readSessionSpans,
   readSpineRunEvents,
+  readSpineRunManifest,
+  readSpineSessionRecord,
   readSpineSessions,
+  readSpineSessionsAsync,
   writeEntryRecord,
   writeRunEvents,
+  writeRunManifestRecord,
   writeSessionRecord,
 } from "./span-store";
 import { traceEntryToSpans } from "../../packages/observability-schema/src/map-trace-entry";
@@ -118,7 +122,7 @@ describe("span-store", () => {
     expect(a).toBe(b);
   });
 
-  it("round-trips a session record (sessions lens)", () => {
+  it("round-trips a session record through synchronous and HTTP list reads", async () => {
     writeSessionRecord(
       { sessionId: "sess-x", outcome: "completed", runId: "r1" },
       spanDir,
@@ -127,6 +131,27 @@ describe("span-store", () => {
       (s) => s.sessionId === "sess-x",
     );
     expect(found?.outcome).toBe("completed");
+    expect(found?.source).toBe("live");
+    expect(found?.metrics).toEqual({ totalCost: 0 });
+    expect(readSpineSessionRecord("sess-x", spanDir))
+      .toEqual({ sessionId: "sess-x", outcome: "completed", runId: "r1" });
+    expect(await readSpineSessionsAsync(spanDir)).toEqual(readSpineSessions(spanDir));
+    expect(await readSpineSessionsAsync(join(root, "missing"))).toEqual([]);
+  });
+
+  it("fills SQLite read defaults for an orphan session without changing its raw header", async () => {
+    const orphan = { sessionId: "orphan-x", source: "orphan_trace_file" };
+    writeSessionRecord(orphan, spanDir);
+    const expected = {
+      sessionId: "orphan-x", runId: "", source: "orphan_trace_file",
+      startTime: 0, endTime: 0, outcome: "", query: "", startUrl: "",
+      turnCount: 0, metrics: { totalCost: 0 },
+    };
+    expect(readSpineSessions(spanDir).find((s) => s.sessionId === "orphan-x"))
+      .toEqual(expected);
+    expect((await readSpineSessionsAsync(spanDir)).find((s) => s.sessionId === "orphan-x"))
+      .toEqual(expected);
+    expect(readSpineSessionRecord("orphan-x", spanDir)).toEqual(orphan);
   });
 
   it("round-trips run events (run-events lens)", () => {
@@ -143,5 +168,9 @@ describe("span-store", () => {
       "node_started",
       "node_completed",
     ]);
+    const manifest = { runId: "r1", objective: "Find the requested item" };
+    writeRunManifestRecord(manifest, runDir);
+    writeRunManifestRecord(manifest, runDir);
+    expect(readSpineRunManifest("r1", runDir)).toEqual(manifest);
   });
 });

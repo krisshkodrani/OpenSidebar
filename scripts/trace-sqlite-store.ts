@@ -2,6 +2,7 @@ import Database from "better-sqlite3";
 import { existsSync, mkdirSync } from "fs";
 import { dirname, join, resolve } from "path";
 import {
+  truncateText,
   type TraceInsightsFilters,
   type TraceInsightsFacets,
   type TraceInsightsMetricRow,
@@ -916,6 +917,15 @@ function pricingModelForNormalizedId(
  * sub-selects (model, tier, mode, tool, toolStatus, skill, failure, eventType).
  * All extra param names are prefixed with `_f` to avoid collisions.
  */
+function failureLabelSql(rawJson: string, outcome: string): string {
+  return `COALESCE(
+    NULLIF(NULLIF(json_extract(${rawJson}, '$.failureCode'), 'none'), ''),
+    NULLIF(NULLIF(json_extract(${rawJson}, '$.failureCategory'), 'none'), ''),
+    CASE WHEN ${outcome} IN ('completed', 'success') THEN NULL
+         ELSE COALESCE(NULLIF(${outcome}, ''), 'unknown_failure') END
+  )`;
+}
+
 function buildSessionCteFilter(
   filters: TraceInsightsFilters,
 ): { whereSql: string; params: Record<string, string | number> } {
@@ -925,13 +935,18 @@ function buildSessionCteFilter(
     : [];
   const params: Record<string, string | number> = { ...base.params };
   const esc = (v: string) => v.replace(/[\\%_]/g, (c) => `\\${c}`);
+  const sessionHasModel = (valueSql: string) => `(
+    EXISTS (SELECT 1 FROM json_each(s.raw_json, '$.models') _sm
+            WHERE _sm.type = 'text'
+              AND normalize_trace_model_id(_sm.value) = ${valueSql})
+    OR EXISTS (SELECT 1 FROM json_each(s.raw_json, '$.metrics.modelBreakdown') _bm
+               WHERE normalize_trace_model_id(_bm.key) = ${valueSql})
+  )`;
 
-  // Model filter — sessions that have a turn with this model
+  // Model and mode filters use the session's recorded model set.
   const model = normalizeTraceModelId(asString(filters.model).trim());
   if (model && model !== "all") {
-    conditions.push(
-      `EXISTS (SELECT 1 FROM trace_turns _fm WHERE _fm.session_id = s.session_id AND _fm.model = @_fModel)`,
-    );
+    conditions.push(sessionHasModel("@_fModel"));
     params._fModel = model;
   }
 
@@ -948,17 +963,12 @@ function buildSessionCteFilter(
   const mode = asString(filters.mode).trim();
   if (mode && mode !== "all") {
     if (mode === "recording") {
-      conditions.push(
-        `EXISTS (SELECT 1 FROM trace_turns _fmo WHERE _fmo.session_id = s.session_id AND _fmo.model = 'recording')`,
-      );
+      conditions.push(sessionHasModel("'recording'"));
     } else if (mode === "manual") {
-      conditions.push(
-        `EXISTS (SELECT 1 FROM trace_turns _fmo WHERE _fmo.session_id = s.session_id AND _fmo.model = 'manual')`,
-      );
+      conditions.push(sessionHasModel("'manual'"));
     } else if (mode === "agent") {
-      conditions.push(
-        `NOT EXISTS (SELECT 1 FROM trace_turns _fmo WHERE _fmo.session_id = s.session_id AND _fmo.model IN ('recording', 'manual'))`,
-      );
+      conditions.push(`NOT ${sessionHasModel("'recording'")}`);
+      conditions.push(`NOT ${sessionHasModel("'manual'")}`);
     }
   }
 
@@ -970,7 +980,9 @@ function buildSessionCteFilter(
     if (tool) { tc.push("_ftl.tool_name = @_fToolName"); params._fToolName = tool; }
     if (toolStatus === "success") tc.push("_ftl.success = 1");
     else if (toolStatus === "failure") tc.push("_ftl.success = 0");
-    conditions.push(`EXISTS (SELECT 1 FROM trace_tools _ftl WHERE ${tc.join(" AND ")})`);
+    // The name-first index makes SQLite scan every call of a popular tool for
+    // each session. The primary key starts with session_id and bounds the probe.
+    conditions.push(`EXISTS (SELECT 1 FROM trace_tools _ftl INDEXED BY sqlite_autoindex_trace_tools_1 WHERE ${tc.join(" AND ")})`);
   }
 
   // Skill filter — embedded in raw_json (LIKE is imprecise but fast enough)
@@ -983,14 +995,7 @@ function buildSessionCteFilter(
   // Failure filter — failureCode > failureCategory > outcome
   const failure = asString(filters.failure).trim();
   if (failure && failure !== "all") {
-    conditions.push(`(
-      json_extract(s.raw_json, '$.failureCode') = @_fFailure
-      OR (json_extract(s.raw_json, '$.failureCode') IS NULL
-          AND json_extract(s.raw_json, '$.failureCategory') = @_fFailure)
-      OR (json_extract(s.raw_json, '$.failureCode') IS NULL
-          AND json_extract(s.raw_json, '$.failureCategory') IS NULL
-          AND s.outcome = @_fFailure)
-    )`);
+    conditions.push(`${failureLabelSql("s.raw_json", "s.outcome")} = @_fFailure`);
     params._fFailure = failure;
   }
 
@@ -999,7 +1004,7 @@ function buildSessionCteFilter(
   if (eventType && eventType !== "all") {
     conditions.push(`(
       EXISTS (
-        SELECT 1 FROM trace_run_events _fre
+        SELECT 1 FROM trace_run_events _fre INDEXED BY sqlite_autoindex_trace_run_events_1
         WHERE _fre.run_id = s.run_id AND _fre.type = @_fEventType
       )
       OR EXISTS (
@@ -1022,11 +1027,6 @@ function buildSessionCteFilter(
   };
 }
 
-const MAX_INSIGHTS_MODEL_ROWS = 12;
-const MAX_INSIGHTS_TOOL_ROWS = 30;
-const MAX_INSIGHTS_FAILURE_ROWS = 20;
-const MAX_INSIGHTS_SKILL_ROWS = 20;
-const MAX_INSIGHTS_EVENT_ROWS = 20;
 const MAX_INSIGHTS_RUN_ROWS = 200;
 const MAX_INSIGHTS_FACET_IDS = 500;
 
@@ -1044,18 +1044,30 @@ function buildInsightsSql(
   db: Database.Database,
   filters: TraceInsightsFilters,
 ): TraceInsightsResponse {
-  const { whereSql, params } = buildSessionCteFilter(filters);
+  const { whereSql, params: filterParams } = buildSessionCteFilter(filters);
+  db.function("normalize_trace_model_id", (value: unknown) =>
+    normalizeTraceModelId(asString(value)));
 
   // Reusable CTE for filtered sessions — does NOT include raw_json to keep
   // it lean. Queries that need raw_json JOIN back to trace_sessions.
-  const cte = `WITH filtered AS (
+  const filteredSelect = `
     SELECT s.session_id, s.run_id, s.outcome, s.domain,
            s.turn_count, s.total_cost, s.start_time, s.end_time,
            s.query, s.start_url
     FROM trace_sessions s
     ${whereSql}
-  )`;
-
+  `;
+  let cte = `WITH filtered AS (${filteredSelect})`;
+  let params = filterParams;
+  const eventType = asString(filters.eventType).trim();
+  if (eventType && eventType !== "all") {
+    // Parsing turn-event JSON is expensive. Reuse the selected sessions across
+    // aggregate queries instead of reevaluating the predicate each time.
+    db.prepare(`CREATE TEMP TABLE filtered_insights AS ${filteredSelect}`).run(filterParams);
+    db.exec("CREATE UNIQUE INDEX filtered_insights_session ON filtered_insights(session_id)");
+    cte = "WITH filtered AS (SELECT * FROM filtered_insights)";
+    params = {};
+  }
   // ── 1. Session summary (one row) ────────────────────────────────────────
   const sr = db.prepare(`
     ${cte}
@@ -1063,10 +1075,12 @@ function buildInsightsSql(
       COUNT(*)                                                                    AS totalSessions,
       COUNT(DISTINCT f.run_id)                                                    AS totalRuns,
       SUM(CASE WHEN f.outcome IN ('completed','success') THEN 1 ELSE 0 END)      AS completedSessions,
-      SUM(CASE WHEN f.outcome NOT IN ('completed','success')
-               AND f.outcome IS NOT NULL THEN 1 ELSE 0 END)                      AS failedSessions,
+      SUM(CASE WHEN f.outcome NOT IN ('completed','success') OR f.outcome IS NULL
+               THEN 1 ELSE 0 END)                                               AS failedSessions,
       SUM(COALESCE(f.turn_count, 0))                                             AS totalTurns,
-      AVG(CAST(f.end_time - f.start_time AS REAL))                               AS averageDurationMs,
+      SUM(COALESCE(f.total_cost, 0))                                              AS totalCost,
+      AVG(CASE WHEN f.end_time - f.start_time > 0
+               THEN CAST(f.end_time - f.start_time AS REAL) ELSE 0 END)         AS averageDurationMs,
       SUM(CASE WHEN json_extract(ts.raw_json,'$.partialHandoff') IS NOT NULL
                THEN 1 ELSE 0 END)                                                AS partialHandoffCount,
       SUM(CASE WHEN f.outcome = 'max_turns'
@@ -1103,7 +1117,8 @@ function buildInsightsSql(
       SUM(t.total_tokens)                        AS totalTokens,
       SUM(t.cost)                                AS requestCost,
       SUM(t.duration_ms)                         AS totalLlmDurationMs,
-      AVG(CAST(t.duration_ms AS REAL))           AS averageLlmDurationMs,
+      AVG(CASE WHEN t.duration_ms > 0 THEN CAST(t.duration_ms AS REAL)
+               ELSE NULL END)                     AS averageLlmDurationMs,
       AVG(CAST(t.prompt_tokens AS REAL))         AS averagePromptTokens,
       AVG(CAST(t.completion_tokens AS REAL))     AS averageCompletionTokens,
       AVG(CAST(t.total_tokens AS REAL))          AS averageTotalTokens
@@ -1121,110 +1136,164 @@ function buildInsightsSql(
     WHERE tt.session_id IN (SELECT session_id FROM filtered)
   `).get(params) ?? {}) as Record<string, unknown>;
 
-  // ── 3b. Escalation aggregates (turn + session events; mirrors the
-  //        in-memory collectEscalationStats in trace-insights.ts) ─────────
-  const escr = (db.prepare(`
-    ${cte}
-    , esc_events AS (
-      SELECT
-        t.session_id AS session_id,
-        json_extract(ev.value, '$.type') AS type,
-        json_extract(ev.value, '$.data.type') AS data_type,
-        json_extract(ev.value, '$.data.outcome') AS data_outcome
-      FROM trace_turns t
-      JOIN filtered f ON f.session_id = t.session_id
-      JOIN json_each(t.raw_json, '$.events') ev
+  // ── 4. Per-model aggregates (for model mix + cost estimation) ───────────
+  const modelCte = `${cte}
+    , model_source AS (
+      SELECT f.session_id, normalize_trace_model_id(m.value) AS model,
+             1 AS sessionListed, CAST(m.key AS INTEGER) AS position
+      FROM filtered f JOIN trace_sessions ts ON ts.session_id = f.session_id
+      JOIN json_each(ts.raw_json, '$.models') m
+      WHERE m.type = 'text'
 
       UNION ALL
 
-      SELECT
-        f.session_id AS session_id,
-        json_extract(ev.value, '$.type') AS type,
-        json_extract(ev.value, '$.data.type') AS data_type,
-        json_extract(ev.value, '$.data.outcome') AS data_outcome
-      FROM filtered f
-      JOIN trace_sessions ts ON ts.session_id = f.session_id
-      JOIN json_each(ts.raw_json, '$.events') ev
-    )
-    SELECT
-      COUNT(DISTINCT CASE WHEN type = 'escalation'
-             OR (type = 'stuck_signal' AND data_type = 'escalate')
-             THEN session_id END)                                            AS escalatedSessions,
-      SUM(CASE WHEN type = 'escalation'
-             OR (type = 'stuck_signal' AND data_type = 'escalate')
-             THEN 1 ELSE 0 END)                                              AS escalations,
-      SUM(CASE WHEN type = 'escalation_outcome' AND data_outcome = 'rescued'
-             THEN 1 ELSE 0 END)                                              AS escalationRescued,
-      SUM(CASE WHEN type = 'escalation_outcome' AND data_outcome = 'failed_fast'
-             THEN 1 ELSE 0 END)                                              AS escalationFailedFast,
-      SUM(CASE WHEN type = 'escalation_outcome' AND data_outcome = 'budget_exhausted'
-             THEN 1 ELSE 0 END)                                              AS escalationBudgetExhausted
-    FROM esc_events
-  `).get(params) ?? {}) as Record<string, unknown>;
+      SELECT f.session_id, normalize_trace_model_id(m.key) AS model,
+             1 AS sessionListed, 1000000 + CAST(m.id AS INTEGER) AS position
+      FROM filtered f JOIN trace_sessions ts ON ts.session_id = f.session_id
+      JOIN json_each(ts.raw_json, '$.metrics.modelBreakdown') m
 
-  // ── 4. Per-model aggregates (for model mix + cost estimation) ───────────
+      UNION ALL
+
+      SELECT t.session_id, normalize_trace_model_id(t.model) AS model,
+             0 AS sessionListed,
+             2000000 + t.turn_number AS position
+      FROM trace_turns t JOIN filtered f ON f.session_id = t.session_id
+    ), model_sessions AS (
+      SELECT session_id, model, MAX(sessionListed) AS sessionListed,
+             MIN(position) AS firstPosition
+      FROM model_source
+      WHERE model IS NOT NULL AND model != ''
+      GROUP BY session_id, model
+    ), ranked_model_sessions AS (
+      SELECT ms.*,
+             ROW_NUMBER() OVER (
+               PARTITION BY ms.model ORDER BY f.start_time DESC, f.session_id
+             ) AS firstRank
+      FROM model_sessions ms
+      JOIN filtered f ON f.session_id = ms.session_id
+    )`;
   const modelAggs = db.prepare(`
-    ${cte}
+    ${modelCte}
     SELECT
-      t.model,
-      t.provider,
-      COUNT(DISTINCT t.session_id)           AS sessions,
+      ms.model,
+      MIN(t.provider)                         AS provider,
+      COUNT(DISTINCT ms.session_id)          AS sessions,
       COUNT(DISTINCT f.run_id)               AS runs,
-      COUNT(*)                               AS requests,
+      COUNT(t.session_id)                    AS requests,
       SUM(t.prompt_tokens)                   AS promptTokens,
       SUM(t.cached_tokens)                   AS cachedTokens,
       SUM(t.completion_tokens)               AS completionTokens,
       SUM(t.total_tokens)                    AS totalTokens,
       SUM(t.cost)                            AS requestCost,
-      MIN(t.session_id)                      AS sampleSessionId,
-      MIN(f.run_id)                          AS sampleRunId
-    FROM trace_turns t
-    JOIN filtered f ON f.session_id = t.session_id
-    WHERE t.model IS NOT NULL AND t.model != ''
-    GROUP BY t.model
+      SUM(t.duration_ms)                     AS durationMs,
+      SUM(CASE WHEN t.prompt_tokens > 0 OR t.completion_tokens > 0
+               THEN 1 ELSE 0 END)            AS pricedRequestCandidates,
+      MAX(f.start_time)                       AS firstStartTime,
+      MAX(CASE WHEN ms.firstRank = 1 THEN ms.firstPosition END) AS firstPosition,
+      MAX(CASE WHEN ms.firstRank = 1 THEN ms.session_id END) AS sampleSessionId,
+      MAX(CASE WHEN ms.firstRank = 1 THEN f.run_id END) AS sampleRunId
+    FROM ranked_model_sessions ms
+    JOIN filtered f ON f.session_id = ms.session_id
+    -- The model-only index scans every turn for popular models per session.
+    -- The primary key starts with session_id and bounds each lookup.
+    LEFT JOIN trace_turns t INDEXED BY sqlite_autoindex_trace_turns_1
+      ON t.session_id = ms.session_id
+      AND normalize_trace_model_id(t.model) = ms.model
+    GROUP BY ms.model
     ORDER BY requests DESC
-    LIMIT ${MAX_INSIGHTS_MODEL_ROWS}
   `).all(params) as Array<Record<string, unknown>>;
+
+  const modelSessionAggs = db.prepare(`
+    ${modelCte}
+    SELECT ms.model,
+      SUM(ms.sessionListed) AS calls,
+      SUM(CASE WHEN ms.sessionListed = 1 AND f.outcome IN ('completed','success')
+               THEN 1 ELSE 0 END) AS successes,
+      SUM(CASE WHEN ms.sessionListed = 1 AND
+               (f.outcome NOT IN ('completed','success') OR f.outcome IS NULL)
+               THEN 1 ELSE 0 END) AS failures,
+      SUM(COALESCE(f.turn_count, 0)) AS totalTurns,
+      SUM(COALESCE(f.total_cost, 0)) AS totalCost
+    FROM model_sessions ms
+    JOIN filtered f ON f.session_id = ms.session_id
+    GROUP BY ms.model
+  `).all(params) as Array<Record<string, unknown>>;
+  const modelSessionById = new Map(modelSessionAggs.map((row) => [asString(row.model), row]));
 
   // ── 5. Tool breakdown ───────────────────────────────────────────────────
   const toolAggs = db.prepare(`
     ${cte}
+    , tool_sessions AS (
+      SELECT
+        tt.tool_name, tt.session_id, f.run_id,
+        COUNT(*) AS calls,
+        SUM(CASE WHEN tt.success = 1 THEN 1 ELSE 0 END) AS successes,
+        SUM(CASE WHEN tt.success = 0 THEN 1 ELSE 0 END) AS failures,
+        SUM(tt.duration_ms) AS durationMs,
+        MIN(printf('%09d:%09d', tt.turn_number, tt.ordinal)) AS firstPosition,
+        f.turn_count, f.total_cost, f.start_time
+      FROM trace_tools tt
+      JOIN filtered f ON f.session_id = tt.session_id
+      WHERE tt.tool_name IS NOT NULL AND tt.tool_name != ''
+      GROUP BY tt.tool_name, tt.session_id
+    )
     SELECT
-      tt.tool_name,
-      COUNT(DISTINCT tt.session_id)                              AS sessions,
-      COUNT(DISTINCT f.run_id)                                   AS runs,
-      COUNT(*)                                                   AS calls,
-      SUM(CASE WHEN tt.success = 0 THEN 1 ELSE 0 END)           AS failures,
-      MIN(CASE WHEN tt.success = 0 THEN tt.error ELSE NULL END)  AS sampleError,
-      MIN(tt.session_id)                                         AS sampleSessionId
-    FROM trace_tools tt
-    JOIN filtered f ON f.session_id = tt.session_id
-    WHERE tt.tool_name IS NOT NULL AND tt.tool_name != ''
-    GROUP BY tt.tool_name
-    ORDER BY calls DESC
-    LIMIT ${MAX_INSIGHTS_TOOL_ROWS}
+      tool_name,
+      COUNT(*) AS sessions,
+      COUNT(DISTINCT run_id) AS runs,
+      SUM(calls) AS calls,
+      SUM(successes) AS successes,
+      SUM(failures) AS failures,
+      SUM(durationMs) AS durationMs,
+      SUM(COALESCE(turn_count, 0)) AS totalTurns,
+      SUM(COALESCE(total_cost, 0)) AS totalCost,
+      (SELECT COALESCE(NULLIF(tt2.error, ''), tt2.result, '')
+       FROM trace_tools tt2 JOIN filtered f2 ON f2.session_id = tt2.session_id
+       WHERE tt2.tool_name = tool_sessions.tool_name AND tt2.success = 0
+       ORDER BY f2.start_time DESC, f2.session_id,
+                tt2.turn_number, tt2.ordinal LIMIT 1) AS sampleError,
+      (SELECT ts2.session_id FROM tool_sessions ts2
+       WHERE ts2.tool_name = tool_sessions.tool_name
+       ORDER BY ts2.start_time DESC, ts2.session_id LIMIT 1) AS sampleSessionId,
+      (SELECT ts2.run_id FROM tool_sessions ts2
+       WHERE ts2.tool_name = tool_sessions.tool_name
+       ORDER BY ts2.start_time DESC, ts2.session_id LIMIT 1) AS sampleRunId,
+      MAX(start_time) AS firstStartTime,
+      (SELECT ts2.firstPosition FROM tool_sessions ts2
+       WHERE ts2.tool_name = tool_sessions.tool_name
+       ORDER BY ts2.start_time DESC, ts2.session_id LIMIT 1) AS firstOrder
+    FROM tool_sessions
+    GROUP BY tool_name
+    ORDER BY failures DESC, calls DESC, sessions DESC,
+             firstStartTime DESC, firstOrder
   `).all(params) as Array<Record<string, unknown>>;
 
   // ── 6. Failure breakdown ────────────────────────────────────────────────
   const failureAggs = db.prepare(`
     ${cte}
+    , labeled_failures AS (
+      SELECT f.*,
+        ${failureLabelSql("ts.raw_json", "f.outcome")} AS failureLabel
+      FROM filtered f
+      JOIN trace_sessions ts ON ts.session_id = f.session_id
+    )
     SELECT
-      COALESCE(
-        NULLIF(json_extract(ts.raw_json,'$.failureCode'),''),
-        NULLIF(json_extract(ts.raw_json,'$.failureCategory'),''),
-        NULLIF(f.outcome,''),
-        'unknown'
-      ) AS failureLabel,
+      f.failureLabel,
       COUNT(*)                  AS sessions,
       COUNT(DISTINCT f.run_id)  AS runs,
-      MIN(f.session_id)         AS sampleSessionId,
-      MIN(f.run_id)             AS sampleRunId
-    FROM filtered f
-    JOIN trace_sessions ts ON ts.session_id = f.session_id
-    WHERE f.outcome NOT IN ('completed','success') AND f.outcome IS NOT NULL
-    GROUP BY failureLabel
-    ORDER BY sessions DESC
-    LIMIT ${MAX_INSIGHTS_FAILURE_ROWS}
+      SUM(COALESCE(f.turn_count, 0)) AS totalTurns,
+      SUM(COALESCE(f.total_cost, 0)) AS totalCost,
+      (SELECT f2.session_id FROM labeled_failures f2
+       WHERE f2.failureLabel = f.failureLabel
+       ORDER BY f2.start_time DESC, f2.session_id LIMIT 1) AS sampleSessionId,
+      (SELECT f2.run_id FROM labeled_failures f2
+       WHERE f2.failureLabel = f.failureLabel
+         AND f2.run_id IS NOT NULL AND f2.run_id != ''
+       ORDER BY f2.start_time DESC, f2.session_id LIMIT 1) AS sampleRunId
+    FROM labeled_failures f
+    WHERE f.failureLabel IS NOT NULL
+    GROUP BY f.failureLabel
+    ORDER BY MAX(f.start_time) DESC, f.failureLabel
   `).all(params) as Array<Record<string, unknown>>;
 
   // ── 6b. Authoritative run outcomes (issue #45) — the orchestrator's
@@ -1239,15 +1308,14 @@ function buildInsightsSql(
       re.run_id                                              AS runId,
       json_extract(re.raw_json,'$.data.classification')      AS classification,
       json_extract(re.raw_json,'$.data.success')             AS success,
-      MIN(f.session_id)                                      AS sampleSessionId,
+      (SELECT f2.session_id FROM filtered f2 WHERE f2.run_id = re.run_id
+       ORDER BY f2.start_time DESC, f2.session_id LIMIT 1) AS sampleSessionId,
+      MAX(f.start_time)                                     AS firstStartTime,
       COUNT(DISTINCT f.session_id)                           AS sessions,
-      SUM(CASE WHEN f.outcome NOT IN ('completed','success') AND f.outcome IS NOT NULL
-               AND COALESCE(
-                 NULLIF(json_extract(ts.raw_json,'$.failureCode'),''),
-                 NULLIF(json_extract(ts.raw_json,'$.failureCategory'),''),
-                 NULLIF(f.outcome,''),
-                 'unknown'
-               ) = json_extract(re.raw_json,'$.data.classification')
+      SUM(COALESCE(f.turn_count, 0))                         AS totalTurns,
+      SUM(COALESCE(f.total_cost, 0))                         AS totalCost,
+      SUM(CASE WHEN ${failureLabelSql("ts.raw_json", "f.outcome")}
+               = json_extract(re.raw_json,'$.data.classification')
                THEN 1 ELSE 0 END)                            AS alreadyLabeled
     FROM trace_run_events re
     JOIN filtered f ON f.run_id = re.run_id
@@ -1255,39 +1323,85 @@ function buildInsightsSql(
     WHERE re.type = 'task_completed'
       AND json_extract(re.raw_json,'$.data.classification') IS NOT NULL
     GROUP BY re.run_id
+    ORDER BY firstStartTime DESC
   `).all(params) as Array<Record<string, unknown>>;
 
-  // ── 7. Skill breakdown (from raw_json.skillToolMetrics.skillId) ─────────
+  // ── 7. Skill breakdown (explicit tool skill + selected plan skills) ──────
   const skillAggs = db.prepare(`
     ${cte}
+    , skill_source AS (
+      SELECT f.session_id, f.run_id,
+             json_extract(ts.raw_json,'$.skillToolMetrics.skillId') AS skillId,
+             0 AS position
+      FROM filtered f
+      JOIN trace_sessions ts ON ts.session_id = f.session_id
+
+      UNION ALL
+
+      SELECT f.session_id, f.run_id,
+             json_extract(step.value, '$.selectedSkillId') AS skillId,
+             CAST(step.key AS INTEGER) + 1 AS position
+      FROM filtered f
+      JOIN trace_sessions ts ON ts.session_id = f.session_id
+      JOIN json_each(ts.raw_json, '$.planDecomposition.steps') step
+    ),
+    skill_sessions AS (
+      SELECT skillId, session_id, MIN(position) AS firstPosition
+      FROM skill_source
+      WHERE skillId IS NOT NULL AND skillId != ''
+      GROUP BY skillId, session_id
+    )
     SELECT
-      json_extract(ts.raw_json,'$.skillToolMetrics.skillId') AS skillId,
-      COUNT(*)                  AS sessions,
-      COUNT(DISTINCT f.run_id)  AS runs,
-      MIN(f.session_id)         AS sampleSessionId
-    FROM filtered f
-    JOIN trace_sessions ts ON ts.session_id = f.session_id
-    WHERE json_extract(ts.raw_json,'$.skillToolMetrics.skillId') IS NOT NULL
-      AND json_extract(ts.raw_json,'$.skillToolMetrics.skillId') != ''
-    GROUP BY skillId
-    ORDER BY sessions DESC
-    LIMIT ${MAX_INSIGHTS_SKILL_ROWS}
+      ss.skillId,
+      COUNT(*) AS sessions,
+      COUNT(DISTINCT f.run_id) AS runs,
+      SUM(CASE WHEN f.outcome IN ('completed','success') THEN 1 ELSE 0 END) AS successes,
+      SUM(CASE WHEN f.outcome NOT IN ('completed','success') OR f.outcome IS NULL
+               THEN 1 ELSE 0 END) AS failures,
+      SUM(COALESCE(f.turn_count, 0)) AS totalTurns,
+      SUM(COALESCE(f.total_cost, 0)) AS totalCost,
+      (SELECT ss2.session_id FROM skill_sessions ss2
+       JOIN filtered f2 ON f2.session_id = ss2.session_id
+       WHERE ss2.skillId = ss.skillId
+       ORDER BY f2.start_time DESC, f2.session_id LIMIT 1) AS sampleSessionId,
+      (SELECT f2.run_id FROM skill_sessions ss2
+       JOIN filtered f2 ON f2.session_id = ss2.session_id
+       WHERE ss2.skillId = ss.skillId
+       ORDER BY f2.start_time DESC, f2.session_id LIMIT 1) AS sampleRunId
+    FROM skill_sessions ss
+    JOIN filtered f ON f.session_id = ss.session_id
+    GROUP BY ss.skillId
+    ORDER BY failures DESC, sessions DESC, MAX(f.start_time) DESC,
+             MIN(ss.firstPosition)
   `).all(params) as Array<Record<string, unknown>>;
 
   // ── 8. Event type breakdown (turn, session, and run events) ──────────────
   const eventAggs = db.prepare(`
     ${cte}
     , filtered_runs AS (
-      SELECT run_id, MIN(session_id) AS sample_session_id
-      FROM filtered
-      WHERE run_id IS NOT NULL AND run_id != ''
-      GROUP BY run_id
+      SELECT run_id, session_id AS sample_session_id, start_time
+      FROM (
+        SELECT f.run_id, f.session_id, f.start_time,
+               ROW_NUMBER() OVER (
+                 PARTITION BY f.run_id
+                 ORDER BY f.start_time DESC, f.session_id
+               ) AS rank
+        FROM filtered f
+        WHERE f.run_id IS NOT NULL AND f.run_id != ''
+      )
+      WHERE rank = 1
     ),
     event_source AS (
       SELECT
         t.session_id AS session_id,
         f.run_id AS run_id,
-        json_extract(ev.value, '$.type') AS type
+        json_extract(ev.value, '$.type') AS type,
+        json_extract(ev.value, '$.data.type') AS data_type,
+        json_extract(ev.value, '$.data.outcome') AS data_outcome,
+        1 AS escalation_source,
+        f.start_time AS start_time,
+        printf('%s:0:%09d:%09d', t.session_id, t.turn_number,
+               CAST(ev.key AS INTEGER)) AS firstOrder
       FROM trace_turns t
       JOIN filtered f ON f.session_id = t.session_id
       JOIN json_each(t.raw_json, '$.events') ev
@@ -1297,7 +1411,12 @@ function buildInsightsSql(
       SELECT
         f.session_id AS session_id,
         f.run_id AS run_id,
-        json_extract(ev.value, '$.type') AS type
+        json_extract(ev.value, '$.type') AS type,
+        json_extract(ev.value, '$.data.type') AS data_type,
+        json_extract(ev.value, '$.data.outcome') AS data_outcome,
+        1 AS escalation_source,
+        f.start_time AS start_time,
+        printf('%s:1:%09d', f.session_id, CAST(ev.key AS INTEGER)) AS firstOrder
       FROM filtered f
       JOIN trace_sessions ts ON ts.session_id = f.session_id
       JOIN json_each(ts.raw_json, '$.events') ev
@@ -1307,57 +1426,128 @@ function buildInsightsSql(
       SELECT
         fr.sample_session_id AS session_id,
         re.run_id AS run_id,
-        re.type AS type
+        re.type AS type,
+        NULL AS data_type,
+        NULL AS data_outcome,
+        0 AS escalation_source,
+        fr.start_time AS start_time,
+        printf('%s:2:%09d', fr.sample_session_id, re.ordinal) AS firstOrder
       FROM trace_run_events re
       JOIN filtered_runs fr ON fr.run_id = re.run_id
+    ),
+    event_sessions AS (
+      SELECT type, session_id, run_id, MAX(start_time) AS start_time,
+             COUNT(*) AS calls,
+             MIN(firstOrder) AS firstOrder
+      FROM event_source
+      WHERE type IS NOT NULL AND type != ''
+      GROUP BY type, session_id
+    ), ranked_event_sessions AS (
+      SELECT es.*,
+             ROW_NUMBER() OVER (
+               PARTITION BY type ORDER BY start_time DESC, session_id
+             ) AS sampleRank,
+             ROW_NUMBER() OVER (
+               PARTITION BY type ORDER BY start_time DESC, firstOrder
+             ) AS orderRank
+      FROM event_sessions es
+    ), escalation_stats AS (
+      SELECT
+        COUNT(DISTINCT CASE WHEN type = 'escalation'
+          OR (type = 'stuck_signal' AND data_type = 'escalate')
+          THEN session_id END) AS escalatedSessions,
+        SUM(CASE WHEN type = 'escalation'
+          OR (type = 'stuck_signal' AND data_type = 'escalate')
+          THEN 1 ELSE 0 END) AS escalations,
+        SUM(CASE WHEN type = 'escalation_outcome' AND data_outcome = 'rescued'
+          THEN 1 ELSE 0 END) AS escalationRescued,
+        SUM(CASE WHEN type = 'escalation_outcome' AND data_outcome = 'failed_fast'
+          THEN 1 ELSE 0 END) AS escalationFailedFast,
+        SUM(CASE WHEN type = 'escalation_outcome' AND data_outcome = 'budget_exhausted'
+          THEN 1 ELSE 0 END) AS escalationBudgetExhausted
+      FROM event_source
+      WHERE escalation_source = 1
     )
     SELECT
-      type,
-      COUNT(DISTINCT session_id) AS sessions,
-      COUNT(DISTINCT run_id)     AS runs,
-      COUNT(*)                   AS calls
-    FROM event_source
-    WHERE type IS NOT NULL AND type != ''
-    GROUP BY type
-    ORDER BY calls DESC
-    LIMIT ${MAX_INSIGHTS_EVENT_ROWS}
+      es.type,
+      COUNT(*) AS sessions,
+      COUNT(DISTINCT es.run_id) AS runs,
+      SUM(es.calls) AS calls,
+      SUM(COALESCE(f.turn_count, 0)) AS totalTurns,
+      SUM(COALESCE(f.total_cost, 0)) AS totalCost,
+      MAX(CASE WHEN es.sampleRank = 1 THEN es.session_id END) AS sampleSessionId,
+      MAX(CASE WHEN es.sampleRank = 1 THEN es.run_id END) AS sampleRunId,
+      MAX(es.start_time) AS firstStartTime,
+      MAX(CASE WHEN es.orderRank = 1 THEN es.firstOrder END) AS firstOrder,
+      MAX(st.escalatedSessions) AS escalatedSessions,
+      MAX(st.escalations) AS escalations,
+      MAX(st.escalationRescued) AS escalationRescued,
+      MAX(st.escalationFailedFast) AS escalationFailedFast,
+      MAX(st.escalationBudgetExhausted) AS escalationBudgetExhausted
+    FROM ranked_event_sessions es
+    JOIN filtered f ON f.session_id = es.session_id
+    CROSS JOIN escalation_stats st
+    GROUP BY es.type
+    ORDER BY calls DESC, sessions DESC, firstStartTime DESC, firstOrder
   `).all(params) as Array<Record<string, unknown>>;
+  const escr = eventAggs[0] ?? {};
 
   // ── 9. Run rows ─────────────────────────────────────────────────────────
   const runAggs = db.prepare(`
     ${cte}
     SELECT
       f.run_id,
-      MIN(ts.query)    AS query,
-      CASE WHEN SUM(CASE WHEN f.outcome NOT IN ('completed','success') THEN 1 ELSE 0 END) = 0
-           THEN 'completed' ELSE 'failed' END                                        AS outcome,
+      (SELECT f2.query FROM filtered f2 WHERE f2.run_id = f.run_id
+       ORDER BY f2.start_time DESC, f2.session_id LIMIT 1) AS query,
+      COALESCE((SELECT f2.outcome FROM filtered f2
+                WHERE f2.run_id = f.run_id
+                  AND f2.outcome NOT IN ('completed','success')
+                ORDER BY f2.start_time ASC, f2.session_id LIMIT 1),
+               'completed')                                                            AS outcome,
       COUNT(*)                                                                        AS sessions,
-      SUM(CASE WHEN f.outcome NOT IN ('completed','success')
-               AND f.outcome IS NOT NULL THEN 1 ELSE 0 END)                          AS failedSessions,
+      SUM(CASE WHEN f.outcome NOT IN ('completed','success') OR f.outcome IS NULL
+               THEN 1 ELSE 0 END)                                                   AS failedSessions,
       SUM(COALESCE(f.turn_count, 0))                                                  AS totalTurns,
       SUM(COALESCE(f.total_cost, 0))                                                  AS totalCost,
       MAX(f.end_time) - MIN(f.start_time)                                             AS durationMs,
-      MIN(f.session_id)                                                               AS sampleSessionId
+      (SELECT f2.session_id FROM filtered f2 WHERE f2.run_id = f.run_id
+       ORDER BY f2.start_time ASC, f2.session_id LIMIT 1) AS sampleSessionId
     FROM filtered f
     JOIN trace_sessions ts ON ts.session_id = f.session_id
     WHERE f.run_id IS NOT NULL AND f.run_id != ''
     GROUP BY f.run_id
-    ORDER BY MIN(f.start_time) DESC
+    ORDER BY durationMs DESC, MAX(f.start_time) DESC, f.run_id
     LIMIT ${MAX_INSIGHTS_RUN_ROWS}
   `).all(params) as Array<Record<string, unknown>>;
 
   const runToolRows = db.prepare(`
     ${cte}
+    , run_tool_sessions AS (
+      SELECT f.run_id, f.session_id, f.start_time, tt.tool_name,
+             COUNT(*) AS calls,
+             MIN(printf('%09d:%09d', tt.turn_number, tt.ordinal)) AS firstPosition
+      FROM trace_tools tt
+      JOIN filtered f ON f.session_id = tt.session_id
+      WHERE f.run_id IS NOT NULL AND f.run_id != ''
+        AND tt.tool_name IS NOT NULL AND tt.tool_name != ''
+      GROUP BY f.run_id, f.session_id, tt.tool_name
+    ), ranked_run_tool_sessions AS (
+      SELECT rts.*,
+             ROW_NUMBER() OVER (
+               PARTITION BY rts.run_id, rts.tool_name
+               ORDER BY rts.start_time DESC, rts.session_id
+             ) AS firstRank
+      FROM run_tool_sessions rts
+    )
     SELECT
-      f.run_id,
-      tt.tool_name,
-      COUNT(*) AS calls
-    FROM trace_tools tt
-    JOIN filtered f ON f.session_id = tt.session_id
-    WHERE f.run_id IS NOT NULL AND f.run_id != ''
-      AND tt.tool_name IS NOT NULL AND tt.tool_name != ''
-    GROUP BY f.run_id, tt.tool_name
-    ORDER BY f.run_id, calls DESC, tt.tool_name
+      rts.run_id,
+      rts.tool_name,
+      SUM(rts.calls) AS calls,
+      MAX(rts.start_time) AS firstStartTime,
+      MAX(CASE WHEN rts.firstRank = 1 THEN rts.firstPosition END) AS firstOrder
+    FROM ranked_run_tool_sessions rts
+    GROUP BY rts.run_id, rts.tool_name
+    ORDER BY rts.run_id, calls DESC, firstStartTime DESC, firstOrder
   `).all(params) as Array<Record<string, unknown>>;
 
   const runSkillRows = db.prepare(`
@@ -1365,7 +1555,10 @@ function buildInsightsSql(
     , skill_source AS (
       SELECT
         f.run_id AS run_id,
-        json_extract(ts.raw_json,'$.skillToolMetrics.skillId') AS skill_id
+        f.session_id AS session_id,
+        f.start_time AS start_time,
+        json_extract(ts.raw_json,'$.skillToolMetrics.skillId') AS skill_id,
+        0 AS position
       FROM filtered f
       JOIN trace_sessions ts ON ts.session_id = f.session_id
       WHERE f.run_id IS NOT NULL AND f.run_id != ''
@@ -1374,20 +1567,28 @@ function buildInsightsSql(
 
       SELECT
         f.run_id AS run_id,
-        json_extract(step.value, '$.selectedSkillId') AS skill_id
+        f.session_id AS session_id,
+        f.start_time AS start_time,
+        json_extract(step.value, '$.selectedSkillId') AS skill_id,
+        CAST(step.key AS INTEGER) + 1 AS position
       FROM filtered f
       JOIN trace_sessions ts ON ts.session_id = f.session_id
       JOIN json_each(ts.raw_json, '$.planDecomposition.steps') step
       WHERE f.run_id IS NOT NULL AND f.run_id != ''
+    ), skill_sessions AS (
+      SELECT run_id, session_id, skill_id, MAX(start_time) AS start_time,
+             MIN(position) AS firstPosition
+      FROM skill_source
+      WHERE skill_id IS NOT NULL AND skill_id != ''
+      GROUP BY run_id, session_id, skill_id
     )
     SELECT
       run_id,
       skill_id,
       COUNT(*) AS calls
-    FROM skill_source
-    WHERE skill_id IS NOT NULL AND skill_id != ''
+    FROM skill_sessions
     GROUP BY run_id, skill_id
-    ORDER BY run_id, calls DESC, skill_id
+    ORDER BY run_id, calls DESC, MAX(start_time) DESC, MIN(firstPosition)
   `).all(params) as Array<Record<string, unknown>>;
 
   const topByRun = (
@@ -1415,32 +1616,25 @@ function buildInsightsSql(
 
   const facetRuns = toStr(
     db.prepare(
-      `${cte} SELECT DISTINCT run_id FROM filtered WHERE run_id IS NOT NULL AND run_id != '' LIMIT ${MAX_INSIGHTS_FACET_IDS}`,
+      `${cte} SELECT DISTINCT run_id FROM filtered WHERE run_id IS NOT NULL AND run_id != '' ORDER BY run_id LIMIT ${MAX_INSIGHTS_FACET_IDS}`,
     ).all(params) as Array<Record<string, unknown>>,
     "run_id",
   );
   const facetSessions = toStr(
     db.prepare(
-      `${cte} SELECT session_id FROM filtered LIMIT ${MAX_INSIGHTS_FACET_IDS}`,
+      `${cte} SELECT session_id FROM filtered ORDER BY session_id LIMIT ${MAX_INSIGHTS_FACET_IDS}`,
     ).all(params) as Array<Record<string, unknown>>,
     "session_id",
   );
   const facetDomains = toStr(
     db.prepare(
-      `${cte} SELECT DISTINCT domain FROM filtered WHERE domain IS NOT NULL AND domain != '' LIMIT ${MAX_INSIGHTS_FACET_IDS}`,
+      `${cte} SELECT DISTINCT domain FROM filtered WHERE domain IS NOT NULL AND domain != '' ORDER BY domain`,
     ).all(params) as Array<Record<string, unknown>>,
     "domain",
   );
-  const facetModels = toStr(
-    db.prepare(`
-      ${cte}
-      SELECT DISTINCT t.model FROM trace_turns t
-      WHERE t.session_id IN (SELECT session_id FROM filtered)
-        AND t.model IS NOT NULL AND t.model != ''
-      LIMIT ${MAX_INSIGHTS_FACET_IDS}
-    `).all(params) as Array<Record<string, unknown>>,
-    "model",
-  );
+  const facetModels = modelSessionAggs
+    .filter((row) => asNumber(row.calls) > 0)
+    .map((row) => asString(row.model)).sort();
 
   // ── Compute estimated costs per model (O(M) instead of O(N turns)) ──────
   let estimatedInputCost = 0;
@@ -1466,7 +1660,7 @@ function buildInsightsSql(
       estimatedCachedInputCost += breakdown.cachedInputCostUsd;
       estimatedOutputCost += breakdown.outputCostUsd;
     } else {
-      unpricedRequests += asNumber(row.requests);
+      unpricedRequests += asNumber(row.pricedRequestCandidates);
     }
   }
 
@@ -1498,7 +1692,7 @@ function buildInsightsSql(
     failureRate: totalSessions > 0 ? failedSessions / totalSessions : 0,
     totalTurns,
     averageTurns: totalSessions > 0 ? totalTurns / totalSessions : 0,
-    totalCost: requestCost,
+    totalCost: asNumber(sr.totalCost),
     averageDurationMs: asNumber(sr.averageDurationMs),
     toolCalls,
     toolFailures,
@@ -1547,6 +1741,10 @@ function buildInsightsSql(
   // ── Model rows ──────────────────────────────────────────────────────────
   const models: TraceInsightsMetricRow[] = modelAggs.map((row) => {
     const model = asString(row.model);
+    const sessionRow = modelSessionById.get(model);
+    const calls = asNumber(sessionRow?.calls);
+    const successes = asNumber(sessionRow?.successes);
+    const failures = asNumber(sessionRow?.failures);
     const mRequests = asNumber(row.requests);
     const mPrompt = asNumber(row.promptTokens);
     const mCached = asNumber(row.cachedTokens);
@@ -1573,38 +1771,64 @@ function buildInsightsSql(
       label: model,
       sessions: asNumber(row.sessions),
       runs: asNumber(row.runs),
-      requests: mRequests,
-      totalCost: mReqCost,
-      requestCost: mReqCost,
-      promptTokens: mPrompt,
-      cachedTokens: mCached,
-      completionTokens: mCompletion,
-      totalTokens: mTotal,
-      estimatedInputCost: mEstInput,
-      estimatedCachedInputCost: mEstCached,
-      estimatedOutputCost: mEstOutput,
-      estimatedRequestCost: mEstReq,
+      calls: calls || undefined,
+      requests: mRequests || undefined,
+      successes: successes || undefined,
+      failures: failures || undefined,
+      failureRate: calls > 0 ? failures / calls : undefined,
+      averageDurationMs: calls > 0 && asNumber(row.durationMs) > 0
+        ? asNumber(row.durationMs) / calls : undefined,
+      totalTurns: asNumber(sessionRow?.totalTurns) || undefined,
+      totalCost: asNumber(sessionRow?.totalCost) || undefined,
+      promptTokens: mPrompt || undefined,
+      cachedTokens: mCached || undefined,
+      completionTokens: mCompletion || undefined,
+      totalTokens: mTotal || undefined,
+      requestCost: mReqCost || undefined,
+      estimatedInputCost: mEstInput || undefined,
+      estimatedCachedInputCost: mEstCached || undefined,
+      estimatedOutputCost: mEstOutput || undefined,
+      estimatedRequestCost: mEstReq || undefined,
+      outputTokenShare: mTotal > 0 ? mCompletion / mTotal : undefined,
       outputCostShare: mEstReq > 0 ? mEstOutput / mEstReq : undefined,
-      unpricedRequests: bd ? 0 : mRequests,
+      unpricedRequests: bd ? undefined : asNumber(row.pricedRequestCandidates) || undefined,
       sampleSessionId: asString(row.sampleSessionId) || undefined,
       sampleRunId: asString(row.sampleRunId) || undefined,
     };
   });
+  const modelOrder = new Map(modelAggs.map((row) => [asString(row.model), row]));
+  models.sort((a, b) =>
+    (b.failures ?? 0) - (a.failures ?? 0) ||
+    (b.calls ?? 0) - (a.calls ?? 0) ||
+    b.sessions - a.sessions ||
+    asNumber(modelOrder.get(b.id)?.firstStartTime) -
+      asNumber(modelOrder.get(a.id)?.firstStartTime) ||
+    asNumber(modelOrder.get(a.id)?.firstPosition) -
+      asNumber(modelOrder.get(b.id)?.firstPosition));
 
   // ── Tool rows ───────────────────────────────────────────────────────────
   const tools: TraceInsightsMetricRow[] = toolAggs.map((row) => {
     const calls = asNumber(row.calls);
     const failures = asNumber(row.failures);
+    const successes = asNumber(row.successes);
+    const durationMs = asNumber(row.durationMs);
+    const totalTurns = asNumber(row.totalTurns);
+    const totalCost = asNumber(row.totalCost);
     return {
       id: asString(row.tool_name),
       label: asString(row.tool_name),
       sessions: asNumber(row.sessions),
       runs: asNumber(row.runs),
       calls,
-      failures,
-      failureRate: calls > 0 ? failures / calls : 0,
+      successes: successes || undefined,
+      failures: failures || undefined,
+      failureRate: calls > 0 ? failures / calls : undefined,
+      averageDurationMs: calls > 0 && durationMs > 0 ? durationMs / calls : undefined,
+      totalTurns: totalTurns || undefined,
+      totalCost: totalCost || undefined,
       sampleSessionId: asString(row.sampleSessionId) || undefined,
-      sampleError: asString(row.sampleError) || undefined,
+      sampleRunId: asString(row.sampleRunId) || undefined,
+      sampleError: row.sampleError == null ? undefined : asString(row.sampleError),
     };
   });
 
@@ -1614,18 +1838,35 @@ function buildInsightsSql(
     label: asString(row.failureLabel),
     sessions: asNumber(row.sessions),
     runs: asNumber(row.runs),
+    calls: asNumber(row.sessions),
+    failures: asNumber(row.sessions),
+    failureRate: 1,
+    totalTurns: asNumber(row.totalTurns) || undefined,
+    totalCost: asNumber(row.totalCost) || undefined,
     sampleSessionId: asString(row.sampleSessionId) || undefined,
     sampleRunId: asString(row.sampleRunId) || undefined,
   }));
 
   // ── Skill rows ──────────────────────────────────────────────────────────
-  const skills: TraceInsightsMetricRow[] = skillAggs.map((row) => ({
-    id: asString(row.skillId),
-    label: asString(row.skillId),
-    sessions: asNumber(row.sessions),
-    runs: asNumber(row.runs),
-    sampleSessionId: asString(row.sampleSessionId) || undefined,
-  }));
+  const skills: TraceInsightsMetricRow[] = skillAggs.map((row) => {
+    const calls = asNumber(row.sessions);
+    const successes = asNumber(row.successes);
+    const failures = asNumber(row.failures);
+    return {
+      id: asString(row.skillId),
+      label: asString(row.skillId),
+      sessions: calls,
+      runs: asNumber(row.runs),
+      calls,
+      successes: successes || undefined,
+      failures: failures || undefined,
+      failureRate: calls > 0 ? failures / calls : undefined,
+      totalTurns: asNumber(row.totalTurns) || undefined,
+      totalCost: asNumber(row.totalCost) || undefined,
+      sampleSessionId: asString(row.sampleSessionId) || undefined,
+      sampleRunId: asString(row.sampleRunId) || undefined,
+    };
+  });
 
   // ── Event rows ──────────────────────────────────────────────────────────
   const events: TraceInsightsMetricRow[] = eventAggs.map((row) => ({
@@ -1634,12 +1875,17 @@ function buildInsightsSql(
     sessions: asNumber(row.sessions),
     runs: asNumber(row.runs),
     calls: asNumber(row.calls),
+    failureRate: 0,
+    totalTurns: asNumber(row.totalTurns) || undefined,
+    totalCost: asNumber(row.totalCost) || undefined,
+    sampleSessionId: asString(row.sampleSessionId) || undefined,
+    sampleRunId: asString(row.sampleRunId) || undefined,
   }));
 
   // ── Run rows ────────────────────────────────────────────────────────────
   const runs: TraceInsightsRunRow[] = runAggs.map((row) => ({
     runId: asString(row.run_id),
-    query: asString(row.query),
+    query: truncateText(asString(row.query)),
     outcome: asString(row.outcome),
     sessions: asNumber(row.sessions),
     failedSessions: asNumber(row.failedSessions),
@@ -1670,29 +1916,46 @@ function buildInsightsSql(
     if (!label) continue;
     const existing = failures.find((item) => item.id === label);
     if (existing) {
+      existing.sessions += asNumber(row.sessions);
       existing.runs += 1;
+      existing.calls = (existing.calls ?? 0) + 1;
+      existing.failures = (existing.failures ?? 0) + 1;
+      existing.totalTurns =
+        (existing.totalTurns ?? 0) + asNumber(row.totalTurns) || undefined;
+      existing.totalCost =
+        (existing.totalCost ?? 0) + asNumber(row.totalCost) || undefined;
     } else {
       failures.push({
         id: label,
         label,
         sessions: asNumber(row.sessions),
         runs: 1,
+        calls: 1,
+        failures: 1,
+        failureRate: 1,
+        totalTurns: asNumber(row.totalTurns) || undefined,
+        totalCost: asNumber(row.totalCost) || undefined,
         sampleSessionId: asString(row.sampleSessionId) || undefined,
         sampleRunId: asString(row.runId) || undefined,
       });
     }
   }
+  failures.sort((a, b) =>
+    (b.failures ?? 0) - (a.failures ?? 0) ||
+    (b.calls ?? 0) - (a.calls ?? 0) ||
+    b.sessions - a.sessions);
 
   // ── Facets ──────────────────────────────────────────────────────────────
+  const sortedIds = (values: string[]) => [...new Set(values.filter(Boolean))].sort();
   const facets: TraceInsightsFacets = {
     runs: facetRuns,
     sessions: facetSessions,
     domains: facetDomains,
     models: facetModels,
-    skills: skillAggs.map((r) => asString(r.skillId)).filter(Boolean),
-    tools: toolAggs.map((r) => asString(r.tool_name)).filter(Boolean),
-    failures: failures.map((r) => r.id).filter(Boolean),
-    eventTypes: eventAggs.map((r) => asString(r.type)).filter(Boolean),
+    skills: sortedIds(skillAggs.map((r) => asString(r.skillId))),
+    tools: sortedIds(toolAggs.map((r) => asString(r.tool_name))),
+    failures: sortedIds(failures.map((r) => r.id)),
+    eventTypes: sortedIds(eventAggs.map((r) => asString(r.type))),
   };
 
   return { summary, facets, tools, skills, models, failures, events, runs };

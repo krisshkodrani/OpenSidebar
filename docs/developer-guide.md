@@ -128,8 +128,6 @@ Routine E2E is divided by purpose rather than difficulty:
 | Smoke             | `pnpm run test:e2e:smoke`                    | Cheap confidence for core browser-agent behavior                       |
 | Interactions      | `pnpm run test:e2e:interactions`             | Page interaction, navigation, overlays, form, and shopping regressions |
 | Runtime           | `pnpm run test:e2e:runtime`                  | Planning, continuation, recovery, and durable state regressions        |
-| WorkArena setup   | `pnpm exec tsx scripts/workarena-doctor.ts`  | Local WorkArena readiness and gated dataset access checks              |
-| WorkArena handoff | `pnpm exec tsx scripts/workarena-handoff.ts` | Manual real ServiceNow handoff run; requires explicit reset flag       |
 
 ### Inspect traces and logs
 
@@ -310,10 +308,6 @@ The pnpm package scripts are the stable day-to-day entry points. Use direct Nx c
 | `pnpm run test:e2e`                                    | you need the normal budgeted E2E sequence                             | alias for staged E2E                                                                                                                                          |
 | `pnpm run test:e2e:smoke`                              | you need cheap real-browser confidence                                | uses Fireworks by default                                                                                                                                     |
 | `pnpm run test:e2e:staged`                             | you need the normal budgeted E2E sequence                             | smoke + interactions + runtime                                                                                                                                |
-| `pnpm exec tsx scripts/workarena-first-task.ts`        | you need a safe first real WorkArena candidate                        | metadata-only; no reset or LLM calls                                                                                                                          |
-| `pnpm exec tsx scripts/workarena-category-coverage.ts` | you need to verify local analog coverage for every WorkArena category | metadata-only; writes `.artifacts/e2e/` report                                                                                                                |
-| `pnpm exec tsx scripts/workarena-handoff.ts`           | you need a manual real WorkArena handoff run                          | requires `--allow-servicenow-reset`; token-spending                                                                                                           |
-| `pnpm exec tsx scripts/workarena-validate-reports.ts`  | you need to validate WorkArena JSON reports                           | no ServiceNow or LLM calls                                                                                                                                    |
 | `pnpm run verify`                                      | you want the local confidence gate                                    | lint + typecheck + tests + build + dist check                                                                                                                 |
 | `pnpm run ci:local`                                    | you want the CI-equivalent local gate                                 | lint + typecheck + tests + build + dist check                                                                                                                 |
 | `pnpm run release:verify`                              | you want release confidence                                           | lint + typecheck + tests + build + dist check + production dependency audit                                                                                   |
@@ -322,7 +316,6 @@ The pnpm package scripts are the stable day-to-day entry points. Use direct Nx c
 | `pnpm run release:smoke:native-panel`                  | you want the manual Chrome side-panel gate                            | launches headed Chrome with `dist/`, waits for a toolbar click, and writes evidence under `.artifacts/e2e/native-sidepanel/`                                  |
 | `pnpm exec vitest run <file>`                          | you want one focused test file                                        | useful during iteration                                                                                                                                       |
 
-For the path from guarded WorkArena smoke runs to category-balanced graded evaluation, see [WorkArena Roadmap](./evals/workarena-roadmap.md).
 
 ### Observability
 

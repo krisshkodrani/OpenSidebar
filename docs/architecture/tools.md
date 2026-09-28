@@ -1,13 +1,13 @@
 # Tool System
 
-OpenSidebar exposes **52 tools** to the model. The **source of truth** is
+OpenSidebar exposes **50 tools** to the model. The **source of truth** is
 `packages/shared-types/src/enums.ts` (`ToolName`) plus the definition/register
 modules below — consult those for exact parameter schemas rather than any list
 in prose.
 
 ## Module structure
 
-`apps/extension/src/background/tools/index.ts` is a ~130-line **barrel**: it
+`apps/extension/src/background/tools/index.ts` is a ~120-line **barrel**: it
 re-exports submodules and wires registration via `registerTools()`. The bulk
 lives in:
 
@@ -25,27 +25,13 @@ lives in:
 | `register-agent-control.ts` / `register-agent-tools.ts` | `done`, `escalate`, `clarify`, `update_notes`, `update_plan`, `compose_text`, `get_profile_fields` |
 | `main-world-bridge.ts` | Serialized MAIN-world injection scripts |
 | `download-helpers.ts`, `tab-navigation-helpers.ts`, `page-inspector.ts` | Shared helpers |
-| `servicenow/` | Quarantined ServiceNow adapter (see below) |
+| `register-catalog.ts`, `register-knowledge-base.ts`, `register-list-actions.ts` | Generic catalog, knowledge, and visible-table workflows |
 
 `navigate` itself is registered inline in `index.ts` because it enforces the
 allowed-origins navigation boundary via `tab-navigation-helpers.ts`.
 
 **Registration order is the catalog order presented to the model** — comments
 in `index.ts` warn against regrouping the calls.
-
-## ServiceNow adapter (one-way rule)
-
-`tools/servicenow/` owns the SN tool schemas and handlers:
-`open_servicenow_module`, `configure_servicenow_form` (`register.ts`),
-`search_knowledge_base` (`register-knowledge-base.ts`),
-`apply_list_filter/_sort/_action` (`register-list-actions.ts`),
-`inspect_catalog_item` / `configure_catalog_item` (`register-catalog.ts`).
-
-Import direction is one-way: adapter modules must **never** import
-`tools/index.ts` or the tools barrel — only `helpers` and concrete siblings.
-The generic layer reaches SN behavior solely through the `servicenow/register*`
-entry points and the `tool-hooks.ts` façade (reference-resolution hooks that
-no-op off ServiceNow). See CLAUDE.md for what is and isn't quarantined.
 
 ## Conventions
 
@@ -76,7 +62,7 @@ a tool's behavior, edit its `ToolMeta` entry, don't `.add()` to a set.
   `upload_file`, and `dismiss_overlays` are.
 - `sequential` — must run alone, never in a parallel batch. This is a wide
   set (~22 tools): navigation/tab tools, `execute_js`, `upload_file`, agent
-  control (`done`, `clarify`, `update_plan`, `compose_text`), and the SN
+  control (`done`, `clarify`, `update_plan`, `compose_text`), and the catalog/list
   configure/apply tools.
 - `riskLevel` — LOW / MEDIUM / HIGH.
 - `cacheable` (`"dom" | "static" | false`) and `mutationSensitive` — drive
@@ -145,8 +131,7 @@ that is not grounded in the current DOM is not epoch-gated.
 
 1. Add the name to `ToolName` (`packages/shared-types/src/enums.ts`) and an
    args type in `packages/shared-types/src/tools.ts`.
-2. Add the `ToolDefinition` schema to `definitions.ts` (or the SN adapter's
-   `servicenow/definitions.ts`).
+2. Add the `ToolDefinition` schema to `definitions.ts`.
 3. Register the executor in the appropriate `register-*.ts` module (create the
    grouping that fits; keep registration order deliberate).
 4. Add a `ToolMeta` entry to `TOOL_METADATA` in `metadata.ts` (risk,
@@ -175,6 +160,6 @@ pnpm exec vitest run --config apps/extension/vitest.config.ts apps/extension/tes
 | `apps/extension/src/background/tools/definitions.ts` | Generic tool schemas |
 | `apps/extension/src/background/tools/registry.ts` | `ToolRegistry` |
 | `apps/extension/src/background/tools/metadata.ts` | Metadata, risk, profiles, concurrency |
-| `apps/extension/src/background/tools/servicenow/` | Quarantined SN adapter |
+| `apps/extension/src/background/tools/register-list-actions.ts` | Generic visible-table actions |
 | `apps/extension/src/content/actions/` | DOM tool implementations |
 | `apps/extension/src/background/agent/loop.ts` | Dispatch orchestration |

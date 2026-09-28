@@ -23,6 +23,7 @@ Do not use it for:
 7. Apply coupon or promo code only after the cart contents are correct, unless the site clearly requires the reverse order.
 8. Re-read totals and visible discount state.
 9. Proceed to checkout only after the cart contents and pricing state match the request.
+10. Read the checkout form and fill every required field using details supplied by the user or a saved profile. Ask for missing details rather than inventing personal information. After submission, verify the order confirmation.
 
 ## Required Evidence
 

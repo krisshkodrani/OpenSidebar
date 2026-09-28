@@ -12,14 +12,14 @@
  * idiom (loop() passes `this`).
  *
  * Control results:
- *   - `end_task`  → the ServiceNow missing-field admission completed the task;
  *   - `next_turn` → all calls were blocked / all exploration-only (retry turn);
  *   - `continue`  → tools dispatched; proceed to post_tool_guards.
  */
 
-import type { AgentStatus, ToolCall } from "../../../types";
+import type { AgentStatus, AgentStep } from "../../../types";
 import type { logger, SessionScopedLogger } from "../../../utils";
 import type { ContextManager } from "../context";
+import type { ListDetailWorkflow, ListDetailWorkflowState } from "../list-detail-workflow";
 import type { TraceRecorder } from "../trace";
 import type { LoopResult } from "../loop-types";
 import type { LoopSession, TurnScope } from "../loop-scope";
@@ -52,7 +52,8 @@ import {
 /** Repeat-action detection window handed to the dispatchers. */
 const REPEAT_ACTION_WINDOW = 20;
 
-export interface DispatchToolsHost {
+export interface DispatchToolsHost
+  extends ParallelToolDispatchHost, SequentialToolDispatchHost {
   readonly turnCount: number;
   readonly traceRecorder: TraceRecorder | null;
   readonly context: ContextManager;
@@ -64,15 +65,12 @@ export interface DispatchToolsHost {
   readonly escalationRescue: {
     noteEscalation(turn: number, trigger: string): void;
   };
-  lastDomStep: unknown;
+  lastDomStep: AgentStep | null;
   throwIfGracefulStopRequested(): void;
-  getServiceNowMissingFieldAdmissionSummary(text: string | null): string | null;
   getMetrics(): LoopResult["metrics"];
   statusHandler(status: AgentStatus, detail: string): void;
-  rewriteListDetailWorkflowToolCall(
-    toolCall: ToolCall,
-    mode: "parallel" | "sequential",
-  ): boolean;
+  readonly listDetailWorkflow: ListDetailWorkflowState & Pick<ListDetailWorkflow,
+    "rewriteListDetailWorkflowToolCall" | "trackListDetailToolSuccess">;
   finalizeParallelToolResults(results: ParallelToolExecutionResult[]): void;
 }
 
@@ -160,33 +158,6 @@ export async function runDispatchToolsPhase(
   session.consecutiveTextOnly = 0;
   host.throwIfGracefulStopRequested();
 
-  // ServiceNow: a "missing field" admission in the model text completes the
-  // record workflow immediately (no tool call needed).
-  const missingFieldAdmissionSummary =
-    host.getServiceNowMissingFieldAdmissionSummary(cleanContent);
-  if (missingFieldAdmissionSummary) {
-    signalCompletedResult(missingFieldAdmissionSummary);
-    host.traceRecorder?.recordEvent(
-      "servicenow_record_missing_field_admission_completed",
-      {
-        turn: host.turnCount,
-        summary: missingFieldAdmissionSummary,
-      },
-    );
-    await host.traceRecorder?.endTurn();
-    return {
-      kind: "end_task",
-      result: {
-        outcome: "completed",
-        turnCount: host.turnCount,
-        summary: missingFieldAdmissionSummary,
-        failure: { category: "none", code: "none" },
-        metrics: host.getMetrics(),
-        evidence: host.evidenceAccumulator.toArray(),
-        completionEnvelope: host.completedResult?.completionEnvelope,
-      },
-    };
-  }
   host.lastDomStep = null;
   host.context.setLastActionOutcome(null);
   const toolCallSetup = prepareToolCallBranch({
@@ -201,7 +172,7 @@ export async function runDispatchToolsPhase(
     log: host.log,
     statusHandler: (status, message) => host.statusHandler(status, message),
     rewriteListDetailWorkflowToolCall: (toolCall, mode) =>
-      host.rewriteListDetailWorkflowToolCall(toolCall, mode),
+      host.listDetailWorkflow.rewriteListDetailWorkflowToolCall(toolCall, mode),
   });
   session.consecutiveBlindToolTurns = toolCallSetup.consecutiveBlindToolTurns;
 
@@ -256,7 +227,7 @@ export async function runDispatchToolsPhase(
     host.throwIfGracefulStopRequested();
     // PARALLEL EXECUTION
     const parallelDispatch = await executeParallelToolCalls(
-      host as unknown as ParallelToolDispatchHost,
+      host,
       {
         toolCalls: effectiveToolCalls,
         tabId: session.tabId,
@@ -291,7 +262,7 @@ export async function runDispatchToolsPhase(
     // SEQUENTIAL EXECUTION (has sequential tools or single tool)
     const sequentialDispatch: SequentialToolDispatchOutput =
       await executeSequentialToolCalls.call(
-        host as unknown as SequentialToolDispatchHost,
+        host,
         {
           toolCalls: effectiveToolCalls,
           repeatActionWindow: REPEAT_ACTION_WINDOW,

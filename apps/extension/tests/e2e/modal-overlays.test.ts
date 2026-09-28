@@ -20,9 +20,12 @@ import {
   getActiveTabId,
   navigateAndWait,
   sendUserChat,
+  stopAgent,
+  startApprovalAutoResponder,
   waitForOutcome,
 } from "./helpers/utils";
 import { getFixtureUrl } from "./helpers/fixture-server";
+import { closeE2EPanel } from "./helpers/browser";
 
 const h = createE2EHarness({ maxTurns: 25, testLabel: "modal-overlays" });
 
@@ -44,7 +47,14 @@ describe.skipIf(!h.apiKey)("E2E: Modal Overlays", () => {
     const prompt = "Close any popups on the page, set the notification email to user@test.com, then delete the account and confirm.";
 
     const workspaceId = await sendUserChat(h.ctx, prompt, tabId);
-
+    // This test exercises page overlays; keep the harness panel out of the
+    // page's viewport after submitting the request.
+    await closeE2EPanel(h.ctx);
+    const approvals = startApprovalAutoResponder(
+      h.ctx,
+      h.ctx.serviceWorker,
+      workspaceId,
+    );
     const outcome = await waitForOutcome(
       h.page,
       h.ctx.serviceWorker,
@@ -57,7 +67,10 @@ describe.skipIf(!h.apiKey)("E2E: Modal Overlays", () => {
       },
       240_000,
       workspaceId,
-    );
+      // The page records the requested deletion; stop any later planning
+      // after this observable end state so it cannot repeat the action.
+      { acceptPageResultWhileRunning: true },
+    ).finally(() => approvals.stop());
 
     await h.printTraceSummary();
 
@@ -87,6 +100,7 @@ describe.skipIf(!h.apiKey)("E2E: Modal Overlays", () => {
 
     console.log(`\n[e2e] PASS — Overlays dismissed, form filled, deletion confirmed`);
 
+    await stopAgent(h.ctx, workspaceId);
     await assertNoGhostSession(h.ctx.serviceWorker, 2_000, workspaceId);
   }, 320_000);
 });

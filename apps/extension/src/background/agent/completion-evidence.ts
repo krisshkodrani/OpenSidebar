@@ -19,9 +19,13 @@ import {
   deriveCompletionEvidenceFromSnapshot,
   deriveCompletionEvidenceFromToolOutcome,
   buildCompletionRecoveryHint,
+  buildCompletionEnvelope,
+  buildTrustedCompletionCandidate,
   type CompletionEvidenceLedger,
   type CompletionCandidateSource,
+  type CompletionEnvelope,
   type CompletionEvaluation,
+  type TrustedCompletionCandidate,
 } from "./completion-kernel";
 import { evaluateGeneratedCompletionCandidate } from "./completion-evaluation-service";
 
@@ -35,6 +39,93 @@ export interface CompletionEvidenceHost {
   readonly originalQuery: string;
   lastCompletionRejection: CompletionEvaluation | null;
   lastCompletionRecoveryHint: string | null;
+}
+
+/** Bind completion evidence operations to the loop's live ledger and context. */
+export class CompletionEvidenceRuntime {
+  constructor(private readonly host: CompletionEvidenceHost) {}
+
+  createCompletionEnvelope(params: {
+    source: CompletionCandidateSource;
+    contractKind: string;
+    decisionReason: string;
+    evidence?: CompletionEvaluation["evidence"];
+    summary: string;
+  }): CompletionEnvelope {
+    return buildCompletionEnvelope({
+      source: params.source,
+      contractKind: params.contractKind,
+      decisionReason: params.decisionReason,
+      evidence: params.evidence ?? [],
+      turn: this.host.turnCount,
+      summary: params.summary,
+    });
+  }
+
+  createTrustedCompletionCandidate(params: {
+    workflow: string;
+    summary: string;
+    reason: string;
+    evidenceText?: string;
+    recordId?: string;
+    targetText?: string;
+  }): TrustedCompletionCandidate {
+    return buildTrustedCompletionCandidate({
+      ...params,
+      turn: this.host.turnCount,
+      url: this.host.context.getCurrentUrl(),
+    });
+  }
+
+  recordCompletionEnvelope(
+    envelope: CompletionEnvelope,
+    metadata: Record<string, unknown> = {},
+  ): void {
+    this.host.traceRecorder?.recordEvent("completion_envelope_created", {
+      turn: this.host.turnCount,
+      ...envelope,
+      ...metadata,
+    });
+  }
+
+  getActiveCompletionContext(): ReturnType<typeof getActiveCompletionContext> {
+    return getActiveCompletionContext(this.host);
+  }
+
+  recordCompletionEvidence(
+    evidence: ReturnType<typeof deriveCompletionEvidenceFromSnapshot>,
+    source: string,
+  ): number {
+    return recordCompletionEvidence(this.host, evidence, source);
+  }
+
+  refreshCompletionEvidenceFromSnapshot(source: string): void {
+    refreshCompletionEvidenceFromSnapshot(this.host, source);
+  }
+
+  recordCompletionToolEvidence(
+    toolName: ToolName,
+    args: Record<string, unknown>,
+    result: string,
+    preActionSnapshot?: DomSnapshot | null,
+  ): void {
+    recordCompletionToolEvidence(this.host, toolName, args, result, preActionSnapshot);
+  }
+
+  evaluateCompletionCandidate(
+    source: CompletionCandidateSource,
+    summary: string,
+  ): CompletionEvaluation {
+    return evaluateCompletionCandidate(this.host, source, summary);
+  }
+
+  getCompletionRecoveryHintForCurrentState(): string | null {
+    return getCompletionRecoveryHintForCurrentState(this.host);
+  }
+
+  maybeAddCompletionRecoveryHint(trigger: string): void {
+    maybeAddCompletionRecoveryHint(this.host, trigger);
+  }
 }
 
 export function getActiveCompletionContext(host: CompletionEvidenceHost): {

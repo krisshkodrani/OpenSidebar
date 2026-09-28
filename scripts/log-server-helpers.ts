@@ -259,10 +259,12 @@ export function matchesTraceFilters(
   const sessionPrefix = (filters.sessionPrefix || "").trim();
 
   if (filters.day && filters.day !== "all" && dayValue !== filters.day) return false;
-  if (isIsoDay(filters.from ?? null) && (!dayValue || dayValue < filters.from)) {
+  const from = filters.from ?? null;
+  if (isIsoDay(from) && (!dayValue || dayValue < from)) {
     return false;
   }
-  if (isIsoDay(filters.to ?? null) && (!dayValue || dayValue > filters.to)) {
+  const to = filters.to ?? null;
+  if (isIsoDay(to) && (!dayValue || dayValue > to)) {
     return false;
   }
   if (domain) {

@@ -25,6 +25,39 @@ export interface AgentLoopMoneyTableHost {
   selectedSkillId: string | null;
 }
 
+/** Bind the money-table policy to live loop state without loop method shims. */
+export class MoneyTableRuntime {
+  constructor(private readonly host: AgentLoopMoneyTableHost) {}
+
+  isMoneyTableAggregateTask(): boolean {
+    return isMoneyTableAggregateTask(this.host);
+  }
+
+  hydrateMoneyTableAggregateFromWorkingNotes(): MoneyTableAggregate | null {
+    return hydrateMoneyTableAggregateFromWorkingNotes(this.host);
+  }
+
+  updateMoneyTableAggregate(result: string): string | null {
+    return updateMoneyTableAggregate(this.host, result);
+  }
+
+  updateMoneyTableAggregateFromSnapshot(): void {
+    updateMoneyTableAggregateFromSnapshot(this.host);
+  }
+
+  getIncompleteMoneyTableAggregateDoneRejection(): string | null {
+    return getIncompleteMoneyTableAggregateDoneRejection(this.host);
+  }
+
+  getIncorrectMoneyTableAggregateDoneRejection(summary: string): string | null {
+    return getIncorrectMoneyTableAggregateDoneRejection(this.host, summary);
+  }
+
+  isCompletedMoneyTableAggregateSummary(summary: string): boolean {
+    return isCompletedMoneyTableAggregateSummary(this.host, summary);
+  }
+}
+
 export function isMoneyTableAggregateTask(
   loop: AgentLoopMoneyTableHost,
 ): boolean {

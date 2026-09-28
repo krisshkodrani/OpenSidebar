@@ -49,7 +49,6 @@ const DIRECT_GROUNDED_TOOLS = new Set<ToolName>([
   ToolName.APPLY_LIST_SORT,
   ToolName.APPLY_LIST_ACTION,
   ToolName.CONFIGURE_CATALOG_ITEM,
-  ToolName.CONFIGURE_SERVICENOW_FORM,
   ToolName.XRAY_PAGE,
 ]);
 
@@ -62,7 +61,6 @@ const OBSERVATION_SETTLED_TOOLS = new Set<ToolName>([
   ...DOM_MODIFYING_TOOLS,
   ToolName.NAVIGATE,
   ToolName.GO_BACK,
-  ToolName.OPEN_SERVICENOW_MODULE,
   ToolName.PRESS_KEY,
   ToolName.CREATE_TAB,
   ToolName.CLOSE_TAB,

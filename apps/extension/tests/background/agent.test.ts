@@ -82,13 +82,6 @@ vi.mock("../../src/background/llm", () => ({
 }));
 
 import {
-  buildServiceNowMissingFieldInfeasibleSummary,
-  extractServiceNowFormMissingFieldLabels,
-  extractServiceNowModuleRequest,
-  maybeInferServiceNowModuleNavigationEvidence,
-  type ModuleNavEvidenceHost,
-} from "../../src/background/agent/servicenow/trusted-workflow-adapter";
-import {
   AgentLoop,
   countVisibleListDetailActions,
   getListDetailDoneRejection,
@@ -122,6 +115,7 @@ import {
 } from "../../src/background/agent/explicit-success-signal";
 import { buildDomAwareProfile } from "../../src/background/tools/metadata";
 import { workspaceManager } from "../../src/background/workspaces/manager";
+import { shouldBlockTabManagementTools } from "../../src/background/agent/workflow-tab-routing";
 import type { TaggedElement } from "../../src/types";
 
 describe("AgentLoop", () => {
@@ -154,67 +148,6 @@ describe("AgentLoop", () => {
       timestamp: Date.now(),
     }));
   }
-
-  test("extractServiceNowModuleRequest parses quoted and plain module paths", () => {
-    expect(
-      extractServiceNowModuleRequest(
-        'Navigate to the "Database Instances > HBase" module of the "Configuration" application.',
-      ),
-    ).toEqual({
-      application: "Configuration",
-      path: ["Database Instances", "HBase"],
-    });
-
-    expect(
-      extractServiceNowModuleRequest(
-        "Open the Database Instances / Oracle module in the Configuration application",
-      ),
-    ).toEqual({
-      application: "Configuration",
-      path: ["Database Instances", "Oracle"],
-    });
-  });
-
-  test("explicit success detection ignores prior-step page-show history", () => {
-    const agent = new AgentLoop("test-key", {
-      onStatusUpdate: vi.fn(),
-      onMessage: vi.fn(),
-      onStep: vi.fn(),
-    });
-
-    (agent as any).originalQuery =
-      'Completed prior step: The page shows "Incident New record".\n' +
-      "Objective: Fill Caller field with 'Joe Employee' using autocomplete";
-    setPlanContext(agent, {
-      subtasks: [
-        {
-          description:
-            "Fill Caller field with 'Joe Employee' using autocomplete",
-          status: "running",
-        },
-      ],
-      planSteps: [
-        {
-          objective: "Fill Caller field with 'Joe Employee' using autocomplete",
-          successCriteria:
-            "Caller field shows 'Joe Employee' as selected value",
-        },
-      ],
-      snapshotText: "Incident New record Caller Short description",
-    });
-
-    const result = detectExplicitSuccessSignalInSnapshot(
-      agent as unknown as ExplicitSuccessSignalHost,
-      {
-        title: "Create INC0045669 | Incident | ServiceNow",
-        url: "https://example.com/incident.do",
-        pageContent: "Incident New record Caller Short description",
-        visibleContent: "Incident New record",
-      },
-    );
-
-    expect(result).toBeNull();
-  });
 
   test("explicit success detection uses the active step scope", () => {
     const agent = new AgentLoop("test-key", {
@@ -270,7 +203,10 @@ describe("AgentLoop", () => {
     (agent as any).useVLExecutor = false;
     (agent as any).refreshPerception = vi.fn();
     (agent as any).triagePopups = vi.fn();
-    (agent as any).captureScreenshotForVLExecutor = vi.fn();
+    const currentObservation = vi.spyOn(
+      (agent as any).perception,
+      "getCurrentObservation",
+    );
     (agent as any).context.setSnapshot({
       title: "Chart Canvas",
       url: "https://example.com/chart",
@@ -295,9 +231,7 @@ describe("AgentLoop", () => {
     await (agent as any).refreshPerceptionAndTriage(123);
 
     expect((agent as any).useVLExecutor).toBe(true);
-    expect((agent as any).captureScreenshotForVLExecutor).toHaveBeenCalledWith(
-      123,
-    );
+    expect(currentObservation).toHaveBeenCalled();
     expect((agent as any).refreshPerception).not.toHaveBeenCalled();
     expect((agent as any).triagePopups).not.toHaveBeenCalled();
     expect(recordEvent).toHaveBeenCalledWith(
@@ -325,7 +259,10 @@ describe("AgentLoop", () => {
     (agent as any).traceRecorder = { recordEvent };
     (agent as any).originalQuery = "Fill out the account form.";
     (agent as any).useVLExecutor = true;
-    (agent as any).captureScreenshotForVLExecutor = vi.fn();
+    const currentObservation = vi.spyOn(
+      (agent as any).perception,
+      "getCurrentObservation",
+    );
     const setScreenshot = vi.spyOn(
       (agent as any).context,
       "setScreenshotForExecutor",
@@ -361,7 +298,7 @@ describe("AgentLoop", () => {
     expect((agent as any).useVLExecutor).toBe(false);
     // Structured now means a text-only executor turn: no screenshot, no
     // separate perception model interpretation.
-    expect((agent as any).captureScreenshotForVLExecutor).not.toHaveBeenCalled();
+    expect(currentObservation).not.toHaveBeenCalled();
     expect(setScreenshot).toHaveBeenCalledWith(null);
     expect(setInterpretation).toHaveBeenCalledWith(null);
     expect(recordEvent).toHaveBeenCalledWith(
@@ -810,7 +747,7 @@ describe("AgentLoop", () => {
       { function: { name: ToolName.DONE } },
     ] as any;
 
-    const filtered = (agent as any).applyToolProfile(tools);
+    const filtered = agent.skillTools.applyToolProfile(tools);
     const names = filtered.map((t: any) => t.function.name);
 
     expect(names).toContain(ToolName.TYPE_TEXT);
@@ -842,7 +779,7 @@ describe("AgentLoop", () => {
       { function: { name: ToolName.DONE } },
     ] as any;
 
-    const filtered = (agent as any).applyToolProfile(tools);
+    const filtered = agent.skillTools.applyToolProfile(tools);
     const names = filtered.map((t: any) => t.function.name);
 
     expect(names).toContain(ToolName.NAVIGATE); // always in base set
@@ -904,7 +841,7 @@ describe("AgentLoop", () => {
       { function: { name: ToolName.DONE } },
     ] as any;
 
-    (agent as any).applyToolProfile(tools);
+    agent.skillTools.applyToolProfile(tools);
 
     const event = logInfo.mock.calls.find(
       (call: any[]) => call[1] === "Tool profile applied",
@@ -952,7 +889,7 @@ describe("AgentLoop", () => {
       { function: { name: ToolName.DONE } },
     ] as any;
 
-    const filtered = (agent as any).applyToolProfile(tools);
+    const filtered = agent.skillTools.applyToolProfile(tools);
     const names = filtered.map((t: any) => t.function.name);
     const event = logInfo.mock.calls.find(
       (call: any[]) => call[1] === "Tool profile applied",
@@ -1004,7 +941,7 @@ describe("AgentLoop", () => {
       { function: { name: ToolName.DONE } },
     ] as any;
 
-    const filtered = (agent as any).applyToolProfile(tools);
+    const filtered = agent.skillTools.applyToolProfile(tools);
     const names = filtered.map((t: any) => t.function.name);
     const event = logInfo.mock.calls.find(
       (call: any[]) => call[1] === "Tool profile applied",
@@ -1053,7 +990,7 @@ describe("AgentLoop", () => {
       { function: { name: ToolName.DONE } },
     ] as any;
 
-    const filtered = (agent as any).applyToolProfile(tools);
+    const filtered = agent.skillTools.applyToolProfile(tools);
     const event = logInfo.mock.calls.find(
       (call: any[]) =>
         call[1] === "Tool profile widened due to step stagnation",
@@ -1096,7 +1033,7 @@ describe("AgentLoop", () => {
       { function: { name: ToolName.DONE } },
     ] as any;
 
-    const filtered = (agent as any).applyToolProfile(tools);
+    const filtered = agent.skillTools.applyToolProfile(tools);
     const names = filtered.map((t: any) => t.function.name);
 
     expect(names).toContain(ToolName.TYPE_TEXT);
@@ -1136,7 +1073,7 @@ describe("AgentLoop", () => {
       { function: { name: ToolName.DONE } },
     ] as any;
 
-    const filtered = (agent as any).applyToolProfile(tools);
+    const filtered = agent.skillTools.applyToolProfile(tools);
     const names = filtered.map((t: any) => t.function.name);
 
     expect(names).toContain(ToolName.READ_PAGE);
@@ -1176,7 +1113,7 @@ describe("AgentLoop", () => {
       { function: { name: ToolName.DONE } },
     ] as any;
 
-    const filtered = (agent as any).applyToolProfile(tools);
+    const filtered = agent.skillTools.applyToolProfile(tools);
     const names = filtered.map((t: any) => t.function.name);
 
     expect(names).toContain(ToolName.READ_PAGE);
@@ -1216,7 +1153,7 @@ describe("AgentLoop", () => {
       { function: { name: ToolName.DONE } },
     ] as any;
 
-    const filtered = (agent as any).applyToolProfile(tools);
+    const filtered = agent.skillTools.applyToolProfile(tools);
     const names = filtered.map((t: any) => t.function.name);
 
     expect(names).toContain(ToolName.READ_PAGE);
@@ -1259,7 +1196,7 @@ describe("AgentLoop", () => {
       { function: { name: ToolName.DONE } },
     ] as any;
 
-    const filtered = (agent as any).applyToolProfile(tools);
+    const filtered = agent.skillTools.applyToolProfile(tools);
     const names = filtered.map((t: any) => t.function.name);
 
     expect(names).toContain(ToolName.SELECT_OPTION);
@@ -1303,7 +1240,7 @@ describe("AgentLoop", () => {
       { function: { name: ToolName.DONE } },
     ] as any;
 
-    const filtered = (agent as any).applyToolProfile(tools);
+    const filtered = agent.skillTools.applyToolProfile(tools);
     const names = filtered.map((t: any) => t.function.name);
 
     expect(names).toContain(ToolName.READ_PAGE);
@@ -1335,7 +1272,7 @@ describe("AgentLoop", () => {
       { function: { name: ToolName.SELECT_OPTION } },
     ] as any;
 
-    const ranked = (agent as any).applySkillToolRanking(tools);
+    const ranked = agent.skillTools.applySkillToolRanking(tools);
     const names = ranked.map((t: any) => t.function.name);
 
     expect(names).toEqual([
@@ -1346,347 +1283,6 @@ describe("AgentLoop", () => {
       ToolName.DONE,
       ToolName.PRESS_KEY,
     ]);
-  });
-
-  test("planless ServiceNow record submit completes without an outer task id", () => {
-    const agent = new AgentLoop(
-      "test-key",
-      {
-        onStatusUpdate: vi.fn(),
-        onMessage: vi.fn(),
-        onStep: vi.fn(),
-      },
-      {
-        selectedSkillId: "servicenow-record-form",
-      },
-    );
-
-    (agent as any).originalQuery =
-      "Create a new change request with Number CHG0000021.";
-
-    const completion = (agent as any).maybeCompleteTrustedFormSubmitStep({
-      toolName: ToolName.CONFIGURE_SERVICENOW_FORM,
-      toolArgs: { fields: [], submit: true, submitButton: "Submit" },
-      toolResult:
-        "Configured ServiceNow form.\n" +
-        "Clicked submit control: Submit\n" +
-        "Submit method: gsftSubmit (sysverb_insert)\n" +
-        "Submitted ServiceNow form record: CHG0000021\n" +
-        "Current title: Create CHG0041407 | Change Request | ServiceNow",
-      mode: "sequential",
-    });
-
-    expect(completion).not.toBeNull();
-    expect(completion.finalSummary).toContain("CHG0000021");
-  });
-
-  test("trusted list sort helper completes from structured sort evidence", () => {
-    const agent = new AgentLoop(
-      "test-key",
-      {
-        onStatusUpdate: vi.fn(),
-        onMessage: vi.fn(),
-        onStep: vi.fn(),
-      },
-      {
-        selectedSkillId: "list-sort-workflow",
-      },
-    );
-
-    const completion = (agent as any).maybeCompleteTrustedListSortStep({
-      toolName: ToolName.APPLY_LIST_SORT,
-      toolArgs: {
-        sorts: [
-          { field: "Number", direction: "descending" },
-          { field: "Duration", direction: "descending" },
-        ],
-      },
-      toolResult:
-        "Applied incident list sorting.\n" +
-        "Query state: sysparm_query=ORDERBYDESCnumber^ORDERBYDESCcalendar_duration\n" +
-        "Sorts:\n" +
-        "- Number desc\n" +
-        "- Duration desc",
-      mode: "sequential",
-    });
-
-    expect(completion).not.toBeNull();
-    expect(completion.finalSummary).toContain("Number descending");
-    expect(completion.finalSummary).toContain("Duration descending");
-    expect(completion.finalSummary).toContain("ORDERBYDESCnumber");
-  });
-
-  test("trusted list sort helper waits when a requested sort clause is missing", () => {
-    const agent = new AgentLoop(
-      "test-key",
-      {
-        onStatusUpdate: vi.fn(),
-        onMessage: vi.fn(),
-        onStep: vi.fn(),
-      },
-      {
-        selectedSkillId: "list-sort-workflow",
-      },
-    );
-
-    const completion = (agent as any).maybeCompleteTrustedListSortStep({
-      toolName: ToolName.APPLY_LIST_SORT,
-      toolArgs: {
-        sorts: [
-          { field: "Number", direction: "descending" },
-          { field: "Duration", direction: "descending" },
-        ],
-      },
-      toolResult:
-        "Applied incident list sorting.\n" +
-        "Query state: sysparm_query=ORDERBYDESCnumber\n" +
-        "Sorts:\n" +
-        "- Number desc",
-      mode: "sequential",
-    });
-
-    expect(completion).toBeNull();
-  });
-
-  test("trusted list filter helper completes from structured filter evidence", () => {
-    const agent = new AgentLoop(
-      "test-key",
-      {
-        onStatusUpdate: vi.fn(),
-        onMessage: vi.fn(),
-        onStep: vi.fn(),
-      },
-      {
-        selectedSkillId: "list-filter-workflow",
-      },
-    );
-
-    const completion = (agent as any).maybeCompleteTrustedListFilterStep({
-      toolName: ToolName.APPLY_LIST_FILTER,
-      toolArgs: {
-        join: "AND",
-        conditions: [
-          { field: "Asset function", operator: "is", value: "Secondary" },
-          { field: "Model category", operator: "is", value: "Computer" },
-          { field: "Assigned to", operator: "is empty", value: "" },
-        ],
-      },
-      toolResult:
-        "Applied alm_hardware list filter.\n" +
-        "Query state: sysparm_query=asset_function=secondary^model_category=81feb9c137101000deeabfc8bcbe5dc4^assigned_toISEMPTY\n" +
-        "Conditions:\n" +
-        '- Asset function is "Secondary" -> asset_function=secondary\n' +
-        '- Model category is "Computer" -> model_category=81feb9c137101000deeabfc8bcbe5dc4\n' +
-        '- Assigned to is empty "" -> assigned_toISEMPTY',
-      mode: "sequential",
-    });
-
-    expect(completion).not.toBeNull();
-    expect(completion.finalSummary).toContain("Asset function is Secondary");
-    expect(completion.finalSummary).toContain("Model category is Computer");
-    expect(completion.finalSummary).toContain("Assigned to is empty");
-    expect(completion.finalSummary).toContain("asset_function=secondary");
-  });
-
-  test("trusted list filter helper waits when a requested condition is missing", () => {
-    const agent = new AgentLoop(
-      "test-key",
-      {
-        onStatusUpdate: vi.fn(),
-        onMessage: vi.fn(),
-        onStep: vi.fn(),
-      },
-      {
-        selectedSkillId: "list-filter-workflow",
-      },
-    );
-
-    const completion = (agent as any).maybeCompleteTrustedListFilterStep({
-      toolName: ToolName.APPLY_LIST_FILTER,
-      toolArgs: {
-        conditions: [
-          { field: "Asset function", operator: "is", value: "Secondary" },
-          { field: "Model category", operator: "is", value: "Computer" },
-        ],
-      },
-      toolResult:
-        "Applied alm_hardware list filter.\n" +
-        "Query state: sysparm_query=asset_function=secondary\n" +
-        "Conditions:\n" +
-        '- Asset function is "Secondary" -> asset_function=secondary',
-      mode: "sequential",
-    });
-
-    expect(completion).toBeNull();
-  });
-
-  test("trusted list filter helper does not planlessly finish follow-up mutations", () => {
-    const agent = new AgentLoop(
-      "test-key",
-      {
-        onStatusUpdate: vi.fn(),
-        onMessage: vi.fn(),
-        onStep: vi.fn(),
-      },
-      {
-        selectedSkillId: "list-filter-workflow",
-      },
-    );
-    (agent as any).originalQuery =
-      'Filter Expense Lines where Short description contains "#SERIES-123", then delete duplicate expense lines with no task.';
-
-    const completion = (agent as any).maybeCompleteTrustedListFilterStep({
-      toolName: ToolName.APPLY_LIST_FILTER,
-      toolArgs: {
-        conditions: [
-          {
-            field: "Short description",
-            operator: "contains",
-            value: "#SERIES-123",
-          },
-        ],
-      },
-      toolResult:
-        "Applied fm_expense_line list filter.\n" +
-        "Query state: sysparm_query=short_description=#SERIES-123\n" +
-        'Conditions:\n- Short description contains "#SERIES-123" -> short_description=#SERIES-123',
-      mode: "sequential",
-    });
-
-    expect(completion).toBeNull();
-  });
-
-  test("catalog order snapshot completion accepts visible request confirmation", () => {
-    const onStatus = vi.fn();
-    const onMessage = vi.fn();
-    const agent = new AgentLoop(
-      "test-key",
-      {
-        onStatusUpdate: onStatus,
-        onMessage,
-        onStep: vi.fn(),
-      },
-      {
-        selectedSkillId: "catalog-order-workflow",
-      },
-    );
-    (agent as any).originalQuery =
-      'Order 10 "Premium Monitor" from the hardware catalog.';
-    (agent as any).context.setSnapshot({
-      title: "Order Status: REQ0025875 | ServiceNow",
-      url: "https://example.service-now.com/checkout",
-      visibleContent:
-        "Order Status REQ0025875 Premium Monitor Quantity 10 Total $11,000.00",
-      pageContent:
-        "Order Status REQ0025875 Premium Monitor Quantity 10 Total $11,000.00",
-      elements: [],
-    });
-
-    const completion = (agent as any).maybeCompleteCatalogOrderFromSnapshot();
-
-    expect(completion?.outcome).toBe("completed");
-    expect(completion?.summary).toContain("REQ0025875");
-    expect(completion?.summary).toContain("Premium Monitor");
-    expect(completion?.summary).toContain("Quantity: 10");
-    expect(
-      (agent as any).completionEvidence
-        .toArray()
-        .some(
-          (event: any) =>
-            event.type === "confirmation_state" &&
-            event.detail?.source === "trusted_workflow" &&
-            event.detail?.recordId === "REQ0025875" &&
-            event.detail?.targetText === "Premium Monitor",
-        ),
-    ).toBe(true);
-    expect(onStatus).toHaveBeenCalledWith(AgentStatus.IDLE, "Done");
-    expect(onMessage).toHaveBeenCalledWith(
-      expect.stringContaining("REQ0025875"),
-      [],
-    );
-  });
-
-  test("catalog order snapshot completion accepts named catalog items", () => {
-    const agent = new AgentLoop(
-      "test-key",
-      {
-        onStatusUpdate: vi.fn(),
-        onMessage: vi.fn(),
-        onStep: vi.fn(),
-      },
-      {
-        selectedSkillId: "catalog-order-workflow",
-      },
-    );
-    (agent as any).originalQuery =
-      'Request quantity 2 of catalog item named Facilities Access Package with approval notes "front desk".';
-    (agent as any).context.setSnapshot({
-      title: "Order Status: REQ0025876 | ServiceNow",
-      url: "https://example.service-now.com/checkout",
-      visibleContent:
-        "Request Number REQ0025876 Facilities Access Package Quantity 2",
-      pageContent:
-        "Request Number REQ0025876 Facilities Access Package Quantity 2",
-      elements: [],
-    });
-
-    const completion = (agent as any).maybeCompleteCatalogOrderFromSnapshot();
-
-    expect(completion?.outcome).toBe("completed");
-    expect(completion?.summary).toContain("REQ0025876");
-    expect(completion?.summary).toContain("Facilities Access Package");
-    expect(completion?.summary).toContain("Quantity: 2");
-  });
-
-  test("catalog order snapshot completion accepts catalog SKU aliases after trusted configuration", async () => {
-    const agent = new AgentLoop(
-      "test-key",
-      {
-        onStatusUpdate: vi.fn(),
-        onMessage: vi.fn(),
-        onStep: vi.fn(),
-      },
-      {
-        selectedSkillId: "catalog-order-workflow",
-      },
-    );
-    (agent as any).originalQuery =
-      'Go to the hardware store and order 1 "Development Laptop (PC)" with configuration {\'Please specify an operating system\': \'Windows 8\', \'What size solid state drive do you want?\': \'250\'}';
-    vi.spyOn(agent as any, "executeToolCall").mockResolvedValue(
-      "Configured catalog item.\nClicked submit control: Add to Cart",
-    );
-    vi.spyOn(agent as any, "refreshSnapshotWithRetry").mockResolvedValue(0);
-
-    await (agent as any).maybeAutoSubmitConfiguredCatalogItem({
-      toolName: ToolName.CONFIGURE_CATALOG_ITEM,
-      toolArgs: { quantity: "1", submit: false },
-      toolResult:
-        "Configured catalog item.\n" +
-        "Configured:\n" +
-        "- Please specify an operating system=Windows 8\n" +
-        "- What size solid state drive do you want?=250 GB\n" +
-        "- Quantity=1",
-      tabId: 123,
-      mode: "sequential",
-    });
-    (agent as any).context.setSnapshot({
-      title: "Order Status: REQ0024215 | ServiceNow",
-      url: "https://example.service-now.com/checkout",
-      visibleContent:
-        "Order Status REQ0024215 Thank you, your request has been submitted Description Dell XPS 13 Quantity 1 Total $1,100.00",
-      pageContent:
-        "Order Status REQ0024215 Thank you, your request has been submitted Description Dell XPS 13 Quantity 1 Total $1,100.00",
-      elements: [],
-    });
-
-    const completion = (agent as any).maybeCompleteCatalogOrderFromSnapshot();
-
-    expect(completion?.outcome).toBe("completed");
-    expect(completion?.summary).toContain("REQ0024215");
-    expect(completion?.summary).toContain("Development Laptop (PC)");
-    expect(completion?.summary).toContain(
-      "Requested configuration verified before submission.",
-    );
   });
 
   test("catalog order helper auto-submits after trusted configuration", async () => {
@@ -1725,57 +1321,6 @@ describe("AgentLoop", () => {
     ).toEqual({ quantity: "10", submit: true, continueToCheckout: true });
   });
 
-  test("catalog order direct submit completes from refreshed order status", async () => {
-    const agent = new AgentLoop(
-      "test-key",
-      {
-        onStatusUpdate: vi.fn(),
-        onMessage: vi.fn(),
-        onStep: vi.fn(),
-      },
-      {
-        selectedSkillId: "catalog-order-workflow",
-      },
-    );
-    (agent as any).originalQuery =
-      'Go to the hardware store and order 1 "Development Laptop (PC)" with configuration {\'Please specify an operating system\': \'Windows 8\'}';
-    vi.spyOn(agent as any, "refreshSnapshotWithRetry").mockImplementation(
-      async () => {
-        (agent as any).context.setSnapshot({
-          title: "Order Status: REQ0024319 | ServiceNow",
-          url: "https://example.service-now.com/checkout",
-          visibleContent:
-            "Order Status REQ0024319 Thank you, your request has been submitted",
-          pageContent:
-            "Order Status REQ0024319 Thank you, your request has been submitted",
-          elements: [],
-        });
-        return 0;
-      },
-    );
-
-    const completion = await (
-      agent as any
-    ).maybeCompleteTrustedCatalogOrderSubmit({
-      toolName: ToolName.CONFIGURE_CATALOG_ITEM,
-      toolArgs: { quantity: "1", submit: true },
-      toolResult:
-        "Configured catalog item.\n" +
-        "Configured:\n" +
-        "- Catalog item=Development Laptop (PC)\n" +
-        "- Please specify an operating system=Windows 8\n" +
-        "- Quantity=1",
-      tabId: 123,
-      mode: "sequential",
-    });
-
-    expect(completion?.finalSummary).toContain("REQ0024319");
-    expect(completion?.finalSummary).toContain("Development Laptop (PC)");
-    expect(completion?.finalSummary).toContain(
-      "Requested configuration verified before submission.",
-    );
-  });
-
   test("catalog order helper waits when explicit configuration fields are missing", async () => {
     const agent = new AgentLoop(
       "test-key",
@@ -1808,1107 +1353,6 @@ describe("AgentLoop", () => {
           'Configured catalog item.\nConfigured:\n- Quantity=5\n- How long do you need it for ?=1 week\n- When do you need it ?="On time for the next meeting"',
       }),
     ).toBe(true);
-  });
-
-  test("auto-submit gate applies only to task-level ServiceNow record workflows", () => {
-    const agent = new AgentLoop(
-      "test-key",
-      {
-        onStatusUpdate: vi.fn(),
-        onMessage: vi.fn(),
-        onStep: vi.fn(),
-      },
-      {
-        selectedSkillId: "servicenow-record-form",
-      },
-    );
-    const params = {
-      toolName: ToolName.CONFIGURE_SERVICENOW_FORM,
-      toolArgs: {
-        fields: [
-          { field: "Number", value: "CHG0000021" },
-          { field: "Risk", value: "Moderate" },
-        ],
-        submit: false,
-      },
-      toolResult:
-        "Configured ServiceNow form.\n" +
-        "Configured:\n" +
-        "- Number (number) = CHG0000021\n" +
-        "- Risk (risk) = Moderate",
-    };
-
-    (agent as any).originalQuery =
-      "Objective: Complete the workflow for the original request: Create a new change request. " +
-      "Fill the form with requested field values. Do not submit the form yet. " +
-      "Submit the form and verify the created record or confirmation is visible.";
-    expect((agent as any).shouldAutoSubmitTrustedServiceNowForm(params)).toBe(
-      true,
-    );
-
-    (agent as any).originalQuery =
-      "Objective: Fill the form with the requested field values. Do not submit the form yet.";
-    expect((agent as any).shouldAutoSubmitTrustedServiceNowForm(params)).toBe(
-      false,
-    );
-  });
-
-  test("ServiceNow record workflow detection recovers from unrelated planner skill on create forms", () => {
-    const agent = new AgentLoop(
-      "test-key",
-      {
-        onStatusUpdate: vi.fn(),
-        onMessage: vi.fn(),
-        onStep: vi.fn(),
-      },
-      {
-        selectedSkillId: "paginated-record-lookup",
-      },
-    );
-    (agent as any).originalQuery =
-      'Create a new problem with a value of "Email system is down again" for field "Problem statement", a value of "Software" for field "Category", and a value of "3 - Low" for field "Impact".';
-    (agent as any).context.getCurrentUrl = vi.fn(
-      () =>
-        "https://example.service-now.com/now/nav/ui/classic/params/target/problem.do",
-    );
-    (agent as any).context.getSnapshot = vi.fn(() => ({
-      title: "Create PRB0051156 | Problem | ServiceNow",
-      url: "https://example.service-now.com/now/nav/ui/classic/params/target/problem.do",
-      elements: [],
-      pageContent: "Problem New record Problem statement Category Impact",
-      visibleContent: "Problem New record",
-      scrollPosition: { top: 0, left: 0, height: 1000, width: 1000 },
-      viewportHeight: 800,
-      timestamp: Date.now(),
-    }));
-
-    expect((agent as any).isTaskLevelServiceNowRecordWorkflow()).toBe(true);
-
-    const userAgent = new AgentLoop(
-      "test-key",
-      {
-        onStatusUpdate: vi.fn(),
-        onMessage: vi.fn(),
-        onStep: vi.fn(),
-      },
-      {
-        selectedSkillId: "paginated-record-lookup",
-      },
-    );
-    (userAgent as any).originalQuery =
-      'Create a new user with a value of "Ada" for field "First name", a value of "Lovelace" for field "Last name", and a value of "English" for field "Preferred language".';
-    (userAgent as any).context.getCurrentUrl = vi.fn(
-      () =>
-        "https://example.service-now.com/now/nav/ui/classic/params/target/sys_user.do",
-    );
-    (userAgent as any).context.getSnapshot = vi.fn(() => ({
-      title: "New Record | User | ServiceNow",
-      url: "https://example.service-now.com/now/nav/ui/classic/params/target/sys_user.do",
-      elements: [],
-      pageContent: "User New record First name Last name Preferred language",
-      visibleContent: "User New record",
-      scrollPosition: { top: 0, left: 0, height: 1000, width: 1000 },
-      viewportHeight: 800,
-      timestamp: Date.now(),
-    }));
-
-    expect((userAgent as any).isTaskLevelServiceNowRecordWorkflow()).toBe(true);
-  });
-
-  test("ServiceNow auto-submit waits when requested fields are missing from helper evidence", () => {
-    const agent = new AgentLoop(
-      "test-key",
-      {
-        onStatusUpdate: vi.fn(),
-        onMessage: vi.fn(),
-        onStep: vi.fn(),
-      },
-      {
-        selectedSkillId: "servicenow-record-form",
-      },
-    );
-    (agent as any).originalQuery =
-      'Objective: Complete the workflow for the original request: Create a new change request with a value of "CHG0000021" for field "Number", a value of "" for field "Service offering", a value of "Line one\nLine two" for field "Implementation plan", a value of "Moderate" for field "Risk", and a value of "Successful" for field "Close code". Fill the form with the requested field values: Number="CHG0000021"; Service offering=empty; Implementation plan="Line one\nLine two"; Risk="Moderate"; Close code="Successful". Do not submit the form yet. Submit the form and verify the created record or confirmation is visible.';
-
-    expect(
-      (agent as any).shouldAutoSubmitTrustedServiceNowForm({
-        toolName: ToolName.CONFIGURE_SERVICENOW_FORM,
-        toolArgs: {
-          fields: [
-            { field: "Number", value: "CHG0000021" },
-            { field: "Risk", value: "Moderate" },
-          ],
-          submit: false,
-        },
-        toolResult:
-          "Configured ServiceNow form.\n" +
-          "Configured:\n" +
-          "- Number (number) = CHG0000021\n" +
-          "- Risk (risk) = Moderate",
-      }),
-    ).toBe(false);
-
-    expect(
-      (agent as any).shouldAutoSubmitTrustedServiceNowForm({
-        toolName: ToolName.CONFIGURE_SERVICENOW_FORM,
-        toolArgs: {
-          fields: [
-            { field: "Number", value: "CHG0000021" },
-            { field: "Risk", value: "Moderate" },
-            { field: "Service offering", value: "" },
-            { field: "Implementation plan", value: "Line one\nLine two" },
-            { field: "Close code", value: "Successful" },
-          ],
-          submit: false,
-        },
-        toolResult:
-          "Configured ServiceNow form.\n" +
-          "Configured:\n" +
-          "- Number (number) = CHG0000021\n" +
-          "- Service offering (service_offering) =  (empty) \n" +
-          "- Implementation plan (implementation_plan) = Line one\n" +
-          "Line two\n" +
-          "- Risk (risk) = Moderate\n" +
-          "- Close code (close_code) = Successful",
-      }),
-    ).toBe(true);
-  });
-
-  test("ServiceNow auto-submit respects fill-only local plan steps", () => {
-    const agent = new AgentLoop(
-      "test-key",
-      {
-        onStatusUpdate: vi.fn(),
-        onMessage: vi.fn(),
-        onStep: vi.fn(),
-      },
-      {
-        selectedSkillId: "servicenow-record-form",
-      },
-    );
-    (agent as any).originalQuery =
-      'Objective: Complete the workflow for the original request: Create a new problem with a value of "Email system is down again" for field "Problem statement". Fill the form with the requested field values: Problem statement="Email system is down again". Do not submit the form yet. Submit the form and verify the created record or confirmation is visible.';
-    (agent as any).planSubtasks = [
-      {
-        description:
-          'Fill the form with the requested field values: Problem statement="Email system is down again". Do not submit the form yet.',
-        status: "running",
-        turnsUsed: 0,
-        turnBudget: 0,
-      },
-    ];
-    (agent as any).planSteps = [
-      {
-        objective:
-          'Fill the form with the requested field values: Problem statement="Email system is down again". Do not submit the form yet.',
-        successCriteria:
-          "Each requested field has the specified value; the final submit action has not been clicked yet.",
-      },
-    ];
-    (agent as any).context.getPlanStatusRaw = vi.fn(() => ({
-      currentIndex: 0,
-      subtasks: (agent as any).planSubtasks,
-    }));
-
-    expect(
-      (agent as any).shouldAutoSubmitTrustedServiceNowForm({
-        toolName: ToolName.CONFIGURE_SERVICENOW_FORM,
-        toolArgs: {
-          fields: [
-            {
-              field: "Problem statement",
-              value: "Email system is down again",
-            },
-          ],
-          submit: false,
-        },
-        toolResult:
-          "Configured ServiceNow form.\n" +
-          "Configured:\n" +
-          "- Problem statement (short_description) = Email system is down again",
-      }),
-    ).toBe(false);
-  });
-
-  test("ServiceNow record controller does not over-complete fill-only local plan steps", async () => {
-    const agent = new AgentLoop(
-      "test-key",
-      {
-        onStatusUpdate: vi.fn(),
-        onMessage: vi.fn(),
-        onStep: vi.fn(),
-      },
-      {
-        selectedSkillId: "servicenow-record-form",
-      },
-    );
-    (agent as any).originalQuery =
-      'Objective: Complete the workflow for the original request: Create a new problem with a value of "Email system is down again" for field "Problem statement". Fill the form with the requested field values: Problem statement="Email system is down again". Do not submit the form yet. Submit the form and verify the created record or confirmation is visible.';
-    (agent as any).planSubtasks = [
-      {
-        description:
-          'Fill the form with the requested field values: Problem statement="Email system is down again". Do not submit the form yet.',
-        status: "running",
-        turnsUsed: 0,
-        turnBudget: 0,
-      },
-    ];
-    (agent as any).planSteps = [
-      {
-        objective:
-          'Fill the form with the requested field values: Problem statement="Email system is down again". Do not submit the form yet.',
-        successCriteria:
-          "Each requested field has the specified value; the final submit action has not been clicked yet.",
-      },
-    ];
-    (agent as any).context.getPlanStatusRaw = vi.fn(() => ({
-      currentIndex: 0,
-      subtasks: (agent as any).planSubtasks,
-    }));
-    const executeToolCall = vi.spyOn(agent as any, "executeToolCall");
-
-    const result = await (agent as any).maybeRunServiceNowRecordFormController(
-      123,
-    );
-
-    expect(result).toBeNull();
-    expect(executeToolCall).not.toHaveBeenCalled();
-  });
-
-  test("ServiceNow submit intent is scoped to fill-only plan steps", () => {
-    const agent = new AgentLoop(
-      "test-key",
-      {
-        onStatusUpdate: vi.fn(),
-        onMessage: vi.fn(),
-        onStep: vi.fn(),
-      },
-      {
-        selectedSkillId: "servicenow-record-form",
-      },
-    );
-
-    expect(
-      (agent as any).hasTrustedServiceNowSubmitIntent(
-        "Fill the form with requested field values. Do not submit the form yet.",
-      ),
-    ).toBe(false);
-    expect(
-      (agent as any).hasTrustedServiceNowSubmitIntent(
-        "Submit the form and verify the created record or confirmation is visible.",
-      ),
-    ).toBe(true);
-  });
-
-  test("ServiceNow record controller configures and submits explicit task-level workflows", async () => {
-    const onStatus = vi.fn();
-    const onMessage = vi.fn();
-    const agent = new AgentLoop(
-      "test-key",
-      {
-        onStatusUpdate: onStatus,
-        onMessage,
-        onStep: vi.fn(),
-      },
-      {
-        selectedSkillId: "servicenow-record-form",
-      },
-    );
-    (agent as any).originalQuery =
-      'Objective: Complete the workflow for the original request: Create a new incident with a value of "EMAIL Server Down Again" for field "Short description", a value of "Joe Employee" for field "Caller", and a value of "Phone" for field "Channel". Submit the form and verify the created record.';
-
-    const executeToolCall = vi
-      .spyOn(agent as any, "executeToolCall")
-      .mockResolvedValueOnce(
-        "Configured ServiceNow form.\n" +
-          "Configured:\n" +
-          "- Short description (short_description) = EMAIL Server Down Again\n" +
-          "- Caller (caller_id) = Joe Employee\n" +
-          "- Channel (contact_type) = Phone",
-      )
-      .mockResolvedValueOnce(
-        "Configured ServiceNow form.\n" +
-          "Clicked submit control: Submit\n" +
-          "Submit method: gsftSubmit (sysverb_insert)\n" +
-          "Submitted ServiceNow form record: INC0036109\n" +
-          "Current title: Create INC0036110 | Incident | ServiceNow",
-      );
-
-    const result = await (agent as any).maybeRunServiceNowRecordFormController(
-      123,
-    );
-
-    expect(result?.outcome).toBe("completed");
-    expect(result?.summary).toContain("INC0036109");
-    expect(onStatus).toHaveBeenCalledWith(AgentStatus.IDLE, "Done");
-    expect(onMessage).toHaveBeenCalledWith(
-      "Trusted ServiceNow form helper submitted record INC0036109.",
-      [],
-    );
-
-    const firstArgs = JSON.parse(
-      executeToolCall.mock.calls[0][0].function.arguments,
-    );
-    expect(firstArgs).toEqual({
-      fields: [
-        { field: "Short description", value: "EMAIL Server Down Again" },
-        { field: "Caller", value: "Joe Employee" },
-        { field: "Channel", value: "Phone" },
-      ],
-      submit: false,
-    });
-    const secondArgs = JSON.parse(
-      executeToolCall.mock.calls[1][0].function.arguments,
-    );
-    expect(secondArgs).toEqual({ submit: true, submitButton: "Submit" });
-  });
-
-  test("ServiceNow record controller retries when the form is still loading", async () => {
-    const agent = new AgentLoop(
-      "test-key",
-      {
-        onStatusUpdate: vi.fn(),
-        onMessage: vi.fn(),
-        onStep: vi.fn(),
-      },
-      {
-        selectedSkillId: "servicenow-record-form",
-      },
-    );
-    (agent as any).originalQuery =
-      'Objective: Complete the workflow for the original request: Create a new incident with a value of "EMAIL Server Down Again" for field "Short description". Submit the form and verify the created record.';
-
-    const executeToolCall = vi
-      .spyOn(agent as any, "executeToolCall")
-      .mockResolvedValueOnce(
-        "Error: Could not find a ServiceNow record form on the current page.",
-      )
-      .mockResolvedValueOnce(
-        "Configured ServiceNow form.\n" +
-          "Configured:\n" +
-          "- Short description (short_description) = EMAIL Server Down Again",
-      )
-      .mockResolvedValueOnce(
-        "Configured ServiceNow form.\n" +
-          "Clicked submit control: Submit\n" +
-          "Submit method: gsftSubmit (sysverb_insert)\n" +
-          "Submitted ServiceNow form record: INC0036109\n" +
-          "Current title: Create INC0036110 | Incident | ServiceNow",
-      );
-
-    const result = await (agent as any).maybeRunServiceNowRecordFormController(
-      123,
-    );
-
-    expect(result?.outcome).toBe("completed");
-    expect(result?.summary).toContain("INC0036109");
-    expect(executeToolCall).toHaveBeenCalledTimes(3);
-    expect(
-      JSON.parse(executeToolCall.mock.calls[1][0].function.arguments),
-    ).toMatchObject({ submit: false });
-  });
-
-  test("ServiceNow record controller opens requested module before retrying a missing form", async () => {
-    const agent = new AgentLoop(
-      "test-key",
-      {
-        onStatusUpdate: vi.fn(),
-        onMessage: vi.fn(),
-        onStep: vi.fn(),
-      },
-      {
-        selectedSkillId: "servicenow-record-form",
-      },
-    );
-    (agent as any).originalQuery =
-      'Objective: Complete the workflow for the original request: Navigate to the "Users" module of the "Organization" application. Create a new user with a value of "Ada Lovelace" for field "Name". Submit the form and verify the created record.';
-
-    const executeToolCall = vi
-      .spyOn(agent as any, "executeToolCall")
-      .mockResolvedValueOnce(
-        "Error: Could not find a ServiceNow record form on the current page.",
-      )
-      .mockResolvedValueOnce(
-        'Successfully navigated to the "Users" module of the "Organization" application.',
-      )
-      .mockResolvedValueOnce(
-        "Configured ServiceNow form.\n" +
-          "Configured:\n" +
-          "- Name (name) = Ada Lovelace",
-      )
-      .mockResolvedValueOnce(
-        "Configured ServiceNow form.\n" +
-          "Clicked submit control: Submit\n" +
-          "Submit method: gsftSubmit (sysverb_insert)\n" +
-          "Submitted ServiceNow form record: USR0012345\n" +
-          "Current title: User | ServiceNow",
-      );
-
-    const result = await (agent as any).maybeRunServiceNowRecordFormController(
-      123,
-    );
-
-    expect(result?.outcome).toBe("completed");
-    expect(result?.summary).toContain("USR0012345");
-    expect(executeToolCall).toHaveBeenCalledTimes(4);
-    expect(executeToolCall.mock.calls[1][0].function.name).toBe(
-      ToolName.OPEN_SERVICENOW_MODULE,
-    );
-    expect(
-      JSON.parse(executeToolCall.mock.calls[1][0].function.arguments),
-    ).toEqual({
-      application: "Organization",
-      path: ["Users"],
-    });
-  });
-
-  test("ServiceNow record controller opens a create form from a requested module list", async () => {
-    const agent = new AgentLoop(
-      "test-key",
-      {
-        onStatusUpdate: vi.fn(),
-        onMessage: vi.fn(),
-        onStep: vi.fn(),
-      },
-      {
-        selectedSkillId: "servicenow-record-form",
-      },
-    );
-    (agent as any).originalQuery =
-      'Objective: Complete the workflow for the original request: Navigate to the "Users" module of the "Organization" application. Create a new user with a value of "Ada" for field "First name". Submit the form and verify the created record.';
-    (chrome.tabs as any).get = vi.fn(async () => ({
-      id: 123,
-      url:
-        "https://workarena.service-now.com/now/nav/ui/classic/params/target/" +
-        encodeURIComponent("sys_user_list.do?sysparm_userpref_module=abc"),
-      title: "Users | ServiceNow",
-      groupId: -1,
-    }));
-
-    const executeToolCall = vi
-      .spyOn(agent as any, "executeToolCall")
-      .mockResolvedValueOnce(
-        "Error: Could not find a ServiceNow record form on the current page.",
-      )
-      .mockResolvedValueOnce(
-        'Successfully navigated to the "Users" module of the "Organization" application.',
-      )
-      .mockResolvedValueOnce(
-        "Error: Could not find a ServiceNow record form on the current page.",
-      )
-      .mockResolvedValueOnce(
-        "Navigated to https://workarena.service-now.com/sys_user.do?sys_id=-1. Page has loaded.",
-      )
-      .mockResolvedValueOnce(
-        "Configured ServiceNow form.\nConfigured:\n- First name (first_name) = Ada",
-      )
-      .mockResolvedValueOnce(
-        "Configured ServiceNow form.\n" +
-          "Clicked submit control: Submit\n" +
-          "Submit method: gsftSubmit (sysverb_insert)\n" +
-          "Submitted ServiceNow form sys_id: 0123456789abcdef0123456789abcdef\n" +
-          "Current title: User | ServiceNow",
-      );
-
-    const result = await (agent as any).maybeRunServiceNowRecordFormController(
-      123,
-    );
-
-    expect(result?.outcome).toBe("completed");
-    expect(executeToolCall).toHaveBeenCalledTimes(6);
-    expect(executeToolCall.mock.calls[3][0].function.name).toBe(
-      ToolName.NAVIGATE,
-    );
-    expect(
-      JSON.parse(executeToolCall.mock.calls[3][0].function.arguments),
-    ).toEqual({
-      url: "https://workarena.service-now.com/sys_user.do?sys_id=-1",
-    });
-  });
-
-  test("ServiceNow record controller opens a create form from a framed module list", async () => {
-    const agent = new AgentLoop(
-      "test-key",
-      {
-        onStatusUpdate: vi.fn(),
-        onMessage: vi.fn(),
-        onStep: vi.fn(),
-      },
-      {
-        selectedSkillId: "servicenow-record-form",
-      },
-    );
-    (agent as any).originalQuery =
-      'Objective: Complete the workflow for the original request: Navigate to the "Users" module of the "Organization" application. Create a new user with a value of "Ada" for field "First name". Submit the form and verify the created record.';
-    (chrome.tabs as any).get = vi.fn(async () => ({
-      id: 123,
-      url: "https://workarena.service-now.com/now/nav/ui/home",
-      title: "Home | ServiceNow",
-      groupId: -1,
-    }));
-    (chrome.scripting.executeScript as any) = vi.fn(async () => [
-      { result: "https://workarena.service-now.com/now/nav/ui/home" },
-      {
-        result:
-          "https://workarena.service-now.com/sys_user_list.do?sysparm_userpref_module=abc",
-      },
-    ]);
-
-    const executeToolCall = vi
-      .spyOn(agent as any, "executeToolCall")
-      .mockResolvedValueOnce(
-        "Error: Could not find a ServiceNow record form on the current page.",
-      )
-      .mockResolvedValueOnce(
-        'Successfully navigated to the "Users" module of the "Organization" application.',
-      )
-      .mockResolvedValueOnce(
-        "Error: Could not find a ServiceNow record form on the current page.",
-      )
-      .mockResolvedValueOnce(
-        "Navigated to https://workarena.service-now.com/sys_user.do?sys_id=-1. Page has loaded.",
-      )
-      .mockResolvedValueOnce(
-        "Configured ServiceNow form.\nConfigured:\n- First name (first_name) = Ada",
-      )
-      .mockResolvedValueOnce(
-        "Configured ServiceNow form.\n" +
-          "Clicked submit control: Submit\n" +
-          "Submit method: gsftSubmit (sysverb_insert)\n" +
-          "Submitted ServiceNow form sys_id: 0123456789abcdef0123456789abcdef\n" +
-          "Current title: User | ServiceNow",
-      );
-
-    const result = await (agent as any).maybeRunServiceNowRecordFormController(
-      123,
-    );
-
-    expect(result?.outcome).toBe("completed");
-    expect(chrome.scripting.executeScript).toHaveBeenCalledWith({
-      target: { tabId: 123, allFrames: true },
-      func: expect.any(Function),
-    });
-    expect(executeToolCall).toHaveBeenCalledTimes(6);
-    expect(
-      JSON.parse(executeToolCall.mock.calls[3][0].function.arguments),
-    ).toEqual({
-      url: "https://workarena.service-now.com/sys_user.do?sys_id=-1",
-    });
-  });
-
-  test("ServiceNow record controller does not blindly retry a rejected submit", async () => {
-    const agent = new AgentLoop(
-      "test-key",
-      {
-        onStatusUpdate: vi.fn(),
-        onMessage: vi.fn(),
-        onStep: vi.fn(),
-      },
-      {
-        selectedSkillId: "servicenow-record-form",
-      },
-    );
-    (agent as any).originalQuery =
-      'Create a new user with a value of "Ada" for field "First name". Submit the form and verify the created record.';
-
-    const executeToolCall = vi
-      .spyOn(agent as any, "executeToolCall")
-      .mockResolvedValueOnce(
-        "Configured ServiceNow form.\nConfigured:\n- First name (first_name) = Ada",
-      )
-      .mockResolvedValueOnce(
-        "ServiceNow form configuration incomplete.\n" +
-          "Mismatches:\n" +
-          "- submitted record sys_id 0123456789abcdef0123456789abcdef was not found in ServiceNow\n" +
-          "Submit diagnostics:\n" +
-          "- Error Message Invalid update\n" +
-          "Clicked submit control: Submit\n" +
-          "Submit method: click (sysverb_insert)",
-      );
-
-    const result = await (agent as any).maybeRunServiceNowRecordFormController(
-      123,
-    );
-
-    expect(result).toBeNull();
-    expect(executeToolCall).toHaveBeenCalledTimes(2);
-  });
-
-  test("ServiceNow record controller hands off a diagnostic (not a resubmit prompt) on a hard validation rejection", async () => {
-    const agent = new AgentLoop(
-      "test-key",
-      { onStatusUpdate: vi.fn(), onMessage: vi.fn(), onStep: vi.fn() },
-      { selectedSkillId: "servicenow-record-form" },
-    );
-    (agent as any).originalQuery =
-      'Create a new incident with a value of "System Administrator" for field "Resolved by". Submit the form and verify the created record.';
-    const addMessage = vi.spyOn((agent as any).context, "addMessage");
-
-    vi.spyOn(agent as any, "executeToolCall")
-      .mockResolvedValueOnce(
-        "Configured ServiceNow form.\nConfigured:\n- Resolved by (resolved_by) = System Administrator",
-      )
-      .mockResolvedValueOnce(
-        "ServiceNow form configuration incomplete.\n" +
-          "Submit diagnostics:\n" +
-          "- Error Message Invalid update\n" +
-          "Clicked submit control: Submit",
-      );
-
-    const result = await (agent as any).maybeRunServiceNowRecordFormController(
-      123,
-    );
-
-    expect(result).toBeNull();
-    const handoff = addMessage.mock.calls
-      .map((call) => String(call[0]?.content ?? ""))
-      .find((content) => /ServiceNow rejected the submission/i.test(content));
-    expect(handoff).toBeDefined();
-    // Must NOT invite a blind resubmit, and must surface the error + guidance.
-    expect(handoff).not.toContain("submit the form with configure_servicenow_form({ submit: true })");
-    expect(handoff).toContain("Resubmitting the same values will fail again");
-    expect(handoff).toContain("Invalid update");
-  });
-
-  test("ServiceNow record controller reports infeasible when requested field is absent", async () => {
-    const onMessage = vi.fn();
-    const agent = new AgentLoop(
-      "test-key",
-      {
-        onStatusUpdate: vi.fn(),
-        onMessage,
-        onStep: vi.fn(),
-      },
-      {
-        selectedSkillId: "servicenow-record-form",
-      },
-    );
-    (agent as any).originalQuery =
-      'Create a new user with a value of "Ada" for field "First name" and a value of "Blue" for field "Half popular". Submit the form and verify the created record.';
-
-    const executeToolCall = vi
-      .spyOn(agent as any, "executeToolCall")
-      .mockResolvedValueOnce(
-        "ServiceNow form configuration incomplete.\n" +
-          "Configured:\n" +
-          "- First name (first_name) = Ada\n" +
-          "Mismatches:\n" +
-          "- Half popular: field not found",
-      );
-
-    const result = await (agent as any).maybeRunServiceNowRecordFormController(
-      123,
-    );
-
-    expect(result?.outcome).toBe("completed");
-    expect(result?.summary).toBe(
-      'I cannot complete this because the requested field "Half popular" is not available on this ServiceNow form.',
-    );
-    expect(onMessage).toHaveBeenCalledWith(result?.summary, []);
-    expect(executeToolCall).toHaveBeenCalledTimes(1);
-  });
-
-  test("ServiceNow record controller keeps retrying delayed form frames", async () => {
-    const agent = new AgentLoop(
-      "test-key",
-      {
-        onStatusUpdate: vi.fn(),
-        onMessage: vi.fn(),
-        onStep: vi.fn(),
-      },
-      {
-        selectedSkillId: "servicenow-record-form",
-      },
-    );
-    (agent as any).originalQuery =
-      'Objective: Complete the workflow for the original request: Create a new problem with a value of "Email system is down again" for field "Problem statement". Submit the form and verify the created record.';
-
-    const loadMiss =
-      "Error: Could not find a ServiceNow record form on the current page.";
-    const executeToolCall = vi
-      .spyOn(agent as any, "executeToolCall")
-      .mockResolvedValueOnce(loadMiss)
-      .mockResolvedValueOnce(loadMiss)
-      .mockResolvedValueOnce(loadMiss)
-      .mockResolvedValueOnce(loadMiss)
-      .mockResolvedValueOnce(loadMiss)
-      .mockResolvedValueOnce(
-        "Configured ServiceNow form.\n" +
-          "Configured:\n" +
-          "- Problem statement (short_description) = Email system is down again",
-      )
-      .mockResolvedValueOnce(
-        "Configured ServiceNow form.\n" +
-          "Clicked submit control: Submit\n" +
-          "Submit method: gsftSubmit (sysverb_insert)\n" +
-          "Submitted ServiceNow form record: PRB0050139\n" +
-          "Current title: PRB0050140 | Problem | ServiceNow",
-      );
-
-    const result = await (agent as any).maybeRunServiceNowRecordFormController(
-      123,
-    );
-
-    expect(result?.outcome).toBe("completed");
-    expect(result?.summary).toContain("PRB0050139");
-    expect(executeToolCall).toHaveBeenCalledTimes(7);
-  });
-
-  test("ServiceNow record controller handles natural field-value creation prompts", async () => {
-    const agent = new AgentLoop(
-      "test-key",
-      {
-        onStatusUpdate: vi.fn(),
-        onMessage: vi.fn(),
-        onStep: vi.fn(),
-      },
-      {
-        selectedSkillId: "servicenow-record-form",
-      },
-    );
-    (agent as any).originalQuery =
-      'Create a new change request with a value of "Hardware" for field "Assignment group", a value of "Update DNS" for field "Short description", and a value of "2 - Medium" for field "Impact".';
-
-    const executeToolCall = vi
-      .spyOn(agent as any, "executeToolCall")
-      .mockResolvedValueOnce(
-        "Configured ServiceNow form.\n" +
-          "Configured:\n" +
-          "- Assignment group (assignment_group) = Hardware\n" +
-          "- Short description (short_description) = Update DNS\n" +
-          "- Impact (impact) = 2 - Medium",
-      )
-      .mockResolvedValueOnce(
-        "Configured ServiceNow form.\n" +
-          "Clicked submit control: Submit\n" +
-          "Submit method: gsftSubmit (sysverb_insert)\n" +
-          "Submitted ServiceNow form record: CHG0036109\n" +
-          "Current title: CHG0036109 | Change Request | ServiceNow",
-      );
-
-    const result = await (agent as any).maybeRunServiceNowRecordFormController(
-      123,
-    );
-
-    expect(result?.outcome).toBe("completed");
-    expect(executeToolCall).toHaveBeenCalledTimes(2);
-    expect(
-      JSON.parse(executeToolCall.mock.calls[0][0].function.arguments),
-    ).toEqual({
-      fields: [
-        { field: "Assignment group", value: "Hardware" },
-        { field: "Short description", value: "Update DNS" },
-        { field: "Impact", value: "2 - Medium" },
-      ],
-      submit: false,
-    });
-  });
-
-  test("ServiceNow record controller retries submit after same-create-form evidence", async () => {
-    const onMessage = vi.fn();
-    const agent = new AgentLoop(
-      "test-key",
-      {
-        onStatusUpdate: vi.fn(),
-        onMessage,
-        onStep: vi.fn(),
-      },
-      {
-        selectedSkillId: "servicenow-record-form",
-      },
-    );
-    (agent as any).originalQuery =
-      'Objective: Complete the workflow for the original request: Create a new incident with a value of "EMAIL Server Down Again" for field "Short description", a value of "Joe Employee" for field "Caller", and a value of "Phone" for field "Channel". Submit the form and verify the created record.';
-
-    const configured =
-      "Configured ServiceNow form.\n" +
-      "Configured:\n" +
-      "- Short description (short_description) = EMAIL Server Down Again\n" +
-      "- Caller (caller_id) = Joe Employee\n" +
-      "- Channel (contact_type) = Phone";
-    const executeToolCall = vi
-      .spyOn(agent as any, "executeToolCall")
-      .mockResolvedValueOnce(configured)
-      .mockResolvedValueOnce(
-        "Configured ServiceNow form.\n" +
-          "Clicked submit control: Submit\n" +
-          "Submit method: gsftSubmit (sysverb_insert)\n" +
-          "submit did not leave the create form for INC0036113\n" +
-          "Submit diagnostics:\n" +
-          "- Error Message Invalid update",
-      )
-      .mockResolvedValueOnce(configured)
-      .mockResolvedValueOnce(
-        "Configured ServiceNow form.\n" +
-          "Clicked submit control: Submit\n" +
-          "Submit method: gsftSubmit (sysverb_insert)\n" +
-          "Submitted ServiceNow form record: INC0036114\n" +
-          "Current title: INC0036114 | Incident | ServiceNow",
-      );
-
-    const result = await (agent as any).maybeRunServiceNowRecordFormController(
-      123,
-    );
-
-    expect(result?.outcome).toBe("completed");
-    expect(result?.summary).toContain("INC0036114");
-    expect(onMessage).toHaveBeenCalledWith(
-      "Trusted ServiceNow form helper submitted record INC0036114.",
-      [],
-    );
-    expect(executeToolCall).toHaveBeenCalledTimes(4);
-
-    const thirdArgs = JSON.parse(
-      executeToolCall.mock.calls[2][0].function.arguments,
-    );
-    expect(thirdArgs).toMatchObject({ submit: false });
-    const fourthArgs = JSON.parse(
-      executeToolCall.mock.calls[3][0].function.arguments,
-    );
-    expect(fourthArgs).toEqual({ submit: true, submitButton: "Submit" });
-  });
-
-  test("atomic ServiceNow module controller opens parsed module path and completes on navigation evidence", async () => {
-    const agent = new AgentLoop(
-      "test-key",
-      {
-        onStatusUpdate: vi.fn(),
-        onMessage: vi.fn(),
-        onStep: vi.fn(),
-      },
-      {
-        selectedSkillId: "servicenow-module-navigation",
-      },
-    );
-    (agent as any).originalQuery =
-      'Navigate to the "Database Instances > HBase" module of the "Configuration" application.';
-    (agent as any).planSteps = [
-      {
-        objective: "Open the requested ServiceNow application navigator module",
-        successCriteria:
-          "The current ServiceNow page is the Configuration > Database Instances > HBase module",
-      },
-    ];
-
-    const executeToolCall = vi
-      .spyOn(agent as any, "executeToolCall")
-      .mockImplementationOnce(async () => {
-        (agent as any).evidenceAccumulator.addMany([
-          {
-            type: "navigation_reached",
-            source: ToolName.OPEN_SERVICENOW_MODULE,
-            confidence: "high",
-            observedAt: new Date().toISOString(),
-            supportsTaskGoal: true,
-            detail: {
-              application: "Configuration",
-              path: ["Database Instances", "HBase"],
-            },
-          },
-          {
-            type: "goal_state_verified",
-            source: ToolName.OPEN_SERVICENOW_MODULE,
-            confidence: "high",
-            observedAt: new Date().toISOString(),
-            supportsTaskGoal: true,
-            detail: {
-              application: "Configuration",
-              path: ["Database Instances", "HBase"],
-            },
-          },
-        ]);
-        return [
-          "Opened ServiceNow module.",
-          "Application: Configuration",
-          "Module: HBase",
-        ].join("\n");
-      });
-
-    const result = await (agent as any).maybeRunAtomicSkillController(123);
-
-    expect(result?.outcome).toBe("completed");
-    expect(result?.summary).toContain(
-      "Configuration > Database Instances > HBase",
-    );
-    expect(executeToolCall).toHaveBeenCalledTimes(1);
-    expect(executeToolCall.mock.calls[0][0].function.name).toBe(
-      ToolName.OPEN_SERVICENOW_MODULE,
-    );
-    expect(
-      JSON.parse(executeToolCall.mock.calls[0][0].function.arguments),
-    ).toEqual({
-      application: "Configuration",
-      path: ["Database Instances", "HBase"],
-    });
-  });
-
-  test("atomic ServiceNow module controller retries transient module lookup misses once", async () => {
-    const agent = new AgentLoop(
-      "test-key",
-      {
-        onStatusUpdate: vi.fn(),
-        onMessage: vi.fn(),
-        onStep: vi.fn(),
-      },
-      {
-        selectedSkillId: "servicenow-module-navigation",
-      },
-    );
-    (agent as any).originalQuery =
-      'Navigate to the "Database Instances > HBase" module of the "Configuration" application.';
-    (agent as any).planSteps = [
-      {
-        objective: "Open the requested ServiceNow application navigator module",
-        successCriteria:
-          "The current ServiceNow page is the Configuration > Database Instances > HBase module",
-      },
-    ];
-
-    const executeToolCall = vi
-      .spyOn(agent as any, "executeToolCall")
-      .mockResolvedValueOnce(
-        "Error: Could not resolve ServiceNow module (lookup_timeout)",
-      )
-      .mockImplementationOnce(async () => {
-        (agent as any).evidenceAccumulator.addMany([
-          {
-            type: "navigation_reached",
-            source: ToolName.OPEN_SERVICENOW_MODULE,
-            confidence: "high",
-            observedAt: new Date().toISOString(),
-            supportsTaskGoal: true,
-            detail: {
-              application: "Configuration",
-              path: ["Database Instances", "HBase"],
-            },
-          },
-          {
-            type: "goal_state_verified",
-            source: ToolName.OPEN_SERVICENOW_MODULE,
-            confidence: "high",
-            observedAt: new Date().toISOString(),
-            supportsTaskGoal: true,
-            detail: {
-              application: "Configuration",
-              path: ["Database Instances", "HBase"],
-            },
-          },
-        ]);
-        return [
-          "Opened ServiceNow module.",
-          "Application: Configuration",
-          "Module: HBase",
-        ].join("\n");
-      });
-
-    const result = await (agent as any).maybeRunAtomicSkillController(123);
-
-    expect(result?.outcome).toBe("completed");
-    expect(executeToolCall).toHaveBeenCalledTimes(2);
-    expect(executeToolCall.mock.calls[1][0].id).toMatch(/^atomic_retry_/);
-  });
-
-  test("ServiceNow module navigation done can infer evidence from the reached page", () => {
-    const agent = new AgentLoop(
-      "test-key",
-      {
-        onStatusUpdate: vi.fn(),
-        onMessage: vi.fn(),
-        onStep: vi.fn(),
-      },
-      {
-        selectedSkillId: "servicenow-module-navigation",
-      },
-    );
-    (agent as any).originalQuery =
-      'Navigate to the "Database Instances > HBase" module of the "Configuration" application.';
-    (agent as any).context.setSnapshot({
-      title: "HBase Instances | ServiceNow",
-      url: "https://example.service-now.com/cmdb_ci_hbase_instance_list.do",
-      elements: [],
-      visibleContent: "HBase Instances",
-      viewport: { width: 1280, height: 720 },
-      scroll: { x: 0, y: 0, maxY: 0, viewportHeight: 720 },
-    });
-
-    // The SN evidence inference (a live pre-step of the completion pipeline,
-    // RFC LP-15 Phase 7b) adds the typed evidence from the reached page, so the
-    // missing-evidence guard then passes.
-    const inferred = maybeInferServiceNowModuleNavigationEvidence(
-      agent as unknown as ModuleNavEvidenceHost,
-      "Opened the HBase Instances module.",
-    );
-
-    expect(inferred).toBe(true);
-    expect((agent as any).getMissingRequiredEvidenceTypes()).toEqual([]);
-    const evidence = (agent as any).evidenceAccumulator.toArray();
-    expect(evidence).toEqual(
-      expect.arrayContaining([
-        expect.objectContaining({
-          type: "navigation_reached",
-          source: ToolName.DONE,
-          confidence: "medium",
-          supportsTaskGoal: true,
-        }),
-        expect.objectContaining({
-          type: "goal_state_verified",
-          source: ToolName.DONE,
-          confidence: "medium",
-          supportsTaskGoal: true,
-        }),
-      ]),
-    );
-  });
-
-  test("done rejects missing required typed evidence through kernel preflight", async () => {
-    const recordEvent = vi.fn();
-    const agent = new AgentLoop(
-      "test-key",
-      {
-        onStatusUpdate: vi.fn(),
-        onMessage: vi.fn(),
-        onStep: vi.fn(),
-      },
-      {
-        selectedSkillId: "servicenow-module-navigation",
-      },
-    );
-    (agent as any).traceRecorder = { recordEvent };
-    (agent as any).originalQuery =
-      'Navigate to the "Database Instances > HBase" module of the "Configuration" application.';
-    (agent as any).hasReadPage = true;
-    (agent as any).turnCount = 4;
-    (agent as any).planner.validateDone = vi.fn(async () => ({
-      approved: true,
-      reason: "planner approved",
-    }));
-
-    const accepted = await (agent as any).handleDoneToolCall(
-      "done-call-required-evidence",
-      "Opened the Configuration > Database Instances > HBase module.",
-      123,
-    );
-
-    expect(accepted).toBe(false);
-    expect((agent as any).completedResult).toBeNull();
-    expect((agent as any).doneRejections).toBe(1);
-    expect((agent as any).planner.validateDone).not.toHaveBeenCalled();
-    expect(recordEvent).toHaveBeenCalledWith(
-      "done_rejected_missing_evidence",
-      {
-        rejections: 1,
-        selectedSkillId: "servicenow-module-navigation",
-        missingRequiredEvidence: [
-          "navigation_reached",
-          "goal_state_verified",
-        ],
-      },
-    );
-    expect((agent as any).context.getMessages().at(-1)).toMatchObject({
-      role: "tool",
-      tool_call_id: "done-call-required-evidence",
-      content: expect.stringContaining("Missing required typed evidence"),
-    });
   });
 
   test("deterministic done accepts current quiz selection despite stale planner question", async () => {
@@ -3341,7 +1785,7 @@ describe("AgentLoop", () => {
       approved: true,
       reason: "planner should not be reached",
     }));
-    (agent as any).listDetailReviewedTargets = new Set(["frontend engineer"]);
+    (agent as any).listDetailWorkflow.listDetailReviewedTargets = new Set(["frontend engineer"]);
     (agent as any).context.setSnapshot({
       title: "Job Listings",
       url: "https://jobs.example.test/listings",
@@ -3602,7 +2046,7 @@ describe("AgentLoop", () => {
       approved: true,
       reason: "planner should not be reached",
     }));
-    (agent as any).updateMoneyTableAggregate(
+    (agent as any).moneyTable.updateMoneyTableAggregate(
       "Page content: Employee Directory 10 employees, 5 per page. # Name Email Department Salary 1 Alice Smith alice.smith@company.com Engineering $55,000 2 Bob Johnson bob.johnson@company.com Sales $56,731 3 Cara Lopez cara.lopez@company.com HR $58,000 4 Dan Miller dan.miller@company.com Finance $59,000 5 Eva Moore eva.moore@company.com Legal $60,000 Showing 1 - 5 of 10 Page 1 of 2",
     );
 
@@ -3708,68 +2152,6 @@ describe("AgentLoop", () => {
     });
   });
 
-  test("trusted workflow completion creates a trusted_tool completion envelope", () => {
-    const onMessage = vi.fn();
-    const agent = new AgentLoop(
-      "test-key",
-      {
-        onStatusUpdate: vi.fn(),
-        onMessage,
-        onStep: vi.fn(),
-      },
-      {
-        selectedSkillId: "list-sort-workflow",
-      },
-    );
-
-    const trustedCompletion = (agent as any).maybeCompleteTrustedListSortStep({
-      toolName: ToolName.APPLY_LIST_SORT,
-      toolArgs: {
-        sorts: [{ field: "priority", direction: "descending" }],
-      },
-      toolResult:
-        "Applied list sort.\nQuery state: sysparm_query=ORDERBYDESCpriority\nSorts: priority desc",
-      mode: "sequential",
-    });
-
-    expect(trustedCompletion).toMatchObject({
-      finalSummary: expect.stringContaining("Applied list sort"),
-      completionCandidate: {
-        contractKind: "workflow_confirmation",
-        decisionReason: expect.stringContaining("Trusted list sort"),
-        evidence: [
-          expect.objectContaining({
-            type: "confirmation_state",
-            confidence: "high",
-            logicalKey: expect.stringContaining(
-              "trusted:list-sort:confirmation",
-            ),
-          }),
-        ],
-      },
-    });
-
-    (agent as any).completeTaskResult(trustedCompletion.finalSummary, {
-      completionCandidate: trustedCompletion.completionCandidate,
-      saveCheckpoint: false,
-    });
-
-    expect((agent as any).completedResult).toMatchObject({
-      outcome: "completed",
-      summary: trustedCompletion.finalSummary,
-      completionEnvelope: {
-        status: "completed",
-        source: "trusted_tool",
-        contractKind: "workflow_confirmation",
-        decisionReason: expect.stringContaining("Trusted list sort"),
-        evidenceKeys: expect.arrayContaining([
-          expect.stringContaining("trusted:list-sort:confirmation"),
-        ]),
-      },
-    });
-    expect(onMessage).toHaveBeenCalledWith(trustedCompletion.finalSummary, []);
-  });
-
   test("submit-form reset completion creates a trusted_tool completion envelope", () => {
     const onMessage = vi.fn();
     const agent = new AgentLoop("test-key", {
@@ -3844,48 +2226,6 @@ describe("AgentLoop", () => {
       },
     });
     expect(onMessage).toHaveBeenCalledWith(trustedCompletion.finalSummary, []);
-  });
-
-  test("trusted read-answer completion creates a read_answer envelope", () => {
-    const onMessage = vi.fn();
-    const agent = new AgentLoop("test-key", {
-      onStatusUpdate: vi.fn(),
-      onMessage,
-      onStep: vi.fn(),
-    });
-    const completionCandidate = buildTrustedReadAnswerCompletionCandidate({
-      workflow: "search-answer-extraction",
-      answer: "100",
-      source: "knowledge_base_search",
-      turn: 5,
-      question:
-        "Each year, how many new hires does the company typically make?",
-      evidenceText:
-        "The average number of yearly hires is 100, reflecting sustained growth.",
-      url: "https://example.service-now.test/kb",
-    });
-
-    (agent as any).completeTaskResult("100", {
-      completionCandidate,
-      saveCheckpoint: false,
-    });
-
-    expect((agent as any).completedResult).toMatchObject({
-      outcome: "completed",
-      summary: "100",
-      completionEnvelope: {
-        status: "completed",
-        source: "trusted_tool",
-        contractKind: "read_answer",
-        decisionReason: expect.stringContaining(
-          "grounded knowledge base search evidence",
-        ),
-        evidenceKeys: expect.arrayContaining([
-          expect.stringContaining("trusted:search-answer-extraction:answer"),
-        ]),
-      },
-    });
-    expect(onMessage).toHaveBeenCalledWith("100", []);
   });
 
   test("direct non-candidate completion is trace-visible without trusted envelope", () => {
@@ -4096,7 +2436,7 @@ describe("AgentLoop", () => {
       { function: { name: ToolName.READ_PAGE } },
     ] as any;
 
-    const ranked = (agent as any).applySkillToolRanking(tools);
+    const ranked = agent.skillTools.applySkillToolRanking(tools);
     const names = ranked.map((t: any) => t.function.name);
 
     expect(names).toEqual([
@@ -4122,7 +2462,7 @@ describe("AgentLoop", () => {
       { function: { name: ToolName.TYPE_TEXT } },
     ] as any;
 
-    const ranked = (agent as any).applySkillToolRanking(tools);
+    const ranked = agent.skillTools.applySkillToolRanking(tools);
     expect(ranked).toEqual(tools);
   });
 
@@ -4244,14 +2584,14 @@ describe("AgentLoop", () => {
       ],
     } as any);
 
-    (agent as any).recordMutationSensitiveAction(
+    agent.mutationReplay.recordMutationSensitiveAction(
       ToolName.CLICK_ELEMENT,
       { id: 45 },
       'Clicked [45] button "Back to Listings"',
     );
 
     expect(
-      (agent as any).replayMutationSensitiveAction(
+      agent.mutationReplay.replayMutationSensitiveAction(
         "call-1",
         ToolName.CLICK_ELEMENT,
         { id: 45 },
@@ -4293,7 +2633,7 @@ describe("AgentLoop", () => {
       ],
     } as any);
 
-    (agent as any).recordMutationSensitiveAction(
+    agent.mutationReplay.recordMutationSensitiveAction(
       ToolName.CLICK_ELEMENT,
       { id: 41 },
       'Clicked [41] button "Next"',
@@ -4328,7 +2668,7 @@ describe("AgentLoop", () => {
     } as any);
 
     expect(
-      (agent as any).replayMutationSensitiveAction(
+      agent.mutationReplay.replayMutationSensitiveAction(
         "call-1",
         ToolName.CLICK_ELEMENT,
         { id: 41 },
@@ -4370,7 +2710,7 @@ describe("AgentLoop", () => {
       ],
     } as any);
 
-    (agent as any).recordMutationSensitiveAction(
+    agent.mutationReplay.recordMutationSensitiveAction(
       ToolName.CLICK_ELEMENT,
       { id: 41 },
       'Clicked [41] button "Next"',
@@ -4406,7 +2746,7 @@ describe("AgentLoop", () => {
     } as any);
 
     expect(
-      (agent as any).replayMutationSensitiveAction(
+      agent.mutationReplay.replayMutationSensitiveAction(
         "call-1",
         ToolName.CLICK_ELEMENT,
         { id: 41 },
@@ -4438,14 +2778,14 @@ describe("AgentLoop", () => {
       ],
     } as any);
 
-    (agent as any).recordMutationSensitiveAction(
+    agent.mutationReplay.recordMutationSensitiveAction(
       ToolName.CLICK_ELEMENT,
       { id: 41 },
       'Clicked [41] button "Submit"',
     );
 
     expect(
-      (agent as any).replayMutationSensitiveAction(
+      agent.mutationReplay.replayMutationSensitiveAction(
         "call-1",
         ToolName.CLICK_ELEMENT,
         { id: 41 },
@@ -4486,7 +2826,7 @@ describe("AgentLoop", () => {
     } as any;
 
     (agent as any).context.setSnapshot(page2Snapshot);
-    (agent as any).recordMutationSensitiveAction(
+    agent.mutationReplay.recordMutationSensitiveAction(
       ToolName.CLICK_ELEMENT,
       { id: 41 },
       'Clicked [41] button "3"',
@@ -4497,7 +2837,7 @@ describe("AgentLoop", () => {
     });
 
     expect(
-      (agent as any).replayMutationSensitiveAction(
+      agent.mutationReplay.replayMutationSensitiveAction(
         "call-1",
         ToolName.CLICK_ELEMENT,
         { id: 41 },
@@ -4536,7 +2876,7 @@ describe("AgentLoop", () => {
     (agent as any).originalQuery =
       "Review the employee directory and tell me which employee has the highest salary and what that salary is.";
 
-    const firstNote = (agent as any)
+    const firstNote = (agent as any).moneyTable
       .updateMoneyTableAggregate(`Page: Employee Directory
 
 Page content:
@@ -4562,7 +2902,7 @@ Showing 1-5 of 50`);
     expect(firstNote).toContain("not exhaustive");
     expect(firstNote).toContain("Next action: click Next");
 
-    const laterNote = (agent as any)
+    const laterNote = (agent as any).moneyTable
       .updateMoneyTableAggregate(`Page: Employee Directory
 
 Page content:
@@ -4610,7 +2950,7 @@ $63,655
 Showing 6-10 of 50`,
     } as any);
 
-    (agent as any).updateMoneyTableAggregateFromSnapshot();
+    (agent as any).moneyTable.updateMoneyTableAggregateFromSnapshot();
 
     expect((agent as any).context.getWorkingNotes()).toContain("Frank Garcia");
     expect((agent as any).context.getWorkingNotes()).toContain(
@@ -4627,7 +2967,7 @@ Showing 6-10 of 50`,
     (agent as any).originalQuery =
       "Review the employee directory and tell me which employee has the highest salary and what that salary is.";
 
-    const note = (agent as any).updateMoneyTableAggregate(
+    const note = (agent as any).moneyTable.updateMoneyTableAggregate(
       "Page content: Employee Directory 50 employees, 5 per page. # Name Email Department Salary 46 Yara Nelson yara.nelson@company.com Engineering $122,000 47 Omar Hall omar.hall@company.com Support $98,100 Showing 46 - 50 of 50 Page 10 of 10",
     );
 
@@ -4646,16 +2986,16 @@ Showing 6-10 of 50`,
     });
     (agent as any).originalQuery =
       "Review the employee directory and tell me which employee has the highest salary and what that salary is.";
-    (agent as any).updateMoneyTableAggregate(
+    (agent as any).moneyTable.updateMoneyTableAggregate(
       "Page content: Employee Directory 10 employees, 5 per page. # Name Email Department Salary 1 Alice Smith alice.smith@company.com Engineering $55,000 2 Bob Johnson bob.johnson@company.com Sales $56,731 3 Cara Lopez cara.lopez@company.com HR $58,000 4 Dan Miller dan.miller@company.com Finance $59,000 5 Eva Moore eva.moore@company.com Legal $60,000 Showing 1 - 5 of 10 Page 1 of 2",
     );
-    (agent as any).updateMoneyTableAggregate(
+    (agent as any).moneyTable.updateMoneyTableAggregate(
       "Page content: Employee Directory 10 employees, 5 per page. # Name Email Department Salary 6 Frank Garcia frank.garcia@company.com Operations $63,655 7 Yara Nelson yara.nelson@company.com Engineering $122,000 8 Omar Hall omar.hall@company.com Support $98,100 9 Ivy Stone ivy.stone@company.com Sales $99,000 10 Jack King jack.king@company.com Sales $100,000 Showing 6 - 10 of 10 Page 2 of 2",
     );
 
     const rejection = (
       agent as any
-    ).getIncorrectMoneyTableAggregateDoneRejection(
+    ).moneyTable.getIncorrectMoneyTableAggregateDoneRejection(
       "The highest salary is Jack King at $100,000.",
     );
 
@@ -4675,20 +3015,20 @@ Showing 6-10 of 50`,
     );
     (agent as any).originalQuery =
       "Review the employee directory and tell me which employee has the highest salary and what that salary is.";
-    (agent as any).updateMoneyTableAggregate(
+    (agent as any).moneyTable.updateMoneyTableAggregate(
       "Page content: Employee Directory 10 employees, 5 per page. # Name Email Department Salary 1 Alice Smith alice.smith@company.com Engineering $55,000 2 Bob Johnson bob.johnson@company.com Sales $56,731 3 Cara Lopez cara.lopez@company.com HR $58,000 4 Dan Miller dan.miller@company.com Finance $59,000 5 Eva Moore eva.moore@company.com Legal $60,000 Showing 1 - 5 of 10 Page 1 of 2",
     );
-    (agent as any).updateMoneyTableAggregate(
+    (agent as any).moneyTable.updateMoneyTableAggregate(
       "Page content: Employee Directory 10 employees, 5 per page. # Name Email Department Salary 6 Frank Garcia frank.garcia@company.com Operations $63,655 7 Yara Nelson yara.nelson@company.com Engineering $122,000 8 Omar Hall omar.hall@company.com Support $98,100 9 Ivy Stone ivy.stone@company.com Sales $99,000 10 Jack King jack.king@company.com Sales $100,000 Showing 6 - 10 of 10 Page 2 of 2",
     );
 
     expect(
-      (agent as any).isCompletedMoneyTableAggregateSummary(
+      (agent as any).moneyTable.isCompletedMoneyTableAggregateSummary(
         "The highest salary is Yara Nelson at $122,000.",
       ),
     ).toBe(true);
     expect(
-      (agent as any).isCompletedMoneyTableAggregateSummary(
+      (agent as any).moneyTable.isCompletedMoneyTableAggregateSummary(
         "The highest salary is Jack King at $100,000.",
       ),
     ).toBe(false);
@@ -5025,23 +3365,23 @@ Showing 6-10 of 50`,
       elements: [],
     };
 
-    (agent as any).trackListDetailToolSuccess(
+    (agent as any).listDetailWorkflow.trackListDetailToolSuccess(
       ToolName.CLICK_ELEMENT,
       { id: 35 },
       listSnapshot,
     );
 
-    expect((agent as any).listDetailOpenedTargets.size).toBe(1);
-    expect((agent as any).listDetailReviewedTargets.size).toBe(0);
+    expect((agent as any).listDetailWorkflow.listDetailOpenedTargets.size).toBe(1);
+    expect((agent as any).listDetailWorkflow.listDetailReviewedTargets.size).toBe(0);
 
-    (agent as any).trackListDetailToolSuccess(
+    (agent as any).listDetailWorkflow.trackListDetailToolSuccess(
       ToolName.READ_PAGE,
       {},
       detailSnapshot,
     );
 
-    expect((agent as any).listDetailOpenedTargets.size).toBe(1);
-    expect((agent as any).listDetailReviewedTargets.size).toBe(1);
+    expect((agent as any).listDetailWorkflow.listDetailOpenedTargets.size).toBe(1);
+    expect((agent as any).listDetailWorkflow.listDetailReviewedTargets.size).toBe(1);
     expect(recordEvent).toHaveBeenCalledWith(
       "list_detail_item_reviewed",
       expect.objectContaining({
@@ -5103,19 +3443,19 @@ Showing 6-10 of 50`,
       ],
     } as any;
 
-    (agent as any).trackListDetailToolSuccess(
+    (agent as any).listDetailWorkflow.trackListDetailToolSuccess(
       ToolName.CLICK_ELEMENT,
       { id: 35 },
       listSnapshot,
     );
-    (agent as any).trackListDetailToolSuccess(
+    (agent as any).listDetailWorkflow.trackListDetailToolSuccess(
       ToolName.READ_PAGE,
       {},
       listSnapshot,
     );
 
-    expect((agent as any).listDetailOpenedTargets.size).toBe(1);
-    expect((agent as any).listDetailReviewedTargets.size).toBe(0);
+    expect((agent as any).listDetailWorkflow.listDetailOpenedTargets.size).toBe(1);
+    expect((agent as any).listDetailWorkflow.listDetailReviewedTargets.size).toBe(0);
   });
 
   test("redirects off-workflow list-detail tool calls to the next review action", () => {
@@ -5134,8 +3474,8 @@ Showing 6-10 of 50`,
     (agent as any).originalQuery =
       "Review the job listings and tell me which ones are the best matches for my profile and why.";
     (agent as any).traceRecorder = { recordEvent };
-    (agent as any).listDetailVisibleActionCount = 3;
-    (agent as any).listDetailReviewedTargets = new Set([
+    (agent as any).listDetailWorkflow.listDetailVisibleActionCount = 3;
+    (agent as any).listDetailWorkflow.listDetailReviewedTargets = new Set([
       "senior frontend engineer at nextera tech",
     ]);
     (agent as any).context.setSnapshot({
@@ -5184,7 +3524,7 @@ Showing 6-10 of 50`,
       },
     } as any;
 
-    const redirected = (agent as any).rewriteListDetailWorkflowToolCall(
+    const redirected = (agent as any).listDetailWorkflow.rewriteListDetailWorkflowToolCall(
       toolCall,
       "sequential",
     );
@@ -5218,9 +3558,9 @@ Showing 6-10 of 50`,
     (agent as any).originalQuery =
       "Review the job listings and tell me which ones are the best matches for my profile and why.";
     (agent as any).traceRecorder = { recordEvent };
-    (agent as any).listDetailVisibleActionCount = 10;
-    (agent as any).listDetailCurrentTarget = "full stack engineer at datapulse";
-    (agent as any).listDetailOpenedTargets = new Set([
+    (agent as any).listDetailWorkflow.listDetailVisibleActionCount = 10;
+    (agent as any).listDetailWorkflow.listDetailCurrentTarget = "full stack engineer at datapulse";
+    (agent as any).listDetailWorkflow.listDetailOpenedTargets = new Set([
       "full stack engineer at datapulse",
     ]);
     (agent as any).context.setSnapshot({
@@ -5249,7 +3589,7 @@ Showing 6-10 of 50`,
       },
     } as any;
 
-    const redirected = (agent as any).rewriteListDetailWorkflowToolCall(
+    const redirected = (agent as any).listDetailWorkflow.rewriteListDetailWorkflowToolCall(
       toolCall,
       "sequential",
     );
@@ -5281,10 +3621,10 @@ Showing 6-10 of 50`,
     );
     (agent as any).originalQuery =
       "Review the job listings and tell me which ones are the best matches for my profile and why.";
-    (agent as any).listDetailVisibleActionCount = 10;
-    (agent as any).listDetailCurrentTarget =
+    (agent as any).listDetailWorkflow.listDetailVisibleActionCount = 10;
+    (agent as any).listDetailWorkflow.listDetailCurrentTarget =
       "frontend developer at startupgrid";
-    (agent as any).listDetailOpenedTargets = new Set([
+    (agent as any).listDetailWorkflow.listDetailOpenedTargets = new Set([
       "frontend developer at startupgrid",
     ]);
     (agent as any).context.setSnapshot({
@@ -5313,7 +3653,7 @@ Showing 6-10 of 50`,
       },
     } as any;
 
-    const redirected = (agent as any).rewriteListDetailWorkflowToolCall(
+    const redirected = (agent as any).listDetailWorkflow.rewriteListDetailWorkflowToolCall(
       toolCall,
       "sequential",
     );
@@ -5338,10 +3678,10 @@ Showing 6-10 of 50`,
     (agent as any).originalQuery =
       "Review the job listings and tell me which ones are the best matches for my profile and why.";
     (agent as any).traceRecorder = { recordEvent };
-    (agent as any).listDetailVisibleActionCount = 10;
-    (agent as any).listDetailCurrentTarget =
+    (agent as any).listDetailWorkflow.listDetailVisibleActionCount = 10;
+    (agent as any).listDetailWorkflow.listDetailCurrentTarget =
       "frontend developer at startupgrid";
-    (agent as any).listDetailReviewedTargets = new Set([
+    (agent as any).listDetailWorkflow.listDetailReviewedTargets = new Set([
       "frontend developer at startupgrid",
     ]);
     (agent as any).context.setSnapshot({
@@ -5370,7 +3710,7 @@ Showing 6-10 of 50`,
       },
     } as any;
 
-    const redirected = (agent as any).rewriteListDetailWorkflowToolCall(
+    const redirected = (agent as any).listDetailWorkflow.rewriteListDetailWorkflowToolCall(
       toolCall,
       "sequential",
     );
@@ -5404,9 +3744,9 @@ Showing 6-10 of 50`,
     (agent as any).originalQuery =
       "Review the job listings and tell me which ones are the best matches for my profile and why.";
     (agent as any).traceRecorder = { recordEvent };
-    (agent as any).listDetailVisibleActionCount = 10;
-    (agent as any).listDetailCurrentTarget = "full stack engineer at datapulse";
-    (agent as any).listDetailReviewedTargets = new Set([
+    (agent as any).listDetailWorkflow.listDetailVisibleActionCount = 10;
+    (agent as any).listDetailWorkflow.listDetailCurrentTarget = "full stack engineer at datapulse";
+    (agent as any).listDetailWorkflow.listDetailReviewedTargets = new Set([
       "full stack engineer at datapulse",
     ]);
     (agent as any).context.setSnapshot({
@@ -5445,7 +3785,7 @@ Showing 6-10 of 50`,
       },
     } as any;
 
-    const redirected = (agent as any).rewriteListDetailWorkflowToolCall(
+    const redirected = (agent as any).listDetailWorkflow.rewriteListDetailWorkflowToolCall(
       toolCall,
       "sequential",
     );
@@ -5499,7 +3839,7 @@ Showing 6-10 of 50`,
       },
     ];
 
-    const replanned = await (agent as any).replanOnEscalation(123, []);
+    const replanned = await (agent as any).planRecovery.replanOnEscalation(123, []);
 
     expect(replanned).toBe(false);
     expect(replanFrom).not.toHaveBeenCalled();
@@ -5547,7 +3887,7 @@ Showing 6-10 of 50`,
       },
     ];
 
-    const replanned = await (agent as any).replanOnEscalation(123, []);
+    const replanned = await (agent as any).planRecovery.replanOnEscalation(123, []);
 
     expect(replanned).toBe(false);
     expect(replanFrom).not.toHaveBeenCalled();
@@ -5605,7 +3945,7 @@ Showing 6-10 of 50`,
     (agent as any).traceRecorder = { recordEvent };
     (agent as any).turnCount = 3;
 
-    (agent as any).recordSkillToolSelection(ToolName.PRESS_KEY, "sequential");
+    agent.skillTools.recordSkillToolSelection(ToolName.PRESS_KEY, "sequential");
 
     expect(recordEvent).toHaveBeenCalledWith("skill_tool_selected", {
       turn: 3,
@@ -5644,7 +3984,7 @@ Showing 6-10 of 50`,
       },
     );
 
-    const newIdx = (agent as any).advanceCompletedSubtasks();
+    const newIdx = agent.planProgress.advanceCompletedSubtasks();
     (agent as any).syncPlanStatus(newIdx);
 
     const planStatus = (agent as any).context.getPlanStatusRaw();
@@ -6120,6 +4460,7 @@ Showing 6-10 of 50`,
     const result = await agent.start("Report Warehouse Gamma count", 123);
 
     expect(validateDone).toHaveBeenCalled();
+    expect(result.outcome).not.toBe("error");
     expect(result.outcome).not.toBe("completed");
     expect((agent as any).doneRejections).toBeGreaterThan(0);
     expect(onMessage).not.toHaveBeenCalledWith(
@@ -6395,7 +4736,11 @@ Showing 6-10 of 50`,
     (agent as any).originalQuery =
       "Buy the first two items from the procurement list and mark them complete.";
 
-    expect((agent as any).shouldBlockTabManagementTools()).toBe(false);
+    expect(shouldBlockTabManagementTools({
+      originalQuery: (agent as any).originalQuery,
+      selectedSkillId: agent.selectedSkillId,
+      planRequiresTabManagement: (agent as any).planRequiresTabManagement,
+    })).toBe(false);
   });
 
   test("re-opens the tab-management gate when the plan later requires tabs (no session latch)", () => {
@@ -6410,263 +4755,21 @@ Showing 6-10 of 50`,
     );
     // A generic query with no explicit tab phrasing and no skill: gate is closed.
     (agent as any).originalQuery = "Look at this page and tell me what it says.";
-    expect((agent as any).shouldBlockTabManagementTools()).toBe(true);
+    expect(shouldBlockTabManagementTools({
+      originalQuery: (agent as any).originalQuery,
+      selectedSkillId: agent.selectedSkillId,
+      planRequiresTabManagement: (agent as any).planRequiresTabManagement,
+    })).toBe(true);
 
     // Once the planner declares multi-tab intent mid-run, the gate must re-open.
     // Blocking an earlier call must not have permanently disabled the tab tools.
     (agent as any).planRequiresTabManagement = true;
-    expect((agent as any).shouldBlockTabManagementTools()).toBe(false);
+    expect(shouldBlockTabManagementTools({
+      originalQuery: (agent as any).originalQuery,
+      selectedSkillId: agent.selectedSkillId,
+      planRequiresTabManagement: (agent as any).planRequiresTabManagement,
+    })).toBe(false);
     expect((agent as any).disabledTools.size).toBe(0);
-  });
-
-  test("extracts ServiceNow missing field labels from form helper mismatches", () => {
-    const result = [
-      "ServiceNow form configuration incomplete.",
-      "Configured:",
-      "- First name (first_name) = Derek-Shawn",
-      "Mismatches:",
-      "- Half popular: field not found",
-      "- Half popular: field not found",
-      "- Business phone: expected 123, found 456",
-    ].join("\n");
-
-    expect(extractServiceNowFormMissingFieldLabels(result)).toEqual([
-      "Half popular",
-    ]);
-  });
-
-  test("builds a ServiceNow infeasible summary naming unavailable fields", () => {
-    expect(
-      buildServiceNowMissingFieldInfeasibleSummary(["Half popular"]),
-    ).toContain('"Half popular"');
-    expect(
-      buildServiceNowMissingFieldInfeasibleSummary([
-        "Half popular",
-        "Watch in",
-      ]),
-    ).toBe(
-      'I cannot complete this because the requested fields "Half popular", "Watch in" are not available on this ServiceNow form.',
-    );
-  });
-
-  test("recognizes bounded ServiceNow missing field search as infeasible", () => {
-    const agent = new AgentLoop(
-      "test-key",
-      {
-        onStatusUpdate: vi.fn(),
-        onMessage: vi.fn(),
-        onStep: vi.fn(),
-      },
-      {
-        selectedSkillId: "servicenow-record-form",
-      },
-    );
-    (agent as any).originalQuery =
-      'Create a new user with a value of "Ada" for field "First name" and a value of "Blue" for field "Half popular". Submit the form and verify the created record.';
-
-    const state = new Map();
-    const first = (agent as any).assessServiceNowMissingFieldInfeasibility(
-      [
-        {
-          toolName: ToolName.FIND_ELEMENT,
-          args: { text: "Half popular" },
-          resultContent: 'Text "Half popular" not found on this page.',
-        },
-        {
-          toolName: ToolName.INSPECT_HIDDEN,
-          args: { pattern: "half" },
-          resultContent:
-            'No hidden elements found matching "half" (scanned in 12ms).',
-        },
-      ],
-      state,
-    );
-    expect(first).toBe(
-      'I cannot complete this because the requested field "Half popular" is not available on this ServiceNow form.',
-    );
-
-    const second = (agent as any).assessServiceNowMissingFieldInfeasibility(
-      [
-        {
-          toolName: ToolName.INSPECT_HIDDEN,
-          args: { pattern: "popular" },
-          resultContent:
-            'No hidden elements found matching "popular" (scanned in 12ms).',
-        },
-      ],
-      state,
-    );
-
-    expect(second).toBe(
-      'I cannot complete this because the requested field "Half popular" is not available on this ServiceNow form.',
-    );
-  });
-
-  test("recognizes exact hidden miss plus find miss for ServiceNow missing fields", () => {
-    const agent = new AgentLoop(
-      "test-key",
-      {
-        onStatusUpdate: vi.fn(),
-        onMessage: vi.fn(),
-        onStep: vi.fn(),
-      },
-      {
-        selectedSkillId: "servicenow-record-form",
-      },
-    );
-    (agent as any).originalQuery =
-      'Create a new user with a value of "Ada" for field "First name" and a value of "we" for field "Young ago". Submit the form and verify the created record.';
-
-    const state = new Map();
-    expect(
-      (agent as any).assessServiceNowMissingFieldInfeasibility(
-        [
-          {
-            toolName: ToolName.INSPECT_HIDDEN,
-            args: { pattern: "Young ago" },
-            resultContent:
-              'No hidden elements found matching "Young ago" (scanned in 12ms).',
-          },
-        ],
-        state,
-      ),
-    ).toBeNull();
-
-    expect(
-      (agent as any).assessServiceNowMissingFieldInfeasibility(
-        [
-          {
-            toolName: ToolName.FIND_ELEMENT,
-            args: { text: "Young ago" },
-            resultContent: 'Text "Young ago" not found on this page.',
-          },
-        ],
-        state,
-      ),
-    ).toBe(
-      'I cannot complete this because the requested field "Young ago" is not available on this ServiceNow form.',
-    );
-  });
-
-  test("recognizes full-label and token hidden misses for ServiceNow missing fields", () => {
-    const agent = new AgentLoop(
-      "test-key",
-      {
-        onStatusUpdate: vi.fn(),
-        onMessage: vi.fn(),
-        onStep: vi.fn(),
-      },
-      {
-        selectedSkillId: "servicenow-record-form",
-      },
-    );
-    (agent as any).originalQuery =
-      'Create a new user with a value of "Ada" for field "First name" and a value of "we" for field "Tree action". Submit the form and verify the created record.';
-
-    const state = new Map();
-    for (const pattern of ["Tree action", "tree"]) {
-      const result = (agent as any).assessServiceNowMissingFieldInfeasibility(
-        [
-          {
-            toolName: ToolName.INSPECT_HIDDEN,
-            args: { pattern },
-            resultContent: `No hidden elements found matching "${pattern}" (scanned in 12ms).`,
-          },
-        ],
-        state,
-      );
-      if (pattern === "Tree action") {
-        expect(result).toBeNull();
-      } else {
-        expect(result).toBe(
-          'I cannot complete this because the requested field "Tree action" is not available on this ServiceNow form.',
-        );
-      }
-    }
-
-    expect(
-      (agent as any).assessServiceNowMissingFieldInfeasibility(
-        [
-          {
-            toolName: ToolName.INSPECT_HIDDEN,
-            args: { pattern: "action" },
-            resultContent:
-              'No hidden elements found matching "action" (scanned in 12ms).',
-          },
-        ],
-        state,
-      ),
-    ).toBe(
-      'I cannot complete this because the requested field "Tree action" is not available on this ServiceNow form.',
-    );
-  });
-
-  test("recognizes ServiceNow missing fields without selected skill after handoff", () => {
-    const agent = new AgentLoop("test-key", {
-      onStatusUpdate: vi.fn(),
-      onMessage: vi.fn(),
-      onStep: vi.fn(),
-    });
-    (agent as any).originalQuery =
-      'Create a new user with a value of "Ada" for field "First name" and a value of "strategy" for field "About back". Submit the form and verify the created record.';
-    setPlanContext(agent, {
-      subtasks: [],
-      planSteps: [],
-      snapshotText:
-        "User New record User ID First name Last name Language Business phone Mobile phone Submit",
-    });
-
-    const state = new Map();
-    expect(
-      (agent as any).assessServiceNowMissingFieldInfeasibility(
-        [
-          {
-            toolName: ToolName.INSPECT_HIDDEN,
-            args: { pattern: "About back" },
-            resultContent:
-              'No hidden elements found matching "About back" (scanned in 12ms).',
-          },
-          {
-            toolName: ToolName.INSPECT_HIDDEN,
-            args: { pattern: "about" },
-            resultContent:
-              'No hidden elements found matching "about" (scanned in 12ms).',
-          },
-        ],
-        state,
-      ),
-    ).toBe(
-      'I cannot complete this because the requested field "About back" is not available on this ServiceNow form.',
-    );
-  });
-
-  test("recognizes ServiceNow missing field admissions with tool calls", () => {
-    const agent = new AgentLoop(
-      "test-key",
-      {
-        onStatusUpdate: vi.fn(),
-        onMessage: vi.fn(),
-        onStep: vi.fn(),
-      },
-      {
-        selectedSkillId: "servicenow-record-form",
-      },
-    );
-    (agent as any).originalQuery =
-      'Create a new user with a value of "Ada" for field "First name" and a value of "we" for field "Degree someone". Submit the form and verify the created record.';
-
-    expect(
-      (agent as any).getServiceNowMissingFieldAdmissionSummary(
-        'The "Degree someone" field does not exist on the ServiceNow User form. Let me try Personalize Form.',
-      ),
-    ).toBe(
-      'I cannot complete this because the requested field "Degree someone" is not available on this ServiceNow form.',
-    );
-    expect(
-      (agent as any).getServiceNowMissingFieldAdmissionSummary(
-        '"Degree someone" is not visible yet, so I will search hidden fields.',
-      ),
-    ).toBeNull();
   });
 
   test("bypasses stale plan rejection when the page already shows final submission confirmation", () => {
@@ -7070,7 +5173,7 @@ Showing 6-10 of 50`,
       timestamp: Date.now(),
     }));
 
-    const result = (agent as any).getUncommittedInlineEditDoneRejection(0);
+    const result = agent.inlineEditVerification.getUncommittedInlineEditDoneRejection(0);
 
     expect(result).toContain("Commit the edit");
   });
@@ -7137,19 +5240,19 @@ Showing 6-10 of 50`,
       reason: "You likely just committed an inline edit on this step.",
     };
 
-    const mutationBlock = (agent as any).getPendingInlineEditVerificationBlock(
+    const mutationBlock = agent.inlineEditVerification.getPendingInlineEditVerificationBlock(
       ToolName.CLICK_ELEMENT,
       0,
     );
     expect(mutationBlock).toContain("Verify the committed page state");
 
-    const readAllowed = (agent as any).getPendingInlineEditVerificationBlock(
+    const readAllowed = agent.inlineEditVerification.getPendingInlineEditVerificationBlock(
       ToolName.READ_PAGE,
       0,
     );
     expect(readAllowed).toBeNull();
 
-    const staleStep = (agent as any).getPendingInlineEditVerificationBlock(
+    const staleStep = agent.inlineEditVerification.getPendingInlineEditVerificationBlock(
       ToolName.CLICK_ELEMENT,
       1,
     );
@@ -7778,7 +5881,7 @@ describe("Workspace-scoped tab operations", () => {
       { function: { name: ToolName.DONE } },
     ] as any;
 
-    const filtered = (agent as any).applyToolProfile(tools);
+    const filtered = agent.skillTools.applyToolProfile(tools);
     expect(filtered).toHaveLength(tools.length); // all tools pass through
   });
 });

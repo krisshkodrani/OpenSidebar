@@ -15,6 +15,8 @@
 import type { TraceRecorder } from "../trace";
 import type { LoopResult } from "../loop-types";
 import type { LoopSession } from "../loop-scope";
+import type { MoneyTableRuntime } from "../loop-money-table";
+import type { BroadcastMessage } from "../agent-broadcast";
 import { BROADCAST_INTERVALS } from "../constants";
 
 export interface PrepareTurnContextHost {
@@ -27,8 +29,8 @@ export interface PrepareTurnContextHost {
     getBudgetUrgencyLevel(): "normal" | "low" | "critical";
   };
   readonly telemetry: { readonly sessionStartTime: number };
-  broadcast(message: unknown): void;
-  updateMoneyTableAggregateFromSnapshot(): void;
+  broadcast(message: BroadcastMessage): void;
+  readonly moneyTable: Pick<MoneyTableRuntime, "updateMoneyTableAggregateFromSnapshot">;
   maybeCompleteCatalogOrderFromSnapshot(): LoopResult | null;
 }
 
@@ -81,7 +83,7 @@ export function runPrepareTurnContextPhase(
       session.previousBudgetUrgencyLevel = currentBudgetLevel;
     }
   }
-  host.updateMoneyTableAggregateFromSnapshot();
+  host.moneyTable.updateMoneyTableAggregateFromSnapshot();
   const catalogSnapshotCompletion =
     host.maybeCompleteCatalogOrderFromSnapshot();
   if (catalogSnapshotCompletion) {

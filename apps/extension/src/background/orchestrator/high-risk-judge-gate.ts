@@ -13,6 +13,8 @@ import {
 import type { VerifierLike } from "./lane-types";
 import type { NodeVerificationResult } from "./verifier";
 import type { OrchestratorTask, StructuredEvidence, TaskNode } from "./types";
+import { classifyNodeEffect } from "./node-effect-policy";
+import { classifyVerificationRisk } from "./verifier";
 
 const REVERIFY_PREFIX = "Re-verify and complete: ";
 
@@ -128,4 +130,29 @@ export async function runHighRiskJudgeGate(
     );
     return null;
   }
+}
+
+/** Apply the judge gate only after a high-risk verifier acceptance. */
+export async function maybeApplyHighRiskJudgeGate(input: {
+  task: OrchestratorTask;
+  node: TaskNode;
+  verifier: VerifierLike;
+  evidence: StructuredEvidence[];
+  summary: string;
+  verification: NodeVerificationResult;
+  emit: (type: string, data: Record<string, unknown>) => void;
+}): Promise<void> {
+  const { task, node, verifier, evidence, summary, verification, emit } = input;
+  if (
+    verification.decision !== "accept" ||
+    (classifyNodeEffect(node) !== "consequential_write" &&
+      classifyVerificationRisk({
+        objective: node.description,
+        successCriteria: node.successCriteria,
+      }) !== "high")
+  ) {
+    return;
+  }
+  const gate = await runHighRiskJudgeGate(task, node, verifier, evidence, summary);
+  applyJudgeGateOutcome({ gate, node, verification, emit });
 }

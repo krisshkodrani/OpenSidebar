@@ -39,7 +39,6 @@ const EXECUTOR_DEFAULT_TOOLS: ToolName[] = [
   ToolName.SCROLL_PAGE,
   ToolName.READ_PAGE,
   ToolName.NAVIGATE,
-  ToolName.OPEN_SERVICENOW_MODULE,
   ToolName.SEARCH_KNOWLEDGE_BASE,
   ToolName.CREATE_TAB,
   ToolName.CLOSE_TAB,
@@ -67,7 +66,6 @@ const EXECUTOR_DEFAULT_TOOLS: ToolName[] = [
   ToolName.APPLY_LIST_ACTION,
   ToolName.INSPECT_CATALOG_ITEM,
   ToolName.CONFIGURE_CATALOG_ITEM,
-  ToolName.CONFIGURE_SERVICENOW_FORM,
   ToolName.XRAY_PAGE,
   ToolName.GET_PROFILE_FIELDS,
   ToolName.DISMISS_OVERLAYS,
@@ -173,8 +171,6 @@ const PAGINATED_TABLE_SCAN_SKILL_ID = "paginated-table-scan";
 const SKILL_OWNED_WORKFLOW_IDS = new Set([
   "chart-value-extraction",
   "search-answer-extraction",
-  "servicenow-module-navigation",
-  "servicenow-record-form",
   "list-filter-workflow",
   "list-sort-workflow",
   "list-row-action-workflow",
@@ -543,12 +539,8 @@ function collapseSkillOwnedWorkflowNodes(
   const skillOwns = Boolean(
     selectedDescriptor?.atomic || SKILL_OWNED_WORKFLOW_IDS.has(selection.id),
   );
-  // A create-record form (field-value fill + submit) is one atomic workflow, so
-  // merge it even when skill selection lands on a *generic* skill (e.g. a page
-  // whose URL isn't recognized as ServiceNow). Without this, the two nodes
-  // survive, and the executor completes the fill node on its "the final submit
-  // action has not been clicked yet" criterion without ever submitting — the
-  // create-incident stranding bug.
+  // A create-record form (field-value fill + submit) is one atomic workflow.
+  // Keep fill and submit together when generic skill selection is used.
   const isFieldValueForm = isFieldValueFormPlan(nodes);
   if (!skillOwns && !isFieldValueForm) {
     return nodes;
@@ -605,9 +597,8 @@ function collapseSkillOwnedWorkflowNodes(
   return [
     {
       ...firstNode,
-      // Skill-owned selection wins; for a generic-skill field-value form keep
-      // the fill node's planner-assigned skill (record-form on a recognized
-      // ServiceNow page, generic otherwise).
+      // Skill-owned selection wins; for a generic field-value form keep the
+      // fill node's planner-assigned skill.
       ...(skillOwns
         ? {
             selectedSkillId: selection.id,
@@ -772,6 +763,11 @@ export function collapseSameContextSequentialNodes(
     pageUrl,
     ...skillCatalogOptions,
   });
+  const cartReplacement = mergedSkill?.id === "cart-modify-checkout" &&
+    /\b(?:swap|replace)\b|\b(?:remove|delete)\b[\s\S]{0,200}\bcart\b[\s\S]{0,200}\b(?:add|put)\b/i.test(query);
+  const successCriteria = cartReplacement
+    ? nodes.at(-1)?.successCriteria ?? ""
+    : dedupeStrings(nodes.map((node) => node.successCriteria)).join("; ");
   return [
     {
       ...firstNode,
@@ -779,12 +775,7 @@ export function collapseSameContextSequentialNodes(
       selectedSkillReason: mergedSkill?.reason,
       description,
       displayLabel,
-      successCriteria: compactText(
-        // Keep each source node's observable outcome as a distinct rubric
-        // criterion. Joining with spaces fused unrelated transient and terminal
-        // states into one malformed judge criterion after a same-page collapse.
-        dedupeStrings(nodes.map((node) => node.successCriteria)).join("; "),
-      ),
+      successCriteria: compactText(successCriteria),
       allowedTools: unionTools(nodes),
       assumptions: dedupeStrings(nodes.flatMap((node) => node.assumptions)),
       handoffArtifacts: nodes.flatMap((node) => node.handoffArtifacts),

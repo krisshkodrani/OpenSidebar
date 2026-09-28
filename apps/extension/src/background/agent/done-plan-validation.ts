@@ -11,6 +11,7 @@
  */
 
 import type { ContextManager } from "./context";
+import type { MoneyTableRuntime } from "./loop-money-table";
 import type { TraceRecorder } from "./trace";
 import type { logger, SessionScopedLogger } from "../../utils";
 import type { PlanStep, TaskPlanner } from "./planner";
@@ -30,6 +31,7 @@ import {
   checkSummaryStepCoherence,
 } from "./verification";
 import { normalizeGuardText } from "./text-entry-guards";
+import type { PlannerValidationResult } from "./completion/pipeline";
 
 type PendingAsyncVerification = {
   stepIndex: number;
@@ -55,12 +57,57 @@ export interface DonePlanValidationHost {
   readonly originalQuery: string;
   readonly selectedSkillId: string | null;
   pendingAsyncVerification: PendingAsyncVerification;
-  isCompletedMoneyTableAggregateSummary(summary: string): boolean;
+  readonly moneyTable: Pick<MoneyTableRuntime, "isCompletedMoneyTableAggregateSummary">;
   getUncommittedInlineEditDoneRejection(
     currentStepIndex: number,
   ): string | null;
   hasRecentToolEvidenceForTokens(expectedTokens: string[]): boolean;
   stepHandler(step: AgentStep, update: boolean): void;
+}
+
+export interface DonePlanValidationRuntimeHost extends DonePlanValidationHost {
+  readonly taskId: string | null;
+  lastDonePlanValidation: PlannerValidationResult | null;
+}
+
+/** Bind plan validation and its recorded result to current loop state. */
+export class DonePlanValidationRuntime {
+  constructor(private readonly host: DonePlanValidationRuntimeHost) {}
+
+  async run(summary: string): Promise<PlannerValidationResult | null> {
+    if (!(this.host.taskId && this.host.planSubtasks.length > 0)) {
+      this.host.lastDonePlanValidation = null;
+      return null;
+    }
+    const precheck = evaluateDonePlanPrecheck(this.host, summary);
+    let shouldReject = precheck.shouldReject;
+    let rejectReason = precheck.rejectReason;
+    const effectiveCurrentIdx = precheck.effectiveCurrentIdx;
+
+    ({ shouldReject, rejectReason } = await evaluateDonePlanValidation(
+      this.host,
+      summary,
+      effectiveCurrentIdx,
+      precheck.completedMoneyTableAggregate,
+      shouldReject,
+      rejectReason,
+    ));
+
+    this.host.lastDonePlanValidation = {
+      rejected: shouldReject,
+      reason: rejectReason ?? "",
+    };
+
+    if (shouldReject) {
+      // The pipeline carries the run_done_plan_rejection effect.
+      return {
+        rejected: true,
+        reason: rejectReason ?? "",
+        effectiveCurrentIdx,
+      };
+    }
+    return { rejected: false, reason: "" };
+  }
 }
 
 export function evaluateDonePlanPrecheck(
@@ -75,7 +122,7 @@ summary: string,
   let shouldReject = false;
   let rejectReason = "";
   const completedMoneyTableAggregate =
-    host.isCompletedMoneyTableAggregateSummary(summary);
+    host.moneyTable.isCompletedMoneyTableAggregateSummary(summary);
   const completedCount = host.planSubtasks.filter(
     (s) => s.status === "completed",
   ).length;

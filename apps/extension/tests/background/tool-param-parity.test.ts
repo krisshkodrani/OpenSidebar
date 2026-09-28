@@ -20,9 +20,6 @@ import { fileURLToPath } from "node:url";
 import ts from "typescript";
 import "../setup";
 import * as toolDefs from "../../src/background/tools/definitions";
-// The ServiceNow adapter owns its own definitions; without this import the two
-// most complex schemas in the system would silently skip every parity check.
-import * as servicenowDefs from "../../src/background/tools/servicenow/definitions";
 import { ToolName, type ToolDefinition } from "../../src/types";
 
 const here = dirname(fileURLToPath(import.meta.url));
@@ -54,7 +51,7 @@ function isToolDefinition(value: unknown): value is ToolDefinition {
 
 /** All runtime definitions, keyed by wire name (`def.function.name`). */
 const defsByWireName = new Map<string, ToolDefinition>(
-  [...Object.values(toolDefs), ...Object.values(servicenowDefs)]
+  Object.values(toolDefs)
     .filter(isToolDefinition)
     .map((def) => [def.function.name, def]),
 );
@@ -64,7 +61,7 @@ const enumMemberByWireName = new Map<string, string>(
   Object.entries(ToolName).map(([member, wire]) => [wire, member]),
 );
 
-/** CLICK_ELEMENT -> "clickelementargs": tolerant of ServiceNow-style casing. */
+/** CLICK_ELEMENT -> "clickelementargs": tolerant of mixed casing. */
 function expectedInterfaceKey(enumMember: string): string {
   return `${enumMember.replace(/_/g, "").toLowerCase()}args`;
 }

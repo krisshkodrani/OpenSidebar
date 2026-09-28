@@ -32,7 +32,7 @@ export interface AgentLoopSkillToolsHost {
     stepWarnTurns: number;
   };
   log: {
-    info(category: string, message: string, data?: unknown): void;
+    info(category: "agent", message: string, data?: Record<string, unknown>): void;
   };
   originalQuery: string;
   planSteps: Array<{
@@ -45,10 +45,51 @@ export interface AgentLoopSkillToolsHost {
   selectedSkillId: string | null;
   enabledSkillPackIds?: string[];
   traceRecorder?: {
-    recordEvent(name: string, data?: unknown): void;
+    recordEvent(name: string, data?: Record<string, unknown>): void;
   };
   turnCount: number;
   turnsOnCurrentStep: number;
+}
+
+/** Bind skill-tool policy to the loop's current plan, skill, and page state. */
+export class SkillToolRuntime {
+  constructor(private readonly host: AgentLoopSkillToolsHost) {}
+
+  getActiveSkillToolPolicy(): ReturnType<typeof getActiveSkillToolPolicy> {
+    return getActiveSkillToolPolicy(this.host);
+  }
+
+  classifySkillToolPreference(toolName: ToolName): ReturnType<typeof classifySkillToolPreference> {
+    return classifySkillToolPreference(this.host, toolName);
+  }
+
+  applySkillToolRanking(tools: ToolDefinition[]): ToolDefinition[] {
+    return applySkillToolRanking(this.host, tools);
+  }
+
+  applySkillToolSuppression(tools: ToolDefinition[]): ToolDefinition[] {
+    return applySkillToolSuppression(this.host, tools);
+  }
+
+  recordSkillToolSelection(toolName: ToolName, mode: "parallel" | "sequential"): void {
+    recordSkillToolSelection(this.host, toolName, mode);
+  }
+
+  applyToolProfile(tools: ToolDefinition[]): ToolDefinition[] {
+    return applyToolProfile(this.host, tools);
+  }
+
+  getActiveToolProfileForStep(stepIndex: number): ToolProfile | undefined {
+    return getActiveToolProfileForStep(this.host, stepIndex);
+  }
+
+  isSkillOwnedListDetailReview(): boolean {
+    return isSkillOwnedListDetailReview(this.host);
+  }
+
+  isSkillOwnedMultiTabChecklistLoop(): boolean {
+    return isSkillOwnedMultiTabChecklistLoop(this.host);
+  }
 }
 
 export function getActiveSkillToolPolicy(

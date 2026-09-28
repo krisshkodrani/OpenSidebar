@@ -7,6 +7,7 @@ import {
   openHelperPage,
   type ExtensionContext,
 } from "./helpers/browser";
+import { navigateAndWait } from "./helpers/utils";
 
 describe("E2E: bounded cloud write command", () => {
   let ctx: ExtensionContext;
@@ -39,15 +40,25 @@ describe("E2E: bounded cloud write command", () => {
 
   test("semantically resolves, types, and verifies without Enter or submit", async () => {
     const target = await ctx.browser.newPage();
-    await target.goto(pageUrl);
+    await navigateAndWait(target, pageUrl);
     const helper = await openHelperPage(ctx);
     await target.bringToFront();
     const tabId = await helper.evaluate(async (url) => {
       await chrome.storage.local.set({ "opensidebar:e2eTestApiEnabled": true });
-      for (let attempt = 0; attempt < 50; attempt++) {
-        const tab = (await chrome.tabs.query({ active: true, currentWindow: true }))
+      let lastError = "target tab not found";
+      for (let attempt = 0; attempt < 200; attempt++) {
+        const tab = (await chrome.tabs.query({}))
           .find((item) => item.url === url);
         if (tab?.id != null) {
+          if (attempt > 0 && attempt % 20 === 0) {
+            const files = chrome.runtime.getManifest().content_scripts?.[0]?.js;
+            if (files?.length) {
+              await chrome.scripting.executeScript({
+                target: { tabId: tab.id },
+                files,
+              });
+            }
+          }
           try {
             const ready = await chrome.tabs.sendMessage(tab.id, {
               type: "E2E_CONTENT_READY_PING",
@@ -56,13 +67,14 @@ describe("E2E: bounded cloud write command", () => {
               payload: {},
             });
             if (ready?.ok) return tab.id;
-          } catch {
-            // The content script may still be starting.
+            lastError = `ping returned ${JSON.stringify(ready)}`;
+          } catch (error) {
+            lastError = String(error);
           }
         }
         await new Promise((resolve) => setTimeout(resolve, 100));
       }
-      throw new Error("content script did not become ready");
+      throw new Error(`content script did not become ready: ${lastError}`);
     }, pageUrl);
     const origin = new URL(pageUrl).origin;
     const now = new Date().toISOString();

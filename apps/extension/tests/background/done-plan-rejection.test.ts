@@ -4,6 +4,7 @@ import {
   runDonePlanRejection,
   type DonePlanRejectionHost,
 } from "../../src/background/agent/done-plan-rejection";
+import { PlanProgressRuntime, type AgentLoopPlanProgressHost } from "../../src/background/agent/loop-plan-progress";
 
 /**
  * Characterization coverage for the done-against-active-plan rejection policy
@@ -32,8 +33,7 @@ function makeHost(over: HostOverrides = {}): DonePlanRejectionHost {
       getSnapshot: vi.fn(() => null),
       getCurrentUrl: vi.fn(() => null),
     } as unknown as DonePlanRejectionHost["context"],
-    // Extra members consumed by advanceCompletedSubtasks in the auto-advance
-    // branch (reached via the `as unknown as AgentLoopPlanProgressHost` cast).
+    // Extra members consumed by plan advancement in the auto-advance branch.
     captureSubtaskResult: vi.fn(() => ""),
     escalationsOnCurrentStep: 0,
     lastPlanIndex: 0,
@@ -55,6 +55,7 @@ function makeHost(over: HostOverrides = {}): DonePlanRejectionHost {
     stepHandler: vi.fn(),
     ...over,
   } as unknown as DonePlanRejectionHost;
+  host.planProgress = new PlanProgressRuntime(host as unknown as AgentLoopPlanProgressHost);
   return host;
 }
 
@@ -104,6 +105,19 @@ describe("runDonePlanRejection — retry_step branch", () => {
 });
 
 describe("runDonePlanRejection — reject branch", () => {
+  test("uses an explicit diagnostic formatter when the host has no formatter method", () => {
+    const host = makeHost();
+    delete host.doneRejectionDiagnosticContent;
+    const formatDiagnostic = vi.fn(() => "DIAGNOSTIC");
+
+    runDonePlanRejection(host, "tc-explicit", "I clicked submit", "Verifier rejected", 0, formatDiagnostic);
+
+    expect(formatDiagnostic).toHaveBeenCalledOnce();
+    expect(host.context.addMessage).toHaveBeenCalledWith(
+      expect.objectContaining({ content: "DIAGNOSTIC" }),
+    );
+  });
+
   test("a non-plan-incomplete reason rejects: counts, guards, diagnoses", () => {
     const host = makeHost({ doneRejections: 0 });
 

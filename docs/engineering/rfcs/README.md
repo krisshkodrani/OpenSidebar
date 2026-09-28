@@ -267,8 +267,8 @@ carve-out confirmed at stamp time.
 
 LP-15 was decision-stamped and executed 2026-07-05→07 (all twelve phases'
 first passes merged); LP-16 picks up its deferred decomposition follow-ups
-and extends them to every oversized file. LP-16 is **not stamped** — same
-status rules as above.
+and extends them to every oversized file. LP-16 is **decision stamped**;
+its staged remainder plan governs the unfinished Phase 3 driver flip.
 
 | #     | RFC                                                                                                                  | Problem                                                                                                                                                                                                                                                | Depends on                                                                           |
 | ----- | -------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------ |

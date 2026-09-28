@@ -1,5 +1,32 @@
 # Changelog
 
+## [0.7.7] - 2026-09-26
+
+### Added
+
+- Added an opt-in setting for active tasks to read and interact with embedded
+  cross-origin pages. It remains off by default in the published extension.
+- Added curated Playground fixtures and a consistent responsive application
+  design across the signed-in web experience.
+
+### Fixed
+
+- Improved retention of requested facts seen during a workflow for more
+  accurate final reporting, and tightened completion evidence and recovery paths.
+- Preserved remote mission state during migration replay and bounded telemetry
+  delivery retries per record.
+- Kept the production build and typecheck graph aligned with their workspace
+  dependencies.
+
+### Internal
+
+- Split the agent completion, turn, and orchestration code into smaller modules
+  under the shrink-only size guard.
+- Removed ServiceNow-specific runtime and benchmark wiring while retaining
+  generic list, catalog, and knowledge tools.
+- Kept generated traces and release reports local; added a reviewed, sanitized
+  trace dataset preparation path for future model experiments.
+
 ## [0.7.6] - 2026-09-13
 
 ### Added

@@ -1,10 +1,9 @@
 /**
- * Perception Warmup — Proactive page interpretation
+ * Perception Warmup — Proactive page capture
  *
- * Runs perception (screenshot + vision model) as soon as the side panel opens,
- * before the user types anything. When the user finally sends a message,
- * the cached result is consumed and the first agent turn starts instantly
- * (skipping the 1-2s vision API call).
+ * Captures a page snapshot and screenshot when the side panel opens, before
+ * the user types anything. The first agent turn may reuse that capture; the
+ * executor performs its own vision work after the task starts.
  *
  * Event-driven: waits for CONTENT_SCRIPT_READY signal instead of sleeping.
  * Cache is keyed by (tabId, fingerprint) with a 30s staleness guard.
@@ -18,6 +17,7 @@ import {
 import { logger } from "../../utils";
 import { isTabReady, ensureContentScript } from "../infrastructure/tab-ready";
 import { transformScreenshot } from "./screenshot-transform";
+import { requestPageSnapshot } from "./frame-snapshot-runtime";
 import { computeSnapshotFingerprint } from "../agent/stagnation";
 
 /** Maximum age (ms) before a warmup entry is considered stale. */
@@ -33,8 +33,8 @@ async function captureVisibleTabWithRetry(
       windowId,
       options as chrome.tabs.CaptureVisibleTabOptions,
     )) as unknown as string;
-  } catch (error: any) {
-    const message = String(error?.message || "");
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
     const isQuotaError =
       /MAX_CAPTURE_VISIBLE_TAB_CALLS_PER_SECOND/i.test(message) ||
       /\bquota\b/i.test(message);
@@ -143,12 +143,7 @@ class PerceptionWarmup {
       }
 
       // 2. Request snapshot from content script
-      const snapResponse = await chrome.tabs.sendMessage(tabId, {
-        type: "DOM_SNAPSHOT_REQUEST",
-        requestId: crypto.randomUUID(),
-        source: MessageSource.BACKGROUND,
-        payload: { refresh: true },
-      });
+      const snapResponse = await requestPageSnapshot(tabId, { refresh: true });
 
       const snapshot: DomSnapshot | undefined = snapResponse?.payload?.snapshot;
       if (!snapshot || !snapshot.elements) {
@@ -176,7 +171,7 @@ class PerceptionWarmup {
         if (tab.active) {
           // LP-9: same owned pipeline as refreshPerception — q90 capture,
           // then transform (resolution/format/scale) before anything
-          // downstream (perceive or the loop's warmup fast path) sees it.
+          // downstream (the loop's warmup fast path) sees it.
           const captured = await captureVisibleTabWithRetry(tab.windowId, {
             format: "jpeg",
             quality: 90,
@@ -198,10 +193,10 @@ class PerceptionWarmup {
             })
           )?.payload?.documentState;
         }
-      } catch (e: any) {
+      } catch (e) {
         logger.warn("warmup", "Screenshot capture failed (non-fatal)", {
           tabId,
-          error: e?.message,
+          error: e instanceof Error ? e.message : String(e),
         });
       }
 
@@ -232,10 +227,10 @@ class PerceptionWarmup {
       });
 
       return entry;
-    } catch (e: any) {
+    } catch (e) {
       logger.warn("warmup", "Perception warmup failed (non-fatal)", {
         tabId,
-        error: e?.message,
+        error: e instanceof Error ? e.message : String(e),
       });
       return null;
     }

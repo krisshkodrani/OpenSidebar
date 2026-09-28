@@ -1,5 +1,10 @@
 # Scaling Skills Across Environments Without Prompt Bloat
 
+> **Superseded platform example (2026-09-28):** ServiceNow support was
+> removed by owner decision. The ServiceNow pack and activation rules below
+> document the former implementation, not current routing policy. Generic
+> workflow skills and evidence-based routing remain the design direction.
+
 > **Status: implemented.** The routing layer described here shipped in
 > `orchestrator/skills.ts` (`resolveEligibleSkillCandidates` inside
 > `selectPrimarySkill`, candidate cap `MAX_ROUTED_SKILL_CANDIDATES = 32`),
@@ -12,8 +17,7 @@
 > differently than the layer examples: most "enterprise" examples below
 > (list filter/sort, catalog ordering, chart extraction) ship as **core
 > (unpacked) always-eligible skills**; the gated enterprise packs today are
-> `communication-workflows` and `procurement-workflows`, plus the
-> `servicenow-platform` platform pack.
+> `communication-workflows` and `procurement-workflows`, .
 
 ## Summary
 
