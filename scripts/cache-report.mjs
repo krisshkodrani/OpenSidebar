@@ -89,6 +89,9 @@ function parseArgs(argv) {
     else if (arg === "--") continue;
     else throw new Error(`Unknown argument: ${arg}`);
   }
+  if (!Number.isSafeInteger(args.minTurns) || args.minTurns < 1) {
+    throw new Error("--min-turns must be a positive integer");
+  }
   return args;
 }
 
@@ -229,7 +232,7 @@ function emptyGroup(key) {
  * different cache behaviour — pooling them produces a number that describes no
  * real workload.
  */
-export function aggregate(turns, sessions) {
+export function aggregate(turns, sessions, minTurns = MIN_WARM_TURNS_FOR_VERDICT) {
   const groups = new Map();
   const turnCountBySession = new Map();
   for (const turn of turns) {
@@ -339,10 +342,10 @@ export function aggregate(turns, sessions) {
     }
   }
 
-  return [...groups.values()].map(finalizeGroup);
+  return [...groups.values()].map((group) => finalizeGroup(group, minTurns));
 }
 
-function finalizeGroup(group) {
+function finalizeGroup(group, minTurns) {
   const cachedSorted = [...group.cachedTokenSamples].sort((a, b) => a - b);
   const stableSorted = [...group.stablePrefixPctSamples].sort((a, b) => a - b);
   const offsetSorted = [...group.divergenceOffsetSamples].sort((a, b) => a - b);
@@ -412,11 +415,11 @@ function finalizeGroup(group) {
       Object.values(group.outcomes).reduce((a, b) => a + b, 0),
     ),
 
-    verdictEligible: group.warmTurns >= MIN_WARM_TURNS_FOR_VERDICT,
+    verdictEligible: group.warmTurns >= minTurns,
   };
 }
 
-function formatGroup(group) {
+function formatGroup(group, minTurns) {
   const lines = [];
   lines.push(
     `\n── ${group.tier} · ${group.model} @ ${group.provider} · run length ${group.runLengthBin} · prompt ${group.prompt}`,
@@ -492,7 +495,7 @@ function formatGroup(group) {
 
   if (!group.verdictEligible) {
     lines.push(
-      `   ⚠ ${group.warmTurns} warm turns < ${MIN_WARM_TURNS_FOR_VERDICT} — too few to support a verdict`,
+      `   ⚠ ${group.warmTurns} warm turns < ${minTurns} — too few to support a verdict`,
     );
   }
   return lines.join("\n");
@@ -559,13 +562,13 @@ function formatComparison(baseline, current) {
   return lines.join("\n");
 }
 
-function formatVerdict(report) {
+function formatVerdict(report, minTurns) {
   const eligible = report.groups.filter((g) => g.verdictEligible);
   const lines = ["\n═══ Verdict ═══"];
 
   if (eligible.length === 0) {
     lines.push(
-      `No population has ${MIN_WARM_TURNS_FOR_VERDICT}+ warm turns. Collect more runs before concluding anything.`,
+      `No population has ${minTurns}+ warm turns. Collect more runs before concluding anything.`,
     );
     return lines.join("\n");
   }
@@ -656,12 +659,13 @@ function main() {
     return;
   }
 
-  const groups = aggregate(turns, sessions).sort(
+  const groups = aggregate(turns, sessions, args.minTurns).sort(
     (a, b) => b.warmTurns - a.warmTurns,
   );
   const report = {
     generatedAtMs: Date.now(),
     filters: { since: args.since ?? null, session: args.session ?? null },
+    minWarmTurns: args.minTurns,
     totals: {
       turns: turns.length,
       sessions: new Set(turns.map((t) => t.sessionId)).size,
@@ -683,8 +687,8 @@ function main() {
   console.log(
     `Prompt-cache report — ${report.totals.turns} turns, ${report.totals.sessions} session(s), ${report.totals.populations} population(s)`,
   );
-  for (const group of groups) console.log(formatGroup(group));
-  console.log(formatVerdict(report));
+  for (const group of groups) console.log(formatGroup(group, args.minTurns));
+  console.log(formatVerdict(report, args.minTurns));
 
   if (args.baseline) {
     const baseline = JSON.parse(readFileSync(resolve(args.baseline), "utf8"));

@@ -27,4 +27,6 @@ test("cache report weighs task success by session, not by turn count", () => {
   assert.equal(group.warmTurns, 2);
   assert.deepEqual(group.outcomes, { completed: 1, failed: 1 });
   assert.equal(group.taskSuccessPct, 50);
+  assert.equal(group.verdictEligible, false);
+  assert.equal(aggregate(turns, sessions, 2)[0].verdictEligible, true);
 });
