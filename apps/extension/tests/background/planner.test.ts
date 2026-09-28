@@ -2177,7 +2177,7 @@ describe("OrchestratorPlanner.buildNodes returns BuildNodesResult", () => {
         expect(result.nodes[0].description).toMatch(/return and check it off/i);
     });
 
-    test("selects multi-tab-checklist-workflow for natural procurement checklist requests", async () => {
+    test("does not infer multi-tab navigation from a purchase checklist alone", async () => {
         completeImpl = () => Promise.resolve({
             role: "assistant",
             content: '{"isMultiStep": true, "difficulty": "complex", "subtasks": ["Buy the first procurement item", "Buy the second procurement item", "Mark both complete"]}',
@@ -2192,10 +2192,8 @@ describe("OrchestratorPlanner.buildNodes returns BuildNodesResult", () => {
             "https://example.com/procurement",
         );
 
-        expect(result.nodes).toHaveLength(1);
-        expect(result.nodes[0].selectedSkillId).toBe("multi-tab-checklist-workflow");
-        expect(result.nodes[0].description).toMatch(/Buy the first two items/i);
-        expect(result.nodes[0].successCriteria).toMatch(/marked, recorded/i);
+        expect(result.nodes.length).toBeGreaterThan(1);
+        expect(result.nodes.map((node) => node.selectedSkillId)).not.toContain("multi-tab-checklist-workflow");
     });
 
     test("does not collapse procurement workflows when the procurement pack is disabled", async () => {
@@ -2969,17 +2967,17 @@ describe("selectPrimarySkill", () => {
         expect(
             selectPrimarySkill({
                 ...input,
-                enabledSkillPackIds: ["procurement-workflows"],
+                enabledSkillPackIds: ["source-list-workflows"],
             })?.id,
         ).toBe("multi-tab-checklist-workflow");
     });
 
-    test("matches natural procurement checklist workflows without tab wording", () => {
+    test("matches source-list loops when target links are explicit without tab wording", () => {
         expect(
             selectPrimarySkill({
-                query: "Buy the first two items from the procurement list and mark them complete.",
-                objective: "Complete the requested procurement list items",
-                successCriteria: "The first two rows are marked complete on the procurement list",
+                query: "Open the first two links from the reading list, review each page, and mark them complete.",
+                objective: "Review the linked pages and update the reading list",
+                successCriteria: "The first two rows are marked complete on the reading list",
             })?.id,
         ).toBe("multi-tab-checklist-workflow");
     });

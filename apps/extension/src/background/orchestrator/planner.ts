@@ -226,10 +226,6 @@ function isSkillOwnedMultiTabChecklistRequest(
       ...nodes.flatMap((node) => [node.description, node.successCriteria]),
     ].join(" "),
   );
-  const hasProcurementSurface =
-    /\bprocurement\s+list\b/i.test(corpus) ||
-    /\b(?:store|stores|store\s+page|store\s+link)\b/i.test(corpus);
-  const hasPurchaseIntent = /\b(?:buy|purchase|procure|order)\b/i.test(corpus);
   const hasExplicitTabIntent =
     /\b(?:new|separate|another|other|multiple)\s+tabs?\b|\bswitch\b[\s\S]{0,40}\btabs?\b|\bacross\s+tabs?\b/i.test(
       corpus,
@@ -238,6 +234,8 @@ function isSkillOwnedMultiTabChecklistRequest(
     /\b(?:list|checklist|rows?|items?|links?|listings?|articles?|dashboards?|reports?|job board|research)\b/i.test(
       corpus,
     );
+  const hasTargetNavigationIntent =
+    /\b(?:open|visit|follow)\b[\s\S]{0,80}\b(?:links?|pages?|listings?|articles?|dashboards?|reports?|stores?)\b/i.test(corpus);
   const hasMultipleItems =
     /\bfirst\s+(?:\w+|\d+)\s+items?\b/i.test(corpus) ||
     /\bfirst\s+(?:\w+|\d+)\s+(?:links?|listings?|articles?|dashboards?|reports?|jobs?)\b/i.test(
@@ -257,13 +255,13 @@ function isSkillOwnedMultiTabChecklistRequest(
       corpus,
     ) ||
     /\bcheckbox\b/i.test(corpus) ||
-    /\b(?:return|switch back|come back)\b[\s\S]{0,80}\b(?:mark|check|record|source|list|board)\b/i.test(
+    /\b(?:return|switch back|come back)\b[\s\S]{0,80}\b(?:mark|check|record|note)\b/i.test(
       corpus,
     );
 
   return (
-    ((hasProcurementSurface && hasPurchaseIntent) ||
-      (hasExplicitTabIntent && hasSourceSurface)) &&
+    hasSourceSurface &&
+    (hasExplicitTabIntent || hasTargetNavigationIntent) &&
     hasMultipleItems &&
     hasReturnOrMarkIntent
   );

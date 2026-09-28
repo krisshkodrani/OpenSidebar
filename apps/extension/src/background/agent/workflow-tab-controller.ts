@@ -40,112 +40,6 @@ function normalizeUrl(url: string | null | undefined): string | null {
   }
 }
 
-function getProcurementTabRole(
-  url: string | null | undefined,
-): "checklist" | "store" | null {
-  if (!url) return null;
-  try {
-    const parsed = new URL(url);
-    if (parsed.pathname !== "/procurement") return null;
-    return parsed.searchParams.has("store") ? "store" : "checklist";
-  } catch {
-    return null;
-  }
-}
-
-function getProcurementStoreKey(url: string | null | undefined): string | null {
-  if (!url) return null;
-  try {
-    const parsed = new URL(url);
-    if (parsed.pathname !== "/procurement") return null;
-    const store = parsed.searchParams.get("store");
-    return store ? store.trim().toLowerCase() : null;
-  } catch {
-    return null;
-  }
-}
-
-function evaluateProcurementCompatibilityRedirect(
-  input: WorkflowTabControllerInput,
-): WorkflowTabRedirectDecision | null {
-  if (input.skillId !== "multi-tab-checklist-workflow") return null;
-  if (
-    input.toolName !== ToolName.CLICK_ELEMENT &&
-    input.toolName !== ToolName.CREATE_TAB &&
-    input.toolName !== ToolName.RIGHT_CLICK
-  ) {
-    return null;
-  }
-  const resolvedTargetUrl = normalizeUrl(input.targetUrl);
-  if (!resolvedTargetUrl) return null;
-
-  // Legacy procurement protection is intentionally limited to the /procurement
-  // fixture route. Generic checklist pages fall through to URL-based tab reuse.
-  const targetRole = getProcurementTabRole(resolvedTargetUrl);
-  if (!targetRole) return null;
-
-  const currentRole = getProcurementTabRole(input.currentUrl);
-  const currentStoreKey = getProcurementStoreKey(input.currentUrl);
-  const checklistTabId =
-    input.workspaceTabs.find(
-      (tab) =>
-        typeof tab.id === "number" &&
-        tab.id !== input.currentTabId &&
-        getProcurementTabRole(tab.url) === "checklist",
-    )?.id ?? null;
-
-  if (
-    targetRole === "checklist" &&
-    currentRole === "store" &&
-    checklistTabId &&
-    checklistTabId !== input.currentTabId
-  ) {
-    return {
-      controllerId: "multi-tab-checklist-workflow",
-      traceEvent: "workflow_tab_redirect",
-      message:
-        `The original procurement checklist is already open as tab ${checklistTabId}. ` +
-        `Use switch_tab({"tabId": ${checklistTabId}}) to return there instead of interacting with an in-page Procurement link.`,
-    };
-  }
-
-  const targetStoreKey = getProcurementStoreKey(resolvedTargetUrl);
-  if (!targetStoreKey) return null;
-  const existingStoreTab = input.workspaceTabs.find(
-    (tab) =>
-      typeof tab.id === "number" &&
-      tab.id !== input.currentTabId &&
-      getProcurementStoreKey(tab.url) === targetStoreKey,
-  );
-  if (existingStoreTab?.id) {
-    return {
-      controllerId: "multi-tab-checklist-workflow",
-      traceEvent: "workflow_tab_redirect",
-      message:
-        `The ${targetStoreKey} store is already open as tab ${existingStoreTab.id}. ` +
-        `Use switch_tab({"tabId": ${existingStoreTab.id}}) instead of reopening or context-clicking the same store page.`,
-    };
-  }
-
-  if (
-    currentRole === "store" &&
-    currentStoreKey &&
-    targetStoreKey === currentStoreKey &&
-    (input.toolName === ToolName.CLICK_ELEMENT ||
-      input.toolName === ToolName.RIGHT_CLICK)
-  ) {
-    return {
-      controllerId: "multi-tab-checklist-workflow",
-      traceEvent: "workflow_tab_redirect",
-      message:
-        `You are already on the ${currentStoreKey} store page. ` +
-        `Do not reopen the same store from inside this procurement loop; either finish the purchase or switch back to the checklist tab.`,
-    };
-  }
-
-  return null;
-}
-
 function evaluateMultiTabChecklistRedirect(
   input: WorkflowTabControllerInput,
 ): WorkflowTabRedirectDecision | null {
@@ -160,6 +54,15 @@ function evaluateMultiTabChecklistRedirect(
 
   const resolvedTargetUrl = normalizeUrl(input.targetUrl);
   if (!resolvedTargetUrl) return null;
+
+  if (normalizeUrl(input.currentUrl) === resolvedTargetUrl &&
+      input.toolName !== ToolName.CREATE_TAB) {
+    return {
+      controllerId: "multi-tab-checklist-workflow",
+      traceEvent: "workflow_tab_redirect",
+      message: "This checklist target page is already active. Complete the item here or switch back to the source tab instead of reopening it.",
+    };
+  }
 
   const existingTargetTab = input.workspaceTabs.find(
     (tab) =>
@@ -244,7 +147,6 @@ export function evaluateWorkflowTabRedirect(
   input: WorkflowTabControllerInput,
 ): WorkflowTabRedirectDecision | null {
   return (
-    evaluateProcurementCompatibilityRedirect(input) ??
     evaluateMultiTabChecklistRedirect(input) ??
     evaluateListDetailLoopRedirect(input) ??
     evaluateCrossTabCompareRedirect(input)

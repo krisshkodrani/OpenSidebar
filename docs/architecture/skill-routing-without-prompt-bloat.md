@@ -17,7 +17,7 @@
 > differently than the layer examples: most "enterprise" examples below
 > (list filter/sort, catalog ordering, chart extraction) ship as **core
 > (unpacked) always-eligible skills**; the gated enterprise packs today are
-> `communication-workflows` and `procurement-workflows`, .
+> `communication-workflows` and `source-list-workflows`.
 
 ## Summary
 

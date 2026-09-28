@@ -4681,7 +4681,7 @@ Showing 6-10 of 50`,
     expect(result).toBe(true);
   });
 
-  test("bypasses stale plan rejection for satisfied procurement loop tasks", () => {
+  test("does not treat a partially checked source list as completed work", () => {
     const agent = new AgentLoop("test-key", {
       onStatusUpdate: vi.fn(),
       onMessage: vi.fn(),
@@ -4718,7 +4718,7 @@ Showing 6-10 of 50`,
       currentStepIndex: 1,
     });
 
-    expect(result).toBe(true);
+    expect(result).toBe(false);
   });
 
   test("allows tab management tools for skill-owned procurement loops", () => {

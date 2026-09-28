@@ -320,6 +320,8 @@ describe("settings storage", () => {
         "custom-pack",
       ]),
     ).toEqual(["communication-workflows", "custom-pack"]);
+    expect(normalizeEnabledSkillPackIds(["procurement-workflows", "source-list-workflows"]))
+      .toEqual(["source-list-workflows"]);
 
     const syncSet = vi.fn(async () => {});
     chrome.storage.sync.set = syncSet as any;

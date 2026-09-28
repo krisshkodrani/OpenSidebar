@@ -13,7 +13,7 @@ describe("workflow tab controller", () => {
     expect(shouldCheckWorkflowTabRedirect(ToolName.READ_PAGE)).toBe(false);
   });
 
-  test("procurement loop redirects back to an existing checklist tab", () => {
+  test("returns to an existing checklist tab by URL", () => {
     const decision = evaluateWorkflowTabRedirect({
       skillId: "multi-tab-checklist-workflow",
       toolName: ToolName.CLICK_ELEMENT,
@@ -30,11 +30,11 @@ describe("workflow tab controller", () => {
       controllerId: "multi-tab-checklist-workflow",
       traceEvent: "workflow_tab_redirect",
       message:
-        'The original procurement checklist is already open as tab 11. Use switch_tab({"tabId": 11}) to return there instead of interacting with an in-page Procurement link.',
+        'This checklist target page is already open as tab 11. Use switch_tab({"tabId": 11}) to reuse it instead of opening a duplicate tab.',
     });
   });
 
-  test("procurement loop redirects to an existing matching store tab", () => {
+  test("reuses an existing item tab by URL", () => {
     const decision = evaluateWorkflowTabRedirect({
       skillId: "multi-tab-checklist-workflow",
       toolName: ToolName.CREATE_TAB,
@@ -51,11 +51,11 @@ describe("workflow tab controller", () => {
       controllerId: "multi-tab-checklist-workflow",
       traceEvent: "workflow_tab_redirect",
       message:
-        'The nimbus store is already open as tab 33. Use switch_tab({"tabId": 33}) instead of reopening or context-clicking the same store page.',
+        'This checklist target page is already open as tab 33. Use switch_tab({"tabId": 33}) to reuse it instead of opening a duplicate tab.',
     });
   });
 
-  test("procurement loop blocks right-click escape on an already open store link", () => {
+  test("right-click also reuses an existing item tab", () => {
     const decision = evaluateWorkflowTabRedirect({
       skillId: "multi-tab-checklist-workflow",
       toolName: ToolName.RIGHT_CLICK,
@@ -72,7 +72,7 @@ describe("workflow tab controller", () => {
       controllerId: "multi-tab-checklist-workflow",
       traceEvent: "workflow_tab_redirect",
       message:
-        'The nimbus store is already open as tab 33. Use switch_tab({"tabId": 33}) instead of reopening or context-clicking the same store page.',
+        'This checklist target page is already open as tab 33. Use switch_tab({"tabId": 33}) to reuse it instead of opening a duplicate tab.',
     });
   });
 
@@ -97,7 +97,21 @@ describe("workflow tab controller", () => {
     });
   });
 
-  test("multi-tab checklist workflow does not treat non-procurement store params as procurement tabs", () => {
+  test("does not reopen the active item page during a checklist loop", () => {
+    const decision = evaluateWorkflowTabRedirect({
+      skillId: "multi-tab-checklist-workflow",
+      toolName: ToolName.CLICK_ELEMENT,
+      currentTabId: 22,
+      currentUrl: "https://fixture.test/articles/one",
+      targetUrl: "https://fixture.test/articles/one",
+      workspaceTabs: [{ id: 11, url: "https://fixture.test/reading-list" },
+        { id: 22, url: "https://fixture.test/articles/one" }],
+    });
+    expect(decision?.message).toContain("already active");
+    expect(decision?.message).toContain("source tab");
+  });
+
+  test("query parameters are ordinary URL identity, independent of path", () => {
     const decision = evaluateWorkflowTabRedirect({
       skillId: "multi-tab-checklist-workflow",
       toolName: ToolName.CLICK_ELEMENT,

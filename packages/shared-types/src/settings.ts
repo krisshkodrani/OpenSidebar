@@ -14,7 +14,7 @@ export type LaneTopologyMode = "simple" | "standard" | "full";
 export const DEFAULT_MAX_IMAGE_PROMPT_TOKEN_ESTIMATE = 25_000;
 export const DEFAULT_ENABLED_SKILL_PACK_IDS = [
   "communication-workflows",
-  "procurement-workflows",
+  "source-list-workflows",
 ];
 
 export interface UserSettings {

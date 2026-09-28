@@ -811,13 +811,13 @@ export const SKILL_CATALOG: SkillDescriptor[] = [
     name: "Multi-Tab Checklist Workflow",
     description:
       "Work through a source list or checklist where each item requires opening a target page in another tab, completing or extracting item-specific work, returning to the source tab, and recording progress before repeating.",
-    packId: "procurement-workflows",
+    packId: "source-list-workflows",
     tags: ["workflow", "tabs", "checklist", "multi-tab", "review"],
     triggers: [
       "open each item in a new tab",
       "open links in separate tabs then return to the list",
       "review checklist items across tabs and mark them done",
-      "procurement list store tabs",
+      "source list item pages in separate tabs",
     ],
     maturity: "candidate",
     preferredTools: [

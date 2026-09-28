@@ -81,7 +81,7 @@ export const SKILL_PACK_OPTIONS = [
     description: "Careful email reply and message composition guidance.",
   },
   {
-    id: "procurement-workflows",
+    id: "source-list-workflows",
     label: "Multi-tab workflows",
     description:
       "Checklist and source-list tasks that intentionally span tabs.",

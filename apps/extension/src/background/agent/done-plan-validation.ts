@@ -356,35 +356,6 @@ params: {
       snapshotText,
     );
 
-  const multiTabChecklistIntent =
-    host.selectedSkillId === "multi-tab-checklist-workflow" ||
-    /\b(procurement|purchase|buy|checklist|source list|separate tabs?|new tabs?)\b/i.test(
-      taskContext,
-    );
-  if (multiTabChecklistIntent) {
-    const summaryShowsTargetWork =
-      /\b(purchase|purchased|order|ordered|confirmed|bought|place(?:d)? order|reviewed|captured|extracted|recorded)\b/i.test(
-        summaryText,
-      );
-    const summaryShowsSourceReturn =
-      /\b(check(?:ed|ing)? off|mark(?:ed|ing)? .* (?:done|complete|reviewed)|record(?:ed|ing)? .* reviewed|returned? to .* (?:list|checklist|procurement|board|source)|back on .* (?:list|checklist|procurement|board|source))\b/i.test(
-        summaryText,
-      );
-    const sourceLooksComplete =
-      /\b\d+\s+of\s+\d+\s+items?\s+completed\b/i.test(snapshotText) ||
-      /\b(mark .* as done|all items procured|viewed|reviewed|completed)\b/i.test(
-        snapshotText,
-      );
-
-    if (
-      summaryShowsTargetWork &&
-      summaryShowsSourceReturn &&
-      sourceLooksComplete
-    ) {
-      return true;
-    }
-  }
-
   if (
     confirmationIntent &&
     summaryShowsFinalization &&

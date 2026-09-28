@@ -34,7 +34,7 @@ const BUILT_IN_SKILL_PACKS: SkillPack[] = [
     skillIds: ["email-reply-careful"],
   },
   {
-    id: "procurement-workflows",
+    id: "source-list-workflows",
     name: "Multi-Tab Workflows",
     description:
       "Default checklist skills for source-list workflows that intentionally span multiple tabs.",
@@ -121,16 +121,14 @@ const tableAggregateIntentPattern =
   /\b(highest|max(?:imum)?|largest|most|lowest|min(?:imum)?|smallest|least)\b[\s\S]{0,120}\b(salar(?:y|ies)|pay|compensation|price|cost|amount|revenue|budget|value|total|score)\b|\b(salar(?:y|ies)|pay|compensation|price|cost|amount|revenue|budget|value|total|score)\b[\s\S]{0,120}\b(highest|max(?:imum)?|largest|most|lowest|min(?:imum)?|smallest|least)\b/i;
 const paginatedRecordLookupIntentPattern =
   /\b(find|search for|look up|locate|open|review)\b[\s\S]{0,120}\b(?:#[0-9]+|[A-Z]+-\d+|[A-Z][a-z]+(?:\s+[A-Z][a-z]+)?|post\s+#?\d+|record|row|ticket|employee|item)\b|\b(?:salary|status|priority|code|amount|email|owner|count)\b[\s\S]{0,120}\b(?:for|of)\b[\s\S]{0,80}\b(?:#[0-9]+|[A-Z]+-\d+|[A-Z][a-z]+(?:\s+[A-Z][a-z]+)?)\b/i;
-const procurementLoopPattern =
-  /\b(procurement|purchase|buy)\b[\s\S]{0,160}\b(new tab|another tab|each store|store page|store link)\b[\s\S]{0,160}\b(check (?:it|them) off|mark (?:it|them) done|come back and check|return and check|checkbox)\b/i;
-const naturalProcurementChecklistPattern =
-  /\b(?:buy|purchase|procure)\b[\s\S]{0,120}\b(?:first\s+\w+|first\s+\d+|\d+)\s+items?\b[\s\S]{0,120}\bprocurement\s+list\b[\s\S]{0,120}\b(?:mark|check)\s+(?:them|items?|rows?)\s+(?:complete|done|off)\b/i;
+const targetNavigationPattern =
+  /\b(?:open|visit|follow)\b[\s\S]{0,80}\b(?:links?|pages?|listings?|articles?|dashboards?|reports?|stores?)\b/i;
 const explicitTabIntentPattern =
   /\b(?:new|separate|another|other|multiple)\s+tabs?\b|\bopen\b[\s\S]{0,60}\b(?:tabs?|new windows?)\b|\bswitch\b[\s\S]{0,40}\btabs?\b|\bacross\s+tabs?\b/i;
 const sourceListLoopPattern =
   /\b(?:source\s+)?(?:list|checklist|rows?|items?|links?|listings?|articles?|dashboards?|reports?|job listings?|research links?)\b/i;
 const sourceProgressPattern =
-  /\b(?:return|come back|switch back|go back)\b[\s\S]{0,120}\b(?:source|list|checklist|board|page|tab)\b|\b(?:mark|check|record|note)\b[\s\S]{0,80}\b(?:done|complete|reviewed|finished|progress|each|item|row|article)\b/i;
+  /\b(?:mark|check|record|note)\b[\s\S]{0,80}\b(?:done|complete|reviewed|finished|progress|each|item|row|article|off)\b|\b(?:return|come back|switch back|go back)\b[\s\S]{0,120}\b(?:mark|check|record|note)\b/i;
 const repeatedItemPattern =
   /\b(?:first\s+\w+|first\s+\d+|\d+|two|three|four|five|six|seven|eight|nine|ten|all|each|every)\s+(?:items?|rows?|links?|listings?|articles?|dashboards?|dashboard\s+tabs?|reports?|jobs?)\b/i;
 const overlayRecoveryPattern =
@@ -169,15 +167,13 @@ function hasCommunicationPackSignal(input: SkillMatcherInput): boolean {
   return emailReplyPattern.test(corpus) || threadMessagePattern.test(corpus);
 }
 
-function hasProcurementPackSignal(input: SkillMatcherInput): boolean {
+function hasSourceListPackSignal(input: SkillMatcherInput): boolean {
   const corpus = buildRoutingCorpus(input);
   return (
-    naturalProcurementChecklistPattern.test(corpus) ||
-    procurementLoopPattern.test(corpus) ||
-    (explicitTabIntentPattern.test(corpus) &&
+    (explicitTabIntentPattern.test(corpus) || targetNavigationPattern.test(corpus)) &&
       sourceListLoopPattern.test(corpus) &&
       repeatedItemPattern.test(corpus) &&
-      sourceProgressPattern.test(corpus))
+      sourceProgressPattern.test(corpus)
   );
 }
 
@@ -203,7 +199,7 @@ function getPackActivationReason(
     };
   }
 
-  if (pack.id === "procurement-workflows" && hasProcurementPackSignal(input)) {
+  if (pack.id === "source-list-workflows" && hasSourceListPackSignal(input)) {
     return {
       reason:
         "Source-list or multi-tab checklist workflow signals are present.",
@@ -298,7 +294,8 @@ function resolveEnabledSkillPackIds(
   options?: SkillCatalogOptions,
 ): Set<string> | null {
   if (!options?.enabledSkillPackIds) return null;
-  return new Set(options.enabledSkillPackIds);
+  return new Set(options.enabledSkillPackIds.map((id) =>
+    id === "procurement-workflows" ? "source-list-workflows" : id));
 }
 
 /**
@@ -622,16 +619,10 @@ function selectPrimarySkillWithKeywordMatcher(
   const currentStepNeedsTransactionalCheck =
     transactionPattern.test(stepCorpus);
   const matchesMultiTabChecklistWorkflow =
-    naturalProcurementChecklistPattern.test(corpus) ||
-    procurementLoopPattern.test(corpus) ||
-    (/\b(procurement list|store)\b/i.test(corpus) &&
-      /\b(new tab|another tab)\b/i.test(corpus) &&
-      /\b(buy|purchase)\b/i.test(corpus) &&
-      /\b(check off|mark .* done|checkbox)\b/i.test(corpus)) ||
-    (explicitTabIntentPattern.test(corpus) &&
+    (explicitTabIntentPattern.test(corpus) || targetNavigationPattern.test(corpus)) &&
       sourceListLoopPattern.test(corpus) &&
       repeatedItemPattern.test(corpus) &&
-      sourceProgressPattern.test(corpus));
+      sourceProgressPattern.test(corpus);
 
   if (currentTaskLooksLikeAshbyJobApplication) {
     const selection = selectEnabledSkill(
