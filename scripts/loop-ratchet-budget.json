@@ -25,7 +25,7 @@
     "apps/extension/src/background/agent/loop-helpers.ts": 2543,
     "apps/extension/src/background/agent/planner.ts": 1918,
     "apps/extension/src/background/agent/context.ts": 1540,
-    "apps/extension/src/background/llm/client.ts": 1507,
+    "apps/extension/src/background/llm/client.ts": 1505,
     "apps/extension/src/background/orchestrator/planner.ts": 1626
   }
 }

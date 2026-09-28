@@ -75,7 +75,7 @@ export interface ReadE2EConfigOptions {
 
 const PROFILE_DEFAULTS: Record<E2EProfileName, ProfileDefaults> = {
   local: {
-    provider: "fireworks",
+    provider: "openrouter",
     headless: false,
     singleProcess: false,
     panelMode: "overlay",
@@ -88,7 +88,7 @@ const PROFILE_DEFAULTS: Record<E2EProfileName, ProfileDefaults> = {
     diagnostic: false,
   },
   ci: {
-    provider: "fireworks",
+    provider: "openrouter",
     headless: true,
     singleProcess: false,
     panelMode: "off",
@@ -101,7 +101,7 @@ const PROFILE_DEFAULTS: Record<E2EProfileName, ProfileDefaults> = {
     diagnostic: false,
   },
   debug: {
-    provider: "fireworks",
+    provider: "openrouter",
     headless: false,
     singleProcess: false,
     panelMode: "overlay",
@@ -114,7 +114,7 @@ const PROFILE_DEFAULTS: Record<E2EProfileName, ProfileDefaults> = {
     diagnostic: true,
   },
   video: {
-    provider: "fireworks",
+    provider: "openrouter",
     headless: false,
     singleProcess: false,
     panelMode: "overlay",
@@ -127,7 +127,7 @@ const PROFILE_DEFAULTS: Record<E2EProfileName, ProfileDefaults> = {
     diagnostic: false,
   },
   headed: {
-    provider: "fireworks",
+    provider: "openrouter",
     headless: false,
     singleProcess: false,
     panelMode: "overlay",

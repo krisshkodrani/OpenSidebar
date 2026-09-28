@@ -52,6 +52,7 @@ vi.mock("../../src/background/llm", () => ({
         isPlannerTier = () => this._isPlannerTier;
         getCurrentModel = () => this.model;
         getCurrentProvider = () => "fireworks";
+        getActiveProviderInfo = () => ({ providerId: "fireworks", model: this.model });
     },
     MODEL_EXECUTOR: "accounts/fireworks/routers/kimi-k2p5-turbo",
     MODEL_PLANNER: "accounts/fireworks/routers/kimi-k2p5-turbo",

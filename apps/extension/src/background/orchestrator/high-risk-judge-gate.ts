@@ -154,5 +154,36 @@ export async function maybeApplyHighRiskJudgeGate(input: {
     return;
   }
   const gate = await runHighRiskJudgeGate(task, node, verifier, evidence, summary);
+  const verdict = gate?.verdict;
+  if (verdict?.usage) {
+    const { usage, model } = verdict;
+    const metrics = task.sessionMetrics;
+    metrics.totalPromptTokens += usage.promptTokens;
+    metrics.totalCompletionTokens += usage.completionTokens;
+    metrics.totalTokens += usage.totalTokens;
+    metrics.llmCallCount += 1;
+    const cost = usage.costUsd ?? 0;
+    metrics.totalCost += cost;
+    if (usage.costSource === "actual") metrics.totalCostActual = (metrics.totalCostActual ?? 0) + cost;
+    else metrics.totalCostEstimated = (metrics.totalCostEstimated ?? 0) + cost;
+    metrics.costMode = (metrics.totalCostActual ?? 0) > 0
+      ? (metrics.totalCostEstimated ?? 0) > 0 ? "mixed" : "actual"
+      : (metrics.totalCostEstimated ?? 0) > 0 ? "estimated" : "none";
+    if (model) {
+      const entry = metrics.modelBreakdown[model] ??= {
+        promptTokens: 0, completionTokens: 0, cost: 0,
+        actualCost: 0, estimatedCost: 0, costMode: "none", calls: 0,
+      };
+      entry.promptTokens += usage.promptTokens;
+      entry.completionTokens += usage.completionTokens;
+      entry.calls += 1;
+      entry.cost += cost;
+      if (usage.costSource === "actual") entry.actualCost = (entry.actualCost ?? 0) + cost;
+      else entry.estimatedCost = (entry.estimatedCost ?? 0) + cost;
+      entry.costMode = (entry.actualCost ?? 0) > 0
+        ? (entry.estimatedCost ?? 0) > 0 ? "mixed" : "actual"
+        : (entry.estimatedCost ?? 0) > 0 ? "estimated" : "none";
+    }
+  }
   applyJudgeGateOutcome({ gate, node, verification, emit });
 }

@@ -34,7 +34,7 @@ export const DEFAULT_MULTIMODAL_EXECUTOR_BY_PROVIDER: Record<
   // but in the opposite direction. Both OpenRouter modes carried the Fireworks
   // form until 2026-07-26, which made the whole OpenRouter stack unusable on
   // its own default; fixed here as a precondition of recommending it.
-  openrouter: "minimax/minimax-m3",
+  openrouter: "openai/gpt-6-luna",
   "openrouter-groq": "minimax/minimax-m3",
   // openai-groq stays on the Fireworks form on purpose: that mode's "OpenAI
   // compatible" executor endpoint is Fireworks-backed (see the settings
@@ -71,7 +71,7 @@ const CEREBRAS_EXECUTOR_MODELS = new Set(["gemma-4-31b"]);
  * This set deliberately does NOT spread the Fireworks/Moonshot sets: those hold
  * provider-native ids (`accounts/fireworks/...`, bare `kimi-k2.6`) that 404 on
  * OpenRouter. Every id below was verified against the live OpenRouter catalog
- * on 2026-07-26, and every one is image-capable — the executor sees the
+ * on 2026-07-26 or added from current model cards, and every one is image-capable — the executor sees the
  * screenshot on unified_vl turns.
  *
  * Removed in the same pass: `x-ai/grok-4.1-fast`, which OpenRouter has retired
@@ -79,6 +79,7 @@ const CEREBRAS_EXECUTOR_MODELS = new Set(["gemma-4-31b"]);
  * alias, which is not a routable id.
  */
 const OPENROUTER_EXECUTOR_MODELS = new Set([
+  "openai/gpt-6-luna",
   "stealth/ox-alpha",
   "minimax/minimax-m3",
   "moonshotai/kimi-k2.7-code",

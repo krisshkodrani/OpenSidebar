@@ -362,6 +362,22 @@ describe("LLMClient construction & tier switching", () => {
     expect(result.text).toBe("Composed.");
   });
 
+  test("Luna tool calls request compatible reasoning and OpenRouter cost usage", async () => {
+    const client = makeClient();
+    let payload: Record<string, unknown> = {};
+    mockFetch((_url, init) => {
+      payload = JSON.parse(init!.body as string);
+      return jsonApiResponse("ok", { usage: {
+        prompt_tokens: 10, completion_tokens: 2, total_tokens: 12, cost: 0.000002,
+      } });
+    });
+    const response = await client.complete(baseRequest({ tools: sampleTools }));
+    expect(payload.model).toBe("openai/gpt-6-luna");
+    expect(payload.reasoning_effort).toBe("none");
+    expect(payload.usage).toEqual({ include: true });
+    expect(response.usage?.cost).toBe(0.000002);
+  });
+
   test("judge seat defaults to MODEL_JUDGE on a Fireworks planner (not planner reuse)", async () => {
     // The judge must not queue behind GLM planner traffic — sharing the seat
     // made ~75% of judge calls time out and fail open.

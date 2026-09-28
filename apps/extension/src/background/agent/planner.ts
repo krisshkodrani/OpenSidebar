@@ -1,5 +1,5 @@
 import { LLMClient, LLMClientOptions } from "../llm";
-import { TokenUsage } from "../llm/types";
+import { TokenUsage, type ProviderConfig } from "../llm/types";
 import { SubtaskSummary } from "../../types";
 import { logger } from "../../utils";
 import { renderPrompt } from "../../prompts";
@@ -757,7 +757,7 @@ export class TaskPlanner {
   private modelOverrides?: LLMClientOptions;
   private executorLlm: LLMClient | null = null;
   private usageCallback:
-    | ((usage: TokenUsage, llmMs: number, model: string) => void)
+    | ((usage: TokenUsage, llmMs: number, model: string, providerId: ProviderConfig["providerId"]) => void)
     | null = null;
   /**
    * Transient holder for the LLM's structured multi-tab-intent signal, captured
@@ -788,7 +788,7 @@ export class TaskPlanner {
   }
 
   setUsageCallback(
-    cb: ((usage: TokenUsage, llmMs: number, model: string) => void) | null,
+    cb: ((usage: TokenUsage, llmMs: number, model: string, providerId: ProviderConfig["providerId"]) => void) | null,
   ) {
     this.usageCallback = cb;
   }
@@ -854,7 +854,7 @@ export class TaskPlanner {
         this.usageCallback?.(
           response.usage,
           llmMs,
-          response.actualModel ?? this.llm.getCurrentModel(),
+          response.actualModel ?? this.llm.getCurrentModel(), response.actualProviderId ?? this.llm.getActiveProviderInfo().providerId,
         );
       if (response.finish_reason === "length") {
         // Truncated decompose JSON silently degrades to fallback nodes —
@@ -1501,7 +1501,7 @@ export class TaskPlanner {
         this.usageCallback?.(
           response.usage,
           llmMs,
-          response.actualModel ?? this.llm.getCurrentModel(),
+          response.actualModel ?? this.llm.getCurrentModel(), response.actualProviderId ?? this.llm.getActiveProviderInfo().providerId,
         );
 
       const text = (response.content || "").trim();
@@ -1703,7 +1703,7 @@ Current perception:\n${perception.slice(0, 800)}`,
         this.usageCallback?.(
           response.usage,
           llmMs,
-          response.actualModel ?? executorLlm.getCurrentModel(),
+          response.actualModel ?? executorLlm.getCurrentModel(), response.actualProviderId ?? executorLlm.getActiveProviderInfo().providerId,
         );
       }
 
@@ -1791,7 +1791,7 @@ Current perception:\n${perception.slice(0, 800)}`,
         this.usageCallback?.(
           response.usage,
           llmMs,
-          response.actualModel ?? this.llm.getCurrentModel(),
+          response.actualModel ?? this.llm.getCurrentModel(), response.actualProviderId ?? this.llm.getActiveProviderInfo().providerId,
         );
       }
 

@@ -57,8 +57,9 @@ export interface JudgeUsage {
   completionTokens: number;
   totalTokens: number;
   cachedTokens?: number;
-  /** Estimated USD cost of the call (null when the model has no pricing row). */
+  /** USD cost of the call, from the provider or the pricing table. */
   costUsd?: number;
+  costSource?: "actual" | "estimated";
 }
 
 export interface JudgeVerdict {
@@ -89,6 +90,8 @@ export interface JudgeVerdict {
 
 /** The narrow model seat the judge needs (satisfied by `LLMClient.runJudge`). */
 export interface JudgeSeat {
+  supportsRubricDecision?: () => boolean;
+  runRubricDecision?(rubric: JudgeRubric, signal?: AbortSignal): Promise<JudgeVerdict>;
   runJudge(args: {
     systemPrompt: string;
     userPrompt: string;
@@ -312,30 +315,39 @@ export async function runRubricJudge(
 ): Promise<JudgeVerdict> {
   const key = judgeCacheKey(rubric);
   const cached = options.cache?.get(key);
-  if (cached) return cached;
+  if (cached) return { ...cached, usage: undefined, durationMs: undefined };
 
   const timeoutMs = options.timeoutMs ?? DEFAULT_TIMEOUT_MS;
+  const controller = new AbortController();
+  const abort = () => controller.abort();
+  options.signal?.addEventListener("abort", abort, { once: true });
+  if (options.signal?.aborted) abort();
   let timer: ReturnType<typeof setTimeout> | undefined;
   const timeout = new Promise<null>((resolve) => {
-    timer = setTimeout(() => resolve(null), timeoutMs);
+    timer = setTimeout(() => { resolve(null); abort(); }, timeoutMs);
   });
 
   const startedAt = Date.now();
   let verdict: JudgeVerdict;
   try {
+    const decision = options.seat.runRubricDecision;
     const result = await Promise.race([
-      options.seat.runJudge({
-        systemPrompt: JUDGE_SYSTEM_PROMPT,
-        userPrompt: renderUserPrompt(rubric),
-        signal: options.signal,
-      }),
+      decision && options.seat.supportsRubricDecision?.()
+        ? decision.call(options.seat, rubric, controller.signal)
+        : options.seat.runJudge({
+            systemPrompt: JUDGE_SYSTEM_PROMPT,
+            userPrompt: renderUserPrompt(rubric),
+            signal: controller.signal,
+          }),
       timeout,
     ]);
     if (!result) {
       verdict = failOpen("timeout");
     } else {
-      const parsed = normalizeVerdict(extractJsonObject(result.text), rubric);
-      verdict = parsed ?? failOpen("parse_error", result.text);
+      const parsed = "text" in result
+        ? normalizeVerdict(extractJsonObject(result.text), rubric)
+        : result;
+      verdict = parsed ?? failOpen("parse_error", "text" in result ? result.text : "");
       // The call cost tokens whether or not the output parsed — attach usage
       // and provenance to both a real verdict and a parse-error fail-open.
       verdict.model = result.model;
@@ -349,6 +361,7 @@ export async function runRubricJudge(
     );
   } finally {
     if (timer) clearTimeout(timer);
+    options.signal?.removeEventListener("abort", abort);
   }
   verdict.durationMs = Date.now() - startedAt;
 

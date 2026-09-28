@@ -209,8 +209,8 @@ before any submit) are mandatory. Design and rationale: RFC LP-22. Safety model:
 
 ### Runtime defaults
 
-- Provider mode: `fireworks`; lane: `dev`; executor/planner model: the Fireworks default unless overridden.
-- Override env vars: `E2E_PROVIDER`, `E2E_EXECUTOR_MODEL`, `E2E_TEMPERATURE`, `E2E_USE_VL_EXECUTOR`, `E2E_DIAGNOSTIC`.
+- Provider mode: `openrouter`; lane: `validation`; executor/planner: `openai/gpt-6-luna`; judge: `typesafe/jev-1.13`, unless overridden.
+- Override env vars: `E2E_PROVIDER`, `E2E_MODEL`, `E2E_PLANNER_MODEL`, `E2E_JUDGE_MODEL`, `E2E_PERCEPTION_MODE`, `E2E_DIAGNOSTIC`.
 - Keep harness config minimal; prefer runtime fixes over provider-specific test branching.
 
 ## Failure Triage Order

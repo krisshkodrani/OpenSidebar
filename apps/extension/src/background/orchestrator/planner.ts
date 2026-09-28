@@ -8,7 +8,7 @@ import {
   unionTools,
 } from "./planner-node-utils";
 import type { LLMClientOptions } from "../llm";
-import type { TokenUsage } from "../llm/types";
+import type { ProviderConfig, TokenUsage } from "../llm/types";
 import type { Difficulty } from "../agent/constants";
 import type { ToolProfile } from "../tools/metadata";
 import { ToolName } from "../../types";
@@ -1244,7 +1244,7 @@ export class OrchestratorPlanner {
   }
 
   setUsageCallback(
-    cb: ((usage: TokenUsage, llmMs: number, model: string) => void) | null,
+    cb: ((usage: TokenUsage, llmMs: number, model: string, providerId: ProviderConfig["providerId"]) => void) | null,
   ): void {
     this.planner.setUsageCallback(cb);
   }

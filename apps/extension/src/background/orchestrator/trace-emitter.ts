@@ -1,5 +1,7 @@
 import type { CompletionEnvelope } from "../agent/completion-kernel";
 import type { TokenUsage } from "../llm/types";
+import type { ProviderConfig } from "../llm/types";
+import { recordCompletionUsage } from "../agent/agent-telemetry";
 import {
   createHttpRunTraceWriter,
   logger,
@@ -130,12 +132,22 @@ export class OrchestratorTraceEmitter {
   ): void {
     const maybePlanner = planner as {
       setUsageCallback?: (
-        cb: ((usage: TokenUsage, llmMs: number, model: string) => void) | null,
+        cb: ((usage: TokenUsage, llmMs: number, model: string, providerId: ProviderConfig["providerId"]) => void) | null,
       ) => void;
     };
     if (typeof maybePlanner.setUsageCallback !== "function") return;
 
-    maybePlanner.setUsageCallback((usage, llmMs, model) => {
+    maybePlanner.setUsageCallback((usage, llmMs, model, providerId) => {
+      if (task && "sessionMetrics" in task && providerId) {
+        recordCompletionUsage({
+          metrics: (task as OrchestratorTask).sessionMetrics,
+          response: { role: "assistant", content: null, finish_reason: "stop", usage,
+            actualModel: model, actualProviderId: providerId },
+          llmMs,
+          currentProvider: providerId,
+          currentModel: model,
+        });
+      }
       this.emitEvent(
         task,
         "planner_llm_call",
