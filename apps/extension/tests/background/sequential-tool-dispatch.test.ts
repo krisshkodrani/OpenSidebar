@@ -176,6 +176,27 @@ function genericParams(
 }
 
 describe("executeSequentialToolCalls", () => {
+  test("routes an explicit unresolved target to clarification before escalation", async () => {
+    const host = createHost();
+    host.originalQuery = "Assign the case to the owner";
+    const output = await executeSequentialToolCalls.call(host, {
+      toolCalls: [toolCall(ToolName.ESCALATE, {
+        reason: "There is no single owner to assign: there are two eligible people and the target is unclear.",
+      })],
+      repeatActionWindow: 20,
+      llmIntention: null,
+      signalCompletedResult: vi.fn(),
+      state: baseState(),
+    });
+
+    expect(host.handleClarifyToolCall).toHaveBeenCalledWith(
+      "escalate-call",
+      { question: expect.stringMatching(/Which one should I use/) },
+    );
+    expect(host.refreshSnapshotWithRetry).not.toHaveBeenCalled();
+    expect(output.escalationTier).toBe(0);
+  });
+
   test("accepts done tool calls and returns completion state", async () => {
     const host = createHost();
     const completed = vi.fn();

@@ -4,6 +4,7 @@ import {
   isFinalCommunicationClick,
 } from "./action-exemption-policy";
 import { assessAmbiguousChoiceClickGuard } from "./ambiguous-choice-policy";
+import { clarificationQuestionForEscalation } from "./escalation-clarification-policy";
 import {
   assessCatalogOrderConfigurationClick,
   assessCatalogOrderItemSelectionClick,
@@ -1238,6 +1239,14 @@ export async function executeSequentialToolCalls(
 
     // ESCALATE tool — voluntary model upgrade (de-escalates after progress)
     if (toolName === ToolName.ESCALATE) {
+      const question = clarificationQuestionForEscalation(
+        typeof args.reason === "string" ? args.reason : "",
+        this.originalQuery,
+      );
+      if (question) {
+        await this.handleClarifyToolCall(toolCall.id, { question });
+        continue;
+      }
       const escalateState = await handleEscalateToolCall(
         this as unknown as AgentLoopToolHandlerHost,
         toolCall.id,
