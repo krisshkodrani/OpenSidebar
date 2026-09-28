@@ -90,6 +90,31 @@ export function requestedModels(env: Record<string, string | undefined>): Record
   };
 }
 
+export function modelIdentityMismatch(
+  requested: Record<string, string | null>,
+  resolved: Record<string, string[]>,
+  usage: InvestigationAttempt["usageByRole"],
+  traceRunIds: string[],
+): string | null {
+  if (traceRunIds.length === 0) return "no agent traces were recorded";
+  const comparisons = [
+    ["executor", requested.executorModel],
+    ["planner", requested.plannerModel],
+    ["judge", requested.judgeModel],
+  ] as const;
+  for (const [role, expected] of comparisons) {
+    if (!expected) continue;
+    const actual = resolved[role] ?? [];
+    if (actual.length === 0 && (usage[role]?.calls ?? 0) > 0) {
+      return `${role} made model calls but no resolved model was recorded`;
+    }
+    if (actual.some((model) => model !== expected)) {
+      return `${role} requested ${expected} but traces resolved ${actual.join(", ")}`;
+    }
+  }
+  return null;
+}
+
 export function validateConfig(config: InvestigationConfig): string[] {
   const errors: string[] = [];
   if (!config.label.trim()) errors.push("configuration label is required");
