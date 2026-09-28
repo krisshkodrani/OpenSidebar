@@ -117,6 +117,43 @@ describe.skipIf(!enabled)("E2E: terminal lifecycle", () => {
     }
   }, 120_000);
 
+  it("turns an ambiguous owner escalation into a user clarification", async () => {
+    const scenario = localMockProviderScenarios["ambiguous-owner-escalation"];
+    const cdp = await h.ctx.serviceWorkerTarget.createCDPSession();
+    try {
+      await installLocalMockProviderInterceptor(cdp, "ambiguous-owner-escalation");
+      await navigateAndWait(h.page, getFixtureUrl(scenario.fixture));
+      await h.page.bringToFront();
+      const tabId = await getActiveTabId(h.ctx.serviceWorker);
+      const workspaceId = await sendUserChat(h.ctx, scenario.prompt, tabId);
+      const request = await waitForMonitoredEvent(
+        h.ctx.serviceWorker,
+        (event) => event.type === "CLARIFICATION_REQUEST",
+        scenario.timeoutMs,
+        workspaceId,
+      );
+      expect(request.question).toContain("Which one should I use?");
+
+      const { traceFiles } = await h.printTraceSummary(workspaceId);
+      expect(traceFiles.length).toBeGreaterThan(0);
+      expect(traceFiles.some((file) => {
+        const entries = readFileSync(file, "utf8").trim().split("\n")
+          .map((line) => JSON.parse(line));
+        return entries.some((entry) =>
+          entry.llmResponse?.toolCalls?.some(
+            (call: { function?: { name?: string } }) => call.function?.name === "escalate",
+          ) && entry.events?.some(
+            (event: { type: string; data?: { question?: string } }) =>
+              event.type === "clarification" &&
+              event.data?.question === request.question,
+          ));
+      })).toBe(true);
+      expect((await completions(workspaceId))).toHaveLength(0);
+    } finally {
+      await cdp.detach().catch(() => {});
+    }
+  }, 120_000);
+
   it("ignores a late approval after stopping a pending task", async () => {
     await navigateAndWait(h.page, getFixtureUrl("article"));
     await h.page.bringToFront();
