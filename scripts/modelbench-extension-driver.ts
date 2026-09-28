@@ -515,8 +515,8 @@ async function preflightProviderNetwork(
   // Chrome for Testing can indefinitely suspend external fetches made by an
   // attached MV3 service worker even though the same extension-origin request
   // succeeds in a page. Keep this workaround in the E2E driver: it transports
-  // the unchanged HTTP request through the helper page and reconstructs the
-  // response in the worker. No benchmark state or task data is involved.
+  // the model request through the helper page, opts into route metadata, and
+  // reconstructs the response in the worker. No task data is changed.
   await page.evaluate(() => {
     const marker = "__openSidebarE2ENetworkProxyInstalled";
     const scope = globalThis as typeof globalThis & Record<string, unknown>;
