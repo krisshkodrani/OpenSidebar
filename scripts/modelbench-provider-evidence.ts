@@ -16,7 +16,7 @@ export interface ProviderCallEvidence {
 /** Observe API metadata only; never infer the served identity from the request. */
 export function observeProviderCall(
   request: string, response: string, status: number, durationMs: number,
-  observation?: { role?: string; requestId?: string },
+  observation?: { role?: string; requestId?: string; providerName?: string },
 ): ProviderCallEvidence {
   const requestedModel = String(JSON.parse(request).model ?? "");
   const records: Record<string, any>[] = [];
@@ -32,6 +32,7 @@ export function observeProviderCall(
   let model = "", provider = "";
   const reportedModels = new Set<string>();
   const reportedProviders = new Set<string>();
+  if (observation?.providerName) reportedProviders.add(observation.providerName.toLowerCase());
   const selectedRoutes = new Set<string>();
   let routeEvidenceConflict = false;
   let usage: Record<string, any> = {};

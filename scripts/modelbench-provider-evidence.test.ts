@@ -78,6 +78,19 @@ test("OpenRouter selected endpoint metadata verifies JSON and streamed routes", 
   }
 });
 
+test("OpenRouter response provider header verifies a route without a custom request header", () => {
+  const call = observeProviderCall('{"model":"test/model"}',
+    '{"model":"test/model","usage":{"cost":0.01}}', 200, 1,
+    { role: "executor", requestId: "header-route", providerName: "CoreWeave" });
+  assert.equal(call.provider, "coreweave");
+  assert.deepEqual(summarizeProviderCalls([call], seats).issues, []);
+  const conflicting = observeProviderCall('{"model":"test/model"}',
+    '{"model":"test/model","provider":"OtherHost","usage":{"cost":0.01}}', 200, 1,
+    { providerName: "CoreWeave" });
+  assert.equal(conflicting.routeEvidenceConflict, true);
+  assert.match(summarizeProviderCalls([conflicting], seats).issues[0], /Conflicting route evidence/);
+});
+
 test("conflicting or ambiguous selected endpoint metadata cannot verify a route", () => {
   const endpoints = [
     [{ model: "other/model", provider: "CoreWeave", selected: true }],
