@@ -38,6 +38,7 @@ test("collects actual executor, planner, and judge identities and usage", () => 
         usage: { promptTokens: 4, completionTokens: 1, cachedTokens: 2, costUsd: 0.1 },
       },
     },
+    { type: "task_completed", data: { totalCostUsd: 0.75 } },
   ].map((value) => JSON.stringify(value)).join("\n"));
 
   const result = collectModelBenchTraceEvidence({
@@ -65,6 +66,7 @@ test("collects actual executor, planner, and judge identities and usage", () => 
   assert.equal(result.artifactRefs.length, 2);
   assert.equal(result.telemetry.turns, 1);
   assert.equal(result.telemetry.replans, 0);
+  assert.equal(result.orchestratorTotalCostUsd, 0.75);
 });
 
 test("does not invent a resolved seat when traces contain multiple identities", () => {

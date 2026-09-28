@@ -119,3 +119,41 @@ export function summarizeProviderCalls(calls: ProviderCallEvidence[], seats: Par
   }
   return { resolvedSeats, usageByRole, unattributedUsage, issues: [...new Set(issues)], providerFailures };
 }
+
+/** Compare captured API calls with calls recorded by the agent and orchestrator. */
+export function reconcileProviderAndTraceUsage(
+  provider: ReturnType<typeof summarizeProviderCalls>,
+  traceUsageByRole: Partial<Record<ModelSeat, RoleUsageV1>>,
+  orchestratorTotalCostUsd?: number,
+) {
+  const issues: string[] = [];
+  for (const role of ["executor", "planner", "judge"] as const) {
+    const traced = traceUsageByRole[role]?.calls ?? 0;
+    const captured = provider.usageByRole[role]?.calls ?? 0;
+    if (traced > captured) {
+      issues.push(`Provider capture missed at least ${traced - captured} ${role} call(s) recorded in runtime traces.`);
+    }
+  }
+  const providerReportedCostUsd = Object.values(provider.usageByRole).reduce(
+    (sum, usage) => sum + usage.costUsd, provider.unattributedUsage.costUsd,
+  );
+  const traceRecordedCostUsd = Object.values(traceUsageByRole).reduce(
+    (sum, usage) => sum + usage.costUsd, 0,
+  );
+  if (orchestratorTotalCostUsd !== undefined) {
+    const difference = Math.abs(providerReportedCostUsd - orchestratorTotalCostUsd);
+    if (difference > Math.max(0.00001, orchestratorTotalCostUsd * 0.01)) {
+      issues.push(`Provider-reported cost differs from orchestrator total by $${difference.toFixed(6)}; cost attribution is unverified.`);
+    }
+  }
+  return {
+    providerReportedCostUsd,
+    traceRecordedCostUsd,
+    costDifferenceUsd: providerReportedCostUsd - traceRecordedCostUsd,
+    ...(orchestratorTotalCostUsd !== undefined ? {
+      orchestratorTotalCostUsd,
+      providerVsOrchestratorCostUsd: providerReportedCostUsd - orchestratorTotalCostUsd,
+    } : {}),
+    issues,
+  };
+}
