@@ -1,4 +1,5 @@
 import { logger } from "../../utils";
+import { getTokenBudgetWarning } from "../agent/token-budget-policy";
 import type { OrchestratorTask } from "./types";
 import { sendMessage } from "./task-messaging";
 
@@ -20,11 +21,15 @@ export function emitBudgetWarnings(
   task: OrchestratorTask,
   warningsEmitted: Set<string>,
   emitTrace: (data: Record<string, unknown>) => void,
+  tokenWarningRatio?: number,
 ): void {
   const elapsedMs = Date.now() - (task.startedAt || task.createdAt);
   const timeRatio = elapsedMs / task.budget.maxSessionTimeMs;
-  const tokenRatio =
-    task.sessionMetrics.totalTokens / task.budget.maxTotalTokens;
+  const tokenWarning = getTokenBudgetWarning({
+    totalTokens: task.sessionMetrics.totalTokens,
+    maxTotalTokens: task.budget.maxTotalTokens,
+    warningRatio: tokenWarningRatio,
+  });
   const costRatio =
     task.sessionMetrics.totalCost / task.budget.maxTotalCostUsd;
   if (timeRatio >= 0.8 && !warningsEmitted.has("time")) {
@@ -37,14 +42,30 @@ export function emitBudgetWarnings(
       elapsedMs,
     });
   }
-  if (tokenRatio >= 0.8 && !warningsEmitted.has("tokens")) {
+  if (tokenWarning && !warningsEmitted.has("tokens")) {
     warningsEmitted.add("tokens");
     emitTrace({
       metric: "tokens",
-      ratio: tokenRatio,
+      ratio: tokenWarning.ratio,
+      threshold: tokenWarning.threshold,
       totalTokens: task.sessionMetrics.totalTokens,
       totalCost: task.sessionMetrics.totalCost,
       elapsedMs,
+    });
+    sendMessage({
+      type: "AGENT_STEP",
+      workspaceId: task.workspaceId,
+      payload: {
+        step: {
+          id: crypto.randomUUID(),
+          type: "warning",
+          label: "Task token usage is approaching its limit",
+          detail: `${task.sessionMetrics.totalTokens.toLocaleString()} of ${task.budget.maxTotalTokens.toLocaleString()} tokens used`,
+          status: "done",
+          timestamp: Date.now(),
+        },
+        update: false,
+      },
     });
   }
   if (costRatio >= 0.8 && !warningsEmitted.has("cost")) {
