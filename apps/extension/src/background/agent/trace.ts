@@ -670,6 +670,11 @@ export class TraceRecorder {
       delayMs: FINAL_PENDING_DRAIN_DELAY_MS,
       timeoutMs: FINAL_FLUSH_TIMEOUT_MS,
     });
+    if (this.pendingQueue.length > 0) {
+      logger.warn("trace", "Agent trace still pending after final retry", {
+        pending: this.pendingQueue.length,
+      });
+    }
   }
 
   /** Drain pending queue items (best-effort, stop on first failure per attempt) */
@@ -743,7 +748,7 @@ export class TraceRecorder {
       if (!response.ok) {
         throw new Error(`HTTP ${response.status}`);
       }
-    } catch {
+    } catch (error) {
       // Queue for retry on next flush
       this.pendingQueue.push({ path, data: serialized });
       if (this.pendingQueue.length > MAX_PENDING) {
@@ -751,10 +756,11 @@ export class TraceRecorder {
       }
       logger.debug(
         "trace",
-        "Trace flush queued for retry (server not running?)",
+        "Trace flush queued for retry",
         {
           path,
           pending: this.pendingQueue.length,
+          error: error instanceof Error ? error.message : String(error),
         },
       );
     }
