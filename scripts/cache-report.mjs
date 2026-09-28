@@ -35,7 +35,7 @@
 
 import { readFileSync, readdirSync, writeFileSync, mkdirSync } from "node:fs";
 import { join, dirname, resolve } from "node:path";
-import { fileURLToPath } from "node:url";
+import { fileURLToPath, pathToFileURL } from "node:url";
 
 import {
   estimateCostBreakdownUsd,
@@ -229,7 +229,7 @@ function emptyGroup(key) {
  * different cache behaviour — pooling them produces a number that describes no
  * real workload.
  */
-function aggregate(turns, sessions) {
+export function aggregate(turns, sessions) {
   const groups = new Map();
   const turnCountBySession = new Map();
   for (const turn of turns) {
@@ -263,10 +263,15 @@ function aggregate(turns, sessions) {
       );
     }
     const group = groups.get(keyString);
+    const firstTurnForSession = !group.runs.has(turn.sessionId);
     group.runs.add(turn.sessionId);
 
-    const outcome = sessions.get(turn.sessionId)?.outcome ?? "unknown";
-    group.outcomes[outcome] = (group.outcomes[outcome] ?? 0) + 1;
+    // Success is a run-level result. Counting it on every turn makes longer
+    // sessions carry more weight in the cache-versus-success comparison.
+    if (firstTurnForSession) {
+      const outcome = sessions.get(turn.sessionId)?.outcome ?? "unknown";
+      group.outcomes[outcome] = (group.outcomes[outcome] ?? 0) + 1;
+    }
 
     // Turn 1 cannot hit cache — counting it as a miss depresses every rate.
     const isWarm = (turn.turnNumber ?? 1) > 1;
@@ -688,4 +693,6 @@ function main() {
   if (args.out) console.log(`\nWrote ${args.out}`);
 }
 
-main();
+if (process.argv[1] && import.meta.url === pathToFileURL(resolve(process.argv[1])).href) {
+  main();
+}
