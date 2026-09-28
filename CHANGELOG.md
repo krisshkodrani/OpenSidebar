@@ -1,6 +1,6 @@
 # Changelog
 
-## [0.7.7] - 2026-09-26
+## [0.7.7] - Unreleased
 
 ### Added
 
@@ -13,6 +13,11 @@
 
 - Improved retention of requested facts seen during a workflow for more
   accurate final reporting, and tightened completion evidence and recovery paths.
+  Live final-answer validation remains open.
+- Encrypted locally stored provider keys, including migration of existing
+  plaintext keys; the encryption key remains on the same device.
+- Improved clarification handling for unresolved user choices and scoped
+  verification of option quantities and time intervals.
 - Preserved remote mission state during migration replay and bounded telemetry
   delivery retries per record.
 - Kept the production build and typecheck graph aligned with their workspace
@@ -26,6 +31,8 @@
   generic list, catalog, and knowledge tools.
 - Kept generated traces and release reports local; added a reviewed, sanitized
   trace dataset preparation path for future model experiments.
+- Added model-role cost accounting and stricter ModelBench route evidence;
+  headline live model and cost comparisons remain unverified.
 
 ## [0.7.6] - 2026-09-13
 

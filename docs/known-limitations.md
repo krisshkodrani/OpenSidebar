@@ -7,9 +7,15 @@ browser agent rather than guaranteed production automation.
 
 - The agent can misread page state, especially on heavily dynamic pages, hidden
   forms, custom widgets, cross-origin frames, and pages with delayed re-rendering.
+- Rich editors can require site-specific interaction; [Google Docs text entry](https://github.com/krisshkodrani/OpenSidebar/issues/139)
+  remains under investigation.
 - The verifier and `DONE` hardening reduce premature completion, but they depend
   on available page evidence. Users should review sensitive results before acting
   on them.
+- Long tasks can still omit requested facts from the final response. The
+  [fact-retention](https://github.com/krisshkodrani/OpenSidebar/issues/156)
+  and [sports-workflow](https://github.com/krisshkodrani/OpenSidebar/issues/163)
+  fixes await live model confirmation.
 - Long workflows can be affected by provider latency, rate limits, model outages,
   Chrome service-worker lifecycle behavior, and site-specific anti-automation.
 
