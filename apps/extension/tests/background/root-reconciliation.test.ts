@@ -105,6 +105,26 @@ describe("root completion reconciliation", () => {
     ).toBe("continue");
   });
 
+  test("does not treat requested values in a plan description as observed facts", () => {
+    const decision = reconcileRootCompletion({
+      query,
+      completedNodes: [
+        node(
+          "prepare",
+          "Prepare the early train for all 18 travelers and report departure 06:10, arrival 10:42, buffer 1h 48m, and total fee EUR 216",
+          "A replacement is ready for approval. No purchase was made.",
+        ),
+      ],
+      remainingNodes: [
+        node("report", "Report the observed itinerary details", "", "pending"),
+      ],
+      snapshotText: "A replacement is ready for approval. No charge has been made.",
+      hasUnresolvedAttempt: false,
+    });
+
+    expect(decision.decision).toBe("continue");
+  });
+
   test("does not settle incomplete or contradicted evidence", () => {
     const report = node("report", "Report all requested values", "", "pending");
     expect(
