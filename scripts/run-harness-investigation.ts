@@ -7,6 +7,7 @@ import {
   buildInvestigationReport,
   classifyAttempt,
   fingerprintConfig,
+  modelIdentityMismatch,
   requestedModels,
   validateConfig,
   type InvestigationAttempt,
@@ -161,24 +162,6 @@ function collectResolvedEvidence(startedAt: number, endedAt: number): {
   };
 }
 
-function modelIdentityMismatch(
-  requested: Record<string, string | null>,
-  resolved: Record<string, string[]>,
-): string | null {
-  const comparisons = [
-    ["executor", requested.executorModel],
-    ["planner", requested.plannerModel],
-    ["judge", requested.judgeModel],
-  ] as const;
-  for (const [role, expected] of comparisons) {
-    const actual = resolved[role] ?? [];
-    if (expected && actual.length > 0 && !actual.includes(expected)) {
-      return `${role} requested ${expected} but traces resolved ${actual.join(", ")}`;
-    }
-  }
-  return null;
-}
-
 async function main(): Promise<void> {
   const configs = loadConfigs();
   const errors = configs.flatMap(validateConfig);
@@ -236,7 +219,9 @@ async function main(): Promise<void> {
     const reason = exitCode !== 0 && result.passed ? `runner_error:Vitest exited ${exitCode}` : result.reason;
     const requested = requestedModels(item.config.env);
     const evidence = collectResolvedEvidence(startedAt, endedAt);
-    const identityMismatch = modelIdentityMismatch(requested, evidence.resolvedModels);
+    const identityMismatch = modelIdentityMismatch(
+      requested, evidence.resolvedModels, evidence.usageByRole, evidence.traceRunIds,
+    );
     const finalReason = identityMismatch ? `model_identity_mismatch:${identityMismatch}` : reason;
     const classification = identityMismatch
       ? { classification: "harness_failure" as const, eligibleForScoring: false }

@@ -3,6 +3,7 @@ import {
   buildInvestigationReport,
   classifyAttempt,
   fingerprintConfig,
+  modelIdentityMismatch,
   validateConfig,
   type InvestigationConfig,
 } from "../../../../scripts/harness-investigation-lib";
@@ -38,6 +39,19 @@ describe("harness investigation", () => {
       classification: "valid_model_failure",
       eligibleForScoring: true,
     });
+  });
+
+  test("excludes mixed or unattributed model routes from a comparison", () => {
+    const requested = { executorModel: "expected", plannerModel: "planner", judgeModel: "judge" };
+    const usage = { executor: { calls: 2, promptTokens: 0, completionTokens: 0, cachedTokens: 0, costUsd: 0, llmTimeMs: 0 } };
+    expect(modelIdentityMismatch(requested, { executor: ["expected", "fallback"] }, usage, ["run-1"]))
+      .toContain("expected, fallback");
+    expect(modelIdentityMismatch(requested, { executor: [] }, usage, ["run-1"]))
+      .toContain("no resolved model");
+    expect(modelIdentityMismatch(requested, { executor: ["expected"] }, usage, []))
+      .toContain("no agent traces");
+    expect(modelIdentityMismatch(requested, { executor: ["expected"] }, usage, ["run-1"]))
+      .toBeNull();
   });
 
   test("requires every role to be pinned", () => {
