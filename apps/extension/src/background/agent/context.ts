@@ -642,7 +642,10 @@ export class ContextManager {
       finalMessages.push(firstUserMsg);
     }
 
-    // VL executor mode: inject screenshot as a user message before recent history
+    // Keep changing images after history to preserve its cached prefix.
+    finalMessages.push(...selectedReverse.reverse());
+
+    // VL executor mode: send the current screenshot after history.
     if (this.screenshotDataUrl) {
       finalMessages.push({
         role: "user",
@@ -676,9 +679,6 @@ export class ContextManager {
         ],
       });
     }
-
-    // Add selected recent messages (re-reverse to restore order)
-    finalMessages.push(...selectedReverse.reverse());
 
     // 5. Repair the tool-call protocol invariant: drop orphaned results, strip
     // tool_calls whose results are incomplete, and hoist surviving results to

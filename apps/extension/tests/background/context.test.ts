@@ -1482,6 +1482,40 @@ describe("Stable prefix (LP-21)", () => {
     expect(last.content).toContain("## Page Context");
   });
 
+  test("fresh visual evidence follows recorded history and precedes page state", () => {
+    const ctx = new ContextManager();
+    ctx.setOriginalQuery("Read the chart");
+    ctx.addMessage({ role: "user", content: "Read the chart" });
+    ctx.addMessage({ role: "assistant", content: "I will inspect the chart." });
+    ctx.addMessage({
+      role: "assistant",
+      content: null,
+      tool_calls: [{ id: "read-chart", type: "function", function: { name: "read_page", arguments: "{}" } }],
+    });
+    ctx.addMessage({ role: "tool", tool_call_id: "read-chart", content: "Chart text captured" });
+    ctx.setScreenshotForExecutor("data:image/jpeg;base64,abc");
+    ctx.setRegionZoomForExecutor({
+      dataUrl: "data:image/jpeg;base64,zoom",
+      label: "chart detail",
+    });
+
+    const prompt = ctx.getPrompt();
+    const historyIndex = prompt.findIndex((message) => message.content === "I will inspect the chart.");
+    const resultIndex = prompt.findIndex((message) => message.content === "Chart text captured");
+    const screenshotIndex = prompt.findIndex((message) =>
+      Array.isArray(message.content) && message.content.some((part) =>
+        part.type === "text" && part.text === "Current page screenshot."));
+    const zoomIndex = prompt.findIndex((message) =>
+      Array.isArray(message.content) && message.content.some((part) =>
+        part.type === "text" && part.text.includes("Magnified region chart detail")));
+
+    expect(historyIndex).toBeGreaterThan(0);
+    expect(resultIndex).toBeGreaterThan(historyIndex);
+    expect(screenshotIndex).toBeGreaterThan(resultIndex);
+    expect(zoomIndex).toBeGreaterThan(screenshotIndex);
+    expect(zoomIndex).toBeLessThan(prompt.length - 1);
+  });
+
   test("element IDs render in the volatile tail, not the static rules", () => {
     const ctx = new ContextManager();
     ctx.setSnapshot(snapshotWith([42, 43], "https://shop.test/i", "B") as any);
