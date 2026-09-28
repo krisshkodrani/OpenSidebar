@@ -5,6 +5,7 @@ export interface TraceRedactionOptions {
 
 const RUNTIME_SECRET_KEY =
   /^(api[_-]?key|authorization|auth[_-]?token|access[_-]?token|refresh[_-]?token|password|passcode|credential|credentials|cookie|set-cookie|private[_-]?key|client[_-]?secret|secret[_-]?key)$/i;
+const STORED_PROVIDER_KEY = /^(?:[a-z][a-z0-9_-]*)?api[_-]?key(?:_local)?$/i;
 
 const EXPORT_SENSITIVE_KEY = /^(email|phone|address|recipient|sender)$/i;
 
@@ -16,7 +17,7 @@ const EMAIL = /\b[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}\b/gi;
 const DATA_URL_IMAGE = /^data:image\/[a-z0-9.+-]+;base64,/i;
 
 function shouldRedactKey(key: string, mode: "runtime" | "export"): boolean {
-  if (RUNTIME_SECRET_KEY.test(key)) return true;
+  if (RUNTIME_SECRET_KEY.test(key) || STORED_PROVIDER_KEY.test(key)) return true;
   return mode === "export" && EXPORT_SENSITIVE_KEY.test(key);
 }
 

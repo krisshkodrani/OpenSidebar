@@ -451,7 +451,7 @@ describe("settings storage", () => {
 
     expect(localSet).toHaveBeenCalledWith(
       expect.objectContaining({
-        deepseekApiKey_local: "sk-deepseek-test",
+        deepseekApiKey_local: expect.stringMatching(/^enc:v1:/),
       }),
     );
 
@@ -530,7 +530,7 @@ describe("settings storage", () => {
 
     expect(localSet).toHaveBeenCalledWith(
       expect.objectContaining({
-        xiaomiApiKey_local: "sk-xiaomi-test",
+        xiaomiApiKey_local: expect.stringMatching(/^enc:v1:/),
       }),
     );
 

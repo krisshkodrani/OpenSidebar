@@ -35,8 +35,9 @@ browser agent rather than guaranteed production automation.
 
 ## Local Data And Traces
 
-- API keys are stored in Chrome extension local storage and are never synced by
-  OpenSidebar.
+- API keys are encrypted before being stored in Chrome extension local storage
+  and are never synced by OpenSidebar. The encryption key is also local, so an
+  attacker with access to both can still recover the provider keys.
 - The development log server and trace viewer are local-only tools. Running
   `pnpm run dev` or `pnpm run logs` can write page context, tool outputs, and
   screenshot artifacts under local `logs/`, `traces/`, and `.artifacts/` paths.

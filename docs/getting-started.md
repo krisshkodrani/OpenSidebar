@@ -33,6 +33,9 @@ corepack pnpm run dist
 4. Choose one of the provider stacks unlocked by those keys
 5. Save changes
 
+Where your provider allows it, create a key limited to the models you need and
+set a spending limit. You can revoke or rotate that key in the provider account.
+
 Settings exposes the two release-verified provider modes: OpenRouter and
 Fireworks AI. Experimental adapters may still be used by internal evaluation
 commands, but are not part of the supported setup surface.
