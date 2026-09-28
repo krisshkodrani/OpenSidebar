@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import {
+  assertTraceTransportReady,
   extractModelBenchOutcome,
   extractStoredModelBenchOutcome,
   finalAnswer,
@@ -11,6 +12,45 @@ import {
   terminalInteractionEvidence,
 } from "./modelbench-extension-driver.js";
 import { MODEL_BENCH_CASES, scenarioEngine } from "@opensidebar/scenario-engine";
+
+test("trace preflight probes the service worker POST route before a paid run", async () => {
+  const originalFetch = globalThis.fetch;
+  const requests: string[] = [];
+  globalThis.fetch = async (input) => {
+    requests.push(String(input));
+    return new Response("Missing sessionId", { status: 400 });
+  };
+  const worker = {
+    evaluate: (fn: (url: string) => Promise<unknown>, url: string) => fn(url),
+  } as unknown as Parameters<typeof assertTraceTransportReady>[0];
+  try {
+    await assertTraceTransportReady(worker, "http://127.0.0.1:7589");
+    assert.deepEqual(requests, ["http://127.0.0.1:7589/traces"]);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test("trace preflight fails after retry when the service worker cannot POST", async () => {
+  const originalFetch = globalThis.fetch;
+  let attempts = 0;
+  globalThis.fetch = async () => {
+    attempts += 1;
+    throw new Error("network blocked");
+  };
+  const worker = {
+    evaluate: (fn: (url: string) => Promise<unknown>, url: string) => fn(url),
+  } as unknown as Parameters<typeof assertTraceTransportReady>[0];
+  try {
+    await assert.rejects(
+      assertTraceTransportReady(worker, "http://127.0.0.1:7589"),
+      /Service worker cannot write.*network blocked/,
+    );
+    assert.equal(attempts, 2);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
 
 test("retains clarification evidence independently of trace files without unrelated event fields", () => {
   for (const nested of [false, true]) {

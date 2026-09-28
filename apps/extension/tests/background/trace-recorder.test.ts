@@ -3,7 +3,7 @@ import "../setup";
 import { RiskLevel, ToolName } from "../../src/types";
 import { TraceRecorder } from "../../src/background/agent/trace";
 
-describe("TraceRecorder skill tool metrics", () => {
+describe("TraceRecorder persistence", () => {
   const originalFetch = globalThis.fetch;
 
   beforeEach(() => {
@@ -12,6 +12,46 @@ describe("TraceRecorder skill tool metrics", () => {
 
   afterEach(() => {
     globalThis.fetch = originalFetch;
+  });
+
+  test("first-turn clarification retains its question when the session finalizes", async () => {
+    const recorder = new TraceRecorder("session-clarification");
+    recorder.setSessionInfo("Update the matching record", "https://example.com/records");
+    recorder.startTurn(
+      1,
+      {
+        url: "https://example.com/records",
+        title: "Records",
+        elementCount: 2,
+        visibleContentLength: 80,
+        scrollY: 0,
+      },
+      [],
+      2,
+      3,
+      "openai/gpt-5.4",
+      "none",
+    );
+    recorder.recordEvent("clarification", {
+      clarificationId: "clarification-1",
+      stage: "requested",
+      turn: 1,
+      question: "Which record should I update?",
+    });
+    await recorder.finalize("awaiting_clarification", "Waiting for user clarification", 1, null, null);
+
+    const calls = (globalThis.fetch as any).mock.calls;
+    const turn = calls.find(([url]: [string]) => String(url).endsWith("/traces"));
+    const session = calls.find(([url]: [string]) => String(url).endsWith("/traces/session"));
+    expect(turn).toBeTruthy();
+    expect(session).toBeTruthy();
+    expect(JSON.parse(turn[1].body).events).toEqual([
+      expect.objectContaining({
+        type: "clarification",
+        data: expect.objectContaining({ question: "Which record should I update?", stage: "requested" }),
+      }),
+    ]);
+    expect(JSON.parse(session[1].body).outcome).toBe("awaiting_clarification");
   });
 
   test("finalize persists aggregated skill tool metrics on the session record", async () => {

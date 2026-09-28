@@ -1,5 +1,6 @@
 import { execFileSync } from "node:child_process";
 import { resolve } from "node:path";
+import type { WebWorker } from "puppeteer";
 import type { ScenarioRunV2 } from "@opensidebar/scenario-contracts";
 import { createE2EHarness } from "../apps/extension/tests/e2e/helpers/harness.js";
 import {
@@ -27,6 +28,50 @@ import { collectModelBenchTraceEvidence } from "./modelbench-trace-evidence.js";
 import { observeProviderCall, providerSlugsFromCatalog, summarizeProviderCalls, type ProviderCallEvidence } from "./modelbench-provider-evidence.js";
 
 type EventRecord = Record<string, any>;
+
+function traceServerUrl(): string {
+  const port = Number(process.env.E2E_LOG_SERVER_PORT) || 7589;
+  const url = process.env.LOCAL_OBSERVABILITY_SERVER_URL?.trim() || "http://127.0.0.1:7589";
+  if (new URL(url).port !== String(port)) {
+    throw new Error(`Trace server port mismatch: E2E listens on ${port}, extension is configured for ${url}.`);
+  }
+  return url.replace(/\/+$/, "");
+}
+
+/** Probe the trace POST route from the service worker before any provider call. */
+export async function assertTraceTransportReady(
+  worker: Pick<WebWorker, "evaluate">,
+  serverUrl = traceServerUrl(),
+): Promise<void> {
+  const result = await worker.evaluate(async (url: string) => {
+    let error = "No trace response";
+    for (let attempt = 0; attempt < 2; attempt += 1) {
+      const controller = new AbortController();
+      const timeout = setTimeout(() => controller.abort(), 1_500);
+      try {
+        const response = await fetch(`${url}/traces`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: "{}",
+          signal: controller.signal,
+        });
+        const body = await response.text();
+        if (response.status === 400 && body.includes("Missing sessionId")) {
+          return { ready: true, error: "" };
+        }
+        error = `HTTP ${response.status}: ${body.slice(0, 120)}`;
+      } catch (caught) {
+        error = caught instanceof Error ? caught.message : String(caught);
+      } finally {
+        clearTimeout(timeout);
+      }
+    }
+    return { ready: false, error };
+  }, serverUrl);
+  if (!result.ready) {
+    throw new Error(`Service worker cannot write to the E2E trace server (${serverUrl}): ${result.error}`);
+  }
+}
 
 interface DriverOutcome {
   kind: "completion" | "clarification" | "timeout";
@@ -602,6 +647,9 @@ export async function createModelBenchDriver(): Promise<ModelBenchDriver> {
 
         await harness.beforeAllHook();
         beforeAllComplete = true;
+        await withLiveServiceWorker(harness.ctx, (worker) =>
+          assertTraceTransportReady(worker),
+        );
         if (!harness.apiKey) {
           throw new Error(`API key for E2E provider '${harness.providerMode}' is missing.`);
         }

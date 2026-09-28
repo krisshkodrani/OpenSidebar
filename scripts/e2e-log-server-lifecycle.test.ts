@@ -19,6 +19,14 @@ test("E2E log server can stop and restart without leaving its listening child be
       const response = await fetch(healthUrl, { signal: AbortSignal.timeout(3_000) });
       assert.equal(response.status, 200);
       await response.text();
+      const traceProbe = await fetch(`http://127.0.0.1:${port}/traces`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: "{}",
+        signal: AbortSignal.timeout(3_000),
+      });
+      assert.equal(traceProbe.status, 400);
+      assert.match(await traceProbe.text(), /Missing sessionId/);
       await stopLogServer();
       await assert.rejects(fetch(healthUrl, { signal: AbortSignal.timeout(1_000) }));
     }
