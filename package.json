@@ -91,6 +91,7 @@
     "bench": "tsx scripts/run-bench.ts",
     "bench:fetch": "tsx scripts/bench/fetch-tasks.ts",
     "models:check": "tsx scripts/model-compatibility-check.ts",
+    "providers:smoke": "tsx scripts/provider-smoke.ts",
     "traces": "nx run tools:traces",
     "traces:archive": "tsx scripts/trace-archive.ts",
     "traces:delete-old": "tsx scripts/trace-delete-old.ts",
