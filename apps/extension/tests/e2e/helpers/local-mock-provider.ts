@@ -8,6 +8,7 @@ export type LocalMockProviderScenarioName =
   | "done-draft-premature-recovery"
   | "done-form-submit-gating"
   | "done-summary-incomplete-recovery"
+  | "first-turn-clarification"
   | "partial-handoff-max-turns"
   | "bridge-approval-forwarding"
   | "watch-restock"
@@ -105,6 +106,14 @@ export const localMockProviderScenarios: Record<
     prompt: "Read this page and summarize the main points.",
     maxTurns: 8,
     timeoutMs: 180_000,
+  },
+  "first-turn-clarification": {
+    fixture: "article",
+    label: "terminal-first-turn-clarification",
+    prompt:
+      "Please assign this article review to the right owner. It could be Design Ops or Platform; ask me which one I mean before changing anything.",
+    maxTurns: 4,
+    timeoutMs: 60_000,
   },
   "partial-handoff-max-turns": {
     fixture: "summarize",
@@ -397,6 +406,18 @@ function plannerJson(
       ],
     });
   }
+  if (scenarioName === "first-turn-clarification") {
+    return JSON.stringify({
+      isMultiStep: false,
+      difficulty: "simple",
+      steps: [{
+        objective: "Resolve the missing owner choice before assigning the article review.",
+        successCriteria: "The user has been asked to choose between Design Ops and Platform.",
+        dependencies: [], assumptions: [],
+        toolProfile: "full",
+      }],
+    });
+  }
   if (scenarioName === "partial-handoff-max-turns") {
     return JSON.stringify({
       isMultiStep: false,
@@ -622,6 +643,15 @@ function executorToolCalls(
   if (scenarioName === "partial-handoff-max-turns") {
     state.partialHandoffReadReturned = true;
     return [{ name: "read_page", args: {} }];
+  }
+  if (scenarioName === "first-turn-clarification") {
+    return [{
+      name: "clarify",
+      args: {
+        question: "Should I assign the article review to Design Ops or Platform?",
+        suggestions: ["Design Ops", "Platform"],
+      },
+    }];
   }
 
   if (scenarioName === "done-summary-incomplete-recovery") {
