@@ -2,28 +2,10 @@
 
 Use this checklist when preparing a new OpenSidebar release.
 
-## Historical 0.7.2 RC status - 2026-08-08
-
-This table records the 0.7.2 submission at that date. For the current source
-version, inspect the manifest and the [0.7.7 candidate report](engineering/077-release-candidate-report.md),
-then rerun the gates below on the exact release commit.
-
-The `0.7.2` update is submitted for Chrome Web Store review under the stable ID
-`hakbnbbkiehiofnafdkcibbnkbdmjiha`; existing users remain on the previously
-published version until Google approves the update.
-
-| Gate                       | Status               | Evidence / next action                                                                                                                                                                              |
-| -------------------------- | -------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Code and UI                | Passed               | Compact task rail, OpenRouter default/recommendation, provider migration, local reliability summaries, recovery paths, and the staged composer/workspace fixes are present; focused tests passed.   |
-| Listing material           | Passed               | Rebuilt the four customer-only screenshots, promo tile, and marquee under `.artifacts/store/`; OpenRouter is selected in the provider capture and developer-only viewer images are excluded.        |
-| Audience videos            | Passed               | Revalidated both British-female films under `.artifacts/publish/`; rebuilt the customer film with OpenRouter attribution and retained the already accurate developer film.                          |
-| Manifest/version alignment | Passed               | `package.json`, source manifest, and built `dist/manifest.json` declare `0.7.2`; the build contains the exact production Cognito domain/client.                                                     |
-| Site material              | Passed               | Rebuilt and verified both tours and posters from the cache-immutable `v8` media path; the production site build passed with no failed media requests.                                               |
-| Full release verification  | Passed               | RFC validation, lint, typecheck, 5,286 extension tests, production build, dist validation, and production audit passed on the reconciled candidate.                                                 |
-| Native task completion     | Pending              | Re-run deterministic native login/navigation and the native side-panel smoke on the exact release commit.                                                                                           |
-| Release package/preflight  | Pending exact commit | The `0.7.2` zip, checksum, notes, and manifest pass `release:preflight --allow-dirty`; regenerate and run the strict native/preflight gate after committing.                                        |
-| Chrome Web Store upload    | Submitted for review | Package 0.7.2 plus the Cloud-mode privacy and listing disclosures are saved and submitted on the existing item; wait for Published or reviewer feedback.                                            |
-| Production activation      | Blocked on approval  | Follow [cloud-production-activation-runbook.md](engineering/cloud-production-activation-runbook.md); keep credential, preference, relay, session, checkpoint, command, and Temporal flags disabled. |
+Check the source version in `package.json` and `apps/extension/manifest.json`,
+then compare it with the latest published [GitHub release](https://github.com/krisshkodrani/OpenSidebar/releases).
+A source version or an earlier candidate's evidence does not certify a release.
+Run the gates below on the exact commit to be tagged.
 
 ## 1. Freeze The Release Candidate
 
@@ -44,10 +26,12 @@ This runs:
 - lint across maintained app source, shared packages, active tests, and TypeScript tooling scripts
 - TypeScript project references typecheck
 - extension tests
-- backend tests
 - production build
 - extension artifact verification for the generated `dist/` manifest, side panel, trace viewer, service worker import, icons, content scripts, web-accessible resources, and Vite manifest
 - production dependency audit for known advisories
+
+For cloud-service changes, also run `corepack pnpm run cloud:test`; it is not
+part of `release:verify`.
 
 ## 3. Run Final E2E Validation
 
@@ -70,9 +54,8 @@ ServiceNow support was removed by owner decision (2026-09-28). Validate
 changes with local checks and generic browser tests; keep generated outputs
 under `.artifacts/e2e/`.
 
-When you run the E2E suite or prepare the summary, write the dated report to:
-
-- `.artifacts/e2e/e2e-report-YYYY-MM-DD.md`
+Keep generated E2E diagnostics under `.artifacts/e2e/` and summarize the result
+in the CLI or pull request. Do not commit traces or generated reports.
 
 ## 4. Validate Release Artifacts
 
@@ -107,15 +90,16 @@ For a broad GitHub-first BYOK release, also confirm:
 - Attach the generated release notes from `.artifacts/releases/`
 - Upload the built `dist/` package or release zip to the intended distribution channel
 
-GitHub CLI draft command after final manual spot-check:
+GitHub CLI draft command after final manual spot-check (replace `0.7.7` with
+the release version):
 
 ```bash
-gh release create v0.7.0 \
+gh release create v0.7.7 \
   --draft \
-  --title "OpenSidebar v0.7.0 OSS BYOK Preview" \
-  --notes-file .artifacts/releases/opensidebar-v0.7.0-release-notes.md \
-  .artifacts/releases/opensidebar-v0.7.0.zip \
-  .artifacts/releases/opensidebar-v0.7.0.zip.sha256
+  --title "OpenSidebar v0.7.7 OSS BYOK Preview" \
+  --notes-file .artifacts/releases/opensidebar-v0.7.7-release-notes.md \
+  .artifacts/releases/opensidebar-v0.7.7.zip \
+  .artifacts/releases/opensidebar-v0.7.7.zip.sha256
 ```
 
 ## Current Known Caveat
