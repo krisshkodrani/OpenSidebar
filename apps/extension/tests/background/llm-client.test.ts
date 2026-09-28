@@ -18,6 +18,7 @@ import {
   XIAOMI_MODEL_PLANNER,
 } from "../../src/background/llm/client";
 import type { CompletionRequest } from "../../src/background/llm/types";
+import { LLM_REQUEST_OBSERVATION, type LlmRequestObservation } from "../../src/background/llm/transport-observation";
 
 // ----- shared helpers -----
 
@@ -360,6 +361,22 @@ describe("LLMClient construction & tier switching", () => {
     });
     expect(sentModel).toBe(MODEL_EXECUTOR);
     expect(result.text).toBe("Composed.");
+  });
+
+  test("transport context distinguishes concurrent seats sharing a model without changing HTTP", async () => {
+    const client = makeClient({ plannerModel: MODEL_EXECUTOR });
+    const observations: LlmRequestObservation[] = [];
+    mockFetch((url, init) => {
+      observations.push((init as RequestInit & { [LLM_REQUEST_OBSERVATION]: LlmRequestObservation })[LLM_REQUEST_OBSERVATION]);
+      expect(new Request(url, init).headers.has("x-opensidebar-role")).toBe(false);
+      return jsonApiResponse("ok");
+    });
+    const executor = client.complete(baseRequest());
+    client.switchToPlanner();
+    const planner = client.complete(baseRequest());
+    await Promise.all([executor, planner]);
+    expect(observations.map((entry) => entry.role)).toEqual(["executor", "planner"]);
+    expect(observations[0].requestId).not.toBe(observations[1].requestId);
   });
 
   test("Luna tool calls request compatible reasoning and OpenRouter cost usage", async () => {
@@ -993,7 +1010,9 @@ describe("complete() error handling & retry", () => {
   test("retries transient OpenRouter timeouts and server errors", async () => {
     const client = makeClient();
     let callCount = 0;
-    mockFetch(() => {
+    const requestIds: string[] = [];
+    mockFetch((_url, init) => {
+      requestIds.push((init as RequestInit & { [LLM_REQUEST_OBSERVATION]: LlmRequestObservation })[LLM_REQUEST_OBSERVATION].requestId);
       callCount++;
       if (callCount === 1) return new Response("Timed out", { status: 408 });
       if (callCount === 2)
@@ -1004,6 +1023,7 @@ describe("complete() error handling & retry", () => {
     const result = await client.complete(baseRequest());
     expect(result.content).toBe("Recovered");
     expect(callCount).toBe(3);
+    expect(new Set(requestIds).size).toBe(1);
   });
 
   test("does NOT retry on 400/401/404", async () => {

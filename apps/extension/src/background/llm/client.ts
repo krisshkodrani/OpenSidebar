@@ -48,7 +48,7 @@ import {
 import type { JudgeUsage } from "../agent/completion/judge";
 import type { JudgeRubric, JudgeVerdict } from "../agent/completion/judge";
 import { requestJevVerdict } from "../agent/completion/jev-judge";
-
+import { withLlmRequestObservation } from "./transport-observation";
 
 // Seat model ids live in ./seat-models (extracted 2026-07-26 for the
 // decomposition budget); re-exported so `from "./client"` imports still work.
@@ -1073,10 +1073,10 @@ export class LLMClient {
     });
 
     try {
-      let requestInitBase: RequestInit = {
+      let requestInitBase: RequestInit = withLlmRequestObservation({
         method: "POST",
         headers: buildJsonHeaders(provider, request),
-      };
+      }, this._activeTier);
 
       let response: Response;
       let actualProviderId: ProviderConfig["providerId"];
@@ -1337,10 +1337,10 @@ export class LLMClient {
     });
 
     try {
-      let requestInitBase: RequestInit = {
+      let requestInitBase: RequestInit = withLlmRequestObservation({
         method: "POST",
         headers: buildJsonHeaders(provider, request),
-      };
+      }, this._activeTier);
 
       let response: Response;
       let actualProviderId: ProviderConfig["providerId"];

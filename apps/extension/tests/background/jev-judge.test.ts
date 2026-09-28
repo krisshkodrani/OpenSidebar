@@ -1,6 +1,7 @@
 import { describe, expect, test, vi } from "vitest";
 import { jevQuestions, parseJevVerdict, requestJevVerdict } from "../../src/background/agent/completion/jev-judge";
 import type { JudgeRubric } from "../../src/background/agent/completion/judge";
+import { LLM_REQUEST_OBSERVATION, type LlmRequestObservation } from "../../src/background/llm/transport-observation";
 
 const rubric: JudgeRubric = {
   claim: "The submitted form has the requested value",
@@ -43,6 +44,10 @@ describe("Jev rubric decisions", () => {
       expect(fetchMock.mock.calls[0]?.[0]).toBe("https://openrouter.ai/api/alpha/decisions");
       const body = JSON.parse(fetchMock.mock.calls[0]?.[1]?.body as string);
       expect(Object.keys(body.questions)).toEqual(["criterion_0", "fact_0"]);
+      const observation = (fetchMock.mock.calls[0]?.[1] as RequestInit & {
+        [LLM_REQUEST_OBSERVATION]: LlmRequestObservation;
+      })[LLM_REQUEST_OBSERVATION];
+      expect(observation.role).toBe("judge");
     } finally {
       fetchMock.mockRestore();
     }

@@ -1,6 +1,8 @@
 import type { ModelSeat, RequestedSeatV1, ResolvedSeatV1, RoleUsageV1 } from "@opensidebar/scenario-contracts";
 
 export interface ProviderCallEvidence {
+  requestId?: string;
+  role?: ModelSeat | "writer";
   requestedModel: string;
   model: string;
   provider: string;
@@ -11,7 +13,10 @@ export interface ProviderCallEvidence {
 }
 
 /** Observe API metadata only; never infer the served identity from the request. */
-export function observeProviderCall(request: string, response: string, status: number, durationMs: number): ProviderCallEvidence {
+export function observeProviderCall(
+  request: string, response: string, status: number, durationMs: number,
+  observation?: { role?: string; requestId?: string },
+): ProviderCallEvidence {
   const requestedModel = String(JSON.parse(request).model ?? "");
   const records: Record<string, any>[] = [];
   const appendRecord = (value: unknown) => {
@@ -31,12 +36,15 @@ export function observeProviderCall(request: string, response: string, status: n
     if (record.usage) usage = record.usage;
   }
   return {
+    ...(["executor", "planner", "perception", "judge", "writer"].includes(observation?.role ?? "") &&
+      typeof observation?.requestId === "string" && observation.requestId.length > 0
+      ? { role: observation.role as ModelSeat | "writer", requestId: observation.requestId } : {}),
     requestedModel, model, provider, status, durationMs,
     usageReported: typeof usage.cost === "number" && Number.isFinite(usage.cost),
     usage: {
       calls: 1,
-      promptTokens: Number(usage.prompt_tokens ?? 0),
-      completionTokens: Number(usage.completion_tokens ?? 0),
+      promptTokens: Number(usage.prompt_tokens ?? usage.input_tokens ?? 0),
+      completionTokens: Number(usage.completion_tokens ?? usage.output_tokens ?? 0),
       cachedTokens: Number(usage.prompt_tokens_details?.cached_tokens ?? 0),
       costUsd: Number(usage.cost ?? 0), llmTimeMs: durationMs,
     },
@@ -63,20 +71,39 @@ export function providerSlugsFromCatalog(entries: unknown): Record<string, strin
 export function summarizeProviderCalls(calls: ProviderCallEvidence[], seats: Partial<Record<ModelSeat, RequestedSeatV1>>, providerSlugs: Record<string, string> = {}) {
   const resolvedSeats: Partial<Record<ModelSeat, ResolvedSeatV1>> = {};
   const usageByRole: Partial<Record<ModelSeat, RoleUsageV1>> = {};
+  const unattributedUsage: RoleUsageV1 = { calls: 0, promptTokens: 0, completionTokens: 0, cachedTokens: 0, costUsd: 0, llmTimeMs: 0 };
   const issues: string[] = [];
   if (!calls.length) issues.push("No provider response evidence was captured.");
-  for (const call of calls) {
+  const roleForCall = (call: ProviderCallEvidence): ModelSeat | undefined => {
+    if (call.role) {
+      const role = call.role === "writer" ? "executor" : call.role;
+      // With no writer seat in the benchmark contract, an unconfigured writer
+      // reuses executor. A distinct writer route remains unattributed.
+      if (call.role === "writer" && seats.executor?.model !== call.requestedModel) return undefined;
+      return role;
+    }
     const matches = Object.entries(seats).filter(([, seat]) => seat?.model === call.requestedModel);
-    if (matches.length !== 1) { issues.push(`Unassigned or ambiguous model seat: ${call.requestedModel}`); continue; }
-    const [role, requested] = matches[0] as [ModelSeat, RequestedSeatV1];
+    return matches.length === 1 ? matches[0][0] as ModelSeat : undefined;
+  };
+  const addUsage = (total: RoleUsageV1, usage: RoleUsageV1) => {
+    for (const key of Object.keys(total) as (keyof RoleUsageV1)[]) total[key] += usage[key];
+  };
+  for (const call of calls) {
+    const role = roleForCall(call);
+    const requested = role && seats[role];
+    if (!role || !requested) {
+      addUsage(unattributedUsage, call.usage);
+      issues.push(`Unassigned or ambiguous model seat: ${call.requestedModel}`);
+      continue;
+    }
     const total = usageByRole[role] ?? { calls: 0, promptTokens: 0, completionTokens: 0, cachedTokens: 0, costUsd: 0, llmTimeMs: 0 };
-    for (const key of Object.keys(total) as (keyof RoleUsageV1)[]) total[key] += call.usage[key];
+    addUsage(total, call.usage);
     usageByRole[role] = total;
     if (call.status < 200 || call.status >= 300) continue;
     if (!call.usageReported) issues.push(`Missing reported cost for ${role}.`);
     const provider = Object.hasOwn(providerSlugs, call.provider)
       ? providerSlugs[call.provider] : call.provider;
-    if (!call.model || !provider || call.model !== requested.model ||
+    if (!call.model || !provider || call.requestedModel !== requested.model || call.model !== requested.model ||
         (requested.providerPin && provider !== requested.providerPin.toLowerCase())) {
       issues.push(`Unverified route for ${role}: ${call.provider || "unknown"}/${call.model || "unknown"}`);
       continue;
@@ -84,11 +111,11 @@ export function summarizeProviderCalls(calls: ProviderCallEvidence[], seats: Par
     resolvedSeats[role] = { ...requested, resolvedModel: call.model, resolvedProvider: provider };
   }
   const providerFailures: string[] = [];
-  for (const [role, seat] of Object.entries(seats)) {
-    const roleCalls = calls.filter((call) => call.requestedModel === seat?.model);
+  for (const role of Object.keys(seats)) {
+    const roleCalls = calls.filter((call) => roleForCall(call) === role);
     if (roleCalls.length && roleCalls.every((call) => call.status < 200 || call.status >= 300)) {
       providerFailures.push(`${role}: no successful provider response (HTTP ${[...new Set(roleCalls.map((call) => call.status))].join(", ")}).`);
     }
   }
-  return { resolvedSeats, usageByRole, issues: [...new Set(issues)], providerFailures };
+  return { resolvedSeats, usageByRole, unattributedUsage, issues: [...new Set(issues)], providerFailures };
 }

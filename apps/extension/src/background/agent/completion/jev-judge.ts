@@ -1,4 +1,5 @@
 import type { JudgeRubric, JudgeUsage, JudgeVerdict } from "./judge";
+import { withLlmRequestObservation } from "../../llm/transport-observation";
 
 export interface JevDecisionResponse {
   answers?: Record<string, { type?: string; noul?: number; choice?: string }>;
@@ -15,7 +16,7 @@ export async function requestJevVerdict(
   if (!apiKey || apiKey === "__opensidebar_cloud__") {
     throw new Error("Jev Decisions API requires a direct OpenRouter key");
   }
-  const response = await fetch("https://openrouter.ai/api/alpha/decisions", {
+  const response = await fetch("https://openrouter.ai/api/alpha/decisions", withLlmRequestObservation({
     method: "POST",
     headers: { Authorization: `Bearer ${apiKey}`, "Content-Type": "application/json" },
     body: JSON.stringify({
@@ -24,7 +25,7 @@ export async function requestJevVerdict(
       questions: jevQuestions(rubric),
     }),
     signal,
-  });
+  }, "judge"));
   if (!response.ok) throw new Error(`Jev Decisions API returned HTTP ${response.status}`);
   const data = await response.json() as JevDecisionResponse;
   return { ...parseJevVerdict(rubric, data), model: data.model ?? model, providerId: "openrouter" };

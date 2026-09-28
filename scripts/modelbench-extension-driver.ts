@@ -439,8 +439,8 @@ async function preflightProviderNetwork(
 ): Promise<Record<string, string>> {
   if (provider !== "openrouter") return {};
   const page = await openHelperPage(ctx);
-  await page.exposeFunction("recordModelBenchProviderCall", (request: string, response: string, status: number, durationMs: number) => {
-    calls.push(observeProviderCall(request, response, status, durationMs));
+  await page.exposeFunction("recordModelBenchProviderCall", (request: string, response: string, status: number, durationMs: number, observation?: { role?: string; requestId?: string }) => {
+    calls.push(observeProviderCall(request, response, status, durationMs, observation));
   });
   const result = await page.evaluate(async () => {
     const controller = new AbortController();
@@ -492,8 +492,8 @@ async function preflightProviderNetwork(
             signal: controller.signal,
           });
           const responseBody = await response.text();
-          const recordCall = scope.recordModelBenchProviderCall as (request: string, response: string, status: number, durationMs: number) => Promise<void>;
-          await recordCall(message.body, responseBody, response.status, Date.now() - startedAt);
+          const recordCall = scope.recordModelBenchProviderCall as (request: string, response: string, status: number, durationMs: number, observation?: { role?: string; requestId?: string }) => Promise<void>;
+          await recordCall(message.body, responseBody, response.status, Date.now() - startedAt, message.observation);
           sendResponse({
             ok: true,
             status: response.status,
@@ -522,6 +522,8 @@ async function preflightProviderNetwork(
       scope[marker] = true;
       const nativeFetch = globalThis.fetch.bind(globalThis);
       globalThis.fetch = async (input, init) => {
+        const observation = (init as RequestInit & { [key: symbol]: unknown } | undefined)
+          ?.[Symbol.for("opensidebar.llm.request-observation")];
         const request = new Request(input, init);
         if (new URL(request.url).origin !== "https://openrouter.ai") {
           return nativeFetch(input, init);
@@ -535,6 +537,7 @@ async function preflightProviderNetwork(
           method: request.method,
           headers: Object.fromEntries(request.headers.entries()),
           body,
+          observation,
         });
         if (!result?.ok) {
           throw new TypeError(result?.detail || "E2E network proxy failed.");
@@ -662,7 +665,7 @@ export async function createModelBenchDriver(): Promise<ModelBenchDriver> {
         const harnessFailure = harnessFailureReason(outcome);
         const routing = input.configuration.provider === "openrouter"
           ? summarizeProviderCalls(providerCalls, input.configuration.seats, providerSlugs)
-          : { ...evidence, issues: [], providerFailures: [] };
+          : { ...evidence, unattributedUsage: undefined, issues: [], providerFailures: [] };
         return {
           durationMs: Date.now() - startedAt,
           finalState: run.state,
@@ -671,6 +674,7 @@ export async function createModelBenchDriver(): Promise<ModelBenchDriver> {
           driverEvidence,
           resolvedSeats: routing.resolvedSeats,
           usageByRole: routing.usageByRole,
+          unattributedUsage: routing.unattributedUsage,
           telemetry: evidence.telemetry,
           artifactRefs: evidence.artifactRefs,
           ...(providerFailure || routing.providerFailures.length > 0
@@ -719,6 +723,7 @@ export async function createModelBenchDriver(): Promise<ModelBenchDriver> {
           durationMs: Date.now() - startedAt,
           resolvedSeats: partialRouting?.resolvedSeats ?? {},
           usageByRole: partialRouting?.usageByRole ?? {},
+          ...(partialRouting ? { unattributedUsage: partialRouting.unattributedUsage } : {}),
           artifactRefs: [],
           failure: {
             kind: providerError(error) ? "provider" : "harness",
