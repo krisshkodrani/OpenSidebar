@@ -23,7 +23,7 @@
  */
 import { spawn } from "node:child_process";
 import { appendFileSync, mkdirSync, writeFileSync } from "node:fs";
-import { dirname, join, resolve as resolvePath } from "node:path";
+import { dirname, join } from "node:path";
 
 import type {
   BrowserToolResponse,
@@ -37,6 +37,7 @@ import {
   recordDiscovery,
   recordStatus,
   resolveApplicationDir,
+  resolveCvServeDir,
   resolveSeedDir,
   startCvServer,
   assessListing as scoreListing,
@@ -641,7 +642,7 @@ export class RunManager {
       let cvUrl: string | undefined;
       if (app.manifest.cvServe) {
         cvServer = await this.deps.startCvServer(
-          resolvePath(app.dir, app.manifest.cvServe.dir),
+          resolveCvServeDir(app.dir, app.manifest.cvServe.dir, app.manifest.cvServe.file),
           app.manifest.cvServe.file,
         );
         cvUrl = cvServer.url;

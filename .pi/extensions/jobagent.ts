@@ -24,7 +24,6 @@
 
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import type { TSchema } from "typebox";
-import { resolve } from "node:path";
 
 import {
   assembleFillBrief,
@@ -33,6 +32,7 @@ import {
   loadSearchCriteria,
   recordDiscovery,
   recordStatus,
+  resolveCvServeDir,
   startCvServer,
   type ApplicationStatus,
   type CvServer,
@@ -195,7 +195,7 @@ export default function jobagentExtension(pi: ExtensionAPI): void {
       let cvUrl: string | undefined;
       if (app.manifest.cvServe) {
         await closeCvServer(name);
-        const cvDir = resolve(app.dir, app.manifest.cvServe.dir);
+        const cvDir = resolveCvServeDir(app.dir, app.manifest.cvServe.dir, app.manifest.cvServe.file);
         const server = await startCvServer(cvDir, app.manifest.cvServe.file);
         cvServers.set(name, server);
         cvUrl = server.url;

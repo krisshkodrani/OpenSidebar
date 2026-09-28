@@ -76,7 +76,7 @@ export function resolveAnswerLibraryPath(): string {
  * drive-qualified paths ("C:/x", "c:x"), and any `..` SEGMENT. Segment-wise so
  * an innocent name like "cv..old.pdf" stays legal.
  */
-function isEscapingPath(file: string): boolean {
+export function isEscapingPath(file: string): boolean {
   if (/^[\\/]/.test(file)) return true;
   if (/^[a-zA-Z]:/.test(file)) return true;
   if (isAbsolute(file)) return true;
