@@ -1,4 +1,4 @@
-import { describe, expect, test } from "vitest";
+import { afterEach, describe, expect, test, vi } from "vitest";
 import "../setup";
 import {
   loadApiKey,
@@ -8,30 +8,42 @@ import {
   type SettingsStorageBackend,
 } from "../../src/utils/settings-storage";
 import type { UserSettings } from "../../src/types";
+import { PROFILE_CEK_STORAGE_KEY } from "../../src/utils/profile-crypto";
 
-function memoryArea(values: Record<string, unknown> = {}): SettingsStorageArea & {
+function memoryArea(
+  values: Record<string, unknown> = {},
+): SettingsStorageArea & {
   values: Record<string, unknown>;
 } {
   return {
     values,
     async get(keys) {
       if (typeof keys === "string") return { [keys]: values[keys] };
-      if (Array.isArray(keys)) return Object.fromEntries(keys.map((key) => [key, values[key]]));
+      if (Array.isArray(keys))
+        return Object.fromEntries(keys.map((key) => [key, values[key]]));
       return { ...values };
     },
-    async set(items) { Object.assign(values, items); },
+    async set(items) {
+      Object.assign(values, items);
+    },
     async remove(keys) {
       for (const key of Array.isArray(keys) ? keys : [keys]) delete values[key];
     },
   };
 }
 
-function memoryBackend(local: Record<string, unknown> = {}): SettingsStorageBackend & {
+function memoryBackend(
+  local: Record<string, unknown> = {},
+): SettingsStorageBackend & {
   local: ReturnType<typeof memoryArea>;
   sync: ReturnType<typeof memoryArea>;
   session: ReturnType<typeof memoryArea>;
 } {
-  return { local: memoryArea(local), sync: memoryArea(), session: memoryArea() };
+  return {
+    local: memoryArea(local),
+    sync: memoryArea(),
+    session: memoryArea(),
+  };
 }
 
 const credentials = {
@@ -57,6 +69,44 @@ const settings: UserSettings = {
 };
 
 describe("provider credential storage", () => {
+  afterEach(() => vi.unstubAllGlobals());
+
+  test("serializes concurrent migration across extension contexts", async () => {
+    const previous = new Map<string, Promise<unknown>>();
+    vi.stubGlobal("navigator", {
+      locks: {
+        request<T>(name: string, operation: () => Promise<T>): Promise<T> {
+          const next = (previous.get(name) ?? Promise.resolve())
+            .catch(() => {})
+            .then(operation);
+          previous.set(name, next);
+          return next;
+        },
+      },
+    });
+    const storage = memoryBackend({
+      openRouterApiKey_local: credentials.openRouterApiKey,
+    });
+    const originalSet = storage.local.set.bind(storage.local);
+    let keyWrites = 0;
+    storage.local.set = async (items) => {
+      if (PROFILE_CEK_STORAGE_KEY in items) {
+        keyWrites += 1;
+        await new Promise((resolve) => setTimeout(resolve, 5));
+      }
+      await originalSet(items);
+    };
+
+    const [loaded, fastKey] = await Promise.all([
+      loadSettings(storage),
+      loadApiKey(storage),
+    ]);
+    expect(loaded?.openRouterApiKey).toBe(credentials.openRouterApiKey);
+    expect(fastKey).toBe(credentials.openRouterApiKey);
+    expect(keyWrites).toBe(1);
+    expect(storage.local.values.openRouterApiKey_local).toMatch(/^enc:v1:/);
+  });
+
   test("encrypts every provider key locally and returns plaintext only to callers", async () => {
     const storage = memoryBackend();
     await saveSettings(settings, storage);
@@ -87,7 +137,9 @@ describe("provider credential storage", () => {
   });
 
   test("migrates plaintext OpenRouter keys through the fast path", async () => {
-    const storage = memoryBackend({ openRouterApiKey_local: credentials.openRouterApiKey });
+    const storage = memoryBackend({
+      openRouterApiKey_local: credentials.openRouterApiKey,
+    });
     expect(await loadApiKey(storage)).toBe(credentials.openRouterApiKey);
     expect(storage.local.values.openRouterApiKey_local).toMatch(/^enc:v1:/);
   });
@@ -102,7 +154,9 @@ describe("provider credential storage", () => {
     const loaded = await loadSettings(storage);
     expect(loaded?.openRouterApiKey).toBe("");
     expect(loaded?.geminiApiKey).toBe("");
-    expect(storage.sync.values.userSettings).not.toHaveProperty("openRouterApiKey");
+    expect(storage.sync.values.userSettings).not.toHaveProperty(
+      "openRouterApiKey",
+    );
     expect(storage.sync.values.userSettings).not.toHaveProperty("geminiApiKey");
   });
 

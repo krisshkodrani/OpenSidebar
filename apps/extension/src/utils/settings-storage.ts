@@ -39,14 +39,27 @@ const LOCAL_XIAOMI_KEY = "xiaomiApiKey_local";
 const LOCAL_CEREBRAS_KEY = "cerebrasApiKey_local";
 const LEGACY_LOCAL_JOBAGENT_MCP_TOKEN_KEY = "jobAgentMcpToken_local";
 const LOCAL_CREDENTIAL_KEYS = [
-  LOCAL_KEY, LOCAL_OPENAI_KEY, LOCAL_GROQ_KEY, LOCAL_GEMINI_KEY,
-  LOCAL_FIREWORKS_KEY, LOCAL_DEEPSEEK_KEY, LOCAL_KIMI_KEY,
-  LOCAL_XIAOMI_KEY, LOCAL_CEREBRAS_KEY,
+  LOCAL_KEY,
+  LOCAL_OPENAI_KEY,
+  LOCAL_GROQ_KEY,
+  LOCAL_GEMINI_KEY,
+  LOCAL_FIREWORKS_KEY,
+  LOCAL_DEEPSEEK_KEY,
+  LOCAL_KIMI_KEY,
+  LOCAL_XIAOMI_KEY,
+  LOCAL_CEREBRAS_KEY,
 ] as const;
 const SYNC_CREDENTIAL_FIELDS = [
-  "openRouterApiKey", "openaiApiKey", "groqApiKey", "geminiApiKey",
-  "fireworksApiKey", "deepseekApiKey", "kimiApiKey", "xiaomiApiKey",
-  "cerebrasApiKey", "jobAgentMcpToken",
+  "openRouterApiKey",
+  "openaiApiKey",
+  "groqApiKey",
+  "geminiApiKey",
+  "fireworksApiKey",
+  "deepseekApiKey",
+  "kimiApiKey",
+  "xiaomiApiKey",
+  "cerebrasApiKey",
+  "jobAgentMcpToken",
 ] as const;
 
 export type SettingsStorageKeys =
@@ -92,6 +105,15 @@ function normalizeCredential(value: string | undefined): string {
   return value?.trim() ?? "";
 }
 
+async function withCredentialStorageLock<T>(
+  operation: () => Promise<T>,
+): Promise<T> {
+  const locks = globalThis.navigator?.locks;
+  return locks
+    ? await locks.request("opensidebar:provider-credentials", operation)
+    : operation();
+}
+
 async function encryptCredentials(
   values: Record<string, string>,
   storage: SettingsStorageBackend,
@@ -99,42 +121,55 @@ async function encryptCredentials(
   const entries = Object.entries(values);
   if (!entries.some(([, value]) => value)) return values;
   const key = await getProfileEncryptionKey(storage);
-  return Object.fromEntries(await Promise.all(entries.map(async ([name, value]) => [
-    name, value ? await encryptField(key, value) : "",
-  ])));
+  return Object.fromEntries(
+    await Promise.all(
+      entries.map(async ([name, value]) => [
+        name,
+        value ? await encryptField(key, value) : "",
+      ]),
+    ),
+  );
 }
 
 async function readCredentials(
-  raw: Record<string, unknown>,
   storage: SettingsStorageBackend,
-  legacyOpenRouterKey?: unknown,
+  names: readonly string[] = LOCAL_CREDENTIAL_KEYS,
 ): Promise<Record<string, string>> {
-  const values: Record<string, string> = {};
-  const migration: Record<string, string> = {};
-  let key: CryptoKey | undefined;
-  for (const name of LOCAL_CREDENTIAL_KEYS) {
-    const stored = name === LOCAL_KEY && !raw[name]
-      ? legacyOpenRouterKey
-      : raw[name];
-    if (typeof stored !== "string" || !stored) {
-      values[name] = "";
-      continue;
+  return withCredentialStorageLock(async () => {
+    const raw = await storage.local.get([...names]);
+    const legacyOpenRouterKey = !raw[LOCAL_KEY]
+      ? (
+          await storage.session
+            .get(SESSION_KEY)
+            .catch(() => ({}) as Record<string, unknown>)
+        )[SESSION_KEY]
+      : undefined;
+    const values: Record<string, string> = {};
+    const migration: Record<string, string> = {};
+    let key: CryptoKey | undefined;
+    for (const name of names) {
+      const stored =
+        name === LOCAL_KEY && !raw[name] ? legacyOpenRouterKey : raw[name];
+      if (typeof stored !== "string" || !stored) {
+        values[name] = "";
+        continue;
+      }
+      key ??= await getProfileEncryptionKey(storage);
+      values[name] = isEncryptedValue(stored)
+        ? await decryptField(key, stored)
+        : stored;
+      if (!isEncryptedValue(stored)) {
+        migration[name] = await encryptField(key, stored);
+      }
     }
-    key ??= await getProfileEncryptionKey(storage);
-    values[name] = isEncryptedValue(stored)
-      ? await decryptField(key, stored)
-      : stored;
-    if (!isEncryptedValue(stored)) {
-      migration[name] = await encryptField(key, stored);
+    if (Object.keys(migration).length > 0) {
+      await storage.local.set(migration);
     }
-  }
-  if (Object.keys(migration).length > 0) {
-    await storage.local.set(migration);
-  }
-  if (migration[LOCAL_KEY] && legacyOpenRouterKey && !raw[LOCAL_KEY]) {
-    await storage.session.remove(SESSION_KEY);
-  }
-  return values;
+    if (migration[LOCAL_KEY] && legacyOpenRouterKey && !raw[LOCAL_KEY]) {
+      await storage.session.remove(SESSION_KEY);
+    }
+    return values;
+  });
 }
 
 /**
@@ -191,7 +226,8 @@ export function normalizeEnabledSkillPackIds(value: unknown): string[] {
   for (const item of value) {
     if (typeof item !== "string") continue;
     const storedId = item.trim();
-    const id = storedId === "procurement-workflows" ? "source-list-workflows" : storedId;
+    const id =
+      storedId === "procurement-workflows" ? "source-list-workflows" : storedId;
     if (!id || normalized.includes(id)) continue;
     normalized.push(id);
   }
@@ -265,17 +301,24 @@ export async function saveSettings(
     ...rest
   } = normalized;
   await Promise.all([
-    storage.local.set(await encryptCredentials({
-      [LOCAL_KEY]: normalizeCredential(openRouterApiKey),
-      [LOCAL_OPENAI_KEY]: normalizeCredential(openaiApiKey),
-      [LOCAL_GROQ_KEY]: normalizeCredential(groqApiKey),
-      [LOCAL_GEMINI_KEY]: normalizeCredential(geminiApiKey),
-      [LOCAL_FIREWORKS_KEY]: normalizeCredential(fireworksApiKey),
-      [LOCAL_DEEPSEEK_KEY]: normalizeCredential(deepseekApiKey),
-      [LOCAL_KIMI_KEY]: normalizeCredential(kimiApiKey),
-      [LOCAL_XIAOMI_KEY]: normalizeCredential(xiaomiApiKey),
-      [LOCAL_CEREBRAS_KEY]: normalizeCredential(cerebrasApiKey),
-    }, storage)),
+    withCredentialStorageLock(async () =>
+      storage.local.set(
+        await encryptCredentials(
+          {
+            [LOCAL_KEY]: normalizeCredential(openRouterApiKey),
+            [LOCAL_OPENAI_KEY]: normalizeCredential(openaiApiKey),
+            [LOCAL_GROQ_KEY]: normalizeCredential(groqApiKey),
+            [LOCAL_GEMINI_KEY]: normalizeCredential(geminiApiKey),
+            [LOCAL_FIREWORKS_KEY]: normalizeCredential(fireworksApiKey),
+            [LOCAL_DEEPSEEK_KEY]: normalizeCredential(deepseekApiKey),
+            [LOCAL_KIMI_KEY]: normalizeCredential(kimiApiKey),
+            [LOCAL_XIAOMI_KEY]: normalizeCredential(xiaomiApiKey),
+            [LOCAL_CEREBRAS_KEY]: normalizeCredential(cerebrasApiKey),
+          },
+          storage,
+        ),
+      ),
+    ),
     storage.sync.set({ [SYNC_KEY]: rest }),
   ]);
   await Promise.all([
@@ -292,19 +335,11 @@ export async function saveSettings(
 export async function loadSettings(
   storage: SettingsStorageBackend = chromeSettingsStorage,
 ): Promise<UserSettings | null> {
-  const [syncResult, localResult, sessionResult] = await Promise.all([
+  const [syncResult, credentials] = await Promise.all([
     storage.sync.get(SYNC_KEY),
-    storage.local.get([...LOCAL_CREDENTIAL_KEYS]),
-    // Check legacy session key for migration
-    storage.session
-      .get(SESSION_KEY)
-      .catch(() => ({}) as Record<string, unknown>),
+    readCredentials(storage),
   ]);
   const syncSettings = syncResult[SYNC_KEY];
-  // Prefer local, fall back to legacy session key
-  const credentials = await readCredentials(
-    localResult, storage, sessionResult[SESSION_KEY],
-  );
   const apiKey = credentials[LOCAL_KEY];
   const openaiApiKey = credentials[LOCAL_OPENAI_KEY];
   const groqApiKey = credentials[LOCAL_GROQ_KEY];
@@ -455,20 +490,5 @@ export async function loadSettings(
 export async function loadApiKey(
   storage: SettingsStorageBackend = chromeSettingsStorage,
 ): Promise<string> {
-  const result = await storage.local.get(LOCAL_KEY);
-  if (result[LOCAL_KEY]) {
-    return (await readCredentials(result, storage))[LOCAL_KEY];
-  }
-  // Migrate from legacy session storage. Storage read errors may be ignored,
-  // but encryption failures must reach the caller instead of hiding the key.
-  let legacy: Record<string, unknown>;
-  try {
-    legacy = await storage.session.get(SESSION_KEY);
-  } catch {
-    return "";
-  }
-  if (legacy[SESSION_KEY]) {
-    return (await readCredentials(result, storage, legacy[SESSION_KEY]))[LOCAL_KEY];
-  }
-  return "";
+  return (await readCredentials(storage, [LOCAL_KEY]))[LOCAL_KEY];
 }
