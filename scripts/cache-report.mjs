@@ -21,6 +21,7 @@
  *   - reports absolute cached tokens and USD alongside every percentage;
  *   - reports instrumentation COVERAGE, so traces recorded before the §9
  *     telemetry landed are never silently read as "0% divergence";
+ *   - reports session completion only as a proxy; task success needs a validator;
  *   - refuses to print a verdict when the sample is too small to support one.
  *
  * ## The acceptance criterion
@@ -35,7 +36,7 @@
 
 import { readFileSync, readdirSync, writeFileSync, mkdirSync } from "node:fs";
 import { join, dirname, resolve } from "node:path";
-import { fileURLToPath } from "node:url";
+import { fileURLToPath, pathToFileURL } from "node:url";
 
 import {
   estimateCostBreakdownUsd,
@@ -89,6 +90,9 @@ function parseArgs(argv) {
     else if (arg === "--") continue;
     else throw new Error(`Unknown argument: ${arg}`);
   }
+  if (!Number.isSafeInteger(args.minTurns) || args.minTurns < 1) {
+    throw new Error("--min-turns must be a positive integer");
+  }
   return args;
 }
 
@@ -126,7 +130,7 @@ function readJsonl(path) {
   return rows;
 }
 
-/** Session outcome by id, so cache can be reported against task success. */
+/** Session outcome by id; this is a proxy, not a task-validator result. */
 function loadSessionOutcomes() {
   const outcomes = new Map();
   for (const session of readJsonl(join(TRACE_DIR, "index.jsonl"))) {
@@ -229,7 +233,7 @@ function emptyGroup(key) {
  * different cache behaviour — pooling them produces a number that describes no
  * real workload.
  */
-function aggregate(turns, sessions) {
+export function aggregate(turns, sessions, minTurns = MIN_WARM_TURNS_FOR_VERDICT) {
   const groups = new Map();
   const turnCountBySession = new Map();
   for (const turn of turns) {
@@ -263,10 +267,15 @@ function aggregate(turns, sessions) {
       );
     }
     const group = groups.get(keyString);
+    const firstTurnForSession = !group.runs.has(turn.sessionId);
     group.runs.add(turn.sessionId);
 
-    const outcome = sessions.get(turn.sessionId)?.outcome ?? "unknown";
-    group.outcomes[outcome] = (group.outcomes[outcome] ?? 0) + 1;
+    // A session has one outcome. Counting it on every turn makes longer
+    // sessions carry more weight in the cache-versus-completion comparison.
+    if (firstTurnForSession) {
+      const outcome = sessions.get(turn.sessionId)?.outcome ?? "unknown";
+      group.outcomes[outcome] = (group.outcomes[outcome] ?? 0) + 1;
+    }
 
     // Turn 1 cannot hit cache — counting it as a miss depresses every rate.
     const isWarm = (turn.turnNumber ?? 1) > 1;
@@ -334,10 +343,10 @@ function aggregate(turns, sessions) {
     }
   }
 
-  return [...groups.values()].map(finalizeGroup);
+  return [...groups.values()].map((group) => finalizeGroup(group, minTurns));
 }
 
-function finalizeGroup(group) {
+function finalizeGroup(group, minTurns) {
   const cachedSorted = [...group.cachedTokenSamples].sort((a, b) => a - b);
   const stableSorted = [...group.stablePrefixPctSamples].sort((a, b) => a - b);
   const offsetSorted = [...group.divergenceOffsetSamples].sort((a, b) => a - b);
@@ -402,16 +411,16 @@ function finalizeGroup(group) {
     zeroHitDespiteStablePrefixPct: pct(group.zeroHitDespiteStablePrefix, instrumented),
 
     outcomes: group.outcomes,
-    taskSuccessPct: pct(
+    sessionCompletionPct: pct(
       group.outcomes.completed ?? 0,
       Object.values(group.outcomes).reduce((a, b) => a + b, 0),
     ),
 
-    verdictEligible: group.warmTurns >= MIN_WARM_TURNS_FOR_VERDICT,
+    verdictEligible: group.warmTurns >= minTurns,
   };
 }
 
-function formatGroup(group) {
+function formatGroup(group, minTurns) {
   const lines = [];
   lines.push(
     `\n── ${group.tier} · ${group.model} @ ${group.provider} · run length ${group.runLengthBin} · prompt ${group.prompt}`,
@@ -483,17 +492,19 @@ function formatGroup(group) {
   const outcomes = Object.entries(group.outcomes)
     .map(([k, v]) => `${k} ${v}`)
     .join(", ");
-  lines.push(`   task outcomes  ${outcomes} → ${group.taskSuccessPct}% completed`);
+  lines.push(
+    `   session outcomes  ${outcomes} → ${group.sessionCompletionPct}% completed (not task validation)`,
+  );
 
   if (!group.verdictEligible) {
     lines.push(
-      `   ⚠ ${group.warmTurns} warm turns < ${MIN_WARM_TURNS_FOR_VERDICT} — too few to support a verdict`,
+      `   ⚠ ${group.warmTurns} warm turns < ${minTurns} — too few to support a verdict`,
     );
   }
   return lines.join("\n");
 }
 
-/** A/B two report files. Cache AND success, because the RFC requires both. */
+/** A/B cache and session completion; validated task success must be checked separately. */
 function formatComparison(baseline, current) {
   const byKey = (report) => {
     const map = new Map();
@@ -539,12 +550,14 @@ function formatComparison(baseline, current) {
     lines.push(
       `   UNEXPLAINED    ${prev.unexplainedDivergencePct}% → ${group.unexplainedDivergencePct}%  (${delta(group.unexplainedDivergencePct, prev.unexplainedDivergencePct)}pp)`,
     );
+    const previousCompletion = prev.sessionCompletionPct ?? prev.taskSuccessPct ?? 0;
+    const currentCompletion = group.sessionCompletionPct ?? 0;
     lines.push(
-      `   task success   ${prev.taskSuccessPct}% → ${group.taskSuccessPct}%  (${delta(group.taskSuccessPct, prev.taskSuccessPct)}pp)`,
+      `   session completion (proxy) ${previousCompletion}% → ${currentCompletion}%  (${delta(currentCompletion, previousCompletion)}pp)`,
     );
-    if (group.taskSuccessPct < prev.taskSuccessPct) {
+    if (currentCompletion < previousCompletion) {
       lines.push(
-        `   ⚠ task success FELL. Per the RFC, a cache win that costs success is not a win.`,
+        `   ⚠ session completion fell. Check task validators before claiming a cache win.`,
       );
     }
     if (!group.verdictEligible || !prev.verdictEligible) {
@@ -554,13 +567,13 @@ function formatComparison(baseline, current) {
   return lines.join("\n");
 }
 
-function formatVerdict(report) {
+function formatVerdict(report, minTurns) {
   const eligible = report.groups.filter((g) => g.verdictEligible);
   const lines = ["\n═══ Verdict ═══"];
 
   if (eligible.length === 0) {
     lines.push(
-      `No population has ${MIN_WARM_TURNS_FOR_VERDICT}+ warm turns. Collect more runs before concluding anything.`,
+      `No population has ${minTurns}+ warm turns. Collect more runs before concluding anything.`,
     );
     return lines.join("\n");
   }
@@ -651,12 +664,13 @@ function main() {
     return;
   }
 
-  const groups = aggregate(turns, sessions).sort(
+  const groups = aggregate(turns, sessions, args.minTurns).sort(
     (a, b) => b.warmTurns - a.warmTurns,
   );
   const report = {
     generatedAtMs: Date.now(),
     filters: { since: args.since ?? null, session: args.session ?? null },
+    minWarmTurns: args.minTurns,
     totals: {
       turns: turns.length,
       sessions: new Set(turns.map((t) => t.sessionId)).size,
@@ -678,8 +692,8 @@ function main() {
   console.log(
     `Prompt-cache report — ${report.totals.turns} turns, ${report.totals.sessions} session(s), ${report.totals.populations} population(s)`,
   );
-  for (const group of groups) console.log(formatGroup(group));
-  console.log(formatVerdict(report));
+  for (const group of groups) console.log(formatGroup(group, args.minTurns));
+  console.log(formatVerdict(report, args.minTurns));
 
   if (args.baseline) {
     const baseline = JSON.parse(readFileSync(resolve(args.baseline), "utf8"));
@@ -688,4 +702,6 @@ function main() {
   if (args.out) console.log(`\nWrote ${args.out}`);
 }
 
-main();
+if (process.argv[1] && import.meta.url === pathToFileURL(resolve(process.argv[1])).href) {
+  main();
+}
