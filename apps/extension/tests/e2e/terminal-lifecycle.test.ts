@@ -7,6 +7,7 @@ import {
   expect,
   it,
 } from "vitest";
+import { readFileSync } from "node:fs";
 import { createE2EHarness } from "./helpers/harness";
 import { getFixtureUrl } from "./helpers/fixture-server";
 import {
@@ -80,6 +81,41 @@ describe.skipIf(!enabled)("E2E: terminal lifecycle", () => {
       await cdp.detach().catch(() => {});
     }
   }, 240_000);
+
+  it("persists the first-turn clarification question before teardown", async () => {
+    const scenario = localMockProviderScenarios["first-turn-clarification"];
+    const cdp = await h.ctx.serviceWorkerTarget.createCDPSession();
+    try {
+      await installLocalMockProviderInterceptor(cdp, "first-turn-clarification");
+      await navigateAndWait(h.page, getFixtureUrl(scenario.fixture));
+      await h.page.bringToFront();
+      const tabId = await getActiveTabId(h.ctx.serviceWorker);
+      const workspaceId = await sendUserChat(h.ctx, scenario.prompt, tabId);
+      const request = await waitForMonitoredEvent(
+        h.ctx.serviceWorker,
+        (event) => event.type === "CLARIFICATION_REQUEST",
+        scenario.timeoutMs,
+        workspaceId,
+      );
+      const question = "Should I assign the article review to Design Ops or Platform?";
+      expect(request.question).toBe(question);
+
+      const { traceFiles } = await h.printTraceSummary(workspaceId);
+      expect(traceFiles.length).toBeGreaterThan(0);
+      expect(
+        traceFiles.some((file) => readFileSync(file, "utf8")
+          .trim().split("\n").some((line) => {
+            const entry = JSON.parse(line);
+            return entry.events?.some(
+              (event: { type: string; data?: { question?: string } }) =>
+                event.type === "clarification" && event.data?.question === question,
+            );
+          })),
+      ).toBe(true);
+    } finally {
+      await cdp.detach().catch(() => {});
+    }
+  }, 120_000);
 
   it("ignores a late approval after stopping a pending task", async () => {
     await navigateAndWait(h.page, getFixtureUrl("article"));
