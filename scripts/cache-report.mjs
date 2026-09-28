@@ -270,8 +270,8 @@ export function aggregate(turns, sessions, minTurns = MIN_WARM_TURNS_FOR_VERDICT
     const firstTurnForSession = !group.runs.has(turn.sessionId);
     group.runs.add(turn.sessionId);
 
-    // Success is a run-level result. Counting it on every turn makes longer
-    // sessions carry more weight in the cache-versus-success comparison.
+    // A session has one outcome. Counting it on every turn makes longer
+    // sessions carry more weight in the cache-versus-completion comparison.
     if (firstTurnForSession) {
       const outcome = sessions.get(turn.sessionId)?.outcome ?? "unknown";
       group.outcomes[outcome] = (group.outcomes[outcome] ?? 0) + 1;
@@ -492,7 +492,9 @@ function formatGroup(group, minTurns) {
   const outcomes = Object.entries(group.outcomes)
     .map(([k, v]) => `${k} ${v}`)
     .join(", ");
-  lines.push(`   session outcomes  ${outcomes} → ${group.sessionCompletionPct}% completed (not task validation)`);
+  lines.push(
+    `   session outcomes  ${outcomes} → ${group.sessionCompletionPct}% completed (not task validation)`,
+  );
 
   if (!group.verdictEligible) {
     lines.push(
