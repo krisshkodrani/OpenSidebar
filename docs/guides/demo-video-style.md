@@ -1,5 +1,9 @@
 # Demo Video Style Guide
 
+> Historical ServiceNow promo guidance below describes retired footage. ServiceNow
+> support was removed on 2026-09-28. For new demos, use the generic fixture or
+> trace-viewer shows and credit the models recorded in each run.
+
 This is the house style for OpenSidebar demo collages: short, polished videos that
 show the agent completing real tasks, each introduced by a title card and narrated
 by an on-screen caption, with the model stack always credited. The style is encoded
@@ -93,7 +97,7 @@ against the code before changing (`config/model-config.ts`,
 the handoff report, whose `executorModel`/`plannerModel` fields are null unless
 `E2E_MODEL` is exported.
 
-The customer promo follows the recommended product defaults:
+The retired ServiceNow customer promo used this model stack:
 
 - **Executor: MiniMax M3** (`minimax/minimax-m3`).
 - **Planner: GLM 5.2** (`z-ai/glm-5.2`).

@@ -714,8 +714,9 @@ OpenSidebar uses separate runtime tiers for execution, planning, and visual perc
 
 | Model Tier | Model ID                           | Provider    | Use Case                           |
 | ---------- | ---------------------------------- | ----------- | ---------------------------------- |
-| **Executor** | `accounts/fireworks/models/kimi-k2p7-code` | Fireworks | Executor, everyday tasks (default) |
-| **Planner**  | `accounts/fireworks/routers/kimi-k2p6-turbo` | Fireworks | Complex reasoning, escalated tasks |
+| **Executor** | `openai/gpt-6-luna` | OpenRouter | Everyday browser actions (default) |
+| **Planner**  | `openai/gpt-6-luna` | OpenRouter | Planning and escalated tasks (default) |
+| **Judge**    | `typesafe/jev-1.13` | OpenRouter | Typed outcome decisions (default) |
 | **Perception** | `unified_vl` by default; structured fallback is provider-specific | Configured provider | Vision-based page understanding |
 
 The `escalate` tool switches execution onto the planner tier when needed.

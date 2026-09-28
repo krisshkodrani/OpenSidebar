@@ -19,9 +19,9 @@ The same side panel React app also runs inside the overlay harness for browser-d
 | Role          | Current Default                                                                        |
 | ------------- | -------------------------------------------------------------------------------------- |
 | Provider mode | `openrouter`                                                                           |
-| Executor      | `minimax/minimax-m3`                                                                   |
-| Planner       | `z-ai/glm-5.2`                                                                         |
-| Judge         | `openai/gpt-oss-120b`                                                                  |
+| Executor      | `openai/gpt-6-luna`                                                                    |
+| Planner       | `openai/gpt-6-luna`                                                                    |
+| Judge         | `typesafe/jev-1.13` (OpenRouter Decisions API)                                       |
 | Perception    | `unified_vl` through the executor by default; structured fallback is provider-specific |
 
 Defaults live in `apps/extension/src/config/model-config.ts` and
