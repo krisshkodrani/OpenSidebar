@@ -15,7 +15,8 @@ export type LocalMockProviderScenarioName =
   | "watch-restock"
   | "iframe-checkout"
   | "iframe-find"
-  | "iframe-keyboard";
+  | "iframe-keyboard"
+  | "requested-fact-after-navigation";
 
 export interface LocalMockProviderScenario {
   fixture: string;
@@ -49,6 +50,7 @@ interface LocalMockProviderState {
   summaryReadReturned: boolean;
   summaryIncompleteDoneReturned: boolean;
   partialHandoffReadReturned: boolean;
+  requestedFactNavigationStep: number;
 }
 
 export const localMockProviderScenarios: Record<
@@ -129,6 +131,14 @@ export const localMockProviderScenarios: Record<
     prompt:
       "Read this page, gather the main facts, and prepare a final summary with any remaining open questions.",
     maxTurns: 2,
+    timeoutMs: 180_000,
+  },
+  "requested-fact-after-navigation": {
+    fixture: "go-back-chain?step=1",
+    label: "requested-fact-after-navigation",
+    prompt:
+      "Visit Warehouse Beta, then Warehouse Gamma, and tell me Beta's inventory count.",
+    maxTurns: 10,
     timeoutMs: 180_000,
   },
   // pi-backend Phase 4: a job-application-worded prompt makes the final submit a
@@ -459,6 +469,19 @@ function plannerJson(
       ],
     });
   }
+  if (scenarioName === "requested-fact-after-navigation") {
+    return JSON.stringify({
+      isMultiStep: false,
+      difficulty: "simple",
+      steps: [{
+        objective: "Visit Warehouse Beta and Warehouse Gamma, then report Beta's inventory count.",
+        successCriteria: "The final answer gives Beta's inventory count after reaching Gamma.",
+        dependencies: [],
+        assumptions: [],
+        toolProfile: "read_only",
+      }],
+    });
+  }
   if (
     /Quiz Derailment Fixture|Question 32|Answer the quiz question/i.test(
       text,
@@ -619,6 +642,28 @@ function executorToolCalls(
   scenarioName: LocalMockProviderScenarioName,
   state: LocalMockProviderState,
 ): ToolCallSpec[] {
+  if (scenarioName === "requested-fact-after-navigation") {
+    if (state.requestedFactNavigationStep < 2) {
+      const target = state.requestedFactNavigationStep === 0
+        ? /Go to Warehouse Beta/i
+        : /Go to Warehouse Gamma/i;
+      const id = parseTaggedId(text, target);
+      if (id === null) return [{ name: "read_page", args: {} }];
+      state.requestedFactNavigationStep += 1;
+      return [{ name: "click_element", args: { id } }];
+    }
+    const historical = text.match(
+      /Past page observations[\s\S]*?Warehouse Beta[\s\S]*?Inventory count:\s*([\d,]+) units/i,
+    );
+    return [{
+      name: "done",
+      args: {
+        summary: historical
+          ? `Warehouse Beta has ${historical[1]} units in inventory. I then visited Warehouse Gamma.`
+          : "I reached Warehouse Gamma but could not verify Beta's inventory count.",
+      },
+    }];
+  }
   if (scenarioName === "iframe-checkout") {
     if (/Checkout continued/i.test(text)) return [{ name: "done", args: {
       summary: "Continued checkout in the embedded page.",
@@ -1037,6 +1082,7 @@ export async function installLocalMockProviderInterceptor(
     summaryReadReturned: false,
     summaryIncompleteDoneReturned: false,
     partialHandoffReadReturned: false,
+    requestedFactNavigationStep: 0,
   };
 
   await session.send("Fetch.enable", {
