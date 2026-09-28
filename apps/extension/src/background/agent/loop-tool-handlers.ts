@@ -1,10 +1,21 @@
-import { AgentStatus, AgentStep, ToolCall, ToolName } from "../../types";
+import { AgentStatus, AgentStep, ToolCall, ToolName, type SubtaskSummary } from "../../types";
 import { DOM_MODIFYING_TOOLS, CACHEABLE_TOOLS } from "../tools/metadata";
 import { sanitizeUrl } from "../security";
 import { createWorkspaceTab } from "../workspaces/create-workspace-tab";
 import { isUsableTabUrl } from "../infrastructure/tab-resolution";
 import { formatStepLabel } from "../../utils/step-labels";
+import type { ElementResolver } from "../../utils/step-labels";
+import type { LLMClient } from "../llm";
+import type { logger, SessionScopedLogger } from "../../utils";
+import { FRAME_COLLECTION_UNAVAILABLE, FRAME_TEMPORARILY_UNAVAILABLE } from
+  "../perception/frame-snapshot-runtime";
 import { ToolResultCache } from "./tool-cache";
+import type { ContextManager } from "./context";
+import type { AgentMiddleware } from "./middleware";
+import type { TraceRecorder } from "./trace";
+import type { MoneyTableRuntime } from "./loop-money-table";
+import type { CompletionEvidenceRuntime } from "./completion-evidence";
+import type { ListDetailWorkflow } from "./list-detail-workflow";
 import type { CacheType } from "./tool-cache";
 import type { PreToolDecision } from "./middleware";
 import { STRING_LIMITS, INVESTIGATION_TOOLS } from "./constants";
@@ -19,8 +30,9 @@ import {
 } from "./knowledge-search-routing";
 import { assessMissingToolEscalation } from "./tool-capabilities";
 import { applyFieldReReadTracking } from "./fill-checklist-policy";
-import { checkNavigateGuard, type NavigateGuardHost } from "./navigate-guard";
+import { checkNavigateGuard } from "./navigate-guard";
 import { runWriterHandoff } from "./writer-handoff";
+import { getWorkspaceTabIds, shouldBlockTabManagementTools } from "./workflow-tab-routing";
 import {
   buildTrustedReadAnswerCompletionCandidate,
   type TrustedCompletionCandidate,
@@ -76,91 +88,62 @@ export function toolProvidesPageGrounding(toolName: ToolName): boolean {
   );
 }
 
+type TrustedToolResultInput = {
+  toolName: string;
+  toolArgs?: Record<string, unknown>;
+  toolResult: string;
+  mode: "parallel" | "sequential";
+};
+
+type TrustedTabToolResultInput = TrustedToolResultInput & { tabId: number };
+
 export interface AgentLoopToolHandlerHost {
-  checkNavigateGuard(url: string): string | null;
   consecutiveAutoAdvances: number;
-  context: any;
+  context: ContextManager;
   disabledTools: Set<ToolName>;
-  elementResolver: any;
+  elementResolver: ElementResolver | undefined;
   escalateModel(): void;
   executeToolCall(toolCall: ToolCall, tabId: number): Promise<string>;
-  getWorkspaceTabIds(): Promise<number[] | null>;
   getActiveToolNamesForTurn?(): ToolName[];
   hasExplicitPageRead: boolean;
   hasReadPage: boolean;
   lastDomStep: AgentStep | null;
-  llm: any;
-  log: any;
+  llm: Pick<LLMClient, "getCurrentModel" | "hasWriterModel" | "composeText">;
+  log: typeof logger | SessionScopedLogger;
   maxTurns: number;
-  maybeAdvanceTrustedFormFillStep(params: any): void;
-  maybeAutoSubmitTrustedServiceNowForm(params: any): Promise<{
+  trustedListCompletion: Pick<import("./trusted-list-completion").TrustedListCompletionRuntime,
+    "maybeCompleteTrustedListSortStep" | "maybeCompleteTrustedListFilterStep">;
+  maybeCompleteTrustedCatalogOrderSubmit(params: TrustedTabToolResultInput): Promise<{
     finalSummary: string;
     completionCandidate?: TrustedCompletionCandidate;
   } | null>;
-  maybeCompleteTrustedFormSubmitStep(params: any): {
-    finalSummary: string;
-    completionCandidate?: TrustedCompletionCandidate;
-  } | null;
-  maybeCompleteTrustedListSortStep(params: any): {
-    finalSummary: string;
-    completionCandidate?: TrustedCompletionCandidate;
-  } | null;
-  maybeCompleteTrustedListFilterStep(params: any): {
-    finalSummary: string;
-    completionCandidate?: TrustedCompletionCandidate;
-  } | null;
-  maybeCompleteTrustedCatalogOrderSubmit(params: any): Promise<{
-    finalSummary: string;
-    completionCandidate?: TrustedCompletionCandidate;
-  } | null>;
-  maybeAutoSubmitConfiguredCatalogItem(params: any): Promise<void>;
-  middleware: any;
+  maybeAutoSubmitConfiguredCatalogItem(params: TrustedTabToolResultInput): Promise<void>;
+  middleware: Pick<AgentMiddleware, "evaluatePreTool" | "evaluatePostTool">;
   originalQuery: string;
   pendingInlineEditVerification: {
     stepIndex: number;
     reason: string;
   } | null;
-  planSubtasks: Array<{ status: string; description: string }>;
+  planSubtasks: SubtaskSummary[];
   selectedSkillId?: string | null;
-  recordMutationSensitiveAction(
-    toolName: ToolName,
-    args: Record<string, unknown>,
-    result: string,
-    preActionSnapshot?: unknown,
-  ): void;
-  recordCompletionToolEvidence?(
-    toolName: ToolName,
-    args: Record<string, unknown>,
-    result: string,
-    preActionSnapshot?: unknown,
-  ): void;
-  recordPartialProgressToolResult?(
-    toolName: ToolName,
-    args: Record<string, unknown>,
-    result: string,
-  ): void;
+  mutationReplay: Pick<import("./mutation-replay-runtime").MutationReplayRuntime,
+    "recordMutationSensitiveAction" | "replayMutationSensitiveAction">;
+  completionEvidenceRuntime?: Pick<CompletionEvidenceRuntime, "recordCompletionToolEvidence">;
+  partialProgress?: Pick<import("./partial-progress-runtime").PartialProgressRuntime,
+    "recordPartialProgressToolResult">;
   refreshPerceptionAndTriage(tabId: number): Promise<void>;
   refreshSnapshotWithRetry(
     tabId: number,
     prevElementCount: number,
   ): Promise<number>;
-  replayMutationSensitiveAction(
-    toolCallId: string,
-    toolName: ToolName,
-    args: Record<string, unknown>,
-  ): boolean;
-  shouldBlockTabManagementTools(): boolean;
+  planRequiresTabManagement?: boolean;
   statusHandler(status: AgentStatus, message: string): void;
   stepHandler(step: AgentStep, persist: boolean): void;
-  toolCache: any;
-  traceRecorder?: any;
-  trackListDetailToolSuccess(
-    toolName: ToolName,
-    args: Record<string, unknown>,
-    snapshot: unknown,
-  ): void;
+  toolCache: ToolResultCache;
+  traceRecorder?: TraceRecorder | null;
+  readonly listDetailWorkflow: Pick<ListDetailWorkflow, "trackListDetailToolSuccess">;
   turnCount: number;
-  updateMoneyTableAggregate(result: string): string | null;
+  readonly moneyTable: Pick<MoneyTableRuntime, "updateMoneyTableAggregate">;
   workspaceId: string | null;
 }
 
@@ -174,7 +157,11 @@ export interface AgentLoopToolHandlerHost {
  */
 export function tabManagementBlocked(loop: AgentLoopToolHandlerHost): boolean {
   if (loop.context?.hasSpawnedTabs?.()) return false;
-  return loop.shouldBlockTabManagementTools();
+  return shouldBlockTabManagementTools({
+    originalQuery: loop.originalQuery,
+    selectedSkillId: loop.selectedSkillId,
+    planRequiresTabManagement: Boolean(loop.planRequiresTabManagement),
+  });
 }
 
 export type GenericSequentialToolState = {
@@ -261,7 +248,7 @@ export function recordSuccessfulToolExecution(
     toolMs,
     params.preDecision.riskLevel,
   );
-  loop.recordPartialProgressToolResult?.(
+  loop.partialProgress?.recordPartialProgressToolResult(
     params.toolName,
     params.args,
     params.result,
@@ -332,6 +319,11 @@ export function storeSuccessfulToolResult(
   },
 ): void {
   if (!params.cacheType || params.result.startsWith("Error:")) return;
+  // A child frame may answer after the bounded collection window. Keep the
+  // next read live so its controls can appear without a top-page DOM change.
+  if (params.toolName === ToolName.READ_PAGE &&
+      (params.result.includes(FRAME_TEMPORARILY_UNAVAILABLE) ||
+       params.result.includes(FRAME_COLLECTION_UNAVAILABLE))) return;
 
   const fp = getSnapshotFingerprint(loop.context.getSnapshot());
   loop.toolCache.set(
@@ -532,7 +524,7 @@ export function handleUpdateNotesToolCall(
 ): void {
   const note = (args.note as string) || "";
   loop.context.appendWorkingNote(note);
-  loop.trackListDetailToolSuccess(toolName, args, loop.context.getSnapshot());
+  loop.listDetailWorkflow.trackListDetailToolSuccess(toolName, args, loop.context.getSnapshot());
   loop.context.addMessage({
     role: "tool",
     tool_call_id: toolCallId,
@@ -634,7 +626,7 @@ export function handleNavigateGuardToolCall(
   if (!args.url) return false;
 
   const blockMessage = checkNavigateGuard(
-    loop as unknown as NavigateGuardHost,
+    loop,
     args.url as string,
   );
   if (!blockMessage) return false;
@@ -669,7 +661,7 @@ export async function handleListTabsToolCall(
   toolCallId: string,
   tabId: number,
 ): Promise<void> {
-  const wsTabIds = await loop.getWorkspaceTabIds();
+  const wsTabIds = await getWorkspaceTabIds(loop.workspaceId);
   let tabLines: string[];
   if (wsTabIds) {
     // Filter to workspace tabs only
@@ -749,7 +741,7 @@ export async function handleSwitchTabToolCall(
     });
     return { tabId, prevElementCount };
   }
-  const wsTabIds = await loop.getWorkspaceTabIds();
+  const wsTabIds = await getWorkspaceTabIds(loop.workspaceId);
 
   if (wsTabIds && !wsTabIds.includes(targetTabId)) {
     loop.context.addMessage({
@@ -829,7 +821,7 @@ export async function handleCloseTabToolCall(
   args: Record<string, unknown>,
   tabId: number,
 ): Promise<void> {
-  if (loop.replayMutationSensitiveAction(toolCallId, toolName, args)) {
+  if (loop.mutationReplay.replayMutationSensitiveAction(toolCallId, toolName, args)) {
     return;
   }
   if (tabManagementBlocked(loop)) {
@@ -866,7 +858,7 @@ export async function handleCloseTabToolCall(
     return;
   }
 
-  const wsTabIds = await loop.getWorkspaceTabIds();
+  const wsTabIds = await getWorkspaceTabIds(loop.workspaceId);
   if (wsTabIds && !wsTabIds.includes(targetTabId)) {
     loop.context.addMessage({
       role: "tool",
@@ -888,7 +880,7 @@ export async function handleCloseTabToolCall(
       tool_call_id: toolCallId,
       content: `Closed tab ${targetTabId}.`,
     });
-    loop.recordMutationSensitiveAction(
+    loop.mutationReplay.recordMutationSensitiveAction(
       toolName,
       args,
       `Closed tab ${targetTabId}.`,
@@ -913,7 +905,7 @@ export async function handleCreateTabToolCall(
   args: Record<string, unknown>,
   sourceTabId: number,
 ): Promise<void> {
-  if (loop.replayMutationSensitiveAction(toolCallId, toolName, args)) {
+  if (loop.mutationReplay.replayMutationSensitiveAction(toolCallId, toolName, args)) {
     return;
   }
   if (tabManagementBlocked(loop)) {
@@ -955,7 +947,7 @@ export async function handleCreateTabToolCall(
       tool_call_id: toolCallId,
       content: `Created new tab (ID: ${newTab.id}) with URL: ${urlResult.value}. Use switch_tab to make it the active tab.`,
     });
-    loop.recordMutationSensitiveAction(
+    loop.mutationReplay.recordMutationSensitiveAction(
       toolName,
       args,
       `Created new tab (ID: ${newTab.id}) with URL: ${urlResult.value}. Use switch_tab to make it the active tab.`,
@@ -1024,7 +1016,7 @@ export async function handleGenericSequentialToolCall(
   // Idempotency guard: prevent re-execution of mutation-sensitive actions
   // within the same plan step. Checks the durable step mutation ledger first
   // (survives SW restart), then the ephemeral turn cache.
-  if (loop.replayMutationSensitiveAction(toolCall.id, toolName, args)) {
+  if (loop.mutationReplay.replayMutationSensitiveAction(toolCall.id, toolName, args)) {
     return {
       prevElementCount,
       domModified,
@@ -1063,8 +1055,8 @@ export async function handleGenericSequentialToolCall(
       ledger: loop.context.getFieldReadLedger(),
       turn: loop.turnCount,
     });
-    loop.trackListDetailToolSuccess(toolName, args, preActionSnapshot);
-    loop.recordCompletionToolEvidence?.(
+    loop.listDetailWorkflow.trackListDetailToolSuccess(toolName, args, preActionSnapshot);
+    loop.completionEvidenceRuntime?.recordCompletionToolEvidence(
       toolName,
       args,
       result,
@@ -1086,7 +1078,7 @@ export async function handleGenericSequentialToolCall(
       currentStepIndex,
       shouldArmInlineEditVerification,
     });
-    loop.recordMutationSensitiveAction(
+    loop.mutationReplay.recordMutationSensitiveAction(
       toolName,
       args,
       result,
@@ -1144,7 +1136,7 @@ export async function handleGenericSequentialToolCall(
   }
   if (toolName === ToolName.READ_PAGE) {
     loop.hasExplicitPageRead = true;
-    const aggregateNote = loop.updateMoneyTableAggregate(result);
+    const aggregateNote = loop.moneyTable.updateMoneyTableAggregate(result);
     if (aggregateNote) {
       result = `${result}\n\n${aggregateNote}`;
     }
@@ -1163,51 +1155,6 @@ export async function handleGenericSequentialToolCall(
     content: result,
     tool_call_id: toolCall.id,
   });
-
-  if (toolName === ToolName.CONFIGURE_SERVICENOW_FORM) {
-    const missingFieldLabels = [
-      ...new Set(
-        result
-          .split(/\r?\n/)
-          .map((line) => line.match(/^\s*-\s+(.+?):\s*field not found\b/i))
-          .filter((match): match is RegExpMatchArray => Boolean(match))
-          .map((match) => match[1].replace(/\s+/g, " ").trim())
-          .filter((label) => label.length > 0),
-      ),
-    ].filter((label) =>
-      new RegExp(
-        `\\b${label.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}\\b`,
-        "i",
-      ).test(loop.originalQuery),
-    );
-    if (
-      missingFieldLabels.length > 0 &&
-      (loop.selectedSkillId === "servicenow-record-form" ||
-        /\bServiceNow\b/i.test(loop.originalQuery))
-    ) {
-      const quoted = missingFieldLabels.map((label) => `"${label}"`);
-      const summary =
-        missingFieldLabels.length === 1
-          ? `I cannot complete this because the requested field ${quoted[0]} is not available on this ServiceNow form.`
-          : `I cannot complete this because the requested fields ${quoted.join(", ")} are not available on this ServiceNow form.`;
-      loop.traceRecorder?.recordEvent(
-        "servicenow_record_missing_field_configure_completed",
-        {
-          turn: loop.turnCount,
-          fields: missingFieldLabels,
-          mode: "sequential",
-        },
-      );
-      return {
-        prevElementCount,
-        domModified,
-        visuallyModified,
-        lastDomAffectingToolName,
-        breakLoop: true,
-        completedSummary: summary,
-      };
-    }
-  }
 
   if (
     loop.selectedSkillId === "search-answer-extraction" &&
@@ -1272,33 +1219,8 @@ export async function handleGenericSequentialToolCall(
     }
   }
 
-  const trustedSubmitCompletion = loop.maybeCompleteTrustedFormSubmitStep({
-    toolName,
-    toolArgs: args,
-    toolResult: result,
-    mode: "sequential",
-  });
-  if (trustedSubmitCompletion) {
-    return {
-      prevElementCount,
-      domModified,
-      visuallyModified,
-      lastDomAffectingToolName,
-      breakLoop: true,
-      completedSummary: trustedSubmitCompletion.finalSummary,
-      completionCandidate: trustedSubmitCompletion.completionCandidate,
-    };
-  }
-
   // Trigger B: Blind input detection — warn when type_text value has no evidence
-  loop.maybeAdvanceTrustedFormFillStep({
-    toolName,
-    toolArgs: args,
-    toolResult: result,
-    mode: "sequential",
-  });
-
-  const trustedListSortCompletion = loop.maybeCompleteTrustedListSortStep({
+  const trustedListSortCompletion = loop.trustedListCompletion.maybeCompleteTrustedListSortStep({
     toolName,
     toolArgs: args,
     toolResult: result,
@@ -1316,7 +1238,7 @@ export async function handleGenericSequentialToolCall(
     };
   }
 
-  const trustedListFilterCompletion = loop.maybeCompleteTrustedListFilterStep({
+  const trustedListFilterCompletion = loop.trustedListCompletion.maybeCompleteTrustedListFilterStep({
     toolName,
     toolArgs: args,
     toolResult: result,
@@ -1361,26 +1283,6 @@ export async function handleGenericSequentialToolCall(
     tabId,
     mode: "sequential",
   });
-
-  const trustedAutoSubmitCompletion =
-    await loop.maybeAutoSubmitTrustedServiceNowForm({
-      toolName,
-      toolArgs: args,
-      toolResult: result,
-      tabId,
-      mode: "sequential",
-    });
-  if (trustedAutoSubmitCompletion) {
-    return {
-      prevElementCount,
-      domModified,
-      visuallyModified,
-      lastDomAffectingToolName,
-      breakLoop: true,
-      completedSummary: trustedAutoSubmitCompletion.finalSummary,
-      completionCandidate: trustedAutoSubmitCompletion.completionCandidate,
-    };
-  }
 
   if (toolName === ToolName.TYPE_TEXT) {
     const typedValue = String(args.text || "");
@@ -1428,10 +1330,7 @@ export async function handleGenericSequentialToolCall(
   }
 
   // Post-type_text DOM settle: detect autocomplete/dropdown appearance
-  if (
-    !args.pressEnter &&
-    !result.includes("ServiceNow reference value committed")
-  ) {
+  if (!args.pressEnter) {
     const preCount = loop.context.getSnapshot()?.elements.length ?? 0;
     await new Promise((r) => setTimeout(r, 400));
     prevElementCount = await loop.refreshSnapshotWithRetry(tabId, preCount);

@@ -99,8 +99,8 @@ export default function AnalyticsTab({
   );
 
   const { insights, loading, error } = useInsightsData(requestFilters);
-  const { points: trendPoints, loading: trendLoading } =
-    useTrendData(requestFilters);
+  const { points: trendPoints, loading: trendLoading, error: trendError } =
+    useTrendData(requestFilters, !loading && !error);
 
   useEffect(() => {
     let cancelled = false;
@@ -225,7 +225,11 @@ export default function AnalyticsTab({
         </div>
 
         {/* Trend */}
-        {trendLoading && trendPoints.length === 0 ? (
+        {trendError ? (
+          <div className="rounded border border-state-error/25 bg-state-error/10 px-3 py-2 text-sm text-state-error">
+            Failed to load trends: {trendError}
+          </div>
+        ) : trendLoading && trendPoints.length === 0 ? (
           <LoadingSpinner message="Loading trends..." />
         ) : (
           <TrendChart points={trendPoints} />

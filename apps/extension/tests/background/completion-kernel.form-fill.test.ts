@@ -686,6 +686,47 @@ I'd like to order the Pegasus 41 shoes and the Novablast 4 shoes. Use coupon SAV
     expect(generated?.contract.kind).not.toBe("form_fill");
   });
 
+  test("does not treat a visible Add to Cart button as an add action", () => {
+    const snapshot = formSnapshot({
+      title: "Product detail",
+      url: "https://example.test/shop/novablast-4",
+      visibleContent: "Novablast 4 Size Add to Cart",
+      pageContent: "Novablast 4 Size Add to Cart",
+      elements: [],
+    });
+    const generated = generateCompletionContract({
+      userRequest: "Add the Novablast 4 to the cart.",
+      activeObjective: "Open the Novablast 4 product detail page.",
+      successCriteria:
+        "Product detail page visible with size selector and Add to Cart button",
+      snapshot,
+    });
+
+    expect(generated?.contract.kind).not.toBe("workflow_confirmation");
+  });
+
+  test("targets the product rather than the Add to Cart button label", () => {
+    const generated = generateCompletionContract({
+      userRequest: "Add the Novablast 4 to the cart.",
+      activeObjective:
+        "Select an available size and click the Add to Cart button to add the Novablast 4 to the cart.",
+      successCriteria: "Cart counter shows the Novablast 4 added",
+      snapshot: formSnapshot({
+        title: "Product detail",
+        url: "https://example.test/shop/novablast-4",
+        visibleContent: "Novablast 4 Add to Cart Cart: 1",
+        pageContent: "Novablast 4 Add to Cart Cart: 1",
+        elements: [],
+      }),
+    });
+
+    expect(generated?.contract).toMatchObject({
+      kind: "workflow_confirmation",
+      action: "create",
+      targetLabel: "Novablast 4",
+    });
+  });
+
   test("uses active coupon scope without pulling checkout fields forward", () => {
     const generated = generateCompletionContract({
       userRequest: `Original user request (reference for specific values):

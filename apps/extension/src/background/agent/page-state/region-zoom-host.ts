@@ -2,6 +2,7 @@ import type { ContextManager } from "../context";
 import { withPresenceSuspended } from "../capture-guard";
 import type { RegionZoomHost } from "../region-zoom";
 import type { TraceRecorder } from "../trace";
+import type { AgentTelemetryController } from "../agent-telemetry-controller";
 import { waitForDomReady } from "../../infrastructure/tab-ready";
 import { pageDocumentStatesMatch } from "./coordinator";
 import type { ObservationBasis } from "./types";
@@ -12,8 +13,7 @@ export interface RegionZoomLoopHost {
   readonly enforcePageStateConsistency: boolean;
   readonly context: ContextManager;
   readonly traceRecorder: TraceRecorder | null;
-  imagePromptBudgetAllows(count: number): boolean;
-  recordImagePromptBudgetExhausted(count: number, source: string): void;
+  readonly telemetry: Pick<AgentTelemetryController, "imagePromptBudgetAllows" | "recordImagePromptBudgetExhausted">;
   captureVisibleTabWithRetry(
     windowId: number | undefined,
     options: { format?: "jpeg" | "png"; quality?: number },
@@ -29,9 +29,9 @@ export function createRegionZoomHost(
     turnCount: host.turnCount,
     useVLExecutor: host.useVLExecutor,
     getSnapshot: () => host.context.getSnapshot(),
-    imagePromptBudgetAllows: (count) => host.imagePromptBudgetAllows(count),
+    imagePromptBudgetAllows: (count) => host.telemetry.imagePromptBudgetAllows(count),
     recordImagePromptBudgetExhausted: (count, source) =>
-      host.recordImagePromptBudgetExhausted(count, source),
+      host.telemetry.recordImagePromptBudgetExhausted(count, source),
     observationIsCurrent: async () => {
       if (!host.enforcePageStateConsistency || !observationBasis) return true;
       const live = (await waitForDomReady(tabId, { timeoutMs: 50 })).documentState;

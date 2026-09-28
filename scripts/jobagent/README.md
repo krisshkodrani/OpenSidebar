@@ -69,6 +69,11 @@ pnpm run jobagent decide <approvalId> approve
 rather than waiting through it — the human decision is a separate, deliberate
 `decide` call. Add `--json` to any verb for raw API output.
 
+CV variants in `answer-library.json` use paths relative to the seed directory.
+Drafting translates the selected file into an application-relative `cvServe`
+entry. Approval and fill fail if the file is missing. Existing manifests with
+seed-relative `cvServe.dir` remain readable; new drafts use the application-relative form.
+
 ## Proven state
 
 The full loop (discover → draft → fill → human-approve → submit) was proven live

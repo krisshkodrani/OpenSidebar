@@ -57,7 +57,7 @@ const MAX_CRITERIA = 8;
  */
 export function deriveCriteria(successCriteria: string): JudgeCriterion[] {
   const clauses = successCriteria
-    .split(/[\n;.]+/)
+    .split(/[\r\n;]+/)
     .map((clause) => clause.trim())
     .filter((clause) => clause.length >= 3);
   const chosen = clauses.length > 0 ? clauses : [successCriteria.trim()];

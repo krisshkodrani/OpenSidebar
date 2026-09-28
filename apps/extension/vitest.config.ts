@@ -10,6 +10,8 @@ export default defineConfig({
   },
   test: {
     environment: "happy-dom",
+    maxWorkers: 2,
+    testTimeout: 10_000,
     setupFiles: ["./tests/setup.ts"],
     globals: false,
     exclude: [

@@ -4,8 +4,8 @@
 
 > **Historical snapshot (March 2026).** The design philosophy here still
 > holds, but the concrete numbers, thresholds, and model names are frozen at
-> their March 2026 values and several have since changed (e.g. default seats
-> are now minimax-m3 executor / glm-5p2 planner / gpt-oss-120b judge; the
+> their March 2026 values and several have since changed (the current model
+> seats are listed in `docs/architecture/overview.md`; the
 > element cap is 1000, not 50; the loop is decomposed into a turn state
 > machine). For current facts, trust `docs/architecture/` and the source.
 
@@ -17,7 +17,7 @@ OpenSidebar is a Chrome extension that runs an autonomous browser agent. Given a
 
 The core design principle is **generic over task-specific**. There are no site-specific heuristics anywhere in the system. The agent adapts through prompting and demonstrations, never through code. The guiding question behind every architectural decision: *"Would this work on a site I've never seen?"*
 
-The current default runtime uses Fireworks-hosted Kimi for executor and planner turns, with provider/model overrides available in Settings.
+At the time of this snapshot, the runtime used Fireworks-hosted Kimi for executor and planner turns, with provider/model overrides available in Settings.
 
 | Tier | Model | Role |
 |------|-------|------|

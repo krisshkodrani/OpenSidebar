@@ -19,6 +19,12 @@ local-only.
 | `openrouter`  | OpenRouter key  | Full agent stack | Recommended default | Live catalog with a verified allowlist. |
 | `fireworks`   | Fireworks key   | Full agent stack | Supported           | Curated, compatibility-checked models.  |
 
+The default OpenRouter seats in `apps/extension/src/config/model-config.ts` are
+`openai/gpt-6-luna` for executor and planner, and `typesafe/jev-1.13` for
+typed judge decisions. Settings may override the models. The internal E2E
+harness has its own provider default (`fireworks`), so a test run's model
+attribution must come from its recorded configuration and provider responses.
+
 Experimental and legacy provider modes remain understood by the runtime for
 migrations and internal evaluation, but are not offered in Settings. A provider
 or model is promoted only after `pnpm models:check` and the release smoke pass.

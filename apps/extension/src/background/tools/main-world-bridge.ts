@@ -6,12 +6,15 @@
  */
 
 import { getFrameIdsForMainWorldBridge } from "./helpers";
+import { frameActionRoutes } from "../perception/frame-action-routes";
 
 export async function mirrorTextInputInMainWorld(
   tabId: number,
   args: Record<string, unknown>,
-): Promise<string | undefined> {
-  const id = args.id;
+): Promise<void> {
+  const frameTarget = frameActionRoutes.target(tabId, args);
+  if (frameTarget.kind === "stale") return;
+  const id = frameTarget.kind === "child" ? frameTarget.args.id : args.id;
   const text = args.text;
   if (
     (typeof id !== "number" && typeof id !== "string") ||
@@ -21,7 +24,8 @@ export async function mirrorTextInputInMainWorld(
   }
 
   try {
-    const frameIds = await getFrameIdsForMainWorldBridge(tabId);
+    const frameIds = frameTarget.kind === "child"
+      ? [frameTarget.frameId] : await getFrameIdsForMainWorldBridge(tabId);
     const inject = (frameId: number) =>
       chrome.scripting.executeScript({
         target: { tabId, frameIds: [frameId] },
@@ -35,195 +39,14 @@ export async function mirrorTextInputInMainWorld(
             el instanceof HTMLInputElement ||
             el instanceof HTMLTextAreaElement
           ) {
-            const isAutocompleteLikeTextInput = (
-              input: HTMLInputElement,
-            ): boolean => {
-              const role = input.getAttribute("role")?.toLowerCase() ?? "";
-              const blob = [
-                input.id,
-                input.name,
-                input.className,
-                input.getAttribute("autocomplete"),
-                input.getAttribute("aria-label"),
-                input.getAttribute("aria-controls"),
-                input.getAttribute("aria-haspopup"),
-                input.getAttribute("aria-autocomplete"),
-                input.getAttribute("placeholder"),
-              ]
-                .filter(Boolean)
-                .join(" ")
-                .toLowerCase();
-
-              return (
-                role === "combobox" ||
-                input.hasAttribute("list") ||
-                input.hasAttribute("aria-autocomplete") ||
-                /\b(combo|autocomplete|typeahead|suggest|lookup|reference)\b/.test(
-                  blob,
-                ) ||
-                /\bsys_display\./.test(blob)
-              );
-            };
-
-            const detectServiceNowReference = (
-              input: HTMLInputElement,
-            ): string | undefined => {
-              const displayValue = value.trim();
-              const displayName = input.name || input.id;
-              if (!displayName.startsWith("sys_display.")) {
-                return undefined;
-              }
-              if (!displayValue) {
-                return "servicenow_reference_failed:empty_display_value";
-              }
-
-              const fieldPath = displayName.slice("sys_display.".length);
-              const fieldName = fieldPath.includes(".")
-                ? fieldPath.slice(fieldPath.indexOf(".") + 1)
-                : fieldPath;
-              const hiddenControl =
-                document.getElementById(fieldPath) ??
-                Array.from(document.getElementsByName(fieldPath))[0] ??
-                null;
-
-              const getReferenceAttr = (
-                node: Element | null | undefined,
-              ): string | null => {
-                if (!node) return null;
-                for (const attr of [
-                  "data-ref",
-                  "data-reference",
-                  "data-ref-table",
-                  "data-reference-table",
-                  "reference",
-                  "ref",
-                ]) {
-                  const attrValue = node.getAttribute(attr);
-                  if (attrValue) return attrValue;
-                }
-                return null;
-              };
-
-              const inferReferenceTable = (): string | null => {
-                const attrRef =
-                  getReferenceAttr(input) ?? getReferenceAttr(hiddenControl);
-                if (attrRef) return attrRef;
-
-                const gForm = (window as any).g_form;
-                try {
-                  const uiElement =
-                    gForm?.getGlideUIElement?.(fieldName) ??
-                    gForm?.getControl?.(fieldName) ??
-                    null;
-                  for (const prop of [
-                    "reference",
-                    "referenceTable",
-                    "refTable",
-                    "refName",
-                    "tableName",
-                  ]) {
-                    const propValue = uiElement?.[prop];
-                    if (typeof propValue === "string" && propValue) {
-                      return propValue;
-                    }
-                  }
-                } catch {
-                  // Fall through to common ServiceNow reference field names.
-                }
-
-                const commonRefs: Record<string, string> = {
-                  assigned_to: "sys_user",
-                  caller_id: "sys_user",
-                  opened_by: "sys_user",
-                  resolved_by: "sys_user",
-                  assignment_group: "sys_user_group",
-                  rfc: "change_request",
-                  problem_id: "problem",
-                  parent_incident: "incident",
-                  business_service: "cmdb_ci_service",
-                  service_offering: "service_offering",
-                  cmdb_ci: "cmdb_ci",
-                };
-                return commonRefs[fieldName] ?? null;
-              };
-
-              const referenceTable = inferReferenceTable();
-              if (!referenceTable) {
-                return "servicenow_reference_failed:no_reference_table";
-              }
-
-              return `servicenow_reference_candidate:${JSON.stringify({
-                fieldPath,
-                fieldName,
-                referenceTable,
-              })}`;
-            };
-
             if (
               el instanceof HTMLInputElement &&
-              isAutocompleteLikeTextInput(el)
+              (el.getAttribute("role") === "combobox" ||
+                el.hasAttribute("list") ||
+                el.hasAttribute("aria-autocomplete"))
             ) {
-              return detectServiceNowReference(el);
+              return;
             }
-
-            const commitServiceNowField = (): string | undefined => {
-              const host = location.hostname.toLowerCase();
-              if (
-                !host.endsWith(".service-now.com") &&
-                !host.endsWith(".servicenow.com")
-              ) {
-                return undefined;
-              }
-              const rawName = [
-                (el as HTMLInputElement | HTMLTextAreaElement).name,
-                (el as HTMLInputElement | HTMLTextAreaElement).id,
-              ].find(
-                (candidate) => candidate && !/^sys_original\./i.test(candidate),
-              );
-              if (!rawName) return undefined;
-              if (/\b(?:search|typeahead|filter|query)\b/i.test(rawName)) {
-                return undefined;
-              }
-              if (
-                el instanceof HTMLInputElement &&
-                [
-                  "button",
-                  "submit",
-                  "reset",
-                  "hidden",
-                  "checkbox",
-                  "radio",
-                  "file",
-                ].includes(el.type.toLowerCase())
-              ) {
-                return undefined;
-              }
-              const fieldName = rawName.includes(".")
-                ? rawName.slice(rawName.lastIndexOf(".") + 1)
-                : rawName;
-              if (
-                !fieldName ||
-                (fieldName === rawName && !/^[a-z][a-z0-9_]*$/i.test(fieldName))
-              ) {
-                return undefined;
-              }
-
-              const gForm = (window as any).g_form;
-              if (typeof gForm?.setValue !== "function") return undefined;
-              try {
-                gForm.setValue(fieldName, value);
-                const committed =
-                  typeof gForm?.getValue === "function"
-                    ? String(gForm.getValue(fieldName) ?? "")
-                    : value;
-                return committed === value
-                  ? "servicenow_field_committed"
-                  : "servicenow_field_commit_attempted";
-              } catch {
-                return undefined;
-              }
-            };
-
             const dispatchInput = (
               data: string | null,
               inputType: string,
@@ -277,7 +100,7 @@ export async function mirrorTextInputInMainWorld(
             el.dispatchEvent(
               new Event("change", { bubbles: true, composed: true }),
             );
-            return commitServiceNowField();
+            return;
           }
 
           if ((el as HTMLElement).isContentEditable) {
@@ -300,7 +123,7 @@ export async function mirrorTextInputInMainWorld(
       });
 
     for (const frameId of frameIds) {
-      const results = await Promise.race([
+      await Promise.race([
         inject(frameId),
         new Promise<never>((_, reject) =>
           setTimeout(
@@ -309,15 +132,11 @@ export async function mirrorTextInputInMainWorld(
           ),
         ),
       ]).catch(() => null);
-      const value = results?.find(
-        (result) => typeof result.result === "string",
-      )?.result;
-      if (typeof value === "string") return value;
     }
-    return undefined;
+    return;
   } catch {
     // Best-effort: the content-script action already updated the visible DOM.
-    return undefined;
+    return;
   }
 }
 
@@ -325,13 +144,17 @@ export async function clickElementInMainWorld(
   tabId: number,
   args: Record<string, unknown>,
 ): Promise<boolean> {
-  const id = args.id;
+  const frameTarget = frameActionRoutes.target(tabId, args);
+  if (frameTarget.kind === "stale") return false;
+  const id = frameTarget.kind === "child" ? frameTarget.args.id : args.id;
   if (typeof id !== "number" && typeof id !== "string") return false;
 
   try {
     const results = await Promise.race([
       chrome.scripting.executeScript({
-        target: { tabId, allFrames: true },
+        target: frameTarget.kind === "child"
+          ? { tabId, frameIds: [frameTarget.frameId] }
+          : { tabId, allFrames: true },
         world: "MAIN" as any,
         func: async (tagId: string) => {
           const selector = `[data-os-tag="${tagId.replace(/"/g, '\\"')}"]`;

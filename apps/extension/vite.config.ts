@@ -87,9 +87,9 @@ export default defineConfig(({ mode }) => {
             __dirname,
             "src/offscreen/audio.html",
           ),
-          // The overlay harness drives headed E2E; the e2e-mode build
-          // (dist-dev with __DEV__ surface) needs it just like prod.
-          ...(isProductionLike || mode === "e2e"
+          // The overlay harness drives headed E2E and local development.
+          // It is not part of the shipped extension.
+          ...(!isProductionLike
             ? {
                 "overlay-harness": path.resolve(
                   __dirname,

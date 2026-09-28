@@ -51,7 +51,7 @@ export function useComposerTextarea({
   useEffect(() => {
     if (!isAgentRunning) return;
     const handler = (event: globalThis.KeyboardEvent) => {
-      if (event.key === "Escape") {
+      if (event.key === "Escape" && event.isTrusted) {
         event.preventDefault();
         onStop();
       }

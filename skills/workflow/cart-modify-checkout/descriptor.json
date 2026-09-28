@@ -10,6 +10,7 @@
   ],
   "triggers": [
     "swap item in cart",
+    "remove item from cart and add replacement",
     "replace product and keep cart state",
     "apply coupon and checkout"
   ],

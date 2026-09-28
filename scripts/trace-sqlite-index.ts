@@ -9,6 +9,7 @@ import {
 import { dirname, join } from "path";
 import { fileURLToPath } from "url";
 import { normalizeTraceModelId } from "./log-server-helpers";
+import { readSessionEntries, readSpineSessions } from "./obs/span-store";
 
 const DEFAULT_DB_PATH = ".artifacts/trace-index.sqlite";
 
@@ -265,6 +266,7 @@ export function indexTracesToSqlite(
   initSchema(db);
 
   const traceDir = join(projectRoot, "traces");
+  const spanDir = join(traceDir, "spans");
   const runDir = join(traceDir, "runs");
   const screenshotDir = join(traceDir, "screenshots");
   const indexPath = join(traceDir, "index.jsonl");
@@ -342,6 +344,17 @@ export function indexTracesToSqlite(
     }
   }
 
+  // The spine is durable even after legacy JSONL files have been compacted.
+  // Prefer its session lens when rebuilding the derived SQLite index.
+  for (const session of readSpineSessions(spanDir)) {
+    const sessionId = asString(session.sessionId);
+    if (!sessionId) continue;
+    sessions.set(sessionId, {
+      record: session,
+      archiveState: sessions.get(sessionId)?.archiveState ?? "hot",
+    });
+  }
+
   if (existsSync(runDir)) {
     for (const file of readdirSync(runDir)) {
       if (!file.endsWith(".jsonl") || file === "index.jsonl") continue;
@@ -378,6 +391,18 @@ export function indexTracesToSqlite(
       runFilesByRun.set(runId, {
         path: join(archiveRoot, "runs", `${runId}.jsonl`),
         archiveState: "archived",
+      });
+    }
+  }
+
+  const spanRunDir = join(spanDir, "runs");
+  if (existsSync(spanRunDir)) {
+    for (const file of readdirSync(spanRunDir)) {
+      if (!file.endsWith(".jsonl")) continue;
+      const runId = file.replace(/\.jsonl$/, "");
+      runFilesByRun.set(runId, {
+        path: join(spanRunDir, file),
+        archiveState: runFilesByRun.get(runId)?.archiveState ?? "hot",
       });
     }
   }
@@ -455,11 +480,24 @@ export function indexTracesToSqlite(
   const setMeta = db.prepare(`
     INSERT OR REPLACE INTO trace_index_meta (key, value) VALUES (?, ?)
   `);
+  // Some historical turn writes outlived their session record and source file.
+  // Keep those rows when refreshing an existing index; source-backed rows below
+  // still win if the session has since become reconstructible.
+  const orphanTurns = db.prepare(`
+    SELECT t.* FROM trace_turns t
+    WHERE NOT EXISTS (SELECT 1 FROM trace_sessions s WHERE s.session_id = t.session_id)
+  `).all() as Array<Record<string, unknown>>;
+  const orphanTools = db.prepare(`
+    SELECT t.* FROM trace_tools t
+    WHERE NOT EXISTS (SELECT 1 FROM trace_sessions s WHERE s.session_id = t.session_id)
+  `).all() as Array<Record<string, unknown>>;
 
   const tx = db.transaction(() => {
     db.exec(
       "DELETE FROM trace_sessions; DELETE FROM trace_turns; DELETE FROM trace_tools; DELETE FROM trace_run_events; DELETE FROM trace_run_manifests; DELETE FROM trace_artifacts;",
     );
+    for (const row of orphanTurns) insertTurn.run(row);
+    for (const row of orphanTools) insertTool.run(row);
 
     for (const [sessionId, indexedSession] of sessions) {
       const session = indexedSession.record;
@@ -490,7 +528,11 @@ export function indexTracesToSqlite(
         archive_state: indexedSession.archiveState,
       });
 
-      for (const line of readJsonl<Record<string, unknown>>(traceFile)) {
+      const spineEntries = readSessionEntries(sessionId, spanDir);
+      const entryLines = spineEntries.length > 0
+        ? spineEntries.map((record) => ({ record, raw: JSON.stringify(record) }))
+        : readJsonl<Record<string, unknown>>(traceFile);
+      for (const line of entryLines) {
         const entry = line.record;
         if (!entry) continue;
         const turnNumber = asNumber(entry.turnNumber);

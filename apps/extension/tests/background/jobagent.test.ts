@@ -207,6 +207,10 @@ describe("recordStatus", () => {
 });
 
 describe("startCvServer", () => {
+  test("refuses a missing CV before a fill can start", async () => {
+    await expect(startCvServer(APP_DIR, "missing.pdf")).rejects.toThrow(/CV file is missing/);
+  });
+
   test("serves the CV over loopback as PDF; 404s the rest", async () => {
     const server = await startCvServer(APP_DIR, "sample-cv.pdf");
     try {
@@ -220,6 +224,8 @@ describe("startCvServer", () => {
       const port = server.url.match(/:(\d+)\//)![1];
       const missing = await httpGet(`http://127.0.0.1:${port}/nope.pdf`);
       expect(missing.status).toBe(404);
+      const sibling = await httpGet(`http://127.0.0.1:${port}/run-config.json`);
+      expect(sibling.status).toBe(404);
     } finally {
       await server.close();
     }

@@ -135,16 +135,6 @@ export interface NavigateArgs {
   query?: string;
 }
 
-/** Arguments for open_servicenow_module */
-export interface OpenServiceNowModuleArgs {
-  /** Optional ServiceNow application name, e.g. "Configuration" */
-  application?: string;
-  /** Module path labels, with the target module as the last item */
-  path: string[];
-  /** Whether to navigate after resolving the target URL (default true) */
-  run?: boolean;
-}
-
 /** Arguments for search_knowledge_base */
 export interface SearchKnowledgeBaseArgs {
   /** Exact user question to answer from the knowledge source */
@@ -464,10 +454,6 @@ export interface ApplyListFilterCondition {
 export interface ApplyListFilterArgs {
   /** Structured field/operator/value conditions to apply */
   conditions: ApplyListFilterCondition[];
-  /** How to join multiple conditions. Defaults to OR only when the request explicitly uses OR. */
-  join?: "AND" | "OR";
-  /** Optional visible list/table title or system table name */
-  table?: string;
   /** Whether to navigate/run the filter after building it (default true) */
   run?: boolean;
 }
@@ -484,8 +470,6 @@ export interface ApplyListSortClause {
 export interface ApplyListSortArgs {
   /** Ordered sort clauses to apply, primary first */
   sorts: ApplyListSortClause[];
-  /** Optional visible list/table title or system table name */
-  table?: string;
   /** Whether to navigate/run the sort after building it (default true) */
   run?: boolean;
 }
@@ -496,14 +480,6 @@ export interface ApplyListActionArgs {
   records: string[];
   /** Visible selected-row action label, e.g. Delete or Mark as Duplicate */
   action: string;
-  /** Optional related/reference record value required by the action modal */
-  relatedRecord?: string;
-  /** Optional visible/reference field label or system field name for relatedRecord */
-  relatedField?: string;
-  /** Optional visible list/table title or system table name */
-  table?: string;
-  /** Confirm a resulting modal/dialog. Defaults to true. */
-  confirm?: boolean;
 }
 
 /** Arguments for inspect_catalog_item */
@@ -556,24 +532,6 @@ export interface ConfigureCatalogItemArgs {
   continueToCheckout?: boolean;
 }
 
-/** One field to configure on a ServiceNow record form */
-export interface ConfigureServiceNowFormField {
-  /** Visible label or ServiceNow system field name */
-  field: string;
-  /** Value to set; empty string clears optional fields */
-  value: string;
-}
-
-/** Arguments for configure_servicenow_form */
-export interface ConfigureServiceNowFormArgs {
-  /** Fields to set by visible label or system name */
-  fields?: ConfigureServiceNowFormField[];
-  /** Click Submit/Save/Update after verifying requested fields */
-  submit?: boolean;
-  /** Optional visible submit button label */
-  submitButton?: string;
-}
-
 /** Arguments for xray_page — no arguments, simple toggle */
 export type XrayPageArgs = Record<string, never>;
 
@@ -618,7 +576,6 @@ export type ToolArgsMap = {
   [ToolName.SCROLL_PAGE]: ScrollPageArgs;
   [ToolName.READ_PAGE]: ReadPageArgs;
   [ToolName.NAVIGATE]: NavigateArgs;
-  [ToolName.OPEN_SERVICENOW_MODULE]: OpenServiceNowModuleArgs;
   [ToolName.SEARCH_KNOWLEDGE_BASE]: SearchKnowledgeBaseArgs;
 
   [ToolName.CREATE_TAB]: CreateTabArgs;
@@ -656,7 +613,6 @@ export type ToolArgsMap = {
   [ToolName.APPLY_LIST_ACTION]: ApplyListActionArgs;
   [ToolName.INSPECT_CATALOG_ITEM]: InspectCatalogItemArgs;
   [ToolName.CONFIGURE_CATALOG_ITEM]: ConfigureCatalogItemArgs;
-  [ToolName.CONFIGURE_SERVICENOW_FORM]: ConfigureServiceNowFormArgs;
   [ToolName.XRAY_PAGE]: XrayPageArgs;
   [ToolName.DISMISS_OVERLAYS]: DismissOverlaysArgs;
   [ToolName.CLARIFY]: ClarifyArgs;

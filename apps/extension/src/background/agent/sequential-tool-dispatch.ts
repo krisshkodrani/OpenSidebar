@@ -8,7 +8,7 @@ import {
   assessCatalogOrderConfigurationClick,
   assessCatalogOrderItemSelectionClick,
   assessCatalogOrderPostConfirmationClick,
-} from "./servicenow/catalog-order-policy";
+} from "./catalog-order-policy";
 import { assessConsequentialFinalActionBlock } from "./consequential-action-policy";
 import {
   toForwardedApprovalDryRun,
@@ -71,10 +71,7 @@ import {
   assessResultPageProgress,
   type ResultPageProgressState,
 } from "./result-page-progress-policy";
-import {
-  advanceCompletedSubtasks,
-  type AgentLoopPlanProgressHost,
-} from "./loop-plan-progress";
+import type { PlanProgressRuntime } from "./loop-plan-progress";
 import {
   collectTrailingToolResultMessages,
   handleSequentialVerificationGate,
@@ -100,8 +97,12 @@ import {
 } from "./text-entry-guards";
 import { shouldCheckWorkflowTabRedirect } from "./workflow-tab-controller";
 import type { TrustedCompletionCandidate } from "./completion-kernel";
+import type { ListDetailWorkflow, ListDetailWorkflowState } from "./list-detail-workflow";
+import type { SkillToolRuntime } from "./loop-skill-tools";
 
 export interface SequentialToolDispatchHost extends AgentLoopToolHandlerHost {
+  planProgress: Pick<PlanProgressRuntime, "advanceCompletedSubtasks">;
+  skillTools: Pick<SkillToolRuntime, "getActiveToolProfileForStep" | "recordSkillToolSelection">;
   broadcastTaskProgress(currentIndex: number): void;
   ensureToolApproval(
     toolName: ToolName,
@@ -110,13 +111,9 @@ export interface SequentialToolDispatchHost extends AgentLoopToolHandlerHost {
     forceApproval: boolean,
     dryRun?: ForwardedApprovalDryRun,
   ): Promise<boolean>;
-  getActiveToolProfileForStep(stepIndex: number): string | null | undefined;
   getConsequentialActionTaskText(): string;
-  getPendingInlineEditVerificationBlock(
-    toolName: ToolName,
-    currentStepIndex: number,
-  ): string | null;
-  getUncommittedInlineEditDoneRejection(stepIndex: number): string | null;
+  inlineEditVerification: Pick<import("./inline-edit-verification-runtime").InlineEditVerificationRuntime,
+    "getPendingInlineEditVerificationBlock" | "getUncommittedInlineEditDoneRejection">;
   getWorkflowTabToolRedirect(params: {
     toolName: ToolName;
     args: Record<string, unknown>;
@@ -132,18 +129,12 @@ export interface SequentialToolDispatchHost extends AgentLoopToolHandlerHost {
     tabId: number,
   ): Promise<boolean>;
   isRunning: boolean;
-  listDetailOpenedTargets: Set<string>;
-  listDetailReviewedTargets: Set<string>;
-  listDetailVisibleActionCount: number;
-  recordSkillToolSelection(
-    toolName: ToolName,
-    mode: "parallel" | "sequential",
-  ): void;
+  listDetailWorkflow: ListDetailWorkflowState & Pick<ListDetailWorkflow, "trackListDetailToolSuccess">;
   requiresConsequentialActionApproval(
     toolName: ToolName,
     args: Record<string, unknown>,
   ): boolean;
-  runFormSubmitDryRun(
+  formSubmitDryRun(
     toolName: ToolName,
     args: Record<string, unknown>,
     tabId: number,
@@ -433,7 +424,7 @@ export async function executeSequentialToolCalls(
       rawArgsKey,
       this.context.getSnapshot(),
     );
-    this.recordSkillToolSelection(toolName, "sequential");
+    this.skillTools.recordSkillToolSelection(toolName, "sequential");
 
     if (toolName === ToolName.CLICK_ELEMENT) {
       if (sameResponseClickKeys.has(argsKey)) {
@@ -760,11 +751,11 @@ export async function executeSequentialToolCalls(
       toolName,
       args,
       snapshot: currentSnapshot,
-      reviewedTargets: this.listDetailReviewedTargets,
-      openedTargets: this.listDetailOpenedTargets,
-      previousVisibleDetailActionCount: this.listDetailVisibleActionCount,
+      reviewedTargets: this.listDetailWorkflow.listDetailReviewedTargets,
+      openedTargets: this.listDetailWorkflow.listDetailOpenedTargets,
+      previousVisibleDetailActionCount: this.listDetailWorkflow.listDetailVisibleActionCount,
     });
-    this.listDetailVisibleActionCount =
+    this.listDetailWorkflow.listDetailVisibleActionCount =
       listDetailWorkflow.visibleDetailActionCount;
     if (listDetailWorkflow.block) {
       this.context.addMessage({
@@ -781,9 +772,9 @@ export async function executeSequentialToolCalls(
         turn: this.turnCount,
         tool: toolName,
         mode: "sequential",
-        openedDetailCount: this.listDetailOpenedTargets.size,
-        reviewedDetailCount: this.listDetailReviewedTargets.size,
-        visibleDetailActionCount: this.listDetailVisibleActionCount,
+        openedDetailCount: this.listDetailWorkflow.listDetailOpenedTargets.size,
+        reviewedDetailCount: this.listDetailWorkflow.listDetailReviewedTargets.size,
+        visibleDetailActionCount: this.listDetailWorkflow.listDetailVisibleActionCount,
       });
       continue;
     }
@@ -795,7 +786,7 @@ export async function executeSequentialToolCalls(
         planStatus?.subtasks[currentStepIndex]?.description ??
         this.originalQuery;
       const inlineNavigationBlock = assessInlineEditNavigationGuard({
-        activeToolProfile: this.getActiveToolProfileForStep(currentStepIndex),
+        activeToolProfile: this.skillTools.getActiveToolProfileForStep(currentStepIndex),
         selectedSkillId: this.selectedSkillId,
         snapshot: this.context.getSnapshot(),
         objectiveText: activeObjective,
@@ -818,7 +809,7 @@ export async function executeSequentialToolCalls(
       }
     }
 
-    const inlineVerificationBlock = this.getPendingInlineEditVerificationBlock(
+    const inlineVerificationBlock = this.inlineEditVerification.getPendingInlineEditVerificationBlock(
       toolName,
       currentStepIndex,
     );
@@ -844,7 +835,7 @@ export async function executeSequentialToolCalls(
     ) {
       const planStatus = this.context.getPlanStatusRaw();
       const inlineRetarget = assessInlineEditTextEntryRetarget({
-        activeToolProfile: this.getActiveToolProfileForStep(currentStepIndex),
+        activeToolProfile: this.skillTools.getActiveToolProfileForStep(currentStepIndex),
         snapshot: this.context.getSnapshot(),
         targetId: args.id,
       });
@@ -1174,7 +1165,7 @@ export async function executeSequentialToolCalls(
     // exactly what the consequential-action approval exists to ask.
     let forwardedDryRun: ForwardedApprovalDryRun | undefined;
     if (forceConsequentialActionApproval) {
-      const dryRun = await this.runFormSubmitDryRun(toolName, args, tabId);
+      const dryRun = await this.formSubmitDryRun(toolName, args, tabId);
       forwardedDryRun = toForwardedApprovalDryRun(dryRun);
       if (dryRun.kind === "clean") {
         this.stepHandler(
@@ -1223,15 +1214,15 @@ export async function executeSequentialToolCalls(
     // DONE tool — planner-validated exit
     const shouldArmInlineEditVerification =
       currentStepIndex >= 0 &&
-      this.getActiveToolProfileForStep(currentStepIndex) === "edit_surface" &&
+      this.skillTools.getActiveToolProfileForStep(currentStepIndex) === "edit_surface" &&
       ((toolName === ToolName.PRESS_KEY &&
         typeof args.key === "string" &&
         ["enter", "tab"].includes(String(args.key).toLowerCase()) &&
-        this.getUncommittedInlineEditDoneRejection(currentStepIndex) !==
+        this.inlineEditVerification.getUncommittedInlineEditDoneRejection(currentStepIndex) !==
           null) ||
         (toolName === ToolName.TYPE_TEXT &&
           args.pressEnter === true &&
-          this.getUncommittedInlineEditDoneRejection(currentStepIndex) !==
+          this.inlineEditVerification.getUncommittedInlineEditDoneRejection(currentStepIndex) !==
             null));
     if (toolName === ToolName.DONE) {
       const summary = (args.summary as string) || "Task completed.";
@@ -1452,10 +1443,7 @@ export async function executeSequentialToolCalls(
       ),
       currentUrl: this.context.getCurrentUrl(),
       host: {
-        advanceCompletedSubtasks: () =>
-          advanceCompletedSubtasks(
-            this as unknown as AgentLoopPlanProgressHost,
-          ),
+        advanceCompletedSubtasks: () => this.planProgress.advanceCompletedSubtasks(),
         resetConsecutiveAutoAdvances: () => {
           this.consecutiveAutoAdvances = 0;
         },

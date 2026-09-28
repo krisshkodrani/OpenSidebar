@@ -52,6 +52,7 @@ vi.mock("../../src/background/llm", () => ({
         isPlannerTier = () => this._isPlannerTier;
         getCurrentModel = () => this.model;
         getCurrentProvider = () => "fireworks";
+        getActiveProviderInfo = () => ({ providerId: "fireworks", model: this.model });
     },
     MODEL_EXECUTOR: "accounts/fireworks/routers/kimi-k2p5-turbo",
     MODEL_PLANNER: "accounts/fireworks/routers/kimi-k2p5-turbo",
@@ -265,201 +266,7 @@ describe("TaskPlanner.decompose", () => {
             "Email input field shows user@test.com.",
         );
         expect(result!.steps![1].toolProfile).not.toBe("submit_form");
-    });
-    test("compacts over-decomposed field-value form plans instead of truncating submit", async () => {
-        completeImpl = () => Promise.resolve({
-            role: "assistant",
-            content: JSON.stringify({
-                isMultiStep: true,
-                difficulty: "moderate",
-                steps: [
-                    {
-                        objective: "Create a new incident record",
-                        successCriteria: "The new incident form is visible",
-                        dependencies: [],
-                        assumptions: [],
-                    },
-                    {
-                        objective: "Fill Short description field with EMAIL Server Down Again",
-                        successCriteria: "Short description is EMAIL Server Down Again",
-                        dependencies: [0],
-                        assumptions: [],
-                    },
-                    {
-                        objective: "Fill Caller field with Joe Employee",
-                        successCriteria: "Caller is Joe Employee",
-                        dependencies: [1],
-                        assumptions: [],
-                    },
-                    {
-                        objective: "Set Knowledge field to false",
-                        successCriteria: "Knowledge is false",
-                        dependencies: [2],
-                        assumptions: [],
-                    },
-                    {
-                        objective: "Leave Service field empty",
-                        successCriteria: "Service is empty",
-                        dependencies: [3],
-                        assumptions: [],
-                    },
-                    {
-                        objective: "Fill Resolution notes field",
-                        successCriteria: "Resolution notes are filled",
-                        dependencies: [4],
-                        assumptions: [],
-                    },
-                    {
-                        objective: "Fill Description field",
-                        successCriteria: "Description is filled",
-                        dependencies: [5],
-                        assumptions: [],
-                    },
-                    {
-                        objective: "Leave Change Request field empty",
-                        successCriteria: "Change Request is empty",
-                        dependencies: [6],
-                        assumptions: [],
-                    },
-                    {
-                        objective: "Set Channel field to Phone",
-                        successCriteria: "Channel is Phone",
-                        dependencies: [7],
-                        assumptions: [],
-                    },
-                    {
-                        objective: "Submit the incident form",
-                        successCriteria: "Incident is created",
-                        dependencies: [8],
-                        assumptions: [],
-                    },
-                ],
-            }),
-            tool_calls: undefined,
-            finish_reason: "stop",
-        });
-
-        const planner = new TaskPlanner("test-key");
-        const result = await planner.decompose(
-            'Create a new incident with a value of "EMAIL Server Down Again" for field "Short description", a value of "Joe Employee" for field "Caller", a value of "false" for field "Knowledge", a value of "" for field "Service", a value of "Closed before close notes were made mandatory" for field "Resolution notes", a value of "Multiple employees have reported that they are unable to send/receive email." for field "Description", a value of "" for field "Change Request", and a value of "Phone" for field "Channel".',
-            "Create incident",
-            "https://example.service-now.com/incident.do",
-        );
-
-        expect(result).not.toBeNull();
-        expect(result!.steps).toHaveLength(2);
-        expect(result!.steps![0].toolProfile).toBe("form_fill");
-        expect(result!.steps![0].objective).toContain('Channel="Phone"');
-        expect(result!.steps![1].toolProfile).toBe("submit_form");
-        expect(result!.steps![1].dependencies).toEqual([0]);
-    });
-
-    test("prefers compact field-value form plan even when micro-steps are under the cap", async () => {
-        completeImpl = () => Promise.resolve({
-            role: "assistant",
-            content: JSON.stringify({
-                isMultiStep: true,
-                difficulty: "moderate",
-                steps: [
-                    {
-                        objective: "Open the new incident form",
-                        successCriteria: "The incident form is open",
-                        dependencies: [],
-                        assumptions: [],
-                    },
-                    {
-                        objective: "Fill Short description with EMAIL Server Down Again",
-                        successCriteria: "Short description is EMAIL Server Down Again",
-                        dependencies: [0],
-                        assumptions: [],
-                    },
-                    {
-                        objective: "Fill Caller with Joe Employee",
-                        successCriteria: "Caller is Joe Employee",
-                        dependencies: [1],
-                        assumptions: [],
-                    },
-                    {
-                        objective: "Fill Description with Multiple employees have reported that they are unable to send/receive email.",
-                        successCriteria: "Description is filled",
-                        dependencies: [2],
-                        assumptions: [],
-                    },
-                    {
-                        objective: "Set Channel to Phone",
-                        successCriteria: "Channel is Phone",
-                        dependencies: [3],
-                        assumptions: [],
-                    },
-                    {
-                        objective: "Submit the incident form",
-                        successCriteria: "Incident is created",
-                        dependencies: [4],
-                        assumptions: [],
-                    },
-                ],
-            }),
-            tool_calls: undefined,
-            finish_reason: "stop",
-        });
-
-        const planner = new TaskPlanner("test-key");
-        const result = await planner.decompose(
-            'Create a new incident with a value of "EMAIL Server Down Again" for field "Short description", a value of "Joe Employee" for field "Caller", a value of "Multiple employees have reported that they are unable to send/receive email." for field "Description", and a value of "Phone" for field "Channel".',
-            "Create incident",
-            "https://example.service-now.com/incident.do",
-        );
-
-        expect(result).not.toBeNull();
-        expect(result!.steps).toHaveLength(2);
-        expect(result!.steps![0].objective).toContain('Caller="Joe Employee"');
-        expect(result!.steps![0].objective).toContain('Channel="Phone"');
-        expect(result!.steps![1].objective).toContain("Submit");
-    });
-
-    test("prefers synthesized field-value form contract over same-length model form plan", async () => {
-        completeImpl = () => Promise.resolve({
-            role: "assistant",
-            content: JSON.stringify({
-                isMultiStep: true,
-                difficulty: "moderate",
-                steps: [
-                    {
-                        objective: "Fill the incident form with all required field values",
-                        successCriteria: "The incident form is ready for submission",
-                        dependencies: [],
-                        assumptions: [],
-                    },
-                    {
-                        objective: "Submit the incident form by clicking the Submit button",
-                        successCriteria: "Incident is created",
-                        dependencies: [0],
-                        assumptions: [],
-                    },
-                ],
-            }),
-            tool_calls: undefined,
-            finish_reason: "stop",
-        });
-
-        const planner = new TaskPlanner("test-key");
-        const result = await planner.decompose(
-            'Create a new incident with a value of "EMAIL Server Down Again" for field "Short description", a value of "Joe Employee" for field "Caller", a value of "false" for field "Knowledge", a value of "" for field "Service", a value of "Closed before close notes were made mandatory" for field "Resolution notes", a value of "Multiple employees have reported that they are unable to send/receive email." for field "Description", a value of "" for field "Change Request", and a value of "Phone" for field "Channel".',
-            "Create incident",
-            "https://example.service-now.com/incident.do",
-        );
-
-        expect(result).not.toBeNull();
-        expect(result!.steps).toHaveLength(2);
-        expect(result!.steps![0].objective).toContain(
-            "Do not submit the form yet",
-        );
-        expect(result!.steps![0].objective).toContain('Caller="Joe Employee"');
-        expect(result!.steps![0].toolProfile).toBe("form_fill");
-        expect(result!.steps![1].toolProfile).toBe("submit_form");
-    });
-
-    test("preserves sequential multi-step plans even when the planner marks difficulty as simple", async () => {
+    });   test("preserves sequential multi-step plans even when the planner marks difficulty as simple", async () => {
         completeImpl = () => Promise.resolve({
             role: "assistant",
             content: JSON.stringify({
@@ -1702,42 +1509,6 @@ describe("OrchestratorPlanner.buildNodes returns BuildNodesResult", () => {
         expect(nodes[0].successCriteria).toMatch(/every requested action/i);
         expect(nodes[0].successCriteria).toMatch(/partial answer.*insufficient/i);
     });
-
-    test("buildFallbackNodes collapses the field-value form plan so the planner-failure fallback cannot strand", () => {
-        // Regression: when planner.buildNodes throws, the orchestrator falls
-        // back to buildFallbackNodes. That path must run the same collapse as
-        // buildNodes, otherwise the synthesized "fill (do not submit yet)" +
-        // "submit" plan survives uncollapsed and the run terminates after
-        // filling — the live create-incident failure.
-        const query =
-            'Create a new incident with a value of "EMAIL Server Down Again" for field "Short description", a value of "Joe Employee" for field "Caller", and a value of "Phone" for field "Channel".';
-
-        // With ServiceNow page context (as the fixed catch block now threads).
-        const snNodes = buildFallbackNodes(
-            query,
-            "planned",
-            "Incident | ServiceNow",
-            "https://workarenapublic20.service-now.com/incident.do",
-        );
-        expect(snNodes).toHaveLength(1);
-        expect(snNodes[0].selectedSkillId).toBe("servicenow-record-form");
-        expect(snNodes[0].description).not.toContain("Do not submit the form yet");
-        expect(snNodes[0].successCriteria).not.toContain(
-            "the final submit action has not been clicked yet",
-        );
-
-        // Even context-blind (the old failure shape), it must still collapse to
-        // one submit-requiring node rather than stranding on the fill node.
-        const blindNodes = buildFallbackNodes(query);
-        expect(blindNodes).toHaveLength(1);
-        expect(blindNodes[0].description).not.toContain(
-            "Do not submit the form yet",
-        );
-        expect(blindNodes[0].successCriteria.toLowerCase()).toContain(
-            "submission",
-        );
-    });
-
     test("all nodes get full default tools (profile filtering at loop level)", async () => {
         completeImpl = () => Promise.resolve({
             role: "assistant",
@@ -1947,215 +1718,7 @@ describe("OrchestratorPlanner.buildNodes returns BuildNodesResult", () => {
         expect(result.nodes[0].selectedSkillId).toBe("paginated-table-scan");
         expect(result.nodes[0].description).toContain("Scan the full paginated data surface");
         expect(result.nodes[0].successCriteria).toContain("All pages or visible row ranges");
-    });
-
-    test("collapses WorkArena-style list filter plans into one skill-owned workflow node", async () => {
-        completeImpl = () => Promise.resolve({
-            role: "assistant",
-            content: JSON.stringify({
-                isMultiStep: true,
-                difficulty: "complex",
-                steps: [
-                    {
-                        objective: "Open the filter builder on the incident list",
-                        successCriteria: "Filter builder is visible",
-                        dependencies: [],
-                        assumptions: [],
-                    },
-                    {
-                        objective: "Add condition Caller is Margaret Grey",
-                        successCriteria: "Caller condition is set",
-                        dependencies: [0],
-                        assumptions: [],
-                    },
-                    {
-                        objective: "Run the filter and verify the incident list updated",
-                        successCriteria: "Applied filter state is visible",
-                        dependencies: [1],
-                        assumptions: [],
-                    },
-                ],
-            }),
-            tool_calls: undefined,
-            finish_reason: "stop",
-        });
-
-        const planner = new OrchestratorPlanner("test-key");
-        const result = await planner.buildNodes(
-            'Create a filter for the list to extract all entries where "Caller" is "Margaret Grey".',
-            "Incidents | ServiceNow",
-            "https://example.service-now.com/incident_list.do",
-        );
-
-        expect(result.nodes).toHaveLength(1);
-        expect(result.isSingleNode).toBe(true);
-        expect(result.nodes[0].selectedSkillId).toBe("list-filter-workflow");
-        expect(result.nodes[0].description).toContain("Complete the workflow for the original request");
-        expect(result.nodes[0].successCriteria).toContain("not merely an intermediate");
-        expect(result.nodes[0].allowedTools).toContain(ToolName.INSPECT_FILTER_STATE);
-        expect(result.nodes[0].allowedTools).toContain(ToolName.APPLY_LIST_FILTER);
-        expect(result.nodes[0].allowedTools).toContain(ToolName.INSPECT_TABLE);
-    });
-
-    test("restores original scope for single-step multi-field list sort plans", async () => {
-        completeImpl = () => Promise.resolve({
-            role: "assistant",
-            content: JSON.stringify({
-                isMultiStep: true,
-                difficulty: "simple",
-                steps: [
-                    {
-                        objective:
-                            "Click the 'Number' column header in the incidents list to sort by Number descending",
-                        successCriteria:
-                            "The Number column is sorted in descending order",
-                        dependencies: [],
-                        assumptions: [],
-                    },
-                ],
-            }),
-            tool_calls: undefined,
-            finish_reason: "stop",
-        });
-
-        const planner = new OrchestratorPlanner("test-key");
-        const result = await planner.buildNodes(
-            'Sort the "incidents" list by the following fields: - Number (descending) - Duration (descending)',
-            "Incidents | ServiceNow",
-            "https://example.service-now.com/incident_list.do",
-        );
-
-        expect(result.nodes).toHaveLength(1);
-        expect(result.isSingleNode).toBe(true);
-        expect(result.nodes[0].selectedSkillId).toBe("list-sort-workflow");
-        expect(result.nodes[0].description).toContain(
-            "Complete the workflow for the original request",
-        );
-        expect(result.nodes[0].description).toContain("Duration");
-        expect(result.nodes[0].assumptions).toContain(
-            'Preserve all explicit constraints from the user\'s original request: Sort the "incidents" list by the following fields: - Number (descending) - Duration (descending)',
-        );
-        expect(result.nodes[0].handoffArtifacts.at(-1)?.note).toContain(
-            "Skill-owned workflow scope restored",
-        );
-    });
-
-    test("collapses ServiceNow record form plans into one skill-owned workflow node", async () => {
-        completeImpl = () => Promise.resolve({
-            role: "assistant",
-            content: JSON.stringify({
-                isMultiStep: true,
-                difficulty: "complex",
-                steps: [
-                    {
-                        objective:
-                            'Fill the form with the requested field values: Short description="EMAIL Server Down Again"; Caller="Joe Employee". Do not submit the form yet.',
-                        successCriteria:
-                            "Each requested field has the specified value; the final submit action has not been clicked yet.",
-                        dependencies: [],
-                        assumptions: [],
-                    },
-                    {
-                        objective:
-                            "Submit the form and verify the created record or confirmation is visible.",
-                        successCriteria:
-                            "The form submission completes and a created record, confirmation, or resulting item page is visible.",
-                        dependencies: [0],
-                        assumptions: [],
-                    },
-                ],
-            }),
-            tool_calls: undefined,
-            finish_reason: "stop",
-        });
-
-        const planner = new OrchestratorPlanner("test-key");
-        const result = await planner.buildNodes(
-            'Create a new incident with a value of "EMAIL Server Down Again" for field "Short description", and a value of "Joe Employee" for field "Caller".',
-            "Create INC0034429 | Incident | ServiceNow",
-            "https://workarenapublic16.service-now.com/incident.do",
-        );
-
-        expect(result.nodes).toHaveLength(1);
-        expect(result.isSingleNode).toBe(true);
-        expect(result.nodes[0].selectedSkillId).toBe("servicenow-record-form");
-        expect(result.nodes[0].description).toContain(
-            "Complete the workflow for the original request",
-        );
-        expect(result.nodes[0].successCriteria).toContain(
-            "not merely an intermediate",
-        );
-        expect(result.nodes[0].allowedTools).toContain(
-            ToolName.CONFIGURE_SERVICENOW_FORM,
-        );
-    });
-
-    test("collapses field-value fill/submit steps into one submit-requiring node when no form skill owns the workflow", async () => {
-        // Regression: the create-incident stranding bug. The synthesized plan
-        // splits into a `form_fill` node ("Do not submit the form yet") + a
-        // `submit_form` node. On a page whose URL is NOT recognized as
-        // ServiceNow, skill selection lands on a generic skill, the skill-owned
-        // collapse is skipped, both nodes survive, and the executor completes
-        // the fill node on its "not submitted yet" criterion without ever
-        // submitting. The field-value collapse must merge them into one node
-        // whose success requires the submission.
-        completeImpl = () => Promise.resolve({
-            role: "assistant",
-            content: JSON.stringify({
-                isMultiStep: true,
-                difficulty: "complex",
-                steps: [
-                    {
-                        objective:
-                            'Fill the form with the requested field values: Short description="Printer offline"; Caller="Joe Employee"; Channel="Phone". Do not submit the form yet.',
-                        successCriteria:
-                            "Each requested field has the specified value; the final submit action has not been clicked yet.",
-                        dependencies: [],
-                        assumptions: [],
-                    },
-                    {
-                        objective:
-                            "Submit the form and verify the created record or confirmation is visible.",
-                        successCriteria:
-                            "The form submission completes and a created record, confirmation, or resulting item page is visible.",
-                        dependencies: [0],
-                        assumptions: [],
-                    },
-                ],
-            }),
-            tool_calls: undefined,
-            finish_reason: "stop",
-        });
-
-        const planner = new OrchestratorPlanner("test-key");
-        const result = await planner.buildNodes(
-            'Create a new incident with a value of "Printer offline" for field "Short description", a value of "Joe Employee" for field "Caller", and a value of "Phone" for field "Channel".',
-            "Acme Helpdesk",
-            "https://helpdesk.example.com/incidents/new",
-        );
-
-        // The generic page must NOT activate the ServiceNow form skill.
-        expect(result.nodes[0].selectedSkillId).not.toBe(
-            "servicenow-record-form",
-        );
-        // Merged into a single node so the run cannot stop after filling.
-        expect(result.nodes).toHaveLength(1);
-        // The stranding clause is gone; submission is required.
-        expect(result.nodes[0].description).not.toContain(
-            "Do not submit the form yet",
-        );
-        expect(result.nodes[0].successCriteria).not.toContain(
-            "the final submit action has not been clicked yet",
-        );
-        expect(result.nodes[0].successCriteria.toLowerCase()).toContain(
-            "submission",
-        );
-        // Both fill and submit tools remain available on the merged node.
-        expect(result.nodes[0].allowedTools).toContain(ToolName.TYPE_TEXT);
-        expect(result.nodes[0].allowedTools).toContain(ToolName.CLICK_ELEMENT);
-    });
-
-    test("collapses progressive repeatable form plans into one skill-owned workflow node", async () => {
+    });  test("collapses progressive repeatable form plans into one skill-owned workflow node", async () => {
         completeImpl = () => Promise.resolve({
             role: "assistant",
             content: JSON.stringify({
@@ -2431,6 +1994,61 @@ describe("OrchestratorPlanner.buildNodes returns BuildNodesResult", () => {
         expect(result.nodes[0].selectedSkillId).toBe("cart-modify-checkout");
     });
 
+    test("routes cart removal before generic list row actions", () => {
+        expect(selectPrimarySkill({
+            query: "Remove the wrong item from the cart and add the replacement.",
+            objective: "Remove the wrong item from the cart",
+            successCriteria: "The cart no longer lists the wrong item",
+            pageTitle: "Your Cart",
+        })?.id).toBe("cart-modify-checkout");
+    });
+
+    test("routes add-to-cart before catalog ordering", () => {
+        expect(selectPrimarySkill({
+            query: "Add the running shoes to the cart.",
+            objective: "Locate the running shoes in the product listing",
+            successCriteria: "The requested product is visible",
+            pageTitle: "Running Shoes",
+        })?.id).toBe("cart-modify-checkout");
+    });
+
+    test("does not route a renewal discount dispute as a cart workflow", () => {
+        expect(selectPrimarySkill({
+            query: "Review the vendor renewal discount and prepare an unsent dispute.",
+            objective: "Prepare the dispute draft for approval",
+            successCriteria: "The discount discrepancy and corrected total appear in an unsent draft",
+            pageTitle: "Renewal review",
+        })?.id).not.toBe("cart-modify-checkout");
+    });
+
+    test("keeps only the terminal cart state when collapsing sequential cart steps", async () => {
+        completeImpl = () => Promise.resolve({
+            role: "assistant",
+            content: JSON.stringify({
+                isMultiStep: true,
+                difficulty: "moderate",
+                steps: [
+                    { objective: "Remove the wrong shoe", successCriteria: "Cart is empty and counter displays 0" },
+                    { objective: "Add the replacement shoe", successCriteria: "Cart contains Pegasus 41 and counter displays 1", dependencies: [0] },
+                ],
+            }),
+            tool_calls: undefined,
+            finish_reason: "stop",
+        });
+
+        const planner = new OrchestratorPlanner("test-key");
+        const result = await planner.buildNodes(
+            "Wrong shoe — remove the Novablast from the cart and add the Pegasus 41 instead.",
+            "Cart",
+            "https://example.com/cart",
+        );
+
+        expect(result.nodes).toHaveLength(1);
+        expect(result.nodes[0].selectedSkillId).toBe("cart-modify-checkout");
+        expect(result.nodes[0].successCriteria).toContain("Cart contains Pegasus 41");
+        expect(result.nodes[0].successCriteria).not.toContain("Cart is empty");
+    });
+
     test("selects hover-reveal-navigation for hover-dependent menu workflows", async () => {
         completeImpl = () => Promise.resolve({
             role: "assistant",
@@ -2559,7 +2177,7 @@ describe("OrchestratorPlanner.buildNodes returns BuildNodesResult", () => {
         expect(result.nodes[0].description).toMatch(/return and check it off/i);
     });
 
-    test("selects multi-tab-checklist-workflow for natural procurement checklist requests", async () => {
+    test("does not infer multi-tab navigation from a purchase checklist alone", async () => {
         completeImpl = () => Promise.resolve({
             role: "assistant",
             content: '{"isMultiStep": true, "difficulty": "complex", "subtasks": ["Buy the first procurement item", "Buy the second procurement item", "Mark both complete"]}',
@@ -2574,10 +2192,8 @@ describe("OrchestratorPlanner.buildNodes returns BuildNodesResult", () => {
             "https://example.com/procurement",
         );
 
-        expect(result.nodes).toHaveLength(1);
-        expect(result.nodes[0].selectedSkillId).toBe("multi-tab-checklist-workflow");
-        expect(result.nodes[0].description).toMatch(/Buy the first two items/i);
-        expect(result.nodes[0].successCriteria).toMatch(/marked, recorded/i);
+        expect(result.nodes.length).toBeGreaterThan(1);
+        expect(result.nodes.map((node) => node.selectedSkillId)).not.toContain("multi-tab-checklist-workflow");
     });
 
     test("does not collapse procurement workflows when the procurement pack is disabled", async () => {
@@ -2729,82 +2345,16 @@ describe("OrchestratorPlanner.buildNodes returns BuildNodesResult", () => {
 });
 
 describe("selectPrimarySkill", () => {
-    test("keeps optional workflow skills in default-enabled catalog packs", () => {
-        expect(listSkillPacks().map((pack) => pack.id)).toContain(
-            "communication-workflows",
-        );
-        expect(listDefaultEnabledSkillPackIds()).toContain(
-            "communication-workflows",
-        );
-        expect(getSkillPack("communication-workflows")?.skillIds).toContain(
-            "email-reply-careful",
-        );
-        expect(listSkillDescriptors().map((skill) => skill.id)).toContain(
-            "email-reply-careful",
-        );
-        expect(getLoadedSkillContract("email-reply-careful")).toBeTruthy();
-        expect(getSkillToolPolicy("email-reply-careful")).toBeTruthy();
-        expect(listSkillPacks().map((pack) => pack.id)).toContain(
-            "procurement-workflows",
-        );
-        expect(listDefaultEnabledSkillPackIds()).toContain(
-            "procurement-workflows",
-        );
-        expect(getSkillPack("procurement-workflows")?.skillIds).toContain(
-            "multi-tab-checklist-workflow",
-        );
-        expect(listSkillDescriptors().map((skill) => skill.id)).toContain(
-            "multi-tab-checklist-workflow",
-        );
-        expect(getLoadedSkillContract("multi-tab-checklist-workflow")).toBeTruthy();
-        expect(getSkillToolPolicy("multi-tab-checklist-workflow")).toBeTruthy();
-        expect(
-            listSkillDescriptors({ enabledSkillPackIds: [] }).map(
-                (skill) => skill.id,
-            ),
-        ).not.toContain("email-reply-careful");
-        expect(
-            listSkillDescriptors({ enabledSkillPackIds: [] }).map(
-                (skill) => skill.id,
-            ),
-        ).not.toContain("multi-tab-checklist-workflow");
-        expect(
-            getLoadedSkillContract("email-reply-careful", {
-                enabledSkillPackIds: [],
-            }),
-        ).toBeNull();
-        expect(
-            getLoadedSkillContract("multi-tab-checklist-workflow", {
-                enabledSkillPackIds: [],
-            }),
-        ).toBeNull();
-        expect(
-            getSkillToolPolicy("email-reply-careful", {
-                enabledSkillPackIds: [],
-            }),
-        ).toBeNull();
-        expect(
-            getSkillToolPolicy("multi-tab-checklist-workflow", {
-                enabledSkillPackIds: [],
-            }),
-        ).toBeNull();
-        expect(listSkillPacks().map((pack) => pack.id)).toContain(
-            "servicenow-platform",
-        );
-        expect(listDefaultEnabledSkillPackIds()).toContain(
-            "servicenow-platform",
-        );
-        expect(getSkillPack("servicenow-platform")?.type).toBe("platform");
-        expect(getSkillPack("servicenow-platform")?.skillIds).toContain(
-            "servicenow-record-form",
-        );
-        expect(
-            listSkillDescriptors({ enabledSkillPackIds: [] }).map(
-                (skill) => skill.id,
-            ),
-        ).not.toContain("servicenow-record-form");
-    });
+    test("does not route a question about an email field to form filling", () => {
+        const selected = selectPrimarySkill({
+            query: "What's visible on the page now? Is there an email field I can use? Describe what you see.",
+            objective: "Describe the current page and whether an email field is available",
+            successCriteria: "The visible page and email field are described",
+            pageTitle: "Account Settings",
+        });
 
+        expect(selected?.id).not.toBe("structured-form-fill");
+    });
     test("returns cloned skill descriptors from catalog lookup", () => {
         const descriptor = getSkillDescriptor("email-reply-careful");
         expect(descriptor).toBeDefined();
@@ -2883,157 +2433,7 @@ describe("selectPrimarySkill", () => {
         expect(new KeywordSkillMatcher().match(input)?.id).toBe(
             "search-answer-extraction",
         );
-    });
-
-    test("routes ServiceNow platform skills only from strong environment evidence", () => {
-        const genericIncidentTask = {
-            query:
-                'Create a new incident with a value of "Printer offline" for field "Short description".',
-            objective:
-                'Fill the incident form with Short description="Printer offline" and leave it ready to submit.',
-            successCriteria:
-                "The requested incident fields are visible with matching readback.",
-            pageTitle: "Acme Helpdesk",
-            pageUrl: "https://helpdesk.example.com/incidents/new",
-        };
-
-        expect(selectPrimarySkill(genericIncidentTask)?.id).not.toBe(
-            "servicenow-record-form",
-        );
-        expect(
-            resolveEligibleSkillCandidates(genericIncidentTask).map(
-                (candidate) => candidate.skill.id,
-            ),
-        ).not.toContain("servicenow-record-form");
-
-        const serviceNowTask = {
-            ...genericIncidentTask,
-            query:
-                'ServiceNow: create a new incident with a value of "Printer offline" for field "Short description".',
-        };
-
-        expect(selectPrimarySkill(serviceNowTask)?.id).toBe(
-            "servicenow-record-form",
-        );
-        const serviceNowCandidate = resolveEligibleSkillCandidates(
-            serviceNowTask,
-        ).find((candidate) => candidate.skill.id === "servicenow-record-form");
-        expect(serviceNowCandidate?.packId).toBe("servicenow-platform");
-        expect(serviceNowCandidate?.signalStrength).toBe("strong");
-
-        expect(
-            selectPrimarySkill({
-                ...genericIncidentTask,
-                pageTitle: "Create Incident | ServiceNow",
-                pageUrl: "https://workarenapublic16.service-now.com/incident.do",
-            })?.id,
-        ).toBe("servicenow-record-form");
-        expect(
-            selectPrimarySkill({
-                ...genericIncidentTask,
-                pageTitle: "Create Incident",
-                pageUrl: "https://helpdesk.internal.example/incidents/new",
-                runtimeContext: ["platform: ServiceNow"],
-            })?.id,
-        ).toBe("servicenow-record-form");
-
-        // Custom-hosted / self-managed ServiceNow (no .service-now.com host) is
-        // recognized by its URL-path fingerprints (/now/nav/, *_list.do,
-        // nav_to.do, sys_id/sysparm), so the record-form skill still activates for
-        // enterprises on vanity domains.
-        expect(
-            selectPrimarySkill({
-                ...genericIncidentTask,
-                pageTitle: "Incident",
-                pageUrl:
-                    "https://itsm.acme-corp.com/now/nav/ui/classic/params/target/incident.do",
-            })?.id,
-        ).toBe("servicenow-record-form");
-        // A generic legacy `.do` app WITHOUT ServiceNow fingerprints must not.
-        expect(
-            selectPrimarySkill({
-                ...genericIncidentTask,
-                pageUrl: "https://legacy.bank.com/account.do?action=view",
-            })?.id,
-        ).not.toBe("servicenow-record-form");
-    });
-
-    test("ignores WorkArena task ids as ServiceNow activation signals", () => {
-        const candidates = resolveEligibleSkillCandidates({
-            query: "workarena.servicenow.create-incident",
-            objective:
-                'Create a new incident with a value of "Printer offline" for field "Short description".',
-            successCriteria: "The incident form is filled.",
-            pageTitle: "Generic Ticketing",
-            pageUrl: "https://tickets.example.com/incidents/new",
-        }).map((candidate) => candidate.skill.id);
-
-        expect(candidates).not.toContain("servicenow-record-form");
-        expect(candidates).not.toContain("servicenow-module-navigation");
-    });
-
-    test("keeps generic catalog and knowledge tasks out of ServiceNow activation", () => {
-        expect(
-            resolveEligibleSkillCandidates({
-                query:
-                    "Order a laptop from the hardware catalog and proceed through checkout.",
-                objective:
-                    "Configure the laptop catalog item and submit the request.",
-                successCriteria: "Order confirmation is visible.",
-                pageTitle: "Hardware Store",
-                pageUrl: "https://shop.example.com/catalog/laptops",
-            }).map((candidate) => candidate.skill.id),
-        ).not.toContain("servicenow-record-form");
-
-        expect(
-            selectPrimarySkill({
-                query:
-                    "Search the knowledge base and answer what users should do before resetting MFA.",
-                objective:
-                    "Use the knowledge search result to answer the user's question",
-                successCriteria:
-                    "Final answer contains the requested fact from the article",
-                pageTitle: "Help Center",
-                pageUrl: "https://docs.example.com/kb",
-            })?.id,
-        ).toBe("search-answer-extraction");
-    });
-
-    test("respects disabled platform packs even when strong signals match", () => {
-        const input = {
-            query:
-                'Create a new incident with a value of "Printer offline" for field "Short description".',
-            objective:
-                'Fill the form with Short description="Printer offline".',
-            successCriteria: "The ServiceNow incident form is filled.",
-            pageTitle: "Create Incident | ServiceNow",
-            pageUrl: "https://workarenapublic16.service-now.com/incident.do",
-            enabledSkillPackIds: [],
-        };
-
-        expect(
-            resolveEligibleSkillCandidates(input).map(
-                (candidate) => candidate.skill.id,
-            ),
-        ).not.toContain("servicenow-record-form");
-        expect(selectPrimarySkill(input)?.id).not.toBe("servicenow-record-form");
-    });
-
-    test("keeps routed candidate sets bounded", () => {
-        expect(
-            resolveEligibleSkillCandidates({
-                query:
-                    "In ServiceNow, reply to an email, open a procurement list in tabs, sort an incident table, filter records, order a catalog item, and search the knowledge base.",
-                objective:
-                    "Exercise multiple workflow signals without exposing the full skill catalog to selection.",
-                successCriteria: "A bounded candidate set is produced.",
-                pageTitle: "Home | ServiceNow",
-                pageUrl: "https://workarenapublic16.service-now.com/now/nav/ui/home",
-            }).length,
-        ).toBeLessThanOrEqual(32);
-    });
-
-    test("prefers list-detail review over generic compare for listing recommendations", () => {
+    }); test("prefers list-detail review over generic compare for listing recommendations", () => {
         expect(
             selectPrimarySkill({
                 query:
@@ -3099,22 +2499,6 @@ describe("selectPrimarySkill", () => {
             })?.id,
         ).toBe("search-answer-extraction");
     });
-
-    test("keeps ServiceNow knowledge answers out of module navigation", () => {
-        expect(
-            selectPrimarySkill({
-                query:
-                    'Answer the following question using the knowledge base: "Each year, how many new hires does the company typically make? Your answer should be a number."',
-                objective:
-                    "Search the knowledge base for information about annual new hire numbers",
-                successCriteria: "Final answer contains the requested number from a knowledge article",
-                pageTitle: "Knowledge Home - Knowledge Portal | ServiceNow",
-                pageUrl:
-                    "https://workarenapublic17.service-now.com/now/nav/ui/classic/params/target/kb?id=kb_home",
-            })?.id,
-        ).toBe("search-answer-extraction");
-    });
-
     test("matches list filter workflows", () => {
         expect(
             selectPrimarySkill({
@@ -3146,137 +2530,7 @@ describe("selectPrimarySkill", () => {
                 pageTitle: "Service Catalog",
             })?.id,
         ).toBe("catalog-order-workflow");
-    });
-
-    test("routes ServiceNow field-value record forms to the ServiceNow form skill", () => {
-        const selection = selectPrimarySkill({
-            query:
-                'Create a new incident with a value of "EMAIL Server Down Again" for field "Short description", a value of "Joe Employee" for field "Caller", a value of "false" for field "Knowledge", a value of "" for field "Service", a value of "Closed before close notes were made mandatory" for field "Resolution notes", a value of "Multiple employees have reported that they are unable to send/receive email." for field "Description", a value of "" for field "Change Request", and a value of "Phone" for field "Channel".',
-            objective:
-                'Fill the form with the requested field values: Short description="EMAIL Server Down Again"; Caller="Joe Employee"; Knowledge="false"; Service=empty; Resolution notes="Closed before close notes were made mandatory"; Description="Multiple employees have reported that they are unable to send/receive email."; Change Request=empty; Channel="Phone". Do not submit the form yet.',
-            successCriteria:
-                "Each requested field has the specified value and the form is ready to submit.",
-            pageTitle: "Create INC0034429 | Incident | ServiceNow",
-            pageUrl: "https://workarenapublic16.service-now.com/incident.do",
-        });
-
-        expect(selection?.id).toBe("servicenow-record-form");
-        expect(getSkillToolPolicy("servicenow-record-form")?.preferredTools).toContain(
-            ToolName.CONFIGURE_SERVICENOW_FORM,
-        );
-        expect(getSkillToolPolicy("servicenow-record-form")?.discouragedTools).toContain(
-            ToolName.CLICK_ELEMENT,
-        );
-        expect(
-            getSkillToolSuppressionPolicy("servicenow-record-form")?.temporarilySuppressedTools,
-        ).toContain(ToolName.CLICK_ELEMENT);
-        expect(
-            resolveSkillToolProfile(
-                "servicenow-record-form",
-                "Fill the ServiceNow record fields",
-                "Every requested field has matching readback evidence",
-            ),
-        ).toBe("form_fill");
-        expect(
-            resolveSkillToolProfile(
-                "servicenow-record-form",
-                'Complete the workflow for the original request: Create a new change request with a value of "CHG0000021" for field "Number". Submit the form and verify the created record.',
-                "The form submission completes and a created record, confirmation, or resulting item page is visible.",
-            ),
-        ).toBe("submit_form");
-    });
-
-    test("exposes inspector tools through new workflow skill policies", () => {
-        expect(getSkillToolPolicy("chart-value-extraction")?.preferredTools).toContain(
-            ToolName.INSPECT_CHART,
-        );
-        expect(
-            resolveSkillToolProfile(
-                "chart-value-extraction",
-                "Read the incident chart and report the value for the empty category",
-                "Final answer includes the requested chart percentage",
-            ),
-        ).toBe("read_only");
-        const chartSkill = getLoadedSkillContract("chart-value-extraction");
-        expect(chartSkill?.procedureMarkdown).toContain("exactly one numeric value");
-        expect(chartSkill?.executionContract?.completionChecks).toContain(
-            "For single-value questions, the final answer contains only one numeric value.",
-        );
-        const listFilterPolicy = getSkillToolPolicy("list-filter-workflow");
-        expect(listFilterPolicy?.preferredTools).toContain(ToolName.APPLY_LIST_FILTER);
-        expect(listFilterPolicy?.discouragedTools).toContain(ToolName.CLICK_ELEMENT);
-        expect(listFilterPolicy?.discouragedTools).toContain(ToolName.FIND_ELEMENT);
-        expect(
-            resolveSkillToolProfile(
-                "list-filter-workflow",
-                'Create a filter where "Caller" is "Margaret Grey"',
-                "Applied query is visible",
-            ),
-        ).toBe("form_fill");
-        expect(getSkillToolPolicy("list-sort-workflow")?.preferredTools).toContain(
-            ToolName.APPLY_LIST_SORT,
-        );
-        expect(getSkillToolPolicy("list-sort-workflow")?.preferredTools).toContain(
-            ToolName.INSPECT_TABLE,
-        );
-        expect(
-            resolveSkillToolProfile(
-                "list-sort-workflow",
-                "Sort by Number descending and Duration descending",
-                "Applied sort query is visible",
-            ),
-        ).toBe("form_fill");
-        expect(getSkillToolPolicy("catalog-order-workflow")?.preferredTools).toContain(
-            ToolName.INSPECT_CATALOG_ITEM,
-        );
-        expect(getSkillToolPolicy("catalog-order-workflow")?.preferredTools).toContain(
-            ToolName.CONFIGURE_CATALOG_ITEM,
-        );
-        expect(
-            resolveSkillToolProfile(
-                "catalog-order-workflow",
-                "Order a premium monitor from the service catalog",
-                "Request confirmation is visible",
-                "form_fill",
-            ),
-        ).toBe("full");
-        const repeatableFormSkill = getLoadedSkillContract(
-            "progressive-repeatable-form",
-        );
-        expect(repeatableFormSkill?.procedureMarkdown).toContain(
-            "copying profile strings exactly",
-        );
-        expect(
-            repeatableFormSkill?.executionContract?.toolDiscipline,
-        ).toContain(
-            "Treat profile values as literals: copy exact strings for text fields and do not summarize, embellish, or replace them with plausible alternatives.",
-        );
-        expect(
-            selectPrimarySkill({
-                query:
-                    'Navigate to the "Database Instances > HBase" module of the "Configuration" application.',
-                objective:
-                    "Navigate to the Database Instances > HBase module in the Configuration application",
-                successCriteria: "HBase Instances page is visible",
-                pageTitle: "Home | ServiceNow",
-            })?.id,
-        ).toBe("servicenow-module-navigation");
-        expect(
-            getSkillToolPolicy("servicenow-module-navigation")?.preferredTools,
-        ).toContain(ToolName.OPEN_SERVICENOW_MODULE);
-        expect(
-            getSkillToolPolicy("servicenow-module-navigation")?.discouragedTools,
-        ).toContain(ToolName.NAVIGATE);
-        expect(
-            resolveSkillToolProfile(
-                "servicenow-module-navigation",
-                "Navigate to the Database Instances > HBase module",
-                "HBase Instances page is visible",
-            ),
-        ).toBe("navigate");
-    });
-
-    test("matches paginated aggregate table scans", () => {
+    });    test("matches paginated aggregate table scans", () => {
         expect(
             selectPrimarySkill({
                 query:
@@ -3289,71 +2543,7 @@ describe("selectPrimarySkill", () => {
                 pageUrl: "https://example.com/data-table",
             })?.id,
         ).toBe("paginated-table-scan");
-    });
-
-    test("keeps ServiceNow module navigation fallback navigation-only", () => {
-        const nodes = buildFallbackNodes(
-            'Navigate to the "Breakdowns > Elements Filters" module of the "Performance Analytics" application.',
-            "planned",
-            "Home | ServiceNow",
-            "https://workarenapublic17.service-now.com/now/nav/ui/home",
-        );
-
-        expect(nodes).toHaveLength(1);
-        expect(nodes[0].selectedSkillId).toBe("servicenow-module-navigation");
-        expect(nodes[0].description).toContain("Navigate to the");
-        expect(nodes[0].description).not.toMatch(/read the requested result/i);
-        expect(nodes[0].successCriteria).toContain("navigation destination is open");
-        expect(nodes[0].successCriteria).not.toMatch(/requested result/i);
-    });
-
-    test("collapses planner-expanded ServiceNow navigation without report obligations", async () => {
-        completeImpl = () => Promise.resolve({
-            role: "assistant",
-            content: JSON.stringify({
-                isMultiStep: true,
-                difficulty: "moderate",
-                steps: [
-                    {
-                        objective:
-                            "Navigate to breakdowns > elements filters and performance analytics and breakdowns and elements filters and read the requested result there.",
-                        successCriteria:
-                            "Page shows breakdowns > elements filters and performance analytics and breakdowns and elements filters and the requested result value.",
-                        dependencies: [],
-                        assumptions: [],
-                    },
-                    {
-                        objective:
-                            "Report the requested results for breakdowns > elements filters and performance analytics and breakdowns and elements filters.",
-                        successCriteria:
-                            "Final answer mentions breakdowns > elements filters and performance analytics and breakdowns and elements filters and the requested result values.",
-                        dependencies: [0],
-                        assumptions: [],
-                    },
-                ],
-            }),
-            tool_calls: undefined,
-            finish_reason: "stop",
-        });
-        const planner = new OrchestratorPlanner("test-key");
-
-        const result = await planner.buildNodes(
-            'Navigate to the "Breakdowns > Elements Filters" module of the "Performance Analytics" application.',
-            "Home | ServiceNow",
-            "https://workarenapublic17.service-now.com/now/nav/ui/home",
-        );
-
-        expect(result.nodes).toHaveLength(1);
-        expect(result.nodes[0].selectedSkillId).toBe("servicenow-module-navigation");
-        expect(result.nodes[0].description).toContain("Navigate according to");
-        expect(result.nodes[0].description).not.toMatch(/read the requested result/i);
-        expect(result.nodes[0].successCriteria).toContain(
-            "navigation destination is open",
-        );
-        expect(result.nodes[0].successCriteria).not.toMatch(/requested result/i);
-    });
-
-    test("matches targeted paginated record lookups without using aggregate scans", () => {
+    });    test("matches targeted paginated record lookups without using aggregate scans", () => {
         expect(
             selectPrimarySkill({
                 query: "Search for Diana in the employee directory and tell me her salary.",
@@ -3777,17 +2967,17 @@ describe("selectPrimarySkill", () => {
         expect(
             selectPrimarySkill({
                 ...input,
-                enabledSkillPackIds: ["procurement-workflows"],
+                enabledSkillPackIds: ["source-list-workflows"],
             })?.id,
         ).toBe("multi-tab-checklist-workflow");
     });
 
-    test("matches natural procurement checklist workflows without tab wording", () => {
+    test("matches source-list loops when target links are explicit without tab wording", () => {
         expect(
             selectPrimarySkill({
-                query: "Buy the first two items from the procurement list and mark them complete.",
-                objective: "Complete the requested procurement list items",
-                successCriteria: "The first two rows are marked complete on the procurement list",
+                query: "Open the first two links from the reading list, review each page, and mark them complete.",
+                objective: "Review the linked pages and update the reading list",
+                successCriteria: "The first two rows are marked complete on the reading list",
             })?.id,
         ).toBe("multi-tab-checklist-workflow");
     });

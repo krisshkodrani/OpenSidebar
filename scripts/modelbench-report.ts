@@ -45,6 +45,9 @@ function markdown(report: BenchmarkReportV1, source: string): string {
     "| Seat | Calls | Prompt tokens | Completion tokens | Cached tokens | Cost | LLM time (ms) |",
     "| --- | ---: | ---: | ---: | ---: | ---: | ---: |",
     ...roleUsageRows,
+    ...(report.unattributedUsage?.calls
+      ? [`| Unattributed | ${report.unattributedUsage.calls} | ${report.unattributedUsage.promptTokens} | ${report.unattributedUsage.completionTokens} | ${report.unattributedUsage.cachedTokens} | $${report.unattributedUsage.costUsd.toFixed(6)} | ${report.unattributedUsage.llmTimeMs} |`]
+      : []),
     "",
     "## By application family",
     "",

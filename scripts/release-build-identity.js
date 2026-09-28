@@ -2,6 +2,11 @@ import { createHash } from "node:crypto";
 import { readFileSync, readdirSync } from "node:fs";
 import { resolve } from "node:path";
 
+/** Vite's virtual-module manifest is build metadata, not extension content. */
+export function isReleaseFile(relativePath) {
+  return !relativePath.replace(/\\/g, "/").startsWith(".vite/");
+}
+
 /** Hash relative paths and bytes, independent of checkout path and timestamps. */
 export function releaseBuildSha256(directory) {
   const entries = [];
@@ -9,7 +14,9 @@ export function releaseBuildSha256(directory) {
     for (const entry of readdirSync(resolve(directory, relativePath), { withFileTypes: true })) {
       const path = relativePath ? `${relativePath}/${entry.name}` : entry.name;
       if (entry.isDirectory()) visit(path);
-      else if (entry.isFile()) entries.push(path);
+      else if (entry.isFile()) {
+        if (isReleaseFile(path)) entries.push(path);
+      }
       else throw new Error(`Unsupported release entry: ${path}`);
     }
   }

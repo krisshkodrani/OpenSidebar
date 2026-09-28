@@ -1,0 +1,131 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta
+      name="description"
+      content="A local review studio for the OpenSidebar executor fine-tuning pilot."
+    />
+    <title>Training Data Review Studio</title>
+    <link rel="stylesheet" href="/styles.css" />
+  </head>
+  <body>
+    <div class="app-shell">
+      <header class="topbar">
+        <a class="brand" href="#" aria-label="Training Data Review Studio home">
+          <span class="brand-mark">OS</span>
+          <span
+            ><strong>Training Data</strong><small>Review studio</small></span
+          >
+        </a>
+        <div class="topbar-copy">
+          <span class="live-dot"></span>
+          Local pilot · nothing leaves this machine
+        </div>
+      </header>
+
+      <main>
+        <section class="hero">
+          <div>
+            <p class="eyebrow">EXECUTOR FINE-TUNING PILOT</p>
+            <h1>Turn trace history into<br /><em>training judgment.</em></h1>
+            <p class="hero-copy">
+              Review exactly what the smaller model would see, what it should
+              learn to do next, and whether that decision deserves a place in
+              the pilot.
+            </p>
+          </div>
+          <div class="readiness-card">
+            <div class="readiness-head">
+              <span>Conservative curation yield</span
+              ><strong id="readiness-score">—</strong>
+            </div>
+            <div class="readiness-track"><span id="readiness-fill"></span></div>
+            <p id="readiness-copy">Loading archive evidence…</p>
+          </div>
+        </section>
+
+        <section
+          class="metrics"
+          id="metrics"
+          aria-label="Audit metrics"
+        ></section>
+
+        <section class="pilot-notes" aria-label="How to interpret the pilot">
+          <div>
+            <span>01</span>
+            <p>
+              <strong>Executor only</strong>The archive can teach next browser
+              actions. Planner conversations were not recorded.
+            </p>
+          </div>
+          <div>
+            <span>02</span>
+            <p>
+              <strong>One target per card</strong>Context is visible for
+              judgment, while only the final assistant action becomes the
+              training target.
+            </p>
+          </div>
+          <div>
+            <span>03</span>
+            <p>
+              <strong>Human gate</strong>Automatic checks create the shortlist.
+              Your decisions determine what is approved for training.
+            </p>
+          </div>
+        </section>
+
+        <section class="workspace">
+          <aside class="sample-browser">
+            <div class="section-heading">
+              <div>
+                <p class="eyebrow">PILOT SET</p>
+                <h2>Executor decisions</h2>
+              </div>
+              <span class="count-badge" id="visible-count">0</span>
+            </div>
+
+            <label class="search-field">
+              <span>⌕</span>
+              <input
+                id="search"
+                type="search"
+                placeholder="Search task, site, or tool"
+              />
+            </label>
+
+            <div
+              class="filter-row"
+              role="group"
+              aria-label="Review status filter"
+            >
+              <button class="filter active" data-status="all">All</button>
+              <button class="filter" data-status="unreviewed">Open</button>
+              <button class="filter" data-status="approved">Approved</button>
+              <button class="filter" data-status="needs_work">
+                Needs work
+              </button>
+              <button class="filter" data-status="rejected">Rejected</button>
+            </div>
+
+            <div class="sample-list" id="sample-list"></div>
+          </aside>
+
+          <article class="sample-detail" id="sample-detail">
+            <div class="empty-state">
+              <span>01</span>
+              <h2>Select a decision</h2>
+              <p>
+                Open a sample to inspect its context, target action, and review
+                status.
+              </p>
+            </div>
+          </article>
+        </section>
+      </main>
+    </div>
+    <script type="module" src="/app.js"></script>
+  </body>
+</html>

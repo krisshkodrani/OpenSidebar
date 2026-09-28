@@ -167,3 +167,20 @@ host: TurnCheckpointHost,
     // Best-effort cleanup
   }
 }
+
+/** Bind checkpoint persistence and restore to current loop state. */
+export class TurnCheckpointRuntime {
+  constructor(private readonly host: TurnCheckpointHost) {}
+
+  save(): Promise<void> {
+    return saveTurnCheckpoint(this.host);
+  }
+
+  restore(cp: TurnCheckpoint): boolean {
+    return restoreFromTurnCheckpoint(this.host, cp);
+  }
+
+  clear(): Promise<void> {
+    return clearTurnCheckpoint(this.host);
+  }
+}

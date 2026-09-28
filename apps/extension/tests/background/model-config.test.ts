@@ -11,7 +11,7 @@ describe("LLM model config", () => {
     // The top-level executor default tracks the RECOMMENDED provider mode,
     // which became OpenRouter on 2026-07-26 — hence the catalog-form id. The
     // Fireworks form still backs the Fireworks-family seats below.
-    expect(LLM_MODEL_CONFIG.executor).toBe("minimax/minimax-m3");
+    expect(LLM_MODEL_CONFIG.executor).toBe("openai/gpt-6-luna");
     expect(LLM_MODEL_CONFIG.fireworks.executor).toBe(
       "accounts/fireworks/models/kimi-k2p7-code",
     );

@@ -224,6 +224,19 @@ function checkNoDevSurface() {
     }
   }
 
+  const buildManifest = readJson(".vite/manifest.json");
+  if (buildManifest && "src/overlay/index.tsx" in buildManifest) {
+    fail("production Vite manifest must not include the overlay harness entry");
+  }
+  if (
+    existsSync(resolve(distPath, "assets")) &&
+    readdirSync(resolve(distPath, "assets")).some((name) =>
+      name.startsWith("overlay-harness-"),
+    )
+  ) {
+    fail("production assets must not include the overlay harness bundle");
+  }
+
   const forbiddenStrings = ["127.0.0.1:7589"];
   const stack = [distPath];
   while (stack.length > 0) {

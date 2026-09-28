@@ -14,6 +14,7 @@
 import type { AgentStep } from "../../../types";
 import type { logger, SessionScopedLogger } from "../../../utils";
 import type { ContextManager } from "../context";
+import type { PlanRecoveryRuntime } from "../plan-recovery-runtime";
 import type { TraceRecorder } from "../trace";
 import type { LoopResult } from "../loop-types";
 import type { EscalationRescueTracker } from "../escalation-rescue-policy";
@@ -33,11 +34,7 @@ export interface EscalationPhaseHost {
   readonly stagnation: { resetEscalation(): void };
   flushEscalationRescueEvents(): void;
   failFastAfterEscalation(reason: string): LoopResult;
-  replanOnEscalation(
-    tabId: number,
-    subgoalAttempts: SubgoalAttempt[],
-    signal?: AbortSignal,
-  ): Promise<boolean>;
+  readonly planRecovery: Pick<PlanRecoveryRuntime, "replanOnEscalation">;
   strategyPivot(tabId: number, attemptSummary: string): Promise<void>;
   stepHandler(step: AgentStep, update: boolean): void;
 }
@@ -88,7 +85,7 @@ export async function runEscalationPhase(
     );
 
     // Try replan-on-escalation first (planner replans, executor continues)
-    const rescueReplanOk = await host.replanOnEscalation(
+    const rescueReplanOk = await host.planRecovery.replanOnEscalation(
       deps.tabId,
       deps.subgoalAttempts,
       host.abortController?.signal,

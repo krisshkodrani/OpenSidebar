@@ -244,7 +244,7 @@ describe("completion kernel target-aware visible enable/disable workflow confirm
     expect(generated?.contract).toMatchObject({
       kind: "workflow_confirmation",
       action: "create",
-      targetLabel: "Novablast 4 shoes to cart",
+      targetLabel: "Novablast 4 shoes",
     });
     expect(decision.status).toBe("accepted");
   });

@@ -5,15 +5,16 @@
  * conversation (resetting the rescue-policy clocks on a user redirection) and,
  * on a turn-budget cadence, inject the budget reminder that nudges the model
  * toward done()/escalate(). Pure side-effects on the conversation context, so it
- * always continues. Everything it touches is a real AgentLoop field/method, so
- * loop() passes `this` (the established dispatch-host idiom).
+ * always continues. The loop supplies the private feedback value and its clear
+ * callback alongside the collaborators this phase reads.
  */
 
 import type { ContextManager } from "../context";
 import type { TraceRecorder } from "../trace";
 
 export interface FeedbackPhaseHost {
-  pendingFeedback: string | null;
+  readonly pendingFeedback: string | null;
+  clearPendingFeedback(): void;
   readonly turnCount: number;
   readonly traceRecorder: TraceRecorder | null;
   readonly context: ContextManager;
@@ -32,7 +33,7 @@ export function runFeedbackPhase(host: FeedbackPhaseHost): FeedbackPhaseResult {
       role: "user",
       content: `[User feedback]: ${host.pendingFeedback}`,
     });
-    host.pendingFeedback = null;
+    host.clearPendingFeedback();
     // User redirection restarts the rescue-policy progress clocks.
     host.escalationRescue.noteUserIntervention(host.turnCount);
   }

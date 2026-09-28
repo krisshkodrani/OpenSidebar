@@ -2,6 +2,7 @@ import type {
   BenchmarkAttemptV1,
   BenchmarkReportV1,
   MetricSliceV1,
+  RoleUsageV1,
 } from "@opensidebar/scenario-contracts";
 import { MODEL_BENCH_ACCEPTANCE_CASES } from "./acceptance-cases.js";
 import { MODEL_BENCH_CASES } from "./case-catalog.js";
@@ -76,7 +77,7 @@ export function buildBenchmarkReport(
     .map((attempt) => attempt.durationMs);
   const firstAttempts = attempts.filter((attempt) => !attempt.retryOfAttemptId);
   const llmTimes = firstAttempts.map((attempt) =>
-    Object.values(attempt.usageByRole).reduce(
+    (attempt.unattributedUsage?.llmTimeMs ?? 0) + Object.values(attempt.usageByRole).reduce(
       (sum, usage) => sum + (usage?.llmTimeMs ?? 0),
       0,
     ),
@@ -109,6 +110,7 @@ export function buildBenchmarkReport(
   const totalCostUsd = attempts.reduce(
     (sum, attempt) =>
       sum +
+      (attempt.unattributedUsage?.costUsd ?? 0) +
       Object.values(attempt.usageByRole).reduce(
         (roleSum, usage) => roleSum + (usage?.costUsd ?? 0),
         0,
@@ -139,6 +141,18 @@ export function buildBenchmarkReport(
     totalReplans: firstAttempts.reduce((sum, attempt) => sum + (attempt.telemetry?.replans ?? 0), 0),
     totalRecoveries: firstAttempts.reduce((sum, attempt) => sum + (attempt.telemetry?.recoveries ?? 0), 0),
     usageByRole,
+    unattributedUsage: attempts.reduce<RoleUsageV1>((sum, attempt) => {
+      const usage = attempt.unattributedUsage;
+      if (!usage) return sum;
+      return {
+        calls: sum.calls + usage.calls,
+        promptTokens: sum.promptTokens + usage.promptTokens,
+        completionTokens: sum.completionTokens + usage.completionTokens,
+        cachedTokens: sum.cachedTokens + usage.cachedTokens,
+        costUsd: sum.costUsd + usage.costUsd,
+        llmTimeMs: sum.llmTimeMs + usage.llmTimeMs,
+      };
+    }, { calls: 0, promptTokens: 0, completionTokens: 0, cachedTokens: 0, costUsd: 0, llmTimeMs: 0 }),
     totalCostUsd,
     costPerRequestedTaskUsd: overall.requested ? totalCostUsd / overall.requested : null,
     costPerSuccessfulTaskUsd: overall.passed ? totalCostUsd / overall.passed : null,

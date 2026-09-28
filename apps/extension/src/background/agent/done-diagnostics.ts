@@ -24,6 +24,11 @@ import {
   evaluateCompletionWorkflowContractPreflight,
 } from "./completion-kernel";
 import { countVisibleListDetailActions } from "./list-detail-policy";
+import type { ListDetailWorkflowState } from "./list-detail-workflow";
+import type { MoneyTableRuntime } from "./loop-money-table";
+import type { SkillToolRuntime } from "./loop-skill-tools";
+import { getCompletionSummaryTaskContext } from "./completion/decision-context";
+import { formatDoneRejectionDiagnostic } from "./completion/rejection-effects";
 
 export interface DoneDiagnosticsHost {
   readonly originalQuery: string;
@@ -37,13 +42,30 @@ export interface DoneDiagnosticsHost {
   readonly doneRejections: number;
   readonly hasReadPage: boolean;
   readonly hasExplicitPageRead: boolean;
-  readonly listDetailVisibleActionCount: number;
-  readonly listDetailReviewedTargets: ReadonlySet<string>;
-  isSkillOwnedListDetailReview(): boolean;
+  readonly listDetailWorkflow: ListDetailWorkflowState;
+  readonly skillTools: Pick<SkillToolRuntime, "isSkillOwnedListDetailReview">;
   getMissingRequiredEvidenceTypes(): string[];
-  getIncorrectMoneyTableAggregateDoneRejection(summary: string): string | null;
-  getIncompleteMoneyTableAggregateDoneRejection(): string | null;
-  getCompletionSummaryTaskContext(): string;
+  readonly moneyTable: Pick<
+    MoneyTableRuntime,
+    "getIncorrectMoneyTableAggregateDoneRejection" | "getIncompleteMoneyTableAggregateDoneRejection"
+  >;
+}
+
+export function formatDoneRejectionDiagnosticContent(
+  host: DoneDiagnosticsHost & { readonly limits: { maxDoneRejections: number } },
+  params: {
+    summary: string;
+    primaryReason: string;
+    fallbackInstruction: string;
+    nextStepHint?: string;
+  },
+): string {
+  return formatDoneRejectionDiagnostic({
+    ...params,
+    doneRejections: host.doneRejections,
+    maxDoneRejections: host.limits.maxDoneRejections,
+    collectIssues: (summary) => collectDoneDiagnosticIssues(host, summary),
+  });
 }
 
 export function collectDoneDiagnosticIssues(
@@ -58,7 +80,7 @@ summary: string,
 
   const summaryPreflight = evaluateCompletionSummaryPreflight({
     summary,
-    taskContext: host.getCompletionSummaryTaskContext(),
+    taskContext: getCompletionSummaryTaskContext(host),
     turnCount: host.turnCount,
     rootUserRequest: host.originalQuery,
     isOrchestratorNode: Boolean(host.nodeId),
@@ -80,12 +102,12 @@ summary: string,
   }
 
   const incompleteMoneyTableScan =
-    host.getIncompleteMoneyTableAggregateDoneRejection();
+    host.moneyTable.getIncompleteMoneyTableAggregateDoneRejection();
   const moneyTablePreflight = evaluateCompletionMoneyTableAggregatePreflight({
     incompleteScanReason: incompleteMoneyTableScan,
     incorrectAnswerReason: incompleteMoneyTableScan
       ? null
-      : host.getIncorrectMoneyTableAggregateDoneRejection(summary),
+      : host.moneyTable.getIncorrectMoneyTableAggregateDoneRejection(summary),
   });
   if (moneyTablePreflight.status !== "valid") {
     addIssue("money table", moneyTablePreflight.reason);
@@ -103,7 +125,7 @@ summary: string,
     );
   }
 
-  const taskContractGuard = host.isSkillOwnedListDetailReview()
+  const taskContractGuard = host.skillTools.isSkillOwnedListDetailReview()
     ? null
     : evaluateCompletionTaskContractPreflight({
         userRequest: host.originalQuery,
@@ -127,13 +149,13 @@ summary: string,
   }
 
   const visibleDetailActionCount = Math.max(
-    host.listDetailVisibleActionCount,
+    host.listDetailWorkflow.listDetailVisibleActionCount,
     countVisibleListDetailActions(host.context.getSnapshot()),
   );
   const listDetailPreflight = evaluateCompletionListDetailReviewPreflight({
     selectedSkillId: host.selectedSkillId,
     userRequest: host.originalQuery,
-    reviewedDetailCount: host.listDetailReviewedTargets.size,
+    reviewedDetailCount: host.listDetailWorkflow.listDetailReviewedTargets.size,
     visibleDetailActionCount,
   });
   if (listDetailPreflight.status !== "valid") {

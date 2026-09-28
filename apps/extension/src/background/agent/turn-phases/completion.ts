@@ -21,11 +21,13 @@
 import type { AgentStep, DomSnapshot, ToolCall } from "../../../types";
 import type { logger, SessionScopedLogger } from "../../../utils";
 import type { ContextManager } from "../context";
+import type { PlanRecoveryRuntime } from "../plan-recovery-runtime";
 import type { TraceRecorder } from "../trace";
 import type { RuntimeLimits } from "../constants";
 import type { LoopSession, TurnScope } from "../loop-scope";
 import type { EscalationTierController } from "../escalation-tier-controller";
 import type { TrustedCompletionCandidate } from "../completion-kernel";
+import { getWorkspaceTabIds } from "../workflow-tab-routing";
 import type { ActionEffect, StagnationSignal } from "../stagnation";
 import {
   detectExplicitSuccessSignalInSnapshot,
@@ -41,11 +43,7 @@ import {
   surfaceSpawnedTabs,
   type SpawnedTabSurfacingHost,
 } from "../spawned-tab-surfacing";
-import {
-  advanceCompletedSubtasks,
-  completeSingleSubtask,
-  type AgentLoopPlanProgressHost,
-} from "../loop-plan-progress";
+import type { PlanProgressRuntime } from "../loop-plan-progress";
 import { buildTaskContract } from "../task-contract";
 import { countExplicitSteps } from "../explicit-steps";
 import { summarizeCausalChain } from "../context-formatting";
@@ -70,26 +68,32 @@ import {
 } from "../loop-helpers";
 import { ESCALATION_RECOVERY, ESCALATION_REFLECTION } from "../loop-prompts";
 import { ACTION_EFFECT, FRESH_START, ROLLING_DISTILL } from "../constants";
-import type { ActionReceipt } from "../page-state";
+import type { PageStateCoordinator } from "../page-state";
+import type { AgentTelemetryController } from "../agent-telemetry-controller";
+import type { PlanStep } from "../planner";
+import type { PlanStatusTraceEvent } from "../agent-plan-progress";
 
-export interface CompletionPhaseHost {
+export interface CompletionPhaseHost
+  extends ExplicitSuccessSignalHost,
+    SpawnedTabSurfacingHost,
+    PostToolSnapshotRefreshHost,
+    PlanMonitorPhaseHost {
+  readonly planProgress: Pick<PlanProgressRuntime, "advanceCompletedSubtasks" | "completeSingleSubtask">;
   readonly turnCount: number;
   readonly originalQuery: string;
   readonly nodeId: string | null;
   readonly workspaceId: string | null;
-  getWorkspaceTabIds(): Promise<number[] | null>;
-  readonly taskId: unknown;
+  readonly taskId: string | null;
   escalationsOnCurrentStep: number;
   readonly limits: RuntimeLimits;
   readonly abortController: AbortController | null;
   readonly context: ContextManager;
   readonly log: typeof logger | SessionScopedLogger;
   readonly traceRecorder: TraceRecorder | null;
-  readonly perception: {
-    getLastScreenshot(): string | null;
-    getLastActionReceipt(): ActionReceipt | null;
-    invalidateCache(): void;
-  };
+  readonly perception: Pick<PageStateCoordinator,
+    "finalizePendingAsUncertain" | "getCurrentObservation" | "finalizePendingActions" |
+    "getLastScreenshot" | "getLastActionReceipt" | "invalidateCache" |
+    "getInterpretation">;
   readonly stagnation: {
     onSnapshotRefresh(snap: DomSnapshot): StagnationSignal | null;
     readonly lastActionEffect: ActionEffect | null;
@@ -97,15 +101,10 @@ export interface CompletionPhaseHost {
     resetEscalation(): void;
     reset(): void;
   };
-  readonly telemetry: {
-    recordContextProgress(
-      turn: number,
-      signals: ContextProgressSignal[],
-    ): boolean;
-  };
-  readonly toolCache: { clear(): void };
-  readonly planSteps: ReadonlyArray<{ successCriteria?: string }>;
-  readonly planSubtasks: ReadonlyArray<{ status: string; description: string }>;
+  readonly telemetry: Pick<AgentTelemetryController,
+    "broadcastFinalMetrics" | "recordContextProgress" | "recordCitation">;
+  readonly toolCache: { clear(): void; invalidateDom(): void };
+  readonly planSteps: PlanStep[];
   consecutiveAutoAdvances: number;
   consecutiveZeroEffectTurns: number;
   lastDomStep: unknown;
@@ -125,17 +124,17 @@ export interface CompletionPhaseHost {
     toolArgs?: Record<string, unknown>;
     startedTurn: number;
   } | null;
-  completeTaskUi(summary: string): void;
+  completionFinalization: Pick<import("../completion/finalization").CompletionFinalizationRuntime,
+    "completeTaskUi">;
   broadcast(message: unknown): void;
-  broadcastFinalMetrics(): void;
   broadcastTaskProgress(index: number): void;
   escalateModel(): void;
   syncPlanStatus(
     index: number,
-    event: string,
+    event: PlanStatusTraceEvent,
     meta?: Record<string, unknown>,
   ): void;
-  getActiveToolProfileForStep(index: number): string | undefined;
+  skillTools: { getActiveToolProfileForStep(index: number): string | undefined };
   completeSubmitFormReset(
     stepIndex: number,
     signal: unknown,
@@ -146,13 +145,10 @@ export interface CompletionPhaseHost {
     pending: NonNullable<CompletionPhaseHost["pendingAsyncVerification"]>,
   ): Promise<DomSnapshot | null>;
   refreshSnapshot(tabId: number): Promise<number>;
-  replanOnEscalation(
-    tabId: number,
-    subgoalAttempts: SubgoalAttempt[],
-    signal?: AbortSignal,
-  ): Promise<boolean>;
+  readonly planRecovery: Pick<PlanRecoveryRuntime,
+    "replanOnEscalation" | "runPlanMonitor" | "handlePlanDeviation">;
   strategyPivot(tabId: number, attemptSummary?: string): Promise<void>;
-  saveTurnCheckpoint(): Promise<void>;
+  readonly turnCheckpoint: Pick<import("../turn-checkpoint").TurnCheckpointRuntime, "save">;
   stepHandler(step: AgentStep, update: boolean): void;
 }
 
@@ -225,12 +221,12 @@ export async function runCompletionPhase(
   // turn's tool batch, BEFORE effect accounting — a spawned tab means the
   // action was NOT a no-op even though the current tab's DOM is unchanged.
   const spawnedTabCount = await surfaceSpawnedTabs(
-    host as unknown as SpawnedTabSurfacingHost,
+    host,
     host.workspaceId,
   );
   await refreshOpenTabInventory(
-    host as unknown as SpawnedTabSurfacingHost,
-    await host.getWorkspaceTabIds(),
+    host,
+    await getWorkspaceTabIds(host.workspaceId),
     session.tabId,
   );
 
@@ -238,7 +234,7 @@ export async function runCompletionPhase(
   if (turn.domModified && !turn.doneSignaled) {
     try {
       const snapshotRefresh = await refreshPostToolSnapshot(
-        host as unknown as PostToolSnapshotRefreshHost,
+        host,
         {
           tabId: session.tabId,
           prevElementCount: session.prevElementCount,
@@ -251,7 +247,7 @@ export async function runCompletionPhase(
 
       if (snap) {
         const explicitSuccessSignal = detectExplicitSuccessSignalInSnapshot(
-          host as unknown as ExplicitSuccessSignalHost,
+          host,
           snap,
         );
         // Suppress auto-complete for root agent (no nodeId) on multi-return
@@ -291,11 +287,11 @@ export async function runCompletionPhase(
             tool_call_id: crypto.randomUUID(),
             content: summary,
           });
-          host.completeTaskUi(summary);
+          host.completionFinalization.completeTaskUi(summary);
           session.doneSummary = summary;
           turn.doneSignaled = true;
 
-          host.broadcastFinalMetrics();
+          host.telemetry.broadcastFinalMetrics();
         } else if (explicitSuccessSignal && explicitStepCount >= 2) {
           host.traceRecorder?.recordEvent(
             "explicit_success_auto_complete_blocked",
@@ -319,9 +315,7 @@ export async function runCompletionPhase(
             (s) => s.status === "running",
           );
           if (runningIdx >= 0 && runningIdx < host.planSubtasks.length - 1) {
-            const newIdx = advanceCompletedSubtasks(
-              host as unknown as AgentLoopPlanProgressHost,
-            );
+            const newIdx = host.planProgress.advanceCompletedSubtasks();
             const nextDesc =
               host.planSubtasks[newIdx]?.description || "Continue to next step";
             host.syncPlanStatus(newIdx, "multi_return_step_advanced", {
@@ -364,7 +358,7 @@ export async function runCompletionPhase(
 
         // Plan monitor: check alignment every 2 turns when plan is active
         await runPlanMonitorPhase(
-          host as unknown as PlanMonitorPhaseHost,
+          host,
           session.tabId,
         );
 
@@ -588,7 +582,7 @@ export async function runCompletionPhase(
             if (
               currentSubtask &&
               lastToolName &&
-              host.getActiveToolProfileForStep(planAfterAction.currentIndex) ===
+              host.skillTools.getActiveToolProfileForStep(planAfterAction.currentIndex) ===
                 "submit_form"
             ) {
               const submitResetSignal = detectFormSubmissionResetSuccess({
@@ -673,10 +667,7 @@ export async function runCompletionPhase(
               if (advanceSignal || shouldPassiveAdvance) {
                 host.consecutiveAutoAdvances = 0;
                 const fromStep = planAfterAction.currentIndex;
-                const newIdx = completeSingleSubtask(
-                  host as unknown as AgentLoopPlanProgressHost,
-                  fromStep,
-                );
+                const newIdx = host.planProgress.completeSingleSubtask(fromStep);
                 const isStructural = !!advanceSignal;
                 const reason = isStructural
                   ? advanceSignal!.reason
@@ -727,7 +718,7 @@ export async function runCompletionPhase(
                   completedAllSteps,
                 });
                 if (completedAllSteps) {
-                  host.saveTurnCheckpoint().catch(() => {});
+                  host.turnCheckpoint.save().catch(() => {});
                   await host.traceRecorder?.endTurn();
                   return { kind: "end_turn" };
                 }
@@ -779,7 +770,7 @@ export async function runCompletionPhase(
                 hasFailureBrief: !!failureBrief,
               });
 
-              const zeroEffectReplanOk = await host.replanOnEscalation(
+              const zeroEffectReplanOk = await host.planRecovery.replanOnEscalation(
                 session.tabId,
                 subgoalAttempts,
                 host.abortController?.signal,
@@ -965,7 +956,7 @@ export async function runCompletionPhase(
           // Escalate: executor → planner (try replan first)
           else if (esc.tier === 0 && esc.cooldownRemaining <= 0) {
             // Try replan-on-escalation first
-            const stagnationReplanOk = await host.replanOnEscalation(
+            const stagnationReplanOk = await host.planRecovery.replanOnEscalation(
               session.tabId,
               subgoalAttempts,
               host.abortController?.signal,

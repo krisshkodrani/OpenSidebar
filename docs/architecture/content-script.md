@@ -180,8 +180,12 @@ Deep traversal lives in `tagging/dom-traversal.ts`
 - **Closed shadow roots** — read-only traversal via
   `chrome.dom.openOrClosedShadowRoot` (LP-12 Phase A); "closed = inaccessible"
   no longer holds.
-- **Same-origin iframes** — traversed. Cross-origin iframes are not
-  (LP-12 Phase B is the open follow-up).
+- **Same-origin iframes** — traversed by the top-frame snapshot.
+- **Cross-origin iframes** — `frame-content.ts` answers only targeted child
+  snapshot and action messages. The background collects bounded child reads,
+  merges namespaced tags into the active snapshot, and routes tag actions back
+  to the owning frame with its document identity. The setting defaults on in
+  development and off in the shipped build while LP-12 Phase B acceptance runs.
 
 ### SPAs and dynamic content
 

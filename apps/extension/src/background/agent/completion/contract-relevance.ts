@@ -48,8 +48,14 @@ export function isContractRelevantToObjective(
       const focusedText = [params.activeObjective, params.successCriteria]
         .filter(Boolean)
         .join("\n");
+      // A success criterion may describe a control that should be visible on
+      // the destination page. Its label is not an instruction to activate it.
+      const actionText = focusedText.replace(
+        /\b(?:visible|shown|displayed)\s+with\b[^.!?\n]{0,120}\b(?:button|control)\b/gi,
+        "",
+      );
       return (
-        inferWorkflowConfirmationAction(focusedText) ===
+        inferWorkflowConfirmationAction(actionText) ===
         generated.contract.action
       );
     }

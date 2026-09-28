@@ -29,6 +29,19 @@ describe("tagElements", () => {
     expect(tagged[0].text).toBe("Click Me");
   });
 
+  test("does not report placeholders as entered form values", () => {
+    const input = document.createElement("input");
+    input.placeholder = "Renewal invoice review";
+    const textarea = document.createElement("textarea");
+    textarea.placeholder = "Write a message";
+    document.body.append(input, textarea);
+
+    const tagged = tagElements();
+    expect(tagged.find((element) => element.tagName === "input")?.text).toBe("");
+    expect(tagged.find((element) => element.tagName === "textarea")?.text).toBe("");
+    expect(tagged.find((element) => element.tagName === "input")?.attributes.placeholder).toBe("Renewal invoice review");
+  });
+
   test("skips hidden elements", () => {
     const btn = document.createElement("button");
     btn.style.display = "none";
@@ -622,7 +635,10 @@ describe("collapseNearIdentical (WI-1 dedup)", () => {
 
     expect(texts).toContain("Full name");
     expect(texts).toContain("Email address");
-    expect(texts).toContain("SAVE10");
+    expect(tagged).toContainEqual(expect.objectContaining({
+      text: "",
+      attributes: expect.objectContaining({ placeholder: "SAVE10" }),
+    }));
   });
 });
 

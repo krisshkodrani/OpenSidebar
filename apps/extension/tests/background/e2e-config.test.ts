@@ -36,11 +36,11 @@ describe("E2E config", () => {
     ).toBe("subtle");
   });
 
-  test("defaults to the local fireworks overlay profile", () => {
+  test("defaults to the local OpenRouter overlay profile", () => {
     const config = readE2EConfig({ env: {} });
 
     expect(config.profile).toBe("local");
-    expect(config.provider).toBe("fireworks");
+    expect(config.provider).toBe("openrouter");
     expect(config.browser.headless).toBe(false);
     expect(config.browser.panelMode).toBe("overlay");
     expect(config.artifacts.finalScreenshot).toBe(true);

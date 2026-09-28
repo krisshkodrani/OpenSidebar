@@ -2,10 +2,11 @@
  * Interaction tool registrations (RFC LP-16 Phase 4). Registers the
  * content-script interaction tools (click/type/scroll/read/hover/find/select/
  * press/drag/hide/dismiss), including the main-world click+type bridges and the
- * ServiceNow reference finalize hook. Verbatim movement from tools/index.ts.
+ * framework text bridge. Verbatim movement from tools/index.ts.
  */
 import { ToolName, MessageSource } from "../../types";
 import { logger } from "../../utils";
+import { formatPageRead } from "../../utils/format-page-read";
 import { ToolRegistry } from "./registry";
 import {
     CLICK_DEF,
@@ -21,8 +22,10 @@ import {
     DISMISS_OVERLAYS_DEF,
 } from "./definitions";
 import { executeContentTool } from "./bridge";
+import { requestPageSnapshot } from "../perception/frame-snapshot-runtime";
+import { frameActionRoutes } from "../perception/frame-action-routes";
+import { findElementAcrossFrames } from "./frame-find-element";
 import { clickElementInMainWorld, mirrorTextInputInMainWorld } from "./main-world-bridge";
-import { finalizeServiceNowReferenceOnType } from "./servicenow/tool-hooks";
 
 export function registerInteractionTools(toolRegistry: ToolRegistry): void {
     toolRegistry.register(ToolName.CLICK_ELEMENT, CLICK_DEF, async (args, tabId, _signal, toolCallId, context) => {
@@ -48,29 +51,32 @@ export function registerInteractionTools(toolRegistry: ToolRegistry): void {
         // final value and input/change events in MAIN so framework state matches the
         // visible DOM before later clicks submit the value.
         if (!String(result).startsWith("Error:")) {
-            const bridgeStatus = await mirrorTextInputInMainWorld(tabId, args);
-            return await finalizeServiceNowReferenceOnType({
-                tabId,
-                args,
-                result,
-                bridgeStatus,
-            });
+            await mirrorTextInputInMainWorld(tabId, args);
+            return result;
         }
         return result;
     });
     toolRegistry.register(ToolName.SCROLL_PAGE, SCROLL_PAGE_DEF, (args, tabId, _signal, toolCallId, context) =>
         executeContentTool(ToolName.SCROLL_PAGE, args, tabId, undefined, toolCallId, context?.observationBasis),
     );
-    toolRegistry.register(ToolName.READ_PAGE, READ_PAGE_DEF, (args, tabId) =>
-        executeContentTool(ToolName.READ_PAGE, args, tabId),
-    );
+    toolRegistry.register(ToolName.READ_PAGE, READ_PAGE_DEF, async (args, tabId) => {
+        try {
+            const response = await requestPageSnapshot(tabId, {
+                refresh: true, autoDismiss: false,
+            });
+            return formatPageRead(response.payload.snapshot);
+        } catch {
+            frameActionRoutes.invalidate(tabId);
+            return executeContentTool(ToolName.READ_PAGE, args, tabId);
+        }
+    });
 
     // Content Script Tools (already implemented in content/actions.ts)
     toolRegistry.register(ToolName.HOVER_ELEMENT, HOVER_ELEMENT_DEF, (args, tabId, _signal, toolCallId, context) =>
         executeContentTool(ToolName.HOVER_ELEMENT, args, tabId, undefined, toolCallId, context?.observationBasis),
     );
     toolRegistry.register(ToolName.FIND_ELEMENT, FIND_ELEMENT_DEF, (args, tabId) =>
-        executeContentTool(ToolName.FIND_ELEMENT, args, tabId),
+        findElementAcrossFrames(args, tabId),
     );
     toolRegistry.register(ToolName.SELECT_OPTION, SELECT_OPTION_DEF, (args, tabId, _signal, toolCallId, context) =>
         executeContentTool(ToolName.SELECT_OPTION, args, tabId, undefined, toolCallId, context?.observationBasis),
@@ -84,12 +90,7 @@ export function registerInteractionTools(toolRegistry: ToolRegistry): void {
 
         // Pre-validation: request a fresh snapshot and check both IDs exist
         try {
-            const snapResponse = await chrome.tabs.sendMessage(tabId, {
-                type: "DOM_SNAPSHOT_REQUEST",
-                requestId: crypto.randomUUID(),
-                source: MessageSource.BACKGROUND,
-                payload: { refresh: true },
-            });
+            const snapResponse = await requestPageSnapshot(tabId, { refresh: true });
             const elements = snapResponse?.payload?.snapshot?.elements;
             if (elements && Array.isArray(elements)) {
                 const sourceExists = elements.some((el: any) => el.tag === sourceId);

@@ -8,7 +8,7 @@ import {
   unionTools,
 } from "./planner-node-utils";
 import type { LLMClientOptions } from "../llm";
-import type { TokenUsage } from "../llm/types";
+import type { ProviderConfig, TokenUsage } from "../llm/types";
 import type { Difficulty } from "../agent/constants";
 import type { ToolProfile } from "../tools/metadata";
 import { ToolName } from "../../types";
@@ -39,7 +39,6 @@ const EXECUTOR_DEFAULT_TOOLS: ToolName[] = [
   ToolName.SCROLL_PAGE,
   ToolName.READ_PAGE,
   ToolName.NAVIGATE,
-  ToolName.OPEN_SERVICENOW_MODULE,
   ToolName.SEARCH_KNOWLEDGE_BASE,
   ToolName.CREATE_TAB,
   ToolName.CLOSE_TAB,
@@ -67,7 +66,6 @@ const EXECUTOR_DEFAULT_TOOLS: ToolName[] = [
   ToolName.APPLY_LIST_ACTION,
   ToolName.INSPECT_CATALOG_ITEM,
   ToolName.CONFIGURE_CATALOG_ITEM,
-  ToolName.CONFIGURE_SERVICENOW_FORM,
   ToolName.XRAY_PAGE,
   ToolName.GET_PROFILE_FIELDS,
   ToolName.DISMISS_OVERLAYS,
@@ -173,8 +171,6 @@ const PAGINATED_TABLE_SCAN_SKILL_ID = "paginated-table-scan";
 const SKILL_OWNED_WORKFLOW_IDS = new Set([
   "chart-value-extraction",
   "search-answer-extraction",
-  "servicenow-module-navigation",
-  "servicenow-record-form",
   "list-filter-workflow",
   "list-sort-workflow",
   "list-row-action-workflow",
@@ -230,10 +226,6 @@ function isSkillOwnedMultiTabChecklistRequest(
       ...nodes.flatMap((node) => [node.description, node.successCriteria]),
     ].join(" "),
   );
-  const hasProcurementSurface =
-    /\bprocurement\s+list\b/i.test(corpus) ||
-    /\b(?:store|stores|store\s+page|store\s+link)\b/i.test(corpus);
-  const hasPurchaseIntent = /\b(?:buy|purchase|procure|order)\b/i.test(corpus);
   const hasExplicitTabIntent =
     /\b(?:new|separate|another|other|multiple)\s+tabs?\b|\bswitch\b[\s\S]{0,40}\btabs?\b|\bacross\s+tabs?\b/i.test(
       corpus,
@@ -242,6 +234,8 @@ function isSkillOwnedMultiTabChecklistRequest(
     /\b(?:list|checklist|rows?|items?|links?|listings?|articles?|dashboards?|reports?|job board|research)\b/i.test(
       corpus,
     );
+  const hasTargetNavigationIntent =
+    /\b(?:open|visit|follow)\b[\s\S]{0,80}\b(?:links?|pages?|listings?|articles?|dashboards?|reports?|stores?)\b/i.test(corpus);
   const hasMultipleItems =
     /\bfirst\s+(?:\w+|\d+)\s+items?\b/i.test(corpus) ||
     /\bfirst\s+(?:\w+|\d+)\s+(?:links?|listings?|articles?|dashboards?|reports?|jobs?)\b/i.test(
@@ -261,13 +255,13 @@ function isSkillOwnedMultiTabChecklistRequest(
       corpus,
     ) ||
     /\bcheckbox\b/i.test(corpus) ||
-    /\b(?:return|switch back|come back)\b[\s\S]{0,80}\b(?:mark|check|record|source|list|board)\b/i.test(
+    /\b(?:return|switch back|come back)\b[\s\S]{0,80}\b(?:mark|check|record|note)\b/i.test(
       corpus,
     );
 
   return (
-    ((hasProcurementSurface && hasPurchaseIntent) ||
-      (hasExplicitTabIntent && hasSourceSurface)) &&
+    hasSourceSurface &&
+    (hasExplicitTabIntent || hasTargetNavigationIntent) &&
     hasMultipleItems &&
     hasReturnOrMarkIntent
   );
@@ -543,12 +537,8 @@ function collapseSkillOwnedWorkflowNodes(
   const skillOwns = Boolean(
     selectedDescriptor?.atomic || SKILL_OWNED_WORKFLOW_IDS.has(selection.id),
   );
-  // A create-record form (field-value fill + submit) is one atomic workflow, so
-  // merge it even when skill selection lands on a *generic* skill (e.g. a page
-  // whose URL isn't recognized as ServiceNow). Without this, the two nodes
-  // survive, and the executor completes the fill node on its "the final submit
-  // action has not been clicked yet" criterion without ever submitting — the
-  // create-incident stranding bug.
+  // A create-record form (field-value fill + submit) is one atomic workflow.
+  // Keep fill and submit together when generic skill selection is used.
   const isFieldValueForm = isFieldValueFormPlan(nodes);
   if (!skillOwns && !isFieldValueForm) {
     return nodes;
@@ -605,9 +595,8 @@ function collapseSkillOwnedWorkflowNodes(
   return [
     {
       ...firstNode,
-      // Skill-owned selection wins; for a generic-skill field-value form keep
-      // the fill node's planner-assigned skill (record-form on a recognized
-      // ServiceNow page, generic otherwise).
+      // Skill-owned selection wins; for a generic field-value form keep the
+      // fill node's planner-assigned skill.
       ...(skillOwns
         ? {
             selectedSkillId: selection.id,
@@ -772,6 +761,11 @@ export function collapseSameContextSequentialNodes(
     pageUrl,
     ...skillCatalogOptions,
   });
+  const cartReplacement = mergedSkill?.id === "cart-modify-checkout" &&
+    /\b(?:swap|replace)\b|\b(?:remove|delete)\b[\s\S]{0,200}\bcart\b[\s\S]{0,200}\b(?:add|put)\b/i.test(query);
+  const successCriteria = cartReplacement
+    ? nodes.at(-1)?.successCriteria ?? ""
+    : dedupeStrings(nodes.map((node) => node.successCriteria)).join("; ");
   return [
     {
       ...firstNode,
@@ -779,12 +773,7 @@ export function collapseSameContextSequentialNodes(
       selectedSkillReason: mergedSkill?.reason,
       description,
       displayLabel,
-      successCriteria: compactText(
-        // Keep each source node's observable outcome as a distinct rubric
-        // criterion. Joining with spaces fused unrelated transient and terminal
-        // states into one malformed judge criterion after a same-page collapse.
-        dedupeStrings(nodes.map((node) => node.successCriteria)).join("; "),
-      ),
+      successCriteria: compactText(successCriteria),
       allowedTools: unionTools(nodes),
       assumptions: dedupeStrings(nodes.flatMap((node) => node.assumptions)),
       handoffArtifacts: nodes.flatMap((node) => node.handoffArtifacts),
@@ -1253,7 +1242,7 @@ export class OrchestratorPlanner {
   }
 
   setUsageCallback(
-    cb: ((usage: TokenUsage, llmMs: number, model: string) => void) | null,
+    cb: ((usage: TokenUsage, llmMs: number, model: string, providerId: ProviderConfig["providerId"]) => void) | null,
   ): void {
     this.planner.setUsageCallback(cb);
   }

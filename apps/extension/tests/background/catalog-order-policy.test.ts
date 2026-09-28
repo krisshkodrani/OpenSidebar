@@ -4,7 +4,7 @@ import {
   assessCatalogOrderConfigurationClick,
   assessCatalogOrderItemSelectionClick,
   assessCatalogOrderPostConfirmationClick,
-} from "../../src/background/agent/servicenow/catalog-order-policy";
+} from "../../src/background/agent/catalog-order-policy";
 
 function link(id: number, text: string, href = "#") {
   return {
@@ -37,10 +37,10 @@ describe("assessCatalogOrderPostConfirmationClick", () => {
       toolName: ToolName.CLICK_ELEMENT,
       args: { id: 7 },
       snapshot: {
-        title: "Order Status: REQ0024924 | ServiceNow",
-        url: "https://workarenapublic14.service-now.com/now/nav/ui/classic/params/target/com.glideapp.servicecatalog_checkout_view_v2.do%3Fsysparm_sys_id%3Dabc",
-        visibleContent: "Order Status REQ0024924 Quantity 10",
-        elements: [link(7, "Lenovo - Carbon x1", "sc_req_item.do?sys_id=def")],
+        title: "Order Status: ORD0024924 | Shop",
+        url: "https://shop.example.test/orders/confirmed",
+        visibleContent: "Order Status ORD0024924 Quantity 10",
+        elements: [link(7, "View item", "/orders/ORD0024218/items")],
       } as any,
     });
 
@@ -54,9 +54,9 @@ describe("assessCatalogOrderPostConfirmationClick", () => {
       toolName: ToolName.CLICK_ELEMENT,
       args: { id: 117 },
       snapshot: {
-        title: "Order Status: REQ0024218 | ServiceNow",
-        url: "https://workarenapublic18.service-now.com/now/nav/ui/classic/params/target/com.glideapp.servicecatalog_checkout_view_v2.do%3Fsysparm_sys_id%3Dabc",
-        visibleContent: "Order Status REQ0024218 Thank you, your request has been submitted",
+        title: "Order Status: ORD0024218 | Shop",
+        url: "https://shop.example.test/orders/confirmed",
+        visibleContent: "Order Status ORD0024218 Thank you, your request has been submitted",
         elements: [
           button(117, "Back to Catalog", {
             id: "back_to_catalog_header",
@@ -76,9 +76,9 @@ describe("assessCatalogOrderPostConfirmationClick", () => {
       toolName: ToolName.GO_BACK,
       args: {},
       snapshot: {
-        title: "Order Status: REQ0024218 | ServiceNow",
-        url: "https://workarenapublic18.service-now.com/now/nav/ui/classic/params/target/com.glideapp.servicecatalog_checkout_view_v2.do%3Fsysparm_sys_id%3Dabc",
-        visibleContent: "Order Status REQ0024218 Thank you, your request has been submitted",
+        title: "Order Status: ORD0024218 | Shop",
+        url: "https://shop.example.test/orders/confirmed",
+        visibleContent: "Order Status ORD0024218 Thank you, your request has been submitted",
         elements: [],
       } as any,
     });
@@ -93,10 +93,10 @@ describe("assessCatalogOrderPostConfirmationClick", () => {
       toolName: ToolName.READ_ELEMENT,
       args: { id: 285, attribute: "href" },
       snapshot: {
-        title: "Order Status: REQ0024218 | ServiceNow",
-        url: "https://workarenapublic18.service-now.com/now/nav/ui/classic/params/target/com.glideapp.servicecatalog_checkout_view_v2.do%3Fsysparm_sys_id%3Dabc",
-        visibleContent: "Order Status REQ0024218 Thank you, your request has been submitted",
-        elements: [link(285, "Ergonomic Chair", "sc_req_item.do?sys_id=def")],
+        title: "Order Status: ORD0024218 | Shop",
+        url: "https://shop.example.test/orders/confirmed",
+        visibleContent: "Order Status ORD0024218 Thank you, your request has been submitted",
+        elements: [link(285, "View item", "/orders/ORD0024218/items")],
       } as any,
     });
 
@@ -110,8 +110,8 @@ describe("assessCatalogOrderPostConfirmationClick", () => {
       toolName: ToolName.CLICK_ELEMENT,
       args: { id: 7 },
       snapshot: {
-        title: "Standard Laptop | ServiceNow",
-        url: "https://workarenapublic14.service-now.com/catalog_item.do",
+        title: "Standard Laptop | Shop",
+        url: "https://shop.example.test/products/standard-laptop",
         visibleContent: "Standard Laptop Add to Cart",
         elements: [link(7, "Add to Cart")],
       } as any,
@@ -122,14 +122,14 @@ describe("assessCatalogOrderPostConfirmationClick", () => {
 
   test("allows non-catalog workflows to click links on matching pages", () => {
     const result = assessCatalogOrderPostConfirmationClick({
-      selectedSkillId: "servicenow-module-navigation",
+      selectedSkillId: "structured-form-fill",
       toolName: ToolName.CLICK_ELEMENT,
       args: { id: 7 },
       snapshot: {
-        title: "Order Status: REQ0024924 | ServiceNow",
-        url: "https://workarenapublic14.service-now.com/now/nav/ui/classic/params/target/com.glideapp.servicecatalog_checkout_view_v2.do",
-        visibleContent: "Order Status REQ0024924",
-        elements: [link(7, "REQ0024924")],
+        title: "Order Status: ORD0024924 | Shop",
+        url: "https://shop.example.test/orders/confirmed",
+        visibleContent: "Order Status ORD0024924",
+        elements: [link(7, "ORD0024924")],
       } as any,
     });
 
@@ -147,7 +147,7 @@ describe("assessCatalogOrderConfigurationClick", () => {
         'Order 1 "Ergonomic Chair" with configuration {\'Fabric color\': \'Blue\'}',
       snapshot: {
         title: "Ergonomic Chair | Catalog",
-        url: "https://workarenapublic18.service-now.com/com.glideapp.servicecatalog_cat_item_view.do",
+        url: "https://shop.example.test/products/ergonomic-chair",
         visibleContent: "Ergonomic Chair Fabric color Blue Add to Cart",
         elements: [
           {
@@ -155,7 +155,7 @@ describe("assessCatalogOrderConfigurationClick", () => {
             tagName: "label",
             role: "",
             text: "Blue",
-            attributes: { type: "radio", name: "IO:color" },
+            attributes: { type: "radio", name: "color" },
             isVisible: true,
             isDisabled: false,
           },
@@ -175,8 +175,8 @@ describe("assessCatalogOrderConfigurationClick", () => {
       originalQuery:
         'Order 1 "Ergonomic Chair" with configuration {\'Fabric color\': \'Blue\'}',
       snapshot: {
-        title: "Catalog | ServiceNow",
-        url: "https://workarenapublic18.service-now.com/catalog_home.do",
+        title: "Catalog | Shop",
+        url: "https://shop.example.test/catalog",
         visibleContent: "Office seating Ergonomic Chair",
         elements: [link(9, "Office seating")],
       } as any,

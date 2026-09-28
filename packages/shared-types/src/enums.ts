@@ -36,7 +36,6 @@ export enum ToolName {
   SCROLL_PAGE = "scroll_page",
   READ_PAGE = "read_page",
   NAVIGATE = "navigate",
-  OPEN_SERVICENOW_MODULE = "open_servicenow_module",
   SEARCH_KNOWLEDGE_BASE = "search_knowledge_base",
 
   CREATE_TAB = "create_tab",
@@ -74,7 +73,6 @@ export enum ToolName {
   APPLY_LIST_ACTION = "apply_list_action",
   INSPECT_CATALOG_ITEM = "inspect_catalog_item",
   CONFIGURE_CATALOG_ITEM = "configure_catalog_item",
-  CONFIGURE_SERVICENOW_FORM = "configure_servicenow_form",
   XRAY_PAGE = "xray_page",
   DISMISS_OVERLAYS = "dismiss_overlays",
   CLARIFY = "clarify",

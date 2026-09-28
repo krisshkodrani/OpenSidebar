@@ -55,11 +55,17 @@ function createHost(
     },
     elementResolver: undefined,
     executeToolCall,
-    getActiveToolProfileForStep: () => null,
+    skillTools: {
+      getActiveToolProfileForStep: () => undefined,
+      recordSkillToolSelection: vi.fn(),
+    },
     getWorkflowTabToolRedirect: vi.fn(async () => null),
-    listDetailOpenedTargets: new Set<string>(),
-    listDetailReviewedTargets: new Set<string>(),
-    listDetailVisibleActionCount: 0,
+    listDetailWorkflow: {
+      trackListDetailToolSuccess: vi.fn(),
+      listDetailOpenedTargets: new Set<string>(),
+      listDetailReviewedTargets: new Set<string>(),
+      listDetailVisibleActionCount: 0,
+    },
     log: {
       info: vi.fn(),
       warn: vi.fn(),
@@ -77,7 +83,6 @@ function createHost(
       evaluatePostTool: vi.fn(),
     },
     originalQuery: "test task",
-    recordSkillToolSelection: vi.fn(),
     selectedSkillId: null,
     stepHandler: vi.fn(),
     toolCache: new ToolResultCache(),
@@ -85,7 +90,6 @@ function createHost(
       recordEvent: vi.fn(),
       recordToolExecution: vi.fn(),
     },
-    trackListDetailToolSuccess: vi.fn(),
     turnCount: 3,
   } as unknown as ParallelToolDispatchHost;
 }
@@ -111,11 +115,11 @@ describe("executeParallelToolCalls", () => {
       { toolCall: calls[1], result: "download_file ok", error: null },
     ]);
     expect(host.executeToolCall).toHaveBeenCalledTimes(2);
-    expect(host.recordSkillToolSelection).toHaveBeenCalledWith(
+    expect(host.skillTools.recordSkillToolSelection).toHaveBeenCalledWith(
       ToolName.GET_COOKIES,
       "parallel",
     );
-    expect(host.recordSkillToolSelection).toHaveBeenCalledWith(
+    expect(host.skillTools.recordSkillToolSelection).toHaveBeenCalledWith(
       ToolName.DOWNLOAD_FILE,
       "parallel",
     );

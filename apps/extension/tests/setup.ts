@@ -1,8 +1,13 @@
 // Vitest's `environment: "happy-dom"` in vitest.config.ts handles DOM registration automatically.
+import { logger } from "../src/utils/logger";
 
 // Vite build-time constants (injected via `define` in vite.config.ts)
 (globalThis as any).__DEV__ = true;
 (globalThis as any).IS_REACT_ACT_ENVIRONMENT = true;
+
+// Keep routine runtime diagnostics out of Vitest's worker RPC queue. Tests of
+// logger output set their own level explicitly.
+logger.setLevel("ERROR");
 
 // Avoid noisy ECONNREFUSED errors in tests when optional local log/trace server
 // is not running. Only stub localhost drain endpoints; keep other fetch calls real.

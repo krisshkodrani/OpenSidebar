@@ -9,6 +9,7 @@ import {
   type ToolExecutionResult,
 } from "../../types";
 import { logger } from "../../utils";
+import { frameActionRoutes } from "../perception/frame-action-routes";
 import {
   probeContentScript,
   waitForContentScriptReady,
@@ -336,6 +337,16 @@ type ContentToolObservationBasis = PageDocumentState & {
   requireGeometryMatch?: boolean;
 };
 
+const KEYBOARD_TARGET_TOOLS = new Set<ToolName>([
+  ToolName.CLICK_ELEMENT,
+  ToolName.TYPE_TEXT,
+  ToolName.SELECT_OPTION,
+  ToolName.SET_CHECKBOX,
+  ToolName.RIGHT_CLICK,
+  ToolName.DRAG_AND_DROP,
+  ToolName.UPLOAD_FILE,
+]);
+
 export function executeContentTool(
   startName: ToolName,
   args: any,
@@ -366,6 +377,13 @@ export async function executeContentTool(
   logger.debug("tools", `bridge -> ${startName}`, { tabId, args });
 
   const presentationId = toolCallId ?? `bridge:${crypto.randomUUID()}`;
+  const frameTarget = startName === ToolName.PRESS_KEY
+    ? frameActionRoutes.keyboardTarget(tabId, args, observationBasis)
+    : frameActionRoutes.target(tabId, args, observationBasis);
+  if (frameTarget.kind === "stale") return {
+    result: "Error: The observed frame is no longer available. Read the page again before retrying.",
+    errorCode: "stale_observation",
+  };
   const sendMessage = () =>
     chrome.tabs.sendMessage(tabId, {
       type: "TOOL_EXECUTE",
@@ -383,6 +401,7 @@ export async function executeContentTool(
     payload?: {
       result?: string;
       errorCode?: "stale_observation";
+      success?: boolean;
     };
   }): string | ToolExecutionResult => {
     const result = response.payload?.result;
@@ -391,10 +410,42 @@ export async function executeContentTool(
         "Empty response from content script - bridge may be disconnected",
       );
     }
+    if (response.payload?.success && KEYBOARD_TARGET_TOOLS.has(startName))
+      frameActionRoutes.rememberKeyboardFrame(tabId,
+        frameTarget.kind === "child" ? frameTarget.frameId : 0);
     return response.payload?.errorCode
       ? { result, errorCode: response.payload.errorCode }
       : result;
   };
+
+  if (frameTarget.kind === "child") {
+    try {
+      const response = await Promise.race([
+        chrome.tabs.sendMessage(tabId, {
+          type: "FRAME_TOOL_EXECUTE",
+          requestId: crypto.randomUUID(),
+          source: MessageSource.BACKGROUND,
+          payload: {
+            toolName: startName,
+            args: frameTarget.args,
+            toolCallId: presentationId,
+            observationBasis: { ...frameTarget.documentState,
+              observationRevision: observationBasis?.observationRevision ?? 0,
+              ...(observationBasis?.requireGeometryMatch
+                ? { requireGeometryMatch: true } : {}),
+            },
+          },
+        }, { frameId: frameTarget.frameId }),
+        new Promise<never>((_, reject) => setTimeout(
+          () => reject(new Error("Frame tool execution timed out")), 15_000,
+        )),
+      ]);
+      return readResponse(response);
+    } catch {
+      return { result: "Error: The observed frame is no longer available. Read the page again before retrying.",
+        errorCode: "stale_observation" };
+    }
+  }
 
   try {
     const response = await Promise.race([

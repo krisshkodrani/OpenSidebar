@@ -45,11 +45,13 @@ quantizations as though they were one fixed baseline.
 - Served model/provider identity comes from API responses, never from the requested
   pin. Reported provider display names are mapped to routing slugs only through
   OpenRouter's public provider catalog, retained in the attempt diagnostics.
-  Current role attribution requires distinct requested models per seat;
-  ambiguous same-model seat configurations are indeterminate rather than guessed.
+  The runtime supplies a seat and request ID to the local transport observer,
+  so identical requested models can be separated across seats and retries.
+  Calls without that evidence remain indeterminate when the model is shared.
 - Costs are the sum of API-reported usage, not an independently audited invoice.
   Missing usage on an error response does not establish a zero charge. Observed
-  costs remain attached when a later driver operation throws.
+  costs remain attached when a later driver operation throws. Calls whose seat
+  cannot be verified are shown as unattributed and still count toward total cost.
 - A missing agent trace is a harness failure. Terminal interaction evidence is
   retained independently, including clarification questions and suggestions.
   The presence of a trace file alone does not prove every turn was captured.

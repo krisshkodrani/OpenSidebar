@@ -67,6 +67,8 @@ import {
   upsertTraceSessionToSqlite,
 } from "./trace-sqlite-store";
 import { createDiskStore, getRlTrajectory } from "./obs/core";
+import { orderTraceEntries, preferSpineSessions } from "./obs/session-read-policy";
+import { readLegacyJsonlSessions } from "./obs/legacy-sessions";
 import {
   emitObsSpans,
   emitSessionRoots,
@@ -74,12 +76,18 @@ import {
   initSpineOtelExport,
 } from "./obs/otel-emit";
 import {
+  hasSpineRunRecord,
+  hasSpineSessionRecord,
   readSessionEntries,
+  readSpineRunManifest,
+  readSpineSessionRecord,
   readSpineRunEvents,
-  readSpineSessions,
+  readSpineSessionsAsync,
   recordEntrySpansSafe,
   recordRunEventSafe,
+  recordRunManifestSafe,
   recordSessionSafe,
+  SPAN_DIR,
 } from "./obs/span-store";
 
 const EXTENSION_ORIGIN = /^(chrome|moz)-extension:\/\/[a-z0-9_-]+$/i;
@@ -176,6 +184,8 @@ function traceSessionsSourceMtime(): number {
     TRACE_SQLITE_INDEX,
     `${TRACE_SQLITE_INDEX}-wal`,
     TRACE_INDEX,
+    TRACE_DIR,
+    SPAN_DIR,
   ]) {
     try {
       if (existsSync(path)) {
@@ -198,14 +208,19 @@ interface InsightsCacheSlot {
   key: string;
   payload: string; // pre-serialised JSON — avoids re-serialising on every hit
   ts: number;
+  source: "duckdb" | "sqlite" | "spine";
 }
 
 const INSIGHTS_CACHE_TTL_MS = 30_000; // 30 s — fresh enough for local dev
 let insightsCache: InsightsCacheSlot | null = null;
+let insightsGeneration = 0;
+let latestTraceWriteAtMs = 0;
 
 /** Call whenever a write makes cached insights stale. */
 function invalidateInsightsCache(): void {
   insightsCache = null;
+  insightsGeneration++;
+  latestTraceWriteAtMs = Date.now();
 }
 
 function invalidateTraceViewerCaches(): void {
@@ -290,32 +305,15 @@ function sendFile(
 /* ── Normalization helpers ─────────────────────────────────── */
 
 async function loadAllTraceSessions(): Promise<TraceSessionLike[]> {
-  if (process.env.OBS_SPINE_READS === "1") {
-    const spineSessions = readSpineSessions();
-    if (spineSessions.length > 0) {
-      return spineSessions as unknown as TraceSessionLike[];
-    }
-  }
-
-  const sqliteSessions = readTraceSessionsFromSqlite(PROJECT_ROOT);
-  if (sqliteSessions && sqliteSessions.length > 0) return sqliteSessions;
-
-  if (!existsSync(TRACE_INDEX)) return [];
-  const raw = await readFile(TRACE_INDEX, "utf-8");
-  return raw
-    .trim()
-    .split("\n")
-    .filter(Boolean)
-    .map((line) => {
-      try {
-        return normalizeAgentSessionRecord(
-          JSON.parse(line),
-        ) as TraceSessionLike;
-      } catch {
-        return null;
-      }
-    })
-    .filter(Boolean) as TraceSessionLike[];
+  const spineSessions = process.env.OBS_DISABLE_SPINE_READS === "1"
+    ? []
+    : await readSpineSessionsAsync() as TraceSessionLike[];
+  const sqliteSessions = readTraceSessionsFromSqlite(PROJECT_ROOT) ?? [];
+  const { indexed, orphans } = readLegacyJsonlSessions(TRACE_DIR);
+  return preferSpineSessions(
+    spineSessions,
+    preferSpineSessions(sqliteSessions, preferSpineSessions(indexed, orphans)),
+  );
 }
 
 async function readAllTraceSessions(): Promise<TraceSessionLike[]> {
@@ -393,7 +391,8 @@ async function readTraceEntries(sessionId: string): Promise<TraceEntryLike[]> {
   // store is kept as a derived fallback. Set OBS_DISABLE_SPINE_READS=1 to revert.
   if (process.env.OBS_DISABLE_SPINE_READS !== "1") {
     const spineEntries = readSessionEntries(sessionId);
-    if (spineEntries.length > 0) return spineEntries as unknown as TraceEntryLike[];
+    if (spineEntries.length > 0 || hasSpineSessionRecord(sessionId))
+      return spineEntries as unknown as TraceEntryLike[];
   }
 
   const sqliteEntries = readTraceEntriesFromSqlite(PROJECT_ROOT, sessionId);
@@ -402,7 +401,7 @@ async function readTraceEntries(sessionId: string): Promise<TraceEntryLike[]> {
   const traceFile = join(TRACE_DIR, `${sessionId}.jsonl`);
   if (!existsSync(traceFile)) return [];
   const raw = await readFile(traceFile, "utf-8");
-  return raw
+  return orderTraceEntries(raw
     .trim()
     .split("\n")
     .filter(Boolean)
@@ -413,7 +412,7 @@ async function readTraceEntries(sessionId: string): Promise<TraceEntryLike[]> {
         return null;
       }
     })
-    .filter(Boolean) as TraceEntryLike[];
+    .filter(Boolean) as TraceEntryLike[]);
 }
 
 async function readRunTraceEvents(runId: string): Promise<TraceEntryLike[]> {
@@ -421,7 +420,8 @@ async function readRunTraceEvents(runId: string): Promise<TraceEntryLike[]> {
   // OBS_DISABLE_SPINE_READS=1; legacy store is the derived fallback.
   if (process.env.OBS_DISABLE_SPINE_READS !== "1") {
     const spineEvents = readSpineRunEvents(runId);
-    if (spineEvents.length > 0) return spineEvents as unknown as TraceEntryLike[];
+    if (spineEvents.length > 0 || hasSpineRunRecord(runId))
+      return spineEvents as unknown as TraceEntryLike[];
   }
 
   const sqliteEvents = readRunTraceEventsFromSqlite(PROJECT_ROOT, runId);
@@ -804,6 +804,7 @@ const server = createServer(
         const manifest = normalizeRunManifestRecord(await parseJsonBody(req));
         await appendFile(RUN_TRACE_INDEX, JSON.stringify(manifest) + "\n");
         upsertRunTraceManifestToSqlite(PROJECT_ROOT, manifest as TraceEntryLike);
+        recordRunManifestSafe(manifest);
         sendEmpty(res, 204);
       } catch (err) {
         sendText(res, `Run manifest error: ${err}`, 500);
@@ -915,12 +916,29 @@ const server = createServer(
     // GET /api/trace-insights — aggregate sessions, tools, skills, runs, models, failures, events
     if (url.pathname === "/api/trace-insights" && req.method === "GET") {
       try {
+        const snapshotCheckStartedAt = Date.now();
+        let analyticsSnapshot: { dir: string; startedAtMs: number } | null = null;
+        if (process.env.OBS_ANALYTICS === "duckdb" && process.env.OBS_SPINE_READS !== "1") {
+          try {
+            const { currentAnalyticsSnapshot } = await import("./obs/analytics-snapshot");
+            analyticsSnapshot = currentAnalyticsSnapshot(
+              PROJECT_ROOT, SPAN_DIR, process.env.OBS_ANALYTICS_SNAPSHOT,
+            );
+            if (analyticsSnapshot && analyticsSnapshot.startedAtMs <= latestTraceWriteAtMs)
+              analyticsSnapshot = null;
+          } catch (err) {
+            console.warn("DuckDB analytics snapshot check failed:", err);
+          }
+        }
+        const snapshotCheckMs = Date.now() - snapshotCheckStartedAt;
         // Stable cache key: sorted query-string so param order doesn't matter.
-        const cacheKey = Array.from(url.searchParams.entries())
+        const filterKey = Array.from(url.searchParams.entries())
           .filter(([, v]) => v !== "" && v !== "all")
           .sort(([a], [b]) => a.localeCompare(b))
           .map(([k, v]) => `${k}=${v}`)
           .join("&");
+        const cacheKey = `${analyticsSnapshot?.startedAtMs ??
+          (process.env.OBS_SPINE_READS === "1" ? "spine" : "sqlite")}:${filterKey}`;
 
         if (
           insightsCache &&
@@ -928,12 +946,43 @@ const server = createServer(
           Date.now() - insightsCache.ts < INSIGHTS_CACHE_TTL_MS
         ) {
           setCorsHeaders(res, req.headers.origin);
-          res.writeHead(200, { "Content-Type": "application/json" });
+          res.writeHead(200, { "Content-Type": "application/json",
+            "X-OpenSidebar-Insights-Source": insightsCache.source });
           res.end(insightsCache.payload);
           return;
         }
 
         const filters = traceInsightsFilters(url.searchParams);
+        if (analyticsSnapshot) {
+          try {
+            const startedGeneration = insightsGeneration;
+            const importStartedAt = Date.now();
+            const { readDuckInsightsResponse } = await import("./obs/insights-duck");
+            const importMs = Date.now() - importStartedAt;
+            const queryStartedAt = Date.now();
+            const duckInsights = await readDuckInsightsResponse(analyticsSnapshot.dir, filters);
+            const queryMs = Date.now() - queryStartedAt;
+            const recheckStartedAt = Date.now();
+            const { currentAnalyticsSnapshot } = await import("./obs/analytics-snapshot");
+            const stillCurrent = currentAnalyticsSnapshot(
+              PROJECT_ROOT, SPAN_DIR, analyticsSnapshot.dir,
+            );
+            const recheckMs = Date.now() - recheckStartedAt;
+            if (startedGeneration === insightsGeneration &&
+                analyticsSnapshot.startedAtMs > latestTraceWriteAtMs &&
+                stillCurrent?.startedAtMs === analyticsSnapshot.startedAtMs) {
+              const payload = JSON.stringify(duckInsights);
+              insightsCache = { key: cacheKey, payload, ts: Date.now(), source: "duckdb" };
+              res.writeHead(200, { "Content-Type": "application/json",
+                "X-OpenSidebar-Insights-Source": "duckdb",
+                "Server-Timing": `snapshot;dur=${snapshotCheckMs}, import;dur=${importMs}, query;dur=${queryMs}, recheck;dur=${recheckMs}` });
+              res.end(payload);
+              return;
+            }
+          } catch (err) {
+            console.warn("DuckDB trace insights failed; using SQLite fallback:", err);
+          }
+        }
         let sqliteInsights = null;
         const indexStatus = getTraceIndexStatus(PROJECT_ROOT);
         // Aggregates use the SQLite index — a DERIVED projection of the spine
@@ -957,29 +1006,21 @@ const server = createServer(
         }
         if (sqliteInsights) {
           const payload = JSON.stringify(sqliteInsights);
-          insightsCache = { key: cacheKey, payload, ts: Date.now() };
-          res.writeHead(200, { "Content-Type": "application/json" });
+          insightsCache = { key: cacheKey, payload, ts: Date.now(), source: "sqlite" };
+          res.writeHead(200, { "Content-Type": "application/json",
+            "X-OpenSidebar-Insights-Source": "sqlite" });
           res.end(payload);
           return;
         }
 
-        const sessions = await readAllTraceSessions();
-        const entriesBySession = new Map<string, TraceEntryLike[]>();
-        const runEventsByRun = new Map<string, TraceEntryLike[]>();
-
-        await Promise.all(
-          sessions.map(async (session) => {
-            const sessionId =
-              typeof session.sessionId === "string" ? session.sessionId : "";
-            if (sessionId) {
-              entriesBySession.set(sessionId, await readTraceEntries(sessionId));
-            }
-            const runId = typeof session.runId === "string" ? session.runId : "";
-            if (runId && !runEventsByRun.has(runId)) {
-              runEventsByRun.set(runId, await readRunTraceEvents(runId));
-            }
-          }),
+        const sessions = (await readAllTraceSessions()).filter((session) =>
+          !filters.sessionId ||
+          (typeof session.sessionId === "string" &&
+            session.sessionId.startsWith(filters.sessionId)),
         );
+        const insightStore = createDiskStore();
+        const entriesBySession = { get: (id: string) => insightStore.loadEntries(id) };
+        const runEventsByRun = { get: (id: string) => insightStore.loadRunEvents(id) };
 
         const jsonlInsights = buildTraceInsights({
           sessions,
@@ -988,8 +1029,9 @@ const server = createServer(
           filters,
         });
         const payload = JSON.stringify(jsonlInsights);
-        insightsCache = { key: cacheKey, payload, ts: Date.now() };
-        res.writeHead(200, { "Content-Type": "application/json" });
+        insightsCache = { key: cacheKey, payload, ts: Date.now(), source: "spine" };
+        res.writeHead(200, { "Content-Type": "application/json",
+          "X-OpenSidebar-Insights-Source": "spine" });
         res.end(payload);
       } catch (err) {
         sendText(res, `Error reading trace insights: ${err}`, 500);
@@ -1138,6 +1180,19 @@ const server = createServer(
     if (runRawMatch && req.method === "GET") {
       try {
         const runId = runRawMatch[1];
+        if (process.env.OBS_DISABLE_SPINE_READS !== "1") {
+          const spineEvents = readSpineRunEvents(runId);
+          const manifest = readSpineRunManifest(runId);
+          if (manifest || spineEvents.length > 0) {
+            sendText(
+              res,
+              `${[...(manifest ? [manifest] : []), ...spineEvents]
+                .map((event) => JSON.stringify(event)).join("\n")}\n`,
+              200,
+            );
+            return;
+          }
+        }
         const sqliteLines = readRunRawJsonlFromSqlite(PROJECT_ROOT, runId);
         if (sqliteLines && sqliteLines.length > 0) {
           sendText(res, `${sqliteLines.join("\n")}\n`, 200);
@@ -1161,6 +1216,19 @@ const server = createServer(
     if (traceRawMatch && req.method === "GET") {
       try {
         const sessionId = traceRawMatch[1];
+        if (process.env.OBS_DISABLE_SPINE_READS !== "1") {
+          const spineEntries = readSessionEntries(sessionId);
+          const header = readSpineSessionRecord(sessionId);
+          if (header || spineEntries.length > 0) {
+            sendText(
+              res,
+              `${[...(header ? [header] : []), ...spineEntries]
+                .map((entry) => JSON.stringify(entry)).join("\n")}\n`,
+              200,
+            );
+            return;
+          }
+        }
         const sqliteLines = readTraceRawJsonlFromSqlite(PROJECT_ROOT, sessionId);
         if (sqliteLines && sqliteLines.length > 0) {
           sendText(res, `${sqliteLines.join("\n")}\n`, 200);

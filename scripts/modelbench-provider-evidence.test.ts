@@ -72,3 +72,50 @@ test("retains every role's reported costs and detects unconfigured models", () =
   assert.equal(result.usageByRole.judge?.costUsd, 0.01);
   assert.match(result.issues[0], /other\/model/);
 });
+
+test("explicit request roles separate concurrent same-model calls and provider pins", () => {
+  const shared = {
+    executor: { provider: "openrouter", providerPin: "coreweave", model: "test/model" },
+    planner: { provider: "openrouter", providerPin: "other-host", model: "test/model" },
+  };
+  const planner = observeProviderCall('{"model":"test/model"}',
+    '{"model":"test/model","provider":"Other Host","usage":{"cost":0.02}}',
+    200, 20, { role: "planner", requestId: "parallel-planner" });
+  const executor = observeProviderCall('{"model":"test/model"}',
+    '{"model":"test/model","provider":"CoreWeave","usage":{"cost":0.01}}',
+    200, 10, { role: "executor", requestId: "parallel-executor" });
+  const result = summarizeProviderCalls([planner, executor], shared, { "other host": "other-host" });
+  assert.deepEqual(result.issues, []);
+  assert.equal(result.usageByRole.planner?.costUsd, 0.02);
+  assert.equal(result.usageByRole.executor?.costUsd, 0.01);
+  assert.equal(result.resolvedSeats.planner?.resolvedProvider, "other-host");
+  assert.equal(result.resolvedSeats.executor?.resolvedProvider, "coreweave");
+  assert.equal(planner.requestId, "parallel-planner");
+  const samePin = summarizeProviderCalls([executor, { ...executor, role: "planner", requestId: "same-pin-planner" }],
+    { executor: shared.executor, planner: { ...shared.planner, providerPin: "coreweave" } });
+  assert.deepEqual(samePin.issues, []);
+  assert.equal(samePin.usageByRole.planner?.calls, 1);
+  const ambiguous = summarizeProviderCalls([observeProviderCall('{"model":"test/model"}',
+    '{"model":"test/model","provider":"CoreWeave","usage":{"cost":0.03}}', 200, 1)], shared);
+  assert.equal(ambiguous.unattributedUsage.costUsd, 0.03);
+  assert.equal(Object.keys(ambiguous.usageByRole).length, 0);
+});
+
+test("same-model retries, unserved roles and an unconfigured writer stay attributable", () => {
+  const shared = { executor: seats.executor, planner: { ...seats.executor } };
+  const failed = observeProviderCall('{"model":"test/model"}', '{"error":{"code":429}}',
+    429, 5, { role: "planner", requestId: "planner-retry" });
+  const recovered = observeProviderCall('{"model":"test/model"}',
+    '{"model":"test/model","provider":"CoreWeave","usage":{"cost":0.02}}',
+    200, 10, { role: "planner", requestId: "planner-retry" });
+  const writer = observeProviderCall('{"model":"test/model"}',
+    '{"model":"test/model","provider":"CoreWeave","usage":{"cost":0.01}}',
+    200, 10, { role: "writer", requestId: "writer-call" });
+  const result = summarizeProviderCalls([failed, recovered, writer], shared);
+  assert.deepEqual(result.providerFailures, []);
+  assert.equal(result.usageByRole.planner?.calls, 2);
+  assert.equal(result.usageByRole.executor?.costUsd, 0.01);
+  const unserved = summarizeProviderCalls([failed, writer], shared);
+  assert.match(unserved.providerFailures[0], /planner.*429/);
+  assert.equal(unserved.unattributedUsage.costUsd, 0);
+});

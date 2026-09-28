@@ -206,6 +206,66 @@ describe("completion kernel workflow update dirty-state confirmation", () => {
       reason: "Update contract is satisfied by visible target value state.",
     });
   });
+
+  test("recognizes a committed grid cell when the page exposes no visible text", () => {
+    const snap = workflowSnapshot({
+      title: "Spreadsheet Editor",
+      url: "https://example.test/keyboard-nav",
+      visibleContent: "",
+      pageContent: "",
+      elements: [
+        { ...actionButton(1, "Q1 Sales"), tagName: "th", role: "columnheader" },
+        { ...actionButton(2, "Widget A"), tagName: "th", role: "rowheader" },
+        { ...actionButton(3, "999"), tagName: "td", role: "gridcell" },
+      ],
+    });
+    const generated = generateCompletionContract({
+      userRequest: "In the spreadsheet, change the Q1 Sales value in the first row to 999.",
+      activeObjective: "Change the Q1 Sales value in the first row to 999",
+      snapshot: snap,
+    });
+    const decision = evaluateCompletionContract({
+      contract: generated?.contract,
+      evidence: deriveCompletionEvidenceFromSnapshot(snap, 4),
+      snapshot: snap,
+      candidateSource: "model_done",
+      summary: "Changed the Q1 Sales value in the first row to 999; Widget A now shows 999.",
+    });
+
+    expect(decision.status).toBe("accepted");
+  });
+
+  test("does not treat a grid value still in an active editor as committed", () => {
+    const snap = workflowSnapshot({
+      title: "Spreadsheet Editor",
+      visibleContent: "",
+      pageContent: "",
+      elements: [
+        { ...actionButton(1, "Q1 Sales"), tagName: "th", role: "columnheader" },
+        { ...actionButton(2, "Widget A"), tagName: "th", role: "rowheader" },
+        {
+          ...actionButton(3, "999"),
+          tagName: "input",
+          role: "textbox",
+          attributes: { type: "text", value: "999" },
+        },
+      ],
+    });
+    const generated = generateCompletionContract({
+      userRequest: "In the spreadsheet, change the Q1 Sales value in the first row to 999.",
+      snapshot: snap,
+    });
+    const decision = evaluateCompletionContract({
+      contract: generated?.contract,
+      evidence: deriveCompletionEvidenceFromSnapshot(snap, 4),
+      snapshot: snap,
+      candidateSource: "model_done",
+      summary: "Changed the Q1 Sales value in the first row to 999.",
+    });
+
+    expect(decision.status).not.toBe("accepted");
+  });
+
   test("accepts visible target value state for update-like complete contracts", () => {
     const snap = workflowSnapshot({
       title: "Spreadsheet Editor",

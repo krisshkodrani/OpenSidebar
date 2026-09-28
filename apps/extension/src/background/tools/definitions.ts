@@ -160,10 +160,6 @@ export const NAVIGATE_DEF: ToolDefinition = {
   },
 };
 
-// OPEN_SERVICENOW_MODULE_DEF / CONFIGURE_SERVICENOW_FORM_DEF live in the
-// ServiceNow adapter (./servicenow/definitions.ts), not here — the SN tool
-// surface (schema + handler + registration) is owned in one place.
-
 export const SEARCH_KNOWLEDGE_BASE_DEF: ToolDefinition = {
   type: "function",
   function: {
@@ -488,7 +484,6 @@ export const ESCALATE_DEF: ToolDefinition = {
             "drag_and_drop",
             "update_notes",
             "use_profile_data",
-            "service_now_forms",
             "list_and_table_workflows",
           ],
         },
@@ -608,7 +603,7 @@ export const EXTRACT_FORM_STATE_DEF: ToolDefinition = {
   function: {
     name: ToolName.EXTRACT_FORM_STATE,
     description:
-      "Capture structured form state without changing the page: labels, values, required/filled/valid status, choices, and submit buttons. Use scope=\"document\" to inventory all application questions; use the default primary_form scope to verify one form before submitting. Prefer this over read_page for field-by-field form reviews.",
+      "Capture structured form state without changing the page: labels, values, required/filled/valid status, choices, and submit buttons. Pass a tagged field or submit button to inspect its form, including in an embedded frame. Without an ID, the top document is used. scope=\"document\" inventories controls in that document; the default primary_form scope verifies one form before submitting.",
     parameters: {
       type: "object",
       properties: {
@@ -621,7 +616,7 @@ export const EXTRACT_FORM_STATE_DEF: ToolDefinition = {
           type: "string",
           enum: ["primary_form", "document"],
           description:
-            "primary_form (default) captures one form for submit verification; document captures all traversable form controls for a complete inventory.",
+            "primary_form (default) captures one form for submit verification; document captures traversable controls in the selected document. Inaccessible child frames are reported as limitations.",
         },
       },
       required: [],
@@ -1002,14 +997,14 @@ export const APPLY_LIST_FILTER_DEF: ToolDefinition = {
   function: {
     name: ToolName.APPLY_LIST_FILTER,
     description:
-      "Apply a structured list/table filter from field/operator/value conditions, then verify the applied query state. For tasks like 'show records where Field is Value' or 'create a filter where A or B', call this as the first mutation instead of manually clicking complex filter-builder widgets.",
+      "Set one visible list filter control to an exact value, optionally submit its form, then verify the resulting rows. Use page controls for compound or non-exact filters.",
     parameters: {
       type: "object",
       properties: {
         conditions: {
           type: "array",
           description:
-            "Filter conditions to apply. Use visible field labels or system field names and display values from the user request.",
+            "Exactly one condition with a visible field label and exact display value.",
           items: {
             type: "object",
             description: "One field/operator/value condition.",
@@ -1017,32 +1012,21 @@ export const APPLY_LIST_FILTER_DEF: ToolDefinition = {
               field: {
                 type: "string",
                 description:
-                  'Visible field label or system field name, e.g. "Caller" or "caller_id".',
+                  "Visible filter field label.",
               },
               operator: {
                 type: "string",
                 description:
-                  'Operator text such as "is", "is empty", "is not", or "starts with". Defaults to "is".',
+                  'Only "is" or "equals" is supported. Defaults to "is".',
               },
               value: {
                 type: "string",
                 description:
-                  "Display value to filter by. Use an empty string for empty-value filters.",
+                  "Exact value to enter or select.",
               },
             },
             required: ["field"],
           },
-        },
-        join: {
-          type: "string",
-          enum: ["AND", "OR"],
-          description:
-            "How to join multiple conditions. Use OR when the request says conditions are alternatives.",
-        },
-        table: {
-          type: "string",
-          description:
-            "Optional visible list title or system table name when several lists are present.",
         },
         run: {
           type: "boolean",
@@ -1060,14 +1044,14 @@ export const APPLY_LIST_SORT_DEF: ToolDefinition = {
   function: {
     name: ToolName.APPLY_LIST_SORT,
     description:
-      "Apply structured list/table sorting from ordered field/direction clauses, then verify the resulting query state. For tasks like 'sort by Number descending then Duration ascending', call this as the first mutation instead of manually clicking list headers or personalization menus.",
+      "Click one visible sortable table header toward the requested direction. Verify aria-sort or row order afterward. Use page controls for multiple sort keys.",
     parameters: {
       type: "object",
       properties: {
         sorts: {
           type: "array",
           description:
-            "Ordered sort clauses, primary sort first. Use visible field labels or system field names from the user request.",
+            "Exactly one sort clause using a visible column header.",
           items: {
             type: "object",
             description: "One field/direction sort clause.",
@@ -1075,7 +1059,7 @@ export const APPLY_LIST_SORT_DEF: ToolDefinition = {
               field: {
                 type: "string",
                 description:
-                  'Visible field label or system field name, e.g. "Number" or "calendar_duration".',
+                  "Visible column header label.",
               },
               direction: {
                 type: "string",
@@ -1085,11 +1069,6 @@ export const APPLY_LIST_SORT_DEF: ToolDefinition = {
             },
             required: ["field"],
           },
-        },
-        table: {
-          type: "string",
-          description:
-            "Optional visible list title or system table name when several lists are present.",
         },
         run: {
           type: "boolean",
@@ -1107,7 +1086,7 @@ export const APPLY_LIST_ACTION_DEF: ToolDefinition = {
   function: {
     name: ToolName.APPLY_LIST_ACTION,
     description:
-      "Select visible rows in a ServiceNow list/table by record identifiers or unique row text, apply a visible selected-row action such as Delete or Mark as Duplicate, and optionally confirm the resulting dialog. Use after inspect_table has identified the exact target rows.",
+      "Select uniquely identified visible table rows and click a visible row action. Inspect the resulting dialog or page to verify the effect.",
     parameters: {
       type: "object",
       properties: {
@@ -1125,26 +1104,6 @@ export const APPLY_LIST_ACTION_DEF: ToolDefinition = {
           type: "string",
           description:
             'Visible selected-row action label, e.g. "Delete", "Delete with preview", or "Mark as Duplicate".',
-        },
-        relatedRecord: {
-          type: "string",
-          description:
-            'Optional related/reference record value required by the action modal, e.g. the other problem number for "Duplicate of".',
-        },
-        relatedField: {
-          type: "string",
-          description:
-            'Optional visible/reference field label or system field name for relatedRecord, e.g. "Duplicate of" or "duplicate_of".',
-        },
-        table: {
-          type: "string",
-          description:
-            "Optional visible list title or system table name when several lists are present.",
-        },
-        confirm: {
-          type: "boolean",
-          description:
-            "Whether to click a confirmation button in a resulting dialog. Defaults to true.",
         },
       },
       required: ["records", "action"],
@@ -1177,7 +1136,7 @@ export const CONFIGURE_CATALOG_ITEM_DEF: ToolDefinition = {
   function: {
     name: ToolName.CONFIGURE_CATALOG_ITEM,
     description:
-      "Configure a visible ServiceNow/service catalog item by label, verify requested values, and optionally click the order/request/add-to-cart button. Use this on catalog item detail pages instead of separate select_option, set_checkbox, type_text, radio-option clicks, and submit clicks.",
+      "Configure a visible catalog item by label, verify requested values, and optionally click the order/request/add-to-cart button.",
     parameters: {
       type: "object",
       properties: {
@@ -1273,7 +1232,6 @@ export const CONFIGURE_CATALOG_ITEM_DEF: ToolDefinition = {
   },
 };
 
-// CONFIGURE_SERVICENOW_FORM_DEF lives in ./servicenow/definitions.ts.
 
 export const XRAY_PAGE_DEF: ToolDefinition = {
   type: "function",

@@ -5,11 +5,12 @@ import {
   getResourceBlockedPendingNodes,
   getRunnablePendingNodes,
 } from "../../src/background/orchestrator/scheduling";
+import { queueRunnableWorkers } from "../../src/background/orchestrator/scheduler-runtime";
 import {
   annotateParallelContracts,
   inferNodeParallelContract,
 } from "../../src/background/orchestrator/parallel-contract";
-import { TaskNode } from "../../src/background/orchestrator/types";
+import { OrchestratorTask, TaskNode } from "../../src/background/orchestrator/types";
 import { ToolName } from "../../src/types";
 
 function node(
@@ -34,6 +35,30 @@ function node(
 }
 
 describe("Orchestrator dependency scheduling", () => {
+  test("cleans up a rejected worker without a second unhandled rejection", async () => {
+    const pending = node("rejected-worker", "pending");
+    const running = new Set<Promise<void>>();
+    let rejectWorker!: (reason: Error) => void;
+    const worker = new Promise<void>((_resolve, reject) => {
+      rejectWorker = reject;
+    });
+
+    queueRunnableWorkers({
+      task: { id: "task", nodes: [pending] } as OrchestratorTask,
+      runnable: [pending],
+      running,
+      schedulerConcurrency: 1,
+      queuedWorkerTraceNodeIds: new Set(),
+      launchWorker: () => worker,
+      emitTrace: () => {},
+    });
+
+    const firstSettled = Promise.race(running);
+    rejectWorker(new Error("worker setup failed"));
+    await expect(firstSettled).rejects.toThrow("worker setup failed");
+    expect(running.size).toBe(0);
+  });
+
   test("repairs empty resource contracts to a conservative root-tab hint", () => {
     const pending = node("empty-contract", "pending");
     pending.description = "Report the prepared result";

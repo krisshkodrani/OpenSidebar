@@ -25,6 +25,10 @@ Repo policy:
 - Active RFCs live in `docs/engineering/rfcs/`; investigations and scratch research notes stay out of the repo.
 - If a real product bug or follow-up is found but not fixed now, create a GitHub issue when GitHub tools are available.
 
+Product direction (owner decision, 2026-09-28): ServiceNow support is removed.
+Preserve reusable browser, form, list, catalog, and knowledge capabilities.
+Generated traces and benchmark outputs remain local, outside Git.
+
 ## Harness Architecture Direction
 
 The stable decision is documented in `docs/architecture/runtime-boundaries.md`.
@@ -161,28 +165,20 @@ missing act-check-act verification; security/session/auth mistakes; unnecessary 
 9. Prompts in fixtures/tests should read like natural user requests — no keyword stuffing, activation phrases, or hidden fixture knowledge.
 10. Sidepanel UI components must be environment-agnostic (no direct `chrome.*`; use the bridge). Trajectories must be environment-agnostic (no tab IDs or `chrome.storage` keys in replayable entries).
 
-## WorkArena And Generic Skill Philosophy
+## Generic Skill Philosophy
 
-Treat WorkArena as a high-signal evaluator, not the product goal. A failure should
-become a generic browser-agent capability improvement; a pass counts only when the
-real validator passes without hidden benchmark knowledge.
+Build reusable browser-agent capabilities rather than benchmark-specific paths.
+Avoid task IDs, seed entities, fixture text, hidden expected values, and validator
+artifacts in product runtime logic. A test passes only when the user's real
+objective is met.
 
-Do not chase 100% by adding task-id branches, seed branches, hidden expected values,
-or runner shortcuts. Prefer a transferable 80% over a brittle 100%. Before keeping a
-WorkArena-motivated fix, ask whether it would help another realistic app with the same
-workflow shape. Avoid product-name vocabularies, fixture nouns, seed entities, prompt
-literals, and validator artifacts in runtime logic.
+For a stable workflow, prefer a tool/runtime primitive, then a generic skill for
+sequencing and evidence. Change planner routing only for repeated routing
+failures. Harness code should only set up, observe, validate, and report.
 
-When ServiceNow/WorkArena exposes a stable workflow shape, prefer fix layers in order:
-tool/runtime primitive → domain adapter grounded in stable platform semantics (forms,
-tables, frames, reference fields, choice values, catalog state) → generic skill for
-sequencing/evidence/tool discipline → planner policy only when routing is the repeated
-failure → harness only for setup, session transfer, observation, validation, reporting.
-
-Good generic skill candidates: menu navigation, form fill with field readback, list
-filter/sort, dashboard/chart extraction, knowledge-search answer extraction, catalog
-ordering, multi-tab checklist work, infeasible-task clarification. Keep skills as broad
-as the workflow allows.
+Good generic skill candidates: menu navigation, form fill with field readback,
+list filter/sort, chart extraction, knowledge search, catalog ordering,
+multi-tab checklist work, and infeasible-task clarification.
 
 ## JobAgent
 
@@ -209,12 +205,12 @@ before any submit) are mandatory. Design and rationale: RFC LP-22. Safety model:
 - **WorkArena tasks** (ServiceNow, Notion) → staged E2E runner (`pnpm run test:e2e:staged`) — benchmark fidelity, regression detection.
 - **Generic site tasks** → Playwright harness — product correctness on real-world pages.
 - **CI / headless** → mockAdapter — fast unit-level behavior, no browser.
-- When fixing an agent-core bug, cover both a WorkArena-style and a generic case when practical.
+- When fixing an agent-core bug, cover distinct realistic workflow shapes when practical.
 
 ### Runtime defaults
 
-- Provider mode: `fireworks`; lane: `dev`; executor/planner model: the Fireworks default unless overridden.
-- Override env vars: `E2E_PROVIDER`, `E2E_EXECUTOR_MODEL`, `E2E_TEMPERATURE`, `E2E_USE_VL_EXECUTOR`, `E2E_DIAGNOSTIC`.
+- Provider mode: `openrouter`; lane: `validation`; executor/planner: `openai/gpt-6-luna`; judge: `typesafe/jev-1.13`, unless overridden.
+- Override env vars: `E2E_PROVIDER`, `E2E_MODEL`, `E2E_PLANNER_MODEL`, `E2E_JUDGE_MODEL`, `E2E_PERCEPTION_MODE`, `E2E_DIAGNOSTIC`.
 - Keep harness config minimal; prefer runtime fixes over provider-specific test branching.
 
 ## Failure Triage Order

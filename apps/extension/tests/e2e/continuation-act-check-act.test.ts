@@ -28,11 +28,15 @@ import {
   navigateAndWait,
   sendUserChat,
   settleWorkspaceBetweenTurns,
+  startApprovalAutoResponder,
+  stopAgent,
   waitForOutcome,
   waitForTaskCompletion,
+  waitForWorkspaceIdle,
 } from "./helpers/utils";
 import { getFixtureUrl } from "./helpers/fixture-server";
 import { extractDoneSummary, findAllNewTraceFiles } from "./helpers/diagnostics";
+import { closeE2EPanel } from "./helpers/browser";
 
 const h = createE2EHarness({ maxTurns: 15, testLabel: "act-check-act" });
 
@@ -82,6 +86,7 @@ describe.skipIf(!h.apiKey)("E2E: Continuation — Act-Check-Act", () => {
       },
       TURN_TIMEOUT,
       workspaceId,
+      { acceptPageResultWhileRunning: true },
     );
 
     if (!turn1.ok) {
@@ -93,6 +98,9 @@ describe.skipIf(!h.apiKey)("E2E: Continuation — Act-Check-Act", () => {
     expect(turn1.ok, `Turn 1 failed: ${turn1.reason}`).toBe(true);
 
     console.log("[aca] Turn 1 PASS — Overlays dismissed");
+
+    await stopAgent(h.ctx, workspaceId);
+    await waitForWorkspaceIdle(h.ctx.serviceWorker, workspaceId, 90_000);
 
     // =================================================================
     // TRANSITION
@@ -156,6 +164,13 @@ describe.skipIf(!h.apiKey)("E2E: Continuation — Act-Check-Act", () => {
       workspaceId,
     );
 
+    await closeE2EPanel(h.ctx);
+    const approvals = startApprovalAutoResponder(
+      h.ctx,
+      h.ctx.serviceWorker,
+      workspaceId,
+    );
+
     const turn3 = await waitForOutcome(
       h.page,
       h.ctx.serviceWorker,
@@ -168,7 +183,8 @@ describe.skipIf(!h.apiKey)("E2E: Continuation — Act-Check-Act", () => {
       },
       TURN_TIMEOUT,
       workspaceId,
-    );
+      { acceptPageResultWhileRunning: true },
+    ).finally(() => approvals.stop());
 
     if (!turn3.ok) {
       const state = await h.page.evaluate(
@@ -205,6 +221,7 @@ describe.skipIf(!h.apiKey)("E2E: Continuation — Act-Check-Act", () => {
     // Final checks
     // =================================================================
     await h.printTraceSummary(workspaceId);
+    await stopAgent(h.ctx, workspaceId);
     await assertNoGhostSession(h.ctx.serviceWorker, 2_000, workspaceId);
 
     console.log("\n[aca] === ALL 3 TURNS PASSED ===");

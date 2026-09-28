@@ -154,6 +154,8 @@ async function main() {
             configScriptUrl: null,
             configExtensionBaseUrl: null,
             runtimeLogoUrl: null,
+            pageOverlayGlobalVisible: false,
+            pageBridgeTokenVisible: false,
             title: document.title,
             url: location.href,
           };
@@ -209,6 +211,8 @@ async function main() {
         configExtensionBaseUrl:
           config?.runtimeOptions?.extensionBaseUrl ?? null,
         runtimeLogoUrl,
+        pageOverlayGlobalVisible: Boolean(window.__opensidebarOverlayRuntime || window.__opensidebarOverlay),
+        pageBridgeTokenVisible: Boolean(rawConfig?.includes("bridgeToken")),
         title: document.title,
         url: location.href,
       };
@@ -223,6 +227,9 @@ async function main() {
     }
     if (!probe.logoLoaded) {
       throw new Error("OpenSidebar logo did not load in the overlay.");
+    }
+    if (probe.pageOverlayGlobalVisible || probe.pageBridgeTokenVisible) {
+      throw new Error("E2E overlay internals are visible in the page context.");
     }
 
     console.log(`[panel-smoke] Holding Chrome open for ${holdMs}ms.`);

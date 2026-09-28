@@ -14,6 +14,10 @@ function host(): AgentLoopToolHandlerHost {
   return {
     checkNavigateGuard: vi.fn(),
     consecutiveAutoAdvances: 0,
+    mutationReplay: {
+      recordMutationSensitiveAction: vi.fn(),
+      replayMutationSensitiveAction: vi.fn(() => false),
+    },
     context: {
       getSnapshot: vi.fn(() => null),
     },
@@ -39,10 +43,8 @@ function host(): AgentLoopToolHandlerHost {
     originalQuery: "",
     pendingInlineEditVerification: null,
     planSubtasks: [],
-    recordMutationSensitiveAction: vi.fn(),
     refreshPerceptionAndTriage: vi.fn(),
     refreshSnapshotWithRetry: vi.fn(),
-    replayMutationSensitiveAction: vi.fn(),
     shouldBlockTabManagementTools: vi.fn(),
     statusHandler: vi.fn(),
     stepHandler: vi.fn(),
@@ -52,9 +54,9 @@ function host(): AgentLoopToolHandlerHost {
     traceRecorder: {
       recordToolExecution: vi.fn(),
     },
-    trackListDetailToolSuccess: vi.fn(),
+    listDetailWorkflow: { trackListDetailToolSuccess: vi.fn() },
     turnCount: 4,
-    updateMoneyTableAggregate: vi.fn(),
+    moneyTable: { updateMoneyTableAggregate: vi.fn() },
     workspaceId: null,
   };
 }
@@ -214,6 +216,18 @@ describe("tool result recording", () => {
       toolName: ToolName.FIND_ELEMENT,
       args: { text: "Save" },
       result: "Error: missing",
+      cacheType: "dom",
+    });
+
+    expect(loop.toolCache.set).not.toHaveBeenCalled();
+  });
+
+  test("does not cache a page read while embedded frames are unavailable", () => {
+    const loop = host();
+    storeSuccessfulToolResult(loop, {
+      toolName: ToolName.READ_PAGE,
+      args: {},
+      result: "Page content. Content in 1 embedded frame(s) is temporarily unavailable.",
       cacheType: "dom",
     });
 

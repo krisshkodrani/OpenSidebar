@@ -495,13 +495,13 @@ export function registerInspectionTools(toolRegistry: ToolRegistry): void {
             ];
             const params = new URLSearchParams(location.search);
             const interestingParams = [
-              "sysparm_query",
-              "sysparm_fixed_query",
-              "sysparm_first_row",
-              "sysparm_order",
-              "sysparm_orderby",
-              "sysparm_sort",
-              "sysparm_view",
+              "filter",
+              "q",
+              "query",
+              "sort",
+              "order",
+              "orderby",
+              "page",
             ]
               .map((key) => [key, params.get(key)] as const)
               .filter(([, value]) => value);
@@ -639,11 +639,9 @@ export function registerInspectionTools(toolRegistry: ToolRegistry): void {
             ];
             const params = new URLSearchParams(location.search);
             const queryParams = [
-              "sysparm_query",
-              "sysparm_fixed_query",
-              "sysparm_filter",
               "filter",
               "q",
+              "query",
             ]
               .map((key) => [key, params.get(key)] as const)
               .filter(([, value]) => value);

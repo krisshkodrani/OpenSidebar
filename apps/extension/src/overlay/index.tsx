@@ -129,7 +129,7 @@ declare global {
     __opensidebarOverlayConfig?: Pick<
       MountOpenSidebarOverlayOptions,
       "runtimeOptions" | "sidepanelCss" | "glass"
-    >;
+    > & { scriptUrl?: string };
     __opensidebarOverlayRuntime?: OverlayUiRuntimeHarness;
   }
 }

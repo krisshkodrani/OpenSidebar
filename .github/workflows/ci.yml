@@ -47,3 +47,12 @@ jobs:
 
       - name: Verify extension artifact
         run: pnpm run ci:dist
+
+      - name: Verify release package
+        run: |
+          pnpm run release:package
+          if unzip -Z1 .artifacts/releases/opensidebar-v*.zip | grep -q '^\.vite/'; then
+            echo 'Build-only Vite metadata entered the release ZIP' >&2
+            exit 1
+          fi
+          sha256sum .artifacts/releases/opensidebar-v*.zip

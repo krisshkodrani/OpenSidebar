@@ -20,6 +20,7 @@ export const DEFAULT_SETTINGS: UserSettings = {
   openRouterApiKey: "",
   providerMode: DEFAULT_PROVIDER_MODE,
   perceptionMode: "auto",
+  crossOriginFramesEnabled: __DEV__,
   maxImagePromptTokenEstimate: DEFAULT_MAX_IMAGE_PROMPT_TOKEN_ESTIMATE,
   enabledSkillPackIds: [...DEFAULT_ENABLED_SKILL_PACK_IDS],
   laneTopologyMode: "full",

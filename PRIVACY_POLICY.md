@@ -1,7 +1,7 @@
 # Privacy Policy
 
 **OpenSidebar** - Chrome Browser Extension
-Last updated: 2026-08-08
+Last updated: 2026-09-24
 
 ---
 
@@ -27,6 +27,8 @@ OpenSidebar is an open-source browser extension that runs AI-powered tasks in yo
 ### Page Content
 
 When you give the extension a task, it reads the content of the active browser tab, including DOM structure, visible text, page title, URL, and screenshots when visual grounding is enabled. This is necessary for the AI agent to understand the page and perform the actions you request.
+
+If you turn on **Use embedded pages**, an active task can also read and interact with embedded frames from other sites in that tab. Their page text, controls, and URLs become part of the same task context sent to your configured model provider. This setting is off by default in the published extension. It adds no host permission beyond the extension's existing page access.
 
 Page content is accessed for active tasks. The extension does not passively monitor, index, or record your browsing activity.
 

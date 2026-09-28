@@ -37,7 +37,7 @@ import {
   OPENROUTER_MODEL_PLANNER,
   XIAOMI_MODEL_PLANNER,
 } from "./seat-models";
-import { estimateCostUsd } from "./pricing";
+import { toJudgeUsage } from "./judge-usage";
 import { cloudRelayFetch } from "./cloud-relay";
 import {
   buildJsonHeaders,
@@ -46,7 +46,9 @@ import {
   sanitizeApiKeyForHeader,
 } from "./provider-headers";
 import type { JudgeUsage } from "../agent/completion/judge";
-
+import type { JudgeRubric, JudgeVerdict } from "../agent/completion/judge";
+import { requestJevVerdict } from "../agent/completion/jev-judge";
+import { withLlmRequestObservation } from "./transport-observation";
 
 // Seat model ids live in ./seat-models (extracted 2026-07-26 for the
 // decomposition budget); re-exported so `from "./client"` imports still work.
@@ -847,6 +849,17 @@ export class LLMClient {
     }
   }
 
+  public async runRubricDecision(rubric: JudgeRubric, signal?: AbortSignal): Promise<JudgeVerdict> {
+    const slot = this.judgePool.getActive();
+    if (!this.supportsRubricDecision()) throw new Error(`Typed decisions unavailable for ${slot.model}`);
+    return requestJevVerdict(rubric, slot.provider.apiKey, slot.model.replace(/:nitro$/, ""), signal);
+  }
+
+  public supportsRubricDecision(): boolean {
+    const slot = this.judgePool.getActive();
+    return slot.provider.providerId === "openrouter" && slot.model.replace(/:nitro$/, "") === "typesafe/jev-1.13";
+  }
+
   /** Whether a dedicated Writer model is configured (distinct from the executor pool). */
   public hasWriterModel(): boolean {
     return this.writerPool !== this.executorPool;
@@ -879,6 +892,14 @@ export class LLMClient {
     payload: Record<string, unknown>,
   ): Record<string, unknown> {
     const shaped = shapePayloadForProvider(providerId, payload);
+    if (providerId === "openrouter") {
+      if (!shaped.stream) shaped.usage = { include: true };
+      if (String(shaped.model).replace(/:nitro$/, "") === "openai/gpt-6-luna") {
+        // Chat Completions function calling requires reasoning_effort=none.
+        shaped.reasoning_effort = Array.isArray(shaped.tools) && shaped.tools.length ? "none" : "medium";
+        if (shaped.reasoning_effort !== "none") delete shaped.temperature;
+      }
+    }
     if (this.strictModelRouting && shaped.model !== this.getActiveProviderInfo().model) {
       throw new Error("Strict model routing forbids a request model override.");
     }
@@ -1052,10 +1073,10 @@ export class LLMClient {
     });
 
     try {
-      let requestInitBase: RequestInit = {
+      let requestInitBase: RequestInit = withLlmRequestObservation({
         method: "POST",
         headers: buildJsonHeaders(provider, request),
-      };
+      }, this._activeTier);
 
       let response: Response;
       let actualProviderId: ProviderConfig["providerId"];
@@ -1316,10 +1337,10 @@ export class LLMClient {
     });
 
     try {
-      let requestInitBase: RequestInit = {
+      let requestInitBase: RequestInit = withLlmRequestObservation({
         method: "POST",
         headers: buildJsonHeaders(provider, request),
-      };
+      }, this._activeTier);
 
       let response: Response;
       let actualProviderId: ProviderConfig["providerId"];
@@ -1462,29 +1483,6 @@ export class LLMClient {
       throw error;
     }
   }
-}
-
-/**
- * Normalize a raw provider `TokenUsage` into the judge's camelCase `JudgeUsage`
- * and attach an estimated USD cost from the pricing table. Returns undefined
- * when the provider reported no usage (e.g. a cache-only path).
- */
-function toJudgeUsage(
-  usage: TokenUsage | undefined,
-  providerId: ProviderConfig["providerId"],
-  model: string,
-): JudgeUsage | undefined {
-  if (!usage) return undefined;
-  const costUsd = estimateCostUsd(providerId, model, usage);
-  return {
-    promptTokens: usage.prompt_tokens ?? 0,
-    completionTokens: usage.completion_tokens ?? 0,
-    totalTokens: usage.total_tokens ?? 0,
-    ...(usage.cached_tokens != null
-      ? { cachedTokens: usage.cached_tokens }
-      : {}),
-    ...(costUsd != null ? { costUsd } : {}),
-  };
 }
 
 /** Delay that can be cancelled via an AbortSignal. */

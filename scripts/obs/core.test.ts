@@ -1,7 +1,11 @@
-import { describe, expect, it } from "vitest";
+import { mkdtempSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { describe, expect, it, vi } from "vitest";
 
 import {
   compareRuns,
+  createDiskStore,
   findFailures,
   getRun,
   getSpan,
@@ -117,6 +121,73 @@ function makeStore(over: Partial<ObsStore> = {}): ObsStore {
     ...over,
   };
 }
+
+describe("disk store read cutover", () => {
+  it("prefers spine records and preserves unmigrated JSONL sessions", () => {
+    const root = mkdtempSync(join(tmpdir(), "obs-disk-store-"));
+    try {
+      const traces = join(root, "traces");
+      const spans = join(traces, "spans");
+      mkdirSync(join(spans, "s1"), { recursive: true });
+      mkdirSync(join(spans, "runs"), { recursive: true });
+      writeFileSync(join(spans, "s1", "session.json"), JSON.stringify({
+        sessionId: "s1", runId: "r1", query: "spine session", outcome: "completed",
+      }));
+      writeFileSync(join(spans, "s1", "T1.json"), JSON.stringify({
+        v: 1, entry: { sessionId: "s1", turnNumber: 1, marker: "spine turn" }, spans: [],
+      }));
+      writeFileSync(join(spans, "runs", "r1.jsonl"),
+        `${JSON.stringify({ runId: "r1", type: "spine_event" })}\n`);
+      mkdirSync(join(spans, "s4"), { recursive: true });
+      writeFileSync(join(spans, "s4", "session.json"),
+        JSON.stringify({ sessionId: "s4", query: "empty spine session" }));
+      writeFileSync(join(spans, "runs", "r2.manifest.json"),
+        JSON.stringify({ runId: "r2", query: "empty spine run" }));
+      writeFileSync(join(traces, "index.jsonl"), [
+        { sessionId: "s1", runId: "r1", query: "legacy session" },
+        { sessionId: "s2", query: "unmigrated session" },
+      ].map((row) => JSON.stringify(row)).join("\n") + "\n");
+      writeFileSync(join(traces, "s1.jsonl"),
+        `${JSON.stringify({ sessionId: "s1", turnNumber: 1, marker: "legacy turn" })}\n`);
+      writeFileSync(join(traces, "s3.jsonl"),
+        `${JSON.stringify({ sessionId: "s3", turnNumber: 1, marker: "orphan turn" })}\n`);
+      writeFileSync(join(traces, "s4.jsonl"),
+        `${JSON.stringify({ sessionId: "s4", turnNumber: 1, marker: "stale legacy turn" })}\n`);
+      mkdirSync(join(traces, "runs"), { recursive: true });
+      writeFileSync(join(traces, "runs", "r1.jsonl"),
+        `${JSON.stringify({ runId: "r1", type: "legacy_event" })}\n`);
+      writeFileSync(join(traces, "runs", "r2.jsonl"),
+        `${JSON.stringify({ runId: "r2", type: "stale legacy event" })}\n`);
+
+      const store = createDiskStore(root);
+      expect(store.loadSessions().map((session) => session.query)).toEqual([
+        "spine session", "empty spine session", "unmigrated session", undefined,
+      ]);
+      expect(store.loadSessions().find((session) => session.sessionId === "s3"))
+        .toMatchObject({ source: "orphan_trace_file" });
+      expect(store.loadEntries("s1")[0]).toMatchObject({ marker: "spine turn" });
+      expect(store.loadRunEvents("r1")[0]).toMatchObject({ type: "spine_event" });
+      expect(store.loadEntries("s4")).toEqual([]);
+      expect(store.loadRunEvents("r2")).toEqual([]);
+      expect(store.loadInsights({}).events.some((row) => row.id === "spine_event"))
+        .toBe(true);
+
+      const legacy = createDiskStore(root, { spineReads: false });
+      expect(legacy.loadSessions()[0].query).toBe("legacy session");
+      expect(legacy.loadSessions().map((session) => session.sessionId)).toContain("s3");
+      expect(legacy.loadEntries("s1")[0]).toMatchObject({ marker: "legacy turn" });
+      expect(legacy.loadRunEvents("r1")[0]).toMatchObject({ type: "legacy_event" });
+      expect(legacy.loadEntries("s4")[0]).toMatchObject({ marker: "stale legacy turn" });
+      expect(legacy.loadRunEvents("r2")[0]).toMatchObject({ type: "stale legacy event" });
+      vi.stubEnv("OBS_DISABLE_SPINE_READS", "1");
+      expect(createDiskStore(root).loadEntries("s1")[0])
+        .toMatchObject({ marker: "legacy turn" });
+    } finally {
+      vi.unstubAllEnvs();
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+});
 
 // ---- Tests ------------------------------------------------------------------
 

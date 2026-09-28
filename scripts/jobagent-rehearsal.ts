@@ -69,7 +69,7 @@ function stageSeed(): void {
   // The answer library is the synthetic fixture identity — no real PII, and
   // deliberately missing the judgment answers.
   copyFileSync(join(KIT, "answer-library.json"), join(jobagentDir, "answer-library.json"));
-  const cvDir = join(SEED_DIR, "applications");
+  const cvDir = SEED_DIR;
   mkdirSync(cvDir, { recursive: true });
   copyFileSync(join(KIT, "sample-cv.pdf"), join(cvDir, "sample-cv.pdf"));
 }

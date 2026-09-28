@@ -7,7 +7,7 @@
 import { afterEach, beforeEach, describe, expect, test } from "vitest";
 import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { join, resolve } from "node:path";
 
 import {
   approveKitDraft,
@@ -17,6 +17,7 @@ import {
   type FormQuestion,
 } from "../../../../scripts/jobagent/drafting";
 import { loadFillManifest } from "../../../../scripts/jobagent/manifest";
+import { resolveCvServeDir } from "../../../../scripts/jobagent/cv-server";
 import type { AnswerLibrary } from "../../../../scripts/jobagent/answers";
 import type { ApplicationPackage } from "../../../../scripts/jobagent/package";
 
@@ -179,6 +180,7 @@ describe("save/approve flow", () => {
       ...saved,
       manifest: { ...saved.manifest, cvServe: { dir: ".", port: 0, file: "cv.pdf" } },
     };
+    writeFileSync(join(dir, "cv.pdf"), "fixture PDF", "utf8");
     writeFileSync(join(dir, "kit-draft.json"), JSON.stringify(withCv), "utf8");
 
     const manifest = approveKitDraft(dir);
@@ -200,6 +202,39 @@ describe("save/approve flow", () => {
     expect(() => approveKitDraft(dir)).toThrow(/needs a CV to upload/);
     // And the brief never asks for an upload it cannot supply.
     expect(draft.manifest.promptLines.join("\n")).not.toMatch(/upload_file/);
+  });
+
+  test("a fresh kit derives a portable CV path from the seed and keeps it after edit", () => {
+    const seedDir = tempDir();
+    const appDir = join(seedDir, "applications", "sample");
+    mkdirSync(appDir, { recursive: true });
+    mkdirSync(join(seedDir, "cv", "exports"), { recursive: true });
+    writeFileSync(join(seedDir, "cv", "exports", "cv.pdf"), "fixture PDF");
+    const cvLibrary = { ...library, cvVariants: [{ name: "default", file: "cv/exports/cv.pdf" }] };
+    const draft = buildKitDraft(pkg, [{ label: "Resume/CV", kind: "file" }], cvLibrary,
+      { applicationDir: appDir, seedDir });
+    expect(draft.manifest.cvServe).toEqual({
+      dir: join("..", "..", "cv", "exports"), port: 0, file: "cv.pdf",
+    });
+    expect(draft.manifest.promptLines.join("\n")).toContain("upload_file");
+    writeFileSync(join(appDir, "kit-draft.json"), JSON.stringify(draft));
+    const priorSeed = process.env.OPENSIDEBAR_SEED_DIR;
+    process.env.OPENSIDEBAR_SEED_DIR = seedDir;
+    try {
+      const saved = saveKitDraft(appDir, pkg, draft);
+      expect(resolve(appDir, saved.manifest.cvServe!.dir, saved.manifest.cvServe!.file))
+        .toBe(join(seedDir, "cv", "exports", "cv.pdf"));
+      expect(approveKitDraft(appDir).cvServe).toEqual(saved.manifest.cvServe);
+      expect(resolveCvServeDir(appDir, "cv/exports", "cv.pdf"))
+        .toBe(join(seedDir, "cv", "exports"));
+      const legacy = { ...saved, manifest: { ...saved.manifest,
+        cvServe: { dir: "cv/exports", port: 0, file: "cv.pdf" } } };
+      writeFileSync(join(appDir, "kit-draft.json"), JSON.stringify(legacy));
+      expect(approveKitDraft(appDir).cvServe?.dir).toBe("cv/exports");
+    } finally {
+      if (priorSeed === undefined) delete process.env.OPENSIDEBAR_SEED_DIR;
+      else process.env.OPENSIDEBAR_SEED_DIR = priorSeed;
+    }
   });
 
   test("force-approve bypasses the unresolved gate", () => {

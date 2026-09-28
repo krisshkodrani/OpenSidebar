@@ -26,11 +26,12 @@ import {
   LastActionOutcome,
   OpenTabInfo,
   PLANNER_PERSONA,
-  REFERENCE_VALUE_TOOLS,
   CompressionLevel,
   maxCompressionLevel,
 } from "./context-types";
 import { HistoryLog } from "./context-history";
+import { exportContextHistory, restoreContextHistory } from "./context-checkpoint";
+import { ObservationMemory } from "./observation-memory";
 import type { CompactionCause } from "./context-history";
 import { PrefixResetLedger } from "./prompt-prefix-telemetry";
 import type { PromptPrefixReset } from "./prompt-prefix-telemetry";
@@ -95,6 +96,7 @@ export class ContextManager {
    * source of truth, and never written back.
    */
   private readonly log = new HistoryLog();
+  private readonly observations = new ObservationMemory();
   private get history(): LLMMessage[] {
     return this.log.project();
   }
@@ -300,17 +302,7 @@ export class ContextManager {
    * older messages into one-line entries via `summarizeHistory()`.
    */
   public exportForCheckpoint(recentWindow = 8): CompressedHistory {
-    // The FULL log, not the projection: compaction no longer destroys history,
-    // so a checkpoint can now export what actually happened rather than
-    // whatever survived the last summary pass.
-    const full = this.log.fullLog;
-    const recent = full.slice(-recentWindow);
-    const older = full.slice(0, Math.max(0, full.length - recentWindow));
-    return {
-      recentMessages: [...recent],
-      olderSummaries: summarizeHistory([...older], 30),
-      originalCount: full.length,
-    };
+    return exportContextHistory(this.log, this.observations, recentWindow);
   }
 
   /**
@@ -323,17 +315,7 @@ export class ContextManager {
     cp: CompressedHistory,
     isFirstTurn: boolean,
   ): void {
-    this.log.restore([
-      ...(cp.olderSummaries.length > 0
-        ? [
-            {
-              role: "system" as const,
-              content: `Prior turns (compressed, ${cp.originalCount - cp.recentMessages.length} messages):\n${cp.olderSummaries.join("\n")}`,
-            },
-          ]
-        : []),
-      ...cp.recentMessages,
-    ]);
+    restoreContextHistory(this.log, this.observations, cp);
     this.isFirstTurn = isFirstTurn;
     // Restored history may no longer contain the full page-content block —
     // force the next system prompt to emit it in full again.
@@ -473,6 +455,7 @@ export class ContextManager {
   }
 
   public setSnapshot(snapshot: DomSnapshot) {
+    this.observations.observe(snapshot, this.turnCount, this.originalQuery ?? "");
     this.snapshot = snapshot;
     this.pageContent = snapshot.pageContent ?? null;
     if (snapshot.capturedTexts && snapshot.capturedTexts.length > 0) {
@@ -1062,7 +1045,7 @@ Do NOT call done() until every planned step is complete.
     // Drop the placeholder when the no-snapshot branch skipped the injection.
     content = injectValidElementIds(content, []);
 
-    return splitAtVolatileBoundary(content);
+    return splitAtVolatileBoundary(content + this.observations.render(this.originalQuery ?? "", this.snapshot, Math.floor(this.maxContextTokens / 5)));
   }
 
   /**
@@ -1155,6 +1138,7 @@ Do NOT call done() until every planned step is complete.
       elemTokens +
       perceptionTokens +
       pageContentTokens +
+      Math.ceil(this.observations.render(this.originalQuery ?? "", this.snapshot).length / 4) +
       historyTokens;
     const utilization = totalEstimate / this.maxContextTokens;
 
@@ -1398,6 +1382,7 @@ Do NOT call done() until every planned step is complete.
         this.planStatus = saved.planStatus || null;
         this.capturedOverlays = saved.capturedOverlays || [];
         this.lastActionOutcome = saved.lastActionOutcome || null;
+        this.observations.restore(saved.pageObservations);
         logger.info("agent", "Context loaded from session storage", {
           historyLength: this.history.length,
           hasPlan: !!this.planStatus,
@@ -1419,6 +1404,7 @@ Do NOT call done() until every planned step is complete.
           planStatus: this.planStatus,
           capturedOverlays: this.capturedOverlays,
           lastActionOutcome: this.lastActionOutcome,
+          pageObservations: this.observations.export(),
         },
       });
     } catch (e) {
@@ -1443,6 +1429,7 @@ Do NOT call done() until every planned step is complete.
 
   public clear() {
     this.log.clear();
+    this.observations.restore(undefined);
     this.snapshot = null;
     this.planStatus = null;
     this.capturedOverlays = [];

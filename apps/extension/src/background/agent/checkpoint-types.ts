@@ -10,6 +10,7 @@ import type { LLMMessage } from "../llm/types";
 import type { LastActionOutcome, PlanStatus } from "./context-types";
 import type { ToolName } from "../../types";
 import type { CompletionEnvelope } from "./completion-kernel";
+import type { PastPageObservation } from "./observation-memory";
 
 // ---------------------------------------------------------------------------
 // Turn checkpoint
@@ -62,6 +63,8 @@ export interface CheckpointCompletedResult {
 // ---------------------------------------------------------------------------
 
 export interface CompressedHistory {
+  /** Bounded historical page text, separate from lossy action summaries. */
+  pageObservations?: PastPageObservation[];
   /** Full messages for the most recent turns (assistant + tool pairs). */
   recentMessages: LLMMessage[];
   /** One-line summaries for older turns: "T3: click_element({id:5}) → OK" */

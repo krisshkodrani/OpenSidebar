@@ -14,8 +14,7 @@ export type LaneTopologyMode = "simple" | "standard" | "full";
 export const DEFAULT_MAX_IMAGE_PROMPT_TOKEN_ESTIMATE = 25_000;
 export const DEFAULT_ENABLED_SKILL_PACK_IDS = [
   "communication-workflows",
-  "procurement-workflows",
-  "servicenow-platform",
+  "source-list-workflows",
 ];
 
 export interface UserSettings {
@@ -115,6 +114,8 @@ export interface UserSettings {
    * - `structured`: DOM text and element data; screenshots are not sent directly to the executor
    */
   perceptionMode?: PerceptionRuntimeMode;
+  /** Read and act within cross-origin frames; dev default on, shipped default off. */
+  crossOriginFramesEnabled?: boolean;
   /**
    * Maximum estimated image prompt tokens per agent session.
    * Uses conservative high-detail screenshot estimates; auto perception falls

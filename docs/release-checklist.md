@@ -2,7 +2,11 @@
 
 Use this checklist when preparing a new OpenSidebar release.
 
-## Current RC Status - 2026-08-08
+## Historical 0.7.2 RC status - 2026-08-08
+
+This table records the 0.7.2 submission at that date. For the current source
+version, inspect the manifest and the [0.7.7 candidate report](engineering/077-release-candidate-report.md),
+then rerun the gates below on the exact release commit.
 
 The `0.7.2` update is submitted for Chrome Web Store review under the stable ID
 `hakbnbbkiehiofnafdkcibbnkbdmjiha`; existing users remain on the previously
@@ -61,10 +65,10 @@ If the release changes are concentrated in a different area, run the relevant pu
 | --------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------ |
 | Page actions, navigation, overlays, forms, shopping                   | `pnpm run test:e2e:interactions`                                                                                               |
 | Planner, continuation, recovery, backend durability                   | `pnpm run test:e2e:runtime`                                                                                                    |
-| WorkArena setup, reporting, or ServiceNow handoff changes             | `pnpm exec tsx scripts/workarena-doctor.ts` and `pnpm exec tsx scripts/workarena-validate-reports.ts`                          |
-| Real WorkArena confidence after intentional ServiceNow reset approval | `pnpm exec tsx scripts/workarena-handoff.ts --task workarena.servicenow.all-menu --seed 0 --allow-servicenow-reset --no-build` |
 
-Real WorkArena handoff commands may mutate a remote ServiceNow benchmark instance and spend LLM tokens. Run them deliberately, and keep generated reports under `.artifacts/e2e/`.
+ServiceNow support was removed by owner decision (2026-09-28). Validate
+changes with local checks and generic browser tests; keep generated outputs
+under `.artifacts/e2e/`.
 
 When you run the E2E suite or prepare the summary, write the dated report to:
 
@@ -74,6 +78,7 @@ When you run the E2E suite or prepare the summary, write the dated report to:
 
 - Confirm `corepack pnpm run ci:dist` passes.
 - Confirm `dist/manifest.json` has the expected version.
+- Compare the built `dist/manifest.json` security fields with `apps/extension/manifest.json` before Chrome Web Store submission: permissions, content scripts, `web_accessible_resources`, and absence of `externally_connectable`.
 - Confirm `corepack pnpm run ci:audit` reports no production vulnerabilities.
 - Run `corepack pnpm run release:package` and confirm it builds `dist/`, then writes a release zip, `.sha256`, release notes, and artifact manifest under `.artifacts/releases/`.
 - While iterating on release changes, `corepack pnpm run release:preflight --allow-dirty` can validate the generated artifacts.
@@ -115,4 +120,4 @@ gh release create v0.7.0 \
 
 ## Current Known Caveat
 
-- Real-browser E2E and WorkArena handoff runs are not part of `pnpm run verify`; run the relevant E2E gate explicitly for risky runtime changes.
+- Real-browser E2E runs are not part of `pnpm run verify`; run the relevant E2E gate explicitly for risky runtime changes.

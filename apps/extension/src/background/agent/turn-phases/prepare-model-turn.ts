@@ -16,7 +16,7 @@ import { LLMClient } from "../../llm";
 import { ContextManager } from "../context";
 import { PageStateCoordinator, type ObservationBasis } from "../page-state";
 import { TraceRecorder } from "../trace";
-import type { TurnCarry } from "../turn-carry";
+import type { AgentTelemetryController } from "../agent-telemetry-controller";
 import { logger, SessionScopedLogger } from "../../../utils";
 import type { AgentStep } from "../../../types";
 import type { LoopResult } from "../loop-types";
@@ -31,11 +31,11 @@ import {
 } from "../turn-completion";
 import {
   processLlmTurnResponse,
-  type LlmTurnResponseProcessingDeps,
   type LlmTurnResponseProcessingResult,
 } from "../loop-response-processing";
 
 type ToolDefs = LlmTurnPreparationDeps["allTools"];
+import type { SkillToolRuntime } from "../loop-skill-tools";
 type TurnCompletionResponse = Extract<TurnCompletionResult, { kind: "response" }>;
 type ProcessedResponse = Extract<
   LlmTurnResponseProcessingResult,
@@ -54,20 +54,15 @@ export interface PrepareModelTurnHost {
   readonly disabledTools: Parameters<typeof toolRegistry.getDefinitions>[0];
   readonly taskId: string | null;
   readonly runId: string | null;
-  readonly telemetry: { readonly turnCarry: TurnCarry };
+  readonly telemetry: Pick<AgentTelemetryController, "turnCarry" | "recordPromptImageUsage" | "recordUsage" | "broadcastMetrics">;
   activeToolNamesForTurn: string[];
   modelTurnObservationBasis: ObservationBasis | null;
-  applyToolProfile(tools: ToolDefs): ToolDefs;
-  applySkillToolSuppression(tools: ToolDefs): ToolDefs;
-  applySkillToolRanking(tools: ToolDefs): ToolDefs;
+  skillTools: Pick<SkillToolRuntime, "applyToolProfile" | "applySkillToolSuppression" | "applySkillToolRanking">;
   broadcast: TurnCompletionDeps["broadcast"];
   stepHandler: TurnCompletionDeps["stepHandler"];
   finishStream: TurnCompletionDeps["finishStream"];
   statusHandler: TurnCompletionDeps["statusHandler"];
   getMetrics: TurnCompletionDeps["getMetrics"];
-  recordPromptImageUsage: NonNullable<TurnCompletionDeps["recordPromptImageUsage"]>;
-  recordUsage: LlmTurnResponseProcessingDeps["recordUsage"];
-  broadcastMetrics: LlmTurnResponseProcessingDeps["broadcastMetrics"];
 }
 
 export interface PreparedModelTurn {
@@ -105,8 +100,8 @@ export async function runPrepareModelTurnPhase(
     allTools,
     // Apply plan/DOM filtering first, then skill-based ranking within the survivors.
     selectTools: (definitions) => {
-      const selected = host.applySkillToolRanking(
-        host.applySkillToolSuppression(host.applyToolProfile(definitions)),
+      const selected = host.skillTools.applySkillToolRanking(
+        host.skillTools.applySkillToolSuppression(host.skillTools.applyToolProfile(definitions)),
       );
       host.activeToolNamesForTurn = selected.map(
         (definition) => definition.function.name,
@@ -148,7 +143,7 @@ export async function runPrepareModelTurnPhase(
     getMetrics: () => host.getMetrics(),
     invalidatePerceptionCache: () => host.perception.invalidateCache(),
     recordPromptImageUsage: (promptMessages) =>
-      host.recordPromptImageUsage(promptMessages),
+      host.telemetry.recordPromptImageUsage(promptMessages),
     sessionAffinityId:
       host.taskId ?? host.runId ?? host.traceRecorder?.sessionId ?? undefined,
     multiTurnSessionId: host.traceRecorder?.sessionId ?? undefined,
@@ -166,8 +161,8 @@ export async function runPrepareModelTurnPhase(
     traceRecorder: host.traceRecorder,
     log: host.log,
     recordUsage: (completion, durationMs) =>
-      host.recordUsage(completion, durationMs),
-    broadcastMetrics: () => host.broadcastMetrics(),
+      host.telemetry.recordUsage(completion, durationMs),
+    broadcastMetrics: () => host.telemetry.broadcastMetrics(),
     broadcast: (message) => host.broadcast(message),
     finishStream: () => host.finishStream(),
     statusHandler: (status, message) => host.statusHandler(status, message),

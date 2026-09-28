@@ -43,6 +43,7 @@ WHAT IT CAN DO
 - Complete multi-step tasks such as forms, checkouts, and cross-page research
 - Read information on one page and use it on another
 - Work from both the live screenshot and page structure
+- Optionally read and use controls inside embedded pages from other sites during a task (off by default)
 - Manage tabs and windows, upload and download files, and extract structured data
 - Plan harder tasks step by step and verify the result
 - Watch a page and tell you when something changes

@@ -5,17 +5,15 @@
  * API already uses, so an agent (Claude Code) and the human viewer see identical
  * results. It also imports NO MCP SDK, so it is unit-testable in isolation.
  *
- * Data access is SQLite-first (the hot `.artifacts/trace-index.sqlite` index)
- * with a JSONL fallback that mirrors `scripts/log-server.ts` — so it works with
- * or without the log-server running, as long as traces exist on disk.
+ * Session, turn, and run reads prefer the span spine, with SQLite/JSONL for
+ * unmigrated records. Aggregates still use SQLite until insight parity passes.
  *
  * The query functions take an `ObsStore` as their first argument so tests can
  * inject fixtures instead of touching disk.
  */
 
 import { existsSync, readFileSync } from "fs";
-import { dirname, join } from "path";
-import { fileURLToPath } from "url";
+import { join } from "path";
 
 import {
   buildTraceInsightsFromSqlite,
@@ -27,7 +25,6 @@ import {
 } from "../trace-sqlite-store";
 import {
   matchesTraceFilters,
-  normalizeAgentSessionRecord,
   normalizeAgentTurnRecord,
   normalizeRunEventRecord,
   type TraceEntryLike,
@@ -47,18 +44,19 @@ import type {
   TraceSession,
 } from "../../apps/extension/src/types/traces";
 import { buildRlTrajectory } from "./rl-trajectory";
+import { PROJECT_ROOT } from "./paths";
+export { PROJECT_ROOT } from "./paths";
+import { orderTraceEntries, preferSpineSessions } from "./session-read-policy";
+import { readLegacyJsonlSessions } from "./legacy-sessions";
+import {
+  hasSpineRunRecord,
+  hasSpineSessionRecord,
+  readSessionEntries,
+  readSpineRunEvents,
+  readSpineSessions,
+} from "./span-store";
 
-// Project-root + on-disk layout (mirrors scripts/log-server.ts). scripts/obs ->
-// repo root is two levels up.
-export const PROJECT_ROOT = join(
-  dirname(fileURLToPath(import.meta.url)),
-  "..",
-  "..",
-);
-const TRACE_DIR = join(PROJECT_ROOT, "traces");
-const TRACE_INDEX = join(TRACE_DIR, "index.jsonl");
-const RUN_TRACE_DIR = join(TRACE_DIR, "runs");
-const SCREENSHOT_DIR = join(TRACE_DIR, "screenshots");
+const SCREENSHOT_DIR = join(PROJECT_ROOT, "traces", "screenshots");
 
 /** The data-access surface. Default impl reads disk; tests inject fixtures. */
 export interface ObsStore {
@@ -86,41 +84,60 @@ function readJsonl(path: string): unknown[] {
     .filter((value): value is unknown => value !== null);
 }
 
-/** Default store: SQLite-first, JSONL fallback (mirrors log-server reads). */
-export function createDiskStore(projectRoot = PROJECT_ROOT): ObsStore {
+/** Default store: spine-first records with legacy fallbacks for unmigrated data. */
+export function createDiskStore(
+  projectRoot = PROJECT_ROOT,
+  options: { spineReads?: boolean } = {},
+): ObsStore {
+  const traceDir = join(projectRoot, "traces");
+  const spanDir = join(traceDir, "spans");
+  const runDir = join(traceDir, "runs");
+  const spineReadsEnabled = options.spineReads ?? process.env.OBS_DISABLE_SPINE_READS !== "1";
   const loadSessions = (): TraceSessionLike[] => {
-    const fromSqlite = readTraceSessionsFromSqlite(projectRoot);
-    if (fromSqlite && fromSqlite.length > 0) return fromSqlite;
-    return readJsonl(TRACE_INDEX).map((record) =>
-      normalizeAgentSessionRecord(record as Record<string, unknown>),
+    const spine = spineReadsEnabled
+      ? readSpineSessions(spanDir) as unknown as TraceSessionLike[]
+      : [];
+    const fromSqlite = readTraceSessionsFromSqlite(projectRoot) ?? [];
+    const { indexed, orphans } = readLegacyJsonlSessions(traceDir);
+    return preferSpineSessions(
+      spine,
+      preferSpineSessions(fromSqlite, preferSpineSessions(indexed, orphans)),
     );
   };
   const loadEntries = (sessionId: string): TraceEntryLike[] => {
+    if (spineReadsEnabled) {
+      const spine = readSessionEntries(sessionId, spanDir);
+      if (spine.length > 0 || hasSpineSessionRecord(sessionId, spanDir))
+        return spine as unknown as TraceEntryLike[];
+    }
     const fromSqlite = readTraceEntriesFromSqlite(projectRoot, sessionId);
     if (fromSqlite && fromSqlite.length > 0) return fromSqlite;
-    return readJsonl(join(TRACE_DIR, `${sessionId}.jsonl`)).map((record) =>
+    return orderTraceEntries(readJsonl(join(traceDir, `${sessionId}.jsonl`)).map((record) =>
       normalizeAgentTurnRecord(record as Record<string, unknown>),
-    );
+    ));
   };
   const loadRunEvents = (runId: string): TraceEntryLike[] => {
+    if (spineReadsEnabled) {
+      const spineRunDir = join(spanDir, "runs");
+      const spine = readSpineRunEvents(runId, spineRunDir);
+      if (spine.length > 0 || hasSpineRunRecord(runId, spineRunDir))
+        return spine as unknown as TraceEntryLike[];
+    }
     const fromSqlite = readRunTraceEventsFromSqlite(projectRoot, runId);
     if (fromSqlite && fromSqlite.length > 0) return fromSqlite;
-    return readJsonl(join(RUN_TRACE_DIR, `${runId}.jsonl`)).map((record) =>
+    return readJsonl(join(runDir, `${runId}.jsonl`)).map((record) =>
       normalizeRunEventRecord(record as Record<string, unknown>),
     );
   };
   const loadInsights = (filters: TraceInsightsFilters): TraceInsightsResponse => {
     const fromSqlite = buildTraceInsightsFromSqlite(projectRoot, filters);
     if (fromSqlite) return fromSqlite;
-    // JSONL fallback: assemble the inputs buildTraceInsights expects.
-    const sessions = loadSessions();
-    const entriesBySession = new Map<string, TraceEntryLike[]>();
-    for (const session of sessions) {
-      if (session.sessionId) {
-        entriesBySession.set(session.sessionId, loadEntries(session.sessionId));
-      }
-    }
-    return buildTraceInsights({ sessions, entriesBySession, filters });
+    // Read turns on demand so a large corpus does not live in memory at once.
+    const sessions = loadSessions().filter((session) =>
+      !filters.sessionId || session.sessionId?.startsWith(filters.sessionId));
+    const entriesBySession = { get: (id: string) => loadEntries(id) };
+    const runEventsByRun = { get: (id: string) => loadRunEvents(id) };
+    return buildTraceInsights({ sessions, entriesBySession, runEventsByRun, filters });
   };
   return {
     projectRoot,

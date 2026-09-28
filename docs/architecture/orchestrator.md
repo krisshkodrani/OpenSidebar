@@ -26,6 +26,31 @@ src/background/orchestrator/
   types.ts       — TaskNode, OrchestratorTask, handoff types
 ```
 
+The root-goal suppression gate is a pure policy in `root-goal-policy.ts`. It
+evaluates navigation completion, prepare-only reconciliation, and the
+conservative final-criteria shortcut in order. The scheduler fetches a page
+snapshot only when the shared eligibility predicate permits assessment, then
+applies the policy's decision as the sole writer of node status and trace
+events.
+
+`checkpoint-store.ts` is the single serialized writer of the existing v1
+orchestrator checkpoint map. The live task remains owned by the orchestrator;
+the store owns its durable projection and preserves the existing storage key,
+TTL, and restore format. Planning, worker execution, verification,
+user-interaction waits, and finalization still live in `index.ts`. LangGraph
+was removed from the production MV3 worker after its initial narrow use added
+roughly 0.93 MB minified (0.26 MB gzip) without replacing those state owners.
+Approval, clarification, and timeout replies now share one synchronous
+acceptance gate: the first matching reply wins, and a stopped or replaced task
+cannot resume after asynchronous checkpointing or tab rebinding.
+
+`finalizeTask` is the single live-task terminal claim and publication path.
+Execution, termination, and synthetic callers retain their payload policies,
+but initial completion delivery, notifications, and task-scoped cleanup run
+once through that path. An early stop with no plan nodes remains status-only.
+The five-minute latest-completion cache survives runtime cleanup for panel
+resync; registering a new task clears it without clearing completion history.
+
 The directory holds ~44 modules in total. Beyond the core files above, the
 scheduler's state maps live behind small **controller classes** (extracted in
 LP-16 Phase 5): `recent-completion-tracker.ts`, `pending-feedback-queue.ts`,

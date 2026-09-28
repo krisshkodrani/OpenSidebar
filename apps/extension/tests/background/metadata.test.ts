@@ -72,8 +72,8 @@ describe("Tool Metadata", () => {
       expect(SEQUENTIAL_TOOLS.has(ToolName.COMPOSE_TEXT)).toBe(true);
     });
 
-    test("has exactly 22 entries", () => {
-      expect(SEQUENTIAL_TOOLS.size).toBe(22);
+    test("has exactly 20 entries", () => {
+      expect(SEQUENTIAL_TOOLS.size).toBe(20);
     });
   });
 
@@ -301,7 +301,6 @@ describe("Tool Metadata", () => {
     test('resolveToolProfile("navigate") includes navigation tools', () => {
       const tools = resolveToolProfile("navigate");
       expect(tools).not.toBeNull();
-      expect(tools).toContain(ToolName.OPEN_SERVICENOW_MODULE);
       expect(tools).toContain(ToolName.NAVIGATE);
       expect(tools).toContain(ToolName.GO_BACK);
       expect(tools).toContain(ToolName.CREATE_TAB);

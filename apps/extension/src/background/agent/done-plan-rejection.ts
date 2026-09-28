@@ -20,12 +20,10 @@ import type { RuntimeLimits } from "./constants";
 import { STRING_LIMITS } from "./constants";
 import { assessDoneSummary, checkSummaryStepCoherence } from "./verification";
 import { matchSuccessCriteria } from "./loop-helpers";
-import {
-  advanceCompletedSubtasks,
-  type AgentLoopPlanProgressHost,
-} from "./loop-plan-progress";
+import type { PlanProgressRuntime } from "./loop-plan-progress";
 
 export interface DonePlanRejectionHost {
+  readonly planProgress: Pick<PlanProgressRuntime, "advanceCompletedSubtasks">;
   readonly planSteps: PlanStep[];
   stepRetryCount: number;
   consecutiveAutoAdvances: number;
@@ -44,7 +42,7 @@ export interface DonePlanRejectionHost {
   ): void;
   broadcastTaskProgress(currentIndex: number): void;
   checkAndSetDoneRejectionEscalation(): void;
-  doneRejectionDiagnosticContent(params: {
+  doneRejectionDiagnosticContent?(params: {
     summary: string;
     primaryReason: string;
     fallbackInstruction: string;
@@ -59,6 +57,7 @@ export function runDonePlanRejection(
   summary: string,
   rejectReason: string,
   effectiveCurrentIdx: number,
+  formatDiagnostic?: NonNullable<DonePlanRejectionHost["doneRejectionDiagnosticContent"]>,
 ): void {
     // retry_step: when the current step uses retry semantics
     // (infinite scroll, pagination), reject done() without
@@ -162,9 +161,7 @@ export function runDonePlanRejection(
         // Gate passed — proceed with auto-advance
         host.consecutiveAutoAdvances++;
         const previousIdx = effectiveCurrentIdx;
-        const newIdx = advanceCompletedSubtasks(
-          host as unknown as AgentLoopPlanProgressHost,
-        );
+        const newIdx = host.planProgress.advanceCompletedSubtasks();
         const completedStep =
           host.planSubtasks[previousIdx]?.description ||
           `Step ${previousIdx + 1}`;
@@ -194,12 +191,17 @@ export function runDonePlanRejection(
       }
     }
 
+    const diagnostic = formatDiagnostic ?? host.doneRejectionDiagnosticContent;
+    if (!diagnostic) {
+      throw new Error("Done plan rejection diagnostic formatter unavailable");
+    }
     rejectDoneAfterPlanValidation(
       host,
       toolCallId,
       summary,
       rejectReason,
       effectiveCurrentIdx,
+      diagnostic,
     );
 }
 
@@ -209,6 +211,7 @@ export function rejectDoneAfterPlanValidation(
   summary: string,
   rejectReason: string,
   effectiveCurrentIdx: number,
+  formatDiagnostic: NonNullable<DonePlanRejectionHost["doneRejectionDiagnosticContent"]>,
 ): void {
     host.doneRejections++;
     host.checkAndSetDoneRejectionEscalation();
@@ -251,7 +254,7 @@ export function rejectDoneAfterPlanValidation(
       host.context.addMessage({
         role: "tool",
         tool_call_id: toolCallId,
-        content: host.doneRejectionDiagnosticContent({
+        content: formatDiagnostic({
           summary,
           primaryReason: rejectReason,
           fallbackInstruction:
@@ -266,7 +269,7 @@ export function rejectDoneAfterPlanValidation(
     host.context.addMessage({
       role: "tool",
       tool_call_id: toolCallId,
-      content: host.doneRejectionDiagnosticContent({
+      content: formatDiagnostic({
         summary,
         primaryReason: rejectReason,
         fallbackInstruction:

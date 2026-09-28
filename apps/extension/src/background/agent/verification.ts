@@ -1,9 +1,5 @@
 import type { VerificationGate } from "../orchestrator/types";
 import { tokenizeStepText } from "./loop-helpers";
-import {
-  hasDurableServiceNowSortEvidence,
-  isServiceNowListSortQuery,
-} from "./servicenow/trusted-workflow-adapter";
 
 export interface StepCoherenceResult {
   coherent: boolean;
@@ -549,7 +545,7 @@ export function assessWorkflowDoneGuard(
         summary,
       );
     const filterComplete =
-      /\b(applied|run|ran|executed|filtered|active filter|query state|sysparm_query|results? updated|rows? filtered|matching records?|condition applied)\b/.test(
+      /\b(applied|run|ran|executed|filtered|active filter|query state|results? updated|rows? filtered|matching records?|condition applied)\b/.test(
         summary,
       );
     if (filterFailure || (filterInterim && !filterComplete)) {
@@ -591,17 +587,6 @@ export function assessWorkflowDoneGuard(
       return {
         blocked: true,
         reason: `List sort task still needs evidence for requested sort field(s): ${missingSortLabels.join(", ")}.`,
-      };
-    }
-    // ServiceNow-specific evidence bar lives in the quarantined adapter.
-    const serviceNowListSort = isServiceNowListSortQuery(queryText);
-    const durableServiceNowSortEvidence =
-      hasDurableServiceNowSortEvidence(summary);
-    if (serviceNowListSort && sortComplete && !durableServiceNowSortEvidence) {
-      return {
-        blocked: true,
-        reason:
-          "ServiceNow list sort completion needs durable sort evidence such as sysparm_query, ORDERBY, aria-sort, or explicit sort state.",
       };
     }
     if (sortFailure || (sortInterim && !sortComplete)) {

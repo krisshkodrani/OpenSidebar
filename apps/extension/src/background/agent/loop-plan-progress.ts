@@ -24,6 +24,23 @@ export interface AgentLoopPlanProgressHost {
   turnsOnCurrentStep: number;
 }
 
+/** Bind plan advancement to the loop's current subtasks and progress state. */
+export class PlanProgressRuntime {
+  constructor(private readonly host: AgentLoopPlanProgressHost) {}
+
+  advanceCompletedSubtasks(): number {
+    return advanceCompletedSubtasks(this.host);
+  }
+
+  completeSingleSubtask(currentIndex: number): number {
+    return completeSingleSubtask(this.host, currentIndex);
+  }
+
+  completeRemainingSubtasks(currentIndex: number, result: string): number {
+    return completeRemainingSubtasks(this.host, currentIndex, result);
+  }
+}
+
 /**
  * Walk planSubtasks and mark early steps as completed based on
  * planner rejection (which implies the agent has progressed past them).

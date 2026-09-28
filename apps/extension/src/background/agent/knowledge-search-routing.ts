@@ -274,7 +274,7 @@ function extractTextKnowledgeBaseAnswerFromText(
       const answer = match[0].trim().replace(/[.,;:]+$/, "");
       if (
         !answer ||
-        /^(?:Article|Knowledge|General Knowledge|System Administrator|ServiceNow|Financial Reporting|Knowledge Portal|Our Company|The Company)$/i.test(
+        /^(?:Article|Knowledge|General Knowledge|System Administrator|Financial Reporting|Knowledge Portal|Our Company|The Company)$/i.test(
           answer,
         )
       ) {

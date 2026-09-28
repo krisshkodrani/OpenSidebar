@@ -95,6 +95,31 @@ describe("Orchestrator verifier fallback", () => {
     expect(decision?.failureType).toBe("state_mismatch");
   });
 
+  test("does not mistake an empty field described in a read-only answer for failure", () => {
+    const decision = programmaticVerify({
+      taskQuery: "What's visible on the page now? Is there an email field I can use? Describe what you see.",
+      objective: "Describe the current page and whether an email field is available",
+      successCriteria: "The visible page and email field are described",
+      output:
+        "The Account Settings card has a Notification Email field. Its current value is empty, and it is ready for input.",
+      executorOutcome: "completed",
+    });
+
+    expect(decision?.failureType).not.toBe("state_mismatch");
+  });
+
+  test("still rejects an explicitly incomplete read-only answer", () => {
+    const decision = programmaticVerify({
+      taskQuery: "Describe the current page and its email field.",
+      objective: "Describe the current page and email field",
+      successCriteria: "The page and email field are described",
+      output: "The page could not be read. The task is not complete.",
+      executorOutcome: "completed",
+    });
+
+    expect(decision?.failureType).toBe("state_mismatch");
+  });
+
   test("does not treat a legitimate Not Complete field value as failed verification", () => {
     const decision = programmaticVerify({
       output:
@@ -179,14 +204,14 @@ describe("programmaticVerify", () => {
   test("accepts when required typed evidence is sufficient", () => {
     const result = programmaticVerify({
       output: "Configured and submitted.",
-      objective: "Create a ServiceNow incident",
+      objective: "Create a helpdesk case",
       successCriteria: "Record submitted",
       requiredEvidenceTypes: ["submit_succeeded", "record_identity_observed"],
       evidence: [
         {
           event: {
             type: "submit_succeeded",
-            source: ToolName.CONFIGURE_SERVICENOW_FORM,
+            source: ToolName.CLICK_ELEMENT,
             confidence: "high",
             observedAt: "2026-05-01T00:00:00.000Z",
             supportsTaskGoal: true,
@@ -195,7 +220,7 @@ describe("programmaticVerify", () => {
         {
           event: {
             type: "record_identity_observed",
-            source: ToolName.CONFIGURE_SERVICENOW_FORM,
+            source: ToolName.CLICK_ELEMENT,
             confidence: "high",
             observedAt: "2026-05-01T00:00:00.000Z",
             supportsTaskGoal: true,
@@ -216,7 +241,7 @@ describe("programmaticVerify", () => {
         {
           event: {
             type: "submit_succeeded",
-            source: ToolName.CONFIGURE_SERVICENOW_FORM,
+            source: ToolName.CLICK_ELEMENT,
             confidence: "high",
             observedAt: "2026-05-01T00:00:00.000Z",
             supportsTaskGoal: true,
@@ -225,7 +250,7 @@ describe("programmaticVerify", () => {
         {
           event: {
             type: "uncertainty_detected",
-            source: ToolName.CONFIGURE_SERVICENOW_FORM,
+            source: ToolName.CLICK_ELEMENT,
             confidence: "high",
             observedAt: "2026-05-01T00:00:00.000Z",
             supportsTaskGoal: false,
@@ -444,51 +469,6 @@ describe("programmaticVerify", () => {
       }),
     ).toBe("medium");
   });
-
-  test("returns accept for trusted ServiceNow form submit evidence", () => {
-    const result = programmaticVerify({
-      output: "Trusted ServiceNow form helper submitted record CHG0000021.",
-      objective:
-        "Create a new change request and submit the form after setting the requested fields.",
-      successCriteria:
-        "The form submission completes and a created record, confirmation, or resulting item page is visible.",
-      requiredEvidenceTypes: ["submit_succeeded", "record_identity_observed"],
-      evidence: [
-        {
-          event: {
-            type: "submit_succeeded",
-            source: ToolName.CONFIGURE_SERVICENOW_FORM,
-            confidence: "high",
-            observedAt: "2026-05-01T00:00:00.000Z",
-            supportsTaskGoal: true,
-            detail: { recordNumber: "CHG0000021" },
-          },
-        },
-        {
-          event: {
-            type: "record_identity_observed",
-            source: ToolName.CONFIGURE_SERVICENOW_FORM,
-            confidence: "high",
-            observedAt: "2026-05-01T00:00:00.000Z",
-            supportsTaskGoal: true,
-            detail: { recordNumber: "CHG0000021" },
-          },
-        },
-      ],
-      previousUrl:
-        "https://workarenapublic16.service-now.com/now/nav/ui/classic/params/target/change_request.do",
-      currentUrl:
-        "https://workarenapublic16.service-now.com/now/nav/ui/classic/params/target/change_request.do",
-      previousTitle: "Create CHG0041411 | Change Request | ServiceNow",
-      currentTitle: "Create CHG0041412 | Change Request | ServiceNow",
-      executorOutcome: "completed",
-    });
-
-    expect(result).not.toBeNull();
-    expect(result!.decision).toBe("accept");
-    expect(result!.confidence).toBeGreaterThanOrEqual(0.9);
-  });
-
   test("returns null for ambiguous output", () => {
     const result = programmaticVerify({
       output: "Clicked the button and waited for the page to update",

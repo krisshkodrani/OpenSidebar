@@ -10,7 +10,10 @@ export type LocalMockProviderScenarioName =
   | "done-summary-incomplete-recovery"
   | "partial-handoff-max-turns"
   | "bridge-approval-forwarding"
-  | "watch-restock";
+  | "watch-restock"
+  | "iframe-checkout"
+  | "iframe-find"
+  | "iframe-keyboard";
 
 export interface LocalMockProviderScenario {
   fixture: string;
@@ -26,6 +29,9 @@ interface ToolCallSpec {
 }
 
 interface LocalMockProviderState {
+  iframeTypedReturned: boolean;
+  iframeKeyPressedReturned: boolean;
+  iframeFindReturned: boolean;
   loginFieldsFilledReturned: boolean;
   loginSubmitId: number | null;
   loginSubmitReturned: boolean;
@@ -136,6 +142,27 @@ export const localMockProviderScenarios: Record<
     prompt: "Tell me when the Nimbus Running Shoe is back in stock.",
     maxTurns: 1,
     timeoutMs: 60_000,
+  },
+  "iframe-checkout": {
+    fixture: "summarize",
+    label: "iframe-checkout",
+    prompt: "Continue the checkout in the embedded page.",
+    maxTurns: 8,
+    timeoutMs: 120_000,
+  },
+  "iframe-find": {
+    fixture: "summarize",
+    label: "iframe-find",
+    prompt: "Find the Continue checkout control in the embedded page and click it.",
+    maxTurns: 8,
+    timeoutMs: 120_000,
+  },
+  "iframe-keyboard": {
+    fixture: "summarize",
+    label: "iframe-keyboard",
+    prompt: "Enter SAVE10 in the embedded checkout promo field and press Enter to apply it.",
+    maxTurns: 8,
+    timeoutMs: 120_000,
   },
 };
 
@@ -263,6 +290,24 @@ function plannerJson(
       alignment: "aligned",
       reason: "Local mock monitor sees progress aligned with the fixture task.",
     });
+  }
+  if (scenarioName === "iframe-checkout" || scenarioName === "iframe-find") {
+    return JSON.stringify({ isMultiStep: false, difficulty: "simple", steps: [{
+      objective: "Continue the checkout in the embedded page.",
+      successCriteria: "The embedded page shows Checkout continued.",
+      dependencies: [], assumptions: [],
+      verifyAfter: { trigger: "Checkout continued", action: "call_done" },
+      toolProfile: "form_fill",
+    }] });
+  }
+  if (scenarioName === "iframe-keyboard") {
+    return JSON.stringify({ isMultiStep: false, difficulty: "simple", steps: [{
+      objective: "Enter SAVE10 in the embedded checkout promo field and apply it.",
+      successCriteria: "The embedded checkout shows Code applied.",
+      dependencies: [], assumptions: [],
+      verifyAfter: { trigger: "Code applied", action: "call_done" },
+      toolProfile: "form_fill",
+    }] });
   }
   if (
     scenarioName === "done-draft-read-element" ||
@@ -533,6 +578,40 @@ function executorToolCalls(
   scenarioName: LocalMockProviderScenarioName,
   state: LocalMockProviderState,
 ): ToolCallSpec[] {
+  if (scenarioName === "iframe-checkout") {
+    if (/Checkout continued/i.test(text)) return [{ name: "done", args: {
+      summary: "Continued checkout in the embedded page.",
+    } }];
+    const id = parseTaggedId(text, /Continue checkout/i);
+    return id === null ? [{ name: "read_page", args: {} }]
+      : [{ name: "click_element", args: { id } }];
+  }
+  if (scenarioName === "iframe-find") {
+    if (/Checkout continued/i.test(text)) return [{ name: "done", args: {
+      summary: "Found and continued checkout in the embedded page.",
+    } }];
+    if (!state.iframeFindReturned) {
+      state.iframeFindReturned = true;
+      return [{ name: "find_element", args: { text: "Continue checkout" } }];
+    }
+    const foundTag = /Found "Continue checkout" near \[(\d+)\]/i.exec(text)?.[1];
+    return foundTag ? [{ name: "click_element", args: { id: Number(foundTag) } }]
+      : [{ name: "read_page", args: {} }];
+  }
+  if (scenarioName === "iframe-keyboard") {
+    if (/Code applied/i.test(text)) return [{ name: "done", args: {
+      summary: "Applied SAVE10 in the embedded checkout.",
+    } }];
+    if (state.iframeKeyPressedReturned) return [{ name: "read_page", args: {} }];
+    if (state.iframeTypedReturned) {
+      state.iframeKeyPressedReturned = true;
+      return [{ name: "press_key", args: { key: "Enter" } }];
+    }
+    const id = parseTaggedId(text, /Promo code/i);
+    if (id === null) return [{ name: "read_page", args: {} }];
+    state.iframeTypedReturned = true;
+    return [{ name: "type_text", args: { id, text: "SAVE10" } }];
+  }
   if (scenarioName === "watch-restock") {
     if (/cartCount|Added to cart/i.test(text)) {
       return [{ name: "done", args: { summary: "Added one Nimbus Running Shoe to the cart." } }];
@@ -878,8 +957,12 @@ function buildMockResponse(
 export async function installLocalMockProviderInterceptor(
   session: CDPSession,
   scenarioName: LocalMockProviderScenarioName,
+  onRequest?: (body: string) => void,
 ): Promise<void> {
   const state: LocalMockProviderState = {
+    iframeTypedReturned: false,
+    iframeKeyPressedReturned: false,
+    iframeFindReturned: false,
     loginFieldsFilledReturned: false,
     loginSubmitId: null,
     loginSubmitReturned: false,
@@ -908,6 +991,7 @@ export async function installLocalMockProviderInterceptor(
   session.on("Fetch.requestPaused", async (event: any) => {
     try {
       const postData = event.request.postData ?? "{}";
+      onRequest?.(postData);
       const payload = JSON.parse(postData);
       const response = buildMockResponse(payload, scenarioName, state);
       await session.send("Fetch.fulfillRequest", {

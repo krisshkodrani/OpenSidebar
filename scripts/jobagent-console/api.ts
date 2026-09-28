@@ -209,7 +209,7 @@ export function postKitDraft(name: string, body: unknown): ApiResult {
     }
   }
   try {
-    const draft = buildKitDraft(pkg, questions as FormQuestion[], library);
+    const draft = buildKitDraft(pkg, questions as FormQuestion[], library, { applicationDir: dir });
     writeFileSync(
       join(dir, "kit-draft.json"),
       JSON.stringify(draft, null, 2) + "\n",

@@ -150,7 +150,8 @@ describe("runRubricJudge", () => {
     const cache = createJudgeVerdictCache();
     const good = seatReturning('{"pass": false, "confidence": 0.5, "perCriterion": [], "entailment": []}');
     await runRubricJudge(rubric, { seat: good, cache });
-    await runRubricJudge(rubric, { seat: good, cache });
+    const cachedVerdict = await runRubricJudge(rubric, { seat: good, cache });
+    expect(cachedVerdict.usage).toBeUndefined();
     expect(good.runJudge).toHaveBeenCalledTimes(1); // second call served from cache
 
     const bad = { runJudge: vi.fn(async () => { throw new Error("x"); }) };

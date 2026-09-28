@@ -336,7 +336,7 @@ managed PostgreSQL/high availability, multiple hosts, or Temporal Cloud.
 
 ## Phase 10 — Authenticated cloud UX normalization
 
-Status: planned after the 0.7.2 named-tester acceptance sequence. Collect UX
+Status: planned after the named-tester acceptance sequence. Collect UX
 findings during acceptance, then address them as one coherent surface rather
 than applying isolated copy and layout patches during security-sensitive gates.
 

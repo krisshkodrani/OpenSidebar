@@ -127,7 +127,8 @@ export function normalizeEnabledSkillPackIds(value: unknown): string[] {
   const normalized: string[] = [];
   for (const item of value) {
     if (typeof item !== "string") continue;
-    const id = item.trim();
+    const storedId = item.trim();
+    const id = storedId === "procurement-workflows" ? "source-list-workflows" : storedId;
     if (!id || normalized.includes(id)) continue;
     normalized.push(id);
   }

@@ -203,6 +203,18 @@ test("full valid 100-case report is rankable and preserves metric vectors", () =
   assert.equal(report.usageByRole.executor?.promptTokens, 1000);
 });
 
+test("unattributed provider usage still contributes to benchmark cost", () => {
+  const sample = attempt(0);
+  sample.unattributedUsage = {
+    calls: 1, promptTokens: 2, completionTokens: 3, cachedTokens: 0,
+    costUsd: 0.03, llmTimeMs: 40,
+  };
+  const report = buildBenchmarkReport([sample]);
+  assert.equal(report.totalCostUsd, 0.04);
+  assert.equal(report.usageByRole.executor?.costUsd, 0.01);
+  assert.equal(report.unattributedUsage?.costUsd, 0.03);
+});
+
 test("MB-101 attempt records can be reported without changing headline rankability", () => {
   const definition = MODEL_BENCH_ACCEPTANCE_CASES[0]!;
   const report = buildBenchmarkReport([
