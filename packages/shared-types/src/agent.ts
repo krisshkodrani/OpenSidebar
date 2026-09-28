@@ -265,6 +265,8 @@ export interface PendingApproval {
   risk: RiskLevel.HIGH;
   context: string;
   timeoutMs: number;
+  /** Original approval window; timeoutMs can be only the remaining time. */
+  totalTimeoutMs?: number;
   requestedAt: number;
 }
 

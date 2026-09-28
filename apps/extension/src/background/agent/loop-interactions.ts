@@ -138,6 +138,7 @@ export async function requestApproval(
       toolArgs: args,
       context,
       timeoutMs: remainingTimeoutMs,
+      totalTimeoutMs: interaction.timeoutMs,
       workspaceId: host.workspaceId,
       requestId: crypto.randomUUID(),
     }),

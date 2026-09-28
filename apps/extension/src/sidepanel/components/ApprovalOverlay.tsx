@@ -35,10 +35,11 @@ export function ApprovalOverlay() {
   }, [pendingApproval, nowMs]);
 
   const progressPct = useMemo(() => {
-    if (!pendingApproval || pendingApproval.timeoutMs <= 0) return 0;
+    const totalMs = pendingApproval?.totalTimeoutMs ?? pendingApproval?.timeoutMs ?? 0;
+    if (!pendingApproval || totalMs <= 0) return 0;
     return Math.max(
       0,
-      Math.min(100, (remainingMs / pendingApproval.timeoutMs) * 100),
+      Math.min(100, (remainingMs / totalMs) * 100),
     );
   }, [pendingApproval, remainingMs]);
 
