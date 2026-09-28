@@ -87,7 +87,7 @@ function sanitizeUrl(url: string): Result<string> {
 
 ### Secure Storage
 
-- **Chrome local extension storage** - API keys are stored in `chrome.storage.local` for persistence and are never synced
+- **Chrome local extension storage** - API keys are encrypted with AES-GCM before storage in `chrome.storage.local` and are never synced. The encryption key is also stored locally, so access to both can recover the provider keys.
 - **No page storage** - Keys are not stored in website `localStorage`
 - **Permission boundaries** - Keys only accessible to extension
 
@@ -102,6 +102,7 @@ function sanitizeUrl(url: string): Result<string> {
 - **User control** - You control your own API keys
 - **Revocation** - Keys can be revoked at provider level
 - **Rotation** - Support for key changes and updates
+- **Scope and limits** - Where the provider supports them, use a key restricted to the needed models and set a spending limit
 
 ## Agent Interaction Model
 
@@ -180,7 +181,7 @@ OpenSidebar supports configurable confirmation behavior:
 - **Unexpected data sharing** - No OpenSidebar-hosted telemetry or relay; provider traffic is tied to the user's configured key
 - **Cross-site scripting** - Content script sandboxing prevents XSS
 - **Man-in-the-middle** - HTTPS encryption prevents interception
-- **Key theft** - Chrome's encrypted storage protects API keys
+- **Plaintext storage dumps** - OpenSidebar encrypts provider keys before writing them to extension storage
 - **Malicious sites** - Risk classification, approvals, and workspace boundaries reduce dangerous actions
 
 ### User Responsibilities
@@ -196,6 +197,7 @@ OpenSidebar supports configurable confirmation behavior:
 - **Browser permissions** - Limited to granted permissions
 - **Local data only** - Cannot access system files or applications
 - **Provider limitations** - Bound by AI provider terms and capabilities
+- **Local compromise** - Someone who can read both the local encryption key and stored ciphertext can recover provider keys
 
 ## Compliance & Standards
 
