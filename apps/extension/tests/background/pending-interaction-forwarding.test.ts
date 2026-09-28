@@ -82,6 +82,18 @@ describe("emitPendingInteractionMessage", () => {
     });
   });
 
+  test("retains the original duration when forwarding a nearly expired approval", () => {
+    const emission = emitPendingInteractionMessage(task(approval({
+      requestedAt: Date.now() - 579_000,
+      timeoutMs: 600_000,
+    })));
+    expect(emission?.message.type).toBe("APPROVAL_REQUEST");
+    if (emission?.message.type !== "APPROVAL_REQUEST") return;
+    expect(emission.message.payload.timeoutMs).toBeGreaterThan(20_000);
+    expect(emission.message.payload.timeoutMs).toBeLessThan(22_000);
+    expect(emission.message.payload.totalTimeoutMs).toBe(600_000);
+  });
+
   test("returns null when the interaction is resolved", () => {
     expect(
       emitPendingInteractionMessage(task(approval({ approved: false }))),

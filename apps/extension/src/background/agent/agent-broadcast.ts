@@ -71,6 +71,7 @@ export function approvalRequestMessage(args: {
   toolArgs: Record<string, unknown>;
   context: string;
   timeoutMs: number;
+  totalTimeoutMs: number;
   workspaceId: string | null;
   requestId: string;
 }): RuntimeMessage {
@@ -86,6 +87,7 @@ export function approvalRequestMessage(args: {
       risk: RiskLevel.HIGH,
       context: args.context,
       timeoutMs: args.timeoutMs,
+      totalTimeoutMs: args.totalTimeoutMs,
     },
   } as RuntimeMessage;
 }

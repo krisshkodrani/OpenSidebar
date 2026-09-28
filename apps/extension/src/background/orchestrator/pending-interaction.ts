@@ -52,6 +52,7 @@ export interface PendingInteractionEmission {
           risk: "high";
           context: string;
           timeoutMs: number;
+          totalTimeoutMs: number;
         };
       }
     | {
@@ -101,6 +102,7 @@ export function emitPendingInteractionMessage(
           risk: "high",
           context: interaction.context,
           timeoutMs: remainingMs,
+          totalTimeoutMs: interaction.timeoutMs,
         },
       },
       attention: {
