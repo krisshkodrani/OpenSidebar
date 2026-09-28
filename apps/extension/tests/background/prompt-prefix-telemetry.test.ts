@@ -59,6 +59,19 @@ describe("fingerprintPrompt", () => {
 
     expect(a.digest).not.toBe(b.digest);
   });
+
+  test("distinguishes equal-length screenshots without retaining their bytes", () => {
+    const image = (data: string): LLMMessage => ({
+      role: "user",
+      content: [{ type: "image_url", image_url: { url: `data:image/jpeg;base64,${data}` } }],
+    });
+    const first = fingerprintPrompt([sys("stable"), image("AAAA")]);
+    const second = fingerprintPrompt([sys("stable"), image("BBBB")]);
+
+    expect(first.digest).not.toBe(second.digest);
+    expect(JSON.stringify(first)).not.toContain("AAAA");
+    expect(JSON.stringify(second)).not.toContain("BBBB");
+  });
 });
 
 describe("comparePromptPrefix", () => {
@@ -104,6 +117,19 @@ describe("comparePromptPrefix", () => {
     const after = [sys("stable"), user("goal"), user("Page: B")];
 
     expect(diff(before, after).firstDivergenceRegion).toBe("volatile_tail");
+  });
+
+  test("attributes a shifted prior visual and page tail to the volatile region", () => {
+    const before = [sys("stable"), user("goal"), user("image A"), user("page A"), user("catalog")];
+    const after = [sys("stable"), user("goal"), asst("new result"), user("image B"), user("page B"), user("catalog")];
+    const result = comparePromptPrefix(
+      fingerprintPrompt(before, undefined, 2),
+      fingerprintPrompt(after, undefined, 3),
+    );
+
+    expect(result.firstDivergenceMessageIndex).toBe(2);
+    expect(result.firstDivergenceRegion).toBe("volatile_tail");
+    expect(result.stablePrefixMessages).toBe(2);
   });
 
   test("attributes a rewritten middle message to history — the #103 defect", () => {
