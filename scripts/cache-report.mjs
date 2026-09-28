@@ -21,6 +21,7 @@
  *   - reports absolute cached tokens and USD alongside every percentage;
  *   - reports instrumentation COVERAGE, so traces recorded before the §9
  *     telemetry landed are never silently read as "0% divergence";
+ *   - reports session completion only as a proxy; task success needs a validator;
  *   - refuses to print a verdict when the sample is too small to support one.
  *
  * ## The acceptance criterion
@@ -129,7 +130,7 @@ function readJsonl(path) {
   return rows;
 }
 
-/** Session outcome by id, so cache can be reported against task success. */
+/** Session outcome by id; this is a proxy, not a task-validator result. */
 function loadSessionOutcomes() {
   const outcomes = new Map();
   for (const session of readJsonl(join(TRACE_DIR, "index.jsonl"))) {
@@ -410,7 +411,7 @@ function finalizeGroup(group, minTurns) {
     zeroHitDespiteStablePrefixPct: pct(group.zeroHitDespiteStablePrefix, instrumented),
 
     outcomes: group.outcomes,
-    taskSuccessPct: pct(
+    sessionCompletionPct: pct(
       group.outcomes.completed ?? 0,
       Object.values(group.outcomes).reduce((a, b) => a + b, 0),
     ),
@@ -491,7 +492,7 @@ function formatGroup(group, minTurns) {
   const outcomes = Object.entries(group.outcomes)
     .map(([k, v]) => `${k} ${v}`)
     .join(", ");
-  lines.push(`   task outcomes  ${outcomes} → ${group.taskSuccessPct}% completed`);
+  lines.push(`   session outcomes  ${outcomes} → ${group.sessionCompletionPct}% completed (not task validation)`);
 
   if (!group.verdictEligible) {
     lines.push(
@@ -501,7 +502,7 @@ function formatGroup(group, minTurns) {
   return lines.join("\n");
 }
 
-/** A/B two report files. Cache AND success, because the RFC requires both. */
+/** A/B cache and session completion; validated task success must be checked separately. */
 function formatComparison(baseline, current) {
   const byKey = (report) => {
     const map = new Map();
@@ -547,12 +548,14 @@ function formatComparison(baseline, current) {
     lines.push(
       `   UNEXPLAINED    ${prev.unexplainedDivergencePct}% → ${group.unexplainedDivergencePct}%  (${delta(group.unexplainedDivergencePct, prev.unexplainedDivergencePct)}pp)`,
     );
+    const previousCompletion = prev.sessionCompletionPct ?? prev.taskSuccessPct ?? 0;
+    const currentCompletion = group.sessionCompletionPct ?? 0;
     lines.push(
-      `   task success   ${prev.taskSuccessPct}% → ${group.taskSuccessPct}%  (${delta(group.taskSuccessPct, prev.taskSuccessPct)}pp)`,
+      `   session completion (proxy) ${previousCompletion}% → ${currentCompletion}%  (${delta(currentCompletion, previousCompletion)}pp)`,
     );
-    if (group.taskSuccessPct < prev.taskSuccessPct) {
+    if (currentCompletion < previousCompletion) {
       lines.push(
-        `   ⚠ task success FELL. Per the RFC, a cache win that costs success is not a win.`,
+        `   ⚠ session completion fell. Check task validators before claiming a cache win.`,
       );
     }
     if (!group.verdictEligible || !prev.verdictEligible) {
