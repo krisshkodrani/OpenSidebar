@@ -86,7 +86,7 @@
   {
     "id": "agent.system",
     "version": "v10",
-    "hash": "dfdf5d2a",
+    "hash": "fecf912b",
     "description": "Core executor system prompt for browser automation turns. v10: preserve requested facts before prioritizing an action that replaces their visible page state.",
     "sourcePath": "prompts/runtime/agent/system.md"
   },

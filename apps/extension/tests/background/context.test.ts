@@ -1078,6 +1078,26 @@ describe("Working Notes", () => {
 
 // --- Turn Budget Tests ---
 describe("Turn Budget", () => {
+  test("keeps unresolved user choices ahead of escalation at every budget level", () => {
+    for (const turn of [5, 26, 29]) {
+      const ctx = new ContextManager();
+      ctx.setTimeContext(turn, 30, Date.now() - 1000);
+      const systemContent = renderedPrompt(ctx.getPrompt());
+      const priority = systemContent.slice(
+        systemContent.indexOf("## Priority Order"),
+        systemContent.indexOf("## Direct Action Rules"),
+      );
+      expect(priority.indexOf("call `clarify()`")).toBeLessThan(
+        priority.indexOf("call `escalate()`"),
+      );
+      if (turn >= 26) {
+        expect(systemContent).toContain(
+          "clarify() if a required user choice is unresolved",
+        );
+      }
+    }
+  });
+
   test("turnBudget appears in system prompt when time context is set", () => {
     const ctx = new ContextManager();
     ctx.setTimeContext(5, 30, Date.now() - 10000); // 10s ago

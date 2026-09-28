@@ -1022,12 +1022,12 @@ Do NOT call done() until every planned step is complete.
       if (remaining <= AGENT_LIMITS.CRITICAL_BUDGET_TURNS) {
         budgetBlock =
           `\u{1F534} BUDGET CRITICAL — ${remaining} turn${remaining === 1 ? "" : "s"} remaining.\n` +
-          `Call done() now if any progress was made, or escalate() to hand off. ` +
+          `Call done() only if the objective is met; call clarify() if a required user choice is unresolved, or escalate() if blocked on page interaction. ` +
           `Do not start new actions.\n${positionLine}`;
       } else if (remaining <= AGENT_LIMITS.LOW_BUDGET_TURNS) {
         budgetBlock =
           `⚠️ LOW BUDGET — ${remaining} turns remaining.\n` +
-          `Prioritize: complete the current step and call done(), or call escalate() if blocked. ` +
+          `Prioritize: complete the current step and call done(), clarify() if a required user choice is unresolved, or escalate() if blocked on page interaction. ` +
           `Avoid starting new sub-tasks or navigations.\n${positionLine}`;
       } else {
         budgetBlock = `${positionLine} | Budget: ${remaining} turns left`;
