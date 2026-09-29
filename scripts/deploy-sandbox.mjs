@@ -111,6 +111,9 @@ for (const route of [
   "app/internal/activation",
 ]) {
   run("aws", ["s3", "cp", path.join(dist, "index.html"), `s3://${process.env.SANDBOX_CONTROL_BUCKET}/${route}`, "--content-type", "text/html", "--cache-control", shortCache, ...awsDry]);
+  if (route === "app" || route.startsWith("app/")) {
+    run("aws", ["s3api", "put-object", "--bucket", process.env.SANDBOX_CONTROL_BUCKET, "--key", `${route}/`, "--body", path.join(dist, "index.html"), "--content-type", "text/html", "--cache-control", shortCache]);
+  }
 }
 run("aws", ["s3", "cp", redirect, `s3://${process.env.SANDBOX_CONTROL_BUCKET}/sandbox`, "--content-type", "text/html", "--cache-control", shortCache, ...awsDry]);
 
