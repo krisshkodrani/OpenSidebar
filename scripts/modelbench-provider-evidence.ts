@@ -160,7 +160,7 @@ export function reconcileProviderAndTraceUsage(
   orchestratorTotalCostUsd?: number,
 ) {
   const issues: string[] = [];
-  for (const role of ["executor", "planner", "judge"] as const) {
+  for (const role of ["executor", "planner", "perception", "judge"] as const) {
     const traced = traceUsageByRole[role]?.calls ?? 0;
     const captured = provider.usageByRole[role]?.calls ?? 0;
     if (traced > captured) {
