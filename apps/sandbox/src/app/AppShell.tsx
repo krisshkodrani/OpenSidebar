@@ -9,12 +9,9 @@ import {
 } from "@chakra-ui/react";
 import { useAppearance } from "./appearance";
 const navigation = [
-  ["Overview", "/app"],
-  ["Remote work", "/app/missions"],
-  ["Playground", "/app/playground"],
-  ["Sessions", "/app/sessions"],
-  ["Run viewer", "/app/viewer"],
-  ["Settings", "/app/settings"],
+  ["Workspace", [["Overview", "/app"], ["Remote work", "/app/missions"], ["Sessions", "/app/sessions"], ["Analytics", "/app/analytics"]]],
+  ["Explore", [["Playground", "/app/playground"], ["Run viewer", "/app/viewer"]]],
+  ["Account", [["Settings", "/app/settings"]]],
 ] as const;
 function activeRoute(href: string) {
   if (href === "/app/settings" && location.pathname === "/app/account")
@@ -89,22 +86,18 @@ export function AppShell({ children }: { children: ReactNode }) {
           direction="column"
           display={{ base: open ? "flex" : "none", lg: "flex" }}
         >
-          {navigation.map(([label, href]) => (
-            <Button
-              key={href}
-              asChild
-              variant={activeRoute(href) ? "subtle" : "ghost"}
-              colorPalette={activeRoute(href) ? "blue" : "gray"}
-              justifyContent="start"
-              h="11"
-            >
-              <a
-                href={href}
-                aria-current={activeRoute(href) ? "page" : undefined}
-              >
-                {label}
-              </a>
-            </Button>
+          {navigation.map(([group, links]) => (
+            <Box key={group} mt="3">
+              <Text px="3" mb="2" color="muted" fontSize="xs" fontWeight="700" letterSpacing="wide" textTransform="uppercase">{group}</Text>
+              <Flex direction="column" gap="1">
+                {links.map(([label, href]) => (
+                  <Button key={href} asChild variant={activeRoute(href) ? "subtle" : "ghost"}
+                    colorPalette={activeRoute(href) ? "brand" : "gray"} justifyContent="start" h="10">
+                    <a href={href} aria-current={activeRoute(href) ? "page" : undefined}>{label}</a>
+                  </Button>
+                ))}
+              </Flex>
+            </Box>
           ))}
           <Box mt="8" pt="5" borderTopWidth="1px" borderColor="line">
             <Text asChild color="muted" fontSize="xs" fontWeight="600">

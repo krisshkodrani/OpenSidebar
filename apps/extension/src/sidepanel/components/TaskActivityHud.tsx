@@ -80,9 +80,7 @@ export function TaskActivityHud() {
       rail.sessionMetrics.totalTokens > 0 ? (
         <span className="hidden shrink-0 rounded-md border border-slate-200/80 bg-white/70 px-1.5 py-0.5 text-[10px] tabular-nums text-slate-500 dark:border-slate-700 dark:bg-slate-900/70 dark:text-slate-400 sm:inline">
           {formatTokens(rail.sessionMetrics.totalTokens)}
-          {rail.sessionMetrics.totalCost > 0
-            ? ` / ${costLabel(rail.sessionMetrics)}`
-            : ""}
+          {` / ${costLabel(rail.sessionMetrics)}`}
         </span>
       ) : null}
     </div>

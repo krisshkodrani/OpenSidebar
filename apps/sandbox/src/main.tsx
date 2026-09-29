@@ -35,6 +35,7 @@ import { AppShell } from "./app/AppShell";
 
 const AccountPage = lazy(() => import("./account").then((module) => ({ default: module.AccountPage })));
 const MissionsPage = lazy(() => import("./missions-page").then((module) => ({ default: module.MissionsPage })));
+const AnalyticsPage = lazy(() => import("./analytics-page").then((module) => ({ default: module.AnalyticsPage })));
 const DashboardPage = lazy(() => import("./dashboard").then((module) => ({ default: module.DashboardPage })));
 const PlaygroundPage = lazy(() => import("./playground-page").then((module) => ({ default: module.PlaygroundPage })));
 const ViewerPage = lazy(() => import("./viewer").then((module) => ({ default: module.ViewerPage })));
@@ -57,6 +58,7 @@ const legacyAppRoutes: Record<string, string> = {
   "/playground": "/app/playground",
   "/viewer": "/app/viewer",
   "/missions": "/app/missions",
+  "/analytics": "/app/analytics",
 };
 if (legacyAppRoutes[location.pathname]) {
   location.replace(
@@ -1493,6 +1495,8 @@ function App() {
     <AccountPage />
   ) : location.pathname === "/app/missions" ? (
     <MissionsPage />
+  ) : location.pathname === "/app/analytics" ? (
+    <AnalyticsPage />
   ) : location.pathname === "/app/sign-in" ? (
     <AppShell>
       <SignIn />

@@ -144,7 +144,6 @@ export function PlanStrip({
         activeCount={viewModel.activeCount}
         blockedCount={viewModel.blockedCount}
         confirmed={confirmed}
-        currentIndex={viewModel.currentIndex}
         elapsed={elapsed}
         isExpanded={isExpanded}
         mode={viewModel.mode}

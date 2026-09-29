@@ -2,8 +2,8 @@
   --idea-serif: var(--serif);
   --idea-rule: #d9dbe5;
   --idea-paper: #fbfbfc;
-  --idea-blue-soft: rgba(58, 110, 165, 0.08);
-  --idea-blue-mid: rgba(58, 110, 165, 0.18);
+  --idea-blue-soft: rgba(18, 107, 100, 0.08);
+  --idea-blue-mid: rgba(18, 107, 100, 0.18);
 }
 
 .idea-page {
@@ -14,12 +14,12 @@
   background:
     radial-gradient(
       46rem 46rem at 76% 4rem,
-      rgba(58, 110, 165, 0.09),
+      rgba(18, 107, 100, 0.09),
       transparent 63%
     ),
     radial-gradient(
       32rem 32rem at 10% 26rem,
-      rgba(58, 110, 165, 0.045),
+      rgba(18, 107, 100, 0.045),
       transparent 65%
     ),
     var(--idea-paper);
@@ -75,13 +75,13 @@
     radial-gradient(
       circle at center,
       transparent 48%,
-      rgba(58, 110, 165, 0.05) 49%,
+      rgba(18, 107, 100, 0.05) 49%,
       transparent 50%
     ),
     radial-gradient(
       circle at center,
       transparent 64%,
-      rgba(58, 110, 165, 0.07) 65%,
+      rgba(18, 107, 100, 0.07) 65%,
       transparent 66%
     );
 }
@@ -89,7 +89,7 @@
 .idea-hero-orbit {
   position: absolute;
   z-index: -1;
-  border: 1px solid rgba(58, 110, 165, 0.12);
+  border: 1px solid rgba(18, 107, 100, 0.12);
   border-radius: 50%;
   pointer-events: none;
 }
@@ -101,7 +101,7 @@
   height: 7px;
   border-radius: 50%;
   background: var(--accent);
-  box-shadow: 0 0 0 6px rgba(58, 110, 165, 0.1);
+  box-shadow: 0 0 0 6px rgba(18, 107, 100, 0.1);
 }
 
 .idea-hero-orbit-one {
@@ -294,7 +294,7 @@
 .idea-article a {
   color: var(--accent-2);
   text-decoration: underline;
-  text-decoration-color: rgba(47, 92, 140, 0.3);
+  text-decoration-color: rgba(13, 85, 79, 0.3);
   text-decoration-thickness: 1px;
   text-underline-offset: 0.18em;
 }
@@ -406,8 +406,8 @@
   background:
     linear-gradient(
       135deg,
-      rgba(58, 110, 165, 0.09),
-      rgba(58, 110, 165, 0.035)
+      rgba(18, 107, 100, 0.09),
+      rgba(18, 107, 100, 0.035)
     ),
     #f8f9fb;
   box-shadow: inset 3px 0 0 var(--accent);
@@ -418,7 +418,7 @@
   position: absolute;
   top: -22px;
   right: 28px;
-  color: rgba(58, 110, 165, 0.14);
+  color: rgba(18, 107, 100, 0.14);
   font-family: georgia, serif;
   font-size: 8rem;
   line-height: 1;
@@ -986,7 +986,7 @@
   background:
     radial-gradient(
       circle at 85% 20%,
-      rgba(58, 110, 165, 0.13),
+      rgba(18, 107, 100, 0.13),
       transparent 32%
     ),
     var(--navy-3);
@@ -1110,7 +1110,7 @@
 .ideas-index-orbit {
   position: absolute;
   z-index: -1;
-  border: 1px solid rgba(58, 110, 165, 0.13);
+  border: 1px solid rgba(18, 107, 100, 0.13);
   border-radius: 50%;
   pointer-events: none;
 }
@@ -1122,7 +1122,7 @@
   height: 8px;
   border-radius: 50%;
   background: var(--accent);
-  box-shadow: 0 0 0 7px rgba(58, 110, 165, 0.09);
+  box-shadow: 0 0 0 7px rgba(18, 107, 100, 0.09);
 }
 
 .ideas-index-orbit-one {

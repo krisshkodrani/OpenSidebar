@@ -21,3 +21,4 @@ export * from "./cloud-traces";
 export * from "./remote-missions";
 export * from "./work-surface";
 export * from "./personal-data-sync";
+export * from "./run-analytics";

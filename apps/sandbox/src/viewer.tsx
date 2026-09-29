@@ -136,7 +136,7 @@ export function ViewerPage() {
             description="Inspect a run's steps, screenshots and results. Your imported files stay on this device."
           />
           <Button
-            colorPalette="blue"
+            colorPalette="brand"
             loading={busy}
             onClick={() => fileRef.current?.click()}
           >

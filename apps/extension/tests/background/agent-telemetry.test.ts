@@ -28,6 +28,22 @@ describe("agent telemetry", () => {
     expect(metrics.costMode).toBe("actual");
   });
 
+  test("distinguishes a provider-reported zero from missing cost", () => {
+    const measured = emptySessionMetrics();
+    recordVisionTelemetryUsage({ metrics: measured,
+      usage: { prompt_tokens: 1, completion_tokens: 1, total_tokens: 2, cost: 0 },
+      llmMs: 1, model: "openai/gpt-6-luna", providerId: "openrouter" });
+    expect(measured.costMode).toBe("actual");
+    expect(measured.unknownCostCallCount).toBe(0);
+
+    const unknown = emptySessionMetrics();
+    recordVisionTelemetryUsage({ metrics: unknown,
+      usage: { prompt_tokens: 1, completion_tokens: 1, total_tokens: 2 },
+      llmMs: 1, model: "unpriced-model", providerId: "openrouter" });
+    expect(unknown.costMode).toBe("none");
+    expect(unknown.unknownCostCallCount).toBe(1);
+  });
+
   test("counts vision model calls separately from cached vision observations", () => {
     const metrics = emptySessionMetrics();
 

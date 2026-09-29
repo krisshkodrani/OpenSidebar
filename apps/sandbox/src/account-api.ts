@@ -11,6 +11,7 @@ import type {
   CloudSessionTimelineEventV1,
   CloudTraceV1,
   TraceUsageV1,
+  AccountRunAnalyticsV1,
 } from "@opensidebar/shared-types";
 import { controlApi } from "./control-api";
 
@@ -59,6 +60,10 @@ export const accountApi = {
     (await request<{ credentials: CredentialStatusV1[] }>("/credentials"))
       .credentials,
   usage: () => request<UsageSnapshotV1>("/relay/usage"),
+  runAnalytics: () => request<AccountRunAnalyticsV1>("/account/analytics"),
+  setRunAnalyticsConsent: (enabled: boolean) => request<Omit<AccountRunAnalyticsV1, "runs">>(
+    "/account/analytics/consent", { method: "PUT", body: JSON.stringify({ enabled }) },
+  ),
   preferences: () => request<CloudPreferencesV1 | null>("/preferences"),
   remoteWork: () => request<CloudRemoteWorkSettingsV1>("/account/remote-work"),
   remoteMissions: () => request<{ schemaVersion: 1; enabled: boolean; missions: RemoteMissionV1[] }>("/account/remote-missions"),

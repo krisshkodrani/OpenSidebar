@@ -23,6 +23,7 @@ export function costLabel(metrics: SessionMetrics): string {
           ? "estimated"
           : "actual"
       : "none");
+  if ((metrics.unknownCostCallCount ?? 0) > 0 || mode === "none") return "Unknown";
   const suffix = mode === "estimated" ? " est." : mode === "mixed" ? " ~" : "";
   return `${formatCost(metrics.totalCost)}${suffix}`;
 }

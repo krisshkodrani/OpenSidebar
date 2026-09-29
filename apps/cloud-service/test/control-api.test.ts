@@ -6,6 +6,8 @@ import { ControlAuthService } from "../src/control-auth.js";
 import { tokenHash } from "../src/crypto.js";
 import type { PlaygroundRepository } from "../src/repository.js";
 import { MemoryControlRepository } from "./memory-control-repository.js";
+import type { RunAnalyticsStore } from "../src/run-analytics-repository.js";
+import type { RunAnalyticsSnapshotV1 } from "@opensidebar/shared-types";
 
 const extensionId = "abcdefghijklmnopabcdefghijklmnop",
   origin = `chrome-extension://${extensionId}`;
@@ -49,6 +51,70 @@ const body = (value: unknown, headers: Record<string, string> = {}) => ({
   method: "POST",
   headers: { origin, "content-type": "application/json", ...headers },
   body: JSON.stringify(value),
+});
+
+test("run analytics requires website consent and linked-device metadata writes", async () => {
+  const repository = new MemoryControlRepository();
+  let enabledAt: string | null = null;
+  const runs = new Map<string, RunAnalyticsSnapshotV1 & { deviceId: string }>();
+  const analytics: RunAnalyticsStore = {
+    consent: async () => enabledAt,
+    setConsent: async (_accountId, enabled) => {
+      enabledAt = enabled ? new Date().toISOString() : null;
+      if (!enabled) runs.clear();
+      return enabledAt;
+    },
+    list: async () => [...runs.values()],
+    upsert: async (_accountId, deviceId, snapshot) => {
+      if (!enabledAt || Date.parse(snapshot.startedAt) < Date.parse(enabledAt)) return "disabled";
+      const previous = runs.get(snapshot.runId);
+      if (previous && previous.sequence >= snapshot.sequence) return "stale";
+      runs.set(snapshot.runId, { ...snapshot, deviceId });
+      return "saved";
+    },
+  };
+  const websitePlayground = {
+    health: async () => undefined,
+    session: async (hash: string) => hash === tokenHash("web-token")
+      ? { accountId: "account-1", email: "owner@example.com", csrfHash: tokenHash("csrf-token") }
+      : null,
+    consumeAuthQuota: async () => undefined,
+  } as unknown as PlaygroundRepository;
+  const app = createApp(websitePlayground, baseConfig, undefined, {
+    repository, auth: new ControlAuthService(repository, baseConfig),
+    runAnalyticsRepository: analytics,
+  });
+  const cookieHeaders = { origin: "https://opensidebar.com", cookie: "__Host-os_session=web-token; os_csrf=csrf-token", "x-os-csrf": "csrf-token", "content-type": "application/json" };
+  await repository.upsertAccount("account-1", "owner@example.com", true);
+  const link = await repository.upsertDevice("account-1", "install-1", "Chrome", "0.7.7", "browser_extension");
+  await repository.createDeviceSession({ id: "session-1", accountId: "account-1", deviceId: link.id,
+    sessionEpoch: 0, accessHash: tokenHash("access-token"), accessExpiresAt: new Date(Date.now() + 60_000),
+    refreshHash: tokenHash("refresh-token"), refreshFamily: "family-1", refreshExpiresAt: new Date(Date.now() + 60_000) });
+  const bearerHeaders = { origin, authorization: "Bearer access-token", "content-type": "application/json" };
+  const run = { schemaVersion: 1, runId: crypto.randomUUID(), sequence: 1,
+    startedAt: new Date().toISOString(), observedAt: new Date().toISOString(),
+    state: "running", source: "local", promptTokens: 1, completionTokens: 1,
+    spendUsd: null, spendProvenance: "unknown" };
+  const put = (value: unknown, headers = bearerHeaders) => app.request(`/api/v1/analytics/runs/${run.runId}`, {
+    method: "PUT", headers, body: JSON.stringify(value),
+  });
+  assert.equal((await put(run)).status, 403);
+  assert.equal((await app.request("/api/v1/account/analytics/consent", {
+    method: "PUT", headers: bearerHeaders, body: JSON.stringify({ enabled: true }),
+  })).status, 403);
+  assert.equal((await app.request("/api/v1/account/analytics/consent", {
+    method: "PUT", headers: cookieHeaders, body: JSON.stringify({ enabled: true }),
+  })).status, 200);
+  assert.equal((await put({ ...run, prompt: "private" })).status, 400);
+  assert.equal((await put(run)).status, 403); // Started before consent; no backfill.
+  const newRun = { ...run, startedAt: new Date(Date.now() + 1000).toISOString(), observedAt: new Date(Date.now() + 1000).toISOString() };
+  assert.equal((await put(newRun)).status, 200);
+  assert.equal(runs.size, 1);
+  assert.equal((await app.request("/api/v1/account/analytics/consent", {
+    method: "PUT", headers: cookieHeaders, body: JSON.stringify({ enabled: false }),
+  })).status, 200);
+  assert.equal(runs.size, 0);
+  assert.equal((await put({ ...newRun, sequence: 2 })).status, 403);
 });
 
 test("website account session requires matching double-submit CSRF for mutations", async () => {

@@ -250,7 +250,7 @@ export function PlaygroundPage() {
                   .map((scenario) => (
                     <Stack {...card} key={scenario.id} gap="3">
                       {scenario.id === "price-watch" && (
-                        <Badge colorPalette="blue" alignSelf="start">
+                        <Badge colorPalette="brand" alignSelf="start">
                           Recommended first task
                         </Badge>
                       )}

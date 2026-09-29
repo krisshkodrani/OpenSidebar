@@ -61,7 +61,7 @@ function Failure({ error }: { error: unknown }) {
       </Text>
       <Button
         mt="5"
-        colorPalette="blue"
+        colorPalette="brand"
         onClick={() =>
           signIn
             ? location.assign(
@@ -201,9 +201,9 @@ function Overview() {
                   note="Linked extension installations"
                 />
                 <StatusCard
-                  label="AI usage"
+                  label="Cloud relay requests"
                   value={data.usage.requests.toLocaleString()}
-                  note={`of ${data.usage.limits.requests.toLocaleString()} requests this month`}
+                  note={`of ${data.usage.limits.requests.toLocaleString()} requests this month · model spend is in Analytics`}
                 />
               </SimpleGrid>
               {data.sessions.enabled && data.sessions.authorized ? (

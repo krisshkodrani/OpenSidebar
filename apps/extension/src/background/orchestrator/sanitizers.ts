@@ -703,6 +703,7 @@ export function emptySessionMetrics(): SessionMetrics {
     totalCostActual: 0,
     totalCostEstimated: 0,
     costMode: "none",
+    unknownCostCallCount: 0,
     totalLlmTimeMs: 0,
     totalSessionTimeMs: 0,
     llmCallCount: 0,
@@ -947,6 +948,7 @@ export function sanitizeSessionMetrics(
     totalCostActual,
     totalCostEstimated,
     costMode,
+    unknownCostCallCount: typeof raw.unknownCostCallCount === "number" && Number.isSafeInteger(raw.unknownCostCallCount) && raw.unknownCostCallCount >= 0 ? raw.unknownCostCallCount : 0,
     totalLlmTimeMs: raw.totalLlmTimeMs as number,
     totalSessionTimeMs: raw.totalSessionTimeMs as number,
     llmCallCount: raw.llmCallCount as number,
@@ -988,6 +990,17 @@ export function sanitizeBudget(raw: Record<string, unknown>): {
   };
 }
 
+function mergeCostMode(
+  left: SessionMetrics["costMode"],
+  right: SessionMetrics["costMode"],
+  actualCost: number,
+  estimatedCost: number,
+): SessionMetrics["costMode"] {
+  const actual = actualCost > 0 || left === "actual" || left === "mixed" || right === "actual" || right === "mixed";
+  const estimated = estimatedCost > 0 || left === "estimated" || left === "mixed" || right === "estimated" || right === "mixed";
+  return actual && estimated ? "mixed" : actual ? "actual" : estimated ? "estimated" : "none";
+}
+
 export function mergeSessionMetrics(
   target: SessionMetrics,
   incoming?: SessionMetrics,
@@ -1001,14 +1014,9 @@ export function mergeSessionMetrics(
     (target.totalCostActual ?? 0) + (incoming.totalCostActual ?? 0);
   target.totalCostEstimated =
     (target.totalCostEstimated ?? 0) + (incoming.totalCostEstimated ?? 0);
-  target.costMode =
-    (target.totalCostActual ?? 0) > 0 && (target.totalCostEstimated ?? 0) > 0
-      ? "mixed"
-      : (target.totalCostActual ?? 0) > 0
-        ? "actual"
-        : (target.totalCostEstimated ?? 0) > 0
-          ? "estimated"
-          : "none";
+  target.costMode = mergeCostMode(target.costMode, incoming.costMode,
+    target.totalCostActual ?? 0, target.totalCostEstimated ?? 0);
+  target.unknownCostCallCount = (target.unknownCostCallCount ?? 0) + (incoming.unknownCostCallCount ?? 0);
   target.totalLlmTimeMs += incoming.totalLlmTimeMs;
   target.totalSessionTimeMs += incoming.totalSessionTimeMs;
   target.llmCallCount += incoming.llmCallCount;
@@ -1054,14 +1062,8 @@ export function mergeSessionMetrics(
       (existing.actualCost ?? 0) + (metrics.actualCost ?? 0);
     existing.estimatedCost =
       (existing.estimatedCost ?? 0) + (metrics.estimatedCost ?? 0);
-    existing.costMode =
-      (existing.actualCost ?? 0) > 0 && (existing.estimatedCost ?? 0) > 0
-        ? "mixed"
-        : (existing.actualCost ?? 0) > 0
-          ? "actual"
-          : (existing.estimatedCost ?? 0) > 0
-            ? "estimated"
-            : "none";
+    existing.costMode = mergeCostMode(existing.costMode, metrics.costMode,
+      existing.actualCost ?? 0, existing.estimatedCost ?? 0);
     existing.calls += metrics.calls;
     target.modelBreakdown[model] = existing;
   }

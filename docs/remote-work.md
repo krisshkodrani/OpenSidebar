@@ -35,6 +35,16 @@ Raw page content, screenshots, tool output, and local traces are not returned
 by the website mission list. Revoking the Codex connection or disabling remote
 work stops new coordination; local site-access rules remain authoritative.
 
+Account run analytics are a separate, off-by-default setting at
+`/app/analytics`. When enabled, new runs can sync only an opaque run ID, device
+ID, times, state, provider/model identifier when available, token counts, and
+USD spend with its source. Active remote values are observed and provisional;
+the terminal value reconciles them. Unknown spend is excluded from recorded
+totals, and model spend is separate from cloud relay request quota. No task
+instruction, URL, page content, screenshot, or trace is included. Data expires
+after 90 days; turning the setting off deletes synced analytics. Existing local
+run and trace retention is managed separately.
+
 The public Playground is a separate practice environment. Its 12 curated
 scenarios share the ModelBench engine, while the internal 100-case benchmark,
 model telemetry, and scores are not exposed to public accounts.

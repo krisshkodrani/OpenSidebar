@@ -1,3 +1,5 @@
+@import "../../../../packages/ui-tokens/theme.css";
+
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
@@ -32,44 +34,43 @@
  * Theme tokens are RGB channel triplets (not hex) so Tailwind can compose them
  * with opacity modifiers via `rgb(var(--token) / <alpha-value>)`. The Tailwind
  * `trace.*` / `state.*` / `brand.live` colors (tailwind.config.cjs) point at
- * these, so flipping `.dark` on <html> re-themes the whole viewer. :root values
- * mirror the previously-rendered light palette exactly — light mode is unchanged;
- * only dark mode was broken before.
+ * these, so flipping `.dark` on <html> re-themes the whole viewer. The values
+ * follow the shared Calm autonomy palette in both appearance modes.
  */
 :root {
   color-scheme: light;
-  --trace-text: 15 23 42; /* #0f172a */
-  --trace-subtle: 51 65 85; /* #334155 */
-  --trace-muted: 71 85 105; /* #475569 */
-  --trace-dim: 100 116 139; /* #64748b */
-  --trace-accent: 37 99 235; /* #2563eb */
-  --trace-accent-light: 29 78 216; /* #1d4ed8 */
-  --trace-border: 226 232 240; /* #e2e8f0 */
-  --trace-panel: 255 255 255; /* #ffffff */
-  --trace-bg: 248 250 252; /* #f8fafc */
-  --trace-surface: 241 245 249; /* #f1f5f9 */
-  --state-success: 21 128 61; /* #15803d */
+  --trace-text: 24 41 37;
+  --trace-subtle: 64 83 74;
+  --trace-muted: 88 106 98;
+  --trace-dim: 109 131 118;
+  --trace-accent: 18 107 100;
+  --trace-accent-light: 13 85 79;
+  --trace-border: 217 228 222;
+  --trace-panel: 255 255 255;
+  --trace-bg: 245 248 244;
+  --trace-surface: 228 241 236;
+  --state-success: 40 117 69;
   --state-warning: 217 119 6; /* #d97706 */
   --state-error: 220 38 38; /* #dc2626 */
-  --brand-live: 20 184 166; /* #14b8a6 */
+  --brand-live: 18 107 100;
 }
 
 .dark {
   color-scheme: dark;
-  --trace-text: 241 245 249; /* #f1f5f9 */
-  --trace-subtle: 203 213 225; /* #cbd5e1 */
-  --trace-muted: 148 163 184; /* #94a3b8 */
-  --trace-dim: 100 116 139; /* #64748b */
-  --trace-accent: 96 165 250; /* #60a5fa */
-  --trace-accent-light: 147 197 253; /* #93c5fd */
-  --trace-border: 30 41 59; /* #1e293b */
-  --trace-panel: 15 23 42; /* #0f172a */
-  --trace-bg: 2 6 23; /* #020617 */
-  --trace-surface: 15 23 42; /* #0f172a */
-  --state-success: 34 197 94; /* #22c55e */
+  --trace-text: 234 244 236;
+  --trace-subtle: 181 201 189;
+  --trace-muted: 157 180 163;
+  --trace-dim: 132 156 139;
+  --trace-accent: 114 198 182;
+  --trace-accent-light: 162 228 212;
+  --trace-border: 52 77 64;
+  --trace-panel: 23 38 33;
+  --trace-bg: 16 27 24;
+  --trace-surface: 33 54 46;
+  --state-success: 140 217 160;
   --state-warning: 245 158 11; /* #f59e0b */
   --state-error: 239 68 68; /* #ef4444 */
-  --brand-live: 45 212 191; /* #2dd4bf */
+  --brand-live: 114 198 182;
 }
 
 /* ── Scrollbar Styling ──────────────────────────────────────── */
@@ -213,18 +214,18 @@ body {
   width: 2rem;
   height: 2rem;
   border-radius: 0.5rem;
-  background: #eff6ff;
-  border: 1px solid #bfdbfe;
-  color: #2563eb;
+  background: var(--os-surface-muted);
+  border: 1px solid var(--os-line);
+  color: var(--os-accent);
   font-size: 0.75rem;
   font-weight: 700;
   letter-spacing: 0.18em;
 }
 
 .dark .viewer-brand-mark {
-  background: #1e3a5f;
-  border-color: #3b82f6;
-  color: #93c5fd;
+  background: var(--os-surface-muted);
+  border-color: var(--os-line);
+  color: var(--os-accent);
 }
 
 .viewer-metric-card {

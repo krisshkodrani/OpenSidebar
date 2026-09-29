@@ -86,11 +86,11 @@ export function MissionsPage() {
         {!data.missions.enabled ? <Text mt="3" role="status">Remote missions are currently available only to enabled beta accounts.</Text> : null}
       </Box>
       <Box><Flex justify="space-between" align="center" gap="3" wrap="wrap" mb="4">
-        <Heading size="lg">Get set up</Heading><Button asChild variant="outline"><a href="/app/settings">Open settings</a></Button>
+        <Box><Heading size="lg">Connection readiness</Heading><Text color="muted" mt="1">Each requirement reflects a current connection, not mission progress.</Text></Box><Button asChild variant="outline"><a href="/app/settings">Open settings</a></Button>
       </Flex>
         <SimpleGrid columns={{ base: 1, md: 2 }} gap="3">
-          {steps.map((step, index) => <Box {...card} key={step.label}>
-            <Flex justify="space-between" gap="3"><Heading size="sm">{index + 1}. {step.label}</Heading>
+          {steps.map((step) => <Box {...card} key={step.label}>
+            <Flex justify="space-between" gap="3"><Heading size="sm">{step.label}</Heading>
               <Badge colorPalette={step.ready ? "green" : "gray"}>{step.ready ? "Done" : "To do"}</Badge></Flex>
             <Text color="muted" mt="2">{step.detail}</Text>
           </Box>)}
@@ -103,7 +103,7 @@ export function MissionsPage() {
               <Flex align="center" justify="space-between" gap="4" wrap="wrap">
                 <Box><Flex align="center" gap="3" wrap="wrap"><Heading size="sm">Mission {mission.missionId.slice(0, 8)}</Heading>
                   <Badge colorPalette={mission.state === "succeeded" ? "green" : mission.state === "outcome_unknown" ? "orange" : "gray"}>{statusText[mission.state]}</Badge></Flex>
-                  <Text color="muted" mt="1">Started {new Date(mission.createdAt).toLocaleString()} · Browser {browsers.find((device) => device.id === mission.deviceId)?.displayName ?? "unavailable"}</Text></Box>
+                  <Text color="muted" mt="1">Started {new Date(mission.createdAt).toLocaleString()} · {mission.updatedAt ? `State observed ${new Date(mission.updatedAt).toLocaleString()} · ` : ""}Browser {browsers.find((device) => device.id === mission.deviceId)?.displayName ?? "unavailable"}</Text></Box>
                 <Flex gap="2"><Button variant="outline" onClick={() => setSelectedId(mission.missionId)}>Details</Button>
                   {active.has(mission.state) ? <Button variant="outline" colorPalette="red" onClick={() => setConfirmStopId(mission.missionId)}>Stop</Button> : null}</Flex>
               </Flex>

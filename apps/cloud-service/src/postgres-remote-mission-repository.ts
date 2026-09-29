@@ -15,12 +15,13 @@ type MissionRow = {
   state: RemoteMissionState;
   result_code: RemoteMissionV1["resultCode"] | null;
   created_at: Date;
+  updated_at: Date;
   expires_at: Date;
   payload_object_key?: string;
 };
 
 const columns =
-  "mission_id,device_id,sequence,state,result_code,created_at,expires_at";
+  "mission_id,device_id,sequence,state,result_code,created_at,updated_at,expires_at";
 const publicMission = (row: MissionRow): RemoteMissionV1 => ({
   schemaVersion: 1,
   missionId: row.mission_id,
@@ -28,6 +29,7 @@ const publicMission = (row: MissionRow): RemoteMissionV1 => ({
   sequence: Number(row.sequence),
   state: row.state,
   createdAt: row.created_at.toISOString(),
+  updatedAt: row.updated_at.toISOString(),
   expiresAt: row.expires_at.toISOString(),
   ...(row.result_code ? { resultCode: row.result_code } : {}),
 });

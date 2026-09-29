@@ -3,12 +3,12 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>OpenSidebar — Your browser, driven by AI</title>
+    <title>OpenSidebar — Useful browser work, with proof</title>
     <meta
       name="description"
-      content="Open-source AI browser agent. Navigate, click, type, and automate web tasks from a side panel with your own provider key."
+      content="OpenSidebar helps you work across websites, follow each task, and verify the result. Open source browser agent with your own model provider."
     />
-    <meta name="theme-color" content="#F7F7F9" />
+    <meta name="theme-color" content="#F5F8F4" />
     <link rel="icon" type="image/png" href="/favicon.png" />
     <link rel="canonical" href="https://opensidebar.com/" />
 
@@ -16,22 +16,22 @@
     <meta property="og:site_name" content="OpenSidebar" />
     <meta
       property="og:title"
-      content="OpenSidebar — Your browser, driven by AI"
+      content="OpenSidebar — Useful browser work, with proof"
     />
     <meta
       property="og:description"
-      content="An open-source Chrome extension that puts an autonomous AI agent in your side panel. Bring your own key, with local-direct or optional account-linked cloud mode."
+      content="Follow browser work, step in when needed, and check the result. Open source Chrome extension with your own model provider."
     />
     <meta property="og:url" content="https://opensidebar.com/" />
     <meta property="og:image" content="https://opensidebar.com/og.png" />
     <meta name="twitter:card" content="summary_large_image" />
     <meta
       name="twitter:title"
-      content="OpenSidebar — Your browser, driven by AI"
+      content="OpenSidebar — Useful browser work, with proof"
     />
     <meta
       name="twitter:description"
-      content="Open-source AI browser agent that sees the page, clicks, types, and carries multi-step work across tabs to done."
+      content="Open source browser agent that shows its work and keeps you in control."
     />
     <meta name="twitter:image" content="https://opensidebar.com/og.png" />
 
@@ -55,17 +55,22 @@
         </a>
         <nav class="nav-links" aria-label="Primary">
           <a href="/walkthrough">How it works</a>
-          <a href="/ideas">Ideas</a>
-          <a href="#showcase">Demos</a>
-          <a href="#features">Features</a>
           <a href="#remote-work">Remote work</a>
-          <a href="#developers">Developers</a>
           <a href="https://github.com/krisshkodrani/OpenSidebar/tree/main/docs"
             >Docs</a
           >
-          <a href="https://github.com/krisshkodrani/OpenSidebar">GitHub</a>
+          <a href="/app/playground">Playground</a>
           <a class="btn btn-primary nav-cta" href="#quickstart">Install</a>
         </nav>
+        <details class="mobile-nav">
+          <summary>Menu</summary>
+          <nav aria-label="Mobile primary">
+            <a href="/walkthrough">How it works</a>
+            <a href="#remote-work">Remote work</a>
+            <a href="https://github.com/krisshkodrani/OpenSidebar/tree/main/docs">Docs</a>
+            <a href="/app/playground">Playground</a>
+          </nav>
+        </details>
       </div>
     </header>
 
@@ -78,48 +83,20 @@
               ><span class="dot"></span> Open source · MIT · Bring your own
               key</span
             >
-            <h1>Your browser, <br /><span class="grad">driven by AI</span>.</h1>
+            <h1>Useful browser work, with <span class="hero-highlight">proof.</span></h1>
             <p class="hero-sub">
-              OpenSidebar is an open-source Chrome extension that puts an
-              autonomous agent in your side panel — describe a task in plain
-              English and it sees the page, clicks, types, and carries
-              multi-step work across tabs to done.
+              OpenSidebar helps you work across the sites you already use. Follow each task, step in when needed, and check where the answer came from.
             </p>
             <p class="hero-promise">
-              Bring your own API key. The recommended account connection stores
-              supported keys encrypted and relays without retaining task
-              content. Direct from this browser remains available as an advanced
-              option. Optional reliability summaries stay local, off by default,
-              and under your control.
+              Use your own model provider. Your browser keeps its local site rules and approval controls. Remote research through Codex is available to named beta testers.
             </p>
             <div class="hero-cta">
-              <a class="btn btn-primary" href="#quickstart">
-                <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
-                  <path
-                    d="M12 3v12m0 0 4-4m-4 4-4-4M5 19h14"
-                    stroke="currentColor"
-                    stroke-width="2"
-                    stroke-linecap="round"
-                    stroke-linejoin="round"
-                  />
-                </svg>
-                Install — free &amp; open source
-              </a>
-              <a
-                class="btn btn-ghost"
-                href="https://github.com/krisshkodrani/OpenSidebar"
-              >
-                <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
-                  <path
-                    d="M12 2C6.48 2 2 6.58 2 12.25c0 4.53 2.87 8.37 6.85 9.73.5.1.68-.22.68-.49 0-.24-.01-.87-.01-1.71-2.79.62-3.38-1.37-3.38-1.37-.46-1.19-1.11-1.5-1.11-1.5-.91-.64.07-.62.07-.62 1 .07 1.53 1.05 1.53 1.05.89 1.56 2.34 1.11 2.91.85.09-.66.35-1.11.63-1.37-2.23-.26-4.57-1.14-4.57-5.06 0-1.12.39-2.03 1.03-2.75-.1-.26-.45-1.3.1-2.7 0 0 .84-.28 2.75 1.05a9.35 9.35 0 0 1 5 0c1.91-1.33 2.75-1.05 2.75-1.05.55 1.4.2 2.44.1 2.7.64.72 1.03 1.63 1.03 2.75 0 3.93-2.35 4.79-4.59 5.05.36.32.68.94.68 1.9 0 1.37-.01 2.48-.01 2.82 0 .27.18.6.69.49A10.03 10.03 0 0 0 22 12.25C22 6.58 17.52 2 12 2Z"
-                  />
-                </svg>
-                Star on GitHub
-              </a>
+              <a class="btn btn-primary" href="/app/playground">Try the Playground</a>
+              <a class="btn btn-ghost" href="#remote-work">Explore remote work</a>
             </div>
             <div class="hero-meta">
               <span
-                ><span class="dot"></span> The extension runs entirely in your
+                ><span class="dot"></span> Browser actions stay in your
                 browser</span
               >
               <span>50+ browser tools</span>
@@ -128,29 +105,23 @@
           </div>
 
           <div class="reveal">
-            <figure
-              class="player"
-              data-src="/media/v8/customer-tour.mp4"
-              aria-label="OpenSidebar 60-second overview"
-            >
-              <span class="badge">▶ 60-sec tour</span>
-              <img
-                class="poster"
-                src="/media/v8/customer-tour.mp4.poster.jpg"
-                alt="OpenSidebar side panel driving a web task"
-                width="960"
-                height="540"
-                loading="eager"
-              />
-              <button class="play" type="button" aria-label="Play overview">
-                <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
-                  <path d="M8 5v14l11-7z" />
-                </svg>
-              </button>
-            </figure>
+            <div class="hero-receipt" aria-label="Illustrative completed task receipt">
+              <div class="receipt-bar"><span class="receipt-dots" aria-hidden="true">&bull; <b>&bull;</b> &bull;</span><span>OpenSidebar / Example result</span><span aria-hidden="true">&hellip;</span></div>
+              <div class="receipt-body">
+                <span class="receipt-eyebrow">RESULT RECEIPT &middot; EXAMPLE</span>
+                <h2>Compare three suppliers</h2>
+                <p class="receipt-status">Completed &middot; Read only</p>
+                <div class="receipt-row"><span>01</span><div><strong>Supplier A</strong><small>Pricing page observed</small></div><em>Example source</em></div>
+                <div class="receipt-row"><span>02</span><div><strong>Supplier B</strong><small>Catalog observed</small></div><em>Example source</em></div>
+                <div class="receipt-row"><span>03</span><div><strong>Supplier C</strong><small>Availability observed</small></div><em>Example source</em></div>
+                <div class="receipt-tail"><span>No forms submitted</span><span>Cost: example only</span></div>
+              </div>
+            </div>
           </div>
         </div>
       </section>
+
+      <div class="trust-strip"><div class="wrap trust-strip-grid"><div><strong>See the steps</strong><span>Know what the browser actually did.</span></div><div><strong>Keep control</strong><span>Local site rules and stop controls stay yours.</span></div><div><strong>Track the cost</strong><span>See reported spend and when it is unknown.</span></div></div></div>
 
       <!-- QUICK START -->
       <section id="quickstart">
@@ -739,8 +710,7 @@ Load unpacked <span class="c">→</span> select <span class="p">dist/</span></pr
           </a>
           <nav class="footer-links" aria-label="Footer">
             <a href="/walkthrough">How it works</a>
-            <a href="/ideas">Ideas</a>
-            <a href="https://github.com/krisshkodrani/OpenSidebar">GitHub</a>
+            <a href="/app/playground">Playground</a>
             <a href="https://github.com/krisshkodrani/OpenSidebar/issues"
               >Issues</a
             >

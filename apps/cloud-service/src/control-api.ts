@@ -39,6 +39,8 @@ import type { PersonalDataRepository } from "./personal-data-repository.js";
 import type { PersonalDataObjectPort } from "./personal-data-object-store.js";
 import { createModelBenchApi } from "./modelbench-api.js";
 import type { ModelBenchRepository } from "./modelbench-repository.js";
+import type { RunAnalyticsStore } from "./run-analytics-repository.js";
+import { parseRunAnalyticsSnapshot } from "./run-analytics-policy.js";
 import {
   parseConnectionRequest,
   parseCheckpointCommit,
@@ -80,6 +82,7 @@ export type ControlApiDependencies = {
   personalDataRepository?: PersonalDataRepository;
   personalDataObjectStore?: PersonalDataObjectPort;
   modelBenchRepository?: ModelBenchRepository;
+  runAnalyticsRepository?: RunAnalyticsStore;
 };
 
 const noStore = (c: Context) => c.header("Cache-Control", "no-store");
@@ -130,7 +133,9 @@ const isControlRequest = (c: Context) => {
     path === "/personal-data" ||
     path.startsWith("/personal-data/") ||
     path === "/modelbench" ||
-    path.startsWith("/modelbench/")
+    path.startsWith("/modelbench/") ||
+    path === "/analytics" ||
+    path.startsWith("/analytics/")
   );
 };
 const statusFor = (error: unknown) => {
@@ -190,6 +195,7 @@ export function createControlApi(deps: ControlApiDependencies) {
     personalDataRepository,
     personalDataObjectStore,
     modelBenchRepository,
+    runAnalyticsRepository,
   } = deps;
   const api = new Hono<{ Variables: Variables }>();
   const encodeSessionCursor = (
@@ -713,7 +719,7 @@ export function createControlApi(deps: ControlApiDependencies) {
     if (
       !displayName ||
       displayName.length > 80 ||
-      /[\u0000-\u001f\u007f]/.test(displayName) ||
+      Array.from(displayName).some((char) => char.charCodeAt(0) < 32 || char.charCodeAt(0) === 127) ||
       !Number.isSafeInteger(expectedRevision) ||
       expectedRevision < 1
     )
@@ -1705,6 +1711,55 @@ export function createControlApi(deps: ControlApiDependencies) {
         throw new ControlPolicyError("revision_conflict");
       return c.json(preferences);
     });
+  });
+  api.get("/account/analytics", async (c) => {
+    if (!runAnalyticsRepository)
+      return problem(c, 503, "analytics_unavailable", "Run analytics are unavailable.");
+    const accountId = c.get("principal").accountId;
+    const enabledAt = await runAnalyticsRepository.consent(accountId);
+    return c.json({
+      schemaVersion: 1,
+      enabled: enabledAt !== null,
+      enabledAt,
+      retentionDays: 90,
+      runs: enabledAt ? await runAnalyticsRepository.list(accountId) : [],
+    });
+  });
+  api.get("/analytics/consent", async (c) => {
+    if (!runAnalyticsRepository)
+      return problem(c, 503, "analytics_unavailable", "Run analytics are unavailable.");
+    const enabledAt = await runAnalyticsRepository.consent(c.get("principal").accountId);
+    return c.json({ schemaVersion: 1, enabled: enabledAt !== null, enabledAt });
+  });
+  api.put("/account/analytics/consent", async (c) => {
+    if (!runAnalyticsRepository)
+      return problem(c, 503, "analytics_unavailable", "Run analytics are unavailable.");
+    if (c.get("authKind") !== "cookie")
+      return problem(c, 403, "website_required", "Change analytics consent on the website.");
+    const body = await jsonBody(c);
+    if (!body || Object.keys(body).length !== 1 || typeof body.enabled !== "boolean")
+      return problem(c, 400, "invalid_request", "Choose whether account analytics are enabled.");
+    const enabledAt = await runAnalyticsRepository.setConsent(c.get("principal").accountId, body.enabled);
+    return c.json({ schemaVersion: 1, enabled: enabledAt !== null, enabledAt, retentionDays: 90 });
+  });
+  api.put("/analytics/runs/:id", async (c) => {
+    if (!runAnalyticsRepository)
+      return problem(c, 503, "analytics_unavailable", "Run analytics are unavailable.");
+    if (c.get("authKind") !== "bearer")
+      return problem(c, 403, "extension_required", "Run analytics must come from a linked device.");
+    let snapshot;
+    try {
+      snapshot = parseRunAnalyticsSnapshot(await jsonBody(c));
+    } catch {
+      return problem(c, 400, "invalid_request", "Invalid run analytics snapshot.");
+    }
+    if (snapshot.runId !== c.req.param("id"))
+      return problem(c, 400, "invalid_request", "Run ID mismatch.");
+    const principal = c.get("principal");
+    const result = await runAnalyticsRepository.upsert(principal.accountId, principal.deviceId, snapshot);
+    return result === "disabled"
+      ? problem(c, 403, "analytics_disabled", "Account analytics are disabled for this run.")
+      : c.json({ schemaVersion: 1, result });
   });
   api.get("/relay/usage", async (c) => {
     const accountId = c.get("principal").accountId;

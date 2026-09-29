@@ -104,6 +104,7 @@ for (const route of [
   "app/settings",
   "app/sessions",
   "app/missions",
+  "app/analytics",
   "app/viewer",
   "app/playground",
   "app/sign-in",

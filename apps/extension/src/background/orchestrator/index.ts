@@ -128,6 +128,8 @@ import { OrchestratorTraceEmitter } from "./trace-emitter";
 import { OrchestratorVerifier } from "./verifier";
 import { appendRecentSideEffects } from "./node-heuristics";
 import { buildRoleExecutionContract } from "./contracts";
+import { runAnalyticsReporter } from "../run-analytics-reporter";
+import { queueTaskFleetTelemetry } from "./fleet-telemetry-completion";
 import { BudgetEstimator } from "./budget-estimator";
 import { BudgetEstimatorRegistry } from "./budget-estimator-registry";
 import { PendingResolverRegistry } from "./pending-resolver-registry";
@@ -180,14 +182,9 @@ import type { CompletionEnvelope } from "../agent/completion-kernel";
 import type { TaskRunProgressInput } from "@shared-types/progress";
 import { hasUsefulPartialProgressHandoff } from "../agent/partial-progress-handoff";
 import {
-  buildTaskFleetTelemetryProjectionInput,
   createTaskFleetTelemetryState,
   type TaskFleetTelemetryState,
 } from "./fleet-telemetry";
-import {
-  collectFleetTelemetryLocally,
-  projectFleetTelemetryEnvelope,
-} from "../telemetry";
 import {
   clearOutstandingQuestions,
   deleteStructuredProgressEntry,
@@ -196,7 +193,6 @@ import {
   E2E_SYNTHETIC_QUERY_PREFIX,
   isSyntheticPendingInteractionTask,
   EXHAUSTIVE_REVIEW_MAX_TOTAL_TOKENS,
-  getFleetTelemetryRuntimeContext,
   ignoreSiblingsAfterRootCompletion,
   isLargeExhaustiveReviewGraph,
   LIST_DETAIL_REVIEW_SKILL_ID,
@@ -1514,6 +1510,7 @@ export class Orchestrator {
     this.recentCompletionTracker.clear(input.workspaceId);
     this.tasksByWorkspace.set(input.workspaceId, task);
     this.initializeWorkspaceRuntime(input.workspaceId, task.maxWorkers, task);
+    runAnalyticsReporter.start({ runId: task.runId ?? task.id, startedAt: task.createdAt, metrics: task.sessionMetrics }, input.interactionDelivery === "handoff" ? "remote" : "local", input.settings.providerMode === "openrouter" || input.settings.providerMode === "fireworks" ? input.settings.providerMode : undefined);
     await this.persistTaskCheckpoint(task);
     await this.trace.emitManifest(buildTaskManifest(task, input));
     this.emitTraceEvent(
@@ -2772,29 +2769,6 @@ export class Orchestrator {
     }
   }
 
-  /** Queue a terminal summary without awaiting I/O or retaining raw task data. */
-  private queueFleetTelemetry(
-    task: OrchestratorTask,
-    completionStatus: "completed" | "partial" | "failed" | "stopped",
-  ): void {
-    const state =
-      this.fleetTelemetryByTaskId.get(task.id) ??
-      createTaskFleetTelemetryState();
-    this.fleetTelemetryByTaskId.delete(task.id);
-    void collectFleetTelemetryLocally({
-      storage: chromePersistencePort.local,
-      project: () =>
-        projectFleetTelemetryEnvelope(
-          buildTaskFleetTelemetryProjectionInput({
-            task,
-            state,
-            runtime: getFleetTelemetryRuntimeContext(),
-            completionStatus,
-          }),
-        ),
-    });
-  }
-
   private buildTerminationCompletion(
     task: OrchestratorTask,
     terminationReason: string,
@@ -2851,6 +2825,7 @@ export class Orchestrator {
     task.finishedAt = Date.now();
     task.sessionMetrics.totalSessionTimeMs =
       task.finishedAt - (task.startedAt || task.createdAt);
+    void runAnalyticsReporter.publish({ runId: task.runId ?? task.id, startedAt: task.createdAt, metrics: task.sessionMetrics }, options.status === "completed" ? "succeeded" : options.status);
     this.clearPendingInteractionTimer(task.workspaceId);
     task.pendingInteraction = undefined;
     const escalationId = task.pendingEscalation?.packet.escalationId;
@@ -2865,7 +2840,7 @@ export class Orchestrator {
       sendMessage({ type: "STREAM_CHUNK", workspaceId: task.workspaceId,
         payload: { delta: "", done: true } });
       this.cacheAndPersistCompletion(task.workspaceId, payload);
-      if (options.telemetry) this.queueFleetTelemetry(task, payload.status);
+      if (options.telemetry) queueTaskFleetTelemetry(task, payload.status, this.fleetTelemetryByTaskId);
       sendMessage({ type: "TASK_COMPLETION", workspaceId: task.workspaceId,
         payload });
       notifyTaskCompletion(task, payload);

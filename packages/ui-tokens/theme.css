@@ -1,0 +1,29 @@
+/* Generated from tokens.json by scripts/build-ui-tokens.mjs. */
+:root {
+  --os-canvas: #F5F8F4;
+  --os-surface: #FFFFFF;
+  --os-surface-muted: #E4F1EC;
+  --os-text: #182925;
+  --os-text-muted: #586A62;
+  --os-line: #D9E4DE;
+  --os-accent: #126B64;
+  --os-accent-strong: #0D554F;
+  --os-highlight: #A5C842;
+  --os-success: #287545;
+  --os-warning: #D97706;
+  --os-danger: #DC2626;
+}
+:root.dark {
+  --os-canvas: #101B18;
+  --os-surface: #172621;
+  --os-surface-muted: #21362E;
+  --os-text: #EAF4EC;
+  --os-text-muted: #B5C9BD;
+  --os-line: #344D40;
+  --os-accent: #72C6B6;
+  --os-accent-strong: #A2E4D4;
+  --os-highlight: #C1DC70;
+  --os-success: #8CD9A0;
+  --os-warning: #F3B85E;
+  --os-danger: #F4A5A8;
+}
