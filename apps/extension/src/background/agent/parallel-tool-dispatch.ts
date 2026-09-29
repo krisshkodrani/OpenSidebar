@@ -428,7 +428,7 @@ export async function executeParallelToolCalls(
         typeof args.id === "number" &&
         typeof args.text === "string"
       ) {
-        const inlineRetarget = assessInlineEditTextEntryRetarget({
+        const inlineRetarget = args.nativeEditor === true ? null : assessInlineEditTextEntryRetarget({
           activeToolProfile: host.skillTools.getActiveToolProfileForStep(currentStepIndex),
           snapshot: host.context.getSnapshot(),
           targetId: args.id,
@@ -450,6 +450,7 @@ export async function executeParallelToolCalls(
           activeObjective,
           target,
           args.text,
+          args.nativeEditor === true,
         );
         if (targetError) {
           host.log.warn("agent", "Text entry target blocked", {

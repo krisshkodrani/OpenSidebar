@@ -32,7 +32,7 @@ export const TYPE_TEXT_DEF: ToolDefinition = {
   function: {
     name: ToolName.TYPE_TEXT,
     description:
-      "Type into an input field. Clears existing text (appends in contenteditable). Set pressEnter only for single-field forms. For multi-field forms, fill all fields then click submit. Not for hotkeys — use press_key.",
+      "Type into an input field. Clears existing text (appends in contenteditable). For a visible canvas-style editor surface with no input field, set nativeEditor=true: Chrome briefly attaches its debugger, clicks the tagged editor surface, and inserts text at the cursor. Re-read the page to verify the text appeared. Set pressEnter only for single-field forms. For multi-field forms, fill all fields then click submit. Not for hotkeys — use press_key.",
     parameters: {
       type: "object",
       properties: {
@@ -45,6 +45,10 @@ export const TYPE_TEXT_DEF: ToolDefinition = {
           type: "boolean",
           description: "Press Enter after typing.",
         },
+        nativeEditor: {
+          type: "boolean",
+          description: "Use trusted browser input for a canvas-style editor surface. Requires a visible editor tag ID; do not use for normal form fields.",
+        },
       },
       required: ["id", "text"],
     },
@@ -56,7 +60,7 @@ export const COMPOSE_TEXT_DEF: ToolDefinition = {
   function: {
     name: ToolName.COMPOSE_TEXT,
     description:
-      "Delegate authored prose to the specialist Writer, which composes the text and enters it into the target field for you. Use this — not type_text — for any free-text answer or prose: job-application questions, essays, cover letters, message/email/comment bodies, 'describe/explain/why' fields. Do NOT use it for short structured values (names, emails, dates, numbers); type those directly. Do not retype the field afterwards.",
+      "Delegate authored prose to the specialist Writer, which composes the text and enters it into a normal DOM text field. Use this for free-text answers or prose in input, textarea, or contenteditable fields. For canvas-style editors with no DOM text field, compose the text from available evidence and use type_text with nativeEditor=true. Do not use this for short structured values (names, emails, dates, numbers); type those directly. Do not retype the field afterwards.",
     parameters: {
       type: "object",
       properties: {

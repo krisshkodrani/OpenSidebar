@@ -835,7 +835,7 @@ export async function executeSequentialToolCalls(
       typeof args.text === "string"
     ) {
       const planStatus = this.context.getPlanStatusRaw();
-      const inlineRetarget = assessInlineEditTextEntryRetarget({
+      const inlineRetarget = args.nativeEditor === true ? null : assessInlineEditTextEntryRetarget({
         activeToolProfile: this.skillTools.getActiveToolProfileForStep(currentStepIndex),
         snapshot: this.context.getSnapshot(),
         targetId: args.id,
@@ -857,6 +857,7 @@ export async function executeSequentialToolCalls(
         activeObjective,
         target,
         args.text,
+        args.nativeEditor === true,
       );
       if (targetError) {
         this.context.addMessage({
@@ -1287,6 +1288,7 @@ export async function executeSequentialToolCalls(
     // the executor didn't call compose_text itself.
     if (
       toolName === ToolName.TYPE_TEXT &&
+      args.nativeEditor !== true &&
       typeof this.llm.hasWriterModel === "function" &&
       this.llm.hasWriterModel()
     ) {

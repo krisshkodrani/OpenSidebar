@@ -16,6 +16,7 @@ export type LocalMockProviderScenarioName =
   | "iframe-checkout"
   | "iframe-find"
   | "iframe-keyboard"
+  | "native-editor"
   | "requested-fact-after-navigation";
 
 export interface LocalMockProviderScenario {
@@ -188,6 +189,13 @@ export const localMockProviderScenarios: Record<
     fixture: "summarize",
     label: "iframe-keyboard",
     prompt: "Enter SAVE10 in the embedded checkout promo field and press Enter to apply it.",
+    maxTurns: 8,
+    timeoutMs: 120_000,
+  },
+  "native-editor": {
+    fixture: "summarize",
+    label: "native-editor",
+    prompt: "Write Hello native editor in the document on this page.",
     maxTurns: 8,
     timeoutMs: 120_000,
   },
@@ -642,6 +650,14 @@ function executorToolCalls(
   scenarioName: LocalMockProviderScenarioName,
   state: LocalMockProviderState,
 ): ToolCallSpec[] {
+  if (scenarioName === "native-editor") {
+    if (/Document now contains: Hello native editor/i.test(text)) {
+      return [{ name: "done", args: { summary: "Wrote Hello native editor in the document." } }];
+    }
+    const id = parseTaggedId(text, /Document content/i);
+    return id === null ? [{ name: "read_page", args: {} }]
+      : [{ name: "type_text", args: { id, text: "Hello native editor", nativeEditor: true } }];
+  }
   if (scenarioName === "requested-fact-after-navigation") {
     if (state.requestedFactNavigationStep < 2) {
       const target = state.requestedFactNavigationStep === 0

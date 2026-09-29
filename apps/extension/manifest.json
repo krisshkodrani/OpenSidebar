@@ -9,6 +9,7 @@
     "activeTab",
     "offscreen",
     "scripting",
+    "debugger",
     "tabs",
     "tabCapture",
     "tabGroups",
