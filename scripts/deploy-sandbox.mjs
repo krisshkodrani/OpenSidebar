@@ -103,6 +103,7 @@ for (const route of [
   "app/account",
   "app/settings",
   "app/sessions",
+  "app/missions",
   "app/viewer",
   "app/playground",
   "app/sign-in",

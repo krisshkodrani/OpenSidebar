@@ -5,6 +5,7 @@ import type {
   CloudProviderId,
   CloudSessionStatus,
 } from "@opensidebar/shared-types";
+import { isRemoteMissionTerminal } from "@opensidebar/shared-types";
 import { canonicalBrowserCommandApprovalPayload } from "@opensidebar/shared-types";
 import type { CloudConfig } from "./config.js";
 import { ControlAuthError, ControlAuthService } from "./control-auth.js";
@@ -610,6 +611,59 @@ export function createControlApi(deps: ControlApiDependencies) {
   api.get("/account/remote-work", async (c) =>
     c.json(await repository.remoteWorkSettings(c.get("principal").accountId)),
   );
+  api.get("/account/remote-missions", async (c) => {
+    const accountId = c.get("principal").accountId;
+    const enabled = Boolean(config.remoteMissionsEnabled &&
+      config.cloudSessionTesterSubjects.has(accountId) && remoteMissionRepository);
+    return c.json({
+      schemaVersion: 1,
+      enabled,
+      missions: enabled ? await remoteMissionRepository!.recentMissions(accountId, 20) : [],
+    });
+  });
+  api.get("/account/remote-missions/:id", async (c) => {
+    const accountId = c.get("principal").accountId;
+    if (!config.remoteMissionsEnabled || !config.cloudSessionTesterSubjects.has(accountId) ||
+        !remoteMissionRepository || !remoteMissionVault)
+      return problem(c, 403, "remote_mission_access_not_enabled", "Remote missions are not enabled.");
+    const id = c.req.param("id");
+    const mission = uuid(id) ? await remoteMissionRepository.mission(accountId, id) : null;
+    if (!mission) return problem(c, 404, "mission_not_found", "Mission was not found.");
+    const result = isRemoteMissionTerminal(mission.state)
+      ? await remoteMissionVault.getResultAndDecrypt({ accountId, deviceId: mission.deviceId, missionId: id },
+          mission.resultCode === "completed" ? "completed" : mission.resultCode === "not_achieved" ? "not_achieved" :
+            mission.resultCode === "cancelled" ? "cancelled" : "unknown").catch(() => null)
+      : null;
+    return c.json({ schemaVersion: 1, mission,
+      result: result ? { outcome: result.outcome, summary: result.summary } : null });
+  });
+  api.post("/account/remote-missions/:id/cancel", async (c) => {
+    const accountId = c.get("principal").accountId;
+    if (!config.remoteMissionsEnabled || !config.cloudSessionTesterSubjects.has(accountId) ||
+        !remoteMissionRepository || !remoteMissionVault)
+      return problem(c, 403, "remote_mission_access_not_enabled", "Remote missions are not enabled.");
+    const id = c.req.param("id");
+    const mission = uuid(id) ? await remoteMissionRepository.mission(accountId, id) : null;
+    if (!mission) return problem(c, 404, "mission_not_found", "Mission was not found.");
+    if (mission.state === "cancelled") return c.json(mission);
+    if (isRemoteMissionTerminal(mission.state))
+      return problem(c, 409, "state_conflict", "Mission is already finished.");
+    const identity = { accountId, deviceId: mission.deviceId, missionId: id };
+    await remoteMissionVault.encryptResultAndPut(identity, {
+      schemaVersion: 1,
+      missionId: id,
+      outcome: "cancelled",
+      createdAt: new Date().toISOString(),
+      summary: "Stopped from the OpenSidebar website.",
+    });
+    const cancelled = await remoteMissionRepository.transition({
+      ...identity, from: mission.state, to: "cancelled", resultCode: "cancelled",
+    });
+    if ("value" in cancelled) return c.json(cancelled.value);
+    const latest = await remoteMissionRepository.mission(accountId, id);
+    return latest?.state === "cancelled" ? c.json(latest) :
+      problem(c, 409, "state_conflict", "Mission state changed. Refresh and try again.");
+  });
   api.put("/account/remote-work", async (c) => {
     const body = await jsonBody(c);
     const expectedRevision = Number(c.req.header("if-match"));

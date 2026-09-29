@@ -1,6 +1,7 @@
 import type {
   CloudAccountV1,
   CloudDeviceV1,
+  RemoteMissionV1,
   CloudPreferencesV1,
   CloudRemoteWorkSettingsV1,
   CredentialStatusV1,
@@ -60,6 +61,13 @@ export const accountApi = {
   usage: () => request<UsageSnapshotV1>("/relay/usage"),
   preferences: () => request<CloudPreferencesV1 | null>("/preferences"),
   remoteWork: () => request<CloudRemoteWorkSettingsV1>("/account/remote-work"),
+  remoteMissions: () => request<{ schemaVersion: 1; enabled: boolean; missions: RemoteMissionV1[] }>("/account/remote-missions"),
+  remoteMission: (id: string) => request<{ schemaVersion: 1; mission: RemoteMissionV1; result: { outcome: string; summary?: string } | null }>(
+    `/account/remote-missions/${encodeURIComponent(id)}`,
+  ),
+  cancelRemoteMission: (id: string) => request<RemoteMissionV1>(
+    `/account/remote-missions/${encodeURIComponent(id)}/cancel`, { method: "POST" },
+  ),
   saveRemoteWork: (enabled: boolean, expectedRevision: number) =>
     request<CloudRemoteWorkSettingsV1>("/account/remote-work", {
       method: "PUT",

@@ -216,6 +216,50 @@ test("disabling remote work cancels active missions with an encrypted result", a
   assert.equal(transitions.length, 1);
 });
 
+test("website mission list is account-bound and cancellation requires CSRF", async () => {
+  const repository = new MemoryControlRepository();
+  const websitePlayground = {
+    health: async () => undefined,
+    session: async (hash: string) => hash === tokenHash("web-token")
+      ? { accountId: "account-1", email: "owner@example.com", csrfHash: tokenHash("csrf-token") }
+      : null,
+    consumeAuthQuota: async () => undefined,
+  } as unknown as PlaygroundRepository;
+  const mission = {
+    schemaVersion: 1 as const,
+    missionId: "123e4567-e89b-42d3-a456-426614174000",
+    deviceId: "dev_1",
+    sequence: 1,
+    state: "running" as const,
+    createdAt: new Date().toISOString(),
+    expiresAt: new Date(Date.now() + 60_000).toISOString(),
+  };
+  let cancelled = false;
+  const missions = {
+    recentMissions: async (accountId: string) => accountId === "account-1" ? [mission] : [],
+    mission: async (accountId: string, id: string) =>
+      accountId === "account-1" && id === mission.missionId ? mission : null,
+    transition: async () => { cancelled = true; return { kind: "updated", value: { ...mission, state: "cancelled" } }; },
+  };
+  const vault = { encryptResultAndPut: async () => ({ ciphertextSizeBytes: 1, ciphertextSha256: "0".repeat(64) }) };
+  const config = { ...baseConfig, remoteMissionsEnabled: true };
+  const app = createApp(websitePlayground, config, undefined, {
+    repository,
+    auth: new ControlAuthService(repository, config),
+    remoteMissionRepository: missions as never,
+    remoteMissionVault: vault as never,
+  });
+  const headers = { origin: "https://opensidebar.com", cookie: "__Host-os_session=web-token; os_csrf=csrf-token" };
+  const list = await app.request("/api/v1/account/remote-missions", { headers });
+  assert.equal(list.status, 200);
+  assert.equal(((await list.json()) as { missions: unknown[] }).missions.length, 1);
+  const path = `/api/v1/account/remote-missions/${mission.missionId}/cancel`;
+  assert.equal((await app.request(path, { method: "POST", headers })).status, 403);
+  assert.equal(cancelled, false);
+  assert.equal((await app.request(path, { method: "POST", headers: { ...headers, "x-os-csrf": "csrf-token" } })).status, 200);
+  assert.equal(cancelled, true);
+});
+
 test("control API stays unavailable when the master flag is disabled", async () => {
   const repository = new MemoryControlRepository();
   const config = {

@@ -77,6 +77,9 @@ function world(options: {
         ["queued", "accepted", "running", "target_selection_required", "supervision_required", "approval_required"].includes(mission.state),
       );
     },
+    async recentMissions() {
+      return [...records.values()];
+    },
     async missionByIdempotency() {
       return null;
     },

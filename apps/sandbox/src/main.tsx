@@ -6,8 +6,7 @@ import {
   Text as UiText,
 } from "@chakra-ui/react";
 import { PageLayout, PageHeader, card } from "./app/page-ui";
-import { PlaygroundPage } from "./playground-page";
-import { useEffect, useRef, useState } from "react";
+import { lazy, Suspense, useEffect, useRef, useState } from "react";
 import { createRoot } from "react-dom/client";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import {
@@ -32,10 +31,13 @@ if (!location.pathname.startsWith("/app")) {
   void import("./styles.css");
   void import("./guide.css");
 }
-import { AccountPage } from "./account";
-import { DashboardPage } from "./dashboard";
 import { AppShell } from "./app/AppShell";
-import { ViewerPage } from "./viewer";
+
+const AccountPage = lazy(() => import("./account").then((module) => ({ default: module.AccountPage })));
+const MissionsPage = lazy(() => import("./missions-page").then((module) => ({ default: module.MissionsPage })));
+const DashboardPage = lazy(() => import("./dashboard").then((module) => ({ default: module.DashboardPage })));
+const PlaygroundPage = lazy(() => import("./playground-page").then((module) => ({ default: module.PlaygroundPage })));
+const ViewerPage = lazy(() => import("./viewer").then((module) => ({ default: module.ViewerPage })));
 
 // The control-session cookie is intentionally host-only. Keep the Control
 // Center on its canonical host so a visit through www cannot create a separate
@@ -54,6 +56,7 @@ const legacyAppRoutes: Record<string, string> = {
   "/settings": "/app/settings",
   "/playground": "/app/playground",
   "/viewer": "/app/viewer",
+  "/missions": "/app/missions",
 };
 if (legacyAppRoutes[location.pathname]) {
   location.replace(
@@ -1488,6 +1491,8 @@ function App() {
   ) : location.pathname === "/app/account" ||
     location.pathname === "/app/settings" ? (
     <AccountPage />
+  ) : location.pathname === "/app/missions" ? (
+    <MissionsPage />
   ) : location.pathname === "/app/sign-in" ? (
     <AppShell>
       <SignIn />
@@ -1516,7 +1521,9 @@ createRoot(document.getElementById("root")!).render(
     <App />
   ) : (
     <ControlProviders>
-      <App />
+      <Suspense fallback={<AppShell><PageLayout><PageHeader title="Loading" description="Opening your workspace…" /></PageLayout></AppShell>}>
+        <App />
+      </Suspense>
     </ControlProviders>
   ),
 );

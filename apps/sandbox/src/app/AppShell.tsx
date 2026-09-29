@@ -10,6 +10,7 @@ import {
 import { useAppearance } from "./appearance";
 const navigation = [
   ["Overview", "/app"],
+  ["Remote work", "/app/missions"],
   ["Playground", "/app/playground"],
   ["Sessions", "/app/sessions"],
   ["Run viewer", "/app/viewer"],

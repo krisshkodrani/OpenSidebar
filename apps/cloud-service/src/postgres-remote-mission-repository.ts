@@ -109,6 +109,15 @@ export class PostgresRemoteMissionRepository
     return result.rows.map(publicMission);
   }
 
+  async recentMissions(accountId: string, limit: number) {
+    const result = await this.pool.query<MissionRow>(
+      `SELECT ${columns} FROM sessions.remote_missions
+       WHERE account_id=$1 ORDER BY created_at DESC, mission_id DESC LIMIT $2`,
+      [accountId, limit],
+    );
+    return result.rows.map(publicMission);
+  }
+
   async mission(accountId: string, missionId: string) {
     const result = await this.pool.query<MissionRow>(
       `SELECT ${columns} FROM sessions.remote_missions

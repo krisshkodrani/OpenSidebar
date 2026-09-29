@@ -27,6 +27,16 @@ run. Only use `MODEL_BENCH_SKIP_TARGET_BUILD=1` and
 `MODEL_BENCH_SKIP_EXTENSION_BUILD=1` when reusing the same verified artifacts.
 Use a new output directory for each diagnostic; preserve failed attempts.
 
+The production extension driver requires `--max-observed-cost-usd <amount>`
+or `MODEL_BENCH_MAX_OBSERVED_COST_USD`. Every attempt is saved before the
+runner checks the ceiling, including a technical failure before its optional
+retry. Missing API-reported usage stops the run because the actual charge is
+unknown. The ceiling is checked between attempts; one in-flight attempt can
+exceed it, so set an OpenRouter account-level limit as the hard spend boundary.
+The checked-in MB-101 matrix pins the owner-selected Luna planner/executor and
+Jev judge seats. Jev uses OpenRouter's Decisions API; verify its response model,
+provider route, and cost evidence before any full-suite baseline.
+
 Record the configuration and source revision, including uncommitted changes.
 Do not pool results across case versions, code changes, provider routes, or model
 quantizations as though they were one fixed baseline.

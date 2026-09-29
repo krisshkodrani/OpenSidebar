@@ -82,6 +82,7 @@ export const E2E_SUITES: Record<E2ESuiteName, readonly string[]> = {
     "bridge-approval-forwarding.test.ts",
     "completion-done.test.ts",
     "local-mock-provider-video.test.ts",
+    "requested-fact-after-navigation.test.ts",
     "terminal-lifecycle.test.ts",
     "watch-mode.test.ts",
   ],

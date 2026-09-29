@@ -8,18 +8,18 @@
       "seats": {
         "executor": {
           "provider": "openrouter",
-          "providerPin": "minimax",
-          "model": "minimax/minimax-m3"
+          "providerPin": "openai",
+          "model": "openai/gpt-6-luna"
         },
         "planner": {
           "provider": "openrouter",
-          "providerPin": "z-ai",
-          "model": "z-ai/glm-5.2"
+          "providerPin": "openai",
+          "model": "openai/gpt-6-luna"
         },
         "judge": {
           "provider": "openrouter",
-          "providerPin": "groq",
-          "model": "openai/gpt-oss-120b"
+          "providerPin": "typesafe",
+          "model": "typesafe/jev-1.13"
         }
       }
     }
