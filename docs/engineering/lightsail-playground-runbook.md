@@ -79,6 +79,10 @@ Mount `nginx-api-origin.conf` into the existing frontend with
 the frontend service, then verify both `playscenario.ai` and the API readiness
 endpoint. Install `opensidebar-cert-renew.timer`; it uses the existing Certbot
 volumes and reloads Nginx only after a successful renewal check.
+Every later frontend recreation must include the same override file. Running
+Compose with `docker-compose.prod.yml` alone removes the API virtual-host mount;
+CloudFront then receives the PlayScenario certificate and public API requests
+return 502 even while the OpenSidebar API container is healthy.
 
 The shared host needs the AWS CLI and `age` for backups. Keep both backup timers
 disabled until an offline-generated age recipient is present and a manual
