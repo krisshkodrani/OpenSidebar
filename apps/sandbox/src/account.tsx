@@ -1,13 +1,15 @@
+import { PageLayout, PageHeader, card } from "./app/page-ui";
 import { useEffect, useState } from "react";
 import {
   Badge,
   Box,
   Button,
-  Container,
   Flex,
   Heading,
   Input,
+  NativeSelect,
   SimpleGrid,
+  Skeleton,
   Stack,
   Text,
 } from "@chakra-ui/react";
@@ -59,10 +61,12 @@ export function AccountPage() {
     error instanceof Error ? error.message : error ? String(error) : null;
   const act = (operation: () => Promise<unknown>) => mutation.mutate(operation);
   const connectedBrowsers = devices.filter(
-    (device) => device.connectionKind === "browser_extension" && !device.revokedAt,
+    (device) =>
+      device.connectionKind === "browser_extension" && !device.revokedAt,
   );
   const connectedIntegrations = devices.filter(
-    (device) => device.connectionKind === "codex_integration" && !device.revokedAt,
+    (device) =>
+      device.connectionKind === "codex_integration" && !device.revokedAt,
   );
   const connectionHistory = devices.filter(
     (device) =>
@@ -77,11 +81,29 @@ export function AccountPage() {
   const latestTestConnection = [...testConnectionHistory].sort(
     (left, right) => Date.parse(right.lastSeenAt) - Date.parse(left.lastSeenAt),
   )[0];
+  if (accountQuery.isPending)
+    return (
+      <AppShell>
+        <PageLayout>
+          <PageHeader
+            title="Settings"
+            description="Loading your account and connections."
+          />
+          <Stack gap="5" role="status" aria-label="Loading settings">
+            <Skeleton h="40" />
+            <Skeleton h="56" />
+          </Stack>
+        </PageLayout>
+      </AppShell>
+    );
   if (errorMessage && !account)
     return (
       <AppShell>
-        <Container maxW="3xl" py="20">
-          <Heading>OpenSidebar account</Heading>
+        <PageLayout>
+          <PageHeader
+            title="Settings"
+            description="Sign in to manage your account and connections."
+          />
           <Text mt="4" color="danger">
             {errorMessage}
           </Text>
@@ -94,44 +116,41 @@ export function AccountPage() {
           >
             Sign in
           </Button>
-        </Container>
+        </PageLayout>
       </AppShell>
     );
   return (
     <AppShell>
-      <Container maxW="5xl" py={{ base: "8", md: "14" }}>
-        <Flex justify="space-between" align="start" gap="4" wrap="wrap">
-          <Box>
-            <Text
-              color="accent"
-              fontWeight="700"
-              letterSpacing="wide"
-              textTransform="uppercase"
-              fontSize="xs"
-            >
-              OpenSidebar account
-            </Text>
-            <Heading size="2xl" mt="2">
-              Settings
-            </Heading>
-            <Text mt="2" color="muted">
-              {account?.email ?? "Loading account…"}
-            </Text>
-          </Box>
-          <Flex gap="3">
-            <Button variant="outline" onClick={() => location.assign("/app")}>
-              Dashboard
+      <PageLayout>
+        <PageHeader
+          title="Settings"
+          description={
+            account?.email ??
+            "Manage your account, linked browsers and preferences."
+          }
+        />
+        <Flex
+          as="nav"
+          aria-label="Settings sections"
+          gap="2"
+          wrap="wrap"
+          mb="6"
+        >
+          {[
+            ["Account", "account"],
+            ["Preferences", "preferences"],
+            ["Remote work", "remote-work"],
+            ["Providers", "providers"],
+            ["Connections", "connections"],
+          ].map(([label, id]) => (
+            <Button asChild variant="outline" key={id}>
+              <a href={"#" + id}>{label}</a>
             </Button>
-            <Button
-              variant="outline"
-              onClick={() => location.assign("/app/playground")}
-            >
-              Open Playground
-            </Button>
-          </Flex>
+          ))}
         </Flex>
         {errorMessage ? (
           <Box
+            role="alert"
             mt="6"
             borderWidth="1px"
             borderColor="danger"
@@ -141,15 +160,8 @@ export function AccountPage() {
             <Text color="danger">{errorMessage}</Text>
           </Box>
         ) : null}
-        <SimpleGrid columns={{ base: 1, md: 2 }} gap="5" mt="8">
-          <Box
-            bg="surface"
-            borderWidth="1px"
-            borderColor="line"
-            borderRadius="card"
-            boxShadow="card"
-            p="6"
-          >
+        <SimpleGrid id="account" columns={{ base: 1, md: 2 }} gap="5" mt="8">
+          <Box {...card} p="6">
             <Heading size="md">Link the extension</Heading>
             <Text mt="2" color="muted" fontSize="sm">
               Generate a single-use code, then open Extension Settings → Account
@@ -182,14 +194,7 @@ export function AccountPage() {
               Codes expire after 10 minutes.
             </Text>
           </Box>
-          <Box
-            bg="surface"
-            borderWidth="1px"
-            borderColor="line"
-            borderRadius="card"
-            boxShadow="card"
-            p="6"
-          >
+          <Box {...card} p="6">
             <Heading size="md">Monthly AI usage</Heading>
             <Text mt="5" fontSize="2xl" fontWeight="700">
               {usage?.requests ?? 0} / {usage?.limits.requests ?? 2_000}{" "}
@@ -213,31 +218,34 @@ export function AccountPage() {
             act(() => accountApi.savePreferences(value, expected))
           }
         />
-        <Box
-          mt="5"
-          bg="surface"
-          borderWidth="1px"
-          borderColor="line"
-          borderRadius="card"
-          boxShadow="card"
-          p="6"
-        >
+        <Box mt="5" {...card} p="6">
           <Flex justify="space-between" align="center" gap="4" wrap="wrap">
             <Box>
-              <Heading size="md">Remote browser work</Heading>
+              <Heading id="remote-work" size="md">
+                Remote browser work
+              </Heading>
               <Text mt="1" color="muted" fontSize="sm">
-                Allow authorized Codex integrations to send visible, cancellable tasks to linked browsers.
+                Allow authorized Codex integrations to send visible, cancellable
+                tasks to linked browsers.
               </Text>
             </Box>
             <Button
               colorPalette={remoteWork?.enabled ? "red" : "blue"}
               variant={remoteWork?.enabled ? "outline" : "solid"}
               disabled={!remoteWork || mutation.isPending}
-              onClick={() => remoteWork && void act(() =>
-                accountApi.saveRemoteWork(!remoteWork.enabled, remoteWork.revision),
-              )}
+              onClick={() =>
+                remoteWork &&
+                void act(() =>
+                  accountApi.saveRemoteWork(
+                    !remoteWork.enabled,
+                    remoteWork.revision,
+                  ),
+                )
+              }
             >
-              {remoteWork?.enabled ? "Disable remote work" : "Enable remote work"}
+              {remoteWork?.enabled
+                ? "Disable remote work"
+                : "Enable remote work"}
             </Button>
           </Flex>
           <Text mt="3" fontSize="xs" color="muted">
@@ -246,16 +254,10 @@ export function AccountPage() {
               : "Disabled. Local OpenSidebar tasks continue to work normally."}
           </Text>
         </Box>
-        <Box
-          mt="5"
-          bg="surface"
-          borderWidth="1px"
-          borderColor="line"
-          borderRadius="card"
-          boxShadow="card"
-          p="6"
-        >
-          <Heading size="md">Provider connections</Heading>
+        <Box mt="5" {...card} p="6">
+          <Heading id="providers" size="md">
+            Provider connections
+          </Heading>
           <Stack mt="4" gap="3">
             {credentials.map((credential) => (
               <Flex
@@ -299,7 +301,7 @@ export function AccountPage() {
                   ) : null}
                 </Flex>
                 <Flex gap="2" w={{ base: "full", md: "420px" }}>
-                  <input
+                  <Input
                     aria-label={`${credential.provider} API key`}
                     type="password"
                     autoComplete="off"
@@ -315,7 +317,6 @@ export function AccountPage() {
                         [credential.provider]: event.target.value,
                       }))
                     }
-                    className="account-secret-input"
                   />
                   <Button
                     size="sm"
@@ -344,18 +345,12 @@ export function AccountPage() {
             ))}
           </Stack>
         </Box>
-        <Box
-          mt="5"
-          bg="surface"
-          borderWidth="1px"
-          borderColor="line"
-          borderRadius="card"
-          boxShadow="card"
-          p="6"
-        >
-          <Flex justify="space-between" align="center">
+        <Box mt="5" {...card} p="6">
+          <Flex justify="space-between" align="center" gap="3" wrap="wrap">
             <Box>
-              <Heading size="md">Connections</Heading>
+              <Heading id="connections" size="md">
+                Connections
+              </Heading>
               <Text color="muted" fontSize="sm" mt="1">
                 Browsers and integrations connected to your account.
               </Text>
@@ -368,15 +363,27 @@ export function AccountPage() {
               Sign out extension devices
             </Button>
           </Flex>
-          <Heading size="sm" mt="5">Connected browsers</Heading>
+          <Heading size="sm" mt="5">
+            Connected browsers
+          </Heading>
           <Stack mt="3" gap="3">
             {connectedBrowsers.length ? (
               connectedBrowsers.map((device) => (
-                <Flex key={device.id} justify="space-between" align="center" gap="3" wrap="wrap">
+                <Flex
+                  key={device.id}
+                  justify="space-between"
+                  align="center"
+                  gap="3"
+                  wrap="wrap"
+                >
                   <Box>
                     <Flex align="center" gap="2">
                       <Text fontWeight="700">{device.displayName}</Text>
-                      <Badge colorPalette={device.availability === "online" ? "green" : "gray"}>
+                      <Badge
+                        colorPalette={
+                          device.availability === "online" ? "green" : "gray"
+                        }
+                      >
                         {device.availability}
                       </Badge>
                     </Flex>
@@ -392,21 +399,35 @@ export function AccountPage() {
                       aria-label={`Name for ${device.displayName}`}
                       value={deviceNames[device.id] ?? device.displayName}
                       onChange={(event) =>
-                        setDeviceNames((current) => ({ ...current, [device.id]: event.target.value }))
+                        setDeviceNames((current) => ({
+                          ...current,
+                          [device.id]: event.target.value,
+                        }))
                       }
                     />
                     <Button
                       size="sm"
                       variant="outline"
-                      disabled={!(deviceNames[device.id] ?? device.displayName).trim()}
-                      onClick={() => void act(() => accountApi.renameDevice(device, deviceNames[device.id] ?? device.displayName))}
+                      disabled={
+                        !(deviceNames[device.id] ?? device.displayName).trim()
+                      }
+                      onClick={() =>
+                        void act(() =>
+                          accountApi.renameDevice(
+                            device,
+                            deviceNames[device.id] ?? device.displayName,
+                          ),
+                        )
+                      }
                     >
                       Rename
                     </Button>
                     <Button
                       size="sm"
                       variant="outline"
-                      onClick={() => void act(() => accountApi.revokeDevice(device.id))}
+                      onClick={() =>
+                        void act(() => accountApi.revokeDevice(device.id))
+                      }
                     >
                       Revoke
                     </Button>
@@ -417,19 +438,38 @@ export function AccountPage() {
               <Text color="muted">No connected browsers.</Text>
             )}
           </Stack>
-          <Heading size="sm" mt="6">Connected integrations</Heading>
+          <Heading size="sm" mt="6">
+            Connected integrations
+          </Heading>
           <Stack mt="3" gap="3">
-            {connectedIntegrations.length ? connectedIntegrations.map((device) => (
-              <Flex key={device.id} justify="space-between" align="center" gap="3">
-                <Box>
-                  <Text fontWeight="700">{device.displayName}</Text>
-                  <Text color="muted" fontSize="sm">Connected to Codex</Text>
-                </Box>
-                <Button size="sm" variant="outline" onClick={() => void act(() => accountApi.revokeDevice(device.id))}>
-                  Revoke
-                </Button>
-              </Flex>
-            )) : <Text color="muted">No connected integrations.</Text>}
+            {connectedIntegrations.length ? (
+              connectedIntegrations.map((device) => (
+                <Flex
+                  key={device.id}
+                  justify="space-between"
+                  align="center"
+                  gap="3"
+                >
+                  <Box>
+                    <Text fontWeight="700">{device.displayName}</Text>
+                    <Text color="muted" fontSize="sm">
+                      Connected to Codex
+                    </Text>
+                  </Box>
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={() =>
+                      void act(() => accountApi.revokeDevice(device.id))
+                    }
+                  >
+                    Revoke
+                  </Button>
+                </Flex>
+              ))
+            ) : (
+              <Text color="muted">No connected integrations.</Text>
+            )}
           </Stack>
           <Flex mt="6" justify="space-between" align="center">
             <Box>
@@ -438,7 +478,11 @@ export function AccountPage() {
                 {connectionHistory.length} revoked or development connection(s)
               </Text>
             </Box>
-            <Button size="sm" variant="ghost" onClick={() => setShowConnectionHistory((value) => !value)}>
+            <Button
+              size="sm"
+              variant="ghost"
+              onClick={() => setShowConnectionHistory((value) => !value)}
+            >
               {showConnectionHistory ? "Hide" : "Show"}
             </Button>
           </Flex>
@@ -448,31 +492,44 @@ export function AccountPage() {
                 <Flex justify="space-between" align="center" gap="3">
                   <Box>
                     <Flex align="center" gap="2">
-                      <Text fontWeight="700">Development and acceptance tests</Text>
+                      <Text fontWeight="700">
+                        Development and acceptance tests
+                      </Text>
                       <Badge colorPalette="gray">Test history</Badge>
                     </Flex>
                     <Text color="muted" fontSize="sm">
                       {testConnectionHistory.length} run(s) · last seen{" "}
-                      {new Date(latestTestConnection.lastSeenAt).toLocaleString()}
+                      {new Date(
+                        latestTestConnection.lastSeenAt,
+                      ).toLocaleString()}
                     </Text>
                   </Box>
                 </Flex>
               ) : null}
               {revokedConnectionHistory.map((device) => (
-                <Flex key={device.id} justify="space-between" align="center" gap="3">
+                <Flex
+                  key={device.id}
+                  justify="space-between"
+                  align="center"
+                  gap="3"
+                >
                   <Box>
                     <Flex align="center" gap="2">
                       <Text fontWeight="700">{device.displayName}</Text>
-                      <Badge colorPalette="gray">
-                        Revoked
-                      </Badge>
+                      <Badge colorPalette="gray">Revoked</Badge>
                     </Flex>
                     <Text color="muted" fontSize="sm">
                       Last seen {new Date(device.lastSeenAt).toLocaleString()}
                     </Text>
                   </Box>
                   {!device.revokedAt ? (
-                    <Button size="sm" variant="outline" onClick={() => void act(() => accountApi.revokeDevice(device.id))}>
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      onClick={() =>
+                        void act(() => accountApi.revokeDevice(device.id))
+                      }
+                    >
                       Revoke
                     </Button>
                   ) : null}
@@ -481,7 +538,7 @@ export function AccountPage() {
             </Stack>
           ) : null}
         </Box>
-      </Container>
+      </PageLayout>
     </AppShell>
   );
 }
@@ -529,10 +586,14 @@ function PreferencesCard({
       boxShadow="card"
       p="6"
     >
-      <Heading size="md">Synced preferences</Heading>
+      <Heading id="preferences" size="md">
+        Synced preferences
+      </Heading>
       <Text mt="1" color="muted" fontSize="sm">
-        Only product preferences sync. Approval, navigation, site-access,
-        permissions, and telemetry controls always stay on each device.
+        These preferences apply to linked extensions. Website appearance is set
+        in the navigation. Only product preferences sync. Approval, navigation,
+        site-access, permissions, and telemetry controls always stay on each
+        device.
       </Text>
       <Box
         as="form"
@@ -555,35 +616,59 @@ function PreferencesCard({
             <Text fontSize="sm" mb="1">
               Inference mode
             </Text>
-            <select {...register("inferenceMode")}>
-              <option value="local">Direct from this browser</option>
-              <option value="cloud">Use account connection</option>
-            </select>
+            <NativeSelect.Root>
+              <NativeSelect.Field
+                {...register("inferenceMode")}
+                bg="surface"
+                borderColor="line"
+                borderRadius="control"
+              >
+                <option value="local">Direct from this browser</option>
+                <option value="cloud">Use account connection</option>
+              </NativeSelect.Field>
+              <NativeSelect.Indicator />
+            </NativeSelect.Root>
           </label>
           <label>
             <Text fontSize="sm" mb="1">
               Provider
             </Text>
-            <select {...register("providerMode")}>
-              <option value="openrouter">OpenRouter</option>
-              <option value="fireworks">Fireworks</option>
-            </select>
+            <NativeSelect.Root>
+              <NativeSelect.Field
+                {...register("providerMode")}
+                bg="surface"
+                borderColor="line"
+                borderRadius="control"
+              >
+                <option value="openrouter">OpenRouter</option>
+                <option value="fireworks">Fireworks</option>
+              </NativeSelect.Field>
+              <NativeSelect.Indicator />
+            </NativeSelect.Root>
           </label>
           <label>
             <Text fontSize="sm" mb="1">
-              Theme
+              Extension theme
             </Text>
-            <select {...register("theme")}>
-              <option value="system">System</option>
-              <option value="light">Light</option>
-              <option value="dark">Dark</option>
-            </select>
+            <NativeSelect.Root>
+              <NativeSelect.Field
+                {...register("theme")}
+                bg="surface"
+                borderColor="line"
+                borderRadius="control"
+              >
+                <option value="system">System</option>
+                <option value="light">Light</option>
+                <option value="dark">Dark</option>
+              </NativeSelect.Field>
+              <NativeSelect.Indicator />
+            </NativeSelect.Root>
           </label>
           <label>
             <Text fontSize="sm" mb="1">
               Maximum turns
             </Text>
-            <input
+            <Input
               type="number"
               min="1"
               max="200"

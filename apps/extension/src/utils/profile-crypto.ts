@@ -55,24 +55,33 @@ function b64ToBytes(b64: string): Uint8Array<ArrayBuffer> {
 export async function getProfileEncryptionKey(
   storage: PersonalProfileStorage,
 ): Promise<CryptoKey> {
-  const stored = await storage.local.get(PROFILE_CEK_STORAGE_KEY);
-  const existing = stored[PROFILE_CEK_STORAGE_KEY];
-  if (typeof existing === "string" && existing.length > 0) {
-    return subtle().importKey(
-      "raw",
-      b64ToBytes(existing),
-      { name: "AES-GCM" },
+  const loadOrCreate = async (): Promise<CryptoKey> => {
+    const stored = await storage.local.get(PROFILE_CEK_STORAGE_KEY);
+    const existing = stored[PROFILE_CEK_STORAGE_KEY];
+    if (typeof existing === "string" && existing.length > 0) {
+      return subtle().importKey(
+        "raw",
+        b64ToBytes(existing),
+        { name: "AES-GCM" },
+        true,
+        ["encrypt", "decrypt"],
+      );
+    }
+    const key = await subtle().generateKey(
+      { name: "AES-GCM", length: 256 },
       true,
       ["encrypt", "decrypt"],
     );
-  }
-  const key = await subtle().generateKey({ name: "AES-GCM", length: 256 }, true, [
-    "encrypt",
-    "decrypt",
-  ]);
-  const raw = await subtle().exportKey("raw", key);
-  await storage.local.set({ [PROFILE_CEK_STORAGE_KEY]: bufToB64(raw) });
-  return key;
+    const raw = await subtle().exportKey("raw", key);
+    await storage.local.set({ [PROFILE_CEK_STORAGE_KEY]: bufToB64(raw) });
+    return key;
+  };
+  // The side panel and service worker share this key. Serialize first use so
+  // two contexts cannot encrypt data under different freshly generated keys.
+  const locks = globalThis.navigator?.locks;
+  return locks
+    ? locks.request(PROFILE_CEK_STORAGE_KEY, loadOrCreate)
+    : loadOrCreate();
 }
 
 export async function encryptField(
@@ -189,7 +198,8 @@ export async function decryptStoredState(
     !!items &&
     items.some(
       (it) =>
-        it.kind === "sensitive" && SENSITIVE_FIELDS.some((f) => isEncryptedValue(it[f])),
+        it.kind === "sensitive" &&
+        SENSITIVE_FIELDS.some((f) => isEncryptedValue(it[f])),
     );
   if (!decryptNotes && !decryptItems) return raw;
 

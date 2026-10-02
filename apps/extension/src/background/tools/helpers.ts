@@ -1,8 +1,8 @@
 /**
  * Shared generic helpers used by tool executors in this directory.
  *
- * Extracted from tools/index.ts so that adapter modules (e.g. servicenow/)
- * can import them without depending on the tools barrel.
+ * Extracted from tools/index.ts so executors can share them without
+ * depending on the tools barrel.
  */
 
 export function getTabUrl(tab: chrome.tabs.Tab): string {

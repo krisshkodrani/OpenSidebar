@@ -14,7 +14,6 @@ import {
 } from "../trace-sqlite-store";
 import {
   matchesTraceFilters,
-  normalizeAgentSessionRecord,
   normalizeAgentTurnRecord,
   normalizeRunEventRecord,
   type TraceEntryLike,
@@ -29,8 +28,11 @@ import {
   readSessionEntries,
   readSpineRunEvents,
   readSpineSessions,
+  hasSpineSessionRecord,
+  hasSpineRunRecord,
 } from "./span-store";
-import { PROJECT_ROOT as DEFAULT_PROJECT_ROOT } from "./paths";
+import { orderTraceEntries, preferSpineSessions } from "./session-read-policy";
+import { readLegacyJsonlSessions } from "./legacy-sessions";
 
 export interface TraceRepository {
   projectRoot: string;
@@ -59,71 +61,71 @@ function readJsonl(path: string): unknown[] {
     });
 }
 
-export function createTraceRepository(projectRoot: string): TraceRepository {
+export function createTraceRepository(
+  projectRoot: string,
+  options: { spineReads?: boolean } = {},
+): TraceRepository {
   const traceDir = join(projectRoot, "traces");
-  const traceIndex = join(traceDir, "index.jsonl");
-  const runTraceDir = join(traceDir, "runs");
-
+  const spanDir = join(traceDir, "spans");
+  const runDir = join(traceDir, "runs");
+  const spineReadsEnabled =
+    options.spineReads ?? process.env.OBS_DISABLE_SPINE_READS !== "1";
   const loadSessions = (): TraceSessionLike[] => {
-    // SQLite is the query projection and is intentionally first for lists.
-    const sqlite = readTraceSessionsFromSqlite(projectRoot);
-    if (sqlite && sqlite.length > 0) return sqlite;
-    if (
-      projectRoot === DEFAULT_PROJECT_ROOT &&
-      process.env.OBS_SPINE_READS === "1"
-    ) {
-      const spine = readSpineSessions();
-      if (spine.length > 0) return spine as unknown as TraceSessionLike[];
-    }
-    return readJsonl(traceIndex).map((record) =>
-      normalizeAgentSessionRecord(record as Record<string, unknown>),
+    const spine = spineReadsEnabled
+      ? (readSpineSessions(spanDir) as unknown as TraceSessionLike[])
+      : [];
+    const fromSqlite = readTraceSessionsFromSqlite(projectRoot) ?? [];
+    const { indexed, orphans } = readLegacyJsonlSessions(traceDir);
+    return preferSpineSessions(
+      spine,
+      preferSpineSessions(fromSqlite, preferSpineSessions(indexed, orphans)),
     );
   };
-
   const loadEntries = (sessionId: string): TraceEntryLike[] => {
-    // Full-fidelity details come from the authoritative span spine first.
-    if (
-      projectRoot === DEFAULT_PROJECT_ROOT &&
-      process.env.OBS_DISABLE_SPINE_READS !== "1"
-    ) {
-      const spine = readSessionEntries(sessionId);
-      if (spine.length > 0) return spine as unknown as TraceEntryLike[];
+    if (spineReadsEnabled) {
+      const spine = readSessionEntries(sessionId, spanDir);
+      if (spine.length > 0 || hasSpineSessionRecord(sessionId, spanDir))
+        return spine as unknown as TraceEntryLike[];
     }
-    const sqlite = readTraceEntriesFromSqlite(projectRoot, sessionId);
-    if (sqlite && sqlite.length > 0) return sqlite;
-    return readJsonl(join(traceDir, `${sessionId}.jsonl`)).map((record) =>
-      normalizeAgentTurnRecord(record as Record<string, unknown>),
+    const fromSqlite = readTraceEntriesFromSqlite(projectRoot, sessionId);
+    if (fromSqlite && fromSqlite.length > 0) return fromSqlite;
+    return orderTraceEntries(
+      readJsonl(join(traceDir, `${sessionId}.jsonl`)).map((record) =>
+        normalizeAgentTurnRecord(record as Record<string, unknown>),
+      ),
     );
   };
-
   const loadRunEvents = (runId: string): TraceEntryLike[] => {
-    if (
-      projectRoot === DEFAULT_PROJECT_ROOT &&
-      process.env.OBS_DISABLE_SPINE_READS !== "1"
-    ) {
-      const spine = readSpineRunEvents(runId);
-      if (spine.length > 0) return spine as unknown as TraceEntryLike[];
+    if (spineReadsEnabled) {
+      const spineRunDir = join(spanDir, "runs");
+      const spine = readSpineRunEvents(runId, spineRunDir);
+      if (spine.length > 0 || hasSpineRunRecord(runId, spineRunDir))
+        return spine as unknown as TraceEntryLike[];
     }
-    const sqlite = readRunTraceEventsFromSqlite(projectRoot, runId);
-    if (sqlite && sqlite.length > 0) return sqlite;
-    return readJsonl(join(runTraceDir, `${runId}.jsonl`)).map((record) =>
+    const fromSqlite = readRunTraceEventsFromSqlite(projectRoot, runId);
+    if (fromSqlite && fromSqlite.length > 0) return fromSqlite;
+    return readJsonl(join(runDir, `${runId}.jsonl`)).map((record) =>
       normalizeRunEventRecord(record as Record<string, unknown>),
     );
   };
-
   const loadInsights = (
     filters: TraceInsightsFilters,
   ): TraceInsightsResponse => {
-    const sqlite = buildTraceInsightsFromSqlite(projectRoot, filters);
-    if (sqlite) return sqlite;
-    const sessions = loadSessions();
-    const entriesBySession = new Map<string, TraceEntryLike[]>();
-    for (const session of sessions) {
-      if (session.sessionId) {
-        entriesBySession.set(session.sessionId, loadEntries(session.sessionId));
-      }
-    }
-    return buildTraceInsights({ sessions, entriesBySession, filters });
+    const fromSqlite = buildTraceInsightsFromSqlite(projectRoot, filters);
+    if (fromSqlite) return fromSqlite;
+    // Read turns on demand so a large corpus does not live in memory at once.
+    const sessions = loadSessions().filter(
+      (session) =>
+        !filters.sessionId || session.sessionId?.startsWith(filters.sessionId),
+    );
+    const entriesBySession = { get: (id: string) => loadEntries(id) };
+    const runEventsByRun = { get: (id: string) => loadRunEvents(id) };
+    return buildTraceInsights({
+      sessions,
+      entriesBySession,
+      runEventsByRun,
+      filters,
+    });
   };
 
   const searchSessions = (

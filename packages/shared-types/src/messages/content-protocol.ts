@@ -6,6 +6,7 @@
 import type { MessageSource, ToolName } from "../enums";
 import type {
   DomSnapshot,
+  ElementRect,
   OverlayDescriptor,
   PageDocumentState,
 } from "../dom";
@@ -38,6 +39,29 @@ export interface DomSnapshotResponse extends BaseMessage {
   };
 }
 
+/** Explicitly targeted child-frame read; ordinary tab messages stay top-frame-only. */
+export interface FrameSnapshotRequest extends BaseMessage {
+  type: "FRAME_SNAPSHOT_REQUEST";
+  source: MessageSource.BACKGROUND;
+  payload: { refresh: boolean; geometryNonce?: string };
+}
+
+export interface FrameSnapshotResponse extends BaseMessage {
+  type: "FRAME_SNAPSHOT_RESPONSE";
+  source: MessageSource.CONTENT;
+  payload: {
+    snapshot: DomSnapshot;
+    documentState: PageDocumentState;
+  };
+}
+
+/** Parent content script reports geometry for a child identified by the nonce. */
+export interface FrameGeometryReport extends BaseMessage {
+  type: "FRAME_GEOMETRY_REPORT";
+  source: MessageSource.CONTENT;
+  payload: { nonce: string; rect: ElementRect; visible: boolean };
+}
+
 /** Background tells the content script to execute a DOM action */
 export interface ToolExecuteMessage extends BaseMessage {
   type: "TOOL_EXECUTE";
@@ -53,6 +77,11 @@ export interface ToolExecuteMessage extends BaseMessage {
       requireGeometryMatch?: boolean;
     };
   };
+}
+
+/** Explicitly targeted child-frame action; never broadcast to the top frame. */
+export interface FrameToolExecuteMessage extends Omit<ToolExecuteMessage, "type"> {
+  type: "FRAME_TOOL_EXECUTE";
 }
 
 /** Content script returns the result of a tool execution */
@@ -172,7 +201,11 @@ export interface PresenceResumeMessage extends BaseMessage {
 export type ContentProtocolMessage =
   | DomSnapshotRequest
   | DomSnapshotResponse
+  | FrameSnapshotRequest
+  | FrameSnapshotResponse
+  | FrameGeometryReport
   | ToolExecuteMessage
+  | FrameToolExecuteMessage
   | ToolResultMessage
   | DismissModalsMessage
   | DismissModalsResponse

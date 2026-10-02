@@ -1,4 +1,4 @@
-import React, { useMemo } from "react";
+import React, { useMemo, useState } from "react";
 import type { TraceEntry, TraceSession } from "../../../../types/traces";
 import { buildTraceEvidenceTimeline } from "../../../analysis";
 import type {
@@ -82,7 +82,9 @@ function EvidenceCard({ item }: { item: EvidenceItem }) {
   const navigateToTurn = useStore((state) => state.navigateToTurn);
   const navigateToModelIO = useStore((state) => state.navigateToModelIO);
   const { entry, signals } = item;
-  const screenshot = screenshotSource(entry);
+  const source = screenshotSource(entry);
+  const [failedSource, setFailedSource] = useState<string | null>(null);
+  const screenshot = source === failedSource ? null : source;
   const displayState =
     entry.pageState?.postTool ?? entry.pageState?.preDecision ?? entry.snapshot;
   const tools = entry.toolExecutions ?? [];
@@ -128,7 +130,6 @@ function EvidenceCard({ item }: { item: EvidenceItem }) {
       </div>
 
       <div
-        data-evidence-grid
         className={`grid ${
           screenshot
             ? "min-h-[150px] md:grid-cols-[minmax(220px,0.9fr)_minmax(260px,1.1fr)]"
@@ -137,7 +138,6 @@ function EvidenceCard({ item }: { item: EvidenceItem }) {
       >
         {screenshot && (
           <div
-            data-screenshot-panel
             className="flex min-h-[150px] items-center justify-center border-b border-trace-border bg-black/20 md:border-b-0 md:border-r"
           >
             <div className="flex h-full w-full items-center justify-center">
@@ -146,16 +146,7 @@ function EvidenceCard({ item }: { item: EvidenceItem }) {
                 alt={`Page evidence from turn ${entry.turnNumber}`}
                 className="max-h-[230px] w-full bg-trace-bg object-contain"
                 loading="lazy"
-                onError={(event) => {
-                  const panel = event.currentTarget.closest<HTMLElement>(
-                    "[data-screenshot-panel]",
-                  );
-                  const grid = event.currentTarget.closest<HTMLElement>(
-                    "[data-evidence-grid]",
-                  );
-                  if (panel) panel.style.display = "none";
-                  if (grid) grid.style.gridTemplateColumns = "minmax(0, 1fr)";
-                }}
+                onError={() => setFailedSource(source)}
               />
             </div>
           </div>

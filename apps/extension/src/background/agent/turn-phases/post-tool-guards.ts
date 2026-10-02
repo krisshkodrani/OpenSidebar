@@ -3,7 +3,7 @@
  * machine).
  *
  * The guard chain that runs after tools dispatch on a non-completed turn:
- * observation-progress accounting, ServiceNow infeasibility, overlay-recovery
+ * observation-progress accounting, overlay-recovery
  * completion, the all-fail / deterministic / same-tool circuit breakers, the
  * exploration budget, redundant-action + dead-end detection, the post-escalation
  * pivot and step-duration watchdog, then the same-URL forced escalation, the
@@ -12,7 +12,7 @@
  * `this`); the turn-local escalation/outcome state is threaded in as deps.
  *
  * Control results:
- *   - `end_task`  → a circuit breaker or ServiceNow infeasibility ended the run;
+ *   - `end_task`  → a circuit breaker ended the run;
  *   - `end_turn`  → overlay-recovery completion (break to terminal result);
  *   - `next_turn` → a dead-end pivot/nudge consumed the turn (retry);
  *   - `continue`  → guards passed; proceed to the completion phase.
@@ -22,13 +22,14 @@ import type { AgentStep, ToolCall } from "../../../types";
 import { ToolName } from "../../../types";
 import type { logger, SessionScopedLogger } from "../../../utils";
 import type { ContextManager } from "../context";
+import type { PlanRecoveryRuntime } from "../plan-recovery-runtime";
+import type { CompletionEvidenceRuntime } from "../completion-evidence";
 import type { TraceRecorder } from "../trace";
 import type { LoopResult } from "../loop-types";
 import type { RuntimeLimits } from "../constants";
 import type { LoopSession, TurnScope } from "../loop-scope";
 import type { EscalationTierController } from "../escalation-tier-controller";
 import type { TrustedCompletionCandidate } from "../completion-kernel";
-import type { ServiceNowMissingFieldSearchEvidence } from "../servicenow/trusted-workflow-adapter";
 import type { TurnToolOutcomeRecord } from "../turn-tool-outcomes";
 import { collectTurnToolOutcomeRecords } from "../turn-tool-outcomes";
 import type { ContextProgressSignal } from "../context-economy";
@@ -119,20 +120,15 @@ export interface PostToolGuardsHost {
     ): boolean;
   };
   readonly planSubtasks: ReadonlyArray<{ status: string }>;
-  lastToolNameForPerception: string;
+  lastToolNameForPerception: string | undefined;
   pendingDoneRejectionEscalation: boolean;
   circuitBreakerExit(message: string): void;
   getMetrics(): LoopResult["metrics"];
-  getCompletionRecoveryHintForCurrentState(): string | null;
-  assessServiceNowMissingFieldInfeasibility(
-    toolOutcomes: TurnToolOutcomeRecord[],
-    evidence: Map<string, ServiceNowMissingFieldSearchEvidence>,
-  ): string | null;
-  replanOnEscalation(
-    tabId: number,
-    subgoalAttempts: SubgoalAttempt[],
-    signal?: AbortSignal,
-  ): Promise<boolean>;
+  readonly completionEvidenceRuntime: Pick<
+    CompletionEvidenceRuntime,
+    "getCompletionRecoveryHintForCurrentState"
+  >;
+  readonly planRecovery: Pick<PlanRecoveryRuntime, "replanOnEscalation">;
   strategyPivot(tabId: number, attemptSummary?: string): Promise<void>;
   stepHandler(step: AgentStep, update: boolean): void;
 }
@@ -162,10 +158,6 @@ export interface PostToolGuardsDeps {
   blockedActions: BlockedAction[];
   toolFailCounts: Map<string, number>;
   recentSuccesses: RecentAction[];
-  serviceNowMissingFieldSearchEvidence: Map<
-    string,
-    ServiceNowMissingFieldSearchEvidence
-  >;
 }
 
 export type PostToolGuardsResult =
@@ -192,7 +184,6 @@ export async function runPostToolGuardsPhase(
     blockedActions,
     toolFailCounts,
     recentSuccesses,
-    serviceNowMissingFieldSearchEvidence,
   } = deps;
   // --- Circuit Breaker: track tool failures ---
   if (!turn.doneSignaled) {
@@ -244,33 +235,6 @@ export async function runPostToolGuardsPhase(
           signals: observationProgressSignals.map((signal) => signal.label),
         });
       }
-    }
-    const missingFieldInfeasibleSummary =
-      host.assessServiceNowMissingFieldInfeasibility(
-        turnToolOutcomes,
-        serviceNowMissingFieldSearchEvidence,
-      );
-    if (missingFieldInfeasibleSummary) {
-      signalCompletedResult(missingFieldInfeasibleSummary);
-      host.traceRecorder?.recordEvent(
-        "servicenow_record_missing_field_infeasible",
-        {
-          turn: host.turnCount,
-          summary: missingFieldInfeasibleSummary,
-        },
-      );
-      await host.traceRecorder?.endTurn();
-      return {
-        kind: "end_task",
-        result: {
-          outcome: "completed",
-          turnCount: host.turnCount,
-          summary: missingFieldInfeasibleSummary,
-          failure: { category: "none", code: "none" },
-          metrics: host.getMetrics(),
-          evidence: host.evidenceAccumulator.toArray(),
-        },
-      };
     }
     const overlayRecoveryCompletion = buildOverlayRecoveryCompletionSummary({
       originalQuery: host.originalQuery,
@@ -541,7 +505,7 @@ export async function runPostToolGuardsPhase(
         pivotThreshold: host.limits.stagnationPivot,
       });
       if (deadEnd.kind === "pivot") {
-        const completionHint = host.getCompletionRecoveryHintForCurrentState();
+        const completionHint = host.completionEvidenceRuntime.getCompletionRecoveryHintForCurrentState();
         if (completionHint) {
           host.log.info(
             "agent",
@@ -581,7 +545,7 @@ export async function runPostToolGuardsPhase(
         await host.strategyPivot(session.tabId);
         recentOutcomes.length = 0;
       } else if (deadEnd.kind === "nudge") {
-        const completionHint = host.getCompletionRecoveryHintForCurrentState();
+        const completionHint = host.completionEvidenceRuntime.getCompletionRecoveryHintForCurrentState();
         if (completionHint) {
           host.log.info(
             "agent",
@@ -671,7 +635,7 @@ export async function runPostToolGuardsPhase(
         host.escalationRescue.noteEscalation(host.turnCount, "step_watchdog");
 
         // Try replan-on-escalation first: planner replans, executor continues
-        const replanSucceeded = await host.replanOnEscalation(
+        const replanSucceeded = await host.planRecovery.replanOnEscalation(
           session.tabId,
           subgoalAttempts,
           host.abortController?.signal,
@@ -765,7 +729,7 @@ export async function runPostToolGuardsPhase(
     host.escalationRescue.noteEscalation(host.turnCount, "same_url");
 
     // Try replan-on-escalation first
-    const sameUrlReplanOk = await host.replanOnEscalation(
+    const sameUrlReplanOk = await host.planRecovery.replanOnEscalation(
       session.tabId,
       subgoalAttempts,
       host.abortController?.signal,

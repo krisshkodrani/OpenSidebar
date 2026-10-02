@@ -35,6 +35,7 @@ function run(command, args) {
 }
 
 run(process.execPath, ["node_modules/vite/bin/vite.js", "build", "--config", "apps/sandbox/vite.config.ts"]);
+run(process.execPath, ["scripts/verify-playground-boundaries.mjs"]);
 if (!existsSync(dist)) throw new Error("Sandbox build did not produce apps/sandbox/dist.");
 const indexHtml = readFileSync(path.join(dist, "index.html"), "utf8");
 if (!indexHtml.includes('/playground/assets/') || indexHtml.includes('="/assets/')) {
@@ -53,12 +54,17 @@ function isolatedTargetDirectory() {
     for (const file of [...(chunk.css ?? []), ...(chunk.assets ?? [])]) files.add(file);
     for (const imported of [...(chunk.imports ?? []), ...(chunk.dynamicImports ?? [])]) visit(imported);
   };
-  const entry = (source) => Object.entries(manifest).find(([, value]) => value.isEntry && value.src === source)?.[0];
-  const legacyEntry = entry("target.html");
-  const modelBenchEntry = entry("scenario-target.html");
-  if (!legacyEntry || !modelBenchEntry) throw new Error("Vite manifest is missing an isolated target entry.");
-  visit(legacyEntry);
-  visit(modelBenchEntry);
+  // Vite may fold HTML entries sharing a module into a shared chunk.
+  for (const source of ["target.html", "scenario-target.html", "public-scenario-target.html"]) {
+    const html = readFileSync(path.join(dist, source), "utf8");
+    const scripts = [...html.matchAll(/<script[^>]+src="\/([^" ]+)"/g)];
+    if (!scripts.length) throw new Error("Missing target scripts: " + source);
+    for (const match of scripts) {
+      const key = Object.keys(manifest).find((key) => manifest[key].file === match[1]);
+      if (!key) throw new Error("Target script absent from manifest: " + match[1]);
+      visit(key);
+    }
+  }
   for (const file of files) {
     if (file.includes("control-")) throw new Error(`Target dependency closure contains Control Center asset ${file}.`);
   }
@@ -66,6 +72,8 @@ function isolatedTargetDirectory() {
   copyFileSync(path.join(dist, "target.html"), path.join(directory, "index.html"));
   mkdirSync(path.join(directory, "modelbench"), { recursive: true });
   copyFileSync(path.join(dist, "scenario-target.html"), path.join(directory, "modelbench", "index.html"));
+  mkdirSync(path.join(directory, "scenario"), { recursive: true });
+  copyFileSync(path.join(dist, "public-scenario-target.html"), path.join(directory, "scenario", "index.html"));
   for (const file of files) {
     const destination = path.join(directory, file);
     mkdirSync(path.dirname(destination), { recursive: true });
@@ -74,13 +82,14 @@ function isolatedTargetDirectory() {
   return { directory, files };
 }
 
+// Keep immutable assets for draining runs and snapshot-based rollback.
 const cache = "public,max-age=31536000,immutable";
 const shortCache = "public,max-age=300,must-revalidate";
 const awsDry = dryRun ? ["--dryrun"] : [];
 
 // Apex Control Center is canonical at /playground. /sandbox remains a static
 // redirect during migration so old links never hit the marketing error page.
-run("aws", ["s3", "sync", path.join(dist, "playground", "assets"), `s3://${process.env.SANDBOX_CONTROL_BUCKET}/playground/assets`, "--cache-control", cache, "--delete", ...awsDry]);
+run("aws", ["s3", "sync", path.join(dist, "playground", "assets"), `s3://${process.env.SANDBOX_CONTROL_BUCKET}/playground/assets`, "--cache-control", cache, ...awsDry]);
 run("aws", ["s3", "cp", path.join(dist, "index.html"), `s3://${process.env.SANDBOX_CONTROL_BUCKET}/playground`, "--content-type", "text/html", "--cache-control", shortCache, ...awsDry]);
 run("aws", ["s3", "cp", path.join(dist, "index.html"), `s3://${process.env.SANDBOX_CONTROL_BUCKET}/playground/index.html`, "--content-type", "text/html", "--cache-control", shortCache, ...awsDry]);
 run("aws", ["s3", "cp", path.join(dist, "index.html"), `s3://${process.env.SANDBOX_CONTROL_BUCKET}/account`, "--content-type", "text/html", "--cache-control", shortCache, ...awsDry]);
@@ -109,7 +118,7 @@ run("aws", ["s3", "cp", redirect, `s3://${process.env.SANDBOX_CONTROL_BUCKET}/sa
 const isolatedTarget = isolatedTargetDirectory();
 console.log(`Target deployment contains ${isolatedTarget.files.size} isolated assets.`);
 try {
-  run("aws", ["s3", "sync", isolatedTarget.directory, `s3://${process.env.SANDBOX_TARGET_BUCKET}`, "--cache-control", shortCache, "--delete", ...awsDry]);
+  run("aws", ["s3", "sync", isolatedTarget.directory, `s3://${process.env.SANDBOX_TARGET_BUCKET}`, "--cache-control", shortCache, ...awsDry]);
 } finally {
   rmSync(isolatedTarget.directory, { recursive: true, force: true });
 }

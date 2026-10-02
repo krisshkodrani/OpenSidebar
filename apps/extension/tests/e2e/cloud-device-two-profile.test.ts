@@ -60,6 +60,8 @@ describe("E2E: two-profile cloud device takeover", () => {
       cognitoDomain: "https://auth.example.com",
       cognitoClientId: "two-profile-e2e-web-client",
       cloudTesterSubjects: new Set(["two-profile-account"]),
+      cloudSessionTesterSubjects: new Set(["two-profile-account"]),
+      cloudOperatorSubjects: new Set(["two-profile-account"]),
       relayModelAllowlist: new Set(),
     };
     const auth = new ControlAuthService(repository, config);

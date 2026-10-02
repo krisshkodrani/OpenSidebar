@@ -90,6 +90,8 @@ export interface BenchmarkAttemptV1 {
   requestedSeats: Partial<Record<ModelSeat, RequestedSeatV1>>;
   resolvedSeats: Partial<Record<ModelSeat, ResolvedSeatV1>>;
   usageByRole: Partial<Record<ModelSeat, RoleUsageV1>>;
+  /** Billed calls whose role could not be verified. Included in total cost. */
+  unattributedUsage?: RoleUsageV1;
   telemetry?: AttemptTelemetryV1;
   validation: ValidationResultV1 | null;
   diagnostics?: JsonObject;
@@ -133,6 +135,7 @@ export interface BenchmarkReportV1 {
   totalReplans: number;
   totalRecoveries: number;
   usageByRole: Partial<Record<ModelSeat, RoleUsageV1>>;
+  unattributedUsage?: RoleUsageV1;
   totalCostUsd: number;
   costPerRequestedTaskUsd: number | null;
   costPerSuccessfulTaskUsd: number | null;

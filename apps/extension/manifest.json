@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "OpenSidebar",
-  "version": "0.7.5",
+  "version": "0.7.7",
   "description": "Open-source AI browser agent. Navigate, click, type, and automate web tasks from a side panel with your own provider key.",
   "permissions": [
     "sidePanel",
@@ -54,6 +54,12 @@
     {
       "matches": ["<all_urls>"],
       "js": ["src/content/content.ts"],
+      "run_at": "document_idle"
+    },
+    {
+      "matches": ["<all_urls>"],
+      "js": ["src/content/frame-content.ts"],
+      "all_frames": true,
       "run_at": "document_idle"
     }
   ],

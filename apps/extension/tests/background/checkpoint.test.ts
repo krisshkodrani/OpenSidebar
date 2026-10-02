@@ -179,8 +179,6 @@ describe("MUTATION_SENSITIVE_TOOLS", () => {
       ToolName.UPLOAD_FILE,
       ToolName.SET_COOKIE,
       ToolName.DELETE_COOKIE,
-      ToolName.OPEN_SERVICENOW_MODULE,
-      ToolName.CONFIGURE_SERVICENOW_FORM,
       ToolName.APPLY_LIST_FILTER,
       ToolName.APPLY_LIST_SORT,
       ToolName.APPLY_LIST_ACTION,
@@ -222,8 +220,8 @@ describe("MUTATION_SENSITIVE_TOOLS", () => {
     }
   });
 
-  test("has exactly 21 entries", () => {
-    expect(MUTATION_SENSITIVE_TOOLS.size).toBe(21);
+  test("has exactly 19 entries", () => {
+    expect(MUTATION_SENSITIVE_TOOLS.size).toBe(19);
   });
 
   test("is a subset of tools with risk >= MEDIUM or explicit side-effects", () => {

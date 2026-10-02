@@ -59,14 +59,6 @@ One-pagers: [Investigation Loop](./guides/trace-viewer-investigation-loop.html) 
 - [Known Limitations](./known-limitations.md)
 - [Browser Navigation Challenge](./guides/browser-navigation-challenge.md)
 - [The Right Level Of Abstraction](./guides/right-level-of-abstraction.md)
-- [WorkArena Generalized Harness Philosophy](./guides/workarena-generalized-harness-philosophy.md)
-
-## Evaluations
-
-- [WorkArena Setup](./evals/workarena.md)
-- [WorkArena Roadmap](./evals/workarena-roadmap.md)
-- [WorkArena First Smoke Test Checklist](./evals/workarena-smoke-test-checklist.md)
-- [WorkArena Major Full Run Checklist](./evals/workarena-full-run-checklist.md)
 
 ## Other
 

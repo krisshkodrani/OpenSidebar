@@ -22,6 +22,7 @@ import {
   readComboboxCommittedValue,
 } from "../tagging";
 import { buildSnapshot } from "../snapshot";
+import { formatPageRead } from "../../utils/format-page-read";
 import {
   staleIdError,
   describeElement,
@@ -305,32 +306,9 @@ export function executeRead(): {
   navigated: boolean;
 } {
   const snapshot = buildSnapshot(true);
-
-  // Format for the LLM
-  const lines: string[] = [
-    `Page: ${snapshot.title}`,
-    `URL: ${snapshot.url}`,
-    `Scroll: ${snapshot.scroll.y}/${snapshot.scroll.maxY}`,
-    "",
-    "Interactive elements:",
-  ];
-
-  for (const el of snapshot.elements) {
-    const attrs = Object.entries(el.attributes)
-      .map(([k, v]) => `${k}="${v}"`)
-      .join(" ");
-    lines.push(
-      `  [${el.tag}] <${el.tagName}${attrs ? " " + attrs : ""}> "${el.text}"`,
-    );
-  }
-
-  if (snapshot.pageContent) {
-    lines.push("", "Page content:", snapshot.pageContent);
-  }
-
   return {
     success: true,
-    result: lines.join("\n"),
+    result: formatPageRead(snapshot),
     navigated: false,
   };
 }

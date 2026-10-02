@@ -1,18 +1,5 @@
 # Agent Loop
 
-The agent loop is the core orchestration engine that runs in the service
-worker. It manages the Think → Act → Observe cycle: calling the LLM, executing
-tools, and deciding when the task is done.
-
-**Location:** `apps/extension/src/background/agent/`
-
-Since RFC LP-15 Phase 11 / RFC LP-16, the loop is not a monolith: `loop.ts`
-hosts the `AgentLoop` class, but each turn runs as an **explicit state machine
-of ordered phases**, and most behavior lives in extracted modules around it.
-`loop.ts` is guarded by the decomposition ratchet
-(`node scripts/loop-ratchet.mjs --report`) — trust the ratchet over any size
-numbers quoted in prose.
-
 ## The turn state machine
 
 `agent/turn-machine.ts` defines the vocabulary; `loop()` is a thin driver that
@@ -60,7 +47,7 @@ Phases never receive the whole `AgentLoop`. Each declares a narrow
 `runXxxPhase(this as unknown as XxxPhaseHost, deps)`. Extracted method
 clusters follow the same pattern (`done-plan-rejection.ts`,
 `done-plan-validation.ts`, `completion-evidence.ts`, `turn-checkpoint.ts`,
-the ServiceNow controllers in `agent/servicenow/`), with `loop.ts` keeping
+the generic catalog controller in `agent/catalog-controller.ts`), with `loop.ts` keeping
 thin delegator methods so call sites stay stable.
 
 ## Key modules
@@ -82,7 +69,6 @@ thin delegator methods so call sites stay stable.
 | `mutation-ledger.ts`, `evidence.ts`, `verification.ts`                                   | State-diff verification evidence                                          |
 | `partial-progress-handoff.ts`                                                            | Structured handoff when the turn budget runs out                          |
 | `loop-skill-tools.ts`, `skill-turn-cap-policy.ts`                                        | Skill-scoped tool ranking/suppression                                     |
-| `servicenow/`                                                                            | Quarantined ServiceNow domain controllers                                 |
 | `tool-recovery.ts`                                                                       | Recover tool calls from plain-text LLM responses                          |
 | `trace.ts`                                                                               | `TraceRecorder` — full-fidelity session recording (dev-only)              |
 | `constants.ts`                                                                           | Centralized thresholds and limits — source of truth for the numbers below |
@@ -146,6 +132,23 @@ tokens are estimated with a chars/4 heuristic. Context persists across
 service-worker restarts via `chrome.storage.session`; compression tightens
 dynamically (NONE → LIGHT → MEDIUM → HEAVY) under budget pressure.
 
+`observation-memory.ts` retains historical page text when navigation or an SPA
+transition replaces the current view. It deduplicates repeated views and caps
+storage at 16 observations, 8,000 characters per page, and 64,000 text characters
+in total. The volatile prompt tail includes at most 4,000 characters (less for
+small context windows): the most recent prior view plus up to two older views
+ranked by overlap with the user request. History compaction does not erase this
+record; session state and turn checkpoints preserve it. Clearing the task clears
+the record. Explicit working notes remain necessary for facts outside this
+bounded window; excerpts and evictions can omit data.
+
+Historical excerpts are sanitized page data with source URL and observation turn,
+not current state or accepted completion evidence. They cannot authorize actions
+or override disclosure limits. Verifier reroutes also carry up to two prior
+executor reports (each capped at 4,000 characters), labeled as unverified reports.
+The reroute remains pending and must establish its outcome through normal
+verification; copying a report does not mark its claims as verifier accepted.
+
 ## Tools
 
 Tool definitions, registration modules, metadata (risk, DOM-modifying,
@@ -195,9 +198,9 @@ finalized at stream end.
 Model configuration is per-provider-mode in
 `apps/extension/src/config/model-config.ts` with executor eligibility in
 `apps/extension/src/utils/executor-model-policy.ts` — trust those files over
-any list here. Current default seats (OpenRouter provider mode): executor
-`minimax/minimax-m3`, planner `z-ai/glm-5.2`, judge
-`openai/gpt-oss-120b` (a dormant writer seat also exists). The release UI
+any list here. Current default seats (OpenRouter provider mode): executor and
+planner `openai/gpt-6-luna`, judge `typesafe/jev-1.13` through the Decisions
+API (a dormant writer seat also exists). The release UI
 offers OpenRouter and Fireworks; experimental adapters remain available to
 internal evaluation. All modes draw from `ProviderPool` slots.
 

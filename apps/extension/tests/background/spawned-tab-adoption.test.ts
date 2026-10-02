@@ -265,7 +265,9 @@ describe("tab-management gate spawned-tab unlock", () => {
   const gatedLoop = (hasSpawned: boolean) =>
     ({
       context: { hasSpawnedTabs: () => hasSpawned },
-      shouldBlockTabManagementTools: () => true,
+      originalQuery: "Inspect this page",
+      selectedSkillId: null,
+      planRequiresTabManagement: false,
     }) as unknown as AgentLoopToolHandlerHost;
 
   test("stays blocked without spawned tabs", () => {

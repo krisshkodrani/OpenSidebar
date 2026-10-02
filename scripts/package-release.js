@@ -11,6 +11,7 @@ import {
 import { createHash } from "node:crypto";
 import { basename, dirname, relative, resolve } from "node:path";
 import { execFileSync } from "node:child_process";
+import { isReleaseFile, releaseBuildSha256 } from "./release-build-identity.js";
 
 const rootPath = process.cwd();
 const distPath = resolve(rootPath, "dist");
@@ -206,23 +207,25 @@ function readGitCommit() {
 }
 
 function writeReleaseNotes({ commit, distManifest, hash }) {
+  const changelog = readFileSync(resolve(rootPath, "CHANGELOG.md"), "utf8");
+  const releaseHeading = `## [${version}]`;
+  const headingStart = changelog.indexOf(releaseHeading);
+  if (headingStart < 0) {
+    throw new Error(`CHANGELOG.md is missing ${releaseHeading}`);
+  }
+  const headingEnd = changelog.indexOf("\n", headingStart);
+  const nextHeading = changelog.indexOf("\n## [", headingEnd);
+  const highlights = changelog
+    .slice(headingEnd + 1, nextHeading < 0 ? undefined : nextHeading)
+    .trim();
+  if (!highlights) {
+    throw new Error(`CHANGELOG.md has no release notes for ${version}`);
+  }
   const notes = `# OpenSidebar v${version}
-
-OpenSidebar v${version} adds supervised remote browser work to the normal production extension while preserving local browser tasks and Direct from this browser. It ships as a reproducible Chrome Web Store update candidate and unpacked-extension zip.
 
 ## Highlights
 
-- Linked named-tester devices can receive supervised read-only browser missions from opensidebar.com and compatible MCP clients.
-- Remote targets are bound to an existing OpenSidebar tab group with the sidepanel enabled; detached or stale targets fail closed before execution and are rechecked at completion.
-- Active-tab, existing-tab, duplicate-tab selection, and isolated-tab creation return bounded workspace, window, URL, title, and sidepanel evidence without raw Chrome identifiers.
-- The task-centered workbench presents local tasks, plans, decisions, watch mode, and remote missions as one state-driven workflow with bounded history.
-- Account sign-in uses Cognito email OTP and revocable device sessions; serialized refresh preserves the session across extension contexts and token rotation.
-- Direct from this browser remains available for local provider use, and local browser tasks continue independently of remote work.
-- Settings navigation survives tab switches and sidepanel remounts for the current Chrome session.
-- Remote takeover, device-command execution, checkpoint restore, and Temporal coordination remain disabled for this release.
-- The extension remains compatible with the audited 0.7.4 backend contract; the production dependency audit reports no known vulnerabilities.
-- DOMPurify is updated to \`3.4.13\`, and the container runtime dependency manifest is checked against the audited lockfile during release verification.
-- Release packaging builds \`dist/\`, verifies manifest/package version alignment, and writes a deterministic ZIP with a SHA-256 checksum.
+${highlights}
 
 ## Verification
 
@@ -280,6 +283,7 @@ function writeReleaseManifest({ commit, distManifest, hash, zipSize }) {
     name: distManifest.name ?? "OpenSidebar",
     version,
     commit,
+    distSha256: releaseBuildSha256(distPath),
     date: new Date().toISOString().slice(0, 10),
     packageVersion: version,
     extensionManifestVersion: distManifest.version ?? null,
@@ -335,9 +339,11 @@ if (!existsSync(distPath) || !statSync(distPath).isDirectory()) {
 }
 
 mkdirSync(dirname(outputPath), { recursive: true });
-const files = collectFiles(distPath).sort((left, right) =>
-  left.localeCompare(right, "en"),
-);
+const files = collectFiles(distPath)
+  .filter((file) => isReleaseFile(relative(distPath, file)))
+  .sort((left, right) =>
+    left.localeCompare(right, "en"),
+  );
 if (files.length === 0) {
   throw new Error("dist folder is empty");
 }

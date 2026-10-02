@@ -368,39 +368,6 @@ describe("Content Actions", () => {
       expect(result.result).toContain(`Clicked [${buttonId}] button "Submit"`);
     });
 
-    test("click_element treats ServiceNow macroponent shell as pass-through", async () => {
-      (window as any).happyDOM.setURL(
-        "https://workarenapublic18.service-now.com/now/nav/ui/home",
-      );
-      document.body.innerHTML = `
-                <button id="all" role="button" aria-label="All">All</button>
-                <macroponent-f51912f4c700201072b211d4d8c26010 id="shell"></macroponent-f51912f4c700201072b211d4d8c26010>
-            `;
-      resetStableIds();
-      tagElements();
-
-      const button = document.getElementById("all") as HTMLButtonElement;
-      const shell = document.getElementById("shell") as HTMLElement;
-      const buttonId = Number(button.getAttribute("data-os-tag"));
-      const clickHandler = vi.fn();
-      button.addEventListener("click", clickHandler);
-      const elementFromPoint = vi
-        .spyOn(document, "elementFromPoint")
-        .mockReturnValue(shell);
-
-      try {
-        const result = await executeAction(ToolName.CLICK_ELEMENT, {
-          id: buttonId,
-        });
-
-        expect(result.success).toBe(true);
-        expect(result.result).toContain(`Clicked [${buttonId}] button "All"`);
-        expect(clickHandler).toHaveBeenCalledTimes(1);
-      } finally {
-        elementFromPoint.mockRestore();
-      }
-    });
-
     test("click_element does not hide page overlays to click a covered target", async () => {
       document.body.innerHTML = `
                 <button id="target">Delete Account</button>

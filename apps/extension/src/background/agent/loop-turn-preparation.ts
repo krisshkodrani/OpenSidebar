@@ -90,7 +90,15 @@ export async function prepareLlmTurnRequest(
   // Tools are fingerprinted too: the profile pipeline filters AND reorders the
   // array per turn, and providers serialize it ahead of every message — churn
   // there breaks the cache with zero message-level divergence to show for it.
-  const promptFingerprint = fingerprintPrompt(messages, tools);
+  // Current images and page state form a volatile suffix; the catalog follows it.
+  let volatileTailStartIndex = promptWithoutCatalog.length - 1;
+  while (volatileTailStartIndex > 1) {
+    const previousContent = promptWithoutCatalog[volatileTailStartIndex - 1]?.content;
+    if (!Array.isArray(previousContent) ||
+        !previousContent.some((part) => part.type === "image_url")) break;
+    volatileTailStartIndex--;
+  }
+  const promptFingerprint = fingerprintPrompt(messages, tools, volatileTailStartIndex);
   const promptDivergence = comparePromptPrefix(
     deps.previousPromptFingerprint ?? null,
     promptFingerprint,

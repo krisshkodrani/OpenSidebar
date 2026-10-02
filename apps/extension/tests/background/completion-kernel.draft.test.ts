@@ -232,6 +232,58 @@ describe("completion kernel draft workflows", () => {
     expect(buildCompletionRecoveryHint(decision)).toContain("draft remains");
   });
 
+  test("rejects an incomplete draft when its send control is disabled", () => {
+    const snap = draftSnapshot({
+      elements: [
+        ...draftSnapshot().elements,
+        { ...actionButton(302, "Send message"), isDisabled: true },
+      ],
+    });
+    const generated = generateCompletionContract({
+      userRequest: "Prepare a reply and leave it unsent for my approval.",
+      snapshot: snap,
+    });
+
+    const decision = evaluateCompletionContract({
+      contract: generated?.contract,
+      evidence: deriveCompletionEvidenceFromSnapshot(snap, 7),
+      snapshot: snap,
+      candidateSource: "model_done",
+      summary: "The reply is drafted and ready for approval.",
+    });
+
+    expect(decision.status).toBe("rejected");
+    expect(decision.reason).toContain("control is disabled");
+  });
+
+  test("rejects an unsent dispute draft whose send control remains disabled", () => {
+    const snap = draftSnapshot({
+      title: "Renewal review",
+      visibleContent: "Dispute draft Send dispute",
+      pageContent: "Dispute draft Send dispute",
+      elements: [
+        textField(301, "Subject", "Renewal invoice review"),
+        { ...textField(302, "Message", "We dispute the renewal invoice."), tagName: "textarea" },
+        { ...actionButton(303, "Send dispute"), isDisabled: true },
+      ],
+    });
+    const generated = generateCompletionContract({
+      userRequest: "Prepare a concise dispute to the vendor. Don't send it; leave final approval to me.",
+      snapshot: snap,
+    });
+    const decision = evaluateCompletionContract({
+      contract: generated?.contract,
+      evidence: deriveCompletionEvidenceFromSnapshot(snap, 7),
+      snapshot: snap,
+      candidateSource: "model_done",
+      summary: "The dispute is drafted and ready for approval.",
+    });
+
+    expect(generated?.contract.kind).toBe("draft_only");
+    expect(decision.status).toBe("rejected");
+    expect(decision.reason).toContain("control is disabled");
+  });
+
   test("accepts draft-only completion from a live composer value read", () => {
     const snap = draftSnapshot({
       title: "XING message thread",

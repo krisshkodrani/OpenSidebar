@@ -35,6 +35,7 @@ export interface ModelBenchDriverResult {
   driverEvidence?: JsonObject;
   resolvedSeats: Partial<Record<ModelSeat, ResolvedSeatV1>>;
   usageByRole: Partial<Record<ModelSeat, RoleUsageV1>>;
+  unattributedUsage?: RoleUsageV1;
   telemetry?: BenchmarkAttemptV1["telemetry"];
   artifactRefs: readonly string[];
   failure?: {
@@ -184,6 +185,7 @@ export async function runModelBenchCase(
       requestedSeats: options.configuration.seats,
       resolvedSeats: result.resolvedSeats,
       usageByRole: result.usageByRole,
+      ...(result.unattributedUsage ? { unattributedUsage: result.unattributedUsage } : {}),
       ...(result.telemetry ? { telemetry: result.telemetry } : {}),
       validation,
       ...(result.diagnostics || result.failure

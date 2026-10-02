@@ -1,5 +1,57 @@
 # Changelog
 
+## [0.7.7] - Unreleased
+
+### Added
+
+- Added an opt-in setting for active tasks to read and interact with embedded
+  cross-origin pages. It remains off by default in the published extension.
+- Added curated Playground fixtures and a consistent responsive application
+  design across the signed-in web experience.
+
+### Fixed
+
+- Improved retention of requested facts seen during a workflow for more
+  accurate final reporting, and tightened completion evidence and recovery paths.
+  Live final-answer validation remains open.
+- Encrypted locally stored provider keys, including migration of existing
+  plaintext keys; the encryption key remains on the same device.
+- Improved clarification handling for unresolved user choices and scoped
+  verification of option quantities and time intervals.
+- Preserved remote mission state during migration replay and bounded telemetry
+  delivery retries per record.
+- Kept the production build and typecheck graph aligned with their workspace
+  dependencies.
+
+### Internal
+
+- Split the agent completion, turn, and orchestration code into smaller modules
+  under the shrink-only size guard.
+- Removed ServiceNow-specific runtime and benchmark wiring while retaining
+  generic list, catalog, and knowledge tools.
+- Kept generated traces and release reports local; added a reviewed, sanitized
+  trace dataset preparation path for future model experiments.
+- Added model-role cost accounting and stricter ModelBench route evidence;
+  headline live model and cost comparisons remain unverified.
+
+## [0.7.6] - 2026-09-13
+
+### Added
+
+- Integrated the ModelBench100 catalog, deterministic validators, provider-routing
+  evidence, and workspace acceptance diagnostics. Headline model baselines remain
+  pending; diagnostic results are not a benchmark performance claim.
+- Reconciled supervised remote work with workspace targeting and account settings.
+  Remote rollout remains limited to authorized named testers.
+
+### Fixed
+
+- Distinguished read-only communication requests from requests to prepare drafts.
+- Preserved strict provider/model routing and accurate partial-handoff reasons.
+- Corrected trace writer shutdown and bounded optional telemetry Git discovery.
+- Bound release smoke evidence to the actual production build, version, and commit.
+- Updated production dependency overrides and the cloud runtime manifest.
+
 ## [0.7.4] - 2026-08-13
 
 ### Added

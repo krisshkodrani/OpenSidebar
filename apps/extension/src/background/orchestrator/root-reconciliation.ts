@@ -79,8 +79,9 @@ export function reconcileRootCompletion(input: {
 
   const corpus = [
     input.snapshotText,
+    // Planner descriptions are instructions, not observed completion evidence.
     ...input.completedNodes.map(
-      (node) => `${node.description}\n${node.result ?? ""}\n${node.userFacingResult ?? ""}`,
+      (node) => `${node.result ?? ""}\n${node.userFacingResult ?? ""}`,
     ),
   ]
     .filter(Boolean)

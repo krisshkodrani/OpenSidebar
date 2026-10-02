@@ -287,8 +287,7 @@ function normalizeFleetToolName(name: string): FleetToolName {
   }
   if (
     normalized === "navigate" ||
-    normalized === "go_back" ||
-    normalized === "open_servicenow_module"
+    normalized === "go_back"
   ) {
     return "navigate";
   }

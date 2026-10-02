@@ -55,13 +55,13 @@ export async function withPresenceSuspended<T>(
 
 /** captureVisibleTab with a single retry after the per-second quota error. */
 export async function captureVisibleTabWithQuotaRetry(
-  windowId: number,
+  windowId: number | undefined,
   options: { format?: "jpeg" | "png"; quality?: number },
   log: CaptureLog,
 ): Promise<string> {
   try {
     return (await chrome.tabs.captureVisibleTab(
-      windowId,
+      windowId as number,
       options as chrome.tabs.CaptureVisibleTabOptions,
     )) as unknown as string;
   } catch (error: unknown) {
@@ -79,7 +79,7 @@ export async function captureVisibleTabWithQuotaRetry(
       setTimeout(resolve, CAPTURE_VISIBLE_TAB_RETRY_DELAY_MS),
     );
     return (await chrome.tabs.captureVisibleTab(
-      windowId,
+      windowId as number,
       options as chrome.tabs.CaptureVisibleTabOptions,
     )) as unknown as string;
   }

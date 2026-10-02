@@ -18,7 +18,7 @@ export function MetricsSummary({ metrics }: { metrics: SessionMetrics }) {
       <div className="flex flex-wrap items-center gap-1.5">
         <span>{formatTokensCompact(metrics.totalTokens)} tokens</span>
         <span className="text-warm-300 dark:text-warm-600">/</span>
-        <span>
+        <span title="Tracked agent, planner, and judge cost">
           {metrics.totalCost > 0 ? formatCostCompact(metrics.totalCost) : "--"}
           {metrics.totalCost > 0 && costMode === "estimated" ? " (est.)" : ""}
           {metrics.totalCost > 0 && costMode === "mixed" ? " (mixed)" : ""}

@@ -1,5 +1,9 @@
 # Demo Video Style Guide
 
+> Historical ServiceNow promo guidance below describes retired footage. ServiceNow
+> support was removed on 2026-09-28. For new demos, use the generic fixture or
+> trace-viewer shows and credit the models recorded in each run.
+
 This is the house style for OpenSidebar demo collages: short, polished videos that
 show the agent completing real tasks, each introduced by a title card and narrated
 by an on-screen caption, with the model stack always credited. The style is encoded
@@ -8,19 +12,12 @@ copy conventions so future cuts stay consistent.
 
 ## The pipeline
 
-1. **Record each run** through the E2E harness under the `video` profile, which
-   auto-captures the visible Chrome window to an MP4 timelapse:
-   ```
-   E2E_PROFILE=video corepack pnpm tsx scripts/workarena-handoff.ts \
-     --task workarena.servicenow.<task> --allow-servicenow-reset --seed <n>
-   ```
-   Runs are nondeterministic, so record until you get a clean `Validation: true`
-   pass and keep that clip (`.artifacts/e2e/videos/<date>/…-view.mp4`).
+1. **Record each run** through the generic E2E harness under the `video`
+   profile. Keep verified clips under `.artifacts/e2e/videos/`.
 2. **Build the collage** — the montage script locates each clip by label,
    re-times it to a uniform fast-motion length, adds the cards and overlays, and
    concatenates everything through black:
    ```
-   node scripts/build-demo-montage.mjs --show servicenow --scene-sec 17
    node scripts/build-demo-montage.mjs --show fixtures   --scene-sec 17
    node scripts/build-demo-montage.mjs --show <name> --stills   # PNG mockups
    ```
@@ -29,9 +26,7 @@ copy conventions so future cuts stay consistent.
 The tooling is ffmpeg-only (no moviepy), reusing the harness's encoder settings
 (`libx264 -preset veryfast -crf 23 -pix_fmt yuv420p -movflags +faststart`).
 
-**Three shows** are defined in the script and share the same style:
-- **`servicenow`** — WorkArena/ServiceNow tasks (recorded via `workarena-handoff.ts`);
-  the "extendable / deep integration" story.
+**Two shows** are defined in the script and share the same style:
 - **`fixtures`** — general-web fixture tasks (recorded via `run-e2e-video-review.ts`);
   the "core, works on any website" story. Its clips are named by each test's
   `testLabel`, so `scenes[].task` is that label. Fixtures never touch the record
@@ -102,7 +97,7 @@ against the code before changing (`config/model-config.ts`,
 the handoff report, whose `executorModel`/`plannerModel` fields are null unless
 `E2E_MODEL` is exported.
 
-The customer promo follows the recommended product defaults:
+The retired ServiceNow customer promo used this model stack:
 
 - **Executor: MiniMax M3** (`minimax/minimax-m3`).
 - **Planner: GLM 5.2** (`z-ai/glm-5.2`).

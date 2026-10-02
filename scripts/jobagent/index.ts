@@ -17,7 +17,7 @@ import {
 import { resolveApplicationDir, resolveApplicationsDir } from "./paths";
 
 export { assembleFillBrief } from "./brief";
-export { startCvServer, type CvServer } from "./cv-server";
+export { resolveCvServeDir, startCvServer, type CvServer } from "./cv-server";
 export {
   loadAnswerLibrary,
   parseAnswerLibrary,

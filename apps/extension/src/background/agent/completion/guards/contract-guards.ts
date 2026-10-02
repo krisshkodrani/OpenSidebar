@@ -5,9 +5,8 @@
  *   - `rejectDoneForIncompleteTaskContract` (loop.ts:3284) — embeds the
  *     max-rejections branch;
  *   - `rejectDoneForWorkflowContract` (loop.ts:3384);
- *   - `rejectDoneForMissingRequiredEvidence` (loop.ts:3164) — its ServiceNow
- *     evidence inference is an injected pre-step; this guard reads the
- *     post-inference `ctx.missingRequiredEvidence`.
+ *   - `rejectDoneForMissingRequiredEvidence` (loop.ts:3164) reads
+ *     `ctx.missingRequiredEvidence`.
  */
 
 import {

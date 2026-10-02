@@ -14,10 +14,24 @@ mode, only the account's verified OpenRouter or Fireworks credential is usable,
 and the relay enforces a reviewed model allowlist. Legacy hybrid stacks remain
 local-only.
 
-| Provider mode | Required key(s) | Role             | Status              | Notes                                   |
-| ------------- | --------------- | ---------------- | ------------------- | --------------------------------------- |
-| `openrouter`  | OpenRouter key  | Full agent stack | Recommended default | Live catalog with a verified allowlist. |
-| `fireworks`   | Fireworks key   | Full agent stack | Supported           | Curated, compatibility-checked models.  |
+| Provider mode | Environment key      | Executor default                              | Planner default                    | Status              |
+| ------------- | -------------------- | --------------------------------------------- | ---------------------------------- | ------------------- |
+| `openrouter`  | `OPENROUTER_API_KEY` | `openai/gpt-6-luna`                           | `openai/gpt-6-luna`               | Recommended default |
+| `fireworks`   | `FIREWORKS_API_KEY`  | `accounts/fireworks/models/kimi-k2p7-code`   | `accounts/fireworks/models/glm-5p2` | Supported           |
+
+The default OpenRouter seats in `apps/extension/src/config/model-config.ts` are
+`openai/gpt-6-luna` for executor and planner, and `typesafe/jev-1.13` for
+typed judge decisions. Fireworks uses `accounts/fireworks/models/gpt-oss-120b`
+for its judge. There is no separate perception model seat: the executor receives
+screenshots when the task needs vision. Settings may override the models. The internal E2E
+harness has its own provider default (`fireworks`), so a test run's model
+attribution must come from its recorded configuration and provider responses.
+
+To make one small completion request per configured provider, run
+`pnpm providers:smoke` or select one with
+`pnpm providers:smoke -- --provider=openrouter`. Missing environment keys are
+skipped. The command prints provider-reported token counts and cost when supplied;
+it creates no report file. It makes a paid API call for each provider with a key.
 
 Experimental and legacy provider modes remain understood by the runtime for
 migrations and internal evaluation, but are not offered in Settings. A provider

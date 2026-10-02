@@ -1078,6 +1078,26 @@ describe("Working Notes", () => {
 
 // --- Turn Budget Tests ---
 describe("Turn Budget", () => {
+  test("keeps unresolved user choices ahead of escalation at every budget level", () => {
+    for (const turn of [5, 26, 29]) {
+      const ctx = new ContextManager();
+      ctx.setTimeContext(turn, 30, Date.now() - 1000);
+      const systemContent = renderedPrompt(ctx.getPrompt());
+      const priority = systemContent.slice(
+        systemContent.indexOf("## Priority Order"),
+        systemContent.indexOf("## Direct Action Rules"),
+      );
+      expect(priority.indexOf("call `clarify()`")).toBeLessThan(
+        priority.indexOf("call `escalate()`"),
+      );
+      if (turn >= 26) {
+        expect(systemContent).toContain(
+          "clarify() if a required user choice is unresolved",
+        );
+      }
+    }
+  });
+
   test("turnBudget appears in system prompt when time context is set", () => {
     const ctx = new ContextManager();
     ctx.setTimeContext(5, 30, Date.now() - 10000); // 10s ago
@@ -1460,6 +1480,40 @@ describe("Stable prefix (LP-21)", () => {
     const last = prompt[prompt.length - 1];
     expect(last.role).toBe("user");
     expect(last.content).toContain("## Page Context");
+  });
+
+  test("fresh visual evidence follows recorded history and precedes page state", () => {
+    const ctx = new ContextManager();
+    ctx.setOriginalQuery("Read the chart");
+    ctx.addMessage({ role: "user", content: "Read the chart" });
+    ctx.addMessage({ role: "assistant", content: "I will inspect the chart." });
+    ctx.addMessage({
+      role: "assistant",
+      content: null,
+      tool_calls: [{ id: "read-chart", type: "function", function: { name: "read_page", arguments: "{}" } }],
+    });
+    ctx.addMessage({ role: "tool", tool_call_id: "read-chart", content: "Chart text captured" });
+    ctx.setScreenshotForExecutor("data:image/jpeg;base64,abc");
+    ctx.setRegionZoomForExecutor({
+      dataUrl: "data:image/jpeg;base64,zoom",
+      label: "chart detail",
+    });
+
+    const prompt = ctx.getPrompt();
+    const historyIndex = prompt.findIndex((message) => message.content === "I will inspect the chart.");
+    const resultIndex = prompt.findIndex((message) => message.content === "Chart text captured");
+    const screenshotIndex = prompt.findIndex((message) =>
+      Array.isArray(message.content) && message.content.some((part) =>
+        part.type === "text" && part.text === "Current page screenshot."));
+    const zoomIndex = prompt.findIndex((message) =>
+      Array.isArray(message.content) && message.content.some((part) =>
+        part.type === "text" && part.text.includes("Magnified region chart detail")));
+
+    expect(historyIndex).toBeGreaterThan(0);
+    expect(resultIndex).toBeGreaterThan(historyIndex);
+    expect(screenshotIndex).toBeGreaterThan(resultIndex);
+    expect(zoomIndex).toBeGreaterThan(screenshotIndex);
+    expect(zoomIndex).toBeLessThan(prompt.length - 1);
   });
 
   test("element IDs render in the volatile tail, not the static rules", () => {

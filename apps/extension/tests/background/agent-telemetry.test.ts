@@ -13,6 +13,21 @@ import {
 } from "../../src/background/agent/agent-telemetry";
 
 describe("agent telemetry", () => {
+  test("prefers OpenRouter's reported charge over a table estimate", () => {
+    const metrics = emptySessionMetrics();
+    recordVisionTelemetryUsage({
+      metrics,
+      usage: { prompt_tokens: 1000, completion_tokens: 100, total_tokens: 1100, cost: 0.003 },
+      llmMs: 50,
+      model: "openai/gpt-6-luna",
+      providerId: "openrouter",
+    });
+    expect(metrics.totalCost).toBe(0.003);
+    expect(metrics.totalCostActual).toBe(0.003);
+    expect(metrics.totalCostEstimated).toBe(0);
+    expect(metrics.costMode).toBe("actual");
+  });
+
   test("counts vision model calls separately from cached vision observations", () => {
     const metrics = emptySessionMetrics();
 

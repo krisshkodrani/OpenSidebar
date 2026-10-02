@@ -98,6 +98,7 @@ export const SKILL_CATALOG: SkillDescriptor[] = [
     tags: ["workflow", "shopping", "cart", "checkout"],
     triggers: [
       "swap item in cart",
+      "remove item from cart and add replacement",
       "replace product and keep cart state",
       "apply coupon and checkout",
     ],
@@ -387,7 +388,7 @@ export const SKILL_CATALOG: SkillDescriptor[] = [
     id: "list-row-action-workflow",
     name: "List Row Action Workflow",
     description:
-      "Select rows in a ServiceNow list/table and apply a selected-row action such as delete or mark duplicate.",
+      "Select rows in a visible list/table and apply a selected-row action such as delete or mark duplicate.",
     tags: ["workflow", "list", "table", "row-action"],
     triggers: [
       "delete selected rows",
@@ -418,7 +419,7 @@ export const SKILL_CATALOG: SkillDescriptor[] = [
     verifierMode: "hybrid",
     notes: [
       "Use inspect_table first to identify exact row identifiers and avoid acting on the wrong record.",
-      "Use apply_list_action when the target rows and selected-row action are visible in a ServiceNow list.",
+      "Use apply_list_action when the target rows and selected-row action are visible in a visible list.",
       "Do not infer hidden row identities; if the row cannot be uniquely identified, inspect or filter the list first.",
       "Completion requires evidence that the action ran and the affected rows or resulting status changed.",
     ],
@@ -456,43 +457,6 @@ export const SKILL_CATALOG: SkillDescriptor[] = [
       "Product detail page reached is intermediate.",
       "After reaching the item page, configure requested quantity/options and submit in the same workflow rather than reporting that the page is ready.",
       "Completion requires configured requested options and request/order confirmation.",
-    ],
-  },
-  {
-    id: "servicenow-module-navigation",
-    name: "ServiceNow Module Navigation",
-    description:
-      "Resolve and open ServiceNow application navigator modules by metadata instead of manual menu or global search exploration.",
-    tags: ["workflow", "servicenow", "navigation", "module"],
-    packId: "servicenow-platform",
-    triggers: [
-      "ServiceNow module",
-      "application navigator",
-      "navigate to the module",
-      "module of the application",
-      "module in the application",
-    ],
-    maturity: "candidate",
-    preferredTools: [
-      "open_servicenow_module",
-      "read_page",
-      "done",
-      "update_notes",
-    ],
-    discouragedTools: [
-      "navigate",
-      "type_text",
-      "press_key",
-      "scroll_page",
-      "click_coordinates",
-    ],
-    contextScope: "turn",
-    verifierMode: "deterministic",
-    atomic: true,
-    requiredEvidenceTypes: ["navigation_reached", "goal_state_verified"],
-    notes: [
-      "Use ServiceNow module metadata before manual application navigator clicks.",
-      "Do not call navigate with a search query inside ServiceNow.",
     ],
   },
   {
@@ -704,41 +668,6 @@ export const SKILL_CATALOG: SkillDescriptor[] = [
     ],
   },
   {
-    id: "servicenow-record-form",
-    name: "ServiceNow Record Form",
-    description:
-      "Fill, verify, and submit ServiceNow record forms by field label/name with form-state readback.",
-    tags: ["workflow", "forms", "servicenow", "record"],
-    packId: "servicenow-platform",
-    triggers: [
-      "servicenow record form",
-      "create a new incident",
-      "create a new change request",
-      "value for field",
-    ],
-    maturity: "candidate",
-    preferredTools: [
-      "configure_servicenow_form",
-      "read_page",
-      "open_servicenow_module",
-      "done",
-      "update_notes",
-    ],
-    discouragedTools: [
-      "click_element",
-      "type_text",
-      "select_option",
-      "press_key",
-      "click_coordinates",
-    ],
-    contextScope: "turn",
-    verifierMode: "deterministic",
-    notes: [
-      "Use the ServiceNow form helper for both field configuration and final submit.",
-      "Verify field readback before submit and record evidence after submit.",
-    ],
-  },
-  {
     id: "inline-edit-surface",
     name: "Inline Edit Surface",
     description:
@@ -882,13 +811,13 @@ export const SKILL_CATALOG: SkillDescriptor[] = [
     name: "Multi-Tab Checklist Workflow",
     description:
       "Work through a source list or checklist where each item requires opening a target page in another tab, completing or extracting item-specific work, returning to the source tab, and recording progress before repeating.",
-    packId: "procurement-workflows",
+    packId: "source-list-workflows",
     tags: ["workflow", "tabs", "checklist", "multi-tab", "review"],
     triggers: [
       "open each item in a new tab",
       "open links in separate tabs then return to the list",
       "review checklist items across tabs and mark them done",
-      "procurement list store tabs",
+      "source list item pages in separate tabs",
     ],
     maturity: "candidate",
     preferredTools: [

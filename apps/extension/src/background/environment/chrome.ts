@@ -80,8 +80,7 @@ export const chromeContentBridgePort: ContentBridgePort = {
   async executeFunction(tabId, fn, args = [], options = {}) {
     const results = await chrome.scripting.executeScript({
       target: { tabId, allFrames: options.allFrames ?? false },
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any -- chrome world enum
-      world: (options.world ?? "ISOLATED") as any,
+      world: options.world ?? "ISOLATED",
       func: fn,
       args,
     });
@@ -126,18 +125,15 @@ function chromeStorageArea(
 ): PersistenceStorageArea {
   return {
     get(keys) {
-      return chrome.storage[areaName].get(keys as any) as unknown as Promise<
-        Record<string, unknown>
-      >;
+      return chrome.storage[areaName].get(keys);
     },
     async set(items) {
       await chrome.storage[areaName].set(items);
     },
     async remove(keys) {
-      const area = chrome.storage[areaName] as any;
-      const remove = area.remove;
-      if (typeof remove === "function") {
-        await remove.call(area, keys);
+      const area = chrome.storage[areaName];
+      if (typeof area.remove === "function") {
+        await area.remove(keys);
       }
     },
     onChanged(listener) {

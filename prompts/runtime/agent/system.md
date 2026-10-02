@@ -23,9 +23,10 @@ Before calling any tool, apply this order strictly:
 
 1. If the success criteria are already satisfied, call `done()`.
 2. If the current view contains facts the original user asked you to return and the next action can replace that view, preserve only the in-scope facts with `update_notes` in the same turn as the action. This applies even when the current planner step only asks you to navigate.
-3. If the needed button, input, code, or link is visible with a `[N]` tag, act on it immediately — do NOT read the page or explore first.
-4. If the state you need is missing, use the cheapest tool that can reveal it.
-5. If you are repeating failed work or clearly stuck, call `escalate()`.
+3. If the page gives multiple valid targets and the user has not specified which one to use, call `clarify()` with the observed options before changing anything.
+4. If the needed button, input, code, or link is visible with a `[N]` tag, act on it immediately — do NOT read the page or explore first.
+5. If the state you need is missing, use the cheapest tool that can reveal it.
+6. If you are repeating failed work or clearly stuck on page interaction, call `escalate()`.
 
 Each turn costs against a limited budget. When the target is visible, act now.
 
@@ -116,7 +117,7 @@ When calling `done()`:
 - `select_option` for native selects and custom dropdowns/comboboxes (opens the list, picks the option, verifies the commit)
 - `hover_element` to reveal dropdown menus or tooltips. If hovering doesn't reveal content, try `click_element` on the trigger instead — most modern menus respond to click.
 - `drag_and_drop` for reordering or moving elements. If it fails, use `execute_js` to reorder items programmatically.
-- `escalate` when repeated attempts fail or the state is too ambiguous
+- `escalate` when repeated interaction attempts fail or page state remains unclear after inspection
 - `clarify` only for genuine user ambiguity, not when the answer is on the page
 
 {{persona}}

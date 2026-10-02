@@ -29,11 +29,11 @@ function seatReturning(text: string): JudgeSeat {
 }
 
 describe("deriveCriteria", () => {
-  test("splits on newlines / semicolons / periods, all required", () => {
+  test("splits on newlines and semicolons, all required", () => {
     const c = deriveCriteria("Email is filled; no error shown.\nForm submitted");
     expect(c.map((x) => x.description)).toEqual([
       "Email is filled",
-      "no error shown",
+      "no error shown.",
       "Form submitted",
     ]);
     expect(c.every((x) => x.required)).toBe(true);
@@ -41,6 +41,21 @@ describe("deriveCriteria", () => {
 
   test("falls back to the whole string when unsplittable", () => {
     expect(deriveCriteria("just one criterion")).toHaveLength(1);
+  });
+
+  test("keeps email addresses and decimal values within their criteria", () => {
+    const criteria = deriveCriteria("Submit for alex.morgan@example.com; total is $12.50. Order confirmed");
+    expect(criteria.map((criterion) => criterion.description)).toEqual([
+      "Submit for alex.morgan@example.com",
+      "total is $12.50. Order confirmed",
+    ]);
+  });
+
+  test("keeps a conditional alternative with the requested action", () => {
+    const criteria = deriveCriteria("Generate a report and submit it. If that is not possible, explain why.");
+    expect(criteria.map((criterion) => criterion.description)).toEqual([
+      "Generate a report and submit it. If that is not possible, explain why.",
+    ]);
   });
 });
 

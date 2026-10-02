@@ -665,4 +665,29 @@ describe("useTraceData", () => {
       entriesBefore,
     );
   });
+  test("pagination forwards the cursor and discards stale pages after refresh", async () => {
+    const stalePage = deferred<Awaited<ReturnType<typeof api.fetchTraceSessionsPage>>>();
+    const first = { sessionId: "first", startTime: Date.now() };
+    const current = { sessionId: "current", startTime: Date.now() };
+    vi.mocked(api.fetchTraceSessionsPage)
+      .mockResolvedValueOnce({ items: [first], total: 2, hasMore: true, nextCursor: "cursor-1" })
+      .mockImplementationOnce(() => stalePage.promise)
+      .mockResolvedValueOnce({ items: [current], total: 1, hasMore: false, nextCursor: null });
+    let hook!: ReturnType<typeof useTraceData>;
+    function PaginationHarness() { hook = useTraceData(); return null; }
+    await act(async () => root.render(<PaginationHarness />));
+    let pending!: Promise<void>;
+    await act(async () => { pending = hook.loadMoreSessions(); });
+    const options = vi.mocked(api.fetchTraceSessionsPage).mock.calls[1][1]!;
+    expect(options.cursor).toBe("cursor-1");
+    await act(async () => { await hook.refreshSessions(); });
+    expect(options.signal?.aborted).toBe(true);
+    await act(async () => {
+      stalePage.resolve({ items: [{ sessionId: "stale", startTime: Date.now() }], total: 2, hasMore: false, nextCursor: null });
+      await pending;
+    });
+    expect(useStore.getState().sessions.map((session) => session.sessionId)).toEqual(["current"]);
+    expect(useStore.getState().sessionsNextCursor).toBeNull();
+  });
+
 });

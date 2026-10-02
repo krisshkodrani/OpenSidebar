@@ -17,6 +17,7 @@
 import { AgentStatus } from "../../../types";
 import type { logger, SessionScopedLogger } from "../../../utils";
 import type { ContextManager } from "../context";
+import type { PlanRecoveryRuntime } from "../plan-recovery-runtime";
 import type { TraceRecorder } from "../trace";
 import type { RuntimeLimits } from "../constants";
 import type { LoopSession } from "../loop-scope";
@@ -27,10 +28,7 @@ import {
   evaluateTextAdmissionAdvanceGate,
   type TextAdmissionGateHost,
 } from "../text-admission-gate";
-import {
-  completeSingleSubtask,
-  type AgentLoopPlanProgressHost,
-} from "../loop-plan-progress";
+import type { PlanProgressRuntime } from "../loop-plan-progress";
 import {
   buildFirstTurnTextOnlyNudge,
   extractAttemptSummary,
@@ -42,8 +40,10 @@ import {
 import { detectAdmission } from "../verification";
 import { ESCALATION_REFLECTION, TEXT_ONLY_CORRECTION } from "../loop-prompts";
 import { ACTION_EFFECT } from "../constants";
+import type { PlanStatusTraceEvent } from "../agent-plan-progress";
 
-export interface TextResponsePhaseHost {
+export interface TextResponsePhaseHost extends TextAdmissionGateHost {
+  readonly planProgress: Pick<PlanProgressRuntime, "completeSingleSubtask">;
   readonly turnCount: number;
   readonly originalQuery: string;
   readonly taskId: unknown;
@@ -56,19 +56,14 @@ export interface TextResponsePhaseHost {
     readonly lastActionEffect: ActionEffect | null;
     resetEscalation(): void;
   };
-  readonly planSubtasks: ReadonlyArray<{ status: string; description: string }>;
   broadcast(message: unknown): void;
   finishStream(): void;
   forceGroundingRefresh(tabId: number, reason: string): Promise<void>;
   refreshSnapshot(tabId: number): Promise<number>;
   refreshPerceptionAndTriage(tabId: number): Promise<void>;
-  replanOnEscalation(
-    tabId: number,
-    subgoalAttempts: SubgoalAttempt[],
-    signal?: AbortSignal,
-  ): Promise<boolean>;
+  readonly planRecovery: Pick<PlanRecoveryRuntime, "replanOnEscalation">;
   strategyPivot(tabId: number, attemptSummary?: string): Promise<void>;
-  saveTurnCheckpoint(): Promise<void>;
+  readonly turnCheckpoint: Pick<import("../turn-checkpoint").TurnCheckpointRuntime, "save">;
   statusHandler(status: AgentStatus, detail: string): void;
   stepHandler(
     step: {
@@ -82,7 +77,7 @@ export interface TextResponsePhaseHost {
   ): void;
   syncPlanStatus(
     index: number,
-    event: string,
+    event: PlanStatusTraceEvent,
     meta?: Record<string, unknown>,
   ): void;
 }
@@ -210,7 +205,7 @@ export async function runTextResponsePhase(
 
       if (admission.type === "success" && host.planSubtasks.length > 0) {
         const gate = evaluateTextAdmissionAdvanceGate(
-          host as unknown as TextAdmissionGateHost,
+          host,
           {
             summary: cleanContent,
             consecutiveTextOnly: nextTextOnlyCount,
@@ -239,10 +234,7 @@ export async function runTextResponsePhase(
             return { kind: "next_turn" };
           }
 
-          const newIdx = completeSingleSubtask(
-            host as unknown as AgentLoopPlanProgressHost,
-            gate.runningIdx,
-          );
+          const newIdx = host.planProgress.completeSingleSubtask(gate.runningIdx);
           const nextDesc =
             host.planSubtasks[newIdx]?.description || "Continue to next step";
           host.syncPlanStatus(newIdx, "text_admission_criteria_advance", {
@@ -323,7 +315,7 @@ export async function runTextResponsePhase(
     host.turnCount >= 4
   ) {
     // Try replan-on-escalation first
-    const textReplanOk = await host.replanOnEscalation(
+    const textReplanOk = await host.planRecovery.replanOnEscalation(
       session.tabId,
       subgoalAttempts,
       host.abortController?.signal,
@@ -426,7 +418,7 @@ export async function runTextResponsePhase(
   });
 
   // Durable checkpoint: persist loop state for SW restart recovery
-  host.saveTurnCheckpoint().catch(() => {});
+  host.turnCheckpoint.save().catch(() => {});
 
   // Trace: flush turn
   await host.traceRecorder?.endTurn();

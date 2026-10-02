@@ -10,7 +10,7 @@ import {
   assessCatalogOrderConfigurationClick,
   assessCatalogOrderItemSelectionClick,
   assessCatalogOrderPostConfirmationClick,
-} from "./servicenow/catalog-order-policy";
+} from "./catalog-order-policy";
 import { assessConsequentialFinalActionBlock } from "./consequential-action-policy";
 import { INVESTIGATION_TOOLS, TOOL_CACHE } from "./constants";
 import {
@@ -58,22 +58,19 @@ import {
   validateTextEntryTarget,
 } from "./text-entry-guards";
 import { shouldCheckWorkflowTabRedirect } from "./workflow-tab-controller";
-
-type ToolExecutionMode = "parallel" | "sequential";
+import type { ListDetailWorkflow, ListDetailWorkflowState } from "./list-detail-workflow";
+import type { SkillToolRuntime } from "./loop-skill-tools";
 
 export interface ParallelToolDispatchHost extends AgentLoopToolHandlerHost {
-  getActiveToolProfileForStep(stepIndex: number): string | null | undefined;
+  skillTools: Pick<SkillToolRuntime, "getActiveToolProfileForStep" | "recordSkillToolSelection">;
   getConsequentialActionTaskText(): string;
   getWorkflowTabToolRedirect(params: {
     toolName: ToolName;
     args: Record<string, unknown>;
     currentTabId: number;
   }): Promise<string | null>;
-  recordSkillToolSelection(toolName: ToolName, mode: ToolExecutionMode): void;
   selectedSkillId: string | null;
-  listDetailOpenedTargets: Set<string>;
-  listDetailReviewedTargets: Set<string>;
-  listDetailVisibleActionCount: number;
+  listDetailWorkflow: ListDetailWorkflowState & Pick<ListDetailWorkflow, "trackListDetailToolSuccess">;
 }
 
 export interface ParallelToolDispatchState {
@@ -123,7 +120,7 @@ export async function executeParallelToolCalls(
         rawArgsKey,
         host.context.getSnapshot(),
       );
-      host.recordSkillToolSelection(toolName, "parallel");
+      host.skillTools.recordSkillToolSelection(toolName, "parallel");
 
       const planStatus = host.context.getPlanStatusRaw();
       const currentStepIndex = planStatus?.currentIndex ?? -1;
@@ -132,7 +129,7 @@ export async function executeParallelToolCalls(
           planStatus?.subtasks[currentStepIndex]?.description ??
           host.originalQuery;
         const inlineNavigationBlock = assessInlineEditNavigationGuard({
-          activeToolProfile: host.getActiveToolProfileForStep(currentStepIndex),
+          activeToolProfile: host.skillTools.getActiveToolProfileForStep(currentStepIndex),
           selectedSkillId: host.selectedSkillId,
           snapshot: host.context.getSnapshot(),
           objectiveText: activeObjective,
@@ -399,11 +396,11 @@ export async function executeParallelToolCalls(
         toolName,
         args,
         snapshot: currentSnapshot,
-        reviewedTargets: host.listDetailReviewedTargets,
-        openedTargets: host.listDetailOpenedTargets,
-        previousVisibleDetailActionCount: host.listDetailVisibleActionCount,
+        reviewedTargets: host.listDetailWorkflow.listDetailReviewedTargets,
+        openedTargets: host.listDetailWorkflow.listDetailOpenedTargets,
+        previousVisibleDetailActionCount: host.listDetailWorkflow.listDetailVisibleActionCount,
       });
-      host.listDetailVisibleActionCount =
+      host.listDetailWorkflow.listDetailVisibleActionCount =
         listDetailWorkflow.visibleDetailActionCount;
       if (listDetailWorkflow.block) {
         host.log.warn("agent", "List-detail workflow tool blocked", {
@@ -415,9 +412,9 @@ export async function executeParallelToolCalls(
           turn: host.turnCount,
           tool: toolName,
           mode: "parallel",
-          openedDetailCount: host.listDetailOpenedTargets.size,
-          reviewedDetailCount: host.listDetailReviewedTargets.size,
-          visibleDetailActionCount: host.listDetailVisibleActionCount,
+          openedDetailCount: host.listDetailWorkflow.listDetailOpenedTargets.size,
+          reviewedDetailCount: host.listDetailWorkflow.listDetailReviewedTargets.size,
+          visibleDetailActionCount: host.listDetailWorkflow.listDetailVisibleActionCount,
         });
         return {
           toolCall,
@@ -432,7 +429,7 @@ export async function executeParallelToolCalls(
         typeof args.text === "string"
       ) {
         const inlineRetarget = assessInlineEditTextEntryRetarget({
-          activeToolProfile: host.getActiveToolProfileForStep(currentStepIndex),
+          activeToolProfile: host.skillTools.getActiveToolProfileForStep(currentStepIndex),
           snapshot: host.context.getSnapshot(),
           targetId: args.id,
         });
@@ -760,8 +757,8 @@ export async function executeParallelToolCalls(
           ledger: host.context.getFieldReadLedger(),
           turn: host.turnCount,
         });
-        host.trackListDetailToolSuccess(toolName, args, preActionSnapshot);
-        host.recordCompletionToolEvidence?.(
+        host.listDetailWorkflow.trackListDetailToolSuccess(toolName, args, preActionSnapshot);
+        host.completionEvidenceRuntime?.recordCompletionToolEvidence(
           toolName,
           args,
           result,

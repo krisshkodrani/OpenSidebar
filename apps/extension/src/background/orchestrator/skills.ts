@@ -1,6 +1,5 @@
 import { ToolName } from "../../types";
 import type { ToolProfile } from "../tools/metadata";
-
 import { SKILL_CATALOG } from "./skill-catalog";
 import { SKILL_BODIES } from "./skill-bodies";
 import { SKILL_TOOL_SUPPRESSION_POLICIES } from "./skill-suppression-policies";
@@ -35,22 +34,13 @@ const BUILT_IN_SKILL_PACKS: SkillPack[] = [
     skillIds: ["email-reply-careful"],
   },
   {
-    id: "procurement-workflows",
+    id: "source-list-workflows",
     name: "Multi-Tab Workflows",
     description:
       "Default checklist skills for source-list workflows that intentionally span multiple tabs.",
     type: "enterprise",
     enabledByDefault: true,
     skillIds: ["multi-tab-checklist-workflow"],
-  },
-  {
-    id: "servicenow-platform",
-    name: "ServiceNow Platform",
-    description:
-      "ServiceNow-specific platform semantics for application modules, record forms, reference fields, and Glide-backed commits.",
-    type: "platform",
-    enabledByDefault: true,
-    skillIds: ["servicenow-module-navigation", "servicenow-record-form"],
   },
 ];
 
@@ -70,7 +60,7 @@ const gridEditPattern = /\b(spreadsheet|grid|cell|row|column|sheet|table)\b/i;
 const inlineEditPattern =
   /\b(rename|inline edit|inline rename|change .* value|update .* value|replace .* value|edit .* cell|rename .* to|filename|file name|document name|table cell|grid cell)\b/i;
 const cartPattern =
-  /\b(cart|checkout|coupon|promo|discount|swap|replace|remove|add to cart)\b/i;
+  /\b(cart|checkout|coupon|promo|swap|add to cart)\b/i;
 const emailReplyPattern =
   /\b(?:reply|respond|draft|compose)\b[\s\S]{0,100}\b(?:email|e-mail|mail|inbox|subject|sender|recipient)\b|\b(?:email|e-mail|mail|inbox)\b[\s\S]{0,100}\b(?:reply|response|draft)\b|\bsend\b[\s\S]{0,80}\b(?:email|e-mail|mail)\b[\s\S]{0,80}\b(?:reply|response|to|confirm|acknowledge)\b/i;
 const threadMessagePattern =
@@ -91,14 +81,8 @@ const listRowActionPattern =
   /\b(delete|remove|mark [^.\n]{0,80}duplicate|selected rows?|list action|row action|actions? on selected rows?)\b/i;
 const catalogOrderPattern =
   /\b(service catalog|catalog item|request item|hardware store|hardware catalog|catalog option|optional software|add to cart|order now|place order|submit order|request [^.\n]{0,80}catalog|order\s+\d+\s+"[^"]{3,120}"\s+with\s+configuration)\b/i;
-const serviceNowModuleNavigationPattern =
-  /\b(application navigator|module of the|module in the|navigate to (?:the )?[^.\n]{0,120}module|open (?:the )?[^.\n]{0,120}module|(?:service\s*now|servicenow)[^.\n]{0,80}\bmodule\b|\bmodule\b[^.\n]{0,80}\b(?:service\s*now|servicenow))\b/i;
 const formPattern =
   /\b(form|fill|input|field|dropdown|checkbox|select|budget|category|submit)\b/i;
-const fieldValueRecordFormPattern =
-  /\bvalue\s+of\s+(["'])[\s\S]*?\1\s+for\s+field\s+(["'])[\s\S]*?\2/i;
-const serviceNowRecordFormPattern =
-  /\b(?:service[-\s]*now|servicenow|incident|change request|problem|hardware asset|asset|user record|record)\b/i;
 const configuratorPattern =
   /\b(configure|configurator|pick|choose|select|enable|disable)\b[\s\S]{0,120}\b(size|option|engraving|color|variant|total price|total|price|summary)\b/i;
 const profileFieldPattern =
@@ -137,16 +121,14 @@ const tableAggregateIntentPattern =
   /\b(highest|max(?:imum)?|largest|most|lowest|min(?:imum)?|smallest|least)\b[\s\S]{0,120}\b(salar(?:y|ies)|pay|compensation|price|cost|amount|revenue|budget|value|total|score)\b|\b(salar(?:y|ies)|pay|compensation|price|cost|amount|revenue|budget|value|total|score)\b[\s\S]{0,120}\b(highest|max(?:imum)?|largest|most|lowest|min(?:imum)?|smallest|least)\b/i;
 const paginatedRecordLookupIntentPattern =
   /\b(find|search for|look up|locate|open|review)\b[\s\S]{0,120}\b(?:#[0-9]+|[A-Z]+-\d+|[A-Z][a-z]+(?:\s+[A-Z][a-z]+)?|post\s+#?\d+|record|row|ticket|employee|item)\b|\b(?:salary|status|priority|code|amount|email|owner|count)\b[\s\S]{0,120}\b(?:for|of)\b[\s\S]{0,80}\b(?:#[0-9]+|[A-Z]+-\d+|[A-Z][a-z]+(?:\s+[A-Z][a-z]+)?)\b/i;
-const procurementLoopPattern =
-  /\b(procurement|purchase|buy)\b[\s\S]{0,160}\b(new tab|another tab|each store|store page|store link)\b[\s\S]{0,160}\b(check (?:it|them) off|mark (?:it|them) done|come back and check|return and check|checkbox)\b/i;
-const naturalProcurementChecklistPattern =
-  /\b(?:buy|purchase|procure)\b[\s\S]{0,120}\b(?:first\s+\w+|first\s+\d+|\d+)\s+items?\b[\s\S]{0,120}\bprocurement\s+list\b[\s\S]{0,120}\b(?:mark|check)\s+(?:them|items?|rows?)\s+(?:complete|done|off)\b/i;
+const targetNavigationPattern =
+  /\b(?:open|visit|follow)\b[\s\S]{0,80}\b(?:links?|pages?|listings?|articles?|dashboards?|reports?|stores?)\b/i;
 const explicitTabIntentPattern =
   /\b(?:new|separate|another|other|multiple)\s+tabs?\b|\bopen\b[\s\S]{0,60}\b(?:tabs?|new windows?)\b|\bswitch\b[\s\S]{0,40}\btabs?\b|\bacross\s+tabs?\b/i;
 const sourceListLoopPattern =
   /\b(?:source\s+)?(?:list|checklist|rows?|items?|links?|listings?|articles?|dashboards?|reports?|job listings?|research links?)\b/i;
 const sourceProgressPattern =
-  /\b(?:return|come back|switch back|go back)\b[\s\S]{0,120}\b(?:source|list|checklist|board|page|tab)\b|\b(?:mark|check|record|note)\b[\s\S]{0,80}\b(?:done|complete|reviewed|finished|progress|each|item|row|article)\b/i;
+  /\b(?:mark|check|record|note)\b[\s\S]{0,80}\b(?:done|complete|reviewed|finished|progress|each|item|row|article|off)\b|\b(?:return|come back|switch back|go back)\b[\s\S]{0,120}\b(?:mark|check|record|note)\b/i;
 const repeatedItemPattern =
   /\b(?:first\s+\w+|first\s+\d+|\d+|two|three|four|five|six|seven|eight|nine|ten|all|each|every)\s+(?:items?|rows?|links?|listings?|articles?|dashboards?|dashboard\s+tabs?|reports?|jobs?)\b/i;
 const overlayRecoveryPattern =
@@ -180,84 +162,18 @@ function hasAshbyJobApplicationSignal(
   );
 }
 
-function stripBenchmarkTaskIds(text: string): string {
-  return text.replace(/\bworkarena\.[a-z0-9_.-]+\b/gi, " ");
-}
-
-/**
- * Domain-INDEPENDENT ServiceNow URL-path fingerprints (Next Experience nav shell,
- * Glide list/form `.do` endpoints, sys_id / sysparm query params). These identify
- * a ServiceNow instance even when it is hosted on a custom/vanity domain (many
- * enterprises reverse-proxy or self-host, so the `.service-now.com` hostname is
- * absent). They are ServiceNow-specific enough to avoid matching generic ITSM
- * sites — e.g. `helpdesk.example.com/incidents/new` has none of them.
- */
-const SERVICENOW_URL_PATH_FINGERPRINT =
-  /\/now\/(?:nav|workspace|sow|cwf|wb|agent)\/|\bnav_to\.do\b|\b[a-z0-9_]+_list\.do\b|\.do\?[^#]*\bsys_id=|\bsysparm_[a-z_]+=/i;
-
-function hasServiceNowUrlSignal(pageUrl?: string): boolean {
-  if (!pageUrl) return false;
-  try {
-    const url = new URL(pageUrl);
-    const host = url.hostname.toLowerCase();
-    if (
-      host.endsWith(".service-now.com") ||
-      host.endsWith(".servicenow.com") ||
-      host === "service-now.com" ||
-      host === "servicenow.com"
-    ) {
-      return true;
-    }
-    // Custom-hosted ServiceNow: recognize the platform by its URL fingerprints.
-    return SERVICENOW_URL_PATH_FINGERPRINT.test(`${url.pathname}${url.search}`);
-  } catch {
-    return (
-      /\b(?:service-now|servicenow)\.com\b/i.test(pageUrl) ||
-      SERVICENOW_URL_PATH_FINGERPRINT.test(pageUrl)
-    );
-  }
-}
-
-function getServiceNowActivationReason(
-  input: SkillMatcherInput,
-): string | null {
-  if (hasServiceNowUrlSignal(input.pageUrl)) {
-    return "ServiceNow URL host is active.";
-  }
-
-  const markerCorpus = buildCorpus([
-    input.pageTitle,
-    ...(input.pageMarkers ?? []),
-    ...(input.runtimeContext ?? []),
-  ]);
-  if (/\b(?:service\s*now|servicenow)\b/i.test(markerCorpus)) {
-    return "ServiceNow page or runtime marker is active.";
-  }
-
-  const taskCorpus = stripBenchmarkTaskIds(
-    buildCorpus([input.query, input.objective, input.successCriteria]),
-  );
-  if (/\b(?:service\s*now|servicenow)\b/i.test(taskCorpus)) {
-    return "User explicitly named ServiceNow as the target environment.";
-  }
-
-  return null;
-}
-
 function hasCommunicationPackSignal(input: SkillMatcherInput): boolean {
   const corpus = buildRoutingCorpus(input);
   return emailReplyPattern.test(corpus) || threadMessagePattern.test(corpus);
 }
 
-function hasProcurementPackSignal(input: SkillMatcherInput): boolean {
+function hasSourceListPackSignal(input: SkillMatcherInput): boolean {
   const corpus = buildRoutingCorpus(input);
   return (
-    naturalProcurementChecklistPattern.test(corpus) ||
-    procurementLoopPattern.test(corpus) ||
-    (explicitTabIntentPattern.test(corpus) &&
+    (explicitTabIntentPattern.test(corpus) || targetNavigationPattern.test(corpus)) &&
       sourceListLoopPattern.test(corpus) &&
       repeatedItemPattern.test(corpus) &&
-      sourceProgressPattern.test(corpus))
+      sourceProgressPattern.test(corpus)
   );
 }
 
@@ -283,17 +199,12 @@ function getPackActivationReason(
     };
   }
 
-  if (pack.id === "procurement-workflows" && hasProcurementPackSignal(input)) {
+  if (pack.id === "source-list-workflows" && hasSourceListPackSignal(input)) {
     return {
       reason:
         "Source-list or multi-tab checklist workflow signals are present.",
       strength: "weak",
     };
-  }
-
-  if (pack.id === "servicenow-platform") {
-    const reason = getServiceNowActivationReason(input);
-    return reason ? { reason, strength: "strong" } : null;
   }
 
   return null;
@@ -383,7 +294,8 @@ function resolveEnabledSkillPackIds(
   options?: SkillCatalogOptions,
 ): Set<string> | null {
   if (!options?.enabledSkillPackIds) return null;
-  return new Set(options.enabledSkillPackIds);
+  return new Set(options.enabledSkillPackIds.map((id) =>
+    id === "procurement-workflows" ? "source-list-workflows" : id));
 }
 
 /**
@@ -535,28 +447,6 @@ function hasRecordMutationIntent(text: string): boolean {
   );
 }
 
-function hasServiceNowRecordSubmitIntent(text: string): boolean {
-  if (
-    /\b(?:submit the form|form submission completes|submitted record|created record|created\/updated record|confirmation|resulting item page)\b/i.test(
-      text,
-    )
-  ) {
-    return true;
-  }
-
-  if (
-    /\b(?:do not submit|not submit|ready to submit|submit action has not been clicked|has not been submitted)\b/i.test(
-      text,
-    )
-  ) {
-    return false;
-  }
-
-  return /\bcreate\s+(?:a\s+|an\s+|the\s+)?(?:new\s+)?(?:incident|change request|problem|record|user|hardware asset|asset)\b/i.test(
-    text,
-  );
-}
-
 export function resolveSkillToolProfile(
   id: string | null | undefined,
   objective: string,
@@ -571,14 +461,6 @@ export function resolveSkillToolProfile(
 
   if (descriptor.id === "catalog-order-workflow") {
     return "full";
-  }
-
-  if (descriptor.id === "servicenow-module-navigation") {
-    return "navigate";
-  }
-
-  if (descriptor.id === "servicenow-record-form") {
-    return hasServiceNowRecordSubmitIntent(text) ? "submit_form" : "form_fill";
   }
 
   if (
@@ -702,6 +584,7 @@ function selectPrimarySkillWithKeywordMatcher(
     !crmTicketPattern.test(corpus);
   const currentStepLooksLikeFormFill =
     (formPattern.test(stepCorpus) &&
+      /\b(fill|enter|type|set|save|update|change|choose|select|submit|register|create|apply|provide|configure)\b/i.test(stepCorpus) &&
       /\b(fill|form|field|dropdown|checkbox|input|email|name|phone|category|budget)\b/i.test(
         stepCorpus,
       )) ||
@@ -736,31 +619,10 @@ function selectPrimarySkillWithKeywordMatcher(
   const currentStepNeedsTransactionalCheck =
     transactionPattern.test(stepCorpus);
   const matchesMultiTabChecklistWorkflow =
-    naturalProcurementChecklistPattern.test(corpus) ||
-    procurementLoopPattern.test(corpus) ||
-    (/\b(procurement list|store)\b/i.test(corpus) &&
-      /\b(new tab|another tab)\b/i.test(corpus) &&
-      /\b(buy|purchase)\b/i.test(corpus) &&
-      /\b(check off|mark .* done|checkbox)\b/i.test(corpus)) ||
-    (explicitTabIntentPattern.test(corpus) &&
+    (explicitTabIntentPattern.test(corpus) || targetNavigationPattern.test(corpus)) &&
       sourceListLoopPattern.test(corpus) &&
       repeatedItemPattern.test(corpus) &&
-      sourceProgressPattern.test(corpus));
-
-  if (
-    fieldValueRecordFormPattern.test(corpus) &&
-    serviceNowRecordFormPattern.test(corpus) &&
-    !listFilterPattern.test(corpus) &&
-    !listSortPattern.test(corpus) &&
-    !catalogOrderPattern.test(corpus)
-  ) {
-    const selection = selectEnabledSkill(
-      input,
-      "servicenow-record-form",
-      "Task contains explicit ServiceNow record field/value pairs and should use deterministic form configuration and submit evidence.",
-    );
-    if (selection) return selection;
-  }
+      sourceProgressPattern.test(corpus);
 
   if (currentTaskLooksLikeAshbyJobApplication) {
     const selection = selectEnabledSkill(
@@ -794,6 +656,24 @@ function selectPrimarySkillWithKeywordMatcher(
       input,
       "multi-step-form-wizard",
       "Current step targets a multi-step or conditional form and should fill visible fields, re-ground after transitions, handle revealed fields, review, and submit when requested.",
+    );
+    if (selection) return selection;
+  }
+
+  // Explicit shopping-cart mutations take precedence over catalog ordering.
+  // "Add to cart" is also a catalog signal, but a retail cart needs its own
+  // state verification and should not inherit a service-catalog workflow.
+  const explicitCartMutation =
+    (/\bcart\b/i.test(stepCorpus) && /\b(?:remove|delete|add|put|replace|swap)\b/i.test(stepCorpus)) ||
+    (/\b(?:add|put|remove|replace|swap)\b[\s\S]{0,100}\bcart\b/i.test(input.query ?? "") &&
+      /\b(?:locate|find|view|open|select)\b/i.test(input.objective ?? "") &&
+      !/\b(?:checkout|form|field|confirmation|confirm|order|submit)\b/i.test(stepCorpus) &&
+      !/\b(?:service catalog|hardware catalog|catalog item|request item|catalog option)\b/i.test(corpus));
+  if (explicitCartMutation) {
+    const selection = selectEnabledSkill(
+      input,
+      "cart-modify-checkout",
+      "Task modifies an in-progress shopping or checkout state before completion.",
     );
     if (selection) return selection;
   }
@@ -898,18 +778,6 @@ function selectPrimarySkillWithKeywordMatcher(
       input,
       "search-answer-extraction",
       "Task requires searching or reading a knowledge source and returning the requested answer, not just opening a result.",
-    );
-    if (selection) return selection;
-  }
-
-  if (
-    serviceNowModuleNavigationPattern.test(corpus) &&
-    /\b(module|application navigator)\b/i.test(corpus)
-  ) {
-    const selection = selectEnabledSkill(
-      input,
-      "servicenow-module-navigation",
-      "Task requires opening a ServiceNow application module and should resolve the module target directly from ServiceNow metadata.",
     );
     if (selection) return selection;
   }

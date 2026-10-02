@@ -12,24 +12,20 @@
 
 import type { ContextManager } from "../context";
 import type { RuntimeLimits } from "../constants";
-import type { PlanStep, PlanMonitorResult } from "../planner";
+import type { PlanStep } from "../planner";
+import type { PlanRecoveryRuntime } from "../plan-recovery-runtime";
 import type { PageStateCoordinator } from "../page-state";
 
 export interface PlanMonitorPhaseHost {
   turnsSinceLastMonitor: number;
   readonly taskId: string | null;
   readonly planSteps: PlanStep[];
-  readonly perception: PageStateCoordinator;
+  readonly perception: Pick<PageStateCoordinator, "getInterpretation">;
   readonly abortController: AbortController | null;
   readonly replanCount: number;
   readonly limits: RuntimeLimits;
   readonly context: ContextManager;
-  runPlanMonitor(signal?: AbortSignal): Promise<PlanMonitorResult | null>;
-  handlePlanDeviation(
-    monitorResult: PlanMonitorResult,
-    tabId: number,
-    signal?: AbortSignal,
-  ): Promise<void>;
+  readonly planRecovery: Pick<PlanRecoveryRuntime, "runPlanMonitor" | "handlePlanDeviation">;
 }
 
 export async function runPlanMonitorPhase(
@@ -46,7 +42,7 @@ export async function runPlanMonitorPhase(
     !host.abortController?.signal.aborted
   ) {
     host.turnsSinceLastMonitor = 0;
-    const monitorResult = await host.runPlanMonitor(
+    const monitorResult = await host.planRecovery.runPlanMonitor(
       host.abortController?.signal,
     );
     if (monitorResult) {
@@ -54,7 +50,7 @@ export async function runPlanMonitorPhase(
         monitorResult.alignment === "deviated" &&
         host.replanCount < host.limits.maxReplans
       ) {
-        await host.handlePlanDeviation(
+        await host.planRecovery.handlePlanDeviation(
           monitorResult,
           tabId,
           host.abortController?.signal,

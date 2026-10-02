@@ -18,6 +18,7 @@ export interface ApprovalRequestMessage extends BaseMessage {
     risk: RiskLevel.HIGH;
     context: string;
     timeoutMs: number;
+    totalTimeoutMs?: number;
   };
 }
 

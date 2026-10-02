@@ -12,6 +12,15 @@ OpenSidebar now uses a lightweight app-and-packages layout while keeping root de
 - `docs/`: product, architecture, and release documentation
 - `traces/`: local run traces
 
+Generated traces and `.artifacts/` output are ignored by Git. Local executor
+training candidates are audited and reviewed through `scripts/training-data/`
+and `apps/training-data-review/`; approved dataset splits stay under ignored
+`.artifacts/training-data-dataset/`. They are not product runtime code.
+Run `training-data:audit`, inspect the local queue with `training-data:review`,
+and use `training-data:export` only after approving examples. The export
+requires nonempty session-separated train, validation, and test splits; it
+does not train or upload a model.
+
 ## How The Pieces Fit
 
 - The extension is the main product surface and owns:

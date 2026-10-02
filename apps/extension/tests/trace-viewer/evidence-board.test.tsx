@@ -104,6 +104,14 @@ describe("EvidenceBoard", () => {
       "data:image/png;base64,AAAA",
     );
 
+    await act(async () => container.querySelector("img")!.dispatchEvent(new Event("error")));
+    expect(container.querySelector("img")).toBeNull();
+    const recovered = { ...entry, pageState: { ...entry.pageState, preDecision: {
+      ...entry.pageState!.preDecision!, screenshots: [{ kind: "viewport", dataUrl: "data:image/png;base64,BBBB" }],
+    } } } as TraceEntry;
+    await act(async () => useStore.setState({ currentEntries: [recovered] }));
+    expect(container.querySelector("img")?.getAttribute("src")).toBe("data:image/png;base64,BBBB");
+
     const turnButton = Array.from(container.querySelectorAll("button")).find(
       (button) => button.textContent?.trim() === "Turn 2",
     );

@@ -257,6 +257,11 @@ export default function Sports() {
                   </div>
                   <span className="disruption-status">90-minute rule applied</span>
                 </div>
+                <p className="disruption-source-note">
+                  All listed options are available for the full 18-traveler
+                  booking. Fees are group totals. Time before kickoff is measured
+                  from arrival to the 12:30 match start.
+                </p>
                 <fieldset className="disruption-options">
                   <legend>Select an itinerary to prepare</legend>
                   {travelOptions.map((option) => (
@@ -277,7 +282,7 @@ export default function Sports() {
                       </span>
                       <span>
                         <strong>{option.buffer}</strong>
-                        <small>arrival buffer</small>
+                        <small>before 12:30 kickoff</small>
                       </span>
                       <span>
                         <strong>EUR {option.feeEach * travelers}</strong>
@@ -290,7 +295,7 @@ export default function Sports() {
                 <div className="disruption-option-action">
                   <span>
                     {selected
-                      ? `${selected.label}: ${selected.buffer} buffer / EUR ${selected.feeEach * travelers}`
+                      ? `${selected.label}: ${selected.buffer} before kickoff / EUR ${selected.feeEach * travelers}`
                       : "Choose the safest policy-compliant option."}
                   </span>
                   <button
@@ -321,7 +326,7 @@ export default function Sports() {
                       <div><span>REPLACEMENT</span><strong>{prepared.label}</strong></div>
                       <div><span>DEPART</span><strong>{prepared.depart}</strong></div>
                       <div><span>ARRIVE</span><strong>{prepared.arrive}</strong></div>
-                      <div><span>BUFFER</span><strong>{prepared.buffer}</strong></div>
+                      <div><span>BEFORE KICKOFF</span><strong>{prepared.buffer}</strong></div>
                     </div>
                     <div className="disruption-review-total">
                       <div><span>18 travelers</span><strong>EUR {preparedTotal}</strong></div>
@@ -362,7 +367,7 @@ export default function Sports() {
             </dl>
             <div className="disruption-findings">
               <strong>{prepared ? prepared.label : "Schedule changed"}</strong>
-              <span>{prepared ? `${prepared.arrive} arrival / ${prepared.buffer} buffer` : "Current train arrives after kickoff"}</span>
+              <span>{prepared ? `${prepared.arrive} arrival / ${prepared.buffer} before kickoff` : "Current train arrives after kickoff"}</span>
               <span>{prepared ? `EUR ${preparedTotal} for all 18 travelers` : "A replacement must satisfy the 90-minute rule"}</span>
             </div>
             <div className={`disruption-gate ${prepared ? "ready" : ""}`}>

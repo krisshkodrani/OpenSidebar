@@ -2,6 +2,7 @@ import { describe, expect, test, vi } from "vitest";
 import { ToolName, type ToolDefinition } from "../../src/types";
 import { CompressionLevel } from "../../src/background/agent/context-types";
 import { prepareLlmTurnRequest } from "../../src/background/agent/loop-turn-preparation";
+import { comparePromptPrefix } from "../../src/background/agent/prompt-prefix-telemetry";
 import type { LLMMessage } from "../../src/background/llm/types";
 
 function makeTool(name: ToolName): ToolDefinition {
@@ -79,6 +80,40 @@ function makePerception(overrides = {}) {
 }
 
 describe("prepareLlmTurnRequest", () => {
+  test("treats a shifted visual suffix as volatile after appending history", async () => {
+    const visual = (data: string): LLMMessage => ({
+      role: "user",
+      content: [
+        { type: "image_url", image_url: { url: `data:image/jpeg;base64,${data}` } },
+        { type: "text", text: "Current page screenshot." },
+      ],
+    });
+    const stable = [{ role: "system", content: "Rules" }, { role: "user", content: "Goal" }] as LLMMessage[];
+    const first = [...stable, visual("a"), { role: "user", content: "Page A" }] as LLMMessage[];
+    const second = [...stable, { role: "assistant", content: "Observed result" }, visual("bbbb"), { role: "user", content: "Page B" }] as LLMMessage[];
+    const tool = makeTool(ToolName.READ_PAGE);
+    const run = (prompt: LLMMessage[], previousPromptFingerprint?: Awaited<ReturnType<typeof prepareLlmTurnRequest>>["promptFingerprint"]) =>
+      prepareLlmTurnRequest({
+        turnCount: previousPromptFingerprint ? 2 : 1,
+        previousElementCount: 0,
+        context: makeContext({ getPrompt: vi.fn(() => prompt) }) as never,
+        allTools: [tool],
+        selectTools: (tools) => tools,
+        llm: { getCurrentModel: () => "executor-model", isPlannerTier: () => false },
+        perception: makePerception() as never,
+        log: { info: vi.fn() },
+        traceRecorder: null,
+        previousPromptFingerprint,
+      });
+
+    const before = await run(first);
+    const after = await run(second, before.promptFingerprint);
+    expect(before.promptFingerprint.volatileTailStartIndex).toBe(2);
+    expect(after.promptFingerprint.volatileTailStartIndex).toBe(3);
+    expect(comparePromptPrefix(before.promptFingerprint, after.promptFingerprint).firstDivergenceRegion)
+      .toBe("volatile_tail");
+  });
+
   test("builds prompt, selects tools, logs metrics, and initializes previous element count", async () => {
     const allTools = [
       makeTool(ToolName.READ_PAGE),

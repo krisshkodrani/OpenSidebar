@@ -92,6 +92,7 @@ describe("trace-viewer api", () => {
     expect(url).toContain("eventType=circuit_breaker");
     expect(url).not.toContain("model=all");
     expect(url).not.toContain("day=");
+    expect(url).not.toContain("day=");
   });
 
   test("fetchTraceInsights preserves server error body", async () => {
@@ -109,7 +110,7 @@ describe("trace-viewer api", () => {
   });
 
   test("fetchTraceTrends uses one grouped endpoint", async () => {
-    await fetchTraceTrends({ from: "2026-04-10", model: "all" }, 14);
+    await fetchTraceTrends({ from: "2026-04-10", model: "all", day: "2026-04-12" }, 14);
 
     expect(global.fetch).toHaveBeenCalledTimes(1);
     const [url] = (global.fetch as any).mock.calls[0];
@@ -117,6 +118,7 @@ describe("trace-viewer api", () => {
     expect(url).toContain("from=2026-04-10");
     expect(url).toContain("limit=14");
     expect(url).not.toContain("model=all");
+    expect(url).not.toContain("day=");
   });
 
   test("fetchTraceIndexStatus reads index status endpoint", async () => {

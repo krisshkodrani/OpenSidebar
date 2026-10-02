@@ -38,6 +38,7 @@ test("collects actual executor, planner, and judge identities and usage", () => 
         usage: { promptTokens: 4, completionTokens: 1, cachedTokens: 2, costUsd: 0.1 },
       },
     },
+    { type: "task_completed", data: { totalCostUsd: 0.75 } },
   ].map((value) => JSON.stringify(value)).join("\n"));
 
   const result = collectModelBenchTraceEvidence({
@@ -65,6 +66,7 @@ test("collects actual executor, planner, and judge identities and usage", () => 
   assert.equal(result.artifactRefs.length, 2);
   assert.equal(result.telemetry.turns, 1);
   assert.equal(result.telemetry.replans, 0);
+  assert.equal(result.orchestratorTotalCostUsd, 0.75);
 });
 
 test("does not invent a resolved seat when traces contain multiple identities", () => {
@@ -86,7 +88,7 @@ test("does not invent a resolved seat when traces contain multiple identities", 
   assert.deepEqual(result.ambiguousSeats.executor, ["provider:model-a", "provider:model-b"]);
 });
 
-test("attributes a successful pinned OpenRouter call to its enforced upstream", () => {
+test("does not invent the served upstream from a requested OpenRouter pin", () => {
   const root = mkdtempSync(resolve(tmpdir(), "modelbench-evidence-"));
   const trace = resolve(root, "turns.jsonl");
   writeFileSync(trace, `${JSON.stringify({
@@ -111,7 +113,7 @@ test("attributes a successful pinned OpenRouter call to its enforced upstream", 
     },
   });
 
-  assert.equal(result.resolvedSeats.executor?.resolvedProvider, "openai");
+  assert.equal(result.resolvedSeats.executor?.resolvedProvider, "openrouter");
 });
 
 test("records the exact screenshot artifact and image-detail telemetry", () => {

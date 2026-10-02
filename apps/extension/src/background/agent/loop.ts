@@ -1,10 +1,10 @@
+import { providerRoutingOptions } from "../llm/provider-routing-policy";
 import {
   AgentStatus,
   AgentLoopState,
   AgentStep,
   Citation,
   DomSnapshot,
-  MessageSource,
   PartialHandoffReason,
   PartialProgressHandoff,
   PageDocumentState,
@@ -33,7 +33,6 @@ import {
 } from "../../utils/perception-mode";
 import { LLMClient } from "../llm";
 import { toolRegistry } from "../tools";
-import { type ToolProfile } from "../tools/metadata";
 import { waitForDomReady } from "../tab-ready";
 import {
   isBridgeDisconnect,
@@ -43,10 +42,8 @@ import {
 import { type DryRunClassification } from "./mutation-dry-run-policy";
 import {
   runFormSubmitDryRun,
-  type FormSubmitDryRunHost,
 } from "./form-submit-dry-run";
 import type { ForwardedApprovalDryRun } from "@shared-types/browser-bridge";
-import { workspaceManager } from "../workspaces/manager";
 import { ContextManager } from "./context";
 import { StagnationMonitor } from "./stagnation";
 import {
@@ -68,6 +65,9 @@ import {
 } from "./vl-screenshot";
 import { captureVisibleTabWithQuotaRetry } from "./capture-guard";
 import type { PerceptionTaskContext } from "../perception/types";
+import { deriveActivePerceptionTaskContext } from "./perception-task-context";
+import { createNavigationLoopState } from "./navigation-loop-state";
+import { requestPageSnapshot } from "../perception/frame-snapshot-runtime";
 import {
   CompletionResponse,
   LLMMessage,
@@ -79,7 +79,7 @@ import {
   buildElementResolver,
   ElementResolver,
 } from "../../utils/step-labels";
-import { TaskPlanner, PlanStep, PlanMonitorResult } from "./planner";
+import { TaskPlanner, PlanStep } from "./planner";
 import { TraceRecorder } from "./trace";
 import { ToolResultCache } from "./tool-cache";
 import {
@@ -87,18 +87,12 @@ import {
   type PrepareModelTurnHost,
 } from "./turn-phases/prepare-model-turn";
 import { runGatesPhase, type GatesPhaseHost } from "./turn-phases/gates";
-import {
-  runFeedbackPhase,
-  type FeedbackPhaseHost,
-} from "./turn-phases/feedback";
+import { runFeedbackPhase } from "./turn-phases/feedback";
 import {
   runEscalationPhase,
   type EscalationPhaseHost,
 } from "./turn-phases/escalation";
-import {
-  runAccountAndRefreshPhase,
-  type AccountAndRefreshHost,
-} from "./turn-phases/account-and-refresh";
+import { runAccountAndRefreshPhase } from "./turn-phases/account-and-refresh";
 import {
   runDispatchToolsPhase,
   type DispatchToolsHost,
@@ -124,136 +118,80 @@ import {
   type DonePlanRejectionHost,
 } from "./done-plan-rejection";
 import {
-  evaluateDonePlanPrecheck,
-  evaluateDonePlanValidation,
-  type DonePlanValidationHost,
+  DonePlanValidationRuntime,
+  type DonePlanValidationRuntimeHost,
 } from "./done-plan-validation";
 import {
-  collectDoneDiagnosticIssues,
-  type DoneDiagnosticsHost,
+  formatDoneRejectionDiagnosticContent,
 } from "./done-diagnostics";
 import {
-  saveTurnCheckpoint,
-  restoreFromTurnCheckpoint,
-  clearTurnCheckpoint,
+  TurnCheckpointRuntime,
   type TurnCheckpointHost,
 } from "./turn-checkpoint";
-import {
-  getActiveCompletionContext,
-  recordCompletionEvidence,
-  refreshCompletionEvidenceFromSnapshot,
-  recordCompletionToolEvidence,
-  evaluateCompletionCandidate,
-  getCompletionRecoveryHintForCurrentState,
-  maybeAddCompletionRecoveryHint,
-  type CompletionEvidenceHost,
-} from "./completion-evidence";
-import {
-  extractServiceNowModuleRequest,
-  maybeInferServiceNowModuleNavigationEvidence,
-  type ModuleNavEvidenceHost,
-  type ServiceNowMissingFieldSearchEvidence,
-  type TrustedCatalogOrderSubmission,
-} from "./servicenow/trusted-workflow-adapter";
-import {
-  assessServiceNowMissingFieldInfeasibility,
-  getServiceNowMissingFieldAdmissionSummary,
-  hasTaskLevelServiceNowSubmitIntent,
-  hasTrustedServiceNowSubmitIntent,
-  isRetryableServiceNowModuleControllerMiss,
-  isTaskLevelServiceNowRecordWorkflow,
-  maybeAutoSubmitTrustedServiceNowForm,
-  maybeRunServiceNowRecordFormController,
-  shouldAutoSubmitTrustedServiceNowForm,
-  startServiceNowRecordControllerTraceTurn,
-  type ServiceNowRecordFormHost,
-} from "./servicenow/record-form-controller";
+import { CompletionEvidenceRuntime } from "./completion-evidence";
+import type { TrustedCatalogOrderSubmission } from "./catalog-controller";
 import {
   maybeAutoSubmitConfiguredCatalogItem,
   maybeCompleteCatalogOrderFromSnapshot,
   maybeCompleteTrustedCatalogOrderSubmit,
   shouldAutoSubmitConfiguredCatalogItem,
-  type ServiceNowCatalogHost,
-} from "./servicenow/catalog-controller";
+  type CatalogHost,
+} from "./catalog-controller";
 import { resolveInitialSnapshot } from "./initial-snapshot";
 import { bootstrapRuntimePlan } from "./start-planner-bootstrap";
-import { PendingInteractionYield, runStartExecution } from "./start-result";
+import { runStartExecution } from "./start-result";
+import { requestApproval, requestClarification, type InteractionHost } from "./loop-interactions";
 import { finalizeStartResult } from "./start-finalization";
 import { AgentMiddleware } from "./middleware";
 import { EvidenceAccumulator } from "./evidence";
 import { EscalationRescueTracker } from "./escalation-rescue-policy";
 import {
-  buildCompletionEnvelope,
-  buildTrustedCompletionCandidate,
   CompletionEvidenceLedger,
-  deriveCompletionEvidenceFromSnapshot,
-  type CompletionCandidateSource,
   type CompletionEnvelope,
   type CompletionEvaluation,
   type TrustedCompletionCandidate,
 } from "./completion-kernel";
-import {
-  buildCompletionDecisionRecord,
-  computeSnapshotDigest,
-  projectKernelEvidence,
-  type CompletionDecisionBasis,
-  type CompletionDecisionRecordInput,
-} from "./completion/decision-record";
+import { CompletionDecisionContextRuntime } from "./completion/decision-context";
 import {
   isCompletionDecisionRecordingEnabled,
-  recordCompletionDecision,
 } from "./completion/decision-recorder";
-import type { CompletionGuardContext } from "./completion/guards/context";
+import { recordCompletionDecisionOutcome } from "./completion/decision-outcome";
+import { type CompletionRejectionDecision } from "./completion/rejection-instruction";
+import {
+  buildKernelRejectionEffects,
+} from "./completion/rejection-effects";
 import {
   runCompletionPipeline,
   type PlannerValidationResult,
 } from "./completion/pipeline";
-import type {
-  CompletionEffect,
-  CompletionPipelineDecision,
-} from "./completion/pipeline-types";
+import type { CompletionEffect } from "./completion/pipeline-types";
+import { acceptFromPipelineDecision } from "./completion/accept-decision";
+import { CompletionFinalizationRuntime, type CompletedTaskResult } from "./completion/finalization";
+import { applyCompletionEffects } from "./completion/apply-effects";
 import {
-  applyCompletionEffects,
-  type CompletionEffectHost,
-} from "./completion/apply-effects";
+  createCompletionEffectHost,
+  type CompletionEffectStateHost,
+} from "./completion/effect-host";
 import type { TurnCheckpoint } from "./checkpoint-types";
 import { CheckpointCoordinator } from "./checkpoint-coordinator";
 import { AgentTelemetryController } from "./agent-telemetry-controller";
-import { TurnState } from "./turn-state";
-import { LoopSession, TurnScope } from "./loop-scope";
+import { TurnScope } from "./loop-scope";
+import { type TurnControllerHost } from "./turn-controller";
+import { createLoopRunState } from "./loop-run-state";
+import { createCompletionSignal, finishLoopSession } from "./loop-finalization";
 import {
-  createTurnController,
-  type TurnControllerHost,
-} from "./turn-controller";
-import {
-  getActiveSubtaskDescription,
   captureRecentSubtaskResult,
-  getMatchingApprovalInteraction,
-  getMatchingClarificationInteraction,
   getWorkspaceTabs,
   isPureListFilterWorkflowRequest,
-  lookupMutationReplay,
   shouldEscalateOnDoneRejection,
-  type LoopQueriesHost,
 } from "./loop-queries";
 import type { MoneyTableAggregate } from "./money-table-aggregate";
-import { normalizeGuardText } from "./text-entry-guards";
-import { getUncommittedInlineEditDoneRejection } from "./inline-edit-policy";
-import { assessRepeatedAddItemClick } from "./repeated-add-item-policy";
+import { ListDetailWorkflow } from "./list-detail-workflow";
+import { PlanRecoveryRuntime } from "./plan-recovery-runtime";
 export {
   rewriteAutocompleteTextEntry,
   validateTextEntryTarget,
 } from "./text-entry-guards";
-import {
-  countVisibleListDetailActions,
-  getListDetailReturnControl,
-  getListDetailWorkflowBlock,
-  getNextUnreviewedListDetailAction,
-  hasListDetailReturnControl,
-  isListDetailReturnControlRepeatExempt,
-  listDetailActionTargetLabel,
-  listDetailElementLabel,
-} from "./list-detail-policy";
 export {
   countVisibleListDetailActions,
   getListDetailDoneRejection,
@@ -262,39 +200,22 @@ export {
   isListDetailReturnControlRepeatExempt,
   requiresBroadListDetailReview,
 } from "./list-detail-policy";
-import { isPaginationNavigationClick } from "./action-exemption-policy";
 import { imagePromptUsageForCount } from "./agent-telemetry";
 import {
-  approvalRequestMessage,
   BroadcastMessage,
-  clarificationRequestMessage,
   forwardSuppressedStreamChunk,
-  planTerminationMessage,
   runtimeBroadcastMessage,
-  successfulTaskCompletionMessage,
   taskProgressMessage,
 } from "./agent-broadcast";
 import {
-  buildPartialProgressHandoff,
   createProgressLedger,
   formatPartialProgressHandoffSummary,
-  recordProgressLedgerToolResult,
-  updateProgressLedgerState,
   type ProgressLedger,
 } from "./partial-progress-handoff";
 import {
-  approvalRequestStep,
-  clarificationRequestStep,
-} from "./agent-interaction-steps";
-import {
-  annotateCompletedPlanSubtasksForAcceptedDone,
-  buildCompletedPlanStepSummaries,
-  buildFailedPlanStep,
-  buildPlanMonitorReplanMessage,
-  buildPlanReplacementState,
-  buildPlanRevisionMessage,
-  buildPlanStatusSnapshot,
   buildRestoredPlanState,
+  syncPlanStatus as syncPlanStatusPolicy,
+  type PlanStatusTraceEvent,
   type RestorablePlanState,
 } from "./agent-plan-progress";
 import { applySkillTurnCap } from "./skill-turn-cap-policy";
@@ -304,7 +225,6 @@ export {
 } from "./perception-done-validation";
 import {
   AGENT_LIMITS,
-  STRING_LIMITS,
   TOOL_CACHE,
   DEFAULT_RUNTIME_LIMITS,
 } from "./constants";
@@ -314,51 +234,21 @@ import { APPROVAL_TIMEOUT_MS, MAX_SESSION_MS } from "./loop-metrics";
 import type { LoopResult } from "./loop-types";
 import type { PendingUserInteraction } from "./loop-types";
 import { getLoadedSkillContract } from "../orchestrator/skills";
-import { evaluateWorkflowTabRedirect } from "./workflow-tab-controller";
+import { getWorkflowTabToolRedirect as routeWorkflowTabTool } from "./workflow-tab-routing";
 import {
-  BlockedAction,
-  buildStructuredFailureContext,
   detectInstructionContradiction,
   detectFormSubmissionResetSuccess,
-  detectTrustedFormFillStepCompletion,
-  detectTrustedFormSubmitCompletion,
   extractAttemptSummary,
-  formatStructuredFailureContext,
   isPendingAsyncChangeSatisfied,
-  type RecentOutcome,
-  SubgoalAttempt,
-  userExplicitlyRequestedTabManagement,
 } from "./loop-helpers";
-import { extractFieldValuePairs } from "./task-contract";
 import { PIVOT_MESSAGE } from "./loop-prompts";
-import {
-  advanceCompletedSubtasks,
-  completeRemainingSubtasks,
-  completeSingleSubtask,
-  type AgentLoopPlanProgressHost,
-} from "./loop-plan-progress";
-import {
-  applySkillToolRanking,
-  applySkillToolSuppression,
-  applyToolProfile,
-  classifySkillToolPreference,
-  getActiveSkillToolPolicy,
-  getActiveToolProfileForStep,
-  isSkillOwnedListDetailReview,
-  isSkillOwnedMultiTabChecklistLoop,
-  recordSkillToolSelection,
-  type AgentLoopSkillToolsHost,
-} from "./loop-skill-tools";
-import {
-  getIncompleteMoneyTableAggregateDoneRejection,
-  getIncorrectMoneyTableAggregateDoneRejection,
-  hydrateMoneyTableAggregateFromWorkingNotes,
-  isCompletedMoneyTableAggregateSummary,
-  isMoneyTableAggregateTask,
-  updateMoneyTableAggregate,
-  updateMoneyTableAggregateFromSnapshot,
-  type AgentLoopMoneyTableHost,
-} from "./loop-money-table";
+import { PlanProgressRuntime } from "./loop-plan-progress";
+import { InlineEditVerificationRuntime } from "./inline-edit-verification-runtime";
+import { PartialProgressRuntime } from "./partial-progress-runtime";
+import { MutationReplayRuntime } from "./mutation-replay-runtime";
+import { TrustedListCompletionRuntime } from "./trusted-list-completion";
+import { SkillToolRuntime } from "./loop-skill-tools";
+import { MoneyTableRuntime } from "./loop-money-table";
 import { buildConsequentialActionTaskText } from "./consequential-action-context";
 import { assessConsequentialActionApproval } from "./consequential-action-policy";
 import {
@@ -368,15 +258,6 @@ import {
 } from "./parallel-tool-execution";
 import { type TurnToolOutcomeRecord } from "./turn-tool-outcomes";
 export { isDoneSummaryAskingClarification } from "./completion-kernel";
-
-type CompletionRejectionDecision = Extract<
-  CompletionEvaluation,
-  { status: "rejected" | "needs_verification" }
->;
-type CompletionValidationErrorEvidence = Extract<
-  CompletionRejectionDecision["evidence"][number],
-  { type: "validation_error" }
->;
 
 // Re-export submodules for barrel compatibility
 export * from "./loop-types";
@@ -401,55 +282,13 @@ export * from "./loop-helpers";
  * - Model escalation on stuck
  */
 export class AgentLoop {
-  private getActiveSkillToolPolicy() {
-    return getActiveSkillToolPolicy(this as unknown as AgentLoopSkillToolsHost);
-  }
-
-  private classifySkillToolPreference(
-    toolName: ToolName,
-  ): "preferred" | "discouraged" | "neutral" | null {
-    return classifySkillToolPreference(
-      this as unknown as AgentLoopSkillToolsHost,
-      toolName,
-    );
-  }
-
-  private applySkillToolRanking(tools: ToolDefinition[]): ToolDefinition[] {
-    return applySkillToolRanking(
-      this as unknown as AgentLoopSkillToolsHost,
-      tools,
-    );
-  }
-
-  private applySkillToolSuppression(tools: ToolDefinition[]): ToolDefinition[] {
-    return applySkillToolSuppression(
-      this as unknown as AgentLoopSkillToolsHost,
-      tools,
-    );
-  }
-
-  private recordSkillToolSelection(
-    toolName: ToolName,
-    mode: "parallel" | "sequential",
-  ): void {
-    recordSkillToolSelection(
-      this as unknown as AgentLoopSkillToolsHost,
-      toolName,
-      mode,
-    );
-  }
-
   /**
    * Set the moment done() is accepted, BEFORE post-processing (trace, metrics,
    * verification). The orchestrator reads this after a lane timeout to avoid
    * retrying a subtask that already completed — prevents duplicate actions
    * (e.g. adding the same item to cart multiple times).
    */
-  public completedResult: {
-    outcome: "completed";
-    summary: string;
-    completionEnvelope?: CompletionEnvelope;
-  } | null = null;
+  public completedResult: CompletedTaskResult | null = null;
 
   private llm: LLMClient;
   private context: ContextManager;
@@ -505,10 +344,70 @@ export class AgentLoop {
   private originalQuery = "";
   public readonly enabledSkillPackIds?: string[];
   private moneyTableAggregate: MoneyTableAggregate | null = null;
+  readonly moneyTable = new MoneyTableRuntime((() => {
+    const loop = () => this;
+    return {
+      get context() { return loop().context; },
+      get lastPlanIndex() { return loop().lastPlanIndex; },
+      get moneyTableAggregate() { return loop().moneyTableAggregate; },
+      set moneyTableAggregate(value: MoneyTableAggregate | null) {
+        loop().moneyTableAggregate = value;
+      },
+      get originalQuery() { return loop().originalQuery; },
+      get planSubtasks() { return loop().planSubtasks; },
+      get selectedSkillId() { return loop().selectedSkillId; },
+    };
+  })());
   /** Progress tracker — promoted from local to instance for external access */
   private stagnation = new StagnationMonitor();
   /** Owns the mutation replay ledger + durable turn-checkpoint persistence. */
   private checkpoints = new CheckpointCoordinator();
+  readonly turnCheckpoint = new TurnCheckpointRuntime((() => {
+    const loop = () => this;
+    return {
+      get turnCount() { return loop().turnCount; },
+      set turnCount(value: number) { loop().turnCount = value; },
+      get maxTurns() { return loop().maxTurns; },
+      set maxTurns(value: number) { loop().maxTurns = value; },
+      get lastPlanIndex() { return loop().lastPlanIndex; },
+      set lastPlanIndex(value: number) { loop().lastPlanIndex = value; },
+      get turnsOnCurrentStep() { return loop().turnsOnCurrentStep; },
+      set turnsOnCurrentStep(value: number) { loop().turnsOnCurrentStep = value; },
+      get escalationsOnCurrentStep() { return loop().escalationsOnCurrentStep; },
+      set escalationsOnCurrentStep(value: number) { loop().escalationsOnCurrentStep = value; },
+      get guardAfterDoneRejection() { return loop().guardAfterDoneRejection; },
+      set guardAfterDoneRejection(value: boolean) { loop().guardAfterDoneRejection = value; },
+      get completedResult() { return loop().completedResult; },
+      set completedResult(value: TurnCheckpointHost["completedResult"]) {
+        loop().completedResult = value;
+      },
+      get nodeId() { return loop().nodeId; },
+      get workspaceId() { return loop().workspaceId; },
+      get selectedSkillId() { return loop().selectedSkillId; },
+      get context() { return loop().context; },
+      get llm() { return loop().llm; },
+      get checkpoints() { return loop().checkpoints; },
+      get log() { return loop().log; },
+    };
+  })());
+  readonly mutationReplay = new MutationReplayRuntime((() => {
+    const loop = () => this;
+    return {
+      get selectedSkillId() { return loop().selectedSkillId; },
+      get context() { return loop().context; },
+      get originalQuery() { return loop().originalQuery; },
+      get turnCount() { return loop().turnCount; },
+      get checkpoints() { return loop().checkpoints; },
+      get guardAfterDoneRejection() { return loop().guardAfterDoneRejection; },
+      get lastPlanIndex() { return loop().lastPlanIndex; },
+      logWarn: (component: "agent", message: string, data: Record<string, unknown>) =>
+        loop().log.warn(component, message, data),
+      logInfo: (component: "agent", message: string, data: Record<string, unknown>) =>
+        loop().log.info(component, message, data),
+      recordVerifiedProgress: (turn: number, source: "mutation") =>
+        loop().escalationRescue.recordVerifiedProgress(turn, source),
+    };
+  })());
   /** Turn checkpoint to restore from (injected by orchestrator on restart). */
   private pendingTurnCheckpoint: TurnCheckpoint | null = null;
   /** Pending interaction response injected by orchestrator on resume. */
@@ -534,6 +433,23 @@ export class AgentLoop {
     PAGE_STATE_COORDINATOR_MODE === "authoritative";
   /** LP-17b CM-5: reuse state for the VL executor screenshot (vl-screenshot.ts). */
   private vlScreenshotState = createVLScreenshotState();
+  private readonly perceptionCaptureHost: WarmupAdoptionHost & VLScreenshotHost & RegionZoomLoopHost = (() => {
+    const loop = () => this;
+    return {
+      get context() { return loop().context; },
+      get perception() { return loop().perception; },
+      get traceRecorder() { return loop().traceRecorder; },
+      get useVLExecutor() { return loop().useVLExecutor; },
+      get enforcePageStateConsistency() { return loop().enforcePageStateConsistency; },
+      get log() { return loop().log; },
+      get telemetry() { return loop().telemetry; },
+      get turnCount() { return loop().turnCount; },
+      recordCachedVisionUsage: () => loop().recordCachedVisionUsage(),
+      captureVisibleTabWithRetry: (windowId: number | undefined, options: { format?: "jpeg" | "png"; quality?: number }) =>
+        captureVisibleTabWithQuotaRetry(windowId, options, loop().log),
+      refreshSnapshot: (tabId: number) => loop().refreshSnapshot(tabId),
+    };
+  })();
   /** Whether the resolved executor model accepts images (gates unified_vl). */
   private executorVLCapable = true;
   /** inspect_region per-turn cap state (LP-13). */
@@ -566,16 +482,15 @@ export class AgentLoop {
   private escalationsOnCurrentStep = 0;
   /** Consecutive done()-based auto-advances without a DOM-modifying action in between */
   private consecutiveAutoAdvances = 0;
-  /** Detail targets opened while executing a list/detail review skill. */
-  private listDetailOpenedTargets = new Set<string>();
-  /** Detail targets that have evidence from a detail read or saved note. */
-  private listDetailReviewedTargets = new Set<string>();
-  /** Current detail target opened from the list and awaiting evidence capture. */
-  private listDetailCurrentTarget: string | null = null;
-  /** Whether the current detail target has had a detail-page read. */
-  private listDetailCurrentTargetRead = false;
-  /** Largest visible detail-action set observed for the active list/detail review. */
-  private listDetailVisibleActionCount = 0;
+  readonly listDetailWorkflow = new ListDetailWorkflow({
+    selectedSkillId: () => this.selectedSkillId,
+    turnCount: () => this.turnCount,
+    getSnapshot: () => this.context.getSnapshot(),
+    query: () => this.originalQuery,
+    isSkillOwned: () => this.skillTools.isSkillOwnedListDetailReview(),
+    recordEvent: (name, data) => this.traceRecorder?.recordEvent(name, data),
+    logInfo: (message, data) => this.log.info("agent", message, data),
+  });
   /** Trusted catalog helper evidence waiting for the next request confirmation page. */
   private trustedCatalogOrderSubmission: TrustedCatalogOrderSubmission | null =
     null;
@@ -584,6 +499,48 @@ export class AgentLoop {
   private taskId: string | null = null;
   private planSubtasks: SubtaskSummary[] = [];
   private planSteps: PlanStep[] = [];
+  readonly planProgress = new PlanProgressRuntime((() => {
+    const loop = () => this;
+    return {
+      captureSubtaskResult: () => captureRecentSubtaskResult(loop().context.getMessages()),
+      get context() { return loop().context; },
+      get escalationsOnCurrentStep() { return loop().escalationsOnCurrentStep; },
+      set escalationsOnCurrentStep(value: number) { loop().escalationsOnCurrentStep = value; },
+      get lastPlanIndex() { return loop().lastPlanIndex; },
+      set lastPlanIndex(value: number) { loop().lastPlanIndex = value; },
+      get checkpoints() { return loop().checkpoints; },
+      get perception() { return loop().perception; },
+      get planSubtasks() { return loop().planSubtasks; },
+      recordVerifiedPlanAdvance: () => loop().recordVerifiedPlanAdvance(),
+      get stepRetryCount() { return loop().stepRetryCount; },
+      set stepRetryCount(value: number) { loop().stepRetryCount = value; },
+      get turnsOnCurrentStep() { return loop().turnsOnCurrentStep; },
+      set turnsOnCurrentStep(value: number) { loop().turnsOnCurrentStep = value; },
+    };
+  })());
+  readonly trustedListCompletion = new TrustedListCompletionRuntime((() => {
+    const loop = () => this;
+    return {
+      get selectedSkillId() { return loop().selectedSkillId; },
+      get completionEvidenceRuntime() { return loop().completionEvidenceRuntime; },
+      get context() { return loop().context; },
+      get planProgress() { return loop().planProgress; },
+      get turnCount() { return loop().turnCount; },
+      get planSubtaskCount() { return loop().planSubtasks.length; },
+      resetConsecutiveAutoAdvances: () => { loop().consecutiveAutoAdvances = 0; },
+      syncPlanStatus: (index, event, data) => loop().syncPlanStatus(index, event, data),
+      broadcastTaskProgress: (index) => loop().broadcastTaskProgress(index),
+      logInfo: (message, data) => loop().log.info("agent", message, data),
+      recordEvent: (
+        event: Parameters<TraceRecorder["recordEvent"]>[0],
+        data: Parameters<TraceRecorder["recordEvent"]>[1],
+      ) => loop().traceRecorder?.recordEvent(event, data),
+      isPureListFilterWorkflowRequest: () => isPureListFilterWorkflowRequest({
+        originalQuery: loop().originalQuery,
+        planSteps: loop().planSteps,
+      }),
+    };
+  })());
   private planRequiresTabManagement = false;
   private stepRetryCount = 0;
   private taskStartTime = 0;
@@ -597,9 +554,96 @@ export class AgentLoop {
   private traceRecorder: TraceRecorder | null = null;
   /** Compact deterministic progress state used for partial handoffs. */
   private progressLedger: ProgressLedger = createProgressLedger();
+  readonly partialProgress = new PartialProgressRuntime((() => {
+    const loop = () => this;
+    return {
+      get progressLedger() { return loop().progressLedger; },
+      get context() { return loop().context; },
+      get planSubtasks() { return loop().planSubtasks; },
+      get lastPlanIndex() { return loop().lastPlanIndex; },
+      get elementResolver() { return loop().elementResolver; },
+      get originalQuery() { return loop().originalQuery; },
+      get turnCount() { return loop().turnCount; },
+      get maxTurns() { return loop().maxTurns; },
+      get taskId() { return loop().taskId; },
+      get taskStartTime() { return loop().taskStartTime; },
+      get urlHistory() { return loop().urlHistory; },
+      getMetrics: () => loop().getMetrics(),
+      broadcast: (message: BroadcastMessage) => loop().broadcast(message),
+    };
+  })());
 
   /** Session-scoped logger — falls back to global logger before start() */
   private log: typeof logger | SessionScopedLogger = logger;
+  readonly skillTools = new SkillToolRuntime((() => {
+    const loop = () => this;
+    return {
+      get context() { return loop().context; },
+      get limits() { return loop().limits; },
+      get log() { return loop().log; },
+      get originalQuery() { return loop().originalQuery; },
+      get planSteps() { return loop().planSteps; },
+      get planSubtasks() { return loop().planSubtasks; },
+      get selectedSkillId() { return loop().selectedSkillId; },
+      get enabledSkillPackIds() { return loop().enabledSkillPackIds; },
+      get traceRecorder() { return loop().traceRecorder ?? undefined; },
+      get turnCount() { return loop().turnCount; },
+      get turnsOnCurrentStep() { return loop().turnsOnCurrentStep; },
+    };
+  })());
+  readonly planRecovery = new PlanRecoveryRuntime((() => {
+    const loop = () => this;
+    return {
+      isSkillOwnedListDetailReview: () => this.skillTools.isSkillOwnedListDetailReview(),
+      isSkillOwnedMultiTabChecklistLoop: () => this.skillTools.isSkillOwnedMultiTabChecklistLoop(),
+      get planSteps() { return loop().planSteps; },
+      set planSteps(value: PlanStep[]) { loop().planSteps = value; },
+      get planSubtasks() { return loop().planSubtasks; },
+      set planSubtasks(value: SubtaskSummary[]) { loop().planSubtasks = value; },
+      get perception() { return loop().perception; },
+      get context() { return loop().context; },
+      get planner() { return loop().planner; },
+      get originalQuery() { return loop().originalQuery; },
+      get selectedSkillId() { return loop().selectedSkillId; },
+      get turnCount() { return loop().turnCount; },
+      get limits() { return loop().limits; },
+      get replanCount() { return loop().replanCount; },
+      set replanCount(value: number) { loop().replanCount = value; },
+      get turnsOnCurrentStep() { return loop().turnsOnCurrentStep; },
+      set turnsOnCurrentStep(value: number) { loop().turnsOnCurrentStep = value; },
+      get escalationsOnCurrentStep() { return loop().escalationsOnCurrentStep; },
+      set escalationsOnCurrentStep(value: number) { loop().escalationsOnCurrentStep = value; },
+      get doneRejections() { return loop().doneRejections; },
+      set doneRejections(value: number) { loop().doneRejections = value; },
+      get lastContractRejectionKind() { return loop().lastContractRejectionKind; },
+      set lastContractRejectionKind(value: string | undefined) { loop().lastContractRejectionKind = value; },
+      get consecutiveSameKindRejections() { return loop().consecutiveSameKindRejections; },
+      set consecutiveSameKindRejections(value: number) { loop().consecutiveSameKindRejections = value; },
+      get lastPlanIndex() { return loop().lastPlanIndex; },
+      set lastPlanIndex(value: number) { loop().lastPlanIndex = value; },
+      get traceRecorder() { return loop().traceRecorder; },
+      get log() { return loop().log; },
+      stepHandler: (step: AgentStep, update: boolean) => this.stepHandler(step, update),
+      broadcastTaskProgress: (index: number) => this.broadcastTaskProgress(index),
+      refreshSnapshotWithRetry: (tabId: number, prevCount: number) => this.refreshSnapshotWithRetry(tabId, prevCount),
+      refreshPerceptionAndTriage: (tabId: number) => this.refreshPerceptionAndTriage(tabId),
+    };
+  })());
+  private readonly interactionHost = (): InteractionHost => ({
+    resumeInteraction: this.resumeInteraction,
+    clearResumeInteraction: () => { this.resumeInteraction = null; },
+    nodeId: this.nodeId,
+    approvalTimeoutMs: this.approvalTimeoutMs,
+    turnCount: this.turnCount,
+    log: this.log,
+    traceRecorder: this.traceRecorder,
+    statusHandler: (status, detail) => this.statusHandler(status, detail),
+    stepHandler: (step, update) => this.stepHandler(step, update),
+    workspaceId: this.workspaceId,
+    workerId: this.workerId,
+    bypassApprovals: this.bypassApprovals,
+    dispatchMessage: (message) => chrome.runtime.sendMessage(message),
+  });
 
   /** Content-addressed tool result cache */
   private toolCache = new ToolResultCache(TOOL_CACHE.MAX_SIZE);
@@ -636,26 +680,179 @@ export class AgentLoop {
     stepIndex: number;
     reason: string;
   } | null = null;
+  readonly inlineEditVerification = new InlineEditVerificationRuntime((() => {
+    const loop = () => this;
+    return {
+      get skillTools() { return loop().skillTools; },
+      get context() { return loop().context; },
+      get originalQuery() { return loop().originalQuery; },
+      get planSubtasks() { return loop().planSubtasks; },
+      get planSteps() { return loop().planSteps; },
+      get pendingInlineEditVerification() { return loop().pendingInlineEditVerification; },
+      set pendingInlineEditVerification(value: { stepIndex: number; reason: string } | null) {
+        loop().pendingInlineEditVerification = value;
+      },
+    };
+  })());
   private evidenceAccumulator = new EvidenceAccumulator();
   /** Escalation rescue policy state (RFC LP-2): progress clocks + efficacy window. */
   private escalationRescue = new EscalationRescueTracker();
   private completionEvidence = new CompletionEvidenceLedger();
   private lastCompletionRejection: CompletionEvaluation | null = null;
   private lastCompletionRecoveryHint: string | null = null;
+  readonly completionEvidenceRuntime = new CompletionEvidenceRuntime((() => {
+    const loop = () => this;
+    return {
+      get planSubtasks() { return loop().planSubtasks; },
+      get planSteps() { return loop().planSteps; },
+      get completionEvidence() { return loop().completionEvidence; },
+      get traceRecorder() { return loop().traceRecorder; },
+      get turnCount() { return loop().turnCount; },
+      get context() { return loop().context; },
+      get originalQuery() { return loop().originalQuery; },
+      get lastCompletionRejection() { return loop().lastCompletionRejection; },
+      set lastCompletionRejection(value: CompletionEvaluation | null) {
+        loop().lastCompletionRejection = value;
+      },
+      get lastCompletionRecoveryHint() { return loop().lastCompletionRecoveryHint; },
+      set lastCompletionRecoveryHint(value: string | null) {
+        loop().lastCompletionRecoveryHint = value;
+      },
+    };
+  })());
+  readonly completionFinalization = new CompletionFinalizationRuntime((() => {
+    const loop = () => this;
+    return {
+      get completedResult() { return loop().completedResult; },
+      set completedResult(value: CompletedTaskResult | null) { loop().completedResult = value; },
+      get completionEvidenceRuntime() { return loop().completionEvidenceRuntime; },
+      get traceRecorder() { return loop().traceRecorder; },
+      get turnCount() { return loop().turnCount; },
+      get context() { return loop().context; },
+      get taskId() { return loop().taskId; },
+      get planSubtasks() { return loop().planSubtasks; },
+      get taskStartTime() { return loop().taskStartTime; },
+      get urlHistory() { return loop().urlHistory; },
+      stepHandler: (step: AgentStep, update: boolean) => loop().stepHandler(step, update),
+      finishStream: (summary: string) => loop().finishStream(summary),
+      statusHandler: (status: AgentStatus, detail: string) => loop().statusHandler(status, detail),
+      messageHandler: (summary: string, calls: ToolCall[]) => loop().messageHandler(summary, calls),
+      saveTurnCheckpoint: () => loop().turnCheckpoint.save(),
+      logInfo: (component: "agent", message: string, data: Record<string, unknown>) =>
+        loop().log.info(component, message, data),
+      broadcast: (message: BroadcastMessage) => loop().broadcast(message),
+      broadcastFinalMetrics: () => loop().telemetry.broadcastFinalMetrics(),
+    };
+  })());
+  private readonly completionContextHost = (() => {
+    const loop = () => this;
+    return {
+      get context() { return loop().context; },
+      get completionEvidenceRuntime() { return loop().completionEvidenceRuntime; },
+      get completionEvidence() { return loop().completionEvidence; },
+      get planSubtasks() { return loop().planSubtasks; },
+      get planSteps() { return loop().planSteps; },
+      get originalQuery() { return loop().originalQuery; },
+      get turnCount() { return loop().turnCount; },
+      get doneRejections() { return loop().doneRejections; },
+      get consecutiveSameKindRejections() { return loop().consecutiveSameKindRejections; },
+      get lastContractRejectionKind() { return loop().lastContractRejectionKind; },
+      get taskId() { return loop().taskId; },
+      get nodeId() { return loop().nodeId; },
+      get completedResult() { return loop().completedResult; },
+      get limits() { return loop().limits; },
+      get selectedSkillId() { return loop().selectedSkillId; },
+      get hasReadPage() { return loop().hasReadPage; },
+      get hasExplicitPageRead() { return loop().hasExplicitPageRead; },
+      get listDetailWorkflow() { return loop().listDetailWorkflow; },
+      get moneyTable() { return loop().moneyTable; },
+      get skillTools() { return loop().skillTools; },
+      getMissingRequiredEvidenceTypes: () => loop().getMissingRequiredEvidenceTypes(),
+    };
+  })();
+  readonly completionDecisionContext = new CompletionDecisionContextRuntime(this.completionContextHost);
   /**
    * The planner-validation result for the current done() decision (null
    * when no plan applied). Captured so the offline replay can stub the
    * planner stage without a model call (RFC LP-15, Phase 7a).
    */
   private lastDonePlanValidation: PlannerValidationResult | null = null;
+  readonly donePlanValidation = new DonePlanValidationRuntime((() => {
+    const loop = () => this;
+    return {
+      get taskId() { return loop().taskId; },
+      get lastDonePlanValidation() { return loop().lastDonePlanValidation; },
+      set lastDonePlanValidation(value: PlannerValidationResult | null) {
+        loop().lastDonePlanValidation = value;
+      },
+      get planSubtasks() { return loop().planSubtasks; },
+      get planSteps() { return loop().planSteps; },
+      get context() { return loop().context; },
+      get perception() { return loop().perception; },
+      get stagnation() { return loop().stagnation; },
+      get planner() { return loop().planner; },
+      get traceRecorder() { return loop().traceRecorder; },
+      get log() { return loop().log; },
+      get abortController() { return loop().abortController; },
+      get turnCount() { return loop().turnCount; },
+      get nodeId() { return loop().nodeId; },
+      get hasReadPage() { return loop().hasReadPage; },
+      get originalQuery() { return loop().originalQuery; },
+      get selectedSkillId() { return loop().selectedSkillId; },
+      get pendingAsyncVerification() { return loop().pendingAsyncVerification; },
+      set pendingAsyncVerification(value: DonePlanValidationRuntimeHost["pendingAsyncVerification"]) {
+        loop().pendingAsyncVerification = value;
+      },
+      get moneyTable() { return loop().moneyTable; },
+      getUncommittedInlineEditDoneRejection: (index: number) =>
+        loop().inlineEditVerification.getUncommittedInlineEditDoneRejection(index),
+      hasRecentToolEvidenceForTokens: (tokens: string[]) =>
+        loop().hasRecentToolEvidenceForTokens(tokens),
+      stepHandler: (step: AgentStep, update: boolean) => loop().stepHandler(step, update),
+    };
+  })());
+  readonly completionEffectState: CompletionEffectStateHost = (() => {
+    const loop = () => this;
+    return {
+      get doneRejections() { return loop().doneRejections; },
+      set doneRejections(value: number) { loop().doneRejections = value; },
+      get lastContractRejectionKind() { return loop().lastContractRejectionKind; },
+      set lastContractRejectionKind(value: string | undefined) {
+        loop().lastContractRejectionKind = value;
+      },
+      get consecutiveSameKindRejections() { return loop().consecutiveSameKindRejections; },
+      set consecutiveSameKindRejections(value: number) {
+        loop().consecutiveSameKindRejections = value;
+      },
+      get lastCompletionRejection() { return loop().lastCompletionRejection; },
+      set lastCompletionRejection(value: CompletionEvaluation | null) {
+        loop().lastCompletionRejection = value;
+      },
+      get lastCompletionRecoveryHint() { return loop().lastCompletionRecoveryHint; },
+      set lastCompletionRecoveryHint(value: string | null) {
+        loop().lastCompletionRecoveryHint = value;
+      },
+      get guardAfterDoneRejection() { return loop().guardAfterDoneRejection; },
+      set guardAfterDoneRejection(value: boolean) {
+        loop().guardAfterDoneRejection = value;
+      },
+      get context() { return loop().context; },
+      get traceRecorder() { return loop().traceRecorder; },
+      doneRejectionDiagnosticContent: (params) =>
+        formatDoneRejectionDiagnosticContent(loop().completionContextHost, params),
+      checkDoneRejectionEscalation: () => loop().checkAndSetDoneRejectionEscalation(),
+      forceGroundingRefresh: (tabId, reason) => loop().forceGroundingRefresh(tabId, reason),
+      runDonePlanRejection: (id, summary, rejectReason, index) =>
+        runDonePlanRejection(
+          loop() as unknown as DonePlanRejectionHost,
+          id, summary, rejectReason, index,
+          (params) => formatDoneRejectionDiagnosticContent(loop().completionContextHost, params),
+        ),
+    };
+  })();
 
   /** Session telemetry: metrics, session clock, context spend, citations, turn carry. */
-  private telemetry!: AgentTelemetryController;
-
-  /** Accumulate usage from an LLM response */
-  private recordUsage(response: CompletionResponse, llmMs: number): void {
-    this.telemetry.recordUsage(response, llmMs);
-  }
+  readonly telemetry!: AgentTelemetryController;
 
   /** Record usage from a vision API call */
   public recordVisionUsage(
@@ -665,29 +862,7 @@ export class AgentLoop {
     providerId: ProviderConfig["providerId"] = "openrouter",
     imageCount = 0,
   ): void {
-    this.telemetry.recordVisionUsage(
-      usage,
-      llmMs,
-      model,
-      providerId,
-      imageCount,
-    );
-  }
-
-  /** Record estimated image prompt tokens for direct screenshot-backed LLM calls. */
-  private recordPromptImageUsage(messages: LLMMessage[]): void {
-    this.telemetry.recordPromptImageUsage(messages);
-  }
-
-  private imagePromptBudgetAllows(imageCount: number): boolean {
-    return this.telemetry.imagePromptBudgetAllows(imageCount);
-  }
-
-  private recordImagePromptBudgetExhausted(
-    imageCount: number,
-    source: string,
-  ): void {
-    this.telemetry.recordImagePromptBudgetExhausted(imageCount, source);
+    this.telemetry.recordVisionUsage(usage, llmMs, model, providerId, imageCount);
   }
 
   /** Get the current accumulated metrics snapshot */
@@ -695,23 +870,9 @@ export class AgentLoop {
     return this.telemetry.getMetrics();
   }
 
-  /** Record a citation for a URL the agent visited or read */
-  private recordCitation(url: string, title: string, tool: ToolName): void {
-    this.telemetry.recordCitation(url, title, tool);
-  }
-
   /** Get collected citations */
   public getCitations(): Citation[] {
     return this.telemetry.getCitations();
-  }
-
-  /** Broadcast metrics to side panel (throttled) */
-  private broadcastMetrics(): void {
-    this.telemetry.broadcastMetrics();
-  }
-
-  private broadcastFinalMetrics(): void {
-    this.telemetry.broadcastFinalMetrics();
   }
 
   constructor(
@@ -758,6 +919,7 @@ export class AgentLoop {
       plannerModel?: string;
       judgeModel?: string;
       executorProviderPin?: string;
+      strictModelRouting?: boolean;
       plannerProviderPin?: string;
       judgeProviderPin?: string;
       writerModel?: string;
@@ -849,9 +1011,7 @@ export class AgentLoop {
       executorModel: options?.executorModel,
       plannerModel: options?.plannerModel,
       judgeModel: options?.judgeModel,
-      executorProviderPin: options?.executorProviderPin,
-      plannerProviderPin: options?.plannerProviderPin,
-      judgeProviderPin: options?.judgeProviderPin,
+      ...providerRoutingOptions(options),
       writerModel: options?.writerModel,
       useNitro: options?.useNitro,
       providerMode: options?.providerMode,
@@ -945,9 +1105,9 @@ export class AgentLoop {
       context: this.context,
       traceRecorder: this.traceRecorder,
       toolCache: this.toolCache,
-      clearTurnCheckpoint: () => this.clearTurnCheckpoint(),
+      clearTurnCheckpoint: () => this.turnCheckpoint.clear(),
       broadcastPlanTermination: (outcome, summary) =>
-        this.broadcastPlanTermination(outcome, summary),
+        this.partialProgress.broadcastPlanTermination(outcome, summary),
       setRunning: (isRunning) => {
         this.isRunning = isRunning;
       },
@@ -955,131 +1115,6 @@ export class AgentLoop {
         this.traceRecorder = null;
       },
     });
-  }
-
-  // ---------------------------------------------------------------------------
-  // Durable turn checkpoints (Phase 1 + 2)
-  // ---------------------------------------------------------------------------
-
-  /**
-   * Persist loop-local state so a fresh AgentLoop can resume after SW restart.
-   * Called once per turn, after tool results are committed and before the next
-   * LLM call. Fire-and-forget — checkpoint failure must not block the loop.
-   */
-  private async saveTurnCheckpoint(): Promise<void> {
-    await saveTurnCheckpoint(this as unknown as TurnCheckpointHost);
-  }
-
-  /**
-   * Restore loop-local state from a durable turn checkpoint injected by the
-   * orchestrator. Returns true if restoration succeeded, false otherwise.
-   *
-   * The caller (start path) should compare the live page fingerprint before
-   * calling this — if the page diverged materially, skip restore.
-   */
-  private restoreFromTurnCheckpoint(cp: TurnCheckpoint): boolean {
-    return restoreFromTurnCheckpoint(this as unknown as TurnCheckpointHost, cp);
-  }
-
-  /**
-   * Delete the turn checkpoint for this node (called on terminal states).
-   */
-  private async clearTurnCheckpoint(): Promise<void> {
-    await clearTurnCheckpoint(this as unknown as TurnCheckpointHost);
-  }
-
-  private replayMutationSensitiveAction(
-    toolCallId: string,
-    toolName: ToolName,
-    args: Record<string, unknown>,
-  ): boolean {
-    if (
-      isListDetailReturnControlRepeatExempt({
-        selectedSkillId: this.selectedSkillId,
-        toolName,
-        args,
-        snapshot: this.context.getSnapshot(),
-      })
-    ) {
-      return false;
-    }
-    if (
-      isPaginationNavigationClick({
-        selectedSkillId: this.selectedSkillId,
-        toolName,
-        args,
-        snapshot: this.context.getSnapshot(),
-      })
-    ) {
-      return false;
-    }
-
-    const repeatedAddItemBlock = assessRepeatedAddItemClick({
-      toolName,
-      args,
-      snapshot: this.context.getSnapshot(),
-      userRequest: this.originalQuery,
-    });
-    if (repeatedAddItemBlock) {
-      this.log.warn(
-        "agent",
-        "Idempotency guard: blocked repeated add-item click",
-        {
-          turn: this.turnCount,
-          tool: toolName,
-          args: JSON.stringify(args).slice(0, 100),
-        },
-      );
-      this.context.addMessage({
-        role: "tool",
-        tool_call_id: toolCallId,
-        content: repeatedAddItemBlock,
-      });
-      return true;
-    }
-
-    const replay = lookupMutationReplay(
-      this as unknown as LoopQueriesHost,
-      toolName,
-      args,
-    );
-    if (!replay) return false;
-
-    this.log.info("agent", "Idempotency guard: returning cached result", {
-      turn: this.turnCount,
-      tool: toolName,
-      source: replay.source,
-      args: JSON.stringify(args).slice(0, 100),
-    });
-    this.context.addMessage({
-      role: "tool",
-      tool_call_id: toolCallId,
-      content:
-        replay.result +
-        "\n[Note: This action was already executed earlier in this step. " +
-        "The result above is from the previous execution. The page state already reflects this action — do NOT repeat it.]",
-    });
-    return true;
-  }
-
-  private recordMutationSensitiveAction(
-    toolName: ToolName,
-    args: Record<string, unknown>,
-    result: string,
-    actionSnapshot?: DomSnapshot | null,
-  ): void {
-    this.checkpoints.recordMutation({
-      toolName,
-      args,
-      result,
-      actionSnapshot,
-      currentSnapshot: this.context.getSnapshot?.() ?? null,
-      planIndex: this.lastPlanIndex,
-      turn: this.turnCount,
-    });
-    if (!/^\s*(error|failed)\b/i.test(result)) {
-      this.escalationRescue.recordVerifiedProgress(this.turnCount, "mutation");
-    }
   }
 
   /** Verified-progress hook for plan-step advancement (loop-plan-progress host). */
@@ -1113,7 +1148,7 @@ export class AgentLoop {
       turn: this.turnCount,
       reason,
     });
-    const partialHandoff = this.buildMaxTurnPartialHandoff("escalation_failed");
+    const partialHandoff = this.partialProgress.buildMaxTurnPartialHandoff("escalation_failed");
     this.traceRecorder?.recordEvent("partial_handoff_created", {
       reason: partialHandoff.reason,
       turnsUsed: partialHandoff.turnsUsed,
@@ -1147,91 +1182,19 @@ export class AgentLoop {
     };
   }
 
-  private isMoneyTableAggregateTask(): boolean {
-    return isMoneyTableAggregateTask(
-      this as unknown as AgentLoopMoneyTableHost,
-    );
-  }
-
-  private hydrateMoneyTableAggregateFromWorkingNotes(): MoneyTableAggregate | null {
-    return hydrateMoneyTableAggregateFromWorkingNotes(
-      this as unknown as AgentLoopMoneyTableHost,
-    );
-  }
-
-  private updateMoneyTableAggregate(result: string): string | null {
-    return updateMoneyTableAggregate(
-      this as unknown as AgentLoopMoneyTableHost,
-      result,
-    );
-  }
-
-  private updateMoneyTableAggregateFromSnapshot(): void {
-    updateMoneyTableAggregateFromSnapshot(
-      this as unknown as AgentLoopMoneyTableHost,
-    );
-  }
-
-  private getIncompleteMoneyTableAggregateDoneRejection(): string | null {
-    return getIncompleteMoneyTableAggregateDoneRejection(
-      this as unknown as AgentLoopMoneyTableHost,
-    );
-  }
-
-  private getIncorrectMoneyTableAggregateDoneRejection(
-    summary: string,
-  ): string | null {
-    return getIncorrectMoneyTableAggregateDoneRejection(
-      this as unknown as AgentLoopMoneyTableHost,
-      summary,
-    );
-  }
-
-  private isCompletedMoneyTableAggregateSummary(summary: string): boolean {
-    return isCompletedMoneyTableAggregateSummary(
-      this as unknown as AgentLoopMoneyTableHost,
-      summary,
-    );
-  }
   private syncPlanStatus(
     currentIndex: number,
-    traceEvent?:
-      | "step_advanced_by_gate"
-      | "step_advanced_by_done_rejection"
-      | "structural_step_advance"
-      | "passive_step_advance"
-      | "text_admission_criteria_advance"
-      | "multi_return_step_advanced"
-      | "submit_form_reset_success"
-      | "trusted_form_submit_success"
-      | "trusted_list_sort_success"
-      | "trusted_list_filter_success"
-      | undefined,
+    traceEvent?: PlanStatusTraceEvent,
     traceData: Record<string, unknown> = {},
   ): void {
-    const { subtasks, repairedIndex } = buildPlanStatusSnapshot({
-      existingPlan: this.context.getPlanStatusRaw(),
+    syncPlanStatusPolicy({
+      context: this.context,
       planSubtasks: this.planSubtasks,
       planSteps: this.planSteps,
-      currentIndex,
-    });
-
-    if (repairedIndex !== null) {
-      this.log.warn("agent", "Plan status missing running subtask", {
-        turn: this.turnCount,
-        currentIndex,
-        repairedIndex,
-      });
-      this.traceRecorder?.recordEvent("plan_status_missing_running_subtask", {
-        currentIndex,
-        repairedIndex,
-      });
-    }
-
-    this.context.setPlanStatus(subtasks, currentIndex);
-    if (traceEvent) {
-      this.traceRecorder?.recordEvent(traceEvent, traceData);
-    }
+      turnCount: this.turnCount,
+      log: this.log,
+      traceRecorder: this.traceRecorder,
+    }, currentIndex, traceEvent, traceData);
   }
 
   /**
@@ -1280,10 +1243,7 @@ export class AgentLoop {
       results,
       currentUrl: this.context.getCurrentUrl(),
       host: {
-        advanceCompletedSubtasks: () =>
-          advanceCompletedSubtasks(
-            this as unknown as AgentLoopPlanProgressHost,
-          ),
+        advanceCompletedSubtasks: () => this.planProgress.advanceCompletedSubtasks(),
         resetConsecutiveAutoAdvances: () => {
           this.consecutiveAutoAdvances = 0;
         },
@@ -1321,105 +1281,14 @@ export class AgentLoop {
     });
   }
 
-  private completeTaskUi(summary: string): void {
-    this.stepHandler(
-      {
-        id: crypto.randomUUID(),
-        type: "info",
-        label: "Task complete",
-        status: "done",
-        timestamp: Date.now(),
-      },
-      false,
-    );
-    // Replace accumulated reasoning with clean summary and finalize the stream.
-    // done:true is critical - without it the side panel message stays in
-    // isStreaming state and the "Thinking..." placeholder hides the summary.
-    this.finishStream(summary);
-    this.statusHandler(AgentStatus.IDLE, "Done");
-    this.messageHandler(summary, []);
-  }
-
   private completeTaskResult(
     summary: string,
-    options: {
-      saveCheckpoint?: boolean;
-      completionCandidate?: TrustedCompletionCandidate;
-    } = {},
+    options: { saveCheckpoint?: boolean; completionCandidate?: TrustedCompletionCandidate } = {},
   ): void {
-    if (this.completedResult) {
-      return;
-    }
-    let completionEnvelope: CompletionEnvelope | undefined;
-    const candidate = options.completionCandidate;
-    if (candidate) {
-      this.recordCompletionEvidence(candidate.evidence, "trusted_tool");
-      this.traceRecorder?.recordEvent("completion_candidate", {
-        turn: this.turnCount,
-        source: "trusted_tool",
-        contractKind: candidate.contractKind,
-        confidence: "high",
-      });
-      completionEnvelope = this.createCompletionEnvelope({
-        source: "trusted_tool",
-        contractKind: candidate.contractKind,
-        decisionReason: candidate.decisionReason,
-        evidence: candidate.evidence,
-        summary,
-      });
-      this.traceRecorder?.recordEvent("completion_decision", {
-        turn: this.turnCount,
-        status: "accepted",
-        source: "trusted_tool",
-        reason: candidate.decisionReason,
-        contractKind: candidate.contractKind,
-        resultId: completionEnvelope.resultId,
-        evidenceKeys: completionEnvelope.evidenceKeys,
-        completionEnvelope,
-      });
-      this.recordCompletionEnvelope(completionEnvelope);
-    }
-    this.completedResult = {
-      outcome: "completed",
-      summary,
-      ...(completionEnvelope ? { completionEnvelope } : {}),
-    };
-    this.traceRecorder?.recordEvent("completion_state_transition", {
-      turn: this.turnCount,
-      from: "working",
-      to: "completed",
-      source: candidate ? "trusted_tool" : "direct_completion",
-      ...(completionEnvelope
-        ? {
-            resultId: completionEnvelope.resultId,
-            contractKind: completionEnvelope.contractKind,
-          }
-        : {}),
-    });
-    this.statusHandler(AgentStatus.IDLE, "Done");
-    this.messageHandler(summary, []);
-    if (options.saveCheckpoint !== false) {
-      this.saveTurnCheckpoint().catch(() => {});
-    }
+    this.completionFinalization.completeTaskResult(summary, options);
   }
 
-  private createCompletionEnvelope(params: {
-    source: CompletionCandidateSource;
-    contractKind: string;
-    decisionReason: string;
-    evidence?: CompletionEvaluation["evidence"];
-    summary: string;
-  }): CompletionEnvelope {
-    return buildCompletionEnvelope({
-      source: params.source,
-      contractKind: params.contractKind,
-      decisionReason: params.decisionReason,
-      evidence: params.evidence ?? [],
-      turn: this.turnCount,
-      summary: params.summary,
-    });
-  }
-
+  /** Expose the latest catalog tool result to the completion flow. */
   private createTrustedCompletionCandidate(params: {
     workflow: string;
     summary: string;
@@ -1428,352 +1297,7 @@ export class AgentLoop {
     recordId?: string;
     targetText?: string;
   }): TrustedCompletionCandidate {
-    return buildTrustedCompletionCandidate({
-      ...params,
-      turn: this.turnCount,
-      url: this.context.getCurrentUrl(),
-    });
-  }
-
-  private recordCompletionEnvelope(
-    envelope: CompletionEnvelope,
-    metadata: Record<string, unknown> = {},
-  ): void {
-    this.traceRecorder?.recordEvent("completion_envelope_created", {
-      turn: this.turnCount,
-      ...envelope,
-      ...metadata,
-    });
-  }
-
-  private acceptDoneToolCall(
-    summary: string,
-    toolCallId: string,
-    completionEnvelope: CompletionEnvelope,
-  ): void {
-    // Signal completion immediately - the orchestrator reads this after a lane
-    // timeout to avoid retrying completed subtasks.
-    this.completedResult = {
-      outcome: "completed",
-      summary,
-      completionEnvelope,
-    };
-    this.recordCompletionEnvelope(completionEnvelope);
-    this.traceRecorder?.recordEvent("completion_state_transition", {
-      turn: this.turnCount,
-      from: "working",
-      to: "completed",
-      source: "model_done",
-      resultId: completionEnvelope.resultId,
-      contractKind: completionEnvelope.contractKind,
-    });
-
-    this.context.clearPlanStatus();
-    this.log.info("agent", "DONE called", {
-      turn: this.turnCount,
-      url: this.context.getCurrentUrl(),
-      summary: summary.slice(0, STRING_LIMITS.SUMMARY_LOG),
-    });
-    this.context.addMessage({
-      role: "tool",
-      tool_call_id: toolCallId,
-      content: summary,
-    });
-    this.completeTaskUi(summary);
-
-    if (this.taskId && this.planSubtasks.length > 0) {
-      annotateCompletedPlanSubtasksForAcceptedDone({
-        subtasks: this.planSubtasks,
-        summary,
-      });
-
-      const completionMessage = successfulTaskCompletionMessage({
-        taskId: this.taskId,
-        subtasks: this.planSubtasks,
-        turnCount: this.turnCount,
-        totalTimeMs: Date.now() - this.taskStartTime,
-        summary,
-        urlHistory: this.urlHistory,
-      });
-      if (completionMessage) this.broadcast(completionMessage);
-    }
-
-    this.broadcastFinalMetrics();
-  }
-
-  private doneRejectionDiagnosticContent(params: {
-    summary: string;
-    primaryReason: string;
-    fallbackInstruction: string;
-    nextStepHint?: string;
-  }): string {
-    const nextStepHint = params.nextStepHint ?? "";
-    if (this.doneRejections < 2) {
-      return (
-        `done() REJECTED: ${params.primaryReason}\n\n` +
-        params.fallbackInstruction +
-        nextStepHint
-      );
-    }
-
-    const issues = collectDoneDiagnosticIssues(
-      this as unknown as DoneDiagnosticsHost,
-      params.summary,
-    );
-    if (!issues.some((issue) => issue.includes(params.primaryReason))) {
-      issues.unshift(params.primaryReason);
-    }
-    const outstanding =
-      issues.length > 0
-        ? issues.map((issue, index) => `${index + 1}. ${issue}`).join("\n")
-        : `1. ${params.primaryReason}`;
-
-    return (
-      `done() REJECTED (attempt ${this.doneRejections}/${this.limits.maxDoneRejections}). Outstanding:\n` +
-      `${outstanding}\n\n` +
-      "Fix all outstanding issues before calling done(). Take a concrete page action or call escalate() if the current approach cannot resolve them." +
-      nextStepHint
-    );
-  }
-
-  private getActiveCompletionContext(): {
-    activeObjective?: string;
-    successCriteria?: string;
-  } {
-    return getActiveCompletionContext(
-      this as unknown as CompletionEvidenceHost,
-    );
-  }
-
-  private recordCompletionEvidence(
-    evidence: ReturnType<typeof deriveCompletionEvidenceFromSnapshot>,
-    source: string,
-  ): number {
-    return recordCompletionEvidence(
-      this as unknown as CompletionEvidenceHost,
-      evidence,
-      source,
-    );
-  }
-
-  private refreshCompletionEvidenceFromSnapshot(source: string): void {
-    refreshCompletionEvidenceFromSnapshot(
-      this as unknown as CompletionEvidenceHost,
-      source,
-    );
-  }
-
-  private recordCompletionToolEvidence(
-    toolName: ToolName,
-    args: Record<string, unknown>,
-    result: string,
-    preActionSnapshot?: DomSnapshot | null,
-  ): void {
-    recordCompletionToolEvidence(
-      this as unknown as CompletionEvidenceHost,
-      toolName,
-      args,
-      result,
-      preActionSnapshot,
-    );
-  }
-
-  private evaluateCompletionCandidate(
-    source: CompletionCandidateSource,
-    summary: string,
-  ): CompletionEvaluation {
-    return evaluateCompletionCandidate(
-      this as unknown as CompletionEvidenceHost,
-      source,
-      summary,
-    );
-  }
-
-  private getCompletionRecoveryHintForCurrentState(): string | null {
-    return getCompletionRecoveryHintForCurrentState(
-      this as unknown as CompletionEvidenceHost,
-    );
-  }
-
-  private maybeAddCompletionRecoveryHint(trigger: string): void {
-    maybeAddCompletionRecoveryHint(
-      this as unknown as CompletionEvidenceHost,
-      trigger,
-    );
-  }
-
-  private getPendingAutocompleteCompletionEvidence(
-    decision: CompletionRejectionDecision,
-  ): CompletionValidationErrorEvidence | undefined {
-    return decision.evidence.find(
-      (event): event is CompletionValidationErrorEvidence =>
-        event.type === "validation_error" &&
-        event.logicalKey.startsWith("form:autocomplete_pending:"),
-    );
-  }
-
-  private getCompletionRejectionInstruction(
-    decision: CompletionRejectionDecision,
-  ): string {
-    if (decision.status === "needs_verification") {
-      return decision.hint;
-    }
-
-    const pendingAutocomplete =
-      this.getPendingAutocompleteCompletionEvidence(decision);
-    const suggestionTag = pendingAutocomplete?.detail.suggestionElementId;
-    if (typeof suggestionTag === "number") {
-      return `YOUR NEXT ACTION: click_element({"id": ${suggestionTag}}), then verify the selected value is visible.`;
-    }
-
-    switch (decision.contract.kind) {
-      case "quiz_selection":
-        return "Verify the current page state, repair the selected options if needed, then call done() again.";
-      case "form_fill":
-        return "Verify the current form state, select or repair the required field values, then call done() again.";
-      case "draft_only":
-        return "Verify the draft remains visible and unsent, repair the draft if needed, then call done() again.";
-      case "navigation":
-        return "Navigate to the requested page or verify the current URL, then call done() again.";
-      case "read_answer":
-        return "Read or verify the current page evidence, repair the answer summary if needed, then call done() again.";
-      case "workflow_confirmation":
-        return "Verify the requested workflow result is visible or structurally confirmed, repair any missing action, then call done() again.";
-      default:
-        return "Verify the current page state, repair the missing completion evidence, then call done() again.";
-    }
-  }
-
-  /**
-   * Build the deterministic-kernel-rejection effects (RFC LP-16 Phase 2 — single
-   * completion authority): the mutations flow through the pipeline effect stream
-   * instead of a side-effecting callback. post_rejection_diagnostic renders at
-   * apply-time (after increment); the log + autocomplete `rejections` use the
-   * post-increment value (`doneRejections + 1`), matching the prior ordering.
-   */
-  private buildKernelRejectionEffects(
-    summary: string,
-    decision: CompletionRejectionDecision,
-  ): CompletionEffect[] {
-    this.log.warn("agent", "DONE rejected by deterministic completion kernel", {
-      turn: this.turnCount,
-      rejections: this.doneRejections + 1,
-      status: decision.status,
-      reason: decision.reason,
-      contractKind: decision.contract.kind,
-    });
-    const effects: CompletionEffect[] = [
-      { type: "record_contract_rejection", kind: decision.contract.kind },
-      { type: "increment_done_rejections" },
-      { type: "check_done_rejection_escalation" },
-      { type: "set_last_completion_rejection", decision },
-      {
-        type: "emit_trace",
-        event: "completion_decision",
-        data: {
-          turn: this.turnCount,
-          status: decision.status,
-          source: "model_done",
-          reason: decision.reason,
-          contractKind: decision.contract.kind,
-          evidenceKeys: decision.evidence.map((event) => event.logicalKey),
-        },
-      },
-    ];
-    const pendingAutocomplete =
-      this.getPendingAutocompleteCompletionEvidence(decision);
-    if (pendingAutocomplete) {
-      effects.push({
-        type: "emit_trace",
-        event: "done_rejected_autocomplete_suggestion_pending",
-        data: {
-          rejections: this.doneRejections + 1,
-          inputTag: pendingAutocomplete.detail.inputElementId,
-          suggestionTag: pendingAutocomplete.detail.suggestionElementId,
-          value: String(pendingAutocomplete.detail.value ?? "").toLowerCase(),
-        },
-      });
-    }
-    effects.push({
-      type: "post_rejection_diagnostic",
-      summary,
-      primaryReason: decision.reason,
-      fallbackInstruction: this.getCompletionRejectionInstruction(decision),
-    });
-    return effects;
-  }
-
-  /**
-   * Concrete effect applier host (RFC LP-15, Phase 7b). Maps each declarative
-   * CompletionEffect to the loop-side mutation it represents. Constructed per
-   * done() call so the tool-message effects carry the current toolCallId and the
-   * grounding refresh targets the current tab.
-   */
-  private createCompletionEffectHost(
-    toolCallId: string,
-    tabId: number,
-  ): CompletionEffectHost {
-    return {
-      incrementDoneRejections: () => {
-        this.doneRejections++;
-      },
-      recordContractRejection: (kind: string) => {
-        if (this.lastContractRejectionKind === kind) {
-          this.consecutiveSameKindRejections++;
-        } else {
-          this.lastContractRejectionKind = kind;
-          this.consecutiveSameKindRejections = 1;
-        }
-      },
-      setLastCompletionRejection: (decision) => {
-        this.lastCompletionRejection = decision;
-      },
-      setRecoveryHint: (hint) => {
-        this.lastCompletionRecoveryHint = hint;
-      },
-      postContextMessage: (role, content) => {
-        this.context.addMessage(
-          role === "tool"
-            ? { role: "tool", tool_call_id: toolCallId, content }
-            : { role: "user", content },
-        );
-      },
-      postRejectionDiagnostic: (
-        summary,
-        primaryReason,
-        fallbackInstruction,
-      ) => {
-        this.context.addMessage({
-          role: "tool",
-          tool_call_id: toolCallId,
-          content: this.doneRejectionDiagnosticContent({
-            summary,
-            primaryReason,
-            fallbackInstruction,
-          }),
-        });
-      },
-      emitTrace: (event, data) => {
-        this.traceRecorder?.recordEvent(event, data);
-      },
-      setGuardAfterDoneRejection: () => {
-        this.guardAfterDoneRejection = true;
-      },
-      checkDoneRejectionEscalation: () => {
-        this.checkAndSetDoneRejectionEscalation();
-      },
-      forceGroundingRefresh: async () => {
-        await this.forceGroundingRefresh(tabId, "done_before_grounding_read");
-      },
-      runDonePlanRejection: (id, summary, rejectReason, idx) =>
-        runDonePlanRejection(
-          this as unknown as DonePlanRejectionHost,
-          id,
-          summary,
-          rejectReason,
-          idx,
-        ),
-    };
+    return this.completionEvidenceRuntime.createTrustedCompletionCandidate(params);
   }
 
   /**
@@ -1791,14 +1315,20 @@ export class AgentLoop {
     if (!isCompletionDecisionRecordingEnabled()) {
       return this.handleDoneToolCallInner(toolCallId, summary, tabId);
     }
-    const input = this.captureCompletionDecisionInput(summary);
+    const input = this.completionDecisionContext.captureCompletionDecisionInput(summary);
     const verdict = await this.handleDoneToolCallInner(
       toolCallId,
       summary,
       tabId,
     );
     try {
-      this.recordCompletionDecisionOutcome(input, verdict);
+      recordCompletionDecisionOutcome(input, verdict, {
+        plannerResult: this.lastDonePlanValidation,
+        envelope: this.completedResult?.completionEnvelope,
+        getEvidenceCount: () => this.completionEvidence.toArray().length,
+        rejection: this.lastCompletionRejection,
+        recoveryHint: this.lastCompletionRecoveryHint,
+      });
     } catch (err) {
       this.log.warn("agent", "completion decision recording failed", {
         turn: this.turnCount,
@@ -1806,156 +1336,6 @@ export class AgentLoop {
       });
     }
     return verdict;
-  }
-
-  /**
-   * Snapshot the completion decision input surface as the kernel will see it,
-   * without mutating loop state. Evidence is projected (current ledger +
-   * snapshot-derived) to mirror the refresh `handleDoneToolCallInner` performs.
-   */
-  private captureCompletionDecisionInput(
-    summary: string,
-  ): CompletionDecisionRecordInput {
-    const snapshot = this.context.getSnapshot() ?? null;
-    const completionContext = this.getActiveCompletionContext();
-    const runningSubtaskIndex = this.planSubtasks.findIndex(
-      (step) => step.status === "running",
-    );
-    return {
-      userRequest: this.originalQuery,
-      summary,
-      candidateSource: "model_done",
-      activeObjective: completionContext.activeObjective,
-      successCriteria: completionContext.successCriteria,
-      snapshot,
-      snapshotDigest: computeSnapshotDigest(snapshot),
-      evidence: projectKernelEvidence(
-        this.completionEvidence.toArray(),
-        snapshot,
-        this.turnCount,
-      ),
-      counters: {
-        turnCount: this.turnCount,
-        doneRejections: this.doneRejections,
-        consecutiveSameKindRejections: this.consecutiveSameKindRejections,
-        lastContractRejectionKind: this.lastContractRejectionKind ?? null,
-      },
-      planValidation: {
-        hasPlan: Boolean(this.taskId) && this.planSubtasks.length > 0,
-        planSubtaskCount: this.planSubtasks.length,
-        runningSubtaskIndex,
-      },
-      guardContext: this.buildCompletionGuardContext(
-        summary,
-        snapshot,
-        completionContext,
-        runningSubtaskIndex,
-      ),
-      isDuplicateTerminal: Boolean(this.completedResult),
-      // Filled post-inner in recordCompletionDecisionOutcome.
-      plannerResult: null,
-    };
-  }
-
-  /**
-   * Assemble the pure-guard input surface from live loop state (RFC LP-15,
-   * Phase 7a). Captured pre-inner so counters/evidence are unmutated; because
-   * legacy stops at the first rejecting guard, no guard bumps `doneRejections`
-   * before the decider, so a single snapshot is faithful for the whole chain.
-   * (The ServiceNow evidence inference is a live-only pre-step; the corpus is
-   * generic so `missingRequiredEvidence` is inference-independent there.)
-   */
-  private buildCompletionGuardContext(
-    summary: string,
-    snapshot: DomSnapshot | null,
-    completionContext: { activeObjective?: string; successCriteria?: string },
-    runningSubtaskIndex: number,
-  ): CompletionGuardContext {
-    const incompleteMoneyTableScan =
-      this.getIncompleteMoneyTableAggregateDoneRejection();
-    return {
-      summary,
-      userRequest: this.originalQuery,
-      snapshot,
-      taskContext: this.getCompletionSummaryTaskContext(),
-      turnCount: this.turnCount,
-      isOrchestratorNode: Boolean(this.nodeId),
-      doneRejections: this.doneRejections,
-      maxDoneRejections: this.limits.maxDoneRejections,
-      consecutiveSameKindRejections: this.consecutiveSameKindRejections,
-      lastContractRejectionKind: this.lastContractRejectionKind ?? null,
-      planSubtaskCount: this.planSubtasks.length,
-      runningSubtaskIndex,
-      selectedSkillId: this.selectedSkillId,
-      hasReadPage: this.hasReadPage,
-      hasExplicitPageRead: this.hasExplicitPageRead,
-      hasTaskId: Boolean(this.taskId),
-      missingRequiredEvidence: this.getMissingRequiredEvidenceTypes(),
-      activeObjective: completionContext.activeObjective,
-      successCriteria: completionContext.successCriteria,
-      listDetailReviewedCount: this.listDetailReviewedTargets.size,
-      listDetailOpenedCount: this.listDetailOpenedTargets.size,
-      listDetailVisibleActionCount: Math.max(
-        this.listDetailVisibleActionCount,
-        countVisibleListDetailActions(snapshot),
-      ),
-      moneyTableIncompleteScanReason: incompleteMoneyTableScan,
-      moneyTableIncorrectAnswerReason: incompleteMoneyTableScan
-        ? null
-        : this.getIncorrectMoneyTableAggregateDoneRejection(summary),
-    };
-  }
-
-  /** Build and store a decision record from the captured input and verdict. */
-  private recordCompletionDecisionOutcome(
-    input: CompletionDecisionRecordInput,
-    verdict: boolean,
-  ): void {
-    // The planner result is only known after the inner decision runs.
-    input.plannerResult = this.lastDonePlanValidation;
-    let basis: CompletionDecisionBasis = "unknown";
-    let contractKind = "unknown";
-    let reason = "";
-    const envelope = this.completedResult?.completionEnvelope;
-    if (verdict && envelope) {
-      contractKind = envelope.contractKind;
-      reason = envelope.decisionReason;
-      basis =
-        envelope.contractKind === "legacy_done_guards"
-          ? "legacy_done_guards"
-          : this.completionEvidence.toArray().length === 0 &&
-              envelope.decisionReason ===
-                "duplicate_done_after_terminal_completion"
-            ? "duplicate_terminal"
-            : "kernel";
-    } else if (!verdict) {
-      const rejection = this.lastCompletionRejection;
-      basis = "kernel_reject";
-      contractKind =
-        rejection && rejection.status !== "accepted"
-          ? (rejection.contract?.kind ?? "unknown")
-          : "unknown";
-      reason =
-        rejection && rejection.status !== "accepted"
-          ? rejection.reason
-          : "rejected_by_legacy_guard";
-    }
-    recordCompletionDecision(
-      buildCompletionDecisionRecord({
-        recordedAtTurn: input.counters.turnCount,
-        input,
-        verdict: verdict ? "accepted" : "rejected",
-        basis,
-        contractKind,
-        guardId: verdict
-          ? null
-          : contractKind === "unknown"
-            ? null
-            : contractKind,
-        reason,
-        recoveryHint: this.lastCompletionRecoveryHint ?? null,
-      }),
-    );
   }
 
   private async handleDoneToolCallInner(
@@ -1989,30 +1369,16 @@ export class AgentLoop {
       return true;
     }
 
-    // Authority: the pure completion pipeline decides (RFC LP-15, Phase 7b).
-    // The frozen kernel is evaluated lazily inside the pipeline (after summary +
-    // grounding pass) so its side-effects (evidence refresh, candidate traces,
-    // lastCompletionRejection) fire at the legacy point. The planner stage keeps
-    // its bespoke rejection handling (retry_step / auto-advance) via the injected
-    // dep. Declarative reject-side effects are applied by the effect host; the
-    // accept side maps the decision basis to an envelope + acceptDoneToolCall.
-    // ServiceNow module-navigation evidence inference (live pre-step, RFC LP-15
-    // Phase 7b): legacy ran this inside rejectDoneForMissingRequiredEvidence
-    // before evaluating; run it before the guard context is built so the
-    // missing-evidence guard sees the post-inference evidence.
-    if (this.getMissingRequiredEvidenceTypes().length > 0) {
-      maybeInferServiceNowModuleNavigationEvidence(
-        this as unknown as ModuleNavEvidenceHost,
-        summary,
-      );
-    }
-
+    // The pure completion pipeline decides. The frozen kernel runs lazily after
+    // summary and grounding so its side effects happen at the legacy point.
+    // Planner rejection handling is injected; the effect host applies rejects.
+    // Acceptance maps the basis to an envelope and acceptDoneToolCall.
     const snapshot = this.context.getSnapshot() ?? null;
-    const completionContext = this.getActiveCompletionContext();
+    const completionContext = this.completionEvidenceRuntime.getActiveCompletionContext();
     const runningSubtaskIndex = this.planSubtasks.findIndex(
       (step) => step.status === "running",
     );
-    const ctx = this.buildCompletionGuardContext(
+    const ctx = this.completionDecisionContext.buildCompletionGuardContext(
       summary,
       snapshot,
       completionContext,
@@ -2022,19 +1388,24 @@ export class AgentLoop {
     let kernelDecision: CompletionEvaluation | null = null;
     const decision = await runCompletionPipeline(ctx, {
       getKernelDecision: () => {
-        kernelDecision = this.evaluateCompletionCandidate(
+        kernelDecision = this.completionEvidenceRuntime.evaluateCompletionCandidate(
           "model_done",
           summary,
         );
         return kernelDecision;
       },
       isDuplicateTerminal: false, // handled inline above
-      validatePlan: () => this.runDonePlanValidation(toolCallId, summary),
+      validatePlan: () => this.donePlanValidation.run(summary),
       buildKernelRejectionEffects: (decision) =>
         // Only invoked on a kernel rejection, so the evaluation is a rejection.
-        this.buildKernelRejectionEffects(
+        buildKernelRejectionEffects(
           summary,
           decision as CompletionRejectionDecision,
+          {
+            turnCount: this.turnCount,
+            doneRejections: this.doneRejections,
+            log: this.log,
+          },
         ),
       buildPlanRejectionEffects: (plan) => [
         {
@@ -2049,134 +1420,24 @@ export class AgentLoop {
 
     await applyCompletionEffects(
       decision.effects,
-      this.createCompletionEffectHost(toolCallId, tabId),
+      createCompletionEffectHost(this.completionEffectState, toolCallId, tabId),
     );
 
     if (decision.verdict === "reject") return false;
-    return this.acceptFromPipelineDecision(
+    return acceptFromPipelineDecision(
+      {
+        completionEvidenceRuntime: this.completionEvidenceRuntime,
+        completionEvidence: this.completionEvidence,
+        traceRecorder: this.traceRecorder,
+        turnCount: this.turnCount,
+        acceptDoneToolCall: (acceptedSummary, acceptedToolCallId, envelope) =>
+          this.completionFinalization.acceptDoneToolCall(acceptedSummary, acceptedToolCallId, envelope),
+      },
       decision,
       summary,
       toolCallId,
       kernelDecision,
     );
-  }
-
-  /**
-   * Run the plan-validation stage as the pipeline's injected dep (RFC LP-15,
-   * Phase 7b). Preserves the legacy precheck → model-validation → bespoke
-   * handleDonePlanRejection flow; the rejection effects are applied here (not as
-   * pipeline effects), so the pipeline's planner reject carries none. Returns
-   * null when no plan applies.
-   */
-  private async runDonePlanValidation(
-    toolCallId: string,
-    summary: string,
-  ): Promise<PlannerValidationResult | null> {
-    if (!(this.taskId && this.planSubtasks.length > 0)) {
-      this.lastDonePlanValidation = null;
-      return null;
-    }
-    const host = this as unknown as DonePlanValidationHost;
-    const donePlanPrecheck = evaluateDonePlanPrecheck(host, summary);
-    let shouldReject = donePlanPrecheck.shouldReject;
-    let rejectReason = donePlanPrecheck.rejectReason;
-    const effectiveCurrentIdx = donePlanPrecheck.effectiveCurrentIdx;
-    const completedMoneyTableAggregate =
-      donePlanPrecheck.completedMoneyTableAggregate;
-
-    ({ shouldReject, rejectReason } = await evaluateDonePlanValidation(
-      host,
-      summary,
-      effectiveCurrentIdx,
-      completedMoneyTableAggregate,
-      shouldReject,
-      rejectReason,
-    ));
-
-    this.lastDonePlanValidation = {
-      rejected: shouldReject,
-      reason: rejectReason ?? "",
-    };
-
-    if (shouldReject) {
-      // Single-authority (RFC LP-16 Phase 2): don't apply the policy inline —
-      // the pipeline carries a run_done_plan_rejection effect built from this.
-      return {
-        rejected: true,
-        reason: rejectReason ?? "",
-        effectiveCurrentIdx,
-      };
-    }
-    return { rejected: false, reason: "" };
-  }
-
-  /**
-   * Map an accepting pipeline decision to the loop-side accept actions (RFC
-   * LP-15, Phase 7b): build the completion envelope for the deciding basis, emit
-   * the completion_decision trace, and finalize via acceptDoneToolCall.
-   */
-  private acceptFromPipelineDecision(
-    decision: CompletionPipelineDecision,
-    summary: string,
-    toolCallId: string,
-    kernelDecision: CompletionEvaluation | null,
-  ): boolean {
-    if (decision.basis === "kernel" && kernelDecision?.status === "accepted") {
-      const completionEnvelope = this.createCompletionEnvelope({
-        source: "model_done",
-        contractKind: kernelDecision.contract.kind,
-        decisionReason: kernelDecision.reason,
-        evidence: kernelDecision.evidence,
-        summary,
-      });
-      this.traceRecorder?.recordEvent("completion_decision", {
-        turn: this.turnCount,
-        status: "accepted",
-        source: "model_done",
-        reason: kernelDecision.reason,
-        contractKind: kernelDecision.contract.kind,
-        resultId: completionEnvelope.resultId,
-        evidenceKeys: kernelDecision.evidence.map((event) => event.logicalKey),
-        completionEnvelope,
-      });
-      this.acceptDoneToolCall(summary, toolCallId, completionEnvelope);
-      return true;
-    }
-
-    const completionEnvelope = this.createCompletionEnvelope({
-      source: "model_done",
-      contractKind: "legacy_done_guards",
-      decisionReason: "legacy_done_guards_passed",
-      evidence: this.completionEvidence.toArray(),
-      summary,
-    });
-    this.traceRecorder?.recordEvent("completion_decision", {
-      turn: this.turnCount,
-      status: "accepted",
-      source: "model_done",
-      reason: "legacy_done_guards_passed",
-      resultId: completionEnvelope.resultId,
-      contractKind: completionEnvelope.contractKind,
-      evidenceKeys: completionEnvelope.evidenceKeys,
-      completionEnvelope,
-    });
-    this.acceptDoneToolCall(summary, toolCallId, completionEnvelope);
-    return true;
-  }
-
-  private getCompletionSummaryTaskContext(): string {
-    const runningIdx = this.planSubtasks.findIndex(
-      (step) => step.status === "running",
-    );
-    return [
-      this.originalQuery,
-      runningIdx >= 0 ? this.planSubtasks[runningIdx]?.description : undefined,
-      runningIdx >= 0 ? this.planSteps[runningIdx]?.successCriteria : undefined,
-    ]
-      .filter(
-        (part): part is string => typeof part === "string" && part.length > 0,
-      )
-      .join("\n");
   }
 
   private async handleClarifyToolCall(
@@ -2185,7 +1446,7 @@ export class AgentLoop {
   ): Promise<void> {
     const question = (args.question as string) || "Could you clarify?";
     const suggestions = args.suggestions as string[] | undefined;
-    const answer = await this.requestClarification(question, suggestions);
+    const answer = await requestClarification(this.interactionHost(), question, suggestions);
     this.context.addMessage({
       role: "tool",
       tool_call_id: toolCallId,
@@ -2198,299 +1459,20 @@ export class AgentLoop {
     });
   }
 
-  private updatePartialProgressState(lastAction?: string): void {
-    updateProgressLedgerState(
-      this.progressLedger,
-      this.context.getSnapshot?.() ?? null,
-      getActiveSubtaskDescription(this as unknown as LoopQueriesHost),
-      lastAction,
-    );
-  }
-
-  public recordPartialProgressToolResult(
-    toolName: ToolName,
-    args: Record<string, unknown>,
-    result: string,
-  ): void {
-    const lastAction = formatStepLabel(toolName, args, this.elementResolver);
-    this.updatePartialProgressState(lastAction);
-    recordProgressLedgerToolResult(this.progressLedger, {
-      toolName,
-      args,
-      result,
-      turn: this.turnCount,
-      url: this.context.getCurrentUrl?.() || this.context.getSnapshot()?.url,
-    });
-  }
-
-  private buildMaxTurnPartialHandoff(
-    reason: PartialHandoffReason = "max_turns",
-  ): PartialProgressHandoff {
-    this.updatePartialProgressState();
-    return buildPartialProgressHandoff({
-      ledger: this.progressLedger,
-      task: this.originalQuery,
-      reason,
-      turnsUsed: this.turnCount,
-      maxTurns: this.maxTurns,
-    });
-  }
-
-  private broadcastPlanTermination(
-    outcome: "stopped" | "max_turns" | "error",
-    summary: string,
-    partialHandoff?: PartialProgressHandoff,
-  ): void {
-    const message = planTerminationMessage({
-      taskId: this.taskId,
-      subtasks: this.planSubtasks,
-      outcome,
-      summary,
-      turnCount: this.turnCount,
-      maxTurns: this.maxTurns,
-      totalTimeMs: Date.now() - this.taskStartTime,
-      urlHistory: this.urlHistory,
-      metrics: this.getMetrics(),
-      partialHandoff,
-    });
-    if (message) this.broadcast(message);
-  }
-
-  private async requestApproval(
-    toolName: ToolName,
-    args: Record<string, unknown>,
-    context: string,
-    dryRun?: ForwardedApprovalDryRun,
-  ): Promise<boolean> {
-    const interaction = getMatchingApprovalInteraction(
-      this as unknown as LoopQueriesHost,
-      toolName,
-      args,
-      context,
-    ) ?? {
-      kind: "approval" as const,
-      nodeId: this.nodeId,
-      requestedAt: Date.now(),
-      approvalId: crypto.randomUUID(),
-      toolName,
-      args,
-      context,
-      timeoutMs: this.approvalTimeoutMs,
-      ...(dryRun ? { dryRun } : {}),
-    };
-    const remainingTimeoutMs = Math.max(
-      0,
-      interaction.timeoutMs - (Date.now() - interaction.requestedAt),
-    );
-
-    if (remainingTimeoutMs <= 0) {
-      this.resumeInteraction = null;
-      this.log.warn("policy", "Approval timed out before resume", {
-        approvalId: interaction.approvalId,
-        turn: this.turnCount,
-        toolName,
-        workspaceId: this.workspaceId,
-        workerId: this.workerId,
-      });
-      this.traceRecorder?.recordEvent("approval", {
-        approvalId: interaction.approvalId,
-        stage: "settled",
-        turn: this.turnCount,
-        toolName,
-        outcome: "timeout",
-        approved: false,
-      });
-      return false;
-    }
-
-    if (typeof interaction.approved === "boolean") {
-      this.resumeInteraction = null;
-      this.log.info("policy", "Approval decision restored", {
-        approvalId: interaction.approvalId,
-        turn: this.turnCount,
-        toolName,
-        approved: interaction.approved,
-        workspaceId: this.workspaceId,
-        workerId: this.workerId,
-      });
-      this.traceRecorder?.recordEvent("approval", {
-        approvalId: interaction.approvalId,
-        stage: "settled",
-        turn: this.turnCount,
-        toolName,
-        outcome: interaction.approved ? "approved" : "rejected",
-        approved: interaction.approved,
-      });
-      return interaction.approved;
-    }
-
-    this.statusHandler(AgentStatus.PAUSED, "Waiting for approval...");
-    const approvalStep = approvalRequestStep({
-      id: crypto.randomUUID(),
-      context,
-      timestamp: Date.now(),
-    });
-    this.stepHandler(approvalStep, false);
-    this.log.info("policy", "Approval request yielded to orchestrator", {
-      approvalId: interaction.approvalId,
-      turn: this.turnCount,
-      toolName,
-      context,
-      timeoutMs: interaction.timeoutMs,
-      remainingTimeoutMs,
-      workspaceId: this.workspaceId,
-      workerId: this.workerId,
-    });
-    this.traceRecorder?.recordEvent("approval", {
-      approvalId: interaction.approvalId,
-      stage: "requested",
-      turn: this.turnCount,
-      toolName,
-      context,
-      timeoutMs: interaction.timeoutMs,
-      bypassApprovals: this.bypassApprovals,
-    });
-    chrome.runtime
-      .sendMessage(
-        approvalRequestMessage({
-          approvalId: interaction.approvalId,
-          toolName,
-          toolArgs: args,
-          context,
-          timeoutMs: remainingTimeoutMs,
-          workspaceId: this.workspaceId,
-          requestId: crypto.randomUUID(),
-        }),
-      )
-      .catch((error: any) => {
-        this.log.warn("policy", "Approval request dispatch failed", {
-          approvalId: interaction.approvalId,
-          turn: this.turnCount,
-          toolName,
-          error: error?.message ?? String(error),
-          workspaceId: this.workspaceId,
-          workerId: this.workerId,
-        });
-      });
-    throw new PendingInteractionYield(interaction);
-  }
-
-  private static readonly CLARIFICATION_TIMEOUT_MS = 120_000;
-
-  private async requestClarification(
-    question: string,
-    suggestions?: string[],
-  ): Promise<string> {
-    const interaction = getMatchingClarificationInteraction(
-      this as unknown as LoopQueriesHost,
-      question,
-      suggestions,
-    ) ?? {
-      kind: "clarification" as const,
-      nodeId: this.nodeId,
-      requestedAt: Date.now(),
-      clarificationId: crypto.randomUUID(),
-      question,
-      ...(suggestions ? { suggestions } : {}),
-      timeoutMs: AgentLoop.CLARIFICATION_TIMEOUT_MS,
-    };
-    const remainingTimeoutMs = Math.max(
-      0,
-      interaction.timeoutMs - (Date.now() - interaction.requestedAt),
-    );
-
-    if (remainingTimeoutMs <= 0) {
-      this.resumeInteraction = null;
-      this.log.warn("agent", "Clarification timed out before resume", {
-        clarificationId: interaction.clarificationId,
-        turn: this.turnCount,
-      });
-      this.traceRecorder?.recordEvent("clarification", {
-        clarificationId: interaction.clarificationId,
-        stage: "settled",
-        turn: this.turnCount,
-        outcome: "timeout",
-      });
-      return "No response from user.";
-    }
-
-    if (typeof interaction.answer === "string") {
-      this.resumeInteraction = null;
-      this.log.info("agent", "Clarification response restored", {
-        clarificationId: interaction.clarificationId,
-        turn: this.turnCount,
-      });
-      this.traceRecorder?.recordEvent("clarification", {
-        clarificationId: interaction.clarificationId,
-        stage: "settled",
-        turn: this.turnCount,
-        outcome: "answered",
-      });
-      return interaction.answer;
-    }
-
-    this.statusHandler(AgentStatus.PAUSED, "Waiting for user clarification...");
-    const clarifyStep = clarificationRequestStep({
-      id: crypto.randomUUID(),
-      question,
-      timestamp: Date.now(),
-    });
-    this.stepHandler(clarifyStep, false);
-
-    this.log.info("agent", "Clarification yielded to orchestrator", {
-      clarificationId: interaction.clarificationId,
-      turn: this.turnCount,
-      question: question.slice(0, 200),
-      timeoutMs: interaction.timeoutMs,
-      remainingTimeoutMs,
-    });
-    this.traceRecorder?.recordEvent("clarification", {
-      clarificationId: interaction.clarificationId,
-      stage: "requested",
-      turn: this.turnCount,
-      question,
-    });
-    chrome.runtime
-      .sendMessage(
-        clarificationRequestMessage({
-          clarificationId: interaction.clarificationId,
-          question,
-          suggestions,
-          timeoutMs: remainingTimeoutMs,
-          workspaceId: this.workspaceId,
-          requestId: crypto.randomUUID(),
-        }),
-      )
-      .catch((error: any) => {
-        this.log.warn("agent", "Clarification request dispatch failed", {
-          clarificationId: interaction.clarificationId,
-          error: error?.message ?? String(error),
-        });
-      });
-    throw new PendingInteractionYield(interaction);
-  }
-
-  /**
-   * Dry-run gate for a consequential form submit (RFC LP-15, Phase 8). Captures
-   * the live form state via extract_form_state and diffs it against the approved
-   * draft (the form_fill contract's required fields). A clean diff means the form
-   * holds exactly the intended values → the submit auto-approves; an unexpected
-   * diff routes to human approval carrying the rendered diff. `no_draft` (not a
-   * form-fill task, or capture failed) leaves the normal approval gate unchanged.
-   */
-  private async runFormSubmitDryRun(
+  readonly formSubmitDryRun = (
     toolName: ToolName,
     args: Record<string, unknown>,
     tabId: number,
-  ): Promise<DryRunClassification> {
-    // Relocated to form-submit-dry-run.ts (loop ratchet, pi-backend Phase 4).
-    return runFormSubmitDryRun(
-      this as unknown as FormSubmitDryRunHost,
-      toolName,
-      args,
-      tabId,
-    );
-  }
+  ): Promise<DryRunClassification> => runFormSubmitDryRun({
+    originalQuery: this.originalQuery,
+    turnCount: this.turnCount,
+    lastPlanIndex: this.lastPlanIndex,
+    context: this.context,
+    log: this.log,
+    completionEvidence: this.completionEvidence,
+    traceRecorder: this.traceRecorder,
+    checkpoints: this.checkpoints,
+  }, toolName, args, tabId);
 
   private async ensureToolApproval(
     toolName: ToolName,
@@ -2530,7 +1512,8 @@ export class AgentLoop {
       return true;
     }
     const context = formatStepLabel(toolName, args, this.elementResolver);
-    const approved = await this.requestApproval(
+    const approved = await requestApproval(
+      this.interactionHost(),
       toolName,
       args,
       context,
@@ -2689,7 +1672,7 @@ export class AgentLoop {
     if (this.pendingTurnCheckpoint) {
       const cp = this.pendingTurnCheckpoint;
       this.pendingTurnCheckpoint = null;
-      const restored = this.restoreFromTurnCheckpoint(cp);
+      const restored = this.turnCheckpoint.restore(cp);
       if (restored) {
         this.log.info("agent", "Resumed from durable turn checkpoint", {
           priorTurn: cp.turnCount,
@@ -2782,7 +1765,7 @@ export class AgentLoop {
           /* ignore invalid starting URL */
         }
         // Record initial page as citation
-        this.recordCitation(
+        this.telemetry.recordCitation(
           snapshot.url,
           snapshot.title || "",
           ToolName.READ_PAGE,
@@ -2803,7 +1786,7 @@ export class AgentLoop {
       }
 
       const warmupResult = await adoptWarmupScreenshot(
-        this as unknown as WarmupAdoptionHost,
+        this.perceptionCaptureHost,
         { screenshot: warmupScreenshot, entry: warmupEntry },
       );
       if (warmupResult !== "handled") {
@@ -2911,7 +1894,7 @@ export class AgentLoop {
 
     // Register planner usage callback for metrics tracking
     this.planner.setUsageCallback((usage, llmMs, model) => {
-      this.recordUsage(
+      this.telemetry.recordUsage(
         {
           role: "assistant",
           content: null,
@@ -2925,10 +1908,7 @@ export class AgentLoop {
 
     const result = await runStartExecution({
       run: async () => {
-        const controllerResult =
-          (await this.maybeRunServiceNowRecordFormController(tabId)) ??
-          (await this.maybeRunAtomicSkillController(tabId));
-        return controllerResult ?? (await this.loop(tabId));
+        return this.loop(tabId);
       },
       getTurnCount: () => this.turnCount,
       getCompletedResult: () => this.completedResult,
@@ -3039,19 +2019,16 @@ export class AgentLoop {
   }
 
   /**
-   * Check whether a done() rejection mid-point has been reached and we should
-   * escalate to planner mode on the next main-loop tick.
-   * Only fires when we have not already escalated (executor tier only) and the
-   * task has a meaningful rejection budget (≥ 2 allowed rejections).
-   */
-
-  /**
    * Called after every doneRejections++ to schedule a planner escalation when
    * the mid-point threshold is crossed.  The actual escalation happens in the
    * main loop so that escalationTier (a loop-local variable) is updated there.
    */
   private checkAndSetDoneRejectionEscalation(): void {
-    if (!shouldEscalateOnDoneRejection(this as unknown as LoopQueriesHost))
+    if (!shouldEscalateOnDoneRejection({
+      limits: this.limits,
+      doneRejections: this.doneRejections,
+      llm: this.llm,
+    }))
       return;
     this.pendingDoneRejectionEscalation = true;
     this.traceRecorder?.recordEvent("done_rejection_escalation", {
@@ -3060,76 +2037,19 @@ export class AgentLoop {
     } as Record<string, unknown>);
   }
 
-  /** Get the tab IDs belonging to this agent's workspace, or null if no workspace. */
-  private async getWorkspaceTabIds(): Promise<number[] | null> {
-    if (!this.workspaceId || this.workspaceId === "default") return null;
-    const ws = await workspaceManager.getWorkspaceById(this.workspaceId);
-    return ws?.tabIds ?? null;
-  }
-
-  private shouldBlockTabManagementTools(): boolean {
-    if (userExplicitlyRequestedTabManagement(this.originalQuery)) return false;
-    if (this.selectedSkillId === "multi-tab-checklist-workflow") return false;
-    if (this.planRequiresTabManagement) return false;
-    return true;
-  }
-
   private async getWorkflowTabToolRedirect(params: {
     toolName: ToolName;
     args: Record<string, unknown>;
     currentTabId: number;
   }): Promise<string | null> {
-    const { toolName, args, currentTabId } = params;
-    const snapshot = this.context.getSnapshot();
-    const targetId =
-      typeof args.id === "number"
-        ? args.id
-        : typeof args.id === "string"
-          ? parseInt(args.id, 10)
-          : null;
-    const target =
-      (toolName === ToolName.CLICK_ELEMENT ||
-        toolName === ToolName.RIGHT_CLICK) &&
-      targetId
-        ? snapshot?.elements?.find((element) => element.tag === targetId)
-        : null;
-    const targetHref =
-      typeof target?.attributes?.href === "string"
-        ? target.attributes.href
-        : toolName === ToolName.CREATE_TAB && typeof args.url === "string"
-          ? (args.url as string)
-          : null;
-    if (!targetHref) return null;
-
-    let resolvedHref: string | null = null;
-    try {
-      resolvedHref = new URL(
-        targetHref,
-        this.context.getCurrentUrl() || "http://127.0.0.1/",
-      ).toString();
-    } catch {
-      return null;
-    }
-    const tabs = await getWorkspaceTabs(this as unknown as LoopQueriesHost);
-    const decision = evaluateWorkflowTabRedirect({
-      skillId: this.selectedSkillId,
-      toolName,
-      currentTabId,
-      currentUrl: this.context.getCurrentUrl(),
-      targetUrl: resolvedHref,
-      workspaceTabs: tabs,
-    });
-    if (!decision) return null;
-    this.traceRecorder?.recordEvent(decision.traceEvent, {
-      turn: this.turnCount,
-      toolName,
-      controllerId: decision.controllerId,
-      currentTabId,
-      currentUrl: this.context.getCurrentUrl(),
-      targetUrl: resolvedHref,
-      message: decision.message,
-    });
-    return decision.message;
+    return routeWorkflowTabTool({
+      getSnapshot: () => this.context.getSnapshot(),
+      getCurrentUrl: () => this.context.getCurrentUrl(),
+      getSelectedSkillId: () => this.selectedSkillId,
+      getTurnCount: () => this.turnCount,
+      getWorkspaceTabs: () => getWorkspaceTabs({ workspaceId: this.workspaceId }),
+      recordEvent: (name, data) => this.traceRecorder?.recordEvent(name, data),
+    }, params);
   }
 
   /** De-escalate back to executor mode when progress resumes after escalation. */
@@ -3250,13 +2170,9 @@ export class AgentLoop {
       });
     };
 
-    const sendRequest = () =>
-      chrome.tabs.sendMessage(tabId, {
-        type: "DOM_SNAPSHOT_REQUEST",
-        requestId: crypto.randomUUID(),
-        source: MessageSource.BACKGROUND,
-        payload: { refresh: true, autoDismiss: false },
-      });
+    const sendRequest = () => requestPageSnapshot(tabId, {
+      refresh: true, autoDismiss: false,
+    });
 
     try {
       const snapResponse = await sendRequest();
@@ -3313,52 +2229,12 @@ export class AgentLoop {
    * elements to determine which tools are relevant (e.g., draggable
    * elements → include drag_and_drop, file inputs → include upload_file).
    */
-  private applyToolProfile(tools: ToolDefinition[]): ToolDefinition[] {
-    return applyToolProfile(this as unknown as AgentLoopSkillToolsHost, tools);
-  }
-
   public getActiveToolNamesForTurn(): ToolName[] {
     return [...this.activeToolNamesForTurn];
   }
 
-  /** Extracted to capture-guard.ts (LP-24) — quota retry lives there. */
-  private async captureVisibleTabWithRetry(
-    windowId: number,
-    options: { format?: "jpeg" | "png"; quality?: number },
-  ): Promise<string> {
-    return captureVisibleTabWithQuotaRetry(windowId, options, this.log);
-  }
-
   private getActivePerceptionTaskContext(): PerceptionTaskContext | undefined {
-    if (this.planSteps.length === 0) return undefined;
-
-    let stepIndex = this.planSubtasks.findIndex(
-      (subtask) => subtask.status === "running",
-    );
-    if (
-      stepIndex < 0 &&
-      this.lastPlanIndex >= 0 &&
-      this.lastPlanIndex < this.planSteps.length
-    ) {
-      stepIndex = this.lastPlanIndex;
-    }
-    if (stepIndex < 0 || stepIndex >= this.planSteps.length) return undefined;
-
-    const step = this.planSteps[stepIndex];
-    const objective =
-      step.objective?.trim() ||
-      this.planSubtasks[stepIndex]?.description?.trim();
-    if (!objective) return undefined;
-
-    return {
-      objective,
-      successCriteria: step.successCriteria?.trim() || undefined,
-      expectedStateDescription:
-        step.expectedState?.description?.trim() || undefined,
-      toolProfile: step.toolProfile,
-      currentStepIndex: stepIndex,
-      totalSteps: this.planSteps.length,
-    };
+    return deriveActivePerceptionTaskContext(this.planSteps, this.planSubtasks, this.lastPlanIndex);
   }
 
   /**
@@ -3413,7 +2289,7 @@ export class AgentLoop {
     if (this.useVLExecutor) {
       // Unified VL mode: capture screenshot for the executor, skip perception VLM call.
       // The executor LLM receives the screenshot directly as an image content block.
-      await this.captureScreenshotForVLExecutor(tabId);
+      await captureVLExecutorScreenshot(this.perceptionCaptureHost, tabId, this.vlScreenshotState);
       // Skip triagePopups — executor sees overlays in screenshot and calls dismiss_overlays.
       return;
     }
@@ -3422,17 +2298,6 @@ export class AgentLoop {
     // itself (via dismiss_overlays).
     this.context.setScreenshotForExecutor(null);
     this.context.setPageInterpretation(null);
-  }
-
-  /** Capture screenshot and store for VL executor injection (no perception VLM call).
-   *  Body extracted to agent/vl-screenshot.ts (LP-17b CM-5), which also reuses
-   *  the previous screenshot when the page fingerprint is unchanged. */
-  private async captureScreenshotForVLExecutor(tabId: number): Promise<void> {
-    return captureVLExecutorScreenshot(
-      this as unknown as VLScreenshotHost,
-      tabId,
-      this.vlScreenshotState,
-    );
   }
 
   /**
@@ -3456,358 +2321,6 @@ export class AgentLoop {
       turn: this.turnCount,
       reason,
     });
-  }
-
-  private isSkillOwnedListDetailReview(): boolean {
-    return isSkillOwnedListDetailReview(
-      this as unknown as AgentLoopSkillToolsHost,
-    );
-  }
-
-  private isSkillOwnedMultiTabChecklistLoop(): boolean {
-    return isSkillOwnedMultiTabChecklistLoop(
-      this as unknown as AgentLoopSkillToolsHost,
-    );
-  }
-
-  /**
-   * Run plan monitor: compare current perception against expected state for the active step.
-   * Only runs when a plan is active, perception is available, and enough turns have passed.
-   */
-  private async runPlanMonitor(
-    signal?: AbortSignal,
-  ): Promise<PlanMonitorResult | null> {
-    if (
-      this.isSkillOwnedListDetailReview() ||
-      this.isSkillOwnedMultiTabChecklistLoop()
-    ) {
-      return null;
-    }
-    if (this.planSteps.length === 0 || !this.perception.getInterpretation())
-      return null;
-
-    // Find the currently running step
-    const runningIdx = this.planSubtasks.findIndex(
-      (s) => s.status === "running",
-    );
-    if (runningIdx < 0 || runningIdx >= this.planSteps.length) return null;
-
-    const step = this.planSteps[runningIdx];
-    if (!step.expectedState) return null;
-
-    const pageUrl = this.context.getSnapshot()?.url || "";
-    const result = await this.planner.monitorStep(
-      step,
-      runningIdx,
-      this.perception.getInterpretation()!,
-      pageUrl,
-      signal,
-    );
-
-    if (result) {
-      this.traceRecorder?.recordEvent("plan_monitor", {
-        stepIndex: runningIdx,
-        alignment: result.alignment,
-        reason: result.reason,
-        heuristicHit: !result.reason.includes("LLM"),
-        ...(result.blocker ? { blocker: result.blocker } : {}),
-      });
-      this.log.info("agent", "Plan monitor check", {
-        stepIndex: runningIdx,
-        alignment: result.alignment,
-        reason: result.reason.slice(0, 150),
-      });
-    }
-
-    return result;
-  }
-
-  /**
-   * Handle plan deviation: invoke selective replan and update plan state.
-   */
-  private async handlePlanDeviation(
-    monitorResult: PlanMonitorResult,
-    tabId: number,
-    signal?: AbortSignal,
-  ): Promise<void> {
-    if (
-      this.isSkillOwnedListDetailReview() ||
-      this.isSkillOwnedMultiTabChecklistLoop()
-    ) {
-      this.traceRecorder?.recordEvent("plan_replan_skipped_skill_owned_loop", {
-        turn: this.turnCount,
-        skillId: this.selectedSkillId,
-        reason: "plan_monitor_deviation",
-      });
-      return;
-    }
-
-    if (this.replanCount >= this.limits.maxReplans) {
-      this.log.warn("agent", "Plan deviation detected but replan cap reached", {
-        replanCount: this.replanCount,
-        maxReplans: this.limits.maxReplans,
-      });
-      return;
-    }
-
-    const perception = this.perception.getInterpretation() || "";
-    const pageUrl = this.context.getSnapshot()?.url || "";
-
-    const runningIdx = this.planSubtasks.findIndex(
-      (s) => s.status === "running",
-    );
-    if (runningIdx < 0) return;
-
-    this.stepHandler(
-      {
-        id: crypto.randomUUID(),
-        type: "thinking",
-        label: "Replanning from deviation...",
-        status: "running",
-        timestamp: Date.now(),
-      },
-      false,
-    );
-
-    const replanResult = await this.planner.replanFrom(
-      this.originalQuery,
-      buildCompletedPlanStepSummaries(this.planSubtasks),
-      buildFailedPlanStep(this.planSubtasks, runningIdx),
-      perception,
-      pageUrl,
-      signal,
-    );
-
-    if (!replanResult || replanResult.newSteps.length === 0) {
-      this.log.warn("agent", "Replan produced no new steps");
-      return;
-    }
-
-    this.replanCount++;
-
-    // Replace steps from deviation point onward
-    const replacement = buildPlanReplacementState({
-      subtasks: this.planSubtasks,
-      steps: this.planSteps,
-      fromIndex: runningIdx,
-      replacementSteps: replanResult.newSteps,
-    });
-    this.planSubtasks = replacement.planSubtasks;
-    this.planSteps = replacement.planSteps;
-
-    // Update context with new plan
-    this.context.setPlanStatus(replacement.statusEntries, runningIdx);
-
-    // Inject plan monitor message into conversation
-    this.context.addMessage({
-      role: "user",
-      content: buildPlanMonitorReplanMessage({
-        fromIndex: runningIdx,
-        reason: monitorResult.reason,
-        replacementSteps: replanResult.newSteps,
-      }),
-    });
-
-    // Broadcast updated progress
-    this.broadcastTaskProgress(runningIdx);
-
-    this.traceRecorder?.recordEvent("plan_replan", {
-      fromIndex: runningIdx,
-      newStepCount: replanResult.newSteps.length,
-      reason: replanResult.reason,
-      replanNumber: this.replanCount,
-    });
-
-    this.stepHandler(
-      {
-        id: crypto.randomUUID(),
-        type: "info",
-        label: `Plan repaired (${replanResult.newSteps.length} new steps)`,
-        status: "done",
-        timestamp: Date.now(),
-      },
-      false,
-    );
-
-    this.log.info("agent", "Plan repaired after deviation", {
-      fromIndex: runningIdx,
-      newStepCount: replanResult.newSteps.length,
-      replanCount: this.replanCount,
-      reason: replanResult.reason.slice(0, 200),
-    });
-  }
-
-  /**
-   * Attempt replan-on-escalation: instead of switching the planner model to execute
-   * tools directly, ask it to produce a revised plan, then hand back to executor.
-   *
-   * Returns true if replan succeeded (caller should skip old escalation behavior).
-   * Returns false if replan is not applicable or fails (caller falls through to old behavior).
-   */
-  private async replanOnEscalation(
-    tabId: number,
-    subgoalAttempts: SubgoalAttempt[],
-    signal?: AbortSignal,
-  ): Promise<boolean> {
-    if (
-      this.isSkillOwnedListDetailReview() ||
-      this.isSkillOwnedMultiTabChecklistLoop()
-    ) {
-      this.traceRecorder?.recordEvent("plan_replan_skipped_skill_owned_loop", {
-        turn: this.turnCount,
-        skillId: this.selectedSkillId,
-        reason: "escalation_or_stagnation",
-      });
-      this.log.info(
-        "agent",
-        "Skipping replan for skill-owned list-detail loop",
-        {
-          turn: this.turnCount,
-        },
-      );
-      return false;
-    }
-
-    // Guard: replan cap
-    if (this.replanCount >= this.limits.maxReplans) {
-      this.log.info("agent", "replanOnEscalation: cap reached", {
-        replanCount: this.replanCount,
-        maxReplans: this.limits.maxReplans,
-      });
-      return false;
-    }
-
-    // Guard: must have a plan with steps
-    if (this.planSteps.length === 0 || this.planSubtasks.length === 0) {
-      this.log.info("agent", "replanOnEscalation: no plan exists");
-      return false;
-    }
-
-    // Find running step
-    const runningIdx = this.planSubtasks.findIndex(
-      (s) => s.status === "running",
-    );
-    if (runningIdx < 0) {
-      this.log.info("agent", "replanOnEscalation: no running step");
-      return false;
-    }
-
-    const stuckStep = this.planSubtasks[runningIdx];
-    const stuckStepGoal = stuckStep.description;
-
-    // Build structured failure context from subgoal attempts
-    const failureContext = buildStructuredFailureContext(
-      subgoalAttempts,
-      stuckStepGoal,
-      runningIdx,
-      this.turnsOnCurrentStep,
-      this.context.getSnapshot()?.url || "",
-    );
-    const failureContextStr = formatStructuredFailureContext(failureContext);
-
-    this.stepHandler(
-      {
-        id: crypto.randomUUID(),
-        type: "thinking",
-        label: "Replanning stuck step...",
-        status: "running",
-        timestamp: Date.now(),
-      },
-      false,
-    );
-
-    // Get fresh perception for the replan prompt
-    await this.refreshSnapshotWithRetry(tabId, -1);
-    this.perception.invalidateCache();
-    await this.refreshPerceptionAndTriage(tabId);
-
-    const perception = this.perception.getInterpretation() || "";
-    const pageUrl = this.context.getSnapshot()?.url || "";
-
-    // Call the planner to replan (temporarily — no model switch needed, planner has its own LLM)
-    const replanResult = await this.planner.replanFrom(
-      this.originalQuery,
-      buildCompletedPlanStepSummaries(this.planSubtasks),
-      buildFailedPlanStep(this.planSubtasks, runningIdx),
-      perception,
-      pageUrl,
-      signal,
-      failureContextStr,
-    );
-
-    if (!replanResult || replanResult.newSteps.length === 0) {
-      this.log.warn("agent", "replanOnEscalation: replan produced no steps");
-      return false;
-    }
-
-    this.replanCount++;
-
-    // Replace steps from stuck point onward
-    const replacement = buildPlanReplacementState({
-      subtasks: this.planSubtasks,
-      steps: this.planSteps,
-      fromIndex: runningIdx,
-      replacementSteps: replanResult.newSteps,
-    });
-    this.planSubtasks = replacement.planSubtasks;
-    this.planSteps = replacement.planSteps;
-
-    // Update context with new plan
-    this.context.setPlanStatus(replacement.statusEntries, runningIdx);
-
-    // Clear history and inject fresh context with the new plan
-    this.context.clearHistory();
-    this.context.addMessage({
-      role: "user",
-      content: this.originalQuery,
-    });
-    this.context.addMessage({
-      role: "user",
-      content: buildPlanRevisionMessage({
-        fromIndex: runningIdx,
-        reason: replanResult.reason,
-        replacementSteps: replanResult.newSteps,
-      }),
-    });
-
-    // Reset step tracking for the new step
-    this.turnsOnCurrentStep = 0;
-    this.escalationsOnCurrentStep = 0;
-    this.doneRejections = 0;
-    this.lastContractRejectionKind = undefined;
-    this.consecutiveSameKindRejections = 0;
-    this.lastPlanIndex = runningIdx;
-
-    // Broadcast updated progress
-    this.broadcastTaskProgress(runningIdx);
-
-    this.traceRecorder?.recordEvent("replan_on_escalation", {
-      fromIndex: runningIdx,
-      newStepCount: replanResult.newSteps.length,
-      reason: replanResult.reason,
-      replanNumber: this.replanCount,
-      failureContext: failureContextStr.slice(0, 300),
-    });
-
-    this.stepHandler(
-      {
-        id: crypto.randomUUID(),
-        type: "info",
-        label: `Replanned from step ${runningIdx + 1} (${replanResult.newSteps.length} new steps)`,
-        status: "done",
-        timestamp: Date.now(),
-      },
-      false,
-    );
-
-    this.log.info("agent", "replanOnEscalation succeeded", {
-      fromIndex: runningIdx,
-      newStepCount: replanResult.newSteps.length,
-      replanCount: this.replanCount,
-      reason: replanResult.reason.slice(0, 200),
-    });
-
-    return true;
   }
 
   /** Refresh snapshot with retry — used after model escalation where fresh context is critical. */
@@ -3925,226 +2438,6 @@ export class AgentLoop {
     );
   }
 
-  private trackListDetailToolSuccess(
-    toolName: ToolName,
-    args: Record<string, unknown>,
-    preActionSnapshot: DomSnapshot | null,
-  ): void {
-    if (this.selectedSkillId !== "list-detail-review-loop") return;
-    const visibleCount = countVisibleListDetailActions(preActionSnapshot);
-    if (visibleCount > this.listDetailVisibleActionCount) {
-      this.listDetailVisibleActionCount = visibleCount;
-    }
-
-    if (toolName === ToolName.CLICK_ELEMENT) {
-      const id = typeof args.id === "number" ? args.id : Number(args.id);
-      if (!Number.isFinite(id)) return;
-      const target = preActionSnapshot?.elements.find(
-        (element) => element.tag === id,
-      );
-      const label = listDetailActionTargetLabel(target);
-      if (!label) return;
-
-      this.listDetailOpenedTargets.add(label);
-      this.listDetailCurrentTarget = label;
-      this.listDetailCurrentTargetRead = false;
-      this.traceRecorder?.recordEvent("list_detail_item_opened", {
-        turn: this.turnCount,
-        openedCount: this.listDetailOpenedTargets.size,
-        reviewedCount: this.listDetailReviewedTargets.size,
-        visibleActionCount: this.listDetailVisibleActionCount,
-        target: label.slice(0, 160),
-      });
-      return;
-    }
-
-    if (
-      toolName === ToolName.READ_PAGE ||
-      toolName === ToolName.XRAY_PAGE ||
-      toolName === ToolName.UPDATE_NOTES
-    ) {
-      const appearsToBeListPage =
-        countVisibleListDetailActions(preActionSnapshot) >= 3;
-      if (appearsToBeListPage && toolName !== ToolName.UPDATE_NOTES) {
-        return;
-      }
-      if (
-        appearsToBeListPage &&
-        toolName === ToolName.UPDATE_NOTES &&
-        !this.listDetailCurrentTargetRead
-      ) {
-        return;
-      }
-      this.markCurrentListDetailReviewed(
-        toolName === ToolName.UPDATE_NOTES ? "note" : "read",
-      );
-    }
-  }
-
-  private markCurrentListDetailReviewed(source: "read" | "note"): void {
-    if (this.selectedSkillId !== "list-detail-review-loop") return;
-    if (!this.listDetailCurrentTarget) return;
-    if (source === "read") {
-      this.listDetailCurrentTargetRead = true;
-    }
-
-    const target = this.listDetailCurrentTarget;
-    this.listDetailReviewedTargets.add(target);
-    this.traceRecorder?.recordEvent("list_detail_item_reviewed", {
-      turn: this.turnCount,
-      source,
-      openedCount: this.listDetailOpenedTargets.size,
-      reviewedCount: this.listDetailReviewedTargets.size,
-      visibleActionCount: this.listDetailVisibleActionCount,
-      target: target.slice(0, 160),
-    });
-  }
-
-  private rewriteListDetailWorkflowToolCall(
-    toolCall: ToolCall,
-    mode: "parallel" | "sequential",
-  ): boolean {
-    if (!this.isSkillOwnedListDetailReview()) return false;
-
-    const toolName = toolCall.function.name as ToolName;
-    let args: Record<string, unknown> = {};
-    try {
-      args = JSON.parse(toolCall.function.arguments || "{}");
-    } catch {
-      args = {};
-    }
-
-    const currentSnapshot = this.context.getSnapshot();
-    const visibleDetailActionCount =
-      countVisibleListDetailActions(currentSnapshot);
-    if (visibleDetailActionCount > this.listDetailVisibleActionCount) {
-      this.listDetailVisibleActionCount = visibleDetailActionCount;
-    }
-
-    const currentTargetKey = normalizeGuardText(
-      this.listDetailCurrentTarget || "",
-    );
-    const currentTargetNeedsRead =
-      !!currentTargetKey &&
-      !this.listDetailReviewedTargets.has(currentTargetKey);
-    const isOpenDetailSurface =
-      currentTargetNeedsRead &&
-      visibleDetailActionCount < 3 &&
-      hasListDetailReturnControl(currentSnapshot);
-    if (
-      isOpenDetailSurface &&
-      toolName !== ToolName.READ_PAGE &&
-      toolName !== ToolName.XRAY_PAGE &&
-      toolName !== ToolName.UPDATE_NOTES &&
-      toolName !== ToolName.ESCALATE &&
-      toolName !== ToolName.DONE
-    ) {
-      toolCall.function.name = ToolName.READ_PAGE;
-      toolCall.function.arguments = "{}";
-      this.traceRecorder?.recordEvent("list_detail_workflow_tool_redirected", {
-        turn: this.turnCount,
-        mode,
-        fromTool: toolName,
-        toTool: ToolName.READ_PAGE,
-        target: this.listDetailCurrentTarget?.slice(0, 160),
-        openedDetailCount: this.listDetailOpenedTargets.size,
-        reviewedDetailCount: this.listDetailReviewedTargets.size,
-        visibleDetailActionCount: this.listDetailVisibleActionCount,
-        reason: "current_detail_needs_read",
-      });
-      this.log.info("agent", "List-detail workflow tool redirected", {
-        turn: this.turnCount,
-        mode,
-        fromTool: toolName,
-        toTool: ToolName.READ_PAGE,
-        reason: "current_detail_needs_read",
-      });
-      return true;
-    }
-
-    const returnControl = getListDetailReturnControl(currentSnapshot);
-    const clickId = typeof args.id === "number" ? args.id : Number(args.id);
-    const isReturnControlClick =
-      toolName === ToolName.CLICK_ELEMENT &&
-      Number.isFinite(clickId) &&
-      returnControl?.tag === clickId;
-    const isDetailReadTool =
-      toolName === ToolName.READ_PAGE || toolName === ToolName.XRAY_PAGE;
-    const allowDetailReadTool = currentTargetNeedsRead && isDetailReadTool;
-    if (
-      returnControl &&
-      visibleDetailActionCount < 3 &&
-      !isReturnControlClick &&
-      !allowDetailReadTool &&
-      toolName !== ToolName.ESCALATE &&
-      toolName !== ToolName.DONE &&
-      toolName !== ToolName.UPDATE_NOTES
-    ) {
-      toolCall.function.name = ToolName.CLICK_ELEMENT;
-      toolCall.function.arguments = JSON.stringify({ id: returnControl.tag });
-      this.traceRecorder?.recordEvent("list_detail_workflow_tool_redirected", {
-        turn: this.turnCount,
-        mode,
-        fromTool: toolName,
-        toTool: ToolName.CLICK_ELEMENT,
-        targetId: returnControl.tag,
-        target: listDetailElementLabel(returnControl).slice(0, 160),
-        openedDetailCount: this.listDetailOpenedTargets.size,
-        reviewedDetailCount: this.listDetailReviewedTargets.size,
-        visibleDetailActionCount: this.listDetailVisibleActionCount,
-        reason: "return_to_list_required",
-      });
-      this.log.info("agent", "List-detail workflow tool redirected", {
-        turn: this.turnCount,
-        mode,
-        fromTool: toolName,
-        toTool: ToolName.CLICK_ELEMENT,
-        targetId: returnControl.tag,
-        reason: "return_to_list_required",
-      });
-      return true;
-    }
-
-    const block = getListDetailWorkflowBlock({
-      selectedSkillId: this.selectedSkillId,
-      query: this.originalQuery,
-      toolName,
-      args,
-      snapshot: currentSnapshot,
-      reviewedTargets: this.listDetailReviewedTargets,
-      openedTargets: this.listDetailOpenedTargets,
-      visibleDetailActionCount: this.listDetailVisibleActionCount,
-    });
-    if (!block) return false;
-
-    const next = getNextUnreviewedListDetailAction(
-      currentSnapshot,
-      this.listDetailReviewedTargets,
-    );
-    if (!next) return false;
-
-    toolCall.function.name = ToolName.CLICK_ELEMENT;
-    toolCall.function.arguments = JSON.stringify({ id: next.id });
-    this.traceRecorder?.recordEvent("list_detail_workflow_tool_redirected", {
-      turn: this.turnCount,
-      mode,
-      fromTool: toolName,
-      toTool: ToolName.CLICK_ELEMENT,
-      targetId: next.id,
-      target: next.label.slice(0, 160),
-      openedDetailCount: this.listDetailOpenedTargets.size,
-      reviewedDetailCount: this.listDetailReviewedTargets.size,
-      visibleDetailActionCount: this.listDetailVisibleActionCount,
-    });
-    this.log.info("agent", "List-detail workflow tool redirected", {
-      turn: this.turnCount,
-      mode,
-      fromTool: toolName,
-      targetId: next.id,
-    });
-    return true;
-  }
-
   /** Execute a tool call via the tool registry. */
   private async executeToolCall(
     toolCall: ToolCall,
@@ -4178,7 +2471,7 @@ export class AgentLoop {
       }
       const result = await executeInspectRegion(
         createRegionZoomHost(
-          this as unknown as RegionZoomLoopHost,
+          this.perceptionCaptureHost,
           tabId,
           observationBasis,
         ),
@@ -4243,740 +2536,11 @@ export class AgentLoop {
     );
   }
 
-  private advanceCompletedSubtasks(): number {
-    return advanceCompletedSubtasks(
-      this as unknown as AgentLoopPlanProgressHost,
-    );
-  }
-
-  private completeSingleSubtask(currentIndex: number): number {
-    return completeSingleSubtask(
-      this as unknown as AgentLoopPlanProgressHost,
-      currentIndex,
-    );
-  }
-
-  private completeRemainingSubtasks(
-    currentIndex: number,
-    result: string,
-  ): number {
-    return completeRemainingSubtasks(
-      this as unknown as AgentLoopPlanProgressHost,
-      currentIndex,
-      result,
-    );
-  }
-
-  private maybeAdvanceTrustedFormFillStep(params: {
-    toolName: string;
-    toolArgs?: Record<string, unknown>;
-    toolResult: string;
-    mode: "parallel" | "sequential";
-  }): boolean {
-    const plan = this.context.getPlanStatusRaw();
-    if (
-      !this.taskId ||
-      !plan ||
-      plan.currentIndex < 0 ||
-      plan.currentIndex >= plan.subtasks.length
-    ) {
-      return false;
-    }
-
-    const currentSubtask = plan.subtasks[plan.currentIndex];
-    const nextSubtask = plan.subtasks[plan.currentIndex + 1];
-    if (!currentSubtask || !nextSubtask) return false;
-    if (this.getActiveToolProfileForStep(plan.currentIndex) !== "form_fill") {
-      return false;
-    }
-
-    const signal = detectTrustedFormFillStepCompletion({
-      toolName: params.toolName,
-      toolArgs: params.toolArgs,
-      toolResult: params.toolResult,
-    });
-    if (!signal) return false;
-
-    this.consecutiveAutoAdvances = 0;
-    const fromStep = plan.currentIndex;
-    const newIdx = completeSingleSubtask(
-      this as unknown as AgentLoopPlanProgressHost,
-      fromStep,
-    );
-    this.syncPlanStatus(newIdx, "structural_step_advance", {
-      reason: signal.reason,
-      matchedTokens: signal.matchedTokens,
-      advancedTo: newIdx,
-      mode: params.mode,
-      trustedTool: params.toolName,
-    });
-    const nextStepDesc =
-      this.planSubtasks[newIdx]?.description || "Finish the remaining plan";
-    this.context.addMessage({
-      role: "user",
-      content:
-        `STEP COMPLETED: ${signal.reason}. ` +
-        `Continue with the next step: ${nextStepDesc}. ` +
-        `Do NOT re-verify the completed form-fill step unless the page reports an error.`,
-    });
-    this.broadcastTaskProgress(newIdx);
-    this.log.info("agent", "trusted form helper advanced step", {
-      turn: this.turnCount,
-      fromStep,
-      toStep: newIdx,
-      mode: params.mode,
-      matchedTokens: signal.matchedTokens,
-    });
-    this.traceRecorder?.recordEvent("structural_step_advance", {
-      fromStep,
-      toStep: newIdx,
-      matchedTokens: signal.matchedTokens,
-      reason: signal.reason,
-      trustedTool: params.toolName,
-      mode: params.mode,
-      completedAllSteps: newIdx >= this.planSubtasks.length,
-    });
-    return true;
-  }
-
-  private maybeCompleteTrustedListSortStep(params: {
-    toolName: string;
-    toolArgs?: Record<string, unknown>;
-    toolResult: string;
-    mode: "parallel" | "sequential";
-  }): {
-    finalSummary: string;
-    newIndex: number;
-    completionCandidate: TrustedCompletionCandidate;
-  } | null {
-    if (this.selectedSkillId !== "list-sort-workflow") return null;
-    if (params.toolName !== ToolName.APPLY_LIST_SORT) return null;
-    if (
-      /^error:/i.test(params.toolResult) ||
-      !/\bapplied\b/i.test(params.toolResult) ||
-      !/\bquery state:\s*sysparm_query=.*orderby/i.test(params.toolResult)
-    ) {
-      return null;
-    }
-
-    const sorts = Array.isArray(params.toolArgs?.sorts)
-      ? params.toolArgs.sorts
-          .filter(
-            (sort): sort is { field: string; direction?: string } =>
-              !!sort &&
-              typeof sort === "object" &&
-              typeof (sort as any).field === "string" &&
-              (sort as any).field.trim().length > 0,
-          )
-          .map((sort) => ({
-            field: sort.field.trim(),
-            direction: /^asc/i.test(String(sort.direction ?? "ascending"))
-              ? "ascending"
-              : "descending",
-          }))
-      : [];
-    if (sorts.length === 0) return null;
-
-    const normalizedResult = params.toolResult
-      .replace(/\s+/g, " ")
-      .toLowerCase();
-    const missing = sorts.filter((sort) => {
-      const field = sort.field.toLowerCase();
-      const shortDirection = sort.direction === "ascending" ? "asc" : "desc";
-      return !normalizedResult.includes(`${field} ${shortDirection}`);
-    });
-    if (missing.length > 0) return null;
-
-    const queryLine =
-      params.toolResult
-        .split(/\r?\n/)
-        .find((line) => /\bquery state:/i.test(line))
-        ?.trim() ?? "Query state recorded by apply_list_sort.";
-    const sortSummary = sorts
-      .map((sort) => `${sort.field} ${sort.direction}`)
-      .join("; ");
-    const finalSummary = `Applied list sort: ${sortSummary}. Evidence: ${queryLine}`;
-    const completionCandidate = this.createTrustedCompletionCandidate({
-      workflow: "list_sort",
-      summary: finalSummary,
-      reason: "Trusted list sort tool result matched the requested sort.",
-      evidenceText: params.toolResult,
-    });
-
-    const plan = this.context.getPlanStatusRaw();
-    if (
-      !plan ||
-      plan.currentIndex < 0 ||
-      plan.currentIndex >= plan.subtasks.length
-    ) {
-      this.log.info("agent", "trusted list sort completed planless workflow", {
-        turn: this.turnCount,
-        mode: params.mode,
-        sortCount: sorts.length,
-      });
-      this.traceRecorder?.recordEvent("trusted_list_sort_success", {
-        fromStep: -1,
-        toStep: 0,
-        reason: finalSummary,
-        trustedTool: params.toolName,
-        mode: params.mode,
-        completedAllSteps: true,
-        planless: true,
-      });
-      return { finalSummary, newIndex: 0, completionCandidate };
-    }
-
-    this.consecutiveAutoAdvances = 0;
-    const fromStep = plan.currentIndex;
-    const newIndex = completeRemainingSubtasks(
-      this as unknown as AgentLoopPlanProgressHost,
-      fromStep,
-      finalSummary,
-    );
-    this.syncPlanStatus(newIndex, "trusted_list_sort_success", {
-      reason: finalSummary,
-      advancedTo: newIndex,
-      mode: params.mode,
-      trustedTool: params.toolName,
-      sortCount: sorts.length,
-    });
-    this.broadcastTaskProgress(newIndex);
-    this.log.info("agent", "trusted list sort completed workflow", {
-      turn: this.turnCount,
-      fromStep,
-      toStep: newIndex,
-      mode: params.mode,
-      sortCount: sorts.length,
-    });
-    this.traceRecorder?.recordEvent("trusted_list_sort_success", {
-      fromStep,
-      toStep: newIndex,
-      reason: finalSummary,
-      trustedTool: params.toolName,
-      mode: params.mode,
-      completedAllSteps: newIndex >= this.planSubtasks.length,
-    });
-    return { finalSummary, newIndex, completionCandidate };
-  }
-
-  private maybeCompleteTrustedListFilterStep(params: {
-    toolName: string;
-    toolArgs?: Record<string, unknown>;
-    toolResult: string;
-    mode: "parallel" | "sequential";
-  }): {
-    finalSummary: string;
-    newIndex: number;
-    completionCandidate: TrustedCompletionCandidate;
-  } | null {
-    if (this.selectedSkillId !== "list-filter-workflow") return null;
-    if (params.toolName !== ToolName.APPLY_LIST_FILTER) return null;
-    if (
-      /^error:/i.test(params.toolResult) ||
-      !/\bapplied\b/i.test(params.toolResult) ||
-      !/\bquery state:\s*sysparm_query=.+/i.test(params.toolResult)
-    ) {
-      return null;
-    }
-
-    const conditions = Array.isArray(params.toolArgs?.conditions)
-      ? params.toolArgs.conditions
-          .filter(
-            (
-              condition,
-            ): condition is {
-              field: string;
-              operator?: string;
-              value?: unknown;
-            } =>
-              !!condition &&
-              typeof condition === "object" &&
-              typeof (condition as any).field === "string" &&
-              (condition as any).field.trim().length > 0,
-          )
-          .map((condition) => ({
-            field: condition.field.trim(),
-            operator: String(condition.operator ?? "is").trim() || "is",
-            value:
-              condition.value == null ? "" : String(condition.value).trim(),
-          }))
-      : [];
-    if (conditions.length === 0) return null;
-
-    const normalizedResult = params.toolResult
-      .replace(/\s+/g, " ")
-      .toLowerCase();
-    const missing = conditions.filter((condition) => {
-      const field = condition.field.toLowerCase();
-      const operator = condition.operator.toLowerCase();
-      const value = condition.value.toLowerCase();
-      const hasField = normalizedResult.includes(field);
-      if (!hasField) return true;
-      if (/empty/.test(operator)) {
-        return !normalizedResult.includes("empty");
-      }
-      return value.length > 0 && !normalizedResult.includes(value);
-    });
-    if (missing.length > 0) return null;
-
-    const queryLine =
-      params.toolResult
-        .split(/\r?\n/)
-        .find((line) => /\bquery state:/i.test(line))
-        ?.trim() ?? "Query state recorded by apply_list_filter.";
-    const conditionSummary = conditions
-      .map((condition) => {
-        const value = condition.value.length > 0 ? ` ${condition.value}` : "";
-        return `${condition.field} ${condition.operator}${value}`;
-      })
-      .join("; ");
-    const finalSummary = `Applied list filter: ${conditionSummary}. Evidence: ${queryLine}`;
-    const completionCandidate = this.createTrustedCompletionCandidate({
-      workflow: "list_filter",
-      summary: finalSummary,
-      reason: "Trusted list filter tool result matched the requested filter.",
-      evidenceText: params.toolResult,
-    });
-
-    const plan = this.context.getPlanStatusRaw();
-    if (
-      !plan ||
-      plan.currentIndex < 0 ||
-      plan.currentIndex >= plan.subtasks.length
-    ) {
-      if (!isPureListFilterWorkflowRequest(this as unknown as LoopQueriesHost))
-        return null;
-      this.log.info(
-        "agent",
-        "trusted list filter completed planless workflow",
-        {
-          turn: this.turnCount,
-          mode: params.mode,
-          conditionCount: conditions.length,
-        },
-      );
-      this.traceRecorder?.recordEvent("trusted_list_filter_success", {
-        fromStep: -1,
-        toStep: 0,
-        reason: finalSummary,
-        trustedTool: params.toolName,
-        mode: params.mode,
-        completedAllSteps: true,
-        planless: true,
-      });
-      return { finalSummary, newIndex: 0, completionCandidate };
-    }
-
-    this.consecutiveAutoAdvances = 0;
-    const fromStep = plan.currentIndex;
-    const newIndex = completeRemainingSubtasks(
-      this as unknown as AgentLoopPlanProgressHost,
-      fromStep,
-      finalSummary,
-    );
-    this.syncPlanStatus(newIndex, "trusted_list_filter_success", {
-      reason: finalSummary,
-      advancedTo: newIndex,
-      mode: params.mode,
-      trustedTool: params.toolName,
-      conditionCount: conditions.length,
-    });
-    this.broadcastTaskProgress(newIndex);
-    this.log.info("agent", "trusted list filter completed workflow", {
-      turn: this.turnCount,
-      fromStep,
-      toStep: newIndex,
-      mode: params.mode,
-      conditionCount: conditions.length,
-    });
-    this.traceRecorder?.recordEvent("trusted_list_filter_success", {
-      fromStep,
-      toStep: newIndex,
-      reason: finalSummary,
-      trustedTool: params.toolName,
-      mode: params.mode,
-      completedAllSteps: newIndex >= this.planSubtasks.length,
-    });
-    return { finalSummary, newIndex, completionCandidate };
-  }
-
-  // --- ServiceNow record-form controller (quarantined adapter) ---
-  // Thin delegates into ./servicenow/record-form-controller.ts; the loop
-  // passes itself as the dispatch host (every host member is a real loop
-  // field/method).
-
-  private hasTrustedServiceNowSubmitIntent(text?: string): boolean {
-    return hasTrustedServiceNowSubmitIntent(
-      this as unknown as ServiceNowRecordFormHost,
-      text,
-    );
-  }
-
-  private isTaskLevelServiceNowRecordWorkflow(): boolean {
-    return isTaskLevelServiceNowRecordWorkflow(
-      this as unknown as ServiceNowRecordFormHost,
-    );
-  }
-
-  private async maybeRunAtomicSkillController(
-    tabId: number,
-  ): Promise<LoopResult | null> {
-    const contract = getLoadedSkillContract(this.selectedSkillId ?? undefined, {
-      enabledSkillPackIds: this.enabledSkillPackIds,
-    });
-    if (!contract?.atomic) return null;
-    if (this.getMissingRequiredEvidenceTypes().length === 0) return null;
-
-    const preferredTool = contract.preferredTools
-      ?.map((tool) => tool as ToolName)
-      .find((tool) => tool !== ToolName.DONE && tool !== ToolName.READ_PAGE);
-    if (!preferredTool) return null;
-
-    const activePlanIndex = this.planSubtasks.findIndex(
-      (subtask) => subtask.status === "running",
-    );
-    const activePlanStep =
-      activePlanIndex >= 0
-        ? this.planSteps[activePlanIndex]
-        : this.planSteps[0];
-    const activeSubtask =
-      activePlanIndex >= 0 ? this.planSubtasks[activePlanIndex] : undefined;
-    const controllerText = [
-      this.originalQuery,
-      activeSubtask?.description,
-      activePlanStep?.objective,
-      activePlanStep?.successCriteria,
-    ]
-      .filter((part): part is string => typeof part === "string")
-      .join("\n");
-    const fields = extractFieldValuePairs(controllerText);
-    if (
-      preferredTool === ToolName.CONFIGURE_SERVICENOW_FORM &&
-      fields.length === 0
-    ) {
-      return null;
-    }
-    const moduleRequest =
-      preferredTool === ToolName.OPEN_SERVICENOW_MODULE
-        ? extractServiceNowModuleRequest(controllerText)
-        : null;
-    if (preferredTool === ToolName.OPEN_SERVICENOW_MODULE && !moduleRequest) {
-      return null;
-    }
-
-    const args: Record<string, unknown> =
-      preferredTool === ToolName.CONFIGURE_SERVICENOW_FORM
-        ? {
-            fields,
-            submit: this.hasTrustedServiceNowSubmitIntent(controllerText),
-            submitButton: "Submit",
-          }
-        : preferredTool === ToolName.OPEN_SERVICENOW_MODULE && moduleRequest
-          ? moduleRequest
-          : {};
-
-    this.statusHandler(AgentStatus.ACTING, `Running ${contract.name}...`);
-    this.turnCount++;
-    startServiceNowRecordControllerTraceTurn(
-      this as unknown as ServiceNowRecordFormHost,
-      fields.length,
-    );
-    const executeAtomicToolCall = async (idPrefix: string): Promise<string> => {
-      const toolCall: ToolCall = {
-        id: `${idPrefix}_${crypto.randomUUID()}`,
-        type: "function",
-        function: {
-          name: preferredTool,
-          arguments: JSON.stringify(args),
-        },
-      } as ToolCall;
-      const startedAt = Date.now();
-      const result = await this.executeToolCall(toolCall, tabId);
-      const durationMs = Date.now() - startedAt;
-      this.traceRecorder?.recordToolExecution(
-        toolCall.id,
-        preferredTool,
-        args,
-        result,
-        !result.startsWith("Error:"),
-        durationMs,
-        RiskLevel.MEDIUM,
-        result.startsWith("Error:") ? result : undefined,
-      );
-      this.context.addMessage({
-        role: "tool",
-        content: result,
-        tool_call_id: toolCall.id,
-      });
-      return result;
-    };
-
-    this.traceRecorder?.recordEvent("atomic_skill_controller_started", {
-      turn: this.turnCount,
-      selectedSkillId: contract.id,
-      preferredTool,
-    });
-    let result = await executeAtomicToolCall("atomic");
-    if (
-      preferredTool === ToolName.OPEN_SERVICENOW_MODULE &&
-      this.getMissingRequiredEvidenceTypes().length > 0 &&
-      isRetryableServiceNowModuleControllerMiss(result)
-    ) {
-      this.traceRecorder?.recordEvent("atomic_skill_controller_retry", {
-        turn: this.turnCount,
-        selectedSkillId: contract.id,
-        preferredTool,
-      });
-      await waitForDomReady(tabId, {
-        timeoutMs: 1500,
-        waitForElements: true,
-      });
-      result = await executeAtomicToolCall("atomic_retry");
-    }
-
-    const missing = this.getMissingRequiredEvidenceTypes();
-    if (missing.length > 0) {
-      this.traceRecorder?.recordEvent("atomic_skill_controller_deferred", {
-        turn: this.turnCount,
-        selectedSkillId: contract.id,
-        missing,
-      });
-      this.context.addMessage({
-        role: "user",
-        content:
-          `The atomic ${contract.name} controller did not collect all required evidence yet. ` +
-          `Missing: ${missing.join(", ")}. Continue manually with the selected workflow tool.`,
-      });
-      await this.traceRecorder?.endTurn();
-      return null;
-    }
-
-    const recordSummary = this.evidenceAccumulator
-      .getByType("record_identity_observed")
-      .at(-1)
-      ?.detail?.recordNumber?.toString();
-    const navigationEvidence = this.evidenceAccumulator
-      .getByType("navigation_reached")
-      .at(-1);
-    const navigationSummary = navigationEvidence
-      ? [
-          navigationEvidence.detail?.application,
-          ...(Array.isArray(navigationEvidence.detail?.path)
-            ? navigationEvidence.detail.path
-            : []),
-        ]
-          .filter(
-            (part): part is string =>
-              typeof part === "string" && part.length > 0,
-          )
-          .join(" > ")
-      : "";
-    const summary =
-      recordSummary ||
-      (navigationSummary
-        ? `Successfully opened ServiceNow module ${navigationSummary}.`
-        : "") ||
-      result.split("\n").find((line) => /submitted|configured/i.test(line)) ||
-      `${contract.name} completed with required evidence.`;
-    const finalSummary =
-      /completed|submitted|configured|opened|navigated/i.test(summary)
-        ? summary
-        : `${contract.name} completed: ${summary}`;
-    this.completeTaskResult(finalSummary, {
-      completionCandidate: this.createTrustedCompletionCandidate({
-        workflow: "atomic_skill_controller",
-        summary: finalSummary,
-        reason: "Atomic skill controller completed with required evidence.",
-        evidenceText: result,
-        recordId: recordSummary,
-      }),
-    });
-    this.traceRecorder?.recordEvent("atomic_skill_controller_completed", {
-      turn: this.turnCount,
-      selectedSkillId: contract.id,
-      evidenceCount: this.evidenceAccumulator.toArray().length,
-    });
-    await this.traceRecorder?.endTurn();
-    return {
-      outcome: "completed",
-      turnCount: this.turnCount,
-      summary: finalSummary,
-      failure: { category: "none", code: "none" },
-      metrics: this.getMetrics(),
-      evidence: this.evidenceAccumulator.toArray(),
-      completionEnvelope: this.completedResult?.completionEnvelope,
-    };
-  }
-
-  private assessServiceNowMissingFieldInfeasibility(
-    toolOutcomes: TurnToolOutcomeRecord[],
-    searchEvidence: Map<string, ServiceNowMissingFieldSearchEvidence>,
-  ): string | null {
-    return assessServiceNowMissingFieldInfeasibility(
-      this as unknown as ServiceNowRecordFormHost,
-      toolOutcomes,
-      searchEvidence,
-    );
-  }
-
-  private getServiceNowMissingFieldAdmissionSummary(
-    text: string | null,
-  ): string | null {
-    return getServiceNowMissingFieldAdmissionSummary(
-      this as unknown as ServiceNowRecordFormHost,
-      text,
-    );
-  }
-
-  private async maybeRunServiceNowRecordFormController(
-    tabId: number,
-  ): Promise<LoopResult | null> {
-    return maybeRunServiceNowRecordFormController(
-      this as unknown as ServiceNowRecordFormHost,
-      tabId,
-    );
-  }
-
-  private shouldAutoSubmitTrustedServiceNowForm(params: {
-    toolName: string;
-    toolArgs?: Record<string, unknown>;
-    toolResult: string;
-  }): boolean {
-    return shouldAutoSubmitTrustedServiceNowForm(
-      this as unknown as ServiceNowRecordFormHost,
-      params,
-    );
-  }
-
-  private async maybeAutoSubmitTrustedServiceNowForm(params: {
-    toolName: string;
-    toolArgs?: Record<string, unknown>;
-    toolResult: string;
-    tabId: number;
-    mode: "parallel" | "sequential";
-  }): Promise<{
-    finalSummary: string;
-    newIndex: number;
-    completionCandidate: TrustedCompletionCandidate;
-  } | null> {
-    return maybeAutoSubmitTrustedServiceNowForm(
-      this as unknown as ServiceNowRecordFormHost,
-      params,
-    );
-  }
-
-  private maybeCompleteTrustedFormSubmitStep(params: {
-    toolName: string;
-    toolArgs?: Record<string, unknown>;
-    toolResult: string;
-    mode: "parallel" | "sequential";
-  }): {
-    finalSummary: string;
-    newIndex: number;
-    completionCandidate: TrustedCompletionCandidate;
-  } | null {
-    const signal = detectTrustedFormSubmitCompletion({
-      toolName: params.toolName,
-      toolArgs: params.toolArgs,
-      toolResult: params.toolResult,
-    });
-    if (!signal) return null;
-    const completionCandidate = this.createTrustedCompletionCandidate({
-      workflow: "form_submit",
-      summary: signal.reason,
-      reason: "Trusted form submit tool result confirmed submission.",
-      evidenceText: params.toolResult,
-      recordId: signal.submittedRecord,
-      targetText: signal.submittedRecord,
-    });
-
-    const plan = this.context.getPlanStatusRaw();
-    if (
-      !plan ||
-      plan.currentIndex < 0 ||
-      plan.currentIndex >= plan.subtasks.length
-    ) {
-      if (
-        this.selectedSkillId !== "servicenow-record-form" ||
-        !hasTaskLevelServiceNowSubmitIntent(
-          this as unknown as ServiceNowRecordFormHost,
-        )
-      ) {
-        return null;
-      }
-
-      this.log.info("agent", "trusted form helper completed planless submit", {
-        turn: this.turnCount,
-        mode: params.mode,
-        submittedRecord: signal.submittedRecord,
-      });
-      this.traceRecorder?.recordEvent("trusted_form_submit_success", {
-        fromStep: -1,
-        toStep: 0,
-        matchedTokens: signal.matchedTokens,
-        reason: signal.reason,
-        submittedRecord: signal.submittedRecord,
-        trustedTool: params.toolName,
-        mode: params.mode,
-        completedAllSteps: true,
-        planless: true,
-      });
-      return {
-        finalSummary: signal.reason,
-        newIndex: 0,
-        completionCandidate,
-      };
-    }
-
-    const currentSubtask = plan.subtasks[plan.currentIndex];
-    if (!currentSubtask) return null;
-    if (this.getActiveToolProfileForStep(plan.currentIndex) !== "submit_form") {
-      return null;
-    }
-
-    this.consecutiveAutoAdvances = 0;
-    const fromStep = plan.currentIndex;
-    const newIndex = completeRemainingSubtasks(
-      this as unknown as AgentLoopPlanProgressHost,
-      fromStep,
-      signal.reason,
-    );
-    this.syncPlanStatus(newIndex, "trusted_form_submit_success", {
-      reason: signal.reason,
-      matchedTokens: signal.matchedTokens,
-      submittedRecord: signal.submittedRecord,
-      advancedTo: newIndex,
-      mode: params.mode,
-      trustedTool: params.toolName,
-    });
-    this.broadcastTaskProgress(newIndex);
-    this.log.info("agent", "trusted form helper completed submit step", {
-      turn: this.turnCount,
-      fromStep,
-      toStep: newIndex,
-      mode: params.mode,
-      submittedRecord: signal.submittedRecord,
-    });
-    this.traceRecorder?.recordEvent("trusted_form_submit_success", {
-      fromStep,
-      toStep: newIndex,
-      matchedTokens: signal.matchedTokens,
-      reason: signal.reason,
-      submittedRecord: signal.submittedRecord,
-      trustedTool: params.toolName,
-      mode: params.mode,
-      completedAllSteps: newIndex >= this.planSubtasks.length,
-    });
-    return { finalSummary: signal.reason, newIndex, completionCandidate };
-  }
-
-  // --- ServiceNow catalog-order controller (quarantined adapter) ---
-  // Thin delegates into ./servicenow/catalog-controller.ts; the loop passes
-  // itself as the dispatch host (every host member is a real loop field).
+  // Catalog-order controller delegates into the reusable catalog workflow.
 
   private maybeCompleteCatalogOrderFromSnapshot(): LoopResult | null {
     return maybeCompleteCatalogOrderFromSnapshot(
-      this as unknown as ServiceNowCatalogHost,
+      this as unknown as CatalogHost,
     );
   }
 
@@ -4986,7 +2550,7 @@ export class AgentLoop {
     toolResult: string;
   }): boolean {
     return shouldAutoSubmitConfiguredCatalogItem(
-      this as unknown as ServiceNowCatalogHost,
+      this as unknown as CatalogHost,
       params,
     );
   }
@@ -4999,7 +2563,7 @@ export class AgentLoop {
     mode: "parallel" | "sequential";
   }): Promise<{ finalSummary: string } | null> {
     return maybeCompleteTrustedCatalogOrderSubmit(
-      this as unknown as ServiceNowCatalogHost,
+      this as unknown as CatalogHost,
       params,
     );
   }
@@ -5012,7 +2576,7 @@ export class AgentLoop {
     mode: "parallel" | "sequential";
   }): Promise<void> {
     return maybeAutoSubmitConfiguredCatalogItem(
-      this as unknown as ServiceNowCatalogHost,
+      this as unknown as CatalogHost,
       params,
     );
   }
@@ -5025,12 +2589,8 @@ export class AgentLoop {
     newIndex: number;
     completionCandidate: TrustedCompletionCandidate;
   } {
-    const newIndex = completeRemainingSubtasks(
-      this as unknown as AgentLoopPlanProgressHost,
-      currentIndex,
-      signal.reason,
-    );
-    const completionCandidate = this.createTrustedCompletionCandidate({
+    const newIndex = this.planProgress.completeRemainingSubtasks(currentIndex, signal.reason);
+    const completionCandidate = this.completionEvidenceRuntime.createTrustedCompletionCandidate({
       workflow: "form_submit_reset",
       summary: signal.reason,
       reason: "Trusted form submit reset evidence confirmed submission.",
@@ -5069,110 +2629,64 @@ export class AgentLoop {
     return { finalSummary: signal.reason, newIndex, completionCandidate };
   }
 
-  private getActiveToolProfileForStep(
-    stepIndex: number,
-  ): ToolProfile | undefined {
-    return getActiveToolProfileForStep(
-      this as unknown as AgentLoopSkillToolsHost,
-      stepIndex,
-    );
-  }
-
-  private getUncommittedInlineEditDoneRejection(
-    currentStepIndex: number,
-  ): string | null {
-    return getUncommittedInlineEditDoneRejection({
-      toolProfile: this.getActiveToolProfileForStep(currentStepIndex),
-      snapshot: this.context.getSnapshot(),
-      taskText: `${this.originalQuery}\n${this.planSubtasks[currentStepIndex]?.description || ""}\n${this.planSteps[currentStepIndex]?.successCriteria || ""}`,
-    });
-  }
-
-  private getPendingInlineEditVerificationBlock(
-    toolName: ToolName,
-    currentStepIndex: number,
-  ): string | null {
-    if (
-      this.pendingInlineEditVerification &&
-      this.pendingInlineEditVerification.stepIndex !== currentStepIndex
-    ) {
-      this.pendingInlineEditVerification = null;
-    }
-    if (
-      !this.pendingInlineEditVerification ||
-      this.pendingInlineEditVerification.stepIndex !== currentStepIndex
-    ) {
-      return null;
-    }
-    if (
-      [
-        ToolName.READ_PAGE,
-        ToolName.READ_ELEMENT,
-        ToolName.FIND_ELEMENT,
-        ToolName.WAIT,
-      ].includes(toolName)
-    ) {
-      return null;
-    }
-    return (
-      `${this.pendingInlineEditVerification.reason} ` +
-      "Verify the committed page state with read_page, read_element, or find_element before taking another action."
-    );
-  }
-
-  /**
-   * Walk backward through history to capture the most recent tool result
-   * as a subtask result string.
-   */
-  private captureSubtaskResult(): string {
-    return captureRecentSubtaskResult(this.context.getMessages());
-  }
-
-  /**
-   * Check whether a navigate() target URL matches a completed plan step's URL.
-   * Compares origin + pathname for plain URLs, and includes query params when
-   * either side has them so SPA view-state URLs remain distinct. Hash is ignored.
-   * Returns a block message if matched, or null to allow navigation.
-   */
-
+  private readonly gatesPhaseHost: GatesPhaseHost = (() => {
+    const loop = () => this;
+    return {
+      get isRunning() { return loop().isRunning; },
+      get turnCount() { return loop().turnCount; },
+      set turnCount(value: number) { loop().turnCount = value; },
+      get turnsOnCurrentStep() { return loop().turnsOnCurrentStep; },
+      set turnsOnCurrentStep(value: number) { loop().turnsOnCurrentStep = value; },
+      get guardAfterDoneRejection() { return loop().guardAfterDoneRejection; },
+      set guardAfterDoneRejection(value: boolean) { loop().guardAfterDoneRejection = value; },
+      get pauseGate() { return loop().pauseGate; },
+      get checkpoints() { return loop().checkpoints; },
+      get middleware() { return loop().middleware; },
+      get maxTurns() { return loop().maxTurns; },
+      get telemetry() { return loop().telemetry; },
+      get log() { return loop().log; },
+      get workspaceId() { return loop().workspaceId; },
+      get workerId() { return loop().workerId; },
+      throwIfGracefulStopRequested: () => loop().throwIfGracefulStopRequested(),
+      finishStream: () => loop().finishStream(),
+      broadcast: (message: BroadcastMessage) => loop().broadcast(message),
+      statusHandler: (status: AgentStatus, detail: string) => loop().statusHandler(status, detail),
+    };
+  })();
+  private readonly prepareTurnContextHost: PrepareTurnContextHost = (() => {
+    const loop = () => this;
+    return {
+      get turnCount() { return loop().turnCount; },
+      get maxTurns() { return loop().maxTurns; },
+      get traceRecorder() { return loop().traceRecorder; },
+      get llm() { return loop().llm; },
+      get context() { return loop().context; },
+      get telemetry() { return loop().telemetry; },
+      get moneyTable() { return loop().moneyTable; },
+      broadcast: (message: BroadcastMessage) => loop().broadcast(message),
+      maybeCompleteCatalogOrderFromSnapshot: () => loop().maybeCompleteCatalogOrderFromSnapshot(),
+    };
+  })();
   private async loop(initialTabId: number): Promise<LoopResult> {
-    // Session-scoped state, persists across turns (RFC LP-16 Phase 3). See loop-scope.ts.
-    const session = new LoopSession(initialTabId, this.lastPlanIndex);
-    // Two-tier escalation state machine (0=executor, 1=planner). plan-then-act:
-    // start at tier 1 (planner) for orientation, then hand off to tier 0
-    // (executor). Exception: preferredModelTier="executor" skips orientation.
-    // Run-scoped turn accumulators (LP-15 Phase 6): same-tool failure counts,
-    // the recent-success / recent-tool-call windows, result-page progress, and
-    // find_element-discovered tag IDs. Owned by TurnState; consumed by the
-    // dispatchers + stagnation-adjacent policies by reference.
-    const turnState = new TurnState();
-    const { toolFailCounts, recentSuccesses, recentToolCalls } = turnState;
-    const verifiedFinalClickBypassKeys = new Set<string>();
-    const blockedActions: BlockedAction[] = [];
-    const recentOutcomes: RecentOutcome[] = [];
-    const recentObservationProgressKeys: string[] = [];
-    const subgoalAttempts: SubgoalAttempt[] = [];
-    const serviceNowMissingFieldSearchEvidence = new Map<
-      string,
-      ServiceNowMissingFieldSearchEvidence
-    >();
-
-    // Two-tier escalation controller + working-memory closures (RFC LP-16
-    // Phase 3b). See turn-controller.ts.
     const {
+      session,
+      turnState,
+      toolFailCounts,
+      recentSuccesses,
+      verifiedFinalClickBypassKeys,
+      blockedActions,
+      recentOutcomes,
+      recentObservationProgressKeys,
+      subgoalAttempts,
       esc,
       resetStepScopedActionMemory,
       resetEscalationWorkingMemory,
       beginPlannerEscalation,
-    } = createTurnController(this as unknown as TurnControllerHost, session, {
-      recentToolCalls,
-      recentSuccesses,
-      blockedActions,
-      verifiedFinalClickBypassKeys,
-      subgoalAttempts,
-      recentOutcomes,
-      serviceNowMissingFieldSearchEvidence,
-    });
+    } = createLoopRunState(
+      this as unknown as TurnControllerHost,
+      initialTabId,
+      this.lastPlanIndex,
+    );
     if (esc.orientationPhase) {
       this.escalateModel(); // Start with planner model (plan phase)
     }
@@ -5183,7 +2697,7 @@ export class AgentLoop {
 
       // Top-of-turn control gate (RFC LP-15 Phase 11): pause / graceful-stop /
       // middleware halt + counter advance + idempotency-cache clear.
-      const gate = await runGatesPhase(this as unknown as GatesPhaseHost, {
+      const gate = await runGatesPhase(this.gatesPhaseHost, {
         resetStepScopedActionMemory,
       });
       if (gate.kind === "end_turn") break;
@@ -5195,21 +2709,21 @@ export class AgentLoop {
         prevElementCount: session.prevElementCount,
       });
 
-      // Feedback phase: fold pending user feedback + the turn-budget reminder
-      // into context before inference. Extracted (RFC LP-16 Phase 3).
-      runFeedbackPhase(this as unknown as FeedbackPhaseHost);
+      runFeedbackPhase({
+        pendingFeedback: this.pendingFeedback,
+        clearPendingFeedback: () => { this.pendingFeedback = null; },
+        turnCount: this.turnCount,
+        traceRecorder: this.traceRecorder,
+        context: this.context,
+        escalationRescue: this.escalationRescue,
+      });
 
-      // Pre-inference turn bookkeeping: turn-progress broadcast, time context,
-      // budget-urgency trace, money-table refresh, catalog-order snapshot
-      // completion. Extracted (RFC LP-16 Phase 3b).
       const turnContext = runPrepareTurnContextPhase(
-        this as unknown as PrepareTurnContextHost,
+        this.prepareTurnContextHost,
         session,
       );
       if (turnContext.kind === "end_task") return turnContext.result;
 
-      // Escalation phase: escalation-rescue policy (RFC LP-2) — fail-fast or
-      // replan/strategy-pivot on no verified progress. Extracted (LP-16 Phase 3).
       const escalationOutcome = await runEscalationPhase(
         this as unknown as EscalationPhaseHost,
         {
@@ -5220,12 +2734,8 @@ export class AgentLoop {
           beginPlannerEscalation,
         },
       );
-      if (escalationOutcome.kind === "end_task") {
-        return escalationOutcome.result;
-      }
+      if (escalationOutcome.kind === "end_task") return escalationOutcome.result;
 
-      // 1. LLM Inference: prepare request → model call (w/ retries) → process
-      // response. Extracted to the prepare_model_turn phase (RFC LP-15 Phase 11).
       const preparedTurn = await runPrepareModelTurnPhase(
         this as unknown as PrepareModelTurnHost,
         session.prevElementCount,
@@ -5234,32 +2744,19 @@ export class AgentLoop {
         return preparedTurn.result;
       }
       session.prevElementCount = preparedTurn.prepared.previousElementCount;
-      const response = preparedTurn.prepared.response;
-      const hallucinationDetected = preparedTurn.prepared.hallucinationDetected;
-      const normalizedContent = preparedTurn.prepared.normalizedContent;
-      const rawContent = preparedTurn.prepared.rawContent;
-      const cleanContent = preparedTurn.prepared.cleanContent;
-      const toolsRecoveredFromText =
-        preparedTurn.prepared.toolsRecoveredFromText;
-      const llmIntention = preparedTurn.prepared.llmIntention;
+      const { response, hallucinationDetected, normalizedContent, rawContent,
+        cleanContent, toolsRecoveredFromText, llmIntention } = preparedTurn.prepared;
 
-      // 3. Handle Response
       if (response.tool_calls && response.tool_calls.length > 0) {
         // ACTION REQUIRED. The streaming message stays open across tool-calling
         // turns (finalized when done() is called or the loop exits).
         // signalCompletedResult is shared with the completion phase, so it is
         // created here and threaded into both.
-        const signalCompletedResult = (
-          summary: string,
-          options?: {
-            saveCheckpoint?: boolean;
-            completionCandidate?: TrustedCompletionCandidate;
-          },
-        ) => {
-          session.doneSummary = summary;
-          turn.doneSignaled = true;
-          this.completeTaskResult(summary, options);
-        };
+        const signalCompletedResult = createCompletionSignal(
+          session,
+          turn,
+          (summary, options) => this.completeTaskResult(summary, options),
+        );
         const dispatch = await runDispatchToolsPhase(
           this as unknown as DispatchToolsHost,
           {
@@ -5296,7 +2793,6 @@ export class AgentLoop {
             blockedActions,
             toolFailCounts,
             recentSuccesses,
-            serviceNowMissingFieldSearchEvidence,
           },
         );
         if (guards.kind === "end_task") return guards.result;
@@ -5323,10 +2819,10 @@ export class AgentLoop {
         if (completion.kind === "next_turn") continue;
 
         // End-of-turn bookkeeping: distill + checkpoint + trace flush (RFC LP-16 Phase 3).
-        const account = await runAccountAndRefreshPhase(
-          this as unknown as AccountAndRefreshHost,
-          turn,
-        );
+        const account = await runAccountAndRefreshPhase({
+          turnCount: this.turnCount, context: this.context,
+          traceRecorder: this.traceRecorder, turnCheckpoint: this.turnCheckpoint,
+        }, turn);
         if (account.kind === "end_turn") break;
       } else {
         const text = await runTextResponsePhase(
@@ -5348,53 +2844,19 @@ export class AgentLoop {
       }
     }
 
-    if (this.turnCount >= this.maxTurns && !this.completedResult) {
-      this.log.warn("agent", "Loop ended: max turns reached", {
-        turns: this.turnCount,
-        maxTurns: this.maxTurns,
-      });
-      const partialHandoff = this.buildMaxTurnPartialHandoff();
-      this.traceRecorder?.recordEvent("partial_handoff_created", {
-        reason: partialHandoff.reason,
-        turnsUsed: partialHandoff.turnsUsed,
-        maxTurns: partialHandoff.maxTurns,
-        completedCount: partialHandoff.completed.length,
-        evidenceCount: partialHandoff.evidence.length,
-        remainingCount: partialHandoff.remaining.length,
-        handoff: partialHandoff,
-      });
-      const limitMsg = formatPartialProgressHandoffSummary(partialHandoff);
-      this.broadcast({
-        type: "STREAM_CHUNK",
-        payload: { delta: "", done: false, replaceContent: limitMsg },
-      });
-      this.finishStream();
-      this.statusHandler(
-        AgentStatus.IDLE,
-        `Turn limit (${this.turnCount}/${this.maxTurns})`,
-      );
-      return {
-        outcome: "max_turns" as const,
-        turnCount: this.turnCount,
-        summary: limitMsg,
-        failure: {
-          category: "budget",
-          code: "turn_limit_reached",
-          detail: limitMsg,
-        },
-        metrics: this.getMetrics(),
-        partialHandoff,
-      };
-    }
-
-    return {
-      outcome: "completed" as const,
+    return finishLoopSession({
       turnCount: this.turnCount,
-      summary: session.doneSummary,
-      failure: { category: "none", code: "none" },
-      metrics: this.getMetrics(),
-      completionEnvelope: this.completedResult?.completionEnvelope,
-    };
+      maxTurns: this.maxTurns,
+      doneSummary: session.doneSummary,
+      completedResult: this.completedResult,
+      log: this.log,
+      traceRecorder: this.traceRecorder,
+      buildPartialHandoff: () => this.partialProgress.buildMaxTurnPartialHandoff(),
+      broadcast: (message) => this.broadcast(message),
+      finishStream: () => this.finishStream(),
+      statusHandler: (status, detail) => this.statusHandler(status, detail),
+      getMetrics: () => this.getMetrics(),
+    });
   }
 
   /**
@@ -5450,20 +2912,12 @@ export class AgentLoop {
    * Get current loop state for saving before navigation.
    */
   public getState(tabId: number): AgentLoopState {
-    // Cast LLMMessage[] to ChatMessage[] - they are compatible at runtime
-    const messages =
-      this.context.getMessages() as unknown as import("../../types").ChatMessage[];
-    return {
-      status: AgentStatus.WAITING_FOR_PAGE_LOAD,
-      messages,
+    return createNavigationLoopState(tabId, this.context.getMessages(), {
       originalQuery: this.originalQuery,
       turnCount: this.turnCount,
       maxTurns: this.maxTurns,
-      activeTabId: tabId,
       workspaceId: this.workspaceId,
       workerId: this.workerId,
-      lastActivityTs: Date.now(),
-      pendingToolCall: null,
-    };
+    });
   }
 }

@@ -27,16 +27,9 @@ import { NAVIGATE_DEF } from "./definitions";
 import {
   waitForNavigation,
 } from "./bridge";
-// ServiceNow is a quarantined adapter — the generic tools layer talks to it
-// only through these register entry points, never its internal
-// reference/table helpers. See ./servicenow/.
-import {
-  registerOpenServiceNowModuleTool,
-  registerConfigureServiceNowFormTool,
-  registerServiceNowKnowledgeBaseTool,
-  registerServiceNowListActionTools,
-  registerServiceNowCatalogTools,
-} from "./servicenow";
+import { registerKnowledgeBaseTool } from "./register-knowledge-base";
+import { registerCatalogTools } from "./register-catalog";
+import { registerListActionTools } from "./register-list-actions";
 
 // Re-export submodules for barrel compatibility
 export * from "./registry";
@@ -99,11 +92,7 @@ export function registerTools() {
     },
   );
 
-  // Registration order is catalog order (registry pushes defs in call order);
-  // keep this call here — do not group it with the other ServiceNow tool below.
-  registerOpenServiceNowModuleTool(toolRegistry);
-
-  registerServiceNowKnowledgeBaseTool(toolRegistry);
+  registerKnowledgeBaseTool(toolRegistry);
 
   registerTabTools(toolRegistry);
 
@@ -119,12 +108,8 @@ export function registerTools() {
 
   registerInspectionTools(toolRegistry);
 
-  registerServiceNowListActionTools(toolRegistry);
-  registerServiceNowCatalogTools(toolRegistry);
-
-  // Registration order is catalog order; keep this at its ordinal position —
-  // grouping it with open_servicenow_module above would shift the catalog.
-  registerConfigureServiceNowFormTool(toolRegistry);
+  registerListActionTools(toolRegistry);
+  registerCatalogTools(toolRegistry);
 
   // Page Assist Tools (xray_page)
   registerMiscAgentTools(toolRegistry);

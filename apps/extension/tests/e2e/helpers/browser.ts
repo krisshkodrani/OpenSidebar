@@ -288,8 +288,13 @@ function injectE2eAssets(): void {
  * Launch Chrome with the extension from dist/ loaded.
  * Discovers the extension ID dynamically from the service worker URL.
  */
-export async function launchWithExtension(): Promise<ExtensionContext> {
-  injectE2eAssets();
+export async function launchWithExtension(
+  build: "e2e" | "production" = "e2e",
+): Promise<ExtensionContext> {
+  const extensionPath = build === "production"
+    ? path.resolve(__dirname, "../../../../../dist")
+    : DIST_PATH;
+  if (build === "e2e") injectE2eAssets();
   const headless = shouldRunHeadless();
   const browser = await puppeteer.launch({
     headless,
@@ -297,8 +302,8 @@ export async function launchWithExtension(): Promise<ExtensionContext> {
     waitForInitialPage: false,
     defaultViewport: headless ? HEADLESS_VIEWPORT : null,
     args: [
-      `--disable-extensions-except=${DIST_PATH}`,
-      `--load-extension=${DIST_PATH}`,
+      `--disable-extensions-except=${extensionPath}`,
+      `--load-extension=${extensionPath}`,
       "--no-first-run",
       "--no-sandbox",
       "--disable-gpu",
@@ -503,7 +508,7 @@ async function waitForInPageSidePanelOverlayReady(
 (async () => {
         const results = await chrome.scripting.executeScript({
           target: { tabId: ${JSON.stringify(targetTabId)} },
-          world: "MAIN",
+          world: "ISOLATED",
           func: () => {
             const host = document.getElementById("opensidebar-harness-host");
             const root = host?.shadowRoot?.getElementById("root");
@@ -606,6 +611,7 @@ export async function openInPageSidePanelOverlay(
         overlayLoaderFile: OVERLAY_LOADER_FILE,
       })};
       const tab = await chrome.tabs.get(input.targetTabId);
+      await chrome.storage.local.set({ "opensidebar:e2eTestApiEnabled": true });
       const overlayScriptUrl = chrome.runtime.getURL(input.overlayBundlePath);
       const extensionBaseUrl = new URL("/", overlayScriptUrl).toString();
       const mountMessage = {
@@ -645,7 +651,7 @@ export async function openInPageSidePanelOverlay(
         const loaderResults = await chrome.scripting.executeScript({
           target: { tabId: input.targetTabId },
           files: [input.overlayLoaderFile],
-          world: "MAIN",
+          world: "ISOLATED",
         });
         if (!loaderResults.some((result) => result.result === true)) {
           throw new Error("E2E overlay loader did not report a mounted host.");

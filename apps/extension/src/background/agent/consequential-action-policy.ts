@@ -192,7 +192,7 @@ function isJobApplicationSubmitAction(
 }
 
 function isCommunicationWorkflow(taskText: string): boolean {
-  return /\b(reply|respond|email|e-mail|message|thread|comment|post|compose|draft|copy|text)\b/.test(
+  return /\b(reply|respond|email|e-mail|message|thread|comment|post|compose|draft|copy|text|dispute|letter|notice)\b/.test(
     taskText,
   );
 }
@@ -217,6 +217,19 @@ function isCommunicationSendAction(
   // Treat only labels with an explicit delivery verb as final actions so
   // preparatory controls such as "Draft a short reply" remain usable.
   return /\b(send|post|publish|submit)\b/.test(label);
+}
+
+/** A no-send constraint alone does not request an unsent draft as an output. */
+export function requiresDraftOnlyCompletion(taskText: string): boolean {
+  if (!isDraftOnlyCommunicationTask(taskText)) return false;
+  if (
+    /\b(?:prepare|draft|compose|write|create)\b[\s\S]{0,120}\b(?:dispute|letter|notice|message|email|e-mail|reply|response)\b/i.test(taskText) &&
+    /\b(?:do not|don't|dont|never)\s+(?:click\s+)?(?:send|post|reply|submit|publish)\b/i.test(taskText)
+  ) return true;
+  return isDraftOnlyCommunicationTask(taskText.replace(
+    /\b(?:do not|don't|dont|never)\s+(?:click\s+)?(?:send|post|reply|submit|publish)\b/gi,
+    "",
+  )) || /\b(?:type|enter|fill)\b[^\n.]{0,100}\b(?:message|reply|email|composer|editor)\b/i.test(taskText);
 }
 
 export function isDraftOnlyCommunicationTask(taskText: string): boolean {

@@ -1,10 +1,12 @@
 /** Install, verify, or remove the local observability MCP in Codex. */
 import { spawnSync } from "node:child_process";
 import { existsSync } from "node:fs";
-import { delimiter, join, resolve } from "node:path";
+import { delimiter, join } from "node:path";
+
+import { PROJECT_ROOT } from "./paths";
 
 const command = process.argv[2] ?? "doctor";
-const repositoryRoot = resolve(process.cwd());
+const repositoryRoot = PROJECT_ROOT;
 const serverName = "opensidebar-observability";
 
 function codexInvocation(): { executable: string; prefix: string[] } {

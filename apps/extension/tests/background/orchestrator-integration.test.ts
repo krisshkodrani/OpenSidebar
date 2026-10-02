@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, vi, test } from "vitest";
 import "../setup";
-import { SessionMetrics, ToolName, UserSettings } from "../../src/types";
+import { AgentStatus, PartialProgressHandoff, SessionMetrics, ToolName, UserSettings } from "../../src/types";
 import {
   TURN_CHECKPOINT_VERSION,
   TurnCheckpoint,
@@ -66,8 +66,11 @@ let loopStartImpl: (
     | "error"
     | "stopped"
     | "awaiting_approval"
+    | "max_turns"
     | "awaiting_clarification";
   summary: string;
+  turnCount?: number;
+  partialHandoff?: PartialProgressHandoff;
   metrics?: SessionMetrics;
   pendingInteraction?: Record<string, unknown>;
   sideEffectsLog?: Array<Record<string, unknown>>;
@@ -1286,8 +1289,8 @@ describe("Orchestrator integration join tests", () => {
     (chrome.tabs as any).sendMessage = vi.fn(async () => ({
       payload: {
         snapshot: {
-          title: "Elements Filters | ServiceNow",
-          url: "https://workarenapublic16.service-now.com/now/nav/ui/classic/params/target/pa_filters_list.do",
+          title: "Elements Filters | Helpdesk",
+          url: "https://workarenapublic16.example.test/now/nav/ui/classic/params/target/pa_filters_list.do",
           visibleContent:
             "Performance Analytics Elements Filters list with Title, Breakdown source, and Filter columns.",
           pageContent:
@@ -1396,8 +1399,8 @@ describe("Orchestrator integration join tests", () => {
     (chrome.tabs as any).sendMessage = vi.fn(async () => ({
       payload: {
         snapshot: {
-          title: "Elements Filters | ServiceNow",
-          url: "https://workarenapublic16.service-now.com/now/nav/ui/classic/params/target/pa_filters_list.do",
+          title: "Elements Filters | Helpdesk",
+          url: "https://workarenapublic16.example.test/now/nav/ui/classic/params/target/pa_filters_list.do",
           visibleContent:
             "Performance Analytics Elements Filters list with Title, Breakdown source, and Filter columns.",
           pageContent:
@@ -1512,8 +1515,8 @@ describe("Orchestrator integration join tests", () => {
     (chrome.tabs as any).sendMessage = vi.fn(async () => ({
       payload: {
         snapshot: {
-          title: "Elements Filters | ServiceNow",
-          url: "https://workarenapublic16.service-now.com/now/nav/ui/classic/params/target/pa_filters_list.do",
+          title: "Elements Filters | Helpdesk",
+          url: "https://workarenapublic16.example.test/now/nav/ui/classic/params/target/pa_filters_list.do",
           visibleContent:
             "Performance Analytics Elements Filters list with Title, Breakdown source, and Filter columns.",
           pageContent:
@@ -1668,8 +1671,8 @@ describe("Orchestrator integration join tests", () => {
     (chrome.tabs as any).sendMessage = vi.fn(async () => ({
       payload: {
         snapshot: {
-          title: "Elements Filters | ServiceNow",
-          url: "https://workarenapublic16.service-now.com/now/nav/ui/classic/params/target/pa_filters_list.do",
+          title: "Elements Filters | Helpdesk",
+          url: "https://workarenapublic16.example.test/now/nav/ui/classic/params/target/pa_filters_list.do",
           visibleContent:
             "Performance Analytics Elements Filters list with Title, Breakdown source, and Filter columns.",
           pageContent:
@@ -1797,8 +1800,8 @@ describe("Orchestrator integration join tests", () => {
     (chrome.tabs as any).sendMessage = vi.fn(async () => ({
       payload: {
         snapshot: {
-          title: "Elements Filters | ServiceNow",
-          url: "https://workarenapublic16.service-now.com/now/nav/ui/classic/params/target/pa_filters_list.do",
+          title: "Elements Filters | Helpdesk",
+          url: "https://workarenapublic16.example.test/now/nav/ui/classic/params/target/pa_filters_list.do",
           visibleContent:
             "Performance Analytics Elements Filters list with Title, Breakdown source, and Filter columns.",
           pageContent:
@@ -1877,8 +1880,8 @@ describe("Orchestrator integration join tests", () => {
     (chrome.tabs as any).sendMessage = vi.fn(async () => ({
       payload: {
         snapshot: {
-          title: "Shared admin dashboard | ServiceNow",
-          url: "https://workarenapublic16.service-now.com/now/nav/ui/home",
+          title: "Shared admin dashboard | Helpdesk",
+          url: "https://workarenapublic16.example.test/now/nav/ui/home",
           visibleContent:
             "Performance Analytics Breakdowns Elements Filters menu item is visible.",
           pageContent:
@@ -1930,8 +1933,8 @@ describe("Orchestrator integration join tests", () => {
     (chrome.tabs as any).sendMessage = vi.fn(async () => ({
       payload: {
         snapshot: {
-          title: "Shared admin dashboard | ServiceNow",
-          url: "https://workarenapublic18.service-now.com/now/nav/ui/home",
+          title: "Shared admin dashboard | Helpdesk",
+          url: "https://workarenapublic18.example.test/now/nav/ui/home",
           visibleContent:
             "Ezekiel Mildon is selected. The Impersonate user button is enabled and ready.",
           pageContent:
@@ -2174,6 +2177,30 @@ describe("Orchestrator integration join tests", () => {
     expect(String(subtaskResults[0]?.result || "")).toContain("class=blocked");
   });
 
+  test("reports escalation failure without inventing turn exhaustion", async () => {
+    plannerBuildNodesImpl = async () => [makeNode("n1", "Investigate a blocked action")];
+    loopStartImpl = async () => ({
+      outcome: "max_turns",
+      summary: "Unable to recover from the blocked action",
+      turnCount: 7,
+      partialHandoff: {
+        schemaVersion: "2026-05-26", reason: "escalation_failed",
+        status: "partial_handoff", task: "Investigate a blocked action",
+        generatedAt: new Date().toISOString(), turnsUsed: 7, maxTurns: 28,
+        completed: [], evidence: [], currentState: {}, remaining: [],
+        uncertainty: [], suggestedContinuationPrompt: "Inspect the blocked action",
+      },
+    });
+    const orchestrator = new Orchestrator(orchestratorDeps);
+    activeOrchestrator = orchestrator;
+    await orchestrator.startTask(makeInput("Investigate a blocked action"));
+    const messages = (globalThis as any).__runtimeMessages as Array<{
+      type?: string; payload?: any;
+    }>;
+    const completion = messages.find((message) => message.type === "TASK_COMPLETION");
+    expect(completion?.payload?.terminationReason).toBe("Escalation failed (7/28)");
+  });
+
   test("terminates task when global token budget is exceeded", async () => {
     plannerBuildNodesImpl = async () => [
       makeNode("n1", "high token step"),
@@ -2411,48 +2438,6 @@ describe("Orchestrator integration join tests", () => {
       "Page or tool output shows Warehouse Beta",
     );
   });
-
-  test("planner-lane failure fallback collapses a ServiceNow field-value form into one submit-requiring node", async () => {
-    // End-to-end deterministic proof of the create-incident fix: when the
-    // planner lane times out (buildNodes throws), the orchestrator falls back to
-    // buildFallbackNodes. That fallback must (a) receive the current page
-    // context so it selects servicenow-record-form on a ServiceNow page, and
-    // (b) collapse the synthesized "fill (do not submit yet)" + "submit" plan
-    // into a single submit-requiring node. Without the fix the executor gets a
-    // "do not submit the form yet" objective and strands without submitting.
-    plannerBuildNodesImpl = async () => {
-      throw new Error("planner lane timeout (20000ms)");
-    };
-    (chrome.tabs as any).get = vi.fn(async (tabId: number) => ({
-      id: tabId,
-      title: "Create INC0000031 | Incident | ServiceNow",
-      url: "https://workarenapublic20.service-now.com/now/nav/ui/classic/params/target/incident.do",
-    }));
-
-    const orchestrator = new Orchestrator(orchestratorDeps);
-    activeOrchestrator = orchestrator;
-    const query =
-      'Create a new incident with a value of "EMAIL Server Down Again" for field "Short description", a value of "Joe Employee" for field "Caller", and a value of "Phone" for field "Channel".';
-
-    await orchestrator.startTask(makeInput(query));
-
-    // Single collapsed node reached the executor — not a stranded fill node.
-    expect(capturedInstructions).toHaveLength(1);
-    const instruction = capturedInstructions[0].instruction;
-    // The stranding clause is gone and submission is required.
-    expect(instruction).not.toContain("Do not submit the form yet");
-    expect(instruction).not.toContain(
-      "the final submit action has not been clicked yet",
-    );
-    expect(instruction).toContain(
-      "Complete the workflow for the original request",
-    );
-    // Page context threaded → ServiceNow record-form skill selected.
-    expect(createdLoopConfigs[0]?.selectedSkillId).toBe(
-      "servicenow-record-form",
-    );
-  });
-
   test("accepts deterministic completion envelopes without verifier split-brain", async () => {
     plannerBuildNodesImpl = async () => [
       makeNode("n1", "select the correct quiz options"),
@@ -2756,6 +2741,38 @@ describe("Orchestrator integration join tests", () => {
     ).toBe(true);
   });
 
+  test("hands off an answer received during pause persistence to one resumed run", async () => {
+    let launchCount = 0;
+    loopStartImpl = async () => ++launchCount === 1
+      ? { outcome: "awaiting_approval", summary: "Awaiting approval",
+          pendingInteraction: { kind: "approval", nodeId: "n1", requestedAt: Date.now(),
+            approvalId: "approval-during-save", toolName: ToolName.CLICK_ELEMENT,
+            args: { id: 4 }, context: "Click [4]", timeoutMs: 60_000 } }
+      : { outcome: "completed", summary: "clicked after approval" };
+    const orchestrator = new Orchestrator(orchestratorDeps);
+    activeOrchestrator = orchestrator;
+    const originalSet = (chrome.storage.local as any).set;
+    let answered = false;
+    (chrome.storage.local as any).set = vi.fn(async (payload: Record<string, any>) => {
+      const interaction = payload["opensidebar:orchestrator:checkpoints"]?.["ws-1"]?.task?.pendingInteraction;
+      if (interaction?.approvalId === "approval-during-save" && !answered) {
+        answered = true;
+        expect(orchestrator.resolveApprovalResponse(
+          { approvalId: interaction.approvalId, approved: true }, "ws-1",
+        )).toBe(true);
+      }
+      return originalSet(payload);
+    });
+
+    await orchestrator.startTask(makeInput("needs approval"));
+    await new Promise((resolve) => setTimeout(resolve, 25));
+
+    expect(answered).toBe(true);
+    expect(createdLoopNodeIds).toEqual(["n1", "n1"]);
+    const messages = (globalThis as any).__runtimeMessages as Array<{ type?: string }>;
+    expect(messages.some((message) => message.type === "TASK_PAUSED")).toBe(false);
+  });
+
   test("pauses on approval request and resumes with the resolved approval", async () => {
     let launchCount = 0;
     loopStartImpl = async () => {
@@ -2793,6 +2810,9 @@ describe("Orchestrator integration join tests", () => {
         "ws-1",
       ),
     ).toBe(true);
+    expect(orchestrator.resolveApprovalResponse(
+      { approvalId: "approval-1", approved: false }, "ws-1",
+    )).toBe(false);
 
     await new Promise((resolve) => setTimeout(resolve, 25));
 
@@ -2856,6 +2876,9 @@ describe("Orchestrator integration join tests", () => {
         "ws-1",
       ),
     ).toBe(true);
+    expect(orchestrator.resolveClarificationResponse(
+      { clarificationId: "clarify-1", answer: "Account A" }, "ws-1",
+    )).toBe(false);
     await new Promise((resolve) => setTimeout(resolve, 25));
 
     expect(createdLoopNodeIds).toEqual(["n1"]);
@@ -2863,6 +2886,310 @@ describe("Orchestrator integration join tests", () => {
       "clarification",
     );
     expect(createdLoopConfigs[0]?.resumeInteraction?.answer).toBe("Account B");
+  });
+
+  test("does not let a stale timeout replace an accepted clarification", async () => {
+    const checkpointStore = (globalThis as any).__checkpointStore as Record<string, unknown>;
+    checkpointStore["ws-1"] = makeRecoveryTaskCheckpoint("task-answer-first", {
+      pendingInteraction: {
+        kind: "clarification", nodeId: "n1", requestedAt: Date.now(),
+        clarificationId: "clarify-answer-first", question: "Which account?",
+        timeoutMs: 60_000,
+      },
+    });
+    loopStartImpl = async () => ({ outcome: "completed", summary: "answered" });
+
+    const orchestrator = new Orchestrator(orchestratorDeps);
+    activeOrchestrator = orchestrator;
+    await orchestrator.restoreFromCheckpoints();
+    expect(orchestrator.resolveClarificationResponse(
+      { clarificationId: "clarify-answer-first", answer: "Account B" }, "ws-1",
+    )).toBe(true);
+    await (orchestrator as any).handlePendingInteractionTimeout("ws-1");
+    await new Promise((resolve) => setTimeout(resolve, 25));
+
+    expect(createdLoopNodeIds).toEqual(["n1"]);
+    expect(createdLoopConfigs[0]?.resumeInteraction?.answer).toBe("Account B");
+  });
+
+  test("does not resume an accepted interaction after stop during checkpoint save", async () => {
+    const orchestrator = new Orchestrator(orchestratorDeps);
+    activeOrchestrator = orchestrator;
+    const seeded = await orchestrator.seedE2EPendingInteraction({
+      tabId: 101, workspaceId: "ws-1",
+      interaction: { kind: "approval", toolName: ToolName.CLICK_ELEMENT,
+        context: "Confirm click" },
+    });
+    const originalSet = (chrome.storage.local as any).set;
+    let releaseSave!: () => void;
+    const saveGate = new Promise<void>((resolve) => { releaseSave = resolve; });
+    (chrome.storage.local as any).set = vi.fn(async (payload: Record<string, unknown>) => {
+      await saveGate;
+      return originalSet(payload);
+    });
+
+    expect(orchestrator.resolveApprovalResponse(
+      { approvalId: seeded.interactionId, approved: true }, "ws-1",
+    )).toBe(true);
+    const messages = (globalThis as any).__runtimeMessages as Array<{ type?: string; payload?: any }>;
+    const requestCount = messages.filter((message) => message.type === "APPROVAL_REQUEST").length;
+    await orchestrator.resyncWorkspaceState("ws-1");
+    expect(messages.filter((message) => message.type === "AGENT_STATUS").at(-1)
+      ?.payload?.status).toBe(AgentStatus.ACTING);
+    expect(messages.filter((message) => message.type === "APPROVAL_REQUEST")).toHaveLength(requestCount);
+    const stopPromise = orchestrator.stopTask("ws-1");
+    releaseSave();
+    await stopPromise;
+    await new Promise((resolve) => setTimeout(resolve, 25));
+
+    expect(messages.filter((message) => message.type === "TASK_COMPLETION")
+      .map((message) => message.payload?.status)).toEqual(["stopped"]);
+  });
+
+  test("does not launch a recovered worker after stop during tab rebinding", async () => {
+    const checkpointStore = (globalThis as any).__checkpointStore as Record<string, unknown>;
+    checkpointStore["ws-1"] = makeRecoveryTaskCheckpoint("task-stop-during-rebind", {
+      pendingInteraction: {
+        kind: "approval", nodeId: "n1", requestedAt: Date.now(),
+        approvalId: "approval-stop-during-rebind", toolName: ToolName.CLICK_ELEMENT,
+        args: { id: 4 }, context: "Click [4]", timeoutMs: 60_000,
+      },
+    });
+    const orchestrator = new Orchestrator(orchestratorDeps);
+    activeOrchestrator = orchestrator;
+    await orchestrator.restoreFromCheckpoints();
+    let enteredRebind!: () => void;
+    let releaseRebind!: () => void;
+    const rebindEntered = new Promise<void>((resolve) => { enteredRebind = resolve; });
+    const rebindGate = new Promise<void>((resolve) => { releaseRebind = resolve; });
+    (orchestratorDeps.workspaceManager as any).getWorkspaceById = async () => {
+      enteredRebind();
+      await rebindGate;
+      return { id: "ws-1", tabIds: [101], tabGroupId: 1 };
+    };
+
+    expect(orchestrator.resolveApprovalResponse(
+      { approvalId: "approval-stop-during-rebind", approved: true }, "ws-1",
+    )).toBe(true);
+    await rebindEntered;
+    await orchestrator.stopTask("ws-1");
+    const replacement = await orchestrator.seedE2EPendingInteraction({
+      tabId: 101, workspaceId: "ws-1",
+      interaction: { kind: "clarification", question: "New task question" },
+    });
+    releaseRebind();
+    await new Promise((resolve) => setTimeout(resolve, 25));
+
+    expect(createdLoopNodeIds).toEqual([]);
+    expect((checkpointStore["ws-1"] as any)?.task?.id).toBe(replacement.taskId);
+    const messages = (globalThis as any).__runtimeMessages as Array<{ type?: string; payload?: any }>;
+    expect(messages.filter((message) => message.type === "TASK_COMPLETION")
+      .map((message) => message.payload?.status)).toEqual(["stopped"]);
+  });
+
+  test("publishes a stopped completion only once for concurrent stops", async () => {
+    const orchestrator = new Orchestrator(orchestratorDeps);
+    activeOrchestrator = orchestrator;
+    await orchestrator.seedE2EPendingInteraction({
+      tabId: 101, workspaceId: "ws-1",
+      interaction: { kind: "approval", toolName: ToolName.CLICK_ELEMENT,
+        context: "Confirm click" },
+    });
+
+    await Promise.all([orchestrator.stopTask("ws-1"), orchestrator.stopTask("ws-1")]);
+
+    const messages = (globalThis as any).__runtimeMessages as Array<{ type?: string; payload?: any }>;
+    expect(messages.filter((message) => message.type === "TASK_COMPLETION")
+      .map((message) => message.payload?.status)).toEqual(["stopped"]);
+    expect(Object.keys((globalThis as any).__checkpointStore)).toHaveLength(0);
+  });
+
+  test("keeps a stop before plan nodes status-only", async () => {
+    let releasePlan!: (nodes: TaskNode[]) => void;
+    plannerBuildNodesImpl = () => new Promise((resolve) => { releasePlan = resolve; });
+    const orchestrator = new Orchestrator(orchestratorDeps);
+    activeOrchestrator = orchestrator;
+    const start = orchestrator.startTask(makeInput("plan a two-step task"));
+    await vi.waitFor(() => expect(plannerBuildNodeCalls).toBe(1));
+
+    await orchestrator.stopTask("ws-1");
+    releasePlan([makeNode("n1", "first step"), makeNode("n2", "second step")]);
+    await start;
+
+    const messages = (globalThis as any).__runtimeMessages as Array<{ type?: string; payload?: any }>;
+    expect(messages.some((message) => message.type === "TASK_COMPLETION")).toBe(false);
+    expect(messages.filter((message) => message.type === "AGENT_STATUS").at(-1)
+      ?.payload?.detail).toBe("Stopped");
+  });
+
+  test("sends one stopped completion for plan-confirmation cancellation", async () => {
+    plannerBuildNodesImpl = async () => [
+      makeNode("n1", "first step"), makeNode("n2", "second step"),
+    ];
+    const orchestrator = new Orchestrator(orchestratorDeps);
+    activeOrchestrator = orchestrator;
+    const start = orchestrator.startTask({ ...makeInput("two steps"),
+      settings: { ...baseSettings, requirePlanConfirmation: true } });
+    const messages = (globalThis as any).__runtimeMessages as Array<{ type?: string; payload?: any }>;
+    await vi.waitFor(() => expect(messages.some((message) =>
+      message.type === "PLAN_CONFIRMATION_REQUEST")).toBe(true));
+    const confirmation = messages.find((message) => message.type === "PLAN_CONFIRMATION_REQUEST");
+
+    expect(orchestrator.resolvePlanConfirmation({
+      confirmationId: confirmation!.payload.confirmationId, decision: "cancel",
+    })).toBe(true);
+    await start;
+
+    expect(messages.filter((message) => message.type === "TASK_COMPLETION")
+      .map((message) => message.payload?.status)).toEqual(["stopped"]);
+  });
+
+  test("resyncs the completed payload until its five-minute TTL expires", async () => {
+    const orchestrator = new Orchestrator(orchestratorDeps);
+    activeOrchestrator = orchestrator;
+    await orchestrator.startTask(makeInput("read the page"));
+    const messages = (globalThis as any).__runtimeMessages as Array<{ type?: string; payload?: any }>;
+    const completions = () => messages.filter((message) => message.type === "TASK_COMPLETION");
+    expect(completions()).toHaveLength(1);
+
+    await orchestrator.resyncWorkspaceState("ws-1");
+    expect(completions()).toHaveLength(2);
+    expect(completions()[1]?.payload).toEqual(completions()[0]?.payload);
+    expect(orchestrator.getRecentOutcome("ws-1")).toBe("completed");
+    expect(await orchestrator.waitForTaskCompletion("ws-1"))
+      .toEqual(completions()[0]?.payload);
+
+    const now = Date.now();
+    const clock = vi.spyOn(Date, "now").mockReturnValue(now + 5 * 60_000 + 1);
+    try {
+      await orchestrator.resyncWorkspaceState("ws-1");
+      expect(orchestrator.getRecentOutcome("ws-1")).toBeNull();
+      expect(await orchestrator.waitForTaskCompletion("ws-1")).toBeNull();
+    } finally {
+      clock.mockRestore();
+    }
+    expect(completions()).toHaveLength(2);
+  });
+
+  test("does not replay an old completion after a replacement task registers", async () => {
+    const orchestrator = new Orchestrator(orchestratorDeps);
+    activeOrchestrator = orchestrator;
+    await orchestrator.startTask(makeInput("read the page"));
+    const messages = (globalThis as any).__runtimeMessages as Array<{ type?: string; payload?: any }>;
+    expect(messages.filter((message) => message.type === "TASK_COMPLETION")).toHaveLength(1);
+
+    await orchestrator.seedE2EPendingInteraction({
+      tabId: 101, workspaceId: "ws-1",
+      interaction: { kind: "clarification", question: "Which account?" },
+    });
+    expect(orchestrator.getRecentOutcome("ws-1")).toBeNull();
+    await orchestrator.resyncWorkspaceState("ws-1");
+    expect(messages.filter((message) => message.type === "TASK_COMPLETION")).toHaveLength(1);
+  });
+
+  test("recovers an answered interaction without persisting a terminal checkpoint", async () => {
+    const checkpointStore = (globalThis as any).__checkpointStore as Record<string, unknown>;
+    checkpointStore["ws-1"] = makeRecoveryTaskCheckpoint("task-answered", {
+      query: "__e2e_pending_interaction__:approval",
+      pendingInteraction: {
+        kind: "approval", nodeId: "n1", requestedAt: Date.now(),
+        approvalId: "approval-answered", toolName: ToolName.CLICK_ELEMENT,
+        args: {}, context: "Confirm click", timeoutMs: 60_000,
+        approved: true,
+      },
+    });
+    const savedStatuses: string[] = [];
+    const originalSet = (chrome.storage.local as any).set;
+    (chrome.storage.local as any).set = vi.fn(async (payload: Record<string, unknown>) => {
+      const checkpoints = payload["opensidebar:orchestrator:checkpoints"] as
+        | Record<string, { task?: { status?: string } }> | undefined;
+      const status = checkpoints?.["ws-1"]?.task?.status;
+      if (status) savedStatuses.push(status);
+      return originalSet(payload);
+    });
+
+    const orchestrator = new Orchestrator(orchestratorDeps);
+    activeOrchestrator = orchestrator;
+    await orchestrator.restoreFromCheckpoints();
+    const messages = (globalThis as any).__runtimeMessages as Array<{ type?: string; payload?: any }>;
+    await vi.waitFor(() => expect(messages.filter((message) =>
+      message.type === "TASK_COMPLETION")).toHaveLength(1));
+
+    expect(messages.find((message) => message.type === "TASK_COMPLETION")
+      ?.payload?.status).toBe("completed");
+    expect(createdLoopNodeIds).toEqual([]);
+    expect(savedStatuses).not.toContain("completed");
+    expect(checkpointStore["ws-1"]).toBeUndefined();
+  });
+
+  test("does not let a draining old task finalize its replacement", async () => {
+    let releaseOld!: (result: { outcome: "completed"; summary: string }) => void;
+    let releaseNew!: (result: { outcome: "completed"; summary: string }) => void;
+    let launches = 0;
+    loopStartImpl = async () => {
+      launches += 1;
+      return launches === 1
+        ? new Promise((resolve) => { releaseOld = resolve; })
+        : new Promise((resolve) => { releaseNew = resolve; });
+    };
+    const orchestrator = new Orchestrator(orchestratorDeps);
+    activeOrchestrator = orchestrator;
+    const oldStart = orchestrator.startTask(makeInput("old task"));
+    await vi.waitFor(() => expect(createdLoopNodeIds).toHaveLength(1));
+    await orchestrator.stopTask("ws-1");
+
+    const newStart = orchestrator.startTask(makeInput("replacement task"));
+    await vi.waitFor(() => expect(createdLoopNodeIds).toHaveLength(2));
+    const activeTasks = (orchestrator as any).tasksByWorkspace as Map<string, { id: string }>;
+    const replacementId = activeTasks.get("ws-1")!.id;
+    releaseOld({ outcome: "completed", summary: "late old result" });
+    await oldStart;
+    expect(activeTasks.get("ws-1")?.id).toBe(replacementId);
+
+    releaseNew({ outcome: "completed", summary: "new result" });
+    await newStart;
+    const messages = (globalThis as any).__runtimeMessages as Array<{ type?: string; payload?: any }>;
+    expect(messages.filter((message) => message.type === "TASK_COMPLETION")
+      .map((message) => message.payload?.taskId)).toEqual([replacementId]);
+  });
+
+  test("finalizes an unexpected recovered-run failure once", async () => {
+    const checkpointStore = (globalThis as any).__checkpointStore as Record<string, unknown>;
+    checkpointStore["ws-1"] = makeRecoveryTaskCheckpoint("task-recovery-failure");
+    orchestratorDeps.createVerifier = () => { throw new Error("recovery boom"); };
+    const orchestrator = new Orchestrator(orchestratorDeps);
+    activeOrchestrator = orchestrator;
+
+    await orchestrator.restoreFromCheckpoints();
+    const messages = (globalThis as any).__runtimeMessages as Array<{ type?: string; payload?: any }>;
+    await vi.waitFor(() => expect(messages.filter((message) =>
+      message.type === "TASK_COMPLETION")).toHaveLength(1));
+
+    expect(messages.find((message) => message.type === "TASK_COMPLETION")
+      ?.payload?.status).toBe("failed");
+    expect(orchestrator.hasActiveTask("ws-1")).toBe(false);
+  });
+
+  test("resumes after a best-effort resolved checkpoint save fails", async () => {
+    const orchestrator = new Orchestrator(orchestratorDeps);
+    activeOrchestrator = orchestrator;
+    const seeded = await orchestrator.seedE2EPendingInteraction({
+      tabId: 101, workspaceId: "ws-1",
+      interaction: { kind: "approval", toolName: ToolName.CLICK_ELEMENT,
+        context: "Confirm click" },
+    });
+    (chrome.storage.local as any).set = vi.fn(async () => {
+      throw new Error("storage unavailable");
+    });
+
+    expect(orchestrator.resolveApprovalResponse(
+      { approvalId: seeded.interactionId, approved: true }, "ws-1",
+    )).toBe(true);
+    await new Promise((resolve) => setTimeout(resolve, 25));
+
+    const messages = (globalThis as any).__runtimeMessages as Array<{ type?: string; payload?: any }>;
+    expect(messages.find((message) => message.type === "TASK_COMPLETION")
+      ?.payload?.status).toBe("completed");
   });
 
   test("emits pending interaction restore and timeout run-trace events", async () => {
@@ -2919,6 +3246,10 @@ describe("Orchestrator integration join tests", () => {
     activeOrchestrator = new Orchestrator(orchestratorDeps);
     await activeOrchestrator.restoreFromCheckpoints();
     await new Promise((resolve) => setTimeout(resolve, 50));
+    expect(activeOrchestrator.resolveClarificationResponse(
+      { clarificationId: "clarify-timeout-1", answer: "Too late" }, "ws-1",
+    )).toBe(false);
+    expect(createdLoopConfigs.at(-1)?.resumeInteraction?.answer).toBe("No response from user.");
 
     expect(
       runTraceEvents.some(
@@ -3637,5 +3968,38 @@ describe("Orchestrator integration join tests", () => {
     expect(completion).toBeDefined();
     expect(completion?.payload?.status).toBe("failed");
   });
+
+  test.each([
+    ["stop_task", "stopped", "failed", "Stopped by operator escalation decision."],
+    ["skip_node", "partial", "skipped", "Skipped by operator escalation decision."],
+  ] as const)(
+    "applies operator escalation %s to the task result",
+    async (optionId, expectedStatus, expectedNodeStatus, expectedReason) => {
+      plannerBuildNodesImpl = async () => [makeNode("n1", "needs operator review")];
+      verifierDecisionImpl = async () => ({
+        decision: "retry",
+        reason: "High uncertainty, evidence incomplete",
+        confidence: 0.2,
+        failureType: "insufficient_evidence",
+      });
+      autoEscalationDecision = { optionId };
+
+      const orchestrator = new Orchestrator(orchestratorDeps);
+      activeOrchestrator = orchestrator;
+      await orchestrator.startTask(makeInput(`escalation ${optionId} path`));
+
+      const messages = (globalThis as any).__runtimeMessages as Array<{
+        type?: string;
+        payload?: any;
+      }>;
+      expect(messages.some((message) => message.type === "ESCALATION_REQUEST")).toBe(true);
+      const completion = messages.find((message) => message.type === "TASK_COMPLETION");
+      expect(completion?.payload?.status).toBe(expectedStatus);
+      expect(completion?.payload?.subtaskResults?.[0]?.status).toBe(expectedNodeStatus);
+      expect(String(completion?.payload?.subtaskResults?.[0]?.result || "")).toContain(
+        expectedReason,
+      );
+    },
+  );
 
 });

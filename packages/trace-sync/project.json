@@ -1,0 +1,15 @@
+{
+  "$schema": "../../node_modules/nx/schemas/project-schema.json",
+  "name": "trace-sync",
+  "projectType": "library",
+  "sourceRoot": "packages/trace-sync/src",
+  "targets": {
+    "typecheck": {
+      "executor": "nx:run-commands",
+      "options": {
+        "cwd": "{workspaceRoot}",
+        "command": "tsc -b packages/trace-sync/tsconfig.json"
+      }
+    }
+  }
+}

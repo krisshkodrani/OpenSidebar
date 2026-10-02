@@ -5,8 +5,8 @@
  * API already uses, so Codex and the human viewer see identical
  * results. It also imports NO MCP SDK, so it is unit-testable in isolation.
  *
- * Data access comes from the shared repository: SQLite for lists/aggregates,
- * the span spine for full-fidelity details, and JSONL as the final fallback.
+ * Data access comes from the shared repository: the span spine for records,
+ * SQLite for aggregates, and SQLite/JSONL for unmigrated records.
  * It works without the log server running as long as traces exist on disk.
  *
  * The query functions take an `ObsStore` as their first argument so tests can
@@ -35,11 +35,8 @@ import type {
   TraceSession,
 } from "../../apps/extension/src/types/traces";
 import { buildRlTrajectory } from "./rl-trajectory";
-import {
-  createTraceRepository,
-  type TraceRepository,
-} from "./repository";
-import { buildViewerUrl } from "../../packages/observability-schema/src/viewer-link";
+import { createTraceRepository, type TraceRepository } from "./repository";
+import { buildViewerUrl } from "../../packages/observability-schema/src/index";
 import { PROJECT_ROOT } from "./paths";
 
 // Project-root + on-disk layout (mirrors scripts/log-server.ts). scripts/obs ->
@@ -50,9 +47,14 @@ const SCREENSHOT_DIR = join(TRACE_DIR, "screenshots");
 /** The data-access surface. Default impl reads disk; tests inject fixtures. */
 export type ObsStore = TraceRepository;
 
-/** Default store: SQLite-first, JSONL fallback (mirrors log-server reads). */
-export function createDiskStore(projectRoot = PROJECT_ROOT): ObsStore {
-  return createTraceRepository(projectRoot);
+/** Default store: spine-first records with legacy fallbacks. */
+export { PROJECT_ROOT } from "./paths";
+
+export function createDiskStore(
+  projectRoot = PROJECT_ROOT,
+  options: { spineReads?: boolean } = {},
+): ObsStore {
+  return createTraceRepository(projectRoot, options);
 }
 
 // ---- Query functions (the MCP tool bodies; all reuse existing logic) --------
@@ -137,7 +139,8 @@ export function getRun(
     if (sid) ids.add(sid);
   }
   for (const session of store.loadSessions()) {
-    if (session.runId === runId && session.sessionId) ids.add(session.sessionId);
+    if (session.runId === runId && session.sessionId)
+      ids.add(session.sessionId);
   }
   return {
     runId,
@@ -268,7 +271,9 @@ export function getBlob(
 export function getSpan(store: ObsStore, sessionId: string, turn: number) {
   const entry = store
     .loadEntries(sessionId)
-    .find((candidate) => (candidate as { turnNumber?: number }).turnNumber === turn);
+    .find(
+      (candidate) => (candidate as { turnNumber?: number }).turnNumber === turn,
+    );
   if (!entry) return null;
   const e = entry as Record<string, unknown> & {
     turnNumber?: number;

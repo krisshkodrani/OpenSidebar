@@ -41,6 +41,7 @@ function mergePendingApprovalDeadline(
   const deadline = Math.min(currentDeadline, nextDeadline);
   return {
     ...next,
+    totalTimeoutMs: next.totalTimeoutMs ?? current.totalTimeoutMs,
     requestedAt: current.requestedAt,
     timeoutMs: Math.max(0, deadline - current.requestedAt),
   };

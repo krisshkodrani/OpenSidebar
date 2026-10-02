@@ -40,6 +40,7 @@ import { PassiveMonitorController } from "./passive-monitor";
 import { transcribeWithGroq } from "./speech/groq";
 import { TabAudioCaptureController } from "./speech/tab-audio";
 import { perceptionWarmup } from "./perception-warmup";
+import { frameActionRoutes } from "./perception/frame-action-routes";
 import { agentNotifications } from "./notifications";
 import {
   isE2ESeedPendingInteractionMessage,
@@ -194,12 +195,14 @@ agentNotifications.registerHandlers();
 
 // 3b. Invalidate perception warmup cache on navigation and tab close
 chrome.webNavigation?.onCommitted.addListener((details) => {
+  frameActionRoutes.invalidate(details.tabId);
   if (details.frameId === 0) {
     perceptionWarmup.invalidate(details.tabId);
     tabAudioCapture.clearTranscriptsForTab(details.tabId);
   }
 });
 chrome.tabs.onRemoved.addListener((tabId) => {
+  frameActionRoutes.invalidate(tabId);
   perceptionWarmup.invalidate(tabId);
   passiveMonitor.stopSessionsForTab(tabId);
   tabAudioCapture.stopSessionsForTab(tabId);

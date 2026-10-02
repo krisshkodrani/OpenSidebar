@@ -19,7 +19,6 @@ import type { RuntimeLimits } from "./constants";
 import { ORIENTATION } from "./constants";
 import type { LoopSession } from "./loop-scope";
 import { EscalationTierController } from "./escalation-tier-controller";
-import type { ServiceNowMissingFieldSearchEvidence } from "./servicenow/trusted-workflow-adapter";
 import {
   buildHandoffBriefing,
   clearStepScopedActionMemory,
@@ -64,10 +63,6 @@ export interface TurnControllerCollections {
   verifiedFinalClickBypassKeys: Set<string>;
   subgoalAttempts: SubgoalAttempt[];
   recentOutcomes: RecentOutcome[];
-  serviceNowMissingFieldSearchEvidence: Map<
-    string,
-    ServiceNowMissingFieldSearchEvidence
-  >;
 }
 
 export interface TurnController {
@@ -94,7 +89,6 @@ export function createTurnController(
     verifiedFinalClickBypassKeys,
     subgoalAttempts,
     recentOutcomes,
-    serviceNowMissingFieldSearchEvidence,
   } = collections;
 
   // Two-tier escalation state machine (0=executor, 1=planner). plan-then-act:
@@ -180,7 +174,6 @@ export function createTurnController(
     host.stagnation.resetEscalation();
     subgoalAttempts.length = 0;
     recentOutcomes.length = 0;
-    serviceNowMissingFieldSearchEvidence.clear();
     session.consecutiveTextOnly = 0;
     recentSuccesses.length = 0;
     if (options?.resetProgressSignals) {

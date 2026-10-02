@@ -18,6 +18,7 @@ import {
   XIAOMI_MODEL_PLANNER,
 } from "../../src/background/llm/client";
 import type { CompletionRequest } from "../../src/background/llm/types";
+import { LLM_REQUEST_OBSERVATION, type LlmRequestObservation } from "../../src/background/llm/transport-observation";
 
 // ----- shared helpers -----
 
@@ -362,6 +363,38 @@ describe("LLMClient construction & tier switching", () => {
     expect(result.text).toBe("Composed.");
   });
 
+  test("transport context distinguishes concurrent seats sharing a model without changing HTTP", async () => {
+    const client = makeClient({ plannerModel: MODEL_EXECUTOR });
+    const observations: LlmRequestObservation[] = [];
+    mockFetch((url, init) => {
+      observations.push((init as RequestInit & { [LLM_REQUEST_OBSERVATION]: LlmRequestObservation })[LLM_REQUEST_OBSERVATION]);
+      expect(new Request(url, init).headers.has("x-opensidebar-role")).toBe(false);
+      return jsonApiResponse("ok");
+    });
+    const executor = client.complete(baseRequest());
+    client.switchToPlanner();
+    const planner = client.complete(baseRequest());
+    await Promise.all([executor, planner]);
+    expect(observations.map((entry) => entry.role)).toEqual(["executor", "planner"]);
+    expect(observations[0].requestId).not.toBe(observations[1].requestId);
+  });
+
+  test("Luna tool calls request compatible reasoning and OpenRouter cost usage", async () => {
+    const client = makeClient();
+    let payload: Record<string, unknown> = {};
+    mockFetch((_url, init) => {
+      payload = JSON.parse(init!.body as string);
+      return jsonApiResponse("ok", { usage: {
+        prompt_tokens: 10, completion_tokens: 2, total_tokens: 12, cost: 0.000002,
+      } });
+    });
+    const response = await client.complete(baseRequest({ tools: sampleTools }));
+    expect(payload.model).toBe("openai/gpt-6-luna");
+    expect(payload.reasoning_effort).toBe("none");
+    expect(payload.usage).toEqual({ include: true });
+    expect(response.usage?.cost).toBe(0.000002);
+  });
+
   test("judge seat defaults to MODEL_JUDGE on a Fireworks planner (not planner reuse)", async () => {
     // The judge must not queue behind GLM planner traffic — sharing the seat
     // made ~75% of judge calls time out and fail open.
@@ -552,6 +585,58 @@ describe("LLMClient construction & tier switching", () => {
     expect(client.getCurrentModel()).toBe(MODEL_EXECUTOR);
     client.switchToPlanner();
     expect(client.getCurrentModel()).toBe("custom/planner");
+  });
+
+  test("strict routing prevents runtime model fallback and request overrides", async () => {
+    const client = makeClient({ strictModelRouting: true, executorProviderPin: "coreweave" });
+    const model = client.getCurrentModel();
+    expect(client.activateExecutorFallback("empty_response")).toBe(false);
+    expect(client.getCurrentModel()).toBe(model);
+    let calls = 0;
+    mockFetch(() => { calls += 1; return jsonApiResponse("ok"); });
+    await expect(client.complete(baseRequest({ model: "other/model" }))).rejects.toThrow("forbids a request model override");
+    expect(calls).toBe(0);
+  });
+
+  test("strict routing uses only the pinned upstream for executor and planner", async () => {
+    const client = makeClient({ strictModelRouting: true, executorProviderPin: "coreweave", plannerProviderPin: "deepinfra" });
+    const payloads: any[] = [];
+    mockFetch((_url, init) => { payloads.push(JSON.parse(String(init?.body))); return jsonApiResponse("ok"); });
+    await client.complete(baseRequest());
+    client.switchToPlanner();
+    await client.complete(baseRequest());
+    expect(payloads.map((p) => p.provider)).toEqual([
+      { only: ["coreweave"], allow_fallbacks: false },
+      { only: ["deepinfra"], allow_fallbacks: false },
+    ]);
+  });
+
+  test("strict routing fails before fetching when an active seat has no pin", async () => {
+    const client = makeClient({ strictModelRouting: true });
+    let calls = 0;
+    mockFetch(() => { calls += 1; return jsonApiResponse("ok"); });
+    await expect(client.complete(baseRequest())).rejects.toThrow("requires an OpenRouter provider pin");
+    expect(calls).toBe(0);
+  });
+
+  test("strict writer routing inherits the executor pin when it reuses that seat", async () => {
+    const client = makeClient({ strictModelRouting: true, executorProviderPin: "coreweave" });
+    const payloads: any[] = [];
+    mockFetch((_url, init) => { payloads.push(JSON.parse(String(init?.body))); return jsonApiResponse("Composed."); });
+    const result = await client.composeText({ systemPrompt: "Write prose.", userPrompt: "Draft a short reply." });
+    expect(result.text).toBe("Composed.");
+    expect(payloads[0].model).toBe(MODEL_EXECUTOR);
+    expect(payloads[0].provider).toEqual({ only: ["coreweave"], allow_fallbacks: false });
+    expect(client.getCurrentModel()).toBe(MODEL_EXECUTOR);
+  });
+
+  test("strict routing does not silently route an unpinned dedicated writer", async () => {
+    const client = makeClient({ strictModelRouting: true, executorProviderPin: "coreweave", writerModel: "custom/writer" });
+    let calls = 0;
+    mockFetch(() => { calls++; return jsonApiResponse("Composed."); });
+    await expect(client.composeText({ systemPrompt: "Write prose.", userPrompt: "Draft a reply." })).rejects.toThrow("requires an OpenRouter provider pin");
+    expect(calls).toBe(0);
+    expect(client.getCurrentModel()).toBe(MODEL_EXECUTOR);
   });
 
   test("activateExecutorFallback switches executor model for runtime anomalies", () => {
@@ -925,7 +1010,9 @@ describe("complete() error handling & retry", () => {
   test("retries transient OpenRouter timeouts and server errors", async () => {
     const client = makeClient();
     let callCount = 0;
-    mockFetch(() => {
+    const requestIds: string[] = [];
+    mockFetch((_url, init) => {
+      requestIds.push((init as RequestInit & { [LLM_REQUEST_OBSERVATION]: LlmRequestObservation })[LLM_REQUEST_OBSERVATION].requestId);
       callCount++;
       if (callCount === 1) return new Response("Timed out", { status: 408 });
       if (callCount === 2)
@@ -936,6 +1023,7 @@ describe("complete() error handling & retry", () => {
     const result = await client.complete(baseRequest());
     expect(result.content).toBe("Recovered");
     expect(callCount).toBe(3);
+    expect(new Set(requestIds).size).toBe(1);
   });
 
   test("does NOT retry on 400/401/404", async () => {

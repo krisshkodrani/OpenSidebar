@@ -86,7 +86,7 @@
   {
     "id": "agent.system",
     "version": "v10",
-    "hash": "dfdf5d2a",
+    "hash": "fecf912b",
     "description": "Core executor system prompt for browser automation turns. v10: preserve requested facts before prioritizing an action that replaces their visible page state.",
     "sourcePath": "prompts/runtime/agent/system.md"
   },
@@ -113,8 +113,8 @@
   },
   {
     "id": "orchestrator.verifier.system",
-    "version": "v2",
-    "hash": "2a2f92ef",
+    "version": "v3",
+    "hash": "1a427a91",
     "description": "Primary verifier system prompt for executor outcome validation.",
     "sourcePath": "prompts/runtime/orchestrator/verifier_system.md"
   },
@@ -162,9 +162,9 @@
   },
   {
     "id": "agent.reflection.escalation",
-    "version": "v2",
-    "hash": "395707d7",
-    "description": "Escalation reflection for planner-model takeover when stalled.",
+    "version": "v3",
+    "hash": "87afabcb",
+    "description": "Same-model reassessment when stalled.",
     "sourcePath": "prompts/runtime/reflections/escalation.md"
   },
   {

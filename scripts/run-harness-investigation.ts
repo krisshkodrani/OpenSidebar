@@ -4,9 +4,12 @@ import { execFileSync } from "node:child_process";
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { basename, resolve } from "node:path";
 import {
+  allAgentSessionsErrored,
   buildInvestigationReport,
+  campaignStopReason,
   classifyAttempt,
   fingerprintConfig,
+  modelIdentityMismatch,
   requestedModels,
   validateConfig,
   type InvestigationAttempt,
@@ -86,9 +89,10 @@ function collectResolvedEvidence(startedAt: number, endedAt: number): {
   traceRunIds: string[];
   retryLineage: string[];
   usageByRole: InvestigationAttempt["usageByRole"];
+  allSessionsErrored: boolean;
 } {
   const indexPath = resolve(ROOT, "traces/index.jsonl");
-  if (!existsSync(indexPath)) return { resolvedModels: {}, traceRunIds: [], retryLineage: [], usageByRole: {} };
+  if (!existsSync(indexPath)) return { resolvedModels: {}, traceRunIds: [], retryLineage: [], usageByRole: {}, allSessionsErrored: false };
   const sessions = readFileSync(indexPath, "utf8")
     .split(/\r?\n/)
     .filter(Boolean)
@@ -97,7 +101,7 @@ function collectResolvedEvidence(startedAt: number, endedAt: number): {
     })
     .filter((session: any) => {
       const time = Number(session.startTime);
-      return session.traceKind === "agent.session" && time >= startedAt - 5_000 && time <= endedAt + 5_000;
+      return session.traceKind === "agent.session" && time >= startedAt && time <= endedAt;
     });
   const runIds = [...new Set(sessions.map((session: any) => session.runId).filter(Boolean))] as string[];
   const executor = new Set<string>();
@@ -158,25 +162,8 @@ function collectResolvedEvidence(startedAt: number, endedAt: number): {
     traceRunIds: runIds.sort(),
     retryLineage,
     usageByRole,
+    allSessionsErrored: allAgentSessionsErrored(sessions.map((session: any) => String(session.outcome ?? ""))),
   };
-}
-
-function modelIdentityMismatch(
-  requested: Record<string, string | null>,
-  resolved: Record<string, string[]>,
-): string | null {
-  const comparisons = [
-    ["executor", requested.executorModel],
-    ["planner", requested.plannerModel],
-    ["judge", requested.judgeModel],
-  ] as const;
-  for (const [role, expected] of comparisons) {
-    const actual = resolved[role] ?? [];
-    if (expected && actual.length > 0 && !actual.includes(expected)) {
-      return `${role} requested ${expected} but traces resolved ${actual.join(", ")}`;
-    }
-  }
-  return null;
 }
 
 async function main(): Promise<void> {
@@ -236,9 +223,12 @@ async function main(): Promise<void> {
     const reason = exitCode !== 0 && result.passed ? `runner_error:Vitest exited ${exitCode}` : result.reason;
     const requested = requestedModels(item.config.env);
     const evidence = collectResolvedEvidence(startedAt, endedAt);
-    const identityMismatch = modelIdentityMismatch(requested, evidence.resolvedModels);
-    const finalReason = identityMismatch ? `model_identity_mismatch:${identityMismatch}` : reason;
-    const classification = identityMismatch
+    const identityMismatch = modelIdentityMismatch(
+      requested, evidence.resolvedModels, evidence.usageByRole, evidence.traceRunIds,
+    );
+    const finalReason = identityMismatch ? `model_identity_mismatch:${identityMismatch}`
+      : evidence.allSessionsErrored ? "runtime_session_error:all agent sessions errored" : reason;
+    const classification = identityMismatch || evidence.allSessionsErrored
       ? { classification: "harness_failure" as const, eligibleForScoring: false }
       : classifyAttempt({ passed: result.passed && exitCode === 0, reason: finalReason });
     attempts.push({
@@ -270,6 +260,12 @@ async function main(): Promise<void> {
         notes: "",
       })), null, 2),
     );
+    const stopReason = campaignStopReason(attempts);
+    if (stopReason) {
+      console.error(`[harness:investigation] ${stopReason} Partial evidence is saved in ${outputDir}.`);
+      process.exitCode = 2;
+      break;
+    }
   }
 }
 

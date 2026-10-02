@@ -4,6 +4,12 @@ import { createRoot, type Root } from "react-dom/client";
 import "../setup";
 import AnalyticsTab from "../../src/trace-viewer/components/traces/AnalyticsTab";
 
+const trendState = vi.hoisted(() => ({
+  points: [],
+  loading: false,
+  error: null as string | null,
+}));
+
 const mockInsights = {
   summary: {
     totalSessions: 12,
@@ -75,7 +81,7 @@ vi.mock("../../src/trace-viewer/hooks/useInsightsData", () => ({
   }),
 }));
 vi.mock("../../src/trace-viewer/hooks/useTrendData", () => ({
-  useTrendData: () => ({ points: [], loading: false }),
+  useTrendData: () => trendState,
 }));
 vi.mock("../../src/trace-viewer/api", async (importOriginal) => {
   const actual = await importOriginal<object>();
@@ -91,6 +97,7 @@ describe("AnalyticsTab", () => {
   let root: Root;
 
   beforeEach(() => {
+    trendState.error = null;
     container = document.createElement("div");
     document.body.appendChild(container);
     root = createRoot(container);
@@ -153,5 +160,16 @@ describe("AnalyticsTab", () => {
     expect(container.textContent).toContain(
       "No failures found for the current filters.",
     );
+  });
+
+  test("shows a trend read failure without hiding the summary", async () => {
+    trendState.error = "request failed";
+    await act(async () => {
+      root.render(
+        <AnalyticsTab onSelectSession={() => {}} onFocusRun={() => {}} />,
+      );
+    });
+    expect(container.textContent).toContain("Failed to load trends: request failed");
+    expect(container.textContent).toContain("Est. cost");
   });
 });

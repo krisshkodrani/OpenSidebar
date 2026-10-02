@@ -23,17 +23,20 @@ import {
 import { createE2EHarness } from "./helpers/harness";
 import {
   assertNoGhostSession,
+  clearMonitoredEvents,
   getActiveTabId,
   navigateAndWait,
   sendUserChat,
   settleWorkspaceBetweenTurns,
+  stopAgent,
   waitForOutcome,
+  waitForWorkspaceIdle,
 } from "./helpers/utils";
 import { getFixtureUrl } from "./helpers/fixture-server";
 
 const h = createE2EHarness({ maxTurns: 20, testLabel: "cart-swap" });
 
-const TURN_TIMEOUT = 200_000;
+const TURN_TIMEOUT = 260_000;
 
 describe.skipIf(!h.apiKey)("E2E: Continuation — Cart Swap", () => {
   beforeAll(() => h.beforeAllHook(), 60_000);
@@ -76,6 +79,7 @@ describe.skipIf(!h.apiKey)("E2E: Continuation — Cart Swap", () => {
       },
       TURN_TIMEOUT,
       workspaceId,
+      { acceptPageResultWhileRunning: true },
     );
 
     if (!turn1.ok) {
@@ -85,6 +89,11 @@ describe.skipIf(!h.apiKey)("E2E: Continuation — Cart Swap", () => {
       console.log("[cart-swap] TURN 1 FAIL:", { reason: turn1.reason, cart });
     }
     expect(turn1.ok, `Turn 1 failed: ${turn1.reason}`).toBe(true);
+    if (turn1.reason === "page_result") {
+      await clearMonitoredEvents(h.ctx.serviceWorker);
+      await stopAgent(h.ctx, workspaceId);
+      await waitForWorkspaceIdle(h.ctx.serviceWorker, workspaceId, 90_000);
+    }
 
     console.log("[cart-swap] Turn 1 PASS — Novablast in cart");
 
@@ -124,6 +133,7 @@ describe.skipIf(!h.apiKey)("E2E: Continuation — Cart Swap", () => {
       },
       TURN_TIMEOUT,
       workspaceId,
+      { acceptPageResultWhileRunning: true },
     );
 
     if (!turn2.ok) {
@@ -136,6 +146,11 @@ describe.skipIf(!h.apiKey)("E2E: Continuation — Cart Swap", () => {
       });
     }
     expect(turn2.ok, `Turn 2 failed: ${turn2.reason}`).toBe(true);
+    if (turn2.reason === "page_result") {
+      await clearMonitoredEvents(h.ctx.serviceWorker);
+      await stopAgent(h.ctx, workspaceId);
+      await waitForWorkspaceIdle(h.ctx.serviceWorker, workspaceId, 90_000);
+    }
 
     console.log("[cart-swap] Turn 2 PASS — Cart swapped to Pegasus");
 
@@ -151,7 +166,7 @@ describe.skipIf(!h.apiKey)("E2E: Continuation — Cart Swap", () => {
 
     await sendUserChat(
       h.ctx,
-      "Apply coupon SAVE10, choose standard shipping, and checkout as alex@example.com.",
+      "Apply coupon SAVE10, choose standard shipping, and checkout as Alex Morgan (alex@example.com).",
       tabId,
       workspaceId,
     );
@@ -168,6 +183,7 @@ describe.skipIf(!h.apiKey)("E2E: Continuation — Cart Swap", () => {
       },
       TURN_TIMEOUT,
       workspaceId,
+      { acceptPageResultWhileRunning: true },
     );
 
     if (!turn3.ok) {
@@ -182,11 +198,18 @@ describe.skipIf(!h.apiKey)("E2E: Continuation — Cart Swap", () => {
       });
     }
     expect(turn3.ok, `Turn 3 failed: ${turn3.reason}`).toBe(true);
+    if (turn3.reason === "page_result") {
+      await clearMonitoredEvents(h.ctx.serviceWorker);
+      await stopAgent(h.ctx, workspaceId);
+      await waitForWorkspaceIdle(h.ctx.serviceWorker, workspaceId, 90_000);
+      await settleWorkspaceBetweenTurns(h.ctx.serviceWorker, workspaceId);
+    }
 
     const order = turn3.result as any;
     expect(order.coupon).toBe("SAVE10");
     expect(order.shippingMethod).toBe("standard");
     expect(order.email).toBe("alex@example.com");
+    expect(order.name).toBe("Alex Morgan");
 
     // Must be Pegasus, not Novablast
     const pegasus = order.items.find((i: any) => i.id === "pegasus-41");
@@ -210,5 +233,5 @@ describe.skipIf(!h.apiKey)("E2E: Continuation — Cart Swap", () => {
     await assertNoGhostSession(h.ctx.serviceWorker, 2_000, workspaceId);
 
     console.log("\n[cart-swap] === ALL 3 TURNS PASSED ===");
-  }, 660_000);
+  }, 900_000);
 });

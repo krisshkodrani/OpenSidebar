@@ -1,13 +1,120 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import {
+  assertTraceTransportReady,
   extractModelBenchOutcome,
   extractStoredModelBenchOutcome,
+  finalAnswer,
   harnessFailureReason,
   modelBenchSettingsPatch,
   observedTabOpeningAction,
   providerFailureReason,
+  terminalInteractionEvidence,
 } from "./modelbench-extension-driver.js";
+import { MODEL_BENCH_CASES, scenarioEngine } from "@opensidebar/scenario-engine";
+
+test("trace preflight probes the service worker POST route before a paid run", async () => {
+  const originalFetch = globalThis.fetch;
+  const requests: string[] = [];
+  globalThis.fetch = async (input) => {
+    requests.push(String(input));
+    return new Response("Missing sessionId", { status: 400 });
+  };
+  const worker = {
+    evaluate: (fn: (url: string) => Promise<unknown>, url: string) => fn(url),
+  } as unknown as Parameters<typeof assertTraceTransportReady>[0];
+  try {
+    await assertTraceTransportReady(worker, "http://127.0.0.1:7589");
+    assert.deepEqual(requests, ["http://127.0.0.1:7589/traces"]);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test("trace preflight fails after retry when the service worker cannot POST", async () => {
+  const originalFetch = globalThis.fetch;
+  let attempts = 0;
+  globalThis.fetch = async () => {
+    attempts += 1;
+    throw new Error("network blocked");
+  };
+  const worker = {
+    evaluate: (fn: (url: string) => Promise<unknown>, url: string) => fn(url),
+  } as unknown as Parameters<typeof assertTraceTransportReady>[0];
+  try {
+    await assert.rejects(
+      assertTraceTransportReady(worker, "http://127.0.0.1:7589"),
+      /Service worker cannot write.*network blocked/,
+    );
+    assert.equal(attempts, 2);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test("retains clarification evidence independently of trace files without unrelated event fields", () => {
+  for (const nested of [false, true]) {
+    const payload = { clarificationId: "question-1", question: "Which record should I update?", suggestions: ["First record", "Second record", 4], unrelated: "not evidence" };
+    const outcome = extractModelBenchOutcome([{ type: "CLARIFICATION_REQUEST", ...(nested ? { payload } : payload) }]);
+    assert.ok(outcome);
+    assert.deepEqual(terminalInteractionEvidence(outcome), {
+      type: "CLARIFICATION_REQUEST", status: "", clarificationId: "question-1",
+      question: payload.question, suggestions: ["First record", "Second record"],
+    });
+  }
+});
+
+test("terminal evidence does not invent a question for an empty interaction", () => {
+  const outcome = extractModelBenchOutcome([{ type: "CLARIFICATION_REQUEST", clarificationId: "question-1" }]);
+  assert.ok(outcome);
+  assert.equal(terminalInteractionEvidence(outcome)?.question, undefined);
+});
+
+test("only completed task summaries provide scoreable answers", () => {
+  for (const status of ["failed", "partial", "stopped", "completed"]) {
+    const outcome = extractModelBenchOutcome([{
+      type: "TASK_COMPLETION",
+      payload: { status, summary: "Aurora: $82" },
+    }]);
+    assert.ok(outcome);
+    assert.equal(finalAnswer(outcome), status === "completed" ? "Aurora: $82" : undefined);
+  }
+});
+
+test("verifier rejection quoting the expected answer cannot pass answer validation", () => {
+  const definition = MODEL_BENCH_CASES.find(
+    (candidate) => candidate.contract.id === "analytics.inspect-canvas-tooltip",
+  )!;
+  const initialState = scenarioEngine.initialize(definition.contract.id);
+  for (const status of ["failed", "completed"]) {
+    const outcome = extractStoredModelBenchOutcome([{
+      completionData: {
+        status,
+        summary: status === "failed"
+          ? "Verifier retry: The final answer 'Aurora: $82' is provided, but supporting evidence is absent."
+          : "Aurora: $82",
+      },
+    }], "workspace-1");
+    assert.ok(outcome);
+    const validation = scenarioEngine.validate({
+      definition, initialState, finalState: initialState,
+      finalAnswer: finalAnswer(outcome),
+    });
+    assert.equal(validation.verdict, status === "completed" ? "pass" : "fail");
+  }
+});
+
+test("error details and clarification questions are not final answers", () => {
+  for (const event of [
+    { type: "AGENT_STATUS", status: "ERROR", detail: "Expected Aurora: $82" },
+    { type: "CLARIFICATION_REQUEST", clarificationId: "c1", summary: "Aurora: $82?" },
+    { type: "TASK_COMPLETION", status: "completed", detail: "Aurora: $82" },
+  ]) {
+    const outcome = extractModelBenchOutcome([event]);
+    assert.ok(outcome);
+    assert.equal(finalAnswer(outcome), undefined);
+  }
+});
 
 test("maps each benchmark seat into the extension settings contract", () => {
   assert.deepEqual(
@@ -36,6 +143,8 @@ test("maps each benchmark seat into the extension settings contract", () => {
     {
       providerMode: "openrouter",
       executorModel: "openai/gpt-5.6-sol",
+      strictModelRouting: true,
+      useNitro: false,
       plannerModel: "z-ai/glm-5.2",
       executorProviderPin: "openai",
       plannerProviderPin: "z-ai",

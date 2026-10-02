@@ -696,7 +696,7 @@ function copySectionLink(
     { sessionId, view: "prompts", turn: turnNumber, section },
     baseUrl,
   );
-  void navigator.clipboard?.writeText(url);
+  void navigator.clipboard?.writeText(url).catch(() => undefined);
 }
 
 function LazyDisclosure({

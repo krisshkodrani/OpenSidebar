@@ -1,8 +1,11 @@
 import { describe, expect, test } from "vitest";
 import {
+  allAgentSessionsErrored,
   buildInvestigationReport,
+  campaignStopReason,
   classifyAttempt,
   fingerprintConfig,
+  modelIdentityMismatch,
   validateConfig,
   type InvestigationConfig,
 } from "../../../../scripts/harness-investigation-lib";
@@ -31,6 +34,25 @@ describe("harness investigation", () => {
       classification: "indeterminate",
       eligibleForScoring: false,
     });
+    expect(classifyAttempt({ passed: false, reason: "HTTP 503 from provider" }).classification).toBe("provider_failure");
+    expect(classifyAttempt({ passed: false, reason: "Expected 500 rows" }).classification).toBe("valid_model_failure");
+  });
+
+  test("stops a paid campaign after credit failure or repeated systemic failures", () => {
+    const provider = { classification: "provider_failure" as const, reason: "HTTP 503" };
+    const harness = { classification: "harness_failure" as const, reason: "runtime session error" };
+    const model = { classification: "valid_model_failure" as const, reason: "assertion failed" };
+    expect(campaignStopReason([provider])).toBeNull();
+    expect(campaignStopReason([provider, model, provider])).toBeNull();
+    expect(campaignStopReason([provider, harness])).toMatch(/Two consecutive/);
+    expect(campaignStopReason([{ classification: "provider_failure", reason: "HTTP 402 credit exhausted" }]))
+      .toMatch(/credit failure/);
+  });
+
+  test("recognizes a complete agent-session collapse without treating mixed outcomes as one", () => {
+    expect(allAgentSessionsErrored([])).toBe(false);
+    expect(allAgentSessionsErrored(["error", "error"])).toBe(true);
+    expect(allAgentSessionsErrored(["error", "completed"])).toBe(false);
   });
 
   test("counts ordinary assertion failures as model evidence", () => {
@@ -38,6 +60,19 @@ describe("harness investigation", () => {
       classification: "valid_model_failure",
       eligibleForScoring: true,
     });
+  });
+
+  test("excludes mixed or unattributed model routes from a comparison", () => {
+    const requested = { executorModel: "expected", plannerModel: "planner", judgeModel: "judge" };
+    const usage = { executor: { calls: 2, promptTokens: 0, completionTokens: 0, cachedTokens: 0, costUsd: 0, llmTimeMs: 0 } };
+    expect(modelIdentityMismatch(requested, { executor: ["expected", "fallback"] }, usage, ["run-1"]))
+      .toContain("expected, fallback");
+    expect(modelIdentityMismatch(requested, { executor: [] }, usage, ["run-1"]))
+      .toContain("no resolved model");
+    expect(modelIdentityMismatch(requested, { executor: ["expected"] }, usage, []))
+      .toContain("no agent traces");
+    expect(modelIdentityMismatch(requested, { executor: ["expected"] }, usage, ["run-1"]))
+      .toBeNull();
   });
 
   test("requires every role to be pinned", () => {

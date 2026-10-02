@@ -113,6 +113,17 @@ export function GeneralSettingsTab({
               }
             </p>
           </section>
+          <section className="space-y-3">
+            <h3 className="text-xs font-semibold uppercase tracking-wider text-warm-400">
+              Embedded pages
+            </h3>
+            <ToggleRow
+              checked={formState.crossOriginFramesEnabled ?? __DEV__}
+              description="Let the agent read and use controls inside embedded pages from other sites."
+              label="Use embedded pages"
+              onChange={(checked) => onChange("crossOriginFramesEnabled", checked)}
+            />
+          </section>
         </>
       ) : null}
 

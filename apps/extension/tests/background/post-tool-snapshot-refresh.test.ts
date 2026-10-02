@@ -40,7 +40,7 @@ function createHost(): PostToolSnapshotRefreshHost {
     },
     offDomainWarned: false,
     perception: new PageStateCoordinator(),
-    recordCitation: vi.fn(),
+    telemetry: { recordCitation: vi.fn() },
     recordVerifiedNewUrl: vi.fn(),
     refreshPerceptionAndTriage: vi.fn(),
     startingOrigin: "https://example.test",
@@ -52,7 +52,7 @@ function createHost(): PostToolSnapshotRefreshHost {
       recordPostToolSnapshot: vi.fn(),
     },
     turnCount: 2,
-    updateMoneyTableAggregateFromSnapshot: vi.fn(),
+    moneyTable: { updateMoneyTableAggregateFromSnapshot: vi.fn() },
     urlHistory: ["https://example.test/start"],
   } as unknown as PostToolSnapshotRefreshHost;
 }
@@ -93,9 +93,9 @@ describe("refreshPostToolSnapshot", () => {
     expect(result.snap).toBe(snapshot);
     expect(result.prevElementCount).toBe(1);
     expect(host.context.setSnapshot).toHaveBeenCalledWith(snapshot);
-    expect(host.updateMoneyTableAggregateFromSnapshot).toHaveBeenCalled();
+    expect(host.moneyTable.updateMoneyTableAggregateFromSnapshot).toHaveBeenCalled();
     expect(host.toolCache.invalidateDom).toHaveBeenCalled();
-    expect(host.recordCitation).toHaveBeenCalledWith(
+    expect(host.telemetry.recordCitation).toHaveBeenCalledWith(
       "https://example.test/next",
       "Next page",
       "read_page",

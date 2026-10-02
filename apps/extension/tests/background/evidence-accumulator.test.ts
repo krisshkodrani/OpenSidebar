@@ -8,11 +8,11 @@ describe("EvidenceAccumulator", () => {
     const accumulator = new EvidenceAccumulator();
     const event = {
       type: "submit_succeeded" as const,
-      source: ToolName.CONFIGURE_SERVICENOW_FORM,
+      source: ToolName.CLICK_ELEMENT,
       confidence: "high" as const,
       observedAt: "2026-05-01T00:00:00.000Z",
       supportsTaskGoal: true,
-      detail: { recordNumber: "INC0010001" },
+      detail: { recordNumber: "CASE0010001" },
     };
 
     expect(accumulator.add(event)).toBe(true);
@@ -25,7 +25,7 @@ describe("EvidenceAccumulator", () => {
     const accumulator = new EvidenceAccumulator();
     accumulator.add({
       type: "uncertainty_detected",
-      source: ToolName.CONFIGURE_SERVICENOW_FORM,
+      source: ToolName.CLICK_ELEMENT,
       confidence: "high",
       observedAt: "2026-05-01T00:00:00.000Z",
       supportsTaskGoal: false,
@@ -35,4 +35,3 @@ describe("EvidenceAccumulator", () => {
     expect(accumulator.hasConflict()).toBe(true);
   });
 });
-

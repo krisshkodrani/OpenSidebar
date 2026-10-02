@@ -95,8 +95,10 @@ function makeHost(currentSnapshot: DomSnapshot | null) {
       recordPerception: () => {},
     },
     log: { warn: vi.fn() },
-    imagePromptBudgetAllows: () => true,
-    recordImagePromptBudgetExhausted: vi.fn(),
+    telemetry: {
+      imagePromptBudgetAllows: () => true,
+      recordImagePromptBudgetExhausted: vi.fn(),
+    },
     captureVisibleTabWithRetry: vi.fn(async () => {
       captureCalls.push(1);
       return `raw-${captureCalls.length}`;
@@ -172,7 +174,7 @@ describe("captureVLExecutorScreenshot (LP-17b CM-5)", () => {
   test("budget exhaustion clears the screenshot and never reuses", async () => {
     const state = createVLScreenshotState();
     const h = makeHost(snapshot());
-    h.host.imagePromptBudgetAllows = () => false;
+    h.host.telemetry.imagePromptBudgetAllows = () => false;
     await captureVLExecutorScreenshot(h.host, 7, state);
     expect(h.getExecutorScreenshot()).toBeNull();
     expect(h.captureCalls.length).toBe(0);

@@ -4,7 +4,7 @@ This document provides a comprehensive reference for all tools available in Open
 
 ## Overview
 
-OpenSidebar provides **52 tools** organized into categories: DOM interaction, navigation, browser management, page analysis, ServiceNow & list workflow, control flow, and memory & profile.
+OpenSidebar provides **50 tools** organized into categories: DOM interaction, navigation, browser management, page analysis, list and knowledge workflow, control flow, and memory & profile.
 
 ---
 
@@ -535,19 +535,7 @@ Toggle X-ray mode: forces all hidden elements visible.
 
 ---
 
-## ServiceNow & List Workflow Tools
-
-### open_servicenow_module
-
-Resolve and open a ServiceNow application module from ServiceNow metadata. For tasks like "Navigate to the X > Y module of the Z application", call this before manual menu/search clicks or `navigate(query)`.
-
-| Parameter   | Type    | Required | Description                                                                                    |
-| ----------- | ------- | -------- | ---------------------------------------------------------------------------------------------- |
-| application | string  | No       | Optional ServiceNow application name, e.g. "Configuration"                                     |
-| path        | array   | Yes      | Module path labels, with the target module as the last item, e.g. ["Database Instances", "HBase"] |
-| run         | boolean | No       | Whether to navigate after resolving the target URL. Defaults to true                           |
-
----
+## List and Knowledge Workflow Tools
 
 ### search_knowledge_base
 
@@ -564,47 +552,40 @@ Search the current site's knowledge base, read the best matching articles, and e
 
 ### apply_list_filter
 
-Apply a structured list/table filter from field/operator/value conditions, then verify the applied query state. For tasks like "show records where Field is Value" or "create a filter where A or B", call this as the first mutation instead of manually clicking complex filter-builder widgets.
+Set one visible list filter control to an exact value. Verify the resulting rows before completion. Use page controls for compound or non-exact filters.
 
 | Parameter  | Type    | Required | Description                                                                                     |
 | ---------- | ------- | -------- | ------------------------------------------------------------------------------------------------ |
-| conditions | array   | Yes      | Filter conditions to apply — objects with `field` (required), `operator` (e.g. "is", "is empty", "is not", "starts with"; defaults to "is"), and `value` (display value; empty string for empty-value filters) |
-| join       | string  | No       | How to join multiple conditions: "AND" or "OR". Use OR when the request says conditions are alternatives |
-| table      | string  | No       | Optional visible list title or system table name when several lists are present                  |
+| conditions | array | Yes | Exactly one visible field with an exact value; only `is` and `equals` operators are supported |
 | run        | boolean | No       | Whether to run/navigate the filter after building it. Defaults to true                           |
 
 ---
 
 ### apply_list_sort
 
-Apply structured list/table sorting from ordered field/direction clauses, then verify the resulting query state. For tasks like "sort by Number descending then Duration ascending", call this as the first mutation instead of manually clicking list headers or personalization menus.
+Click one visible sortable column toward the requested direction. Verify the resulting row order or `aria-sort` before completion.
 
 | Parameter | Type    | Required | Description                                                                                      |
 | --------- | ------- | -------- | ------------------------------------------------------------------------------------------------ |
-| sorts     | array   | Yes      | Ordered sort clauses, primary sort first — objects with `field` (required) and `direction` ("ascending", "descending", "asc", "desc"; defaults to ascending) |
-| table     | string  | No       | Optional visible list title or system table name when several lists are present                  |
+| sorts | array | Yes | Exactly one visible column with `ascending` or `descending` direction |
 | run       | boolean | No       | Whether to run/navigate the sort after building it. Defaults to true                             |
 
 ---
 
 ### apply_list_action
 
-Select visible rows in a ServiceNow list/table by record identifiers or unique row text, apply a visible selected-row action such as Delete or Mark as Duplicate, and optionally confirm the resulting dialog. Use after `inspect_table` has identified the exact target rows.
+Select uniquely identified visible table rows and click one visible action. Inspect any resulting dialog and verify the effect before completion.
 
 | Parameter     | Type    | Required | Description                                                                                       |
 | ------------- | ------- | -------- | -------------------------------------------------------------------------------------------------- |
 | records       | array   | Yes      | Visible record numbers or unique row text snippets identifying rows to select                       |
 | action        | string  | Yes      | Visible selected-row action label, e.g. "Delete", "Delete with preview", or "Mark as Duplicate"     |
-| relatedRecord | string  | No       | Optional related/reference record value required by the action modal, e.g. the other problem number for "Duplicate of" |
-| relatedField  | string  | No       | Optional visible/reference field label or system field name for relatedRecord, e.g. "Duplicate of" or "duplicate_of" |
-| table         | string  | No       | Optional visible list title or system table name when several lists are present                     |
-| confirm       | boolean | No       | Whether to click a confirmation button in a resulting dialog. Defaults to true                      |
 
 ---
 
 ### configure_catalog_item
 
-Configure a visible ServiceNow/service catalog item by label, verify requested values, and optionally click the order/request/add-to-cart button. Use this on catalog item detail pages instead of separate select_option, set_checkbox, type_text, radio-option clicks, and submit clicks.
+Configure a visible catalog item by label, verify requested values, and optionally click the order or add-to-cart button.
 
 | Parameter          | Type    | Required | Description                                                                                    |
 | ------------------ | ------- | -------- | ------------------------------------------------------------------------------------------------ |
@@ -616,20 +597,6 @@ Configure a visible ServiceNow/service catalog item by label, verify requested v
 | submit             | boolean | No       | Click an order/request/add-to-cart control after requested values are verified. Defaults to false |
 | submitButton       | string  | No       | Optional visible submit button label, e.g. "Order Now"                                            |
 | continueToCheckout | boolean | No       | After clicking an add-to-cart/order-to-cart control, continue by clicking a visible cart checkout/proceed-to-checkout control in the same call. Defaults to false |
-
----
-
-### configure_servicenow_form
-
-Fill and verify a ServiceNow record form by field label/name using g_form when available, including hidden/tabbed fields, choices, checkboxes, empty values, and references. Use this on ServiceNow record forms before manual type/click sequences.
-
-| Parameter    | Type    | Required | Description                                                                                       |
-| ------------ | ------- | -------- | -------------------------------------------------------------------------------------------------- |
-| fields       | array   | No       | Requested field/value pairs to set — objects with `field` (visible label or system field name, e.g. "Short description" or "caller_id") and `value` (empty string clears an optional field), both required |
-| submit       | boolean | No       | Click the ServiceNow Submit/Save/Update control after verifying requested values. Defaults to false |
-| submitButton | string  | No       | Optional submit control label, e.g. "Submit", "Save", or "Update"                                   |
-
-**Note:** Set `submit=true` only after requested values are verified.
 
 ---
 
@@ -723,7 +690,7 @@ Read exact fact-like values from the user's local Profile Digest for form fillin
 | **Navigation** (7)              | navigate, create_tab, close_tab, switch_tab, go_back, list_tabs, create_window                                                                                                                                            |
 | **Browser Management** (7)      | wait, done, get_cookies, set_cookie, delete_cookie, search_history, download_file                                                                                                                                          |
 | **Page Analysis** (7)           | inspect_hidden, inspect_chart, inspect_region, inspect_table, inspect_filter_state, inspect_catalog_item, xray_page                                                                                                        |
-| **ServiceNow & List Workflow** (7) | open_servicenow_module, search_knowledge_base, apply_list_filter, apply_list_sort, apply_list_action, configure_catalog_item, configure_servicenow_form                                                                 |
+| **List and Knowledge Workflow** (5) | search_knowledge_base, apply_list_filter, apply_list_sort, apply_list_action, configure_catalog_item                                                                 |
 | **Control Flow** (4)            | escalate, clarify, update_plan, compose_text                                                                                                                                                                               |
 | **Memory & Profile** (2)        | update_notes, get_profile_fields                                                                                                                                                                                           |
 
@@ -736,8 +703,8 @@ Tools are classified by risk level:
 | Level      | Description                     | Tools                                                                                        |
 | ---------- | ------------------------------- | -------------------------------------------------------------------------------------------- |
 | **LOW** (21)    | Read-only inspection or agent-internal control | read_page, scroll_page, hover_element, find_element, read_element, list_tabs, search_knowledge_base, inspect_hidden, inspect_chart, inspect_region, inspect_table, inspect_filter_state, inspect_catalog_item, xray_page, wait, done, escalate, clarify, update_notes, get_profile_fields, update_plan |
-| **MEDIUM** (18) | Mutates page or browser state   | click_element, type_text, select_option, drag_and_drop, hide_element, dismiss_overlays, press_key, switch_tab, upload_file, right_click, set_checkbox, click_coordinates, download_file, apply_list_filter, apply_list_sort, configure_catalog_item, configure_servicenow_form, compose_text |
-| **HIGH** (12)   | Navigation, tabs, windows, browser data, destructive list actions, or code execution | navigate, open_servicenow_module, create_tab, close_tab, go_back, create_window, execute_js, get_cookies, set_cookie, delete_cookie, search_history, apply_list_action |
+| **MEDIUM** (17) | Mutates page or browser state   | click_element, type_text, select_option, drag_and_drop, hide_element, dismiss_overlays, press_key, switch_tab, upload_file, right_click, set_checkbox, click_coordinates, download_file, apply_list_filter, apply_list_sort, configure_catalog_item, compose_text |
+| **HIGH** (11)   | Navigation, tabs, windows, browser data, destructive list actions, or code execution | navigate, create_tab, close_tab, go_back, create_window, execute_js, get_cookies, set_cookie, delete_cookie, search_history, apply_list_action |
 
 ---
 
@@ -747,8 +714,9 @@ OpenSidebar uses separate runtime tiers for execution, planning, and visual perc
 
 | Model Tier | Model ID                           | Provider    | Use Case                           |
 | ---------- | ---------------------------------- | ----------- | ---------------------------------- |
-| **Executor** | `accounts/fireworks/models/kimi-k2p7-code` | Fireworks | Executor, everyday tasks (default) |
-| **Planner**  | `accounts/fireworks/routers/kimi-k2p6-turbo` | Fireworks | Complex reasoning, escalated tasks |
+| **Executor** | `openai/gpt-6-luna` | OpenRouter | Everyday browser actions (default) |
+| **Planner**  | `openai/gpt-6-luna` | OpenRouter | Planning and escalated tasks (default) |
+| **Judge**    | `typesafe/jev-1.13` | OpenRouter | Typed outcome decisions (default) |
 | **Perception** | `unified_vl` by default; structured fallback is provider-specific | Configured provider | Vision-based page understanding |
 
 The `escalate` tool switches execution onto the planner tier when needed.

@@ -8,9 +8,15 @@ export type LocalMockProviderScenarioName =
   | "done-draft-premature-recovery"
   | "done-form-submit-gating"
   | "done-summary-incomplete-recovery"
+  | "first-turn-clarification"
+  | "ambiguous-owner-escalation"
   | "partial-handoff-max-turns"
   | "bridge-approval-forwarding"
-  | "watch-restock";
+  | "watch-restock"
+  | "iframe-checkout"
+  | "iframe-find"
+  | "iframe-keyboard"
+  | "requested-fact-after-navigation";
 
 export interface LocalMockProviderScenario {
   fixture: string;
@@ -26,6 +32,9 @@ interface ToolCallSpec {
 }
 
 interface LocalMockProviderState {
+  iframeTypedReturned: boolean;
+  iframeKeyPressedReturned: boolean;
+  iframeFindReturned: boolean;
   loginFieldsFilledReturned: boolean;
   loginSubmitId: number | null;
   loginSubmitReturned: boolean;
@@ -41,6 +50,7 @@ interface LocalMockProviderState {
   summaryReadReturned: boolean;
   summaryIncompleteDoneReturned: boolean;
   partialHandoffReadReturned: boolean;
+  requestedFactNavigationStep: number;
 }
 
 export const localMockProviderScenarios: Record<
@@ -100,12 +110,35 @@ export const localMockProviderScenarios: Record<
     maxTurns: 8,
     timeoutMs: 180_000,
   },
+  "first-turn-clarification": {
+    fixture: "article",
+    label: "terminal-first-turn-clarification",
+    prompt:
+      "Please assign this article review to the right owner. It could be Design Ops or Platform; ask me which one I mean before changing anything.",
+    maxTurns: 4,
+    timeoutMs: 60_000,
+  },
+  "ambiguous-owner-escalation": {
+    fixture: "article",
+    label: "terminal-ambiguous-owner-escalation",
+    prompt: "Assign this article review to the appropriate owner.",
+    maxTurns: 4,
+    timeoutMs: 60_000,
+  },
   "partial-handoff-max-turns": {
     fixture: "summarize",
     label: "completion-partial-handoff-max-turns",
     prompt:
       "Read this page, gather the main facts, and prepare a final summary with any remaining open questions.",
     maxTurns: 2,
+    timeoutMs: 180_000,
+  },
+  "requested-fact-after-navigation": {
+    fixture: "go-back-chain?step=1",
+    label: "requested-fact-after-navigation",
+    prompt:
+      "Visit Warehouse Beta, then Warehouse Gamma, and tell me Beta's inventory count.",
+    maxTurns: 10,
     timeoutMs: 180_000,
   },
   // pi-backend Phase 4: a job-application-worded prompt makes the final submit a
@@ -136,6 +169,27 @@ export const localMockProviderScenarios: Record<
     prompt: "Tell me when the Nimbus Running Shoe is back in stock.",
     maxTurns: 1,
     timeoutMs: 60_000,
+  },
+  "iframe-checkout": {
+    fixture: "summarize",
+    label: "iframe-checkout",
+    prompt: "Continue the checkout in the embedded page.",
+    maxTurns: 8,
+    timeoutMs: 120_000,
+  },
+  "iframe-find": {
+    fixture: "summarize",
+    label: "iframe-find",
+    prompt: "Find the Continue checkout control in the embedded page and click it.",
+    maxTurns: 8,
+    timeoutMs: 120_000,
+  },
+  "iframe-keyboard": {
+    fixture: "summarize",
+    label: "iframe-keyboard",
+    prompt: "Enter SAVE10 in the embedded checkout promo field and press Enter to apply it.",
+    maxTurns: 8,
+    timeoutMs: 120_000,
   },
 };
 
@@ -264,6 +318,24 @@ function plannerJson(
       reason: "Local mock monitor sees progress aligned with the fixture task.",
     });
   }
+  if (scenarioName === "iframe-checkout" || scenarioName === "iframe-find") {
+    return JSON.stringify({ isMultiStep: false, difficulty: "simple", steps: [{
+      objective: "Continue the checkout in the embedded page.",
+      successCriteria: "The embedded page shows Checkout continued.",
+      dependencies: [], assumptions: [],
+      verifyAfter: { trigger: "Checkout continued", action: "call_done" },
+      toolProfile: "form_fill",
+    }] });
+  }
+  if (scenarioName === "iframe-keyboard") {
+    return JSON.stringify({ isMultiStep: false, difficulty: "simple", steps: [{
+      objective: "Enter SAVE10 in the embedded checkout promo field and apply it.",
+      successCriteria: "The embedded checkout shows Code applied.",
+      dependencies: [], assumptions: [],
+      verifyAfter: { trigger: "Code applied", action: "call_done" },
+      toolProfile: "form_fill",
+    }] });
+  }
   if (
     scenarioName === "done-draft-read-element" ||
     scenarioName === "done-draft-premature-recovery"
@@ -352,6 +424,30 @@ function plannerJson(
       ],
     });
   }
+  if (scenarioName === "first-turn-clarification") {
+    return JSON.stringify({
+      isMultiStep: false,
+      difficulty: "simple",
+      steps: [{
+        objective: "Resolve the missing owner choice before assigning the article review.",
+        successCriteria: "The user has been asked to choose between Design Ops and Platform.",
+        dependencies: [], assumptions: [],
+        toolProfile: "full",
+      }],
+    });
+  }
+  if (scenarioName === "ambiguous-owner-escalation") {
+    return JSON.stringify({
+      isMultiStep: false,
+      difficulty: "simple",
+      steps: [{
+        objective: "Identify the appropriate owner for this article review before assigning it.",
+        successCriteria: "The owner is established or the missing choice is clarified.",
+        dependencies: [], assumptions: [],
+        toolProfile: "full",
+      }],
+    });
+  }
   if (scenarioName === "partial-handoff-max-turns") {
     return JSON.stringify({
       isMultiStep: false,
@@ -371,6 +467,19 @@ function plannerJson(
           toolProfile: "read_only",
         },
       ],
+    });
+  }
+  if (scenarioName === "requested-fact-after-navigation") {
+    return JSON.stringify({
+      isMultiStep: false,
+      difficulty: "simple",
+      steps: [{
+        objective: "Visit Warehouse Beta and Warehouse Gamma, then report Beta's inventory count.",
+        successCriteria: "The final answer gives Beta's inventory count after reaching Gamma.",
+        dependencies: [],
+        assumptions: [],
+        toolProfile: "read_only",
+      }],
     });
   }
   if (
@@ -533,6 +642,62 @@ function executorToolCalls(
   scenarioName: LocalMockProviderScenarioName,
   state: LocalMockProviderState,
 ): ToolCallSpec[] {
+  if (scenarioName === "requested-fact-after-navigation") {
+    if (state.requestedFactNavigationStep < 2) {
+      const target = state.requestedFactNavigationStep === 0
+        ? /Go to Warehouse Beta/i
+        : /Go to Warehouse Gamma/i;
+      const id = parseTaggedId(text, target);
+      if (id === null) return [{ name: "read_page", args: {} }];
+      state.requestedFactNavigationStep += 1;
+      return [{ name: "click_element", args: { id } }];
+    }
+    const historical = text.match(
+      /Past page observations[\s\S]*?Warehouse Beta[\s\S]*?Inventory count:\s*([\d,]+) units/i,
+    );
+    return [{
+      name: "done",
+      args: {
+        summary: historical
+          ? `Warehouse Beta has ${historical[1]} units in inventory. I then visited Warehouse Gamma.`
+          : "I reached Warehouse Gamma but could not verify Beta's inventory count.",
+      },
+    }];
+  }
+  if (scenarioName === "iframe-checkout") {
+    if (/Checkout continued/i.test(text)) return [{ name: "done", args: {
+      summary: "Continued checkout in the embedded page.",
+    } }];
+    const id = parseTaggedId(text, /Continue checkout/i);
+    return id === null ? [{ name: "read_page", args: {} }]
+      : [{ name: "click_element", args: { id } }];
+  }
+  if (scenarioName === "iframe-find") {
+    if (/Checkout continued/i.test(text)) return [{ name: "done", args: {
+      summary: "Found and continued checkout in the embedded page.",
+    } }];
+    if (!state.iframeFindReturned) {
+      state.iframeFindReturned = true;
+      return [{ name: "find_element", args: { text: "Continue checkout" } }];
+    }
+    const foundTag = /Found "Continue checkout" near \[(\d+)\]/i.exec(text)?.[1];
+    return foundTag ? [{ name: "click_element", args: { id: Number(foundTag) } }]
+      : [{ name: "read_page", args: {} }];
+  }
+  if (scenarioName === "iframe-keyboard") {
+    if (/Code applied/i.test(text)) return [{ name: "done", args: {
+      summary: "Applied SAVE10 in the embedded checkout.",
+    } }];
+    if (state.iframeKeyPressedReturned) return [{ name: "read_page", args: {} }];
+    if (state.iframeTypedReturned) {
+      state.iframeKeyPressedReturned = true;
+      return [{ name: "press_key", args: { key: "Enter" } }];
+    }
+    const id = parseTaggedId(text, /Promo code/i);
+    if (id === null) return [{ name: "read_page", args: {} }];
+    state.iframeTypedReturned = true;
+    return [{ name: "type_text", args: { id, text: "SAVE10" } }];
+  }
   if (scenarioName === "watch-restock") {
     if (/cartCount|Added to cart/i.test(text)) {
       return [{ name: "done", args: { summary: "Added one Nimbus Running Shoe to the cart." } }];
@@ -543,6 +708,24 @@ function executorToolCalls(
   if (scenarioName === "partial-handoff-max-turns") {
     state.partialHandoffReadReturned = true;
     return [{ name: "read_page", args: {} }];
+  }
+  if (scenarioName === "first-turn-clarification") {
+    return [{
+      name: "clarify",
+      args: {
+        question: "Should I assign the article review to Design Ops or Platform?",
+        suggestions: ["Design Ops", "Platform"],
+      },
+    }];
+  }
+  if (scenarioName === "ambiguous-owner-escalation") {
+    return [{
+      name: "escalate",
+      args: {
+        reason: "Multiple plausible owners could receive this review, and I cannot choose the target from the page evidence.",
+        reasonCode: "blocked",
+      },
+    }];
   }
 
   if (scenarioName === "done-summary-incomplete-recovery") {
@@ -878,8 +1061,12 @@ function buildMockResponse(
 export async function installLocalMockProviderInterceptor(
   session: CDPSession,
   scenarioName: LocalMockProviderScenarioName,
+  onRequest?: (body: string) => void,
 ): Promise<void> {
   const state: LocalMockProviderState = {
+    iframeTypedReturned: false,
+    iframeKeyPressedReturned: false,
+    iframeFindReturned: false,
     loginFieldsFilledReturned: false,
     loginSubmitId: null,
     loginSubmitReturned: false,
@@ -895,6 +1082,7 @@ export async function installLocalMockProviderInterceptor(
     summaryReadReturned: false,
     summaryIncompleteDoneReturned: false,
     partialHandoffReadReturned: false,
+    requestedFactNavigationStep: 0,
   };
 
   await session.send("Fetch.enable", {
@@ -908,6 +1096,7 @@ export async function installLocalMockProviderInterceptor(
   session.on("Fetch.requestPaused", async (event: any) => {
     try {
       const postData = event.request.postData ?? "{}";
+      onRequest?.(postData);
       const payload = JSON.parse(postData);
       const response = buildMockResponse(payload, scenarioName, state);
       await session.send("Fetch.fulfillRequest", {

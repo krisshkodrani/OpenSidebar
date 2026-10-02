@@ -20,7 +20,6 @@ export const TOOL_CAPABILITY_VALUES = [
   "drag_and_drop",
   "update_notes",
   "use_profile_data",
-  "service_now_forms",
   "list_and_table_workflows",
 ] as const;
 
@@ -68,7 +67,6 @@ const TOOL_CAPABILITIES: Partial<Record<ToolName, ToolCapability[]>> = {
   [ToolName.UPLOAD_FILE]: ["upload_files", "interact_with_page"],
 
   [ToolName.NAVIGATE]: ["navigate_pages"],
-  [ToolName.OPEN_SERVICENOW_MODULE]: ["navigate_pages", "service_now_forms"],
   [ToolName.GO_BACK]: ["navigate_pages"],
   [ToolName.CREATE_TAB]: ["manage_tabs", "navigate_pages"],
   [ToolName.SWITCH_TAB]: ["manage_tabs"],
@@ -80,16 +78,10 @@ const TOOL_CAPABILITIES: Partial<Record<ToolName, ToolCapability[]>> = {
   [ToolName.UPDATE_NOTES]: ["update_notes"],
   [ToolName.GET_PROFILE_FIELDS]: ["use_profile_data"],
 
-  [ToolName.CONFIGURE_SERVICENOW_FORM]: [
-    "service_now_forms",
+  [ToolName.CONFIGURE_CATALOG_ITEM]: [
     "fill_text_fields",
     "select_options",
     "set_binary_controls",
-    "submit_forms",
-  ],
-  [ToolName.CONFIGURE_CATALOG_ITEM]: [
-    "service_now_forms",
-    "fill_text_fields",
     "submit_forms",
   ],
   [ToolName.APPLY_LIST_FILTER]: ["list_and_table_workflows"],

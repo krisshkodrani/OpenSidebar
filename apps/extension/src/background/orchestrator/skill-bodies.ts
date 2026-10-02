@@ -9,6 +9,7 @@ import type {
   LoadedSkillContract,
   SkillDescriptor,
 } from "./skill-types";
+import { CONSEQUENTIAL_ACTION_CONSENT_BODY } from "./skill-body-consent";
 
 export const SKILL_BODIES: Record<
   string,
@@ -74,7 +75,7 @@ export const SKILL_BODIES: Record<
     procedureMarkdown: [
       "1. Clarify the exact fact requested by the user before searching.",
       "2. For knowledge-base answer tasks, call search_knowledge_base first with the exact question and distinctive search terms.",
-      "3. For ServiceNow knowledge tasks, prefer the Knowledge Portal search/results surface over filtered classic admin lists unless the user explicitly asks to edit records.",
+      "3. Search the site's knowledge results and open relevant articles before answering.",
       "4. Read the search result snippets or titles and choose the result whose content is most likely to contain the requested fact, not simply the first result.",
       "5. For numeric-answer questions, prefer candidates whose snippets contain the requested entity plus a number or a strong count cue; if the opened result has no answer, return to grounded results and try the next candidate.",
       "6. Read the selected result content or snippet that contains the requested fact.",
@@ -218,7 +219,7 @@ export const SKILL_BODIES: Record<
   },
   "catalog-order-workflow": {
     procedureMarkdown: [
-      "1. For ServiceNow module paths such as Reports > View/Run or Self-Service > Service Catalog, call open_servicenow_module before manual All-menu navigation.",
+      "1. Navigate through the site's visible menus or search controls to find the requested catalog item.",
       "2. If the target item name and requested quantity/options are already known and the item detail page is open, call configure_catalog_item immediately; pass expectedItem and submit=true when the order/request control is expected on the page.",
       "3. Use inspect_catalog_item only when the item identity, quantity controls, options, price/summary, or order controls are still unknown.",
       "4. On a catalog item detail page, prefer configure_catalog_item to set requested quantity, dropdown/radio-like options, checkbox states, and text requirements in one verified action. When the requested item name is known, pass it as expectedItem so lookalike catalog items are refused before submit.",
@@ -252,60 +253,19 @@ export const SKILL_BODIES: Record<
         "Inspect item, configure requested options, verify configuration, submit, verify confirmation.",
       ],
       toolDiscipline: [
-        "For named ServiceNow module navigation inside a catalog-order task, prefer open_servicenow_module before clicking All, typing into navigator search, or using global search.",
+        "Use visible navigation and search controls to reach the requested catalog item.",
         "When ordering an item chosen from prior evidence such as a chart, carry forward the exact item name and pass it to configure_catalog_item as expectedItem.",
         "When the request says to order extra items so an existing quantity reaches a target, configure the extra difference quantity, not the final target quantity.",
         "Do not call read_page or inspect_catalog_item on a catalog detail page when the target item and quantity/options are already known; call configure_catalog_item instead.",
         "Use inspect_catalog_item after a page transition only when visible quantity/options/order controls are unknown or configure_catalog_item reports missing controls.",
         "Prefer configure_catalog_item over separate select_option, radio-option clicks, set_checkbox, type_text, and submit clicks when the requested configuration is explicit, including dropdown/select/radio-like values.",
         "Once the cart contains the requested item and Proceed to Checkout is visible, avoid Add to Cart and repeated configure_catalog_item calls for that same item.",
-        "Once an Order Status page with a REQ number is visible, avoid clicking request/item links and call done from that confirmation page.",
+        "Once an order confirmation is visible, verify the requested item and quantity before calling done.",
       ],
       completionChecks: [
         "A request/order/cart confirmation exists after submission.",
         "The confirmed item line count and quantity match the user's request.",
         "The current page remains the request/order confirmation page, not a requested-item detail page.",
-      ],
-    },
-  },
-  "servicenow-module-navigation": {
-    procedureMarkdown: [
-      "1. Parse the requested ServiceNow application name and module path from the task.",
-      "2. Call open_servicenow_module with the application when named and the path labels in order, ending with the target module.",
-      "3. Treat ServiceNow home, global search, or Configuration Hub as intermediate states, not completion.",
-      "4. If open_servicenow_module cannot resolve confidently, use its candidate diagnostics to choose the closest module or fall back to visible navigator controls.",
-      "5. Call done only after the resolved module URL, title, list heading, or tool output proves the target module is open.",
-    ].join("\n"),
-    requiredEvidence: [
-      "Requested ServiceNow application or module path",
-      "Resolved module target URL or page evidence",
-      "Current ServiceNow page matches the requested module",
-    ],
-    commonFailures: [
-      {
-        signal: "navigate(query=...) is blocked or opens external search",
-        recovery:
-          "call open_servicenow_module from the current ServiceNow origin instead",
-      },
-      {
-        signal: "spending turns in ServiceNow home/global search",
-        recovery:
-          "extract the application and path labels and resolve the module directly",
-      },
-    ],
-    executionContract: {
-      sequencing: [
-        "Resolve the module with open_servicenow_module, then verify the resulting ServiceNow page.",
-      ],
-      toolDiscipline: [
-        "Prefer open_servicenow_module before manual navigator clicks or search text entry.",
-        "Do not use navigate with query for ServiceNow module lookup.",
-      ],
-      completionChecks: [
-        "The current page or tool output identifies the requested ServiceNow module target.",
-      ],
-      failureRecovery: [
-        "Use candidate diagnostics from open_servicenow_module before falling back to UI navigation.",
       ],
     },
   },
@@ -438,7 +398,7 @@ export const SKILL_BODIES: Record<
       "3. When the requested product's Add-to-Cart control is visible, click it immediately; do not keep inspecting unrelated cart controls.",
       "4. Re-read the cart once after mutation and confirm the requested item, quantity, price, and any visible coupon state.",
       "5. Apply coupon only after cart contents are correct unless the site clearly requires the reverse order.",
-      "6. Proceed to checkout only after cart contents and pricing state match the request.",
+      "6. Proceed to checkout only after cart contents and pricing state match the request. Read the checkout form, fill every required field using user-provided or saved details, and verify the order confirmation after submission.",
     ].join("\n"),
     requiredEvidence: [
       "Cart contents after modification",
@@ -864,108 +824,7 @@ export const SKILL_BODIES: Record<
       ],
     },
   },
-  "servicenow-record-form": {
-    procedureMarkdown: [
-      "1. Parse the requested ServiceNow field/value pairs exactly, preserving quoted literals and empty values.",
-      "2. Use configure_servicenow_form with the full requested field set before manual input tools.",
-      "3. Treat the helper's configured/readback rows as the source of truth for form-fill completion.",
-      "4. Do not submit while any requested field reports a mismatch or missing field.",
-      "5. Submit by calling configure_servicenow_form with submit=true after all requested fields are verified; then verify a record detail, reset-to-next-record signal, or confirmation.",
-      "6. If the helper reports missing fields, re-ground the form/module and retry once with corrected labels before falling back manually.",
-      "7. If a requested field is still absent after helper readback plus bounded page/hidden-field search, do not submit a partial record; answer that the task is infeasible and name the missing field.",
-    ].join("\n"),
-    requiredEvidence: [
-      "Requested field/value mapping",
-      "ServiceNow form helper readback for every requested field",
-      "Submit click evidence",
-      "Created/updated record, confirmation, or reset-to-next-record evidence",
-    ],
-    commonFailures: [
-      {
-        signal: "broad continuation skill selected for a field/value form",
-        recovery:
-          "reroute to servicenow-record-form and configure fields through the ServiceNow form helper",
-      },
-      {
-        signal: "form reset advances to the next blank record",
-        recovery:
-          "use the submitted record number from the pre-submit form state as validation evidence",
-      },
-      {
-        signal: "field lives in a hidden tab or section",
-        recovery:
-          "set and verify it through g_form/readback instead of searching visible controls",
-      },
-    ],
-    executionContract: {
-      sequencing: [
-        "Map fields, configure and read back all requested values, submit, then verify the submitted record state.",
-      ],
-      toolDiscipline: [
-        "Prefer configure_servicenow_form over separate type_text, select_option, and tab clicks for ServiceNow record forms.",
-        "For ServiceNow submit steps, use configure_servicenow_form with submit=true instead of raw button clicks.",
-        "Use manual controls only for fields the helper reports as missing or mismatched.",
-        "Do not use press_key as a submit shortcut.",
-      ],
-      completionChecks: [
-        "Every requested field has helper readback evidence matching the requested value.",
-        "The submit action happened after successful readback.",
-        "The current page or trace evidence identifies the created/updated ServiceNow record or confirmation.",
-      ],
-      failureRecovery: [
-        "If reference lookup fails, re-read the helper mismatch and retry with the visible display value from the prompt.",
-        "If validation errors appear after submit, repair the named fields and submit once more.",
-        "If the requested field does not exist on the record form after bounded search, stop and report the missing field as the reason instead of cycling.",
-      ],
-    },
-  },
-  "consequential-action-consent": {
-    procedureMarkdown: [
-      "1. Identify whether the task includes a consequential final action: submit, send, publish, buy, place order, delete, confirm, or approve.",
-      "2. Determine the user's consent mode from the request: explicit go-ahead, prepare-only, forbidden, or unclear.",
-      "3. If consent is unclear, ask the user whether final actions should be executed automatically or held for approval.",
-      "4. Continue safe preparation: read context, fill drafts or forms, configure options, and collect verification evidence.",
-      "5. Before any consequential final action, summarize what will happen and wait for approval when the user requested approval or the policy is unclear.",
-      "6. Do not use test fixture wording, hidden selectors, or benchmark-specific assumptions to decide consent.",
-      "7. After an approved final action, verify real page feedback such as confirmation, sent state, published item, order receipt, or deleted/changed state.",
-    ].join("\n"),
-    requiredEvidence: [
-      "The consequential action type and target",
-      "The user's consent mode or explicit approval request",
-      "Prepared state before final action",
-      "Post-action confirmation when execution is approved",
-    ],
-    commonFailures: [
-      {
-        signal: "final action is available but user consent is unclear",
-        recovery:
-          "ask a clarification or approval question instead of clicking the final action",
-      },
-      {
-        signal: "task was prepare-only but the agent tries to submit",
-        recovery:
-          "stop after preparation, summarize ready state, and request approval",
-      },
-    ],
-    executionContract: {
-      sequencing: [
-        "Classify consent mode, prepare safely, verify ready state, then request approval before final action when required.",
-      ],
-      toolDiscipline: [
-        "Use clarify when the user's final-action policy is unclear.",
-        "Avoid press_key shortcuts for final submit/send/publish/buy/delete actions.",
-        "Prefer tagged click targets over coordinates for approval-gated final actions.",
-      ],
-      completionChecks: [
-        "The final action was either approved and verified, or intentionally stopped pending approval.",
-        "The final answer states whether the consequential action was executed or is waiting for approval.",
-      ],
-      failureRecovery: [
-        "If approval is denied or absent, report the prepared state without executing the final action.",
-        "If the final target is ambiguous, re-ground and ask which target should receive the action.",
-      ],
-    },
-  },
+  "consequential-action-consent": CONSEQUENTIAL_ACTION_CONSENT_BODY,
   "job-application-assistant": {
     procedureMarkdown: [
       "1. Identify the job, role, company, and application page before filling fields.",
@@ -1227,7 +1086,7 @@ export const SKILL_BODIES: Record<
       "2. Re-read the page. For any overlay reported as CSS-hidden, reappeared, or still present, click its close/dismiss/accept/X control directly — one overlay at a time.",
       "3. After each click, re-read to confirm the overlay is gone and to refresh element IDs (tags shift when the DOM changes).",
       "4. If an overlay resists, try press_key Escape, then re-read and look for another dismiss target.",
-      "5. Proceed to the underlying task or call done only after a re-read shows no blocking overlays remain.",
+      "5. Once a re-read shows no blocking overlays remain, continue the user's underlying task. Call done only after the whole request is complete.",
     ].join("\n"),
     requiredEvidence: [
       "dismiss_overlays result showing what was dismissed and how",
@@ -1250,11 +1109,11 @@ export const SKILL_BODIES: Record<
         "dismiss_overlays first, then targeted close-button clicks for survivors, re-reading between actions.",
       ],
       toolDiscipline: [
-        "Use done immediately after read_page or inspection confirms no blocking overlays remain.",
+        "If the request includes work behind the overlays, complete that work before calling done.",
       ],
       completionChecks: [
         "Each dismissal is confirmed by a re-read.",
-        "A no-match read_page or inspect_hidden check for overlay terms is sufficient final evidence.",
+        "A re-read confirms overlays are gone; verify any requested work behind them separately.",
       ],
       failureRecovery: [
         "If an overlay remains, find a fresh dismiss target or use Escape, then re-read again.",

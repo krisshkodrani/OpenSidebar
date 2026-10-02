@@ -9,12 +9,14 @@
  * the Phase-5 apply loop consumes, so an approved draft is immediately
  * fillable.
  */
-import { existsSync, readFileSync, writeFileSync } from "node:fs";
-import { join } from "node:path";
+import { existsSync, readFileSync, statSync, writeFileSync } from "node:fs";
+import { basename, dirname, join, relative, resolve } from "node:path";
 
-import type { AnswerLibrary } from "./answers";
+import { isEscapingPath, type AnswerLibrary } from "./answers";
 import type { FillManifest } from "./manifest";
 import type { ApplicationPackage } from "./package";
+import { resolveSeedDir } from "./paths";
+import { resolveCvServeDir } from "./cv-server";
 
 export interface FormQuestion {
   label: string;
@@ -267,7 +269,17 @@ export function deriveManifest(
   pkg: ApplicationPackage,
   fields: KitDraftField[],
   existing?: Partial<FillManifest>,
+  paths?: { applicationDir: string; seedDir: string },
 ): FillManifest {
+  const cvField = fields.find((field) => field.question.kind === "file" &&
+    field.source.kind !== "todo" && field.answer && CV_FILE_PATTERN.test(field.question.label));
+  const cvPath = cvField && paths && !isEscapingPath(cvField.answer)
+    ? resolve(paths.seedDir, ...cvField.answer.split(/[\\/]/)) : undefined;
+  const derivedCvServe = cvPath && existsSync(cvPath) && statSync(cvPath).isFile()
+    ? { dir: relative(paths!.applicationDir, dirname(cvPath)) || ".", port: 0, file: basename(cvPath) }
+    : undefined;
+  const cvServe = cvField && (derivedCvServe ??
+    (existing?.cvServe?.file === basename(cvField.answer) ? existing.cvServe : undefined));
   const promptLines: string[] = [
     `Fill out this job application form. Use EXACTLY the values below — byte`,
     `for byte, no paraphrasing. Any field not listed here: leave it blank.`,
@@ -289,7 +301,7 @@ export function deriveManifest(
       // fabricated `dummy.pdf` to a real form field, which is exactly the
       // honesty property this pipeline claims. `markUnservableCv` turns that
       // case into a blocked gate instead.
-      if (existing?.cvServe) {
+      if (cvServe) {
         promptLines.push(
           `Attach the CV via upload_file on the file input for "${field.question.label}".`,
         );
@@ -313,7 +325,7 @@ export function deriveManifest(
     // would find no form at all.
     formUrl: existing?.formUrl ?? pkg.formUrl ?? pkg.sourceUrl ?? "",
     maxTurns: existing?.maxTurns ?? 40,
-    ...(existing?.cvServe ? { cvServe: existing.cvServe } : {}),
+    ...(cvServe ? { cvServe } : {}),
     promptLines,
     expectedFieldValues,
     ...(expectedLongTexts.length ? { expectedLongTexts } : {}),
@@ -329,7 +341,7 @@ export function buildKitDraft(
   pkg: ApplicationPackage,
   questions: FormQuestion[],
   library: AnswerLibrary,
-  opts: { now?: Date } = {},
+  opts: { now?: Date; applicationDir?: string; seedDir?: string } = {},
 ): KitDraft {
   if (!Array.isArray(questions) || questions.length === 0) {
     throw new Error("kit draft needs at least one form question");
@@ -343,7 +355,8 @@ export function buildKitDraft(
     question,
     ...resolveField(question, library),
   }));
-  const manifest = deriveManifest(pkg, perField);
+  const manifest = deriveManifest(pkg, perField, undefined,
+    opts.applicationDir ? { applicationDir: opts.applicationDir, seedDir: opts.seedDir ?? resolveSeedDir() } : undefined);
   const unresolved = perField
     .filter((f) => f.source.kind === "todo")
     .map((f) => f.question.label);
@@ -363,8 +376,8 @@ export function buildKitDraft(
  * The mapping rule ("this label means the CV") and the delivery question ("can
  * we hand the agent that file?") are separate concerns, so the draft keeps
  * recording the intent with its provenance and the APPROVAL is what refuses.
- * `cvVariants[].file` names a path relative to the seed dir, but nothing yet
- * turns that into the `cvServe` block a fill needs — see issue #110.
+ * `cvVariants[].file` names a path relative to the seed dir. A missing file
+ * cannot produce a servable manifest and blocks approval.
  */
 export function unservableCvField(draft: KitDraft): string | null {
   if (draft.manifest.cvServe) return null;
@@ -432,7 +445,8 @@ export function saveKitDraft(
   const updated: KitDraft = {
     schemaVersion: 1,
     generatedAt: (opts.now ?? new Date()).toISOString(),
-    manifest: deriveManifest(pkg, perField, draft.manifest),
+    manifest: deriveManifest(pkg, perField, draft.manifest,
+      { applicationDir: dir, seedDir: resolveSeedDir() }),
     perField,
     unresolved,
     unreviewed: unreviewedOf(perField),
@@ -482,6 +496,13 @@ export function approveKitDraft(
         `add one to run-config.json (dir relative to the application, plus file) ` +
         `or the agent will be asked to attach a file it does not have`,
     );
+  }
+  if (draft.manifest.cvServe && !opts.force) {
+    const { dir: cvDir, file } = draft.manifest.cvServe;
+    const cvPath = join(resolveCvServeDir(dir, cvDir, file), file);
+    if (basename(file) !== file || !existsSync(cvPath) || !statSync(cvPath).isFile()) {
+      throw new Error(`CV file is missing or invalid: ${cvPath}`);
+    }
   }
   writeFileSync(
     join(dir, MANIFEST_FILE),

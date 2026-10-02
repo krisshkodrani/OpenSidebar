@@ -5,8 +5,8 @@
  * reads. The pipeline runner assembles ONE of these per `done()` from the loop
  * (resolving the loop-coupled derivations — task context, missing evidence,
  * active objective — up front) and threads it through each pure guard. Guards
- * never touch `AgentLoop`; anything impure (the ServiceNow evidence inference,
- * the planner model call) runs as an injected pre-step and lands its result
+ * never touch `AgentLoop`; anything impure (such as a planner model call)
+ * runs as an injected pre-step and lands its result
  * here.
  *
  * Fields are added as guards are ported; keep it flat and serializable so a
@@ -53,8 +53,7 @@ export interface CompletionGuardContext {
   hasTaskId: boolean;
 
   /**
-   * Required typed-evidence kinds still missing, precomputed AFTER the injected
-   * ServiceNow inference pre-step has had a chance to add evidence.
+   * Required typed-evidence kinds still missing, precomputed before guards run.
    */
   missingRequiredEvidence: string[];
 

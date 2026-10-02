@@ -440,6 +440,28 @@ export async function executeClick(args: ClickElementArgs): Promise<{
     };
   }
 
+  // A dialog surface can be tagged by a pointer cursor or a dynamic page read,
+  // but activating it does not activate its confirmation buttons.
+  const dialogSurface = el.matches(
+    "[role='dialog'], [role='alertdialog'], dialog, [id*='dialog' i], [class*='dialog' i], [id*='modal' i], [class*='modal' i]",
+  );
+  if (dialogSurface && !el.matches("button, a, input, [role='button'], [onclick]")) {
+    const buttons = Array.from(el.querySelectorAll("button, [role='button']"))
+      .filter((button) => isElementVisible(button))
+      .slice(0, 5);
+    if (buttons.length > 0) {
+      const choices = buttons.map((button) => {
+        const id = addDynamicTag(button);
+        return `[${id}] ${getVisibleText(button).slice(0, 60) || button.getAttribute("aria-label") || "button"}`;
+      });
+      return {
+        success: false,
+        result: `Element [${tagId}] is a dialog container. Click the intended button directly: ${choices.join(", ")}.`,
+        navigated: false,
+      };
+    }
+  }
+
   // Scroll into view if needed
   el.scrollIntoView({ behavior: "instant", block: "center" });
   const ownerDoc = el.ownerDocument ?? document;
@@ -465,14 +487,6 @@ export async function executeClick(args: ClickElementArgs): Promise<{
     (node === node.ownerDocument.body ||
       node === node.ownerDocument.documentElement);
 
-  const isServiceNowShellPassThrough = (node: Element | null): boolean => {
-    if (!node) return false;
-    const tagName = node.tagName.toLowerCase();
-    if (!tagName.startsWith("macroponent-")) return false;
-    const host = window.location.hostname.toLowerCase();
-    return host.endsWith(".service-now.com") || host.endsWith(".servicenow.com");
-  };
-
   // Do not hide page overlays here: a real user click would be intercepted,
   // and clicking through modal/backdrop state can toggle the wrong control.
   const MAX_OVERLAY_RETRIES = 0;
@@ -487,8 +501,7 @@ export async function executeClick(args: ClickElementArgs): Promise<{
       el.contains(topEl) ||
       topEl.contains(el) ||
       isOwnOverlay(topEl) ||
-      isDocumentRoot(topEl) ||
-      isServiceNowShellPassThrough(topEl)
+      isDocumentRoot(topEl)
     ) {
       break; // Clear to click (or our own overlay / document root — not a real blocker)
     }
@@ -535,8 +548,7 @@ export async function executeClick(args: ClickElementArgs): Promise<{
       el.contains(topEl) ||
       topEl.contains(el) ||
       isOwnOverlay(topEl) ||
-      isDocumentRoot(topEl) ||
-      isServiceNowShellPassThrough(topEl)
+      isDocumentRoot(topEl)
     ) {
       cleanClick = true;
       break;

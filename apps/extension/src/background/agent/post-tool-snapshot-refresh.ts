@@ -5,8 +5,11 @@ import {
   ToolName,
 } from "../../types";
 import { waitForDomReady } from "../tab-ready";
+import { mergeFrameSnapshotResponse } from "../perception/frame-snapshot-runtime";
 import type { RecentAction } from "./loop-helpers";
 import type { PageStateCoordinator } from "./page-state";
+import type { MoneyTableRuntime } from "./loop-money-table";
+import type { AgentTelemetryController } from "./agent-telemetry-controller";
 
 export interface PostToolSnapshotRefreshHost {
   context: {
@@ -19,12 +22,13 @@ export interface PostToolSnapshotRefreshHost {
     warn(area: string, message: string, data?: Record<string, unknown>): void;
   };
   offDomainWarned: boolean;
-  perception: PageStateCoordinator;
+  perception: Pick<PageStateCoordinator,
+    "finalizePendingAsUncertain" | "getCurrentObservation" | "finalizePendingActions">;
   acceptPageSnapshot(
     snapshot: DomSnapshot,
     documentState?: PageDocumentState,
   ): void;
-  recordCitation(url: string, title: string, toolName: ToolName): void;
+  readonly telemetry: Pick<AgentTelemetryController, "recordCitation">;
   recordVerifiedNewUrl(): void;
   refreshPerceptionAndTriage(tabId: number): Promise<void>;
   startingOrigin: string | null;
@@ -42,7 +46,7 @@ export interface PostToolSnapshotRefreshHost {
     }): void;
   } | null;
   turnCount: number;
-  updateMoneyTableAggregateFromSnapshot(): void;
+  readonly moneyTable: Pick<MoneyTableRuntime, "updateMoneyTableAggregateFromSnapshot">;
   urlHistory: string[];
 }
 
@@ -131,6 +135,9 @@ export async function refreshPostToolSnapshot(
     return { snap: null, prevElementCount };
   }
 
+  snapResponse = await mergeFrameSnapshotResponse(params.tabId, snapResponse);
+  snap = snapResponse.payload.snapshot as DomSnapshot;
+
   host.log.info("agent", "Snapshot refreshed", {
     turn: host.turnCount,
     title: snap.title?.slice(0, 60),
@@ -140,7 +147,7 @@ export async function refreshPostToolSnapshot(
   });
   prevElementCount = snap.elements.length;
   host.acceptPageSnapshot(snap, snapResponse.payload.documentState);
-  host.updateMoneyTableAggregateFromSnapshot();
+  host.moneyTable.updateMoneyTableAggregateFromSnapshot();
 
   host.traceRecorder?.recordPostToolSnapshot({
     url: snap.url,
@@ -162,7 +169,7 @@ export async function refreshPostToolSnapshot(
   }
 
   if (currentUrl) {
-    host.recordCitation(currentUrl, snap.title || "", ToolName.READ_PAGE);
+    host.telemetry.recordCitation(currentUrl, snap.title || "", ToolName.READ_PAGE);
   }
 
   if (host.startingOrigin && snap.url) {

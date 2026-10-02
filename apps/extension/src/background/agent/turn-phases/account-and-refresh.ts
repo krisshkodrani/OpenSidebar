@@ -20,7 +20,7 @@ export interface AccountAndRefreshHost {
   readonly turnCount: number;
   readonly context: ContextManager;
   readonly traceRecorder: TraceRecorder | null;
-  saveTurnCheckpoint(): Promise<void>;
+  readonly turnCheckpoint: Pick<import("../turn-checkpoint").TurnCheckpointRuntime, "save">;
 }
 
 export type AccountAndRefreshResult =
@@ -45,13 +45,13 @@ export async function runAccountAndRefreshPhase(
 
   if (turn.doneSignaled) {
     // Durable checkpoint: persist loop state for SW restart recovery.
-    await host.saveTurnCheckpoint();
+    await host.turnCheckpoint.save();
     await host.traceRecorder?.endTurn();
     return { kind: "end_turn" };
   }
 
   // Durable checkpoint: persist loop state for SW restart recovery.
-  host.saveTurnCheckpoint().catch(() => {});
+  host.turnCheckpoint.save().catch(() => {});
   // Trace: flush turn at end of each iteration.
   await host.traceRecorder?.endTurn();
   return { kind: "continue" };

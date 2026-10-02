@@ -1,6 +1,6 @@
 # RFC LP-16 — Landmine Decomposition: Ratchet Everything, Split the Giants, One Completion Authority
 
-Lifecycle status: Draft (Recommended Decision only — not owner-stamped)
+Lifecycle status: Decision stamped (Approved; implementation in progress)
 Date: 2026-07-08
 Scope: `scripts/loop-ratchet.mjs` (generalized to a multi-file decomposition
 ratchet), `background/agent/` (completion-kernel.ts split, loop.ts turn-machine
@@ -240,3 +240,39 @@ Recommended evidence before merge (each PR):
 
 Recommended next action: **Implement** (after owner stamp), starting with
 Phase 0.
+
+## Decision
+
+Owner approval recorded 2026-09-24.
+
+Status: Approved
+
+Chosen path:
+
+- Complete the six-phase, behavior-preserving decomposition as written, using the shrink-only ratchet and one focused extraction per PR.
+- Keep the existing completion-kernel façade as the stable import surface.
+- Finish Phase 3 in the staged driver-flip sequence in the companion remainder plan, validating each stage before proceeding.
+
+Required edits before implementation:
+
+- None.
+
+Non-blocking follow-ups:
+
+- None.
+
+Do not do:
+
+- Do not include behavior changes, symbol renames, or API changes in extraction PRs.
+- Do not raise ratchet budgets or exempt a landmine file.
+- Do not detach the ServiceNow injected-script residue under LP-16; that remains LP-15 work.
+
+Evidence required before merge:
+
+- Run the full verify gate and record before/after ratchet numbers for each extraction.
+- For completion-kernel moves, pass the zero-divergence golden gate and preserve the test count.
+- For the Phase 3 driver flip, pass the unit suite and headed Chrome easy, medium, and hard E2E stages on the branch.
+
+Next action:
+
+- Implement.

@@ -33,6 +33,54 @@ function makeNode(handoffArtifacts: TaskNode["handoffArtifacts"]): TaskNode {
 }
 
 describe("Orchestrator handoff briefing", () => {
+  test("a verifier reroute retains exact prior facts without accepting the prior report", () => {
+    const report = `${"Reviewed the requested entries. ".repeat(20)}\nRequested references: WO-209, WO-318.\nDelivery date: October 12.`;
+    const source = makeNode([
+      {
+        role: "executor",
+        phase: "executor_finished",
+        note: report,
+        timestamp: 1,
+        evidence: [{ claim: "Earlier state", confidence: 0.8 }],
+      },
+    ]);
+    const rerouted = createRerouteNode(
+      source,
+      "Check whether the export finished",
+      "Confirmation was not established",
+    );
+    const instruction = buildExecutorInstruction(rerouted);
+    expect(instruction).toContain("WO-209, WO-318");
+    expect(instruction).toContain("Delivery date: October 12");
+    expect(instruction).toContain("reported observations, not verification");
+    expect(rerouted.status).toBe("pending");
+    expect(rerouted.result).toBeUndefined();
+    expect(rerouted.userFacingResult).toBeUndefined();
+    expect(
+      rerouted.handoffArtifacts.some(
+        (artifact) => artifact.phase === "verifier_accept",
+      ),
+    ).toBe(false);
+    expect(rerouted.handoffArtifacts[0].evidence).toBeUndefined();
+    rerouted.handoffArtifacts.push({
+      role: "executor",
+      phase: "executor_finished",
+      note: "The final status is visible but the receipt is unavailable.",
+      timestamp: 2,
+    });
+    const again = createRerouteNode(
+      rerouted,
+      "Check the export receipt",
+      "Receipt not visible",
+    );
+    expect(
+      again.handoffArtifacts.filter(
+        (artifact) => artifact.phase === "executor_finished",
+      ),
+    ).toHaveLength(2);
+    expect(buildExecutorInstruction(again)).toContain("WO-209, WO-318");
+  });
+
   test("formats recent artifacts into compact brief", () => {
     const brief = formatHandoffBrief([
       {
@@ -73,9 +121,12 @@ describe("Orchestrator handoff briefing", () => {
     expect(instruction).toContain("Objective: Fill checkout form");
     expect(instruction).toContain("Success criteria: Checkout form submitted");
     expect(instruction).toContain("Handoff context:");
-    expect(instruction).toContain("Planner assumptions (validate against current page before acting):");
+    expect(instruction).toContain(
+      "Planner assumptions (validate against current page before acting):",
+    );
     expect(instruction).toContain("Execution policy:");
-    expect(instruction).toContain("Executor result (executor): Address completed");
+    expect(instruction).toContain("reported observations, not verification");
+    expect(instruction).toContain("Address completed, payment step pending.");
     expect(instruction).toContain(
       "complete every requirement stated in the Objective and Success criteria",
     );
@@ -103,9 +154,7 @@ describe("Orchestrator handoff briefing", () => {
       "even when this node's local objective only asks you to navigate",
     );
     expect(instruction).toContain("Root-answer evidence:");
-    expect(instruction).toContain(
-      "do not disclose unrelated records",
-    );
+    expect(instruction).toContain("do not disclose unrelated records");
     expect(instruction).toContain("verified prior-step evidence");
   });
 
@@ -200,7 +249,9 @@ describe("Orchestrator handoff briefing", () => {
     expect(instruction).toContain("Selected workflow skill:");
     expect(instruction).toContain("structured-form-fill");
     expect(instruction).toContain("Skill procedure:");
-    expect(instruction).toContain("call get_profile_fields for exact needed facts");
+    expect(instruction).toContain(
+      "call get_profile_fields for exact needed facts",
+    );
     expect(instruction).toContain("Skill evidence requirements:");
     expect(instruction).toContain("Skill execution contract:");
     expect(instruction).toContain("Sequence to preserve:");
@@ -241,7 +292,9 @@ describe("Orchestrator handoff briefing", () => {
     expect(instruction).toContain("Skill operating brief:");
     expect(instruction).toContain("visible listings as the candidate set");
     expect(instruction).toContain("Capture only fit-critical facts");
-    expect(instruction).toContain("final recommendation can be synthesized from evidence");
+    expect(instruction).toContain(
+      "final recommendation can be synthesized from evidence",
+    );
     expect(instruction).not.toContain("Skill procedure:");
     expect(instruction).not.toContain("Skill evidence requirements:");
   });
@@ -249,7 +302,8 @@ describe("Orchestrator handoff briefing", () => {
   test("uses compact skill guidance for multi-tab checklist workflows", () => {
     const node = makeNode([]);
     node.description = "Buy the first procurement item and mark it complete";
-    node.successCriteria = "Purchase confirmed and the checklist row is checked off";
+    node.successCriteria =
+      "Purchase confirmed and the checklist row is checked off";
     node.selectedSkillId = "multi-tab-checklist-workflow";
     node.selectedSkillReason =
       "Task requires repeating a checklist workflow across store tabs: open, purchase, return, and mark complete.";
@@ -259,8 +313,12 @@ describe("Orchestrator handoff briefing", () => {
     expect(instruction).toContain("Selected workflow skill:");
     expect(instruction).toContain("multi-tab-checklist-workflow");
     expect(instruction).toContain("Skill operating brief:");
-    expect(instruction).toContain("Open or reuse the matching target page in another tab");
-    expect(instruction).toContain("Switch back to the source tab and mark or record only the completed item");
+    expect(instruction).toContain(
+      "Open or reuse the matching target page in another tab",
+    );
+    expect(instruction).toContain(
+      "Switch back to the source tab and mark or record only the completed item",
+    );
     expect(instruction).toContain(
       "Treat source-page progress markers, reviewed badges, counters, or row-complete state as sufficient evidence",
     );
@@ -269,7 +327,8 @@ describe("Orchestrator handoff briefing", () => {
 
   test("uses synthesis-first guidance for cross-tab compare", () => {
     const node = makeNode([]);
-    node.description = "Compare the reviewed job listings and recommend the best matches";
+    node.description =
+      "Compare the reviewed job listings and recommend the best matches";
     node.successCriteria = "Best matches identified with reasons";
     node.selectedSkillId = "cross-tab-compare";
     node.selectedSkillReason =
@@ -327,7 +386,9 @@ describe("Orchestrator handoff briefing", () => {
 
     expect(instruction).toContain("PROFILE DATA POLICY:");
     expect(instruction).toContain("get_profile_fields");
-    expect(instruction).toContain("Do not leave the current checkout or form page");
+    expect(instruction).toContain(
+      "Do not leave the current checkout or form page",
+    );
   });
 
   test("injects safe personal context separately from exact profile fields", () => {
@@ -381,7 +442,9 @@ describe("Orchestrator handoff briefing", () => {
     expect(instruction).toContain(
       "I care about Langfuse because it solves one of the most important practical problems in AI product engineering.\n\nMy recent work",
     );
-    expect(instruction).toContain("preserve paragraph breaks and wording exactly");
+    expect(instruction).toContain(
+      "preserve paragraph breaks and wording exactly",
+    );
   });
 
   test("adds Ashby-specific application policy for Ashby skill nodes", () => {
@@ -466,7 +529,11 @@ describe("Orchestrator handoff briefing", () => {
         role: "executor",
         description: "Apply discount code",
         successCriteria: "Discount is reflected in total",
-        allowedTools: [ToolName.TYPE_TEXT, ToolName.CLICK_ELEMENT, ToolName.DONE],
+        allowedTools: [
+          ToolName.TYPE_TEXT,
+          ToolName.CLICK_ELEMENT,
+          ToolName.DONE,
+        ],
         dependencies: [],
         assumptions: [],
         handoffArtifacts: [],
@@ -505,7 +572,11 @@ describe("Orchestrator handoff briefing", () => {
         role: "executor",
         description: "Apply SAVE10 and choose Express shipping",
         successCriteria: "Discount and shipping are selected",
-        allowedTools: [ToolName.TYPE_TEXT, ToolName.CLICK_ELEMENT, ToolName.DONE],
+        allowedTools: [
+          ToolName.TYPE_TEXT,
+          ToolName.CLICK_ELEMENT,
+          ToolName.DONE,
+        ],
         dependencies: [],
         assumptions: [],
         handoffArtifacts: [],
@@ -580,7 +651,11 @@ describe("Orchestrator handoff briefing", () => {
         role: "executor",
         description: "Compare the reviewed job listings",
         successCriteria: "Best matches recommended",
-        allowedTools: [ToolName.READ_PAGE, ToolName.UPDATE_NOTES, ToolName.DONE],
+        allowedTools: [
+          ToolName.READ_PAGE,
+          ToolName.UPDATE_NOTES,
+          ToolName.DONE,
+        ],
         dependencies: ["n2"],
         assumptions: [],
         handoffArtifacts: [],
@@ -592,12 +667,7 @@ describe("Orchestrator handoff briefing", () => {
       },
     ];
 
-    const brief = buildTaskStateBrief(
-      nodes,
-      "n-compare",
-      "executor",
-      nodes[2],
-    );
+    const brief = buildTaskStateBrief(nodes, "n-compare", "executor", nodes[2]);
     expect(brief).toContain("Completed comparison evidence:");
     expect(brief).toContain("Steps completed (2 total):");
     expect(brief).toContain("Review job listing #1");
@@ -620,14 +690,19 @@ describe("Orchestrator handoff briefing", () => {
     );
     expect(context).toContain("Node handoff context:");
     expect(context).toContain("Global task context:");
-    expect(context).toContain("Planner (planner): Finalize checkout confirmation.");
+    expect(context).toContain(
+      "Planner (planner): Finalize checkout confirmation.",
+    );
   });
 
   test("includes reduced skill verification contract for verifier", () => {
     const node = makeNode([]);
     node.selectedSkillId = "cross-tab-compare";
 
-    const context = buildVerifierContext(node, "- [completed] Prior node :: Collected metrics");
+    const context = buildVerifierContext(
+      node,
+      "- [completed] Prior node :: Collected metrics",
+    );
 
     expect(context).toContain("Skill verification contract:");
     expect(context).toContain("Selected skill: cross-tab-compare");
@@ -696,7 +771,7 @@ describe("Orchestrator handoff briefing", () => {
       undefined,
       undefined,
       "Fill checkout using saved profile values",
-      "Use my saved profile for checkout and keep the shipping speed unchanged. The name should stay John Doe, the email should be john.doe@example.com, and suggest Monday at 11 AM in the follow-up note. Also preserve the reference code \"SHIP-42\" while avoiding any unnecessary navigation. Add several extra descriptive sentences here so the full original request becomes much longer than the compact excerpt threshold and would otherwise bloat the executor prompt without adding more useful literals.",
+      'Use my saved profile for checkout and keep the shipping speed unchanged. The name should stay John Doe, the email should be john.doe@example.com, and suggest Monday at 11 AM in the follow-up note. Also preserve the reference code "SHIP-42" while avoiding any unnecessary navigation. Add several extra descriptive sentences here so the full original request becomes much longer than the compact excerpt threshold and would otherwise bloat the executor prompt without adding more useful literals.',
     );
 
     expect(instruction).toContain("Original user request");
@@ -763,39 +838,4 @@ describe("Orchestrator handoff briefing", () => {
     expect(rerouted.dependencies).toEqual(["node-source"]);
     expect(rerouted.description).toContain("alternate payment route");
     expect(rerouted.handoffArtifacts[0].phase).toBe("verifier_reroute");
-  });
-
-  test("reroute preserves the ServiceNow record-form skill when page context is threaded", () => {
-    const source = makeNode([]);
-    // A merged ServiceNow record-form request (field/value pairs, "incident"),
-    // but WorkArena-style: it never says the literal word "ServiceNow".
-    source.description =
-      'Create a new incident with a value of "EMAIL Server Down Again" for field "Short description", a value of "Joe Employee" for field "Caller".';
-    source.successCriteria =
-      "The incident record is submitted with the requested field values.";
-
-    // With the live ServiceNow page context, re-selection keeps the SN skill.
-    const withCtx = createRerouteNode(
-      source,
-      "Submit the incident form",
-      "Form has not been submitted yet",
-      {
-        pageTitle: "Create INC0010443 | Incident | ServiceNow",
-        pageUrl:
-          "https://example.service-now.com/now/nav/ui/classic/params/target/incident.do",
-        enabledSkillPackIds: ["servicenow-platform"],
-      },
-    );
-    expect(withCtx.selectedSkillId).toBe("servicenow-record-form");
-
-    // The pre-fix behavior: without page context the ServiceNow pack de-activates
-    // (the goal never says "ServiceNow"), so a non-SN skill is chosen. This is the
-    // regression the fix prevents.
-    const withoutCtx = createRerouteNode(
-      source,
-      "Submit the incident form",
-      "Form has not been submitted yet",
-    );
-    expect(withoutCtx.selectedSkillId).not.toBe("servicenow-record-form");
-  });
-});
+  });});

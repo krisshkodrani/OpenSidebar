@@ -34,15 +34,14 @@ Run `easy` before `medium` before `hard` unless scoped to one failing test.
 
 ### Landmines (read before editing)
 
-- `background/agent/loop.ts` (~5.6K lines; `AgentLoop` ≈ 148 methods; under the
-  decomposition ratchet — see below) and
-  `background/agent/completion-kernel.ts` (~5.9K lines) are the giants and the
-  most-churned files in the repo. `background/orchestrator/index.ts` (~5.8K
-  lines) and the big `agent/completion/` analysis modules
-  (`workflow-confirmation-analysis.ts` ~3.6K, `read-answer-analysis.ts` ~3.3K)
+- `background/agent/loop.ts` (~3.4K lines; `AgentLoop` ≈ 73 methods; under the
+  decomposition ratchet — see below) and `background/orchestrator/index.ts`
+  (~3.0K lines) remain the primary giant files. The
+  `background/agent/completion-kernel.ts` façade is ~54 lines after LP-16
+  extraction. The big `agent/completion/` analysis modules
+  (`workflow-confirmation-analysis.ts` ~2.2K, `read-answer-analysis.ts` ~2.4K)
   are the next tier — same care applies. (`background/tools/index.ts` is now a
-  ~130-line barrel; the bulk lives in `register-*.ts` modules and the
-  ServiceNow adapter.) Sizes drift — trust
+  ~130-line barrel; the bulk lives in `register-*.ts` modules .) Sizes drift — trust
   `node scripts/loop-ratchet.mjs --report` over this prose.
 - **The decomposition ratchet guards all of this** (LP-15 Phase 11, generalized
   in LP-16 Phase 0): `scripts/loop-ratchet.mjs` runs in the lint step and fails
@@ -62,25 +61,9 @@ Run `easy` before `medium` before `hard` unless scoped to one failing test.
   feedback, prepare_model_turn, dispatch_tools, post_tool_guards, plan_monitor,
   completion, account_and_refresh. The full decomposition plan is RFC LP-16
   (`docs/engineering/rfcs/lp-0016-landmine-decomposition.md`).
-- ServiceNow is a **partially** quarantined adapter, not a fully detached one.
-  What IS contained in `background/tools/servicenow/` (definitions / records /
-  references / navigation / register / register-list-actions / register-catalog
-  / tool-hooks): the SN tool schemas, their registration, the knowledge-base,
-  list-action, and catalog handlers, and the reference-resolution helpers.
-  `tools/index.ts` talks to it only through the `servicenow/` register entry
-  points and `tool-hooks.ts` façades — and adapter modules must never import
-  `tools/index.ts` or the tools barrel (one-way rule). The agent-side SN
-  behavior lives in `background/agent/servicenow/` (record-form-controller /
-  catalog-controller / trusted-workflow-adapter / catalog-order-policy /
-  submit-diagnostics-policy); `agent/loop.ts` keeps only thin dispatch-host
-  delegates into it. What is NOT yet extracted and still lives in generic
-  files: the serialized main-world SN/Glide page scripts in
-  `tools/main-world-bridge.ts` (they are injected into the page, so they can't
-  import adapter code without a new injection mechanism); and smaller SN
-  behavior in `orchestrator/skills.ts`, `agent/verification.ts`, and
-  `content/actions/interaction.ts`. Deleting the adapter dirs would NOT remove
-  ServiceNow from the runtime — full detachment is deferred to the LP-15
-  runtime-as-library work.
+- ServiceNow support was removed by owner decision on 2026-09-28. Generic list,
+  catalog, and knowledge tools live directly under `background/tools/`. Do not
+  restore platform-specific adapters without a new product decision.
 - Completion/"is the task done?" has ONE authority: the pure pipeline in
   `agent/completion/pipeline.ts` (kernel decides accept/reject first; the
   absorbed pre-pipeline guard chain runs as ordered stages after it — their
@@ -99,10 +82,10 @@ Run `easy` before `medium` before `hard` unless scoped to one failing test.
 - **UI must not import `chrome.*`** — route through `sidepanel/runtime.ts`.
 - **Trajectory entries must be environment-agnostic** — no `tabId` / `chrome.storage`
   keys; they must replay identically across adapters.
-- **Domain logic stays quarantined.** ServiceNow / WorkArena specifics belong in
-  clearly-labeled adapters grounded in stable platform semantics — never in generic
-  completion or runtime paths. Do not add task-id / seed / hidden-value branches to
-  pass a benchmark.
+- **Keep domain logic transferable.** Do not add benchmark-specific behavior
+  to generic runtime paths. Keep transferable browser
+  capabilities; do not add task-id, seed, or hidden-value branches to pass a
+  benchmark.
 
 ## Never
 

@@ -652,12 +652,14 @@ describe("Bridge Message Routing", () => {
             risk: "high",
             context: "Navigate to example.com",
             timeoutMs: 30000,
+            totalTimeoutMs: 600000,
         });
 
         const pending = useStore.getState().pendingApproval;
         expect(pending).not.toBeNull();
         expect(pending!.approvalId).toBe("approval-1");
         expect(pending!.risk).toBe("high");
+        expect(pending!.totalTimeoutMs).toBe(600000);
     });
 
     test("ESCALATION_REQUEST stores pending escalation", () => {

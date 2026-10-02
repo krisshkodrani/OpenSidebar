@@ -226,7 +226,7 @@ export interface SessionMetrics {
   totalCompletionTokens: number;
   /** Total tokens (prompt + completion) */
   totalTokens: number;
-  /** Cumulative cost in USD from OpenRouter */
+  /** Tracked cumulative USD cost for agent, planner, and judge calls. */
   totalCost: number;
   /** Cost returned directly by provider responses (`usage.cost`) */
   totalCostActual?: number;

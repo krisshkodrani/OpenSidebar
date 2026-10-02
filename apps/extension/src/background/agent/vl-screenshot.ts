@@ -20,6 +20,7 @@ import {
   type PerceptionScreenshotTrace,
 } from "./page-state";
 import { setCachedScreenshot } from "./screenshot-cache";
+import type { AgentTelemetryController } from "./agent-telemetry-controller";
 
 export interface VLScreenshotHost {
   context: {
@@ -41,8 +42,7 @@ export interface VLScreenshotHost {
       data?: Record<string, unknown>,
     ): void;
   };
-  imagePromptBudgetAllows(count: number): boolean;
-  recordImagePromptBudgetExhausted(count: number, source: string): void;
+  telemetry: Pick<AgentTelemetryController, "imagePromptBudgetAllows" | "recordImagePromptBudgetExhausted">;
   captureVisibleTabWithRetry(
     windowId: number | undefined,
     options: { format: "jpeg" | "png"; quality?: number },
@@ -183,8 +183,8 @@ export async function captureVLExecutorScreenshot(
     clearScreenshotProjection(host);
     return;
   }
-  if (!host.imagePromptBudgetAllows(1)) {
-    host.recordImagePromptBudgetExhausted(1, "vl_executor_screenshot");
+  if (!host.telemetry.imagePromptBudgetAllows(1)) {
+    host.telemetry.recordImagePromptBudgetExhausted(1, "vl_executor_screenshot");
     clearScreenshotProjection(host);
     host.perception.setScreenshotTrace({
       meta: {

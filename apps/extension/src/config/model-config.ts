@@ -75,17 +75,12 @@ export const DEFAULT_LLM_MODEL_CONFIG: LLMModelDefaults = {
   groq: {
     planner: "openai/gpt-oss-120b",
   },
-  // The recommended stack (2026-07-26). Executor tracks the shared OpenRouter
-  // default; planner is GLM 5.2, the same model the Fireworks planner seat runs
-  // but ~39% cheaper through OpenRouter's cheapest healthy host; judge is
-  // GPT-OSS-120B, ~63% cheaper there and — more importantly — a SEPARATE seat.
-  // Before this group existed the OpenRouter judge silently shared the planner
-  // pool, which is the arrangement that made ~75% of judge calls time out
-  // behind planner traffic on Fireworks (2026-07-09 telemetry).
+  // OpenRouter defaults: Luna handles executor and planner; Jev uses the typed
+  // Decisions API for rubric judging.
   openrouter: {
     executor: DEFAULT_MULTIMODAL_EXECUTOR_BY_PROVIDER.openrouter,
-    planner: "z-ai/glm-5.2",
-    judge: "openai/gpt-oss-120b",
+    planner: "openai/gpt-6-luna",
+    judge: "typesafe/jev-1.13",
   },
   fireworks: {
     executor: DEFAULT_MULTIMODAL_EXECUTOR_BY_PROVIDER.fireworks,

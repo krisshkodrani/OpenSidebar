@@ -161,7 +161,9 @@ function resolveUsageCost(
   providerId: ProviderConfig["providerId"],
   model: string,
 ): { total: number; actual: number; estimated: number } {
-  // Always use static pricing table for consistent cost across all providers.
+  if (typeof usage.cost === "number" && Number.isFinite(usage.cost) && usage.cost >= 0) {
+    return { total: usage.cost, actual: usage.cost, estimated: 0 };
+  }
   const estimated = estimateCostUsd(providerId, model, usage) ?? 0;
   return { total: estimated, actual: 0, estimated };
 }

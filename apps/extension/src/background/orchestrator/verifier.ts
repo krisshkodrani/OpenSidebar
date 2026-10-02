@@ -89,10 +89,12 @@ const ERROR_MARKERS = [
 const NEGATIVE_COMPLETION_PATTERNS = [
   /\b(?:verification|verifier)\s+(?:result|status)?\s*[:-]?\s*(?:task\s+)?not\s+(?:complete|completed|successful|satisfied|verified)\b/i,
   /\btask\s+(?:is\s+)?not\s+complete\b/i,
-  /\b(?:field|input|value|required\s+state|required\s+value|actual\s+value)\b[\s\S]{0,120}\b(?:does\s+not\s+contain|missing|absent|empty|not\s+present|not\s+filled|not\s+set)\b/i,
   /\bdid\s+not\s+(?:complete|succeed|work|match|fill|submit|save|update|delete|confirm)\b/i,
   /\bhas\s+not\s+been\s+(?:completed|filled|submitted|saved|updated|deleted|confirmed)\b/i,
   /\bnot\s+successfully\s+(?:filled|submitted|saved|updated|deleted|confirmed)\b/i,
+];
+const FIELD_STATE_NEGATIVE_COMPLETION_PATTERNS = [
+  /\b(?:field|input|value|required\s+state|required\s+value|actual\s+value)\b[\s\S]{0,120}\b(?:does\s+not\s+contain|missing|absent|empty|not\s+present|not\s+filled|not\s+set)\b/i,
   /\brequired\s+value\b[\s\S]{0,120}\b(?:missing|absent|empty|not present)\b/i,
 ];
 
@@ -453,8 +455,12 @@ function isClarificationNeededOutcome(text: string): boolean {
   );
 }
 
-function hasNegativeCompletionEvidence(text: string): boolean {
-  return NEGATIVE_COMPLETION_PATTERNS.some((pattern) => pattern.test(text));
+function hasNegativeCompletionEvidence(
+  text: string,
+  includeFieldState = true,
+): boolean {
+  return NEGATIVE_COMPLETION_PATTERNS.some((pattern) => pattern.test(text)) ||
+    (includeFieldState && FIELD_STATE_NEGATIVE_COMPLETION_PATTERNS.some((pattern) => pattern.test(text)));
 }
 
 function evidenceConfidenceRank(value: EvidenceEvent["confidence"]): number {
@@ -550,7 +556,16 @@ export function programmaticVerify(
   const negativeGateText = isRestraintTask(input)
     ? stripRestraintConfirmations(input.output)
     : input.output;
-  if (hasNegativeCompletionEvidence(negativeGateText)) {
+  const readOnlyObservation =
+    isReadOnlyObjective(
+      input.taskQuery ?? "",
+      input.objective ?? "",
+      input.successCriteria ?? "",
+    ) &&
+    !/\b(?:fill|enter|type|set|save|update|change|submit|register|create|write|send|delete|remove)\b/i.test(
+      `${input.taskQuery ?? ""} ${input.objective ?? ""}`,
+    );
+  if (hasNegativeCompletionEvidence(negativeGateText, !readOnlyObservation)) {
     return {
       decision: "retry",
       reason:

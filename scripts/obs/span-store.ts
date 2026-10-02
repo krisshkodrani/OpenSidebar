@@ -26,6 +26,7 @@ import {
   readFileSync,
   writeFileSync,
 } from "fs";
+import { readFile as readFileAsync, readdir as readdirAsync } from "fs/promises";
 import { join } from "path";
 
 import { traceEntryToSpans } from "../../packages/observability-schema/src/map-trace-entry";
@@ -149,6 +150,43 @@ export function writeSessionRecord(session: Loose, spanDir: string = SPAN_DIR): 
   writeFileSync(join(dir, "session.json"), JSON.stringify(session));
 }
 
+/** Raw session header, used by the JSONL export contract. */
+export function readSpineSessionRecord(
+  sessionId: string,
+  spanDir: string = SPAN_DIR,
+): Loose | null {
+  const file = join(spanDir, sessionId, "session.json");
+  if (!existsSync(file)) return null;
+  try { return JSON.parse(readFileSync(file, "utf-8")) as Loose; }
+  catch { return null; }
+}
+
+/** A session header makes the spine authoritative even when it has no turns. */
+export function hasSpineSessionRecord(
+  sessionId: string,
+  spanDir: string = SPAN_DIR,
+): boolean {
+  return existsSync(join(spanDir, sessionId, "session.json"));
+}
+
+function sessionReadRecord(session: Loose): Loose {
+  // Match the default fields supplied by the legacy SQLite session lens.
+  // Keep session.json itself raw for the JSONL export contract.
+  return {
+    sessionId: "",
+    runId: "",
+    source: "live",
+    startTime: 0,
+    endTime: 0,
+    outcome: "",
+    query: "",
+    startUrl: "",
+    turnCount: 0,
+    metrics: { totalCost: 0 },
+    ...session,
+  };
+}
+
 /** Read all session records from the spine. */
 export function readSpineSessions(spanDir: string = SPAN_DIR): Loose[] {
   if (!existsSync(spanDir)) return [];
@@ -158,10 +196,41 @@ export function readSpineSessions(spanDir: string = SPAN_DIR): Loose[] {
     const file = join(spanDir, name, "session.json");
     if (!existsSync(file)) continue;
     try {
-      sessions.push(JSON.parse(readFileSync(file, "utf-8")) as Loose);
+      const session = JSON.parse(readFileSync(file, "utf-8")) as Loose;
+      sessions.push(sessionReadRecord(session));
     } catch {
       /* skip unreadable */
     }
+  }
+  return sessions;
+}
+
+/** Bounded parallel read for HTTP session lists on large local corpora. */
+export async function readSpineSessionsAsync(
+  spanDir: string = SPAN_DIR,
+): Promise<Loose[]> {
+  let names: string[];
+  try {
+    names = (await readdirAsync(spanDir, { withFileTypes: true }))
+      .filter((entry) => entry.isDirectory() && entry.name !== "runs")
+      .map((entry) => entry.name);
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === "ENOENT") return [];
+    throw error;
+  }
+  const sessions: Loose[] = [];
+  for (let index = 0; index < names.length; index += 64) {
+    const batch = await Promise.all(names.slice(index, index + 64)
+      .map(async (name): Promise<Loose | null> => {
+        try {
+          const session = JSON.parse(await readFileAsync(
+            join(spanDir, name, "session.json"), "utf-8")) as Loose;
+          return sessionReadRecord(session);
+        } catch {
+          return null;
+        }
+      }));
+    for (const session of batch) if (session) sessions.push(session);
   }
   return sessions;
 }
@@ -176,6 +245,42 @@ export function recordSessionSafe(session: unknown): void {
 
 function runFile(runId: string, runDir: string): string {
   return join(runDir, `${runId}.jsonl`);
+}
+
+/** A manifest or event file makes the spine authoritative, including empty runs. */
+export function hasSpineRunRecord(
+  runId: string,
+  runDir: string = RUN_DIR,
+): boolean {
+  return existsSync(runFile(runId, runDir)) ||
+    existsSync(join(runDir, `${runId}.manifest.json`));
+}
+
+export function writeRunManifestRecord(
+  manifest: Loose,
+  runDir: string = RUN_DIR,
+): void {
+  const runId = typeof manifest.runId === "string" ? manifest.runId : "";
+  if (!/^[a-zA-Z0-9_-]+$/.test(runId)) return;
+  mkdirSync(runDir, { recursive: true });
+  writeFileSync(join(runDir, `${runId}.manifest.json`), JSON.stringify(manifest));
+}
+
+export function readSpineRunManifest(
+  runId: string,
+  runDir: string = RUN_DIR,
+): Loose | null {
+  const file = join(runDir, `${runId}.manifest.json`);
+  if (!existsSync(file)) return null;
+  try { return JSON.parse(readFileSync(file, "utf-8")) as Loose; }
+  catch { return null; }
+}
+
+export function recordRunManifestSafe(manifest: unknown): void {
+  try { writeRunManifestRecord(manifest as Loose); }
+  catch (error) {
+    console.error("[obs] run-manifest spine-write failed:", (error as Error).message);
+  }
 }
 
 /** Append one run event to the spine (live ingest). */

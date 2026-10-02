@@ -44,6 +44,25 @@ export const DEFAULT_MODEL_PRICING: ModelPricing[] = [
   // ---------------------------------------------------------------------
   {
     providerId: "openrouter",
+    model: "openai/gpt-6-luna",
+    inputUsdPerMillion: 0.1,
+    outputUsdPerMillion: 0.5,
+    cachedInputUsdPerMillion: 0.01,
+    effectiveDate: "2026-09-28",
+    sourceUrl: "https://openrouter.ai/openai/gpt-6-luna",
+    confidence: "official",
+  },
+  {
+    providerId: "openrouter",
+    model: "typesafe/jev-1.13",
+    inputUsdPerMillion: 0.042,
+    outputUsdPerMillion: 0,
+    effectiveDate: "2026-09-28",
+    sourceUrl: "https://openrouter.ai/typesafe/jev-1.13",
+    confidence: "official",
+  },
+  {
+    providerId: "openrouter",
     // OpenRouter catalog promotion observed 2026-08-13. The OpenAI route is
     // pinned separately by the caller, so reports retain resolved-provider
     // identity alongside this catalog estimate.

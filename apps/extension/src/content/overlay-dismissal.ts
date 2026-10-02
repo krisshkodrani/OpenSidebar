@@ -305,6 +305,9 @@ export function autoDismissModals(): DismissResult {
   let clickedClose = 0;
   let cssHidden = 0;
   const capturedTexts: string[] = [];
+  const pendingClose = new Set<HTMLElement>();
+  const isPendingClose = (el: HTMLElement): boolean =>
+    [...pendingClose].some((container) => container === el || container.contains(el));
 
   /** Extract text, deduplicate, and log before dismissing */
   function archiveOverlay(el: HTMLElement): void {
@@ -351,6 +354,7 @@ export function autoDismissModals(): DismissResult {
     const closeBtn = findCloseButton(el);
     if (closeBtn) {
       closeBtn.click();
+      pendingClose.add(el);
       dismissed++;
       clickedClose++;
       logger.info("tools", "Clicked close button on overlay", {
@@ -371,6 +375,7 @@ export function autoDismissModals(): DismissResult {
   // Phase B: Viewport-cover detection (catches modals without semantic CSS)
   const coveringOverlays = detectViewportCoveringOverlays();
   for (const { el, coverage } of coveringOverlays) {
+    if (isPendingClose(el)) continue;
     if (!isElementVisible(el)) continue; // May have been hidden in Phase A
 
     // Guard: skip elements that look like primary app content (same as Phase A)
@@ -395,6 +400,7 @@ export function autoDismissModals(): DismissResult {
     const closeBtn = findCloseButton(el);
     if (closeBtn) {
       closeBtn.click();
+      pendingClose.add(el);
       dismissed++;
       clickedClose++;
       logger.info("tools", "Clicked close on covering overlay", {
@@ -441,7 +447,8 @@ export function autoDismissModals(): DismissResult {
   // misdirects the agent into hiding page chrome (seen live 2026-07-23: the
   // agent hid a <nav> and kept overlay-hunting instead of doing the task).
   const remaining = detectViewportCoveringOverlays().filter(
-    ({ el }) => isBackdropElement(el) || !isLikelyAppContent(el),
+    ({ el }) => !isPendingClose(el) &&
+      (isBackdropElement(el) || !isLikelyAppContent(el)),
   );
   if (remaining.length > 0) {
     const top = remaining[0];

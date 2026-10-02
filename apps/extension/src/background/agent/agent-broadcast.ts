@@ -71,6 +71,7 @@ export function approvalRequestMessage(args: {
   toolArgs: Record<string, unknown>;
   context: string;
   timeoutMs: number;
+  totalTimeoutMs: number;
   workspaceId: string | null;
   requestId: string;
 }): RuntimeMessage {
@@ -86,6 +87,7 @@ export function approvalRequestMessage(args: {
       risk: RiskLevel.HIGH,
       context: args.context,
       timeoutMs: args.timeoutMs,
+      totalTimeoutMs: args.totalTimeoutMs,
     },
   } as RuntimeMessage;
 }
@@ -271,6 +273,8 @@ export function planTerminationMessage(args: {
       terminationReason:
         args.outcome === "stopped"
           ? "Stopped by user"
+          : args.partialHandoff?.reason === "escalation_failed"
+            ? `Escalation failed (${args.turnCount}/${args.maxTurns})`
           : args.outcome === "max_turns"
             ? `Turn limit reached (${args.turnCount}/${args.maxTurns})`
             : args.summary,

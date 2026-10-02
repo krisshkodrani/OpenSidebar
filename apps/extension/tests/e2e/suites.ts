@@ -24,6 +24,7 @@ export const E2E_SUITES: Record<E2ESuiteName, readonly string[]> = {
     "suite-hygiene.test.ts",
     "session-state-import.test.ts",
     "delayed-content.test.ts",
+    "frame-snapshot-protocol.test.ts",
     "clarification-recovery.test.ts",
     "mutation-dedupe-recovery.test.ts",
   ],
@@ -81,6 +82,8 @@ export const E2E_SUITES: Record<E2ESuiteName, readonly string[]> = {
     "bridge-approval-forwarding.test.ts",
     "completion-done.test.ts",
     "local-mock-provider-video.test.ts",
+    "requested-fact-after-navigation.test.ts",
+    "terminal-lifecycle.test.ts",
     "watch-mode.test.ts",
   ],
   showcase: [

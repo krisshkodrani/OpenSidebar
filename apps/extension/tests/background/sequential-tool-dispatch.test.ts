@@ -67,11 +67,22 @@ function createHost(): SequentialToolDispatchHost {
     elementResolver: undefined,
     ensureToolApproval: vi.fn(async () => true),
     executeToolCall: vi.fn(),
+    formSubmitDryRun: vi.fn(async () => ({ kind: "no_draft" })),
     consecutiveAutoAdvances: 0,
-    getActiveToolProfileForStep: () => null,
+    mutationReplay: {
+      recordMutationSensitiveAction: vi.fn(),
+      replayMutationSensitiveAction: vi.fn(() => false),
+    },
+    skillTools: {
+      getActiveToolProfileForStep: () => undefined,
+      recordSkillToolSelection: vi.fn(),
+    },
+    planProgress: { advanceCompletedSubtasks: vi.fn(() => 1) },
     getConsequentialActionTaskText: () => "finish the task",
-    getPendingInlineEditVerificationBlock: () => null,
-    getUncommittedInlineEditDoneRejection: () => null,
+    inlineEditVerification: {
+      getPendingInlineEditVerificationBlock: () => null,
+      getUncommittedInlineEditDoneRejection: () => null,
+    },
     getWorkflowTabToolRedirect: vi.fn(async () => null),
     hasExplicitPageRead: false,
     hasReadPage: false,
@@ -79,9 +90,12 @@ function createHost(): SequentialToolDispatchHost {
     handleDoneToolCall: vi.fn(async () => true),
     isRunning: true,
     lastDomStep: null,
-    listDetailOpenedTargets: new Set<string>(),
-    listDetailReviewedTargets: new Set<string>(),
-    listDetailVisibleActionCount: 0,
+    listDetailWorkflow: {
+      trackListDetailToolSuccess: vi.fn(),
+      listDetailOpenedTargets: new Set<string>(),
+      listDetailReviewedTargets: new Set<string>(),
+      listDetailVisibleActionCount: 0,
+    },
     log: {
       info: vi.fn(),
       warn: vi.fn(),
@@ -91,8 +105,10 @@ function createHost(): SequentialToolDispatchHost {
     maybeAdvanceTrustedFormFillStep: vi.fn(),
     maybeAutoSubmitTrustedServiceNowForm: vi.fn(async () => null),
     maybeCompleteTrustedFormSubmitStep: vi.fn(() => null),
-    maybeCompleteTrustedListSortStep: vi.fn(() => null),
-    maybeCompleteTrustedListFilterStep: vi.fn(() => null),
+    trustedListCompletion: {
+      maybeCompleteTrustedListSortStep: vi.fn(() => null),
+      maybeCompleteTrustedListFilterStep: vi.fn(() => null),
+    },
     maybeCompleteTrustedCatalogOrderSubmit: vi.fn(async () => null),
     maybeAutoSubmitConfiguredCatalogItem: vi.fn(async () => {}),
     middleware: {
@@ -109,24 +125,20 @@ function createHost(): SequentialToolDispatchHost {
     originalQuery: "finish the task",
     pendingInlineEditVerification: null,
     planSubtasks: [],
-    recordCompletionToolEvidence: vi.fn(),
-    recordSkillToolSelection: vi.fn(),
-    recordMutationSensitiveAction: vi.fn(),
+    completionEvidenceRuntime: { recordCompletionToolEvidence: vi.fn() },
     refreshPerceptionAndTriage: vi.fn(),
     refreshSnapshotWithRetry: vi.fn(async () => 0),
     requiresConsequentialActionApproval: vi.fn(() => false),
-    replayMutationSensitiveAction: vi.fn(() => false),
     selectedSkillId: null,
     stepHandler: vi.fn(),
     throwIfGracefulStopRequested: vi.fn(),
     toolCache: new ToolResultCache(),
-    trackListDetailToolSuccess: vi.fn(),
     traceRecorder: {
       recordEvent: vi.fn(),
       recordToolExecution: vi.fn(),
     },
     turnCount: 4,
-    updateMoneyTableAggregate: vi.fn(() => null),
+    moneyTable: { updateMoneyTableAggregate: vi.fn(() => null) },
     workspaceId: null,
   } as unknown as SequentialToolDispatchHost;
 }
@@ -164,6 +176,27 @@ function genericParams(
 }
 
 describe("executeSequentialToolCalls", () => {
+  test("routes an explicit unresolved target to clarification before escalation", async () => {
+    const host = createHost();
+    host.originalQuery = "Assign the case to the owner";
+    const output = await executeSequentialToolCalls.call(host, {
+      toolCalls: [toolCall(ToolName.ESCALATE, {
+        reason: "There is no single owner to assign: there are two eligible people and the target is unclear.",
+      })],
+      repeatActionWindow: 20,
+      llmIntention: null,
+      signalCompletedResult: vi.fn(),
+      state: baseState(),
+    });
+
+    expect(host.handleClarifyToolCall).toHaveBeenCalledWith(
+      "escalate-call",
+      { question: expect.stringMatching(/Which one should I use/) },
+    );
+    expect(host.refreshSnapshotWithRetry).not.toHaveBeenCalled();
+    expect(output.escalationTier).toBe(0);
+  });
+
   test("accepts done tool calls and returns completion state", async () => {
     const host = createHost();
     const completed = vi.fn();
@@ -244,7 +277,7 @@ describe("executeSequentialToolCalls", () => {
     const host = createHost();
     const completed = vi.fn();
     (host.executeToolCall as any).mockResolvedValue("Clicked sort header.");
-    (host.maybeCompleteTrustedListSortStep as any).mockReturnValue({
+    (host.trustedListCompletion.maybeCompleteTrustedListSortStep as any).mockReturnValue({
       finalSummary: "The list is sorted.",
     });
 
@@ -260,7 +293,7 @@ describe("executeSequentialToolCalls", () => {
     });
 
     expect(host.executeToolCall).toHaveBeenCalledTimes(1);
-    expect(host.maybeCompleteTrustedListSortStep).toHaveBeenCalledWith(
+    expect(host.trustedListCompletion.maybeCompleteTrustedListSortStep).toHaveBeenCalledWith(
       expect.objectContaining({
         toolName: ToolName.CLICK_ELEMENT,
         toolResult: "Clicked sort header.",

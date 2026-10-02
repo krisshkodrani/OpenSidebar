@@ -39,9 +39,10 @@ export interface InvestigationAttempt {
   configFingerprint: string;
   buildRevision: string;
   worktreeDirty: boolean;
+  allSessionsErrored?: boolean;
 }
 
-const PROVIDER_FAILURE = /\b(401|403|429)\b|unauthori[sz]ed|forbidden|rate.?limit|quota|credit|model.{0,30}(not found|unavailable)|provider[_ -]error/i;
+const PROVIDER_FAILURE = /\b(401|402|403|429)\b|\b(?:HTTP|status|response)\s*[:=]?\s*5\d\d\b|unauthori[sz]ed|forbidden|rate.?limit|quota|credit|model.{0,30}(not found|unavailable)|provider[_ -]error/i;
 const HARNESS_FAILURE = /runner_error|beforeall|afterall|browser.{0,30}(closed|launch|disconnected)|fixture.{0,30}(failed|unavailable)|service worker.{0,30}(missing|closed)|no agent traces|failed to get an active tab/i;
 const INDETERMINATE = /timeout|timed out|stopped by user|cancelled|canceled|empty response|unparseable/i;
 
@@ -67,6 +68,24 @@ export function classifyAttempt(input: {
     : { classification: "valid_model_failure", eligibleForScoring: true };
 }
 
+/** Stop a paid comparison when continued attempts cannot produce fair evidence. */
+export function campaignStopReason(attempts: readonly Pick<InvestigationAttempt, "classification" | "reason">[]): string | null {
+  const last = attempts.at(-1);
+  if (!last) return null;
+  if (last.classification === "provider_failure" && /\b(401|402|403)\b|unauthori[sz]ed|forbidden|quota|credit/i.test(last.reason)) {
+    return "Provider authorization or credit failure; stop before further paid attempts.";
+  }
+  if (attempts.length >= 2 && attempts.slice(-2).every((attempt) =>
+    attempt.classification === "provider_failure" || attempt.classification === "harness_failure")) {
+    return "Two consecutive provider or harness failures; stop before further paid attempts.";
+  }
+  return null;
+}
+
+export function allAgentSessionsErrored(outcomes: readonly string[]): boolean {
+  return outcomes.length > 0 && outcomes.every((outcome) => outcome === "error");
+}
+
 export function fingerprintConfig(config: InvestigationConfig): string {
   const sortedEnv = Object.fromEntries(
     Object.entries(config.env).sort(([left], [right]) => left.localeCompare(right)),
@@ -88,6 +107,31 @@ export function requestedModels(env: Record<string, string | undefined>): Record
     judgeProviderPin: env.E2E_JUDGE_PROVIDER_PIN ?? null,
     perceptionMode: env.E2E_PERCEPTION_MODE ?? null,
   };
+}
+
+export function modelIdentityMismatch(
+  requested: Record<string, string | null>,
+  resolved: Record<string, string[]>,
+  usage: InvestigationAttempt["usageByRole"],
+  traceRunIds: string[],
+): string | null {
+  if (traceRunIds.length === 0) return "no agent traces were recorded";
+  const comparisons = [
+    ["executor", requested.executorModel],
+    ["planner", requested.plannerModel],
+    ["judge", requested.judgeModel],
+  ] as const;
+  for (const [role, expected] of comparisons) {
+    if (!expected) continue;
+    const actual = resolved[role] ?? [];
+    if (actual.length === 0 && (usage[role]?.calls ?? 0) > 0) {
+      return `${role} made model calls but no resolved model was recorded`;
+    }
+    if (actual.some((model) => model !== expected)) {
+      return `${role} requested ${expected} but traces resolved ${actual.join(", ")}`;
+    }
+  }
+  return null;
 }
 
 export function validateConfig(config: InvestigationConfig): string[] {

@@ -46,7 +46,6 @@ export const SKILL_TOOL_SUPPRESSION_POLICIES: Record<
   "progressive-repeatable-form": {
     temporarilySuppressedTools: [
       ToolName.NAVIGATE,
-      ToolName.OPEN_SERVICENOW_MODULE,
       ToolName.GO_BACK,
       ToolName.CREATE_TAB,
       ToolName.LIST_TABS,
@@ -65,7 +64,6 @@ export const SKILL_TOOL_SUPPRESSION_POLICIES: Record<
   "multi-step-form-wizard": {
     temporarilySuppressedTools: [
       ToolName.NAVIGATE,
-      ToolName.OPEN_SERVICENOW_MODULE,
       ToolName.GO_BACK,
       ToolName.CREATE_TAB,
       ToolName.LIST_TABS,
@@ -79,20 +77,6 @@ export const SKILL_TOOL_SUPPRESSION_POLICIES: Record<
       ToolName.ESCALATE,
       ToolName.CLARIFY,
       ToolName.UPDATE_NOTES,
-    ],
-  },
-  "servicenow-record-form": {
-    temporarilySuppressedTools: [
-      ToolName.CLICK_ELEMENT,
-      ToolName.PRESS_KEY,
-      ToolName.CLICK_COORDINATES,
-    ],
-    exemptTools: [
-      ToolName.DONE,
-      ToolName.ESCALATE,
-      ToolName.CLARIFY,
-      ToolName.UPDATE_NOTES,
-      ToolName.CONFIGURE_SERVICENOW_FORM,
     ],
   },
   "inline-edit-surface": {

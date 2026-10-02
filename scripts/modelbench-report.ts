@@ -32,7 +32,7 @@ function markdown(report: BenchmarkReportV1, source: string): string {
     `Rankable: ${report.rankable ? "yes" : "no"}`,
     `Pass@1: ${report.overall.passed}/${report.overall.valid} (${percent(report.overall.passAt1)})`,
     `Coverage: ${report.overall.valid}/${report.overall.requested} (${percent(report.coverage)})`,
-    `Total cost: $${report.totalCostUsd.toFixed(6)}`,
+    `Recorded model cost (not an invoice total): $${report.totalCostUsd.toFixed(6)}`,
     "",
     "## By primary role",
     "",
@@ -45,6 +45,9 @@ function markdown(report: BenchmarkReportV1, source: string): string {
     "| Seat | Calls | Prompt tokens | Completion tokens | Cached tokens | Cost | LLM time (ms) |",
     "| --- | ---: | ---: | ---: | ---: | ---: | ---: |",
     ...roleUsageRows,
+    ...(report.unattributedUsage?.calls
+      ? [`| Unattributed | ${report.unattributedUsage.calls} | ${report.unattributedUsage.promptTokens} | ${report.unattributedUsage.completionTokens} | ${report.unattributedUsage.cachedTokens} | $${report.unattributedUsage.costUsd.toFixed(6)} | ${report.unattributedUsage.llmTimeMs} |`]
+      : []),
     "",
     "## By application family",
     "",

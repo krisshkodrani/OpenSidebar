@@ -290,6 +290,8 @@ Recommended next action: Implement
 
 Status: Approved
 
+Owner update, 2026-09-13: "Approve separate public Playground release."
+
 Chosen path:
 
 - Build ModelBench-100 exactly as specified in this RFC: one shared versioned
@@ -297,6 +299,10 @@ Chosen path:
   deterministic scoring, and separate public/internal data modes.
 - Replace the current fixture-driven E2E and Arena systems in one
   acceptance-gated cutover after local/cloud parity and rollback evidence pass.
+
+- Release the twelve curated public Playground scenarios independently of the
+  full ModelBench harness cutover. The full benchmark baseline gate does not
+  block this public-only release.
 
 Required edits before implementation:
 
@@ -314,10 +320,19 @@ Do not do:
 - Do not make an LLM judge or trace narration authoritative over deterministic
   state.
 - Do not retain a permanent legacy E2E compatibility mode after cutover.
+- Do not treat the separate public Playground release as acceptance of the full
+  ModelBench benchmark or removal of the legacy harness.
 
 Evidence required before merge:
 
-- Complete every item in this RFC's Acceptance evidence section.
+- For the separate twelve-scenario public release: repository verification and
+  CI, cloud and contract tests, all twelve shared fixture objectives, prohibited-
+  data rejection, target/control boundaries, and desktop/mobile browser checks.
+- Before public activation: preserve database, service, asset and routing rollback
+  points; rehearse rollback; stop v1 creation and let existing runs expire; verify
+  the production public account and isolated target flow.
+- For the full ModelBench harness cutover: complete every item in this RFC's
+  Acceptance evidence section, including the three full reference baselines.
 
 Next action:
 

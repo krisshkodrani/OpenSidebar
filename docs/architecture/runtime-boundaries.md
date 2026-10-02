@@ -7,6 +7,10 @@ OpenSidebar has two supported UI hosts for the same side panel React app:
 - The production Chrome extension side panel.
 - The in-page overlay harness used for browser-driven testing and generic page smoke runs.
 
+The overlay entry is included in development and E2E builds, not in the
+production extension bundle. The production distribution check rejects an
+overlay asset; the E2E distribution check requires it.
+
 The stable boundary is port-based. Shared UI and reusable runtime code depend on small local ports, while Chrome-specific APIs stay in the Chrome adapters and production shell code that owns extension lifecycle.
 
 ## Current Runtime Surfaces

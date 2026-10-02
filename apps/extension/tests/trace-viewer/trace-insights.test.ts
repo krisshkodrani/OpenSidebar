@@ -3,6 +3,41 @@ import "../setup";
 import { buildTraceInsights } from "../../../../scripts/trace-insights";
 
 describe("trace insights", () => {
+  test("reads each selected session's turns on demand for unfiltered insights", () => {
+    const sessions = [
+      { sessionId: "s1", runId: "r1", outcome: "completed" },
+      { sessionId: "s2", runId: "r2", outcome: "completed" },
+    ];
+    const reads: string[] = [];
+    const entriesBySession = {
+      get: (id: string) => {
+        reads.push(id);
+        return [{ toolExecutions: [{ toolName: "click", success: true }] }];
+      },
+    };
+
+    const result = buildTraceInsights({ sessions, entriesBySession });
+
+    expect(reads).toEqual(["s1", "s2"]);
+    expect(result.summary.toolCalls).toBe(2);
+  });
+
+  test("uses the newest run session for event samples regardless of input order", () => {
+    const sessions = [
+      { sessionId: "older", runId: "run", startTime: 1, query: "old", outcome: "error", turnCount: 2 },
+      { sessionId: "newer", runId: "run", startTime: 2, query: "new", outcome: "completed", turnCount: 5 },
+    ];
+    const result = buildTraceInsights({
+      sessions,
+      entriesBySession: new Map(),
+      runEventsByRun: new Map([["run", [{ type: "task_completed" }]]]),
+    });
+
+    expect(result.events.find((row) => row.id === "task_completed"))
+      .toMatchObject({ sampleSessionId: "newer", totalTurns: 5 });
+    expect(result.runs[0]).toMatchObject({ query: "new", outcome: "error" });
+  });
+
   test("aggregates tool, skill, run, model, failure, and event stats", () => {
     const sessions = [
       {

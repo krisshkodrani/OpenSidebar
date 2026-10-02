@@ -320,6 +320,8 @@ describe("settings storage", () => {
         "custom-pack",
       ]),
     ).toEqual(["communication-workflows", "custom-pack"]);
+    expect(normalizeEnabledSkillPackIds(["procurement-workflows", "source-list-workflows"]))
+      .toEqual(["source-list-workflows"]);
 
     const syncSet = vi.fn(async () => {});
     chrome.storage.sync.set = syncSet as any;
@@ -449,7 +451,7 @@ describe("settings storage", () => {
 
     expect(localSet).toHaveBeenCalledWith(
       expect.objectContaining({
-        deepseekApiKey_local: "sk-deepseek-test",
+        deepseekApiKey_local: expect.stringMatching(/^enc:v1:/),
       }),
     );
 
@@ -528,7 +530,7 @@ describe("settings storage", () => {
 
     expect(localSet).toHaveBeenCalledWith(
       expect.objectContaining({
-        xiaomiApiKey_local: "sk-xiaomi-test",
+        xiaomiApiKey_local: expect.stringMatching(/^enc:v1:/),
       }),
     );
 

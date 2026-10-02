@@ -118,6 +118,25 @@ describe("overlay UI runtime", () => {
     harness.dispose();
   });
 
+  test("uses Chrome directly in isolated mode without page events", async () => {
+    const sent = vi.spyOn(chrome.runtime, "sendMessage").mockResolvedValue({ ok: true });
+    const stored = vi.spyOn(chrome.storage.local, "get").mockResolvedValue({ setting: "saved" });
+    const pageEvent = vi.fn();
+    window.addEventListener(OVERLAY_SEND_MESSAGE_EVENT, pageEvent);
+    const harness = createOverlayUiRuntimeHarness({ storageMode: "chrome-direct" });
+
+    await expect(harness.port.sendMessage({ type: "SIDE_PANEL_OPENED" })).resolves.toEqual({ ok: true });
+    await expect(harness.port.storage.local.get("setting")).resolves.toEqual({ setting: "saved" });
+    expect(sent).toHaveBeenCalledWith(expect.objectContaining({ type: "SIDE_PANEL_OPENED", source: MessageSource.UI }));
+    expect(stored).toHaveBeenCalledWith("setting");
+    expect(pageEvent).not.toHaveBeenCalled();
+
+    harness.dispose();
+    window.removeEventListener(OVERLAY_SEND_MESSAGE_EVENT, pageEvent);
+    sent.mockRestore();
+    stored.mockRestore();
+  });
+
   test("ignores bridge events with the wrong token", async () => {
     const harness = createOverlayUiRuntimeHarness({ bridgeToken: "expected" });
     const received: string[] = [];

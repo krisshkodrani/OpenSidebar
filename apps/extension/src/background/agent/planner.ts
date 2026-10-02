@@ -1,5 +1,5 @@
 import { LLMClient, LLMClientOptions } from "../llm";
-import { TokenUsage } from "../llm/types";
+import { TokenUsage, type ProviderConfig } from "../llm/types";
 import { SubtaskSummary } from "../../types";
 import { logger } from "../../utils";
 import { renderPrompt } from "../../prompts";
@@ -21,7 +21,7 @@ import {
   synthesizeBatchedExhaustivePlan,
   synthesizePlanFromTaskContract,
 } from "./task-contract";
-import { isDraftOnlyCommunicationTask } from "./consequential-action-policy";
+import { requiresDraftOnlyCompletion } from "./consequential-action-policy";
 
 import { ensureObservableCriteria } from "./plan-criteria";
 
@@ -275,7 +275,7 @@ function enforceDraftOnlyCommunicationStop(
   query: string,
   steps: PlanStep[],
 ): PlanStep[] {
-  if (!isDraftOnlyCommunicationTask(query)) return steps;
+  if (!requiresDraftOnlyCompletion(query)) return steps;
 
   const sanitized: Array<{ originalIndex: number; step: PlanStep }> = [];
   for (let i = 0; i < steps.length; i++) {
@@ -757,7 +757,7 @@ export class TaskPlanner {
   private modelOverrides?: LLMClientOptions;
   private executorLlm: LLMClient | null = null;
   private usageCallback:
-    | ((usage: TokenUsage, llmMs: number, model: string) => void)
+    | ((usage: TokenUsage, llmMs: number, model: string, providerId: ProviderConfig["providerId"]) => void)
     | null = null;
   /**
    * Transient holder for the LLM's structured multi-tab-intent signal, captured
@@ -788,7 +788,7 @@ export class TaskPlanner {
   }
 
   setUsageCallback(
-    cb: ((usage: TokenUsage, llmMs: number, model: string) => void) | null,
+    cb: ((usage: TokenUsage, llmMs: number, model: string, providerId: ProviderConfig["providerId"]) => void) | null,
   ) {
     this.usageCallback = cb;
   }
@@ -854,7 +854,7 @@ export class TaskPlanner {
         this.usageCallback?.(
           response.usage,
           llmMs,
-          response.actualModel ?? this.llm.getCurrentModel(),
+          response.actualModel ?? this.llm.getCurrentModel(), response.actualProviderId ?? this.llm.getActiveProviderInfo().providerId,
         );
       if (response.finish_reason === "length") {
         // Truncated decompose JSON silently degrades to fallback nodes —
@@ -1277,7 +1277,7 @@ export class TaskPlanner {
         steps?.map((step) => step.objective) ||
         (legacySubtasks.length >= 2 ? legacySubtasks : []);
       const acceptsSingleStructuredPlan =
-        !!steps && steps.length === 1 && isDraftOnlyCommunicationTask(query);
+        !!steps && steps.length === 1 && requiresDraftOnlyCompletion(query);
       if (subtasks.length < 2 && !acceptsSingleStructuredPlan) {
         // Only fall back to synthesis when the planner returned NO parsed
         // steps at all, or when the task requires a round-trip and the planner
@@ -1501,7 +1501,7 @@ export class TaskPlanner {
         this.usageCallback?.(
           response.usage,
           llmMs,
-          response.actualModel ?? this.llm.getCurrentModel(),
+          response.actualModel ?? this.llm.getCurrentModel(), response.actualProviderId ?? this.llm.getActiveProviderInfo().providerId,
         );
 
       const text = (response.content || "").trim();
@@ -1703,7 +1703,7 @@ Current perception:\n${perception.slice(0, 800)}`,
         this.usageCallback?.(
           response.usage,
           llmMs,
-          response.actualModel ?? executorLlm.getCurrentModel(),
+          response.actualModel ?? executorLlm.getCurrentModel(), response.actualProviderId ?? executorLlm.getActiveProviderInfo().providerId,
         );
       }
 
@@ -1791,7 +1791,7 @@ Current perception:\n${perception.slice(0, 800)}`,
         this.usageCallback?.(
           response.usage,
           llmMs,
-          response.actualModel ?? this.llm.getCurrentModel(),
+          response.actualModel ?? this.llm.getCurrentModel(), response.actualProviderId ?? this.llm.getActiveProviderInfo().providerId,
         );
       }
 
