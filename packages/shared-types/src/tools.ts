@@ -96,6 +96,8 @@ export interface TypeTextArgs {
   text: string;
   /** Whether to press Enter after typing (default: false) */
   pressEnter?: boolean;
+  /** Use the background native-input path for a visible canvas-style editor. */
+  nativeEditor?: boolean;
 }
 
 /** Arguments for compose_text — delegate prose to the Writer specialist */

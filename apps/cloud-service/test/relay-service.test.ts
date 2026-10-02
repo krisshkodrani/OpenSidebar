@@ -242,6 +242,8 @@ test("relay records provider 401, 429, and 5xx failures without response content
 });
 test("relay forwards explicit cancellation and hard timeout upstream", async () => {
   const originalFetch = globalThis.fetch;
+  // The mocked fetch has no socket to keep Node alive for the unref'd timeout.
+  const keepAlive = setInterval(() => undefined, 1_000);
   const repository = new MemoryControlRepository();
   globalThis.fetch = async (_input, init) =>
     new Promise<Response>((_resolve, reject) =>
@@ -286,6 +288,7 @@ test("relay forwards explicit cancellation and hard timeout upstream", async () 
       "cancelled",
     );
   } finally {
+    clearInterval(keepAlive);
     globalThis.fetch = originalFetch;
   }
 });
