@@ -108,7 +108,8 @@ The agent can only interact with tabs in the current workspace. Each workspace i
 
 **DOM Interaction:**
 - `click_element` - Click tagged elements
-- `type_text` - Type into input fields
+- `type_text` - Type into input fields or, with explicit native-editor mode,
+  a visible canvas-style editor surface
 - `scroll_page` - Scroll up/down (supports scrolling within container elements)
 - `read_page` - Get full page content
 - `hover_element` - Hover over elements

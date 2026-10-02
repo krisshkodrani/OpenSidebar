@@ -8,6 +8,7 @@ import {
   scenarioEngine,
 } from "@opensidebar/scenario-engine";
 import {
+  attemptSpendEvidence,
   runModelBenchCase,
   runModelBenchSuite,
   type ModelBenchDriver,
@@ -323,4 +324,51 @@ test("suite blocks preserve explicit repetition labels for balanced A/B ordering
   });
 
   assert.deepEqual(observed, [2, 3]);
+});
+
+test("attempt is persisted and budget callback can stop before a technical retry", async () => {
+  let calls = 0;
+  const observed: string[] = [];
+  await assert.rejects(
+    runModelBenchCase({
+      definition,
+      configuration,
+      buildRevision: "abc",
+      repetition: 1,
+      driver: {
+        async execute() {
+          calls += 1;
+          return {
+            durationMs: 1,
+            resolvedSeats: {},
+            usageByRole: {},
+            artifactRefs: [],
+            failure: { kind: "provider", reason: "rate limited" },
+          };
+        },
+      },
+      onAttempt(attempt) {
+        observed.push(attempt.classification);
+        throw new Error("budget reached");
+      },
+    }),
+    /budget reached/,
+  );
+  assert.equal(calls, 1);
+  assert.deepEqual(observed, ["provider_failure"]);
+});
+
+test("spend evidence counts unattributed charges and flags missing response usage", () => {
+  const attempt = {
+    usageByRole: {
+      executor: { calls: 1, promptTokens: 1, completionTokens: 1, cachedTokens: 0, costUsd: 0.02, llmTimeMs: 1 },
+    },
+    unattributedUsage: { calls: 1, promptTokens: 1, completionTokens: 1, cachedTokens: 0, costUsd: 0.03, llmTimeMs: 1 },
+    diagnostics: { providerCalls: [{ usageReported: false }] },
+  } as unknown as Parameters<typeof attemptSpendEvidence>[0];
+  assert.deepEqual(attemptSpendEvidence(attempt), {
+    observedCostUsd: 0.05,
+    complete: false,
+  });
+  assert.equal(attemptSpendEvidence({ ...attempt, diagnostics: { providerCalls: [] } }).complete, false);
 });

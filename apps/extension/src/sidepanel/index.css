@@ -1,3 +1,5 @@
+@import "../../../../packages/ui-tokens/theme.css";
+
 @font-face {
   font-family: "Inter";
   font-style: normal;
@@ -41,11 +43,11 @@ body,
 #root {
   height: 100%;
   margin: 0;
-  background-color: #f8fafc;
+  background-color: var(--os-canvas);
 }
 
 .dark body {
-  background-color: #0f172a;
+  background-color: var(--os-canvas);
 }
 
 /* --- Prose styles for assistant markdown messages --- */
@@ -204,13 +206,13 @@ body,
 }
 
 .prose-chat a {
-  color: #2563eb;
+  color: var(--os-accent);
   text-decoration: underline;
   text-underline-offset: 2px;
 }
 
 .prose-chat a:hover {
-  color: #1d4ed8;
+  color: var(--os-accent-strong);
 }
 
 .prose-chat blockquote {
@@ -422,32 +424,32 @@ body,
 .input-glow:focus-within {
   box-shadow:
     0 0 0 2px #ffffff,
-    0 0 0 5px rgba(37, 99, 235, 0.22);
+    0 0 0 5px rgba(18, 107, 100, 0.24);
 }
 
 .dark .input-glow:focus-within {
   box-shadow:
-    0 0 0 2px #0f172a,
-    0 0 0 5px rgba(96, 165, 250, 0.28);
+    0 0 0 2px var(--os-canvas),
+    0 0 0 5px rgba(114, 198, 182, 0.3);
 }
 
-/* --- Azure background gradient --- */
+/* --- Quiet canvas gradient --- */
 .bg-warm-gradient {
-  background: linear-gradient(to bottom, #f8fafc, rgba(219, 234, 254, 0.28));
+  background: linear-gradient(to bottom, var(--os-canvas), var(--os-surface-muted));
 }
 .dark .bg-warm-gradient {
-  background: linear-gradient(to bottom, #0f172a, #020617);
+  background: linear-gradient(to bottom, var(--os-canvas), var(--os-surface-muted));
 }
 
 /* --- Glass surface --- */
 .glass-surface {
   backdrop-filter: blur(12px);
   -webkit-backdrop-filter: blur(12px);
-  background-color: rgba(248, 250, 252, 0.85);
+  background-color: rgba(245, 248, 244, 0.85);
 }
 
 .dark .glass-surface {
-  background-color: rgba(15, 23, 42, 0.85);
+  background-color: rgba(23, 38, 33, 0.85);
 }
 
 /* --- Button tactile feedback --- */

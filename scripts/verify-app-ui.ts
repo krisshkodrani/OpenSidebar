@@ -33,6 +33,17 @@ const preferences = {
   showSessionMetrics: true,
 };
 let preferenceSaves = 0;
+let analyticsEnabled = true;
+let analyticsRuns = [
+  { schemaVersion: 1, runId: "11111111-1111-4111-8111-111111111111", deviceId: "device-1", sequence: 1,
+    startedAt: "2026-09-29T10:00:00.000Z", observedAt: "2026-09-29T10:00:20.000Z",
+    state: "running", source: "remote", promptTokens: 20, completionTokens: 5,
+    spendUsd: null, spendProvenance: "unknown" },
+  { schemaVersion: 1, runId: "22222222-2222-4222-8222-222222222222", deviceId: "device-1", sequence: 2,
+    startedAt: "2026-09-29T09:00:00.000Z", observedAt: "2026-09-29T09:00:30.000Z", finishedAt: "2026-09-29T09:00:30.000Z",
+    state: "succeeded", source: "local", promptTokens: 10, completionTokens: 2,
+    spendUsd: 0, spendProvenance: "provider_reported" },
+];
 const server = createServer(async (req, res) => {
   const url = new URL(req.url!, "http://localhost");
   if (url.pathname.startsWith("/api/")) {
@@ -79,6 +90,20 @@ const server = createServer(async (req, res) => {
         if (req.method === "PUT") preferenceSaves++;
         data = preferences;
         break;
+      case "/api/v1/account/analytics":
+        data = { schemaVersion: 1, enabled: analyticsEnabled,
+          enabledAt: analyticsEnabled ? "2026-09-29T08:00:00.000Z" : null,
+          retentionDays: 90, runs: analyticsEnabled ? analyticsRuns : [] };
+        break;
+      case "/api/v1/account/analytics/consent": {
+        const chunks: Uint8Array[] = [];
+        for await (const chunk of req) chunks.push(chunk as Uint8Array);
+        analyticsEnabled = Boolean((JSON.parse(Buffer.concat(chunks).toString()) as { enabled: boolean }).enabled);
+        if (!analyticsEnabled) analyticsRuns = [];
+        data = { schemaVersion: 1, enabled: analyticsEnabled,
+          enabledAt: analyticsEnabled ? new Date().toISOString() : null, retentionDays: 90 };
+        break;
+      }
       case "/api/v1/traces":
         data = { traces: [] };
         break;
@@ -188,6 +213,7 @@ try {
     "/app",
     "/app/playground",
     "/app/settings",
+    "/app/analytics",
     "/app/sessions",
     "/app/viewer",
     "/app/sign-in",
@@ -238,7 +264,7 @@ try {
       await page.evaluate(
         () => getComputedStyle(document.body).backgroundColor,
       ),
-      "rgb(11, 17, 32)",
+      "rgb(16, 27, 24)",
     );
     await page.waitForFunction(
       () =>
@@ -288,8 +314,16 @@ try {
     await page.select("#web-appearance", "light");
   }
   checks.push(
-    "six routes: one main landmark and page title, 390/768/1440px without overflow, light and dark screenshots",
+    "seven routes: one main landmark and page title, 390/768/1440px without overflow, light and dark screenshots",
   );
+  await page.goto(origin + "/app/analytics", { waitUntil: "networkidle0" });
+  assert.equal(await page.evaluate(() => document.body.textContent?.includes("Spend unknown")), true);
+  assert.equal(await page.evaluate(() => document.body.textContent?.includes("provider reported")), true);
+  assert.equal(await page.evaluate(() => document.body.textContent?.includes("Observed, still running")), true);
+  await click("Turn off and delete");
+  await page.waitForFunction(() => document.body.textContent?.includes("Account analytics off"));
+  assert.equal(analyticsRuns.length, 0);
+  checks.push("unknown, measured zero, provisional state and opt-out deletion remain distinct");
   await page.goto(origin + "/app/account", { waitUntil: "networkidle0" });
   assert.equal(
     await page.$eval("[aria-current=page]", (el) => el.textContent),

@@ -37,6 +37,7 @@ export function emptySessionMetrics(): SessionMetrics {
     totalCostActual: 0,
     totalCostEstimated: 0,
     costMode: "none",
+    unknownCostCallCount: 0,
     totalLlmTimeMs: 0,
     totalSessionTimeMs: 0,
     llmCallCount: 0,
@@ -149,23 +150,23 @@ export function canSpendImagePromptBudget(
   );
 }
 
-function deriveCostMode(actualCost: number, estimatedCost: number): CostMode {
-  if (actualCost <= 0 && estimatedCost <= 0) return "none";
-  if (actualCost > 0 && estimatedCost > 0) return "mixed";
-  if (actualCost > 0) return "actual";
-  return "estimated";
+function deriveCostMode(previous: CostMode | undefined, source: CostMode): CostMode {
+  if (source === "none") return previous ?? "none";
+  if (!previous || previous === "none" || previous === source) return source;
+  return "mixed";
 }
 
 function resolveUsageCost(
   usage: TokenUsage,
   providerId: ProviderConfig["providerId"],
   model: string,
-): { total: number; actual: number; estimated: number } {
+): { total: number; actual: number; estimated: number; source: CostMode } {
   if (typeof usage.cost === "number" && Number.isFinite(usage.cost) && usage.cost >= 0) {
-    return { total: usage.cost, actual: usage.cost, estimated: 0 };
+    return { total: usage.cost, actual: usage.cost, estimated: 0, source: "actual" };
   }
-  const estimated = estimateCostUsd(providerId, model, usage) ?? 0;
-  return { total: estimated, actual: 0, estimated };
+  const estimated = estimateCostUsd(providerId, model, usage);
+  return { total: estimated ?? 0, actual: 0, estimated: estimated ?? 0,
+    source: estimated === null ? "none" : "estimated" };
 }
 
 function ensureModelBreakdownEntry(metrics: SessionMetrics, model: string) {
@@ -204,14 +205,12 @@ export function recordCompletionUsage(args: {
       args.currentProvider) as ProviderConfig["providerId"];
     const model = response.actualModel ?? args.currentModel;
     const cost = resolveUsageCost(response.usage, providerId, model);
+    if (cost.source === "none") metrics.unknownCostCallCount = (metrics.unknownCostCallCount ?? 0) + 1;
     metrics.totalCost += cost.total;
     metrics.totalCostActual = (metrics.totalCostActual ?? 0) + cost.actual;
     metrics.totalCostEstimated =
       (metrics.totalCostEstimated ?? 0) + cost.estimated;
-    metrics.costMode = deriveCostMode(
-      metrics.totalCostActual ?? 0,
-      metrics.totalCostEstimated ?? 0,
-    );
+    metrics.costMode = deriveCostMode(metrics.costMode, cost.source);
     if (response.usage.cached_tokens) {
       metrics.totalCachedTokens += response.usage.cached_tokens;
       args.onCacheHit?.({
@@ -225,6 +224,7 @@ export function recordCompletionUsage(args: {
   }
   metrics.totalLlmTimeMs += llmMs;
   metrics.llmCallCount += 1;
+  if (!response.usage) metrics.unknownCostCallCount = (metrics.unknownCostCallCount ?? 0) + 1;
 
   const model = response.actualModel ?? args.currentModel;
   const entry = ensureModelBreakdownEntry(metrics, model);
@@ -238,10 +238,7 @@ export function recordCompletionUsage(args: {
     entry.cost += cost.total;
     entry.actualCost = (entry.actualCost ?? 0) + cost.actual;
     entry.estimatedCost = (entry.estimatedCost ?? 0) + cost.estimated;
-    entry.costMode = deriveCostMode(
-      entry.actualCost ?? 0,
-      entry.estimatedCost ?? 0,
-    );
+    entry.costMode = deriveCostMode(entry.costMode, cost.source);
   }
 }
 
@@ -262,14 +259,12 @@ export function recordVisionTelemetryUsage(args: {
   metrics.totalCompletionTokens += usage.completion_tokens;
   metrics.totalTokens += usage.total_tokens;
   const cost = resolveUsageCost(usage, providerId, model);
+  if (cost.source === "none") metrics.unknownCostCallCount = (metrics.unknownCostCallCount ?? 0) + 1;
   metrics.totalCost += cost.total;
   metrics.totalCostActual = (metrics.totalCostActual ?? 0) + cost.actual;
   metrics.totalCostEstimated =
     (metrics.totalCostEstimated ?? 0) + cost.estimated;
-  metrics.costMode = deriveCostMode(
-    metrics.totalCostActual ?? 0,
-    metrics.totalCostEstimated ?? 0,
-  );
+  metrics.costMode = deriveCostMode(metrics.costMode, cost.source);
   metrics.totalLlmTimeMs += llmMs;
   metrics.llmCallCount += 1;
 
@@ -280,10 +275,7 @@ export function recordVisionTelemetryUsage(args: {
   entry.cost += cost.total;
   entry.actualCost = (entry.actualCost ?? 0) + cost.actual;
   entry.estimatedCost = (entry.estimatedCost ?? 0) + cost.estimated;
-  entry.costMode = deriveCostMode(
-    entry.actualCost ?? 0,
-    entry.estimatedCost ?? 0,
-  );
+  entry.costMode = deriveCostMode(entry.costMode, cost.source);
 }
 
 export function recordCachedVisionTelemetryUse(metrics: SessionMetrics): void {

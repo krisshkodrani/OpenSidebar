@@ -1,23 +1,23 @@
-/* Walkthrough page — light treatment with warm steel-blue accents.
+/* Walkthrough page — light treatment with pine accents.
    Matches the site-wide warm-light brand system in styles.css.
    Role hues validated (dataviz six-checks) against the light surface:
    planner #7C4DDE · executor #1D7FBF · verifier #C2410C */
 
 .wt-page {
-  --wt-surface: #f7f7f9;
+  --wt-surface: #F5F8F4;
   --wt-card: #ffffff;
-  --wt-well: #efeff5;
-  --wt-ink: #1b1c22;
-  --wt-muted: #5a5c6b;
+  --wt-well: #E4F1EC;
+  --wt-ink: #182925;
+  --wt-muted: #586A62;
   --wt-faint: #8b8d9e;
-  --wt-line: #e3e4ec;
-  --wt-line-strong: #cfd1de;
-  --wt-accent: #3a6ea5;
-  --wt-accent-deep: #2f5c8c;
+  --wt-line: #D9E4DE;
+  --wt-line-strong: #BBD0C3;
+  --wt-accent: #126B64;
+  --wt-accent-deep: #0D554F;
   --wt-planner: #7c4dde;
   --wt-executor: #1d7fbf;
   --wt-verifier: #c2410c;
-  --wt-good: #177245;
+  --wt-good: #287545;
   --wt-good-bg: #e5f3ea;
   --wt-shadow:
     0 1px 2px rgba(20, 21, 35, 0.05), 0 6px 24px -8px rgba(20, 21, 35, 0.1);
@@ -172,7 +172,7 @@
 .wt-spine-item.active .wt-dot {
   background: var(--wt-accent);
   border-color: var(--wt-accent);
-  box-shadow: 0 0 0 4px rgba(58, 110, 165, 0.18);
+  box-shadow: 0 0 0 4px rgba(18, 107, 100, 0.18);
 }
 .wt-spine-item.locked {
   cursor: default;
@@ -615,7 +615,7 @@
 }
 
 /* ---------- controls ---------- */
-/* Warm steel-blue primary; light ghost. Overrides the brand .btn (dark chrome)
+/* Pine primary; light ghost. Overrides the brand .btn
    inside the light page only. */
 .wt-controls {
   position: sticky;
@@ -653,10 +653,10 @@
   --fg: #ffffff;
   --bd: transparent;
   padding: 11px 26px;
-  box-shadow: 0 8px 22px -10px rgba(47, 92, 140, 0.55);
+  box-shadow: 0 8px 22px -10px rgba(13, 85, 79, 0.55);
 }
 .wt-controls .btn-primary:not(:disabled):hover {
-  box-shadow: 0 12px 28px -10px rgba(47, 92, 140, 0.65);
+  box-shadow: 0 12px 28px -10px rgba(13, 85, 79, 0.65);
   color: #ffffff;
 }
 .wt-progress {

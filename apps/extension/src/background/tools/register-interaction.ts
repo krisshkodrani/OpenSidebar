@@ -26,6 +26,7 @@ import { requestPageSnapshot } from "../perception/frame-snapshot-runtime";
 import { frameActionRoutes } from "../perception/frame-action-routes";
 import { findElementAcrossFrames } from "./frame-find-element";
 import { clickElementInMainWorld, mirrorTextInputInMainWorld } from "./main-world-bridge";
+import { typeInNativeEditor } from "./native-editor-input";
 
 export function registerInteractionTools(toolRegistry: ToolRegistry): void {
     toolRegistry.register(ToolName.CLICK_ELEMENT, CLICK_DEF, async (args, tabId, _signal, toolCallId, context) => {
@@ -43,7 +44,10 @@ export function registerInteractionTools(toolRegistry: ToolRegistry): void {
         }
         return result;
     });
-    toolRegistry.register(ToolName.TYPE_TEXT, TYPE_TEXT_DEF, async (args, tabId, _signal, toolCallId, context) => {
+    toolRegistry.register(ToolName.TYPE_TEXT, TYPE_TEXT_DEF, async (args, tabId, signal, toolCallId, context) => {
+        if (args.nativeEditor === true) {
+            return typeInNativeEditor(tabId, args, context?.observationBasis, signal);
+        }
         const result = await executeContentTool(ToolName.TYPE_TEXT, args, tabId, undefined, toolCallId, context?.observationBasis);
         if (typeof result !== "string") return result;
         // Main-world text bridge: controlled inputs in frameworks such as React can

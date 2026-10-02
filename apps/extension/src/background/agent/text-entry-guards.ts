@@ -1,5 +1,6 @@
 import type { DomSnapshot } from "../../types";
 import { rectsLikelyOverlap } from "./geometry";
+import { isNativeEditorSurface } from "../tools/native-editor-policy";
 
 export function normalizeGuardText(value: unknown): string {
   return String(value ?? "")
@@ -147,7 +148,12 @@ export function validateTextEntryTarget(
   objectiveText: string,
   element: DomSnapshot["elements"][number] | null | undefined,
   typedText: string,
+  nativeEditor = false,
 ): string | null {
+  if (nativeEditor) {
+    return isNativeEditorSurface(element) ? null :
+      "Error: nativeEditor requires a visible canvas-style editor surface. Read the page and choose its tag ID.";
+  }
   if (!element) return null;
   if (isFileInputElement(element)) {
     return (

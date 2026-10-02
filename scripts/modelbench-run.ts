@@ -13,6 +13,7 @@ import {
   MODEL_BENCH_CASES,
 } from "@opensidebar/scenario-engine";
 import {
+  attemptSpendEvidence,
   runModelBenchSuite,
   type ModelBenchDriver,
   type ModelBenchRunConfiguration,
@@ -58,6 +59,15 @@ if (!matrixPath || !driverPath) {
     "Usage: pnpm modelbench:run --matrix <matrix.json> --driver <driver.ts> [--suite core-20 | --case <case-id>] [--repeat 1] [--output .artifacts/modelbench/run]",
   );
 }
+const costLimitText = option("--max-observed-cost-usd") ?? process.env.MODEL_BENCH_MAX_OBSERVED_COST_USD;
+const costLimitUsd = Number(costLimitText);
+if (driverPath.replaceAll("\\", "/").endsWith("/modelbench-extension-driver.ts") &&
+    (!costLimitText || !Number.isFinite(costLimitUsd) || costLimitUsd <= 0)) {
+  throw new Error("The extension driver requires --max-observed-cost-usd <positive amount> before any model call.");
+}
+if (costLimitText && (!Number.isFinite(costLimitUsd) || costLimitUsd <= 0)) {
+  throw new Error("--max-observed-cost-usd must be a positive finite amount.");
+}
 const matrix = JSON.parse(readFileSync(resolve(matrixPath), "utf8")) as MatrixFileV1;
 if (matrix.schemaVersion !== 1 || !Array.isArray(matrix.configurations)) {
   throw new Error("ModelBench matrix must have schemaVersion 1 and configurations[].");
@@ -83,6 +93,7 @@ const outputDirectory = resolve(
 mkdirSync(outputDirectory, { recursive: true });
 const outputPath = resolve(outputDirectory, "attempts.json");
 const attempts: BenchmarkAttemptV1[] = [];
+let observedCostUsd = 0;
 const driver = await loadDriver(driverPath);
 const buildRevision = execFileSync("git", ["rev-parse", "HEAD"], {
   encoding: "utf8",
@@ -98,9 +109,17 @@ try {
     onAttempt(attempt) {
       attempts.push(attempt);
       writeFileSync(outputPath, `${JSON.stringify({ attempts }, null, 2)}\n`);
+      const spend = attemptSpendEvidence(attempt);
+      observedCostUsd += spend.observedCostUsd;
       console.log(
-        `[modelbench:run] ${attempt.caseId}: ${attempt.classification} (${attempt.durationMs} ms)`,
+        `[modelbench:run] ${attempt.caseId}: ${attempt.classification} (${attempt.durationMs} ms; observed total $${observedCostUsd.toFixed(6)})`,
       );
+      if (!spend.complete) {
+        throw new Error(`ModelBench stopped after ${attempt.caseId}: provider usage is missing; actual spend is unknown.`);
+      }
+      if (costLimitText && observedCostUsd >= costLimitUsd) {
+        throw new Error(`ModelBench stopped after ${attempt.caseId}: observed spend reached the $${costLimitUsd.toFixed(2)} ceiling.`);
+      }
     },
   });
 } finally {

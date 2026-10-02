@@ -7,8 +7,10 @@ browser agent rather than guaranteed production automation.
 
 - The agent can misread page state, especially on heavily dynamic pages, hidden
   forms, custom widgets, cross-origin frames, and pages with delayed re-rendering.
-- Rich editors can require site-specific interaction; [Google Docs text entry](https://github.com/krisshkodrani/OpenSidebar/issues/139)
-  remains under investigation.
+- Canvas-style editors can use the `type_text` native-editor path after the agent
+  identifies a visible editor surface. This path passed a local browser test;
+  [Google Docs text entry](https://github.com/krisshkodrani/OpenSidebar/issues/139)
+  remains unverified on a real document.
 - The verifier and `DONE` hardening reduce premature completion, but they depend
   on available page evidence. Users should review sensitive results before acting
   on them.
@@ -24,6 +26,9 @@ browser agent rather than guaranteed production automation.
 - Broad host access is required so the agent can work on user-selected sites, but
   users should start on trusted, low-risk pages and keep approval gates enabled
   for sensitive tasks.
+- Native editor input requires Chrome's `debugger` permission. Chrome shows a
+  warning bar during the brief attachment; dismissing it cancels that input.
+  The agent detaches immediately after the insertion attempt.
 - Cookie, history, tab, download, screenshot, and JavaScript capabilities are
   powerful browser-agent tools. High-risk actions may still require user review
   depending on interaction settings.

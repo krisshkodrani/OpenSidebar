@@ -20,6 +20,8 @@ export interface RemoteMissionV1 {
   missionId: string;
   deviceId: string;
   createdAt: string;
+  /** Time the current lifecycle state was last recorded by the service. */
+  updatedAt?: string;
   expiresAt: string;
   state: RemoteMissionState;
   sequence: number;

@@ -3,7 +3,7 @@ import "./walkthrough.css";
 import RAW from "./walkthrough-data.json";
 
 /**
- * Interactive replay of four real recorded orchestrator runs. Every
+ * Interactive replay of three real recorded orchestrator runs. Every
  * objective, tool call, model id, token count, and verdict is read verbatim
  * from the embedded trace extracts — the only curated strings are the tab
  * labels, headlines, and short step titles below.
@@ -146,39 +146,6 @@ const RUN_META: Record<string, RunMeta> = {
       "Confirm the deletion",
     ],
   },
-};
-
-RUN_META.bde2ff19 = {
-  key: "servicenow",
-  tab: "ServiceNow incident",
-  tabNote: "trusted workflow",
-  mode: "workflow",
-  headline: "No decomposition — a recognized trusted workflow.",
-  lede: `A record-creation request with nine explicit field/value pairs,
-    recorded July 7, 2026 against a public ServiceNow developer instance.
-    Instead of emitting a plan graph, the planner bound the whole task to a
-    deterministic workflow with guarded submits.`,
-  planNote: "",
-  finaleTitle: `Incident created — <span class="wt-orderid">INC0000038</span>`,
-  finaleLede: `Nine fields configured, one rejected submit caught and
-    reconciled, then resubmitted — the record left the form.`,
-  shortTitles: [
-    "Fill the incident form",
-    "First submit — rejected",
-    "Reconcile the field state",
-    "Submit — record created",
-  ],
-  actionNotes: [
-    `One call sets all nine fields; the helper echoes back every field it
-      wrote, by label and by internal name.`,
-    `The instance rejected the update, and the guard caught it: a submit only
-      counts if the form actually leaves for a record. It reports the mismatch
-      instead of declaring success.`,
-    `The helper re-applies and re-verifies the same field state before trying
-      again.`,
-    `This time the record leaves the form: INC0000038 is created and opened as
-      evidence.`,
-  ],
 };
 
 const runs = (RAW as { runs: unknown[] }).runs.map((r) => {

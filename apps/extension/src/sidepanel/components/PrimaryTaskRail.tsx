@@ -250,9 +250,7 @@ export function PrimaryTaskRail({ embedded = false }: { embedded?: boolean } = {
             rail.sessionMetrics.totalTokens > 0 ? (
               <span className="rounded-md border border-warm-200/90 bg-white/70 px-1.5 py-0.5 text-[10px] tabular-nums text-warm-500 dark:border-warm-700 dark:bg-warm-900/50 dark:text-warm-400">
                 {formatTokens(rail.sessionMetrics.totalTokens)}
-                {rail.sessionMetrics.totalCost > 0
-                  ? ` / ${costLabel(rail.sessionMetrics)}`
-                  : ""}
+                {` / ${costLabel(rail.sessionMetrics)}`}
               </span>
             ) : null}
           </div>

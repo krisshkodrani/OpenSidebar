@@ -25,6 +25,7 @@ import { createHostedBrowserMcpOperations } from "./hosted-browser-mcp-operation
 import { PersonalDataRepository } from "./personal-data-repository.js";
 import { DisabledPersonalDataObjectStore, PersonalDataObjectStore } from "./personal-data-object-store.js";
 import { PostgresModelBenchRepository } from "./postgres-modelbench-repository.js";
+import { PostgresRunAnalyticsRepository } from "./run-analytics-repository.js";
 
 const config = loadConfig();
 const repository = new PostgresPlaygroundRepository(config.databaseUrl);
@@ -44,6 +45,9 @@ const controlRepository = new PostgresControlRepository(
 );
 await controlRepository.migrate();
 await controlRepository.cleanupExpired();
+const runAnalyticsRepository = new PostgresRunAnalyticsRepository(controlRepository.pool);
+await runAnalyticsRepository.migrate();
+await runAnalyticsRepository.cleanupExpired();
 const personalDataRepository = new PersonalDataRepository(controlRepository.pool);
 await personalDataRepository.migrate();
 await personalDataRepository.cleanupExpired();
@@ -148,6 +152,7 @@ const control = {
   personalDataRepository,
   personalDataObjectStore,
   modelBenchRepository,
+  runAnalyticsRepository,
   passwordlessAuth,
 };
 const server = serve(
@@ -175,6 +180,9 @@ const cleanupTimer = setInterval(
     void controlRepository
       .cleanupExpired()
       .catch((error) => console.error("control-record cleanup failed", error));
+    void runAnalyticsRepository
+      .cleanupExpired()
+      .catch((error) => console.error("run-analytics cleanup failed", error));
     void personalDataRepository
       .cleanupExpired()
       .catch((error) => console.error("personal-data cleanup failed", error));

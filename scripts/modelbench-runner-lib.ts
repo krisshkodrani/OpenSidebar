@@ -58,6 +58,7 @@ export interface RunCaseOptions {
   repetition: number;
   now?: () => Date;
   id?: () => string;
+  onAttempt?: (attempt: BenchmarkAttemptV1) => void | Promise<void>;
 }
 
 function seatMismatch(
@@ -215,6 +216,7 @@ export async function runModelBenchCase(
       artifactRefs: result.artifactRefs,
     };
     attempts.push(attempt);
+    await options.onAttempt?.(attempt);
     if (!retryable(classification) || tryIndex === 1) break;
     retryOfAttemptId = attempt.attemptId;
   }
@@ -230,6 +232,27 @@ export interface RunSuiteOptions {
   /** First repetition label, used when a balanced A/B run is split into blocks. */
   repetitionStart?: number;
   onAttempt?: (attempt: BenchmarkAttemptV1) => void | Promise<void>;
+}
+
+/** API-reported spend only. A missing response usage field is an unknown charge. */
+export function attemptSpendEvidence(attempt: BenchmarkAttemptV1): {
+  observedCostUsd: number;
+  complete: boolean;
+} {
+  const usage = [...Object.values(attempt.usageByRole), attempt.unattributedUsage]
+    .filter((value): value is RoleUsageV1 => Boolean(value));
+  const calls = attempt.diagnostics?.providerCalls;
+  const providerCalls = Array.isArray(calls) ? calls : [];
+  return {
+    observedCostUsd: usage.reduce((sum, value) => sum + value.costUsd, 0),
+    complete: providerCalls.length > 0 && providerCalls.every(
+      (call) =>
+        call &&
+        typeof call === "object" &&
+        "usageReported" in call &&
+        call.usageReported === true,
+    ),
+  };
 }
 
 export async function runModelBenchSuite(
@@ -250,10 +273,10 @@ export async function runModelBenchSuite(
           driver: options.driver,
           buildRevision: options.buildRevision,
           repetition,
+          onAttempt: options.onAttempt,
         });
         for (const attempt of caseAttempts) {
           attempts.push(attempt);
-          await options.onAttempt?.(attempt);
         }
       }
     }

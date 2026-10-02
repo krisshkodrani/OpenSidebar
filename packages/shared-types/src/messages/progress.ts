@@ -234,6 +234,8 @@ export interface SessionMetrics {
   totalCostEstimated?: number;
   /** Provenance of `totalCost` */
   costMode?: "none" | "actual" | "estimated" | "mixed";
+  /** Calls whose cost was neither reported nor estimable. */
+  unknownCostCallCount?: number;
   /** Total LLM call time in ms (wall clock, not including tool execution) */
   totalLlmTimeMs: number;
   /** Total session wall clock time in ms */

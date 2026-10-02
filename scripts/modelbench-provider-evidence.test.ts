@@ -192,6 +192,14 @@ test("cost audit exposes missing planner and judge captures before scoring", () 
   assert.match(audit.issues[1], /1 judge call/);
 });
 
+test("cost audit includes perception calls when that seat is active", () => {
+  const provider = summarizeProviderCalls([], {});
+  const audit = reconcileProviderAndTraceUsage(provider, {
+    perception: { calls: 2, promptTokens: 100, completionTokens: 10, cachedTokens: 0, costUsd: 0.01, llmTimeMs: 20 },
+  });
+  assert.match(audit.issues[0], /2 perception call/);
+});
+
 test("cost audit tolerates extra API retries and does not treat price estimates as missing calls", () => {
   const calls = [0.01, 0.02].map((cost, index) => observeProviderCall(
     '{"model":"test/model"}',

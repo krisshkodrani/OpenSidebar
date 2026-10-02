@@ -9,7 +9,6 @@ export function PlanCollapsedBar({
   activeCount,
   blockedCount,
   confirmed,
-  currentIndex,
   elapsed,
   isExpanded,
   mode,
@@ -20,7 +19,6 @@ export function PlanCollapsedBar({
   activeCount: number;
   blockedCount: number;
   confirmed: boolean;
-  currentIndex: number;
   elapsed: number;
   isExpanded: boolean;
   mode: PlanStripMode;
@@ -29,6 +27,8 @@ export function PlanCollapsedBar({
   rows: PlanRow[];
 }) {
   const Chevron = isExpanded ? ChevronUp : ChevronDown;
+  const current = rows.find((row) => row.status === "running");
+  const currentLabel = current?.label ?? current?.description;
 
   return (
     <button
@@ -79,8 +79,8 @@ export function PlanCollapsedBar({
             Plan
           </span>
           <PlanProgressBar rows={rows} />
-          <span className="ml-1 text-[11px] tabular-nums text-warm-700 dark:text-warm-200">
-            {`Step ${currentIndex + 1}/${rows.length}`}
+          <span className="ml-1 max-w-[12rem] truncate text-[11px] text-warm-700 dark:text-warm-200" title={currentLabel}>
+            {currentLabel ? `Working: ${currentLabel}` : rows.every((row) => row.status === "completed") ? "Plan completed" : "Plan ready"}
           </span>
           {activeCount > 1 ? (
             <span className="rounded-full bg-primary-100 px-1 py-0.5 text-[9px] text-primary-700 dark:bg-primary-900/40 dark:text-primary-300">

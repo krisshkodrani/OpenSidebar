@@ -1,51 +1,55 @@
-# Design System
+# Design system: Calm autonomy
 
-OpenSidebar uses an Azure-inspired product palette: neutral work surfaces, clear blue trust/action colors, and teal only for live agent activity.
+OpenSidebar uses quiet surfaces, pine for action, and a small chartreuse signal
+for current activity. The product shows observed work and its evidence without
+pretending that a task has a predictable completion percentage.
 
-This page is the stable repo record for implemented design decisions. Long-form color research belongs in Notion.
+## Shared palette
 
-## Palette
+`packages/ui-tokens/tokens.json` is the source of truth. Run
+`node scripts/build-ui-tokens.mjs` after changing it. `pnpm ui-tokens:check`
+verifies the generated CSS; the repository verification command checks it too.
 
-| Token | Value | Use |
-| --- | --- | --- |
-| `brand.surface` | `#F8FAFC` | App canvas and quiet backgrounds |
-| `brand.panel` | `#FFFFFF` | Cards, panels, input surfaces |
-| `brand.text` | `#0F172A` | Primary text |
-| `brand.muted` | `#475569` | Secondary text |
-| `brand.subtle` | `#334155` | Strong secondary labels and dark UI accents |
-| `brand.accent` | `#2563EB` | Primary actions, active navigation, key links |
-| `brand.accent-strong` | `#1D4ED8` | Hovered or pressed primary actions |
-| `brand.live` | `#14B8A6` | Agent running, streaming, live orchestration |
-| `brand.live-soft` | `#99F6E4` | Soft live backgrounds and glows |
-| `state.success` | `#15803D` | Completed states and positive confirmation |
-| `state.warning` | `#D97706` | Attention, feedback mode, recoverable risk |
-| `state.error` | `#DC2626` | Errors, blocked state, destructive risk |
-| `state.info` | `#2563EB` | Informational state |
+| Token | Light | Dark | Use |
+| --- | --- | --- | --- |
+| Canvas | `#F5F8F4` | `#101B18` | Page background |
+| Surface | `#FFFFFF` | `#172621` | Cards and controls |
+| Muted surface | `#E4F1EC` | `#21362E` | Quiet grouping |
+| Ink | `#182925` | `#EAF4EC` | Primary text |
+| Muted ink | `#586A62` | `#B5C9BD` | Secondary text |
+| Line | `#D9E4DE` | `#344D40` | Separation |
+| Pine | `#126B64` | `#72C6B6` | Primary action, active navigation, links |
+| Pressed pine | `#0D554F` | `#A2E4D4` | Hover and focus emphasis |
+| Chartreuse | `#A5C842` | `#C1DC70` | Small live marker and editorial highlight |
 
-## Usage Rules
+Success, warning, and danger retain distinct semantic colors. Chartreuse never
+means success by itself. Do not use color alone to communicate a state.
 
-- Use blue for user action, selection, trust, and primary product identity.
-- Use teal for live agent behavior only: running, streaming, processing, orchestration activity.
-- Use amber for user attention or feedback mode, not as a general accent.
-- Use red only for errors, blockers, destructive actions, or hard failure states.
-- Keep surfaces neutral. The product should feel like a workbench, not a campaign page.
-- Prefer semantic tokens over raw hex values in UI code.
+## Task progression
 
-## Focus Treatment
+- Show named states such as **Starting**, **Running**, **Waiting for approval**,
+  **Completed**, and **Outcome uncertain**.
+- Show a timestamp when a state or cost was actually observed. A plan's steps
+  may be shown as step states, but they are not an overall completion forecast.
+- Label active remote spend as observed and provisional. Reconcile the terminal
+  value when the run finishes. Show **Unknown** when no trustworthy price exists;
+  a measured zero is distinct.
+- Keep stop and approval controls near the active task, with clear consequences.
 
-Interactive controls should use the wider two-layer focus treatment:
+## Surfaces
 
-| Mode | Shadow |
-| --- | --- |
-| Light | `0 0 0 2px #ffffff, 0 0 0 5px rgba(37, 99, 235, 0.22)` |
-| Dark | `0 0 0 2px #0f172a, 0 0 0 5px rgba(96, 165, 250, 0.28)` |
-
-This makes keyboard and active-composer focus visible without turning the whole surface blue.
+- The public site leads with a result receipt and the trust story. The receipt
+  is explicitly illustrative; demos and Playground links remain accessible.
+- The SaaS workspace groups current work, recent activity, analytics, and
+  settings. It retains system, light, and dark appearance modes.
+- The extension side panel and trace viewer share the same palette. The live
+  marker is a short chartreuse line, not a moving progress estimate.
+- Internal ModelBench and training-data review screens use the product palette.
+  Fictional benchmark target websites keep their independent visual styles.
 
 ## Implementation
 
-- Tailwind tokens live in `tailwind.config.cjs`.
-- Side panel global styles live in `apps/extension/src/sidepanel/index.css`.
-- Trace viewer global styles live in `apps/extension/src/trace-viewer/index.css`.
-- The main composer focus glow is applied through `.input-glow`.
-
+The site, SaaS, extension, and trace viewer consume the shared token values
+through generated CSS, Chakra semantic tokens, or Tailwind. Prefer those tokens
+over new hardcoded brand colors. Local product screenshots and traces belong in
+`.artifacts/`, not the tracked docs tree.

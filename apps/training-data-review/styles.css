@@ -1,16 +1,16 @@
 :root {
-  --ink: #17201c;
-  --muted: #647069;
-  --paper: #f4f1e9;
-  --panel: #fcfaf5;
-  --line: #d8d5cc;
-  --green: #1f6848;
-  --green-soft: #dceadf;
+  --ink: #182925;
+  --muted: #586a62;
+  --paper: #f5f8f4;
+  --panel: #ffffff;
+  --line: #d9e4de;
+  --green: #126b64;
+  --green-soft: #e4f1ec;
   --amber: #a45d1c;
   --amber-soft: #f6e6ce;
   --red: #a13d35;
   --red-soft: #f4dfda;
-  --blue: #355f83;
+  --blue: #126b64;
   --mono: "SFMono-Regular", Consolas, "Liberation Mono", monospace;
   --serif: Georgia, "Times New Roman", serif;
   --sans:
@@ -28,7 +28,7 @@ body {
   background:
     radial-gradient(
       circle at 92% 5%,
-      rgba(31, 104, 72, 0.09),
+      rgba(18, 107, 100, 0.09),
       transparent 25rem
     ),
     var(--paper);
@@ -55,7 +55,7 @@ button {
   justify-content: space-between;
   padding: 0 4vw;
   border-bottom: 1px solid var(--line);
-  background: rgba(244, 241, 233, 0.88);
+  background: rgba(245, 248, 244, 0.88);
   backdrop-filter: blur(14px);
   position: sticky;
   top: 0;
@@ -103,8 +103,8 @@ button {
   width: 7px;
   height: 7px;
   border-radius: 50%;
-  background: #49a675;
-  box-shadow: 0 0 0 4px rgba(73, 166, 117, 0.13);
+  background: #a5c842;
+  box-shadow: 0 0 0 4px rgba(165, 200, 66, 0.16);
 }
 
 main {
@@ -450,7 +450,7 @@ h1 em {
 .token-bar span {
   display: block;
   height: 100%;
-  background: linear-gradient(90deg, var(--green), #70a88c);
+  background: linear-gradient(90deg, var(--green), #a5c842);
 }
 .detail-body {
   display: grid;

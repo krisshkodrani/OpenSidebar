@@ -31,6 +31,7 @@ export interface RemoteMissionRepository {
     limit: number;
   }): Promise<RemoteMissionV1[]>;
   activeMissions(accountId: string): Promise<RemoteMissionV1[]>;
+  recentMissions(accountId: string, limit: number): Promise<RemoteMissionV1[]>;
   transition(input: {
     accountId: string;
     missionId: string;

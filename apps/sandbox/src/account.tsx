@@ -109,7 +109,7 @@ export function AccountPage() {
           </Text>
           <Button
             mt="6"
-            colorPalette="blue"
+            colorPalette="brand"
             onClick={() =>
               location.assign("/api/v1/playground/auth/login?return=/account")
             }
@@ -180,7 +180,7 @@ export function AccountPage() {
             ) : (
               <Button
                 mt="5"
-                colorPalette="blue"
+                colorPalette="brand"
                 onClick={() =>
                   void act(async () =>
                     setLinkCode((await accountApi.linkCode()).code),
@@ -195,7 +195,7 @@ export function AccountPage() {
             </Text>
           </Box>
           <Box {...card} p="6">
-            <Heading size="md">Monthly AI usage</Heading>
+            <Heading size="md">Monthly cloud relay usage</Heading>
             <Text mt="5" fontSize="2xl" fontWeight="700">
               {usage?.requests ?? 0} / {usage?.limits.requests ?? 2_000}{" "}
               requests
@@ -209,6 +209,7 @@ export function AccountPage() {
             <Text mt="3" fontSize="sm" color="muted">
               {usage?.concurrentStreams ?? 0} active stream(s)
             </Text>
+            <Text mt="3" fontSize="sm" color="muted">This is a request quota. <a href="/app/analytics">Recorded model spend</a> is separate and opt-in.</Text>
           </Box>
         </SimpleGrid>
         <PreferencesCard
@@ -230,7 +231,7 @@ export function AccountPage() {
               </Text>
             </Box>
             <Button
-              colorPalette={remoteWork?.enabled ? "red" : "blue"}
+              colorPalette={remoteWork?.enabled ? "red" : "brand"}
               variant={remoteWork?.enabled ? "outline" : "solid"}
               disabled={!remoteWork || mutation.isPending}
               onClick={() =>
@@ -320,7 +321,7 @@ export function AccountPage() {
                   />
                   <Button
                     size="sm"
-                    colorPalette="blue"
+                    colorPalette="brand"
                     disabled={
                       !credentialDrafts[credential.provider]?.trim() ||
                       mutation.isPending
@@ -682,7 +683,7 @@ function PreferencesCard({
             <Text fontSize="sm">Show session metrics</Text>
           </Flex>
         </label>
-        <Button type="submit" mt="5" colorPalette="blue" loading={busy}>
+        <Button type="submit" mt="5" colorPalette="brand" loading={busy}>
           Save synced preferences
         </Button>
       </Box>

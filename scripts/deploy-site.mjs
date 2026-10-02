@@ -130,7 +130,6 @@ run("aws", [
   s3("/assets"),
   "--cache-control",
   IMMUTABLE,
-  "--delete",
   ...(DRY ? ["--dryrun"] : []),
 ]);
 
