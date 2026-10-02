@@ -214,6 +214,16 @@ export function inferExpectedFieldValue(
 
   const text = cleanLabel(userRequest);
   for (const alias of formFieldAliases(field)) {
+    // In value-before-field requests, the text after the field is location
+    // context, not the value (for example, "type Acme in Company on this page").
+    const valueBeforeField = new RegExp(
+      `\\b(?:write|type|enter)\\s+(.+?)\\s+(?:in|into)\\s+(?:the\\s+)?${escapeRegExp(alias)}\\b`,
+      "i",
+    ).exec(text);
+    if (valueBeforeField?.[1]) {
+      const value = trimInferredValue(valueBeforeField[1], field, fields);
+      if (value && !formFieldAliases(field).includes(normalizeText(value))) return value;
+    }
     const quotedPattern = new RegExp(
       `\\b${escapeRegExp(alias)}\\b\\s*(?:(is|=|:|to|as|with|equals?|shows?|contains?|reads?|displays?)\\s*)?["']([^"']+)["']`,
       "gi",
