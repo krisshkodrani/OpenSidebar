@@ -11,6 +11,7 @@ import {
   getSpan,
   getTrace,
   getTrajectory,
+  investigateTrace,
   listToolUsage,
   queryInsights,
   searchTraces,
@@ -207,6 +208,24 @@ describe("searchTraces", () => {
     expect(result).toHaveLength(1);
     expect(result[0].sessionId).toBe("s1");
   });
+
+  it("uses the repository's indexed search when available", () => {
+    const searchSessions = vi.fn(() => ({
+      items: [sessions[1]],
+      total: 1,
+      hasMore: false,
+      nextCursor: null,
+    }));
+    const result = searchTraces(makeStore({ searchSessions }), {
+      outcome: "error",
+      limit: 1,
+    });
+    expect(searchSessions).toHaveBeenCalledWith(
+      { outcome: "error" },
+      { limit: 1 },
+    );
+    expect(result.map((item) => item.sessionId)).toEqual(["s2"]);
+  });
 });
 
 describe("getTrace", () => {
@@ -214,11 +233,25 @@ describe("getTrace", () => {
     const { session, entries } = getTrace(makeStore(), "s1");
     expect(session?.sessionId).toBe("s1");
     expect(entries).toHaveLength(1);
+    expect(session?.viewerUrl).toContain("#session=s1");
   });
 
   it("returns null session for an unknown id", () => {
     const { session } = getTrace(makeStore(), "nope");
     expect(session).toBeNull();
+  });
+});
+
+describe("investigateTrace", () => {
+  it("returns a compact diagnosis with a Viewer link", () => {
+    const result = investigateTrace(makeStore(), "s1");
+    expect(result?.headline).toBeTruthy();
+    expect(result?.viewerUrl).toContain("#session=s1");
+    expect(result?.findings.length).toBeLessThanOrEqual(8);
+  });
+
+  it("returns null for an unknown session", () => {
+    expect(investigateTrace(makeStore(), "missing")).toBeNull();
   });
 });
 

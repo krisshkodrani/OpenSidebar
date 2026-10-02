@@ -53,20 +53,20 @@ import {
 import {
   buildHarnessRatchetCandidates,
   buildTraceInsightsFromSqlite,
+  buildTraceTrendsFromSqlite,
   getTraceIndexStatus,
   insertRunTraceEventToSqlite,
   insertTraceTurnToSqlite,
   readRunRawJsonlFromSqlite,
-  readRunTraceEventsFromSqlite,
-  readTraceEntriesFromSqlite,
   readTraceRawJsonlFromSqlite,
-  readTraceSessionsFromSqlite,
+  searchTraceSessionsFromSqlite,
   recordTraceArtifactInSqlite,
   retainTraceSqliteWriter,
   upsertRunTraceManifestToSqlite,
   upsertTraceSessionToSqlite,
 } from "./trace-sqlite-store";
 import { createDiskStore, getRlTrajectory } from "./obs/core";
+import { createTraceRepository } from "./obs/repository";
 import { orderTraceEntries, preferSpineSessions } from "./obs/session-read-policy";
 import { readLegacyJsonlSessions } from "./obs/legacy-sessions";
 import {
@@ -122,6 +122,7 @@ const PORT = Number(process.env.LOG_SERVER_PORT) || 7589;
 const HOST = process.env.LOG_SERVER_HOST || "127.0.0.1";
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const PROJECT_ROOT = join(__dirname, "..");
+const traceRepository = createTraceRepository(PROJECT_ROOT);
 const LOG_DIR = join(PROJECT_ROOT, "logs");
 const LOG_FILE = join(LOG_DIR, "opensidebar.jsonl");
 const TRACE_DIR = join(PROJECT_ROOT, "traces");
@@ -1040,6 +1041,29 @@ const server = createServer(
     }
 
     // GET /api/trace-index/status — SQLite observability index health and coverage
+    if (url.pathname === "/api/trace-trends" && req.method === "GET") {
+      try {
+        const requestedLimit = Number(url.searchParams.get("limit") || "30");
+        const trends = buildTraceTrendsFromSqlite(
+          PROJECT_ROOT,
+          traceInsightsFilters(url.searchParams),
+          Number.isFinite(requestedLimit) ? requestedLimit : 30,
+        );
+        if (!trends) {
+          sendText(
+            res,
+            "Trace trends require the SQLite index. Run pnpm traces:index.",
+            503,
+          );
+          return;
+        }
+        sendJson(res, trends);
+      } catch (err) {
+        sendText(res, `Error reading trace trends: ${err}`, 500);
+      }
+      return;
+    }
+
     if (url.pathname === "/api/trace-index/status" && req.method === "GET") {
       try {
         sendJson(res, getTraceIndexStatus(PROJECT_ROOT));
@@ -1078,6 +1102,7 @@ const server = createServer(
         ).trim();
         const mode = (url.searchParams.get("mode") || "").trim();
         const model = (url.searchParams.get("model") || "").trim();
+        const skill = (url.searchParams.get("skill") || "").trim();
         const tier = (url.searchParams.get("tier") || "").trim();
         const q = (url.searchParams.get("q") || "").toLowerCase().trim();
         const runId = (url.searchParams.get("runId") || "").trim();
@@ -1088,7 +1113,6 @@ const server = createServer(
           ? Math.max(1, Math.min(5000, Math.floor(limitRaw)))
           : 200;
 
-        let sessions = await readAllTraceSessions();
         const baseFilters: TraceSearchFiltersLike = {
           day,
           from,
@@ -1098,10 +1122,34 @@ const server = createServer(
           sessionPrefix,
           mode,
           model,
+          skill,
+          tier,
           q,
           runId,
         };
 
+        const sqlitePage = searchTraceSessionsFromSqlite(
+          PROJECT_ROOT,
+          baseFilters,
+          { limit, cursor },
+        );
+        if (sqlitePage) {
+          const items = sqlitePage.items.map(serializeTraceSearchSession);
+          if (withMeta) {
+            sendJson(res, {
+              items,
+              total: sqlitePage.total,
+              returned: items.length,
+              hasMore: sqlitePage.hasMore,
+              nextCursor: sqlitePage.nextCursor,
+            });
+          } else {
+            sendJson(res, items);
+          }
+          return;
+        }
+
+        let sessions = await readAllTraceSessions();
         sessions = sessions.filter((s) => matchesTraceFilters(s, baseFilters));
 
         if (tier && tier !== "all") {
@@ -1283,7 +1331,7 @@ const server = createServer(
     if (rlTrajectoryMatch && req.method === "GET") {
       try {
         const sessionId = rlTrajectoryMatch[1];
-        const trajectory = getRlTrajectory(createDiskStore(), sessionId);
+        const trajectory = getRlTrajectory(traceRepository, sessionId);
         if (!trajectory) {
           sendText(res, `No trajectory for session ${sessionId}`, 404);
           return;
