@@ -55,6 +55,12 @@ vi.mock("../../src/trace-viewer/components/traces/PerceptionList", () => ({
 vi.mock("../../src/trace-viewer/components/traces/LogList", () => ({
   default: () => <div>LogList</div>,
 }));
+vi.mock("../../src/trace-viewer/components/traces/PlanTab", () => ({
+  default: () => <div>PlanTab</div>,
+}));
+vi.mock("../../src/trace-viewer/components/traces/PromptsTab", () => ({
+  default: () => <div>PromptsTab</div>,
+}));
 function resetStore() {
   useStore.setState((useStore as any).getInitialState(), true);
 }
@@ -135,6 +141,85 @@ describe("trace-viewer App", () => {
       expect(useStore.getState().activeSubview).toBe("logs");
       expect(container.textContent).toContain("TraceDetailHeader:session-1");
       expect(container.textContent).toContain("LogList");
+    });
+  });
+
+  test("preserves a turn-specific deep link", async () => {
+    window.location.hash = "#session=session-1&view=turns&turn=7";
+    mockUseTraceData.mockReturnValue({
+      sessions: [
+        {
+          sessionId: "session-1",
+          startTime: 100,
+          endTime: 200,
+          query: "Objective: test",
+          startUrl: "https://example.com",
+          outcome: "completed",
+          turnCount: 7,
+          summary: "done",
+          metrics: null,
+        },
+      ],
+      currentSessionId: "session-1",
+      refreshSessions: vi.fn(),
+    });
+
+    await act(async () => root.render(<App />));
+    await waitFor(() => {
+      expect(useStore.getState().focusTurnNumber).toBe(7);
+      expect(window.location.hash).toContain("turn=7");
+    });
+  });
+
+  test("preserves a response-specific Model I/O deep link", async () => {
+    window.location.hash =
+      "#session=session-1&view=prompts&turn=4&section=response";
+    mockUseTraceData.mockReturnValue({
+      sessions: [
+        {
+          sessionId: "session-1",
+          startTime: 100,
+          endTime: 200,
+          query: "Objective: test",
+          startUrl: "https://example.com",
+          outcome: "completed",
+          turnCount: 4,
+          summary: "done",
+          metrics: null,
+        },
+      ],
+      currentSessionId: "session-1",
+      refreshSessions: vi.fn(),
+      loadMoreSessions: vi.fn(),
+    });
+
+    await act(async () => root.render(<App />));
+    await waitFor(() => {
+      expect(useStore.getState().activeSubview).toBe("prompts");
+      expect(useStore.getState().modelIOFocus).toEqual({
+        turnNumber: 4,
+        section: "response",
+      });
+      expect(window.location.hash).toContain("section=response");
+    });
+  });
+
+  test("applies a new top-level deep link while a trace is open", async () => {
+    useStore.setState({ currentSessionId: "session-1" });
+
+    await act(async () => root.render(<App />));
+    await waitFor(() => {
+      expect(useStore.getState().currentSessionId).toBe("session-1");
+    });
+
+    await act(async () => {
+      window.history.replaceState(null, "", "#top=analytics");
+      window.dispatchEvent(new HashChangeEvent("hashchange"));
+    });
+
+    await waitFor(() => {
+      expect(useStore.getState().currentSessionId).toBeNull();
+      expect(useStore.getState().activeTopLevelView).toBe("analytics");
     });
   });
 

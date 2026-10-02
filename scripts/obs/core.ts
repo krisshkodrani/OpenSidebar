@@ -2,11 +2,12 @@
  * Observability core — the shared query layer behind the trace MCP server
  * (RFC LP-7, Stage A). This module deliberately contains NO query/filter/SQL
  * logic of its own: it only wires together the functions the log-server HTTP
- * API already uses, so an agent (Claude Code) and the human viewer see identical
+ * API already uses, so Codex and the human viewer see identical
  * results. It also imports NO MCP SDK, so it is unit-testable in isolation.
  *
- * Session, turn, and run reads prefer the span spine, with SQLite/JSONL for
- * unmigrated records. Aggregates still use SQLite until insight parity passes.
+ * Data access comes from the shared repository: the span spine for records,
+ * SQLite for aggregates, and SQLite/JSONL for unmigrated records.
+ * It works without the log server running as long as traces exist on disk.
  *
  * The query functions take an `ObsStore` as their first argument so tests can
  * inject fixtures instead of touching disk.
@@ -15,26 +16,16 @@
 import { existsSync, readFileSync } from "fs";
 import { join } from "path";
 
-import {
-  buildTraceInsightsFromSqlite,
-  getTraceIndexStatus,
-  readRunTraceEventsFromSqlite,
-  readTraceEntriesFromSqlite,
-  readTraceSessionsFromSqlite,
-  type TraceIndexStatus,
-} from "../trace-sqlite-store";
+import type { TraceIndexStatus } from "../trace-sqlite-store";
 import {
   matchesTraceFilters,
-  normalizeAgentTurnRecord,
-  normalizeRunEventRecord,
   type TraceEntryLike,
   type TraceSearchFiltersLike,
   type TraceSessionLike,
 } from "../log-server-helpers";
-import {
-  buildTraceInsights,
-  type TraceInsightsFilters,
-  type TraceInsightsResponse,
+import type {
+  TraceInsightsFilters,
+  TraceInsightsResponse,
 } from "../trace-insights";
 import { analyzeTraceSession } from "../../apps/extension/src/trace-viewer/analysis/analyze";
 import { compareTraceSessions } from "../../apps/extension/src/trace-viewer/analysis/comparison";
@@ -44,109 +35,26 @@ import type {
   TraceSession,
 } from "../../apps/extension/src/types/traces";
 import { buildRlTrajectory } from "./rl-trajectory";
+import { createTraceRepository, type TraceRepository } from "./repository";
+import { buildViewerUrl } from "../../packages/observability-schema/src/index";
 import { PROJECT_ROOT } from "./paths";
-export { PROJECT_ROOT } from "./paths";
-import { orderTraceEntries, preferSpineSessions } from "./session-read-policy";
-import { readLegacyJsonlSessions } from "./legacy-sessions";
-import {
-  hasSpineRunRecord,
-  hasSpineSessionRecord,
-  readSessionEntries,
-  readSpineRunEvents,
-  readSpineSessions,
-} from "./span-store";
 
-const SCREENSHOT_DIR = join(PROJECT_ROOT, "traces", "screenshots");
+// Project-root + on-disk layout (mirrors scripts/log-server.ts). scripts/obs ->
+// repo root is two levels up.
+const TRACE_DIR = join(PROJECT_ROOT, "traces");
+const SCREENSHOT_DIR = join(TRACE_DIR, "screenshots");
 
 /** The data-access surface. Default impl reads disk; tests inject fixtures. */
-export interface ObsStore {
-  projectRoot: string;
-  loadSessions(): TraceSessionLike[];
-  loadEntries(sessionId: string): TraceEntryLike[];
-  loadRunEvents(runId: string): TraceEntryLike[];
-  loadInsights(filters: TraceInsightsFilters): TraceInsightsResponse;
-  indexStatus(): TraceIndexStatus;
-}
+export type ObsStore = TraceRepository;
 
-function readJsonl(path: string): unknown[] {
-  if (!existsSync(path)) return [];
-  return readFileSync(path, "utf-8")
-    .trim()
-    .split("\n")
-    .filter(Boolean)
-    .map((line) => {
-      try {
-        return JSON.parse(line) as unknown;
-      } catch {
-        return null;
-      }
-    })
-    .filter((value): value is unknown => value !== null);
-}
+/** Default store: spine-first records with legacy fallbacks. */
+export { PROJECT_ROOT } from "./paths";
 
-/** Default store: spine-first records with legacy fallbacks for unmigrated data. */
 export function createDiskStore(
   projectRoot = PROJECT_ROOT,
   options: { spineReads?: boolean } = {},
 ): ObsStore {
-  const traceDir = join(projectRoot, "traces");
-  const spanDir = join(traceDir, "spans");
-  const runDir = join(traceDir, "runs");
-  const spineReadsEnabled = options.spineReads ?? process.env.OBS_DISABLE_SPINE_READS !== "1";
-  const loadSessions = (): TraceSessionLike[] => {
-    const spine = spineReadsEnabled
-      ? readSpineSessions(spanDir) as unknown as TraceSessionLike[]
-      : [];
-    const fromSqlite = readTraceSessionsFromSqlite(projectRoot) ?? [];
-    const { indexed, orphans } = readLegacyJsonlSessions(traceDir);
-    return preferSpineSessions(
-      spine,
-      preferSpineSessions(fromSqlite, preferSpineSessions(indexed, orphans)),
-    );
-  };
-  const loadEntries = (sessionId: string): TraceEntryLike[] => {
-    if (spineReadsEnabled) {
-      const spine = readSessionEntries(sessionId, spanDir);
-      if (spine.length > 0 || hasSpineSessionRecord(sessionId, spanDir))
-        return spine as unknown as TraceEntryLike[];
-    }
-    const fromSqlite = readTraceEntriesFromSqlite(projectRoot, sessionId);
-    if (fromSqlite && fromSqlite.length > 0) return fromSqlite;
-    return orderTraceEntries(readJsonl(join(traceDir, `${sessionId}.jsonl`)).map((record) =>
-      normalizeAgentTurnRecord(record as Record<string, unknown>),
-    ));
-  };
-  const loadRunEvents = (runId: string): TraceEntryLike[] => {
-    if (spineReadsEnabled) {
-      const spineRunDir = join(spanDir, "runs");
-      const spine = readSpineRunEvents(runId, spineRunDir);
-      if (spine.length > 0 || hasSpineRunRecord(runId, spineRunDir))
-        return spine as unknown as TraceEntryLike[];
-    }
-    const fromSqlite = readRunTraceEventsFromSqlite(projectRoot, runId);
-    if (fromSqlite && fromSqlite.length > 0) return fromSqlite;
-    return readJsonl(join(runDir, `${runId}.jsonl`)).map((record) =>
-      normalizeRunEventRecord(record as Record<string, unknown>),
-    );
-  };
-  const loadInsights = (filters: TraceInsightsFilters): TraceInsightsResponse => {
-    const fromSqlite = buildTraceInsightsFromSqlite(projectRoot, filters);
-    if (fromSqlite) return fromSqlite;
-    // Read turns on demand so a large corpus does not live in memory at once.
-    const sessions = loadSessions().filter((session) =>
-      !filters.sessionId || session.sessionId?.startsWith(filters.sessionId));
-    const entriesBySession = { get: (id: string) => loadEntries(id) };
-    const runEventsByRun = { get: (id: string) => loadRunEvents(id) };
-    return buildTraceInsights({ sessions, entriesBySession, runEventsByRun, filters });
-  };
-  return {
-    projectRoot,
-    loadSessions,
-    loadEntries,
-    loadRunEvents,
-    loadInsights,
-    indexStatus: () => getTraceIndexStatus(projectRoot),
-  };
+  return createTraceRepository(projectRoot, options);
 }
 
 // ---- Query functions (the MCP tool bodies; all reuse existing logic) --------
@@ -160,6 +68,7 @@ export interface TraceSummary {
   runId?: string;
   turnCount?: number;
   models?: string[];
+  viewerUrl: string;
 }
 
 function toSummary(session: TraceSessionLike): TraceSummary {
@@ -172,6 +81,7 @@ function toSummary(session: TraceSessionLike): TraceSummary {
     runId: session.runId,
     turnCount: (session as { turnCount?: number }).turnCount,
     models: session.models,
+    viewerUrl: buildViewerUrl({ sessionId: session.sessionId }),
   };
 }
 
@@ -185,6 +95,11 @@ export function searchTraces(
   args: SearchTracesArgs = {},
 ): TraceSummary[] {
   const { limit = 50, ...filters } = args;
+  if (store.searchSessions) {
+    return store
+      .searchSessions(filters, { limit: Math.max(1, limit) })
+      .items.map(toSummary);
+  }
   const sessions = store.loadSessions();
   const matched = sessions.filter((session) =>
     matchesTraceFilters(session, filters),
@@ -211,7 +126,12 @@ export function getTrace(
 export function getRun(
   store: ObsStore,
   runId: string,
-): { runId: string; events: TraceEntryLike[]; sessionIds: string[] } {
+): {
+  runId: string;
+  events: TraceEntryLike[];
+  sessionIds: string[];
+  viewerUrl: string;
+} {
   const events = store.loadRunEvents(runId);
   const ids = new Set<string>();
   for (const event of events) {
@@ -219,9 +139,43 @@ export function getRun(
     if (sid) ids.add(sid);
   }
   for (const session of store.loadSessions()) {
-    if (session.runId === runId && session.sessionId) ids.add(session.sessionId);
+    if (session.runId === runId && session.sessionId)
+      ids.add(session.sessionId);
   }
-  return { runId, events, sessionIds: [...ids] };
+  return {
+    runId,
+    events,
+    sessionIds: [...ids],
+    viewerUrl: buildViewerUrl({ runId }),
+  };
+}
+
+/** Compact, agent-ready diagnosis with a direct human evidence link. */
+export function investigateTrace(store: ObsStore, sessionId: string) {
+  const session = store
+    .loadSessions()
+    .find((candidate) => candidate.sessionId === sessionId);
+  if (!session) return null;
+  const entries = store.loadEntries(sessionId);
+  const investigation = analyzeTraceSession({
+    session: session as unknown as TraceSession,
+    entries: entries as unknown as TraceEntry[],
+  });
+  const firstBadTurn = investigation.firstBadTurn ?? undefined;
+  return {
+    session: toSummary(session),
+    headline: investigation.headline,
+    likelyFailureClass: investigation.likelyFailureClass,
+    firstBadTurn,
+    recommendedAction: investigation.recommendedAction,
+    metrics: investigation.metrics,
+    findings: investigation.findings.slice(0, 8),
+    viewerUrl: buildViewerUrl({
+      sessionId,
+      view: firstBadTurn ? "turns" : "story",
+      turn: firstBadTurn,
+    }),
+  };
 }
 
 /** query_insights — the full aggregated `TraceInsightsResponse`. */
@@ -286,10 +240,18 @@ export function compareRuns(store: ObsStore, sessionId: string) {
   const sessions = store.loadSessions();
   const base = sessions.find((candidate) => candidate.sessionId === sessionId);
   if (!base) return null;
-  return compareTraceSessions(
+  const result = compareTraceSessions(
     base as unknown as TraceSession,
     sessions as unknown as TraceSession[],
   );
+  return {
+    ...result,
+    viewerUrl: buildViewerUrl({ sessionId }),
+    comparisons: result.comparisons.map((comparison) => ({
+      ...comparison,
+      viewerUrl: buildViewerUrl({ sessionId: comparison.sessionId }),
+    })),
+  };
 }
 
 /** get_blob — a turn screenshot, returned as a path + base64 (when present). */
@@ -309,7 +271,9 @@ export function getBlob(
 export function getSpan(store: ObsStore, sessionId: string, turn: number) {
   const entry = store
     .loadEntries(sessionId)
-    .find((candidate) => (candidate as { turnNumber?: number }).turnNumber === turn);
+    .find(
+      (candidate) => (candidate as { turnNumber?: number }).turnNumber === turn,
+    );
   if (!entry) return null;
   const e = entry as Record<string, unknown> & {
     turnNumber?: number;

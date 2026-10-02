@@ -6,6 +6,7 @@ import TrajectorySpine from "./TrajectorySpine";
 import SystemEventsDrawer from "./SystemEventsDrawer";
 import AdjudicationPanel from "./AdjudicationPanel";
 import { TurnChip } from "./spine-ui";
+import EvidenceBoard from "./EvidenceBoard";
 
 // The Story subview — the run's trajectory as a narrative a HUMAN reads to
 // adjudicate the outcome and understand the big picture. Builds the spine from
@@ -27,6 +28,8 @@ export default function StoryTab({ session }: { session: TraceSession }) {
 
   return (
     <div className="flex flex-col gap-3">
+      <EvidenceBoard session={session} />
+
       <AdjudicationPanel session={session} story={story} />
 
       {noRunEvents && (

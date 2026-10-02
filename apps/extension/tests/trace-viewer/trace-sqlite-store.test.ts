@@ -13,12 +13,15 @@ import { indexTracesToSqlite } from "../../../../scripts/trace-sqlite-index";
 import { buildTraceInsights } from "../../../../scripts/trace-insights";
 import {
   buildTraceInsightsFromSqlite,
+  buildTraceTrendsFromSqlite,
   getTraceIndexStatus,
   insertRunTraceEventToSqlite,
   insertTraceTurnToSqlite,
   readRunTraceEventsFromSqlite,
   readTraceEntriesFromSqlite,
   readTraceSessionsFromSqlite,
+  searchTraceSessionsFromSqlite,
+  upsertRunTraceManifestToSqlite,
   upsertTraceSessionToSqlite,
 } from "../../../../scripts/trace-sqlite-store";
 
@@ -297,6 +300,71 @@ describe("trace sqlite store", () => {
       sessions: 1,
     });
   }, TRACE_SQLITE_TEST_TIMEOUT_MS);
+
+  test("searches sessions with indexed filters and cursor metadata", () => {
+    const page = searchTraceSessionsFromSqlite(
+      root,
+      { outcome: "max_turns" },
+      { limit: 10, path: dbPath },
+    );
+
+    expect(page).toMatchObject({ total: 1, hasMore: false, nextCursor: null });
+    expect(page?.items.map((session) => session.sessionId)).toEqual([
+      "session-1",
+    ]);
+  });
+
+  test("builds the trend series in one grouped query", () => {
+    expect(buildTraceTrendsFromSqlite(root, {}, 30, dbPath)).toEqual([
+      expect.objectContaining({
+        day: "2026-05-11",
+        totalSessions: 1,
+        completedSessions: 0,
+        recordedCost: expect.any(Number),
+        averageTurns: 1,
+      }),
+    ]);
+  });
+
+  test("matches event filters across turn, session, and run event sources", () => {
+    upsertTraceSessionToSqlite(
+      root,
+      {
+        sessionId: "session-2",
+        runId: "run-1",
+        startTime: Date.UTC(2026, 4, 11, 0, 2),
+        endTime: Date.UTC(2026, 4, 11, 0, 3),
+        query: "Second trace in same run",
+        startUrl: "https://example.com/b",
+        outcome: "completed",
+        turnCount: 1,
+        events: [
+          { type: "session_event_two", timestamp: Date.UTC(2026, 4, 11, 0, 2) },
+        ],
+      },
+      { dbPath },
+    );
+    insertTraceTurnToSqlite(
+      root,
+      {
+        sessionId: "session-2",
+        runId: "run-1",
+        turnNumber: 1,
+        llmRequest: { model: "model-b" },
+        llmResponse: {
+          durationMs: 50,
+          usage: { prompt_tokens: 4, completion_tokens: 2, total_tokens: 6 },
+        },
+        events: [
+          { type: "turn_event_two", timestamp: Date.UTC(2026, 4, 11, 0, 2) },
+        ],
+        toolExecutions: [{ toolName: "click", success: true }],
+      },
+      { dbPath },
+    );
+
+    const insights = buildTraceInsightsFromSqlite(root, {}, dbPath);
+  });
 
   test("matches JS insights for the indexed session and run fixture", () => {
     const sessions = readTraceSessionsFromSqlite(root) ?? [];

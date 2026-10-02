@@ -67,7 +67,10 @@ Required edits before implementation:
 
 Non-blocking follow-ups:
 
-- None.
+- Owner decision on 2026-10-02: merge PR #188 with manual testing pending.
+  Complete real-run analytics payload inspection and PostgreSQL acceptance
+  (account/device scoping, monotonic writes, concurrent opt-out/write safety,
+  retention, and deletion) before Chrome Web Store release.
 
 Do not do:
 
@@ -78,7 +81,9 @@ Do not do:
 Evidence required before merge:
 
 - Schema, API, extension, and UI tests listed under Proposed verification.
-- Inspect the request payload from a real test run against the allowlist.
+- Owner waived outstanding real-run payload inspection and PostgreSQL
+  acceptance as merge gates on 2026-10-02, opting to test manually after merge.
+  These checks remain required before Chrome Web Store release.
 
 Next action:
 
