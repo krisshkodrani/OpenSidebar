@@ -1,0 +1,56 @@
+<svg xmlns="http://www.w3.org/2000/svg">
+  <symbol id="evidence" viewBox="0 0 320 240">
+    <g stroke="var(--brand-line, #496a86)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+      <ellipse cx="160" cy="218" rx="120" ry="9" fill="var(--illustration-blue, #afc9df)" stroke="none" opacity=".25"/>
+      <circle cx="253" cy="49" r="27" fill="var(--gold, #e6c676)" stroke="none"/>
+      <rect x="62" y="45" width="145" height="154" rx="9" transform="rotate(-9 135 120)" fill="var(--illustration-blue, #afc9df)"/>
+      <rect x="80" y="39" width="145" height="160" rx="9" transform="rotate(4 150 120)" fill="var(--surface, #fffdf8)"/>
+      <path d="M105 145c10-42 39-57 67-25s34 21 39 0" fill="none" stroke-dasharray="3 7"/>
+      <circle cx="167" cy="109" r="46" fill="var(--surface-accent, #e8eef2)" fill-opacity=".7" stroke-width="4"/>
+      <path d="m199 143 44 48" stroke-width="12"/>
+      <path d="m201 145 42 46" stroke="var(--clay, #d5997c)" stroke-width="8"/>
+      <path d="M146 88c8-9 21-12 32-7" fill="none" stroke="var(--surface, #fffdf8)" stroke-width="5"/>
+      <path d="M40 76v16m-8-8h16M260 144v12m-6-6h12"/>
+      <path d="M42 172c-31-42-3-72 13-67" fill="none" stroke-dasharray="3 7"/>
+    </g>
+  </symbol>
+  <symbol id="rooms" viewBox="0 0 320 240">
+    <g stroke="var(--brand-line, #496a86)" stroke-width="2" stroke-linejoin="round" stroke-linecap="round">
+      <ellipse cx="161" cy="220" rx="139" ry="9" fill="var(--illustration-blue, #afc9df)" stroke="none" opacity=".25"/>
+      <circle cx="159" cy="46" r="25" fill="var(--gold, #e6c676)" stroke="none"/>
+      <path d="M31 107 84 62l54 45v96H31z" fill="var(--surface, #fffdf8)"/>
+      <path d="m22 111 62-53 62 53" fill="none" stroke-width="4"/>
+      <path d="M52 123h23v25H52zm44 0h23v25H96z" fill="var(--illustration-blue, #afc9df)"/>
+      <path d="M75 203v-39h24v39" fill="var(--clay, #d5997c)"/>
+      <path d="M184 109 236 75l53 34v94H184z" fill="var(--illustration-blue, #afc9df)"/>
+      <path d="m176 114 60-43 61 43" fill="none" stroke-width="4"/>
+      <path d="M204 127h23v24h-23zm39 0h23v24h-23z" fill="var(--surface, #fffdf8)"/>
+      <path d="M226 203v-36h24v36" fill="var(--surface, #fffdf8)"/>
+      <path d="M87 204c8 28 63 28 72 0s68-25 80 0M161 95v81" fill="none" stroke-dasharray="3 7"/>
+      <path d="M42 49v14m-7-7h14M285 58v14m-7-7h14"/>
+    </g>
+  </symbol>
+  <symbol id="paths" viewBox="0 0 320 240">
+    <g stroke="var(--brand-line, #496a86)" stroke-width="2" stroke-linejoin="round" stroke-linecap="round">
+      <ellipse cx="160" cy="216" rx="114" ry="10" fill="var(--illustration-blue, #afc9df)" stroke="none" opacity=".25"/>
+      <path d="M161 206V63" stroke-width="7"/>
+      <path d="M161 78H87L64 97l23 18h74z" fill="var(--illustration-blue, #afc9df)"/>
+      <path d="M162 119h75l22 18-22 19h-75z" fill="var(--clay, #d5997c)"/>
+      <circle cx="245" cy="51" r="24" fill="var(--gold, #e6c676)" stroke="none"/>
+      <path d="M158 219c-47-1-20-42-56-47s-61-29-31-47m91 94c65-3 60-23 72-49" fill="none" stroke-dasharray="3 7"/>
+      <path d="M49 70v15m-7-8h14M276 189v12m-6-6h12"/>
+    </g>
+  </symbol>
+  <symbol id="systems" viewBox="0 0 320 240">
+    <g stroke="var(--brand-line, #496a86)" stroke-width="2" stroke-linejoin="round" stroke-linecap="round">
+      <ellipse cx="162" cy="219" rx="129" ry="9" fill="var(--illustration-blue, #afc9df)" stroke="none" opacity=".25"/>
+      <path d="M62 209V98h49v111z" fill="var(--illustration-blue, #afc9df)"/>
+      <path d="M208 209V98h49v111z" fill="var(--clay, #d5997c)"/>
+      <path d="M106 149V97a54 54 0 0 1 108 0v52h-29v-48a25 25 0 0 0-50 0v48z" fill="var(--surface, #fffdf8)"/>
+      <path d="M62 156h49m97 0h49M136 48l13 25m34-25-13 25" fill="none"/>
+      <circle cx="263" cy="54" r="22" fill="var(--gold, #e6c676)" stroke="none"/>
+      <path d="M35 192c43 39 78-30 127-4s87 31 125-10" fill="none" stroke-dasharray="3 7"/>
+      <path d="M44 61v14m-7-7h14"/>
+    </g>
+  </symbol>
+</svg>

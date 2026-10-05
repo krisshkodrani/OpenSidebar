@@ -1,0 +1,102 @@
+/* Locally served fonts: no third-party font requests or tracking. */
+@font-face {
+  font-family: "Nunito Sans";
+  font-style: normal;
+  font-weight: 200 900;
+  font-display: swap;
+  src: url("/fonts/NunitoSans-Variable.ttf") format("truetype");
+}
+@font-face {
+  font-family: Inter;
+  font-style: normal;
+  font-weight: 100 900;
+  font-display: swap;
+  src: url("../../extension/src/sidepanel/fonts/Inter-Variable.woff2")
+    format("woff2");
+}
+:root {
+  color-scheme: light dark;
+  --header-bg: #ffffff;
+  --header-text: #273b4d;
+  --header-muted: #526677;
+  --header-hover: #e8eef2;
+  --header-action: #32699a;
+  --header-action-hover: #24547e;
+  --canvas: #f8f5ee;
+  --surface: #fffdf8;
+  --surface-muted: #eee9df;
+  --text: #273b4d;
+  --text-muted: #606970;
+  --border: #dcd8cc;
+  --border-strong: #b8bdc0;
+  --action: #32699a;
+  --action-hover: #24547e;
+  --action-ink: #fffaf3;
+  --brand: #243f59;
+  --brand-ink: #f6f1e7;
+  --brand-line: #496a86;
+  --accent-soft: #e5edf3;
+  --surface-accent: #e8eef2;
+  --illustration-blue: #afc9df;
+  --clay: #d5997c;
+  --gold: #e6c676;
+  --success-soft: #e7ecdf;
+  --ok: #386147;
+  --warning: #846017;
+  --danger: #a33c3c;
+  --role-planner: #725785;
+  --role-executor: #396778;
+  --role-verifier: #975021;
+  --action-shadow: #244e7626;
+  --shadow-card: 0 1px 2px #273b4d05, 0 8px 24px -16px #273b4d26;
+  --font: Inter, system-ui, -apple-system, "Segoe UI", sans-serif;
+  --heading: "Nunito Sans", "Avenir Next", var(--font);
+  --mono: "SFMono-Regular", Consolas, "Liberation Mono", Menlo, monospace;
+  --radius: 16px;
+  --radius-sm: 10px;
+  --maxw: 1160px;
+  --pad: clamp(20px, 5vw, 40px);
+  /* Compatibility aliases for the established site components. */
+  --navy: var(--canvas);
+  --navy-2: var(--surface);
+  --navy-3: var(--surface-muted);
+  --panel: var(--surface-muted);
+  --ink: var(--text);
+  --grey: var(--text-muted);
+  --grey-dim: var(--text-muted);
+  --line: var(--border);
+  --line-strong: var(--border-strong);
+  --accent: var(--action);
+  --accent-2: var(--action-hover);
+  --accent-ink: var(--action-ink);
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --canvas: #1d2730;
+    --surface: #26343f;
+    --surface-muted: #31414e;
+    --text: #eeeade;
+    --text-muted: #b8c2c9;
+    --border: #455766;
+    --border-strong: #758996;
+    --action: #9ec9ed;
+    --action-hover: #bfddf5;
+    --action-ink: #1d3040;
+    --brand: #172d40;
+    --brand-line: #afc9df;
+    --accent-soft: #2e4253;
+    --surface-accent: #2c3c49;
+    --illustration-blue: #627f99;
+    --clay: #ae755d;
+    --gold: #b89953;
+    --success-soft: #303f32;
+    --ok: #a6c6a1;
+    --warning: #e1bf79;
+    --danger: #f0aaa2;
+    --role-planner: #c6aed9;
+    --role-executor: #9ac6d2;
+    --role-verifier: #e9ba8c;
+    --action-shadow: #00000026;
+    --shadow-card: 0 1px 2px #0000000d, 0 8px 24px -16px #00000040;
+  }
+}
