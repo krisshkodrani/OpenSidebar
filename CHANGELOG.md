@@ -8,6 +8,11 @@
 
 ### Fixed
 
+- Preserved content-script action failures through tool results, UI status, and
+  trace recording instead of reporting them as successful calls.
+- Made browser tests wait for event-monitor readiness and retain terminal
+  events across stream output; reject missing fixture builds immediately.
+
 - Invalidated cached judge verdicts when requirement wording changes.
 - Kept all completion requirements in judge evaluation, including constraints
   beyond the eighth criterion.

@@ -37,6 +37,10 @@ part of `release:verify`.
 
 Run at least one real-browser E2E validation against the release candidate after the build is green.
 
+The staged runner builds fixtures automatically. Before running an isolated
+browser test or the native-panel smoke in a fresh worktree, run
+`pnpm run fixtures:build`; the fixture server rejects a missing build.
+
 Recommended smoke gate:
 
 ```bash
