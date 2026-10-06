@@ -107,6 +107,22 @@ describe("tool result recording", () => {
     expect(toolProvidesPageGrounding(ToolName.READ_ELEMENT)).toBe(true);
   });
 
+  test.each(["parallel", "sequential"] as const)("records returned action errors as failures in %s execution", (mode) => {
+    const loop = host();
+    const result = "Error: No element with tag [133]";
+    recordSuccessfulToolExecution(loop, {
+      toolCall: toolCall(), toolName: ToolName.READ_ELEMENT, args: { id: 133 },
+      result, toolStep: toolStep(), preDecision: preDecision(),
+      discoveredTagIds: new Set(), llmIntention: null, mode,
+    });
+    expect(loop.traceRecorder?.recordToolExecution).toHaveBeenCalledWith(
+      "call-1", ToolName.READ_ELEMENT, { id: 133 }, result, false,
+      expect.any(Number), RiskLevel.LOW, result,
+    );
+    expect(loop.stepHandler).toHaveBeenCalledWith(expect.objectContaining({ status: "error" }), true);
+    expect(loop.log.info).not.toHaveBeenCalled();
+  });
+
   test("records successful tool execution side effects", () => {
     vi.spyOn(Date, "now").mockReturnValue(145);
     const loop = host();
