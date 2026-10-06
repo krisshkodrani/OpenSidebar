@@ -8,6 +8,7 @@
 
 ### Fixed
 
+- Invalidated cached judge verdicts when requirement wording changes.
 - Kept all completion requirements in judge evaluation, including constraints
   beyond the eighth criterion.
 - Required judge evaluation of current evidence even when stored facts have

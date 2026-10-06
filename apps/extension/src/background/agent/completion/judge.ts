@@ -167,7 +167,7 @@ function renderUserPrompt(rubric: JudgeRubric): string {
 export function judgeCacheKey(rubric: JudgeRubric): string {
   const material = [
     rubric.claim,
-    ...rubric.criteria.map((c) => `${c.id}:${c.required}`),
+    ...rubric.criteria.map((c) => `${c.id}:${c.required}:${c.description}`),
     ...rubric.evidence,
     ...rubric.corpusFacts,
   ].join("\0");

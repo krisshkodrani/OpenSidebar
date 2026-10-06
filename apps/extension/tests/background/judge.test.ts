@@ -161,3 +161,22 @@ describe("runRubricJudge", () => {
     expect(bad.runJudge).toHaveBeenCalledTimes(2); // fail-open not cached → retried
   });
 });
+
+
+test("changed requirement text cannot reuse an earlier passing judgment", async () => {
+  const cache = createJudgeVerdictCache();
+  const seat = seatReturning('{"pass":true,"confidence":1,"perCriterion":[{"id":"c1","pass":true}]}');
+  const original: JudgeRubric = { ...rubric, criteria: [
+    { id: "c1", description: "Record is saved", required: true },
+  ] };
+  await runRubricJudge(original, { seat, cache });
+  vi.mocked(seat.runJudge).mockResolvedValueOnce({
+    text: '{"pass":false,"confidence":1,"perCriterion":[{"id":"c1","pass":false}]}',
+    model: "test-judge", providerId: "test",
+  });
+  const result = await runRubricJudge({ ...original, criteria: [
+    { ...original.criteria[0], description: "Record is saved with internal visibility" },
+  ] }, { seat, cache });
+  expect(seat.runJudge).toHaveBeenCalledTimes(2);
+  expect(result.pass).toBe(false);
+});
