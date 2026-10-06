@@ -44,7 +44,7 @@ interface LocalMockProviderState {
   quizReadsAfterSelection: number;
   draftPrematureDoneReturned: boolean;
   draftTypedReturned: boolean;
-  draftReadReturned: boolean;
+  draftRefreshedAfterType: boolean;
   formFilledReturned: boolean;
   formPrematureDoneReturned: boolean;
   formSubmittedReturned: boolean;
@@ -564,13 +564,9 @@ function textIncludesDraftEvidence(text: string): boolean {
   );
 }
 
-function draftComposerId(text: string): number {
-  return (
-    parseTaggedId(
-      text,
-      /reply-editor|Schreiben Sie eine Nachricht|Nachricht|message|textarea/i,
-    ) ?? 133
-  );
+function draftComposerId(text: string): number | null {
+  // React may replace the editor after input. Use the newest observed textarea.
+  return parseTaggedId(text.split("\n").reverse().join("\n"), /<textarea\b/i);
 }
 
 function partnerFieldId(text: string, label: RegExp, fallback: number): number {
@@ -859,25 +855,25 @@ function executorToolCalls(
         },
       ];
     }
+    const composerId = draftComposerId(text);
+    if (composerId === null) return [{ name: "read_page", args: {} }];
     if (!state.draftTypedReturned) {
       state.draftTypedReturned = true;
       return [
         {
           name: "type_text",
-          args: { id: draftComposerId(text), text: GERMAN_DRAFT },
+          args: { id: composerId, text: GERMAN_DRAFT },
         },
       ];
     }
-    if (!state.draftReadReturned) {
-      state.draftReadReturned = true;
-      return [
-        {
-          name: "read_element",
-          args: { id: draftComposerId(text), attribute: "value" },
-        },
-      ];
+    if (!state.draftRefreshedAfterType) {
+      state.draftRefreshedAfterType = true;
+      return [{ name: "read_page", args: {} }];
     }
-    if (textIncludesDraftEvidence(text) || state.draftReadReturned) {
+    if (!textIncludesDraftEvidence(text)) {
+      return [{ name: "read_element", args: { id: composerId, attribute: "value" } }];
+    }
+    if (textIncludesDraftEvidence(text)) {
       return [
         {
           name: "done",
@@ -1091,7 +1087,7 @@ export async function installLocalMockProviderInterceptor(
     quizReadsAfterSelection: 0,
     draftPrematureDoneReturned: false,
     draftTypedReturned: false,
-    draftReadReturned: false,
+    draftRefreshedAfterType: false,
     formFilledReturned: false,
     formPrematureDoneReturned: false,
     formSubmittedReturned: false,

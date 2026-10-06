@@ -122,6 +122,10 @@ export async function startFixtureServer(): Promise<number> {
     return serverPort;
   }
 
+  if (!fs.existsSync(path.join(REACT_APP_DIR, "index.html"))) {
+    throw new Error("Fixture app is not built. Run pnpm run fixtures:build before browser tests.");
+  }
+
   return new Promise((resolve, reject) => {
     server = http.createServer((req, res) => {
       const urlPath = req.url?.split("?")[0] ?? "/";
