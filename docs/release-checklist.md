@@ -90,16 +90,16 @@ For a broad GitHub-first BYOK release, also confirm:
 - Attach the generated release notes from `.artifacts/releases/`
 - Upload the built `dist/` package or release zip to the intended distribution channel
 
-GitHub CLI draft command after final manual spot-check (replace `0.7.7` with
+GitHub CLI draft command after final manual spot-check (replace `0.7.8` with
 the release version):
 
 ```bash
-gh release create v0.7.7 \
+gh release create v0.7.8 \
   --draft \
-  --title "OpenSidebar v0.7.7 OSS BYOK Preview" \
-  --notes-file .artifacts/releases/opensidebar-v0.7.7-release-notes.md \
-  .artifacts/releases/opensidebar-v0.7.7.zip \
-  .artifacts/releases/opensidebar-v0.7.7.zip.sha256
+  --title "OpenSidebar v0.7.8 OSS BYOK Preview" \
+  --notes-file .artifacts/releases/opensidebar-v0.7.8-release-notes.md \
+  .artifacts/releases/opensidebar-v0.7.8.zip \
+  .artifacts/releases/opensidebar-v0.7.8.zip.sha256
 ```
 
 ## Current Known Caveat
