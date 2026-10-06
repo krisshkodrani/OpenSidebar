@@ -1,9 +1,9 @@
 /**
  * Rubric judge (RFC LP-15, Phase 10).
  *
- * The model-backed adjudicator that runs AFTER the pure entailment gate has
- * resolved the claims a corpus fact already entails. It evaluates the remaining
- * claim against an OUTCOME-grounded rubric — each criterion asks "is this
+ * The model-backed adjudicator evaluates the claim and all supplied criteria
+ * against current observations, with stored facts as context. It uses an
+ * OUTCOME-grounded rubric — each criterion asks "is this
  * end-state true given the evidence?", never "was a step performed?" (the lesson
  * from the LP-11 validator failures) — and returns a structured verdict the
  * verifier turns into accept | retry | reroute | human.

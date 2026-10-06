@@ -60,7 +60,7 @@ export function applyJudgeGateOutcome(args: {
     providerId: verdict?.providerId,
     confidence: verdict?.confidence,
     // The full rubric of criteria (id → description) so the viewer can render
-    // every criterion, including corpus-entailed ones the judge never saw.
+    // every criterion supplied to the judge.
     // Descriptions truncated — this run-event pipe is dev-only and unredacted.
     criteria: deriveCriteria(node.successCriteria).map((c) => ({
       id: c.id,

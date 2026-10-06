@@ -85,8 +85,8 @@ describe("corpusEntryToFactRef", () => {
 describe("runJudgeGate", () => {
   const evidence = ["submitted email sam@x.com"];
 
-  test("skips the judge when the corpus entails every criterion", async () => {
-    const seat = seatReturning("{}");
+  test("judges current evidence even when the corpus exactly matches", async () => {
+    const seat = seatReturning('{"pass":true,"confidence":1,"perCriterion":[{"id":"c1","pass":true}]}');
     const outcome = await runJudgeGate(
       {
         claim: "email matches",
@@ -98,8 +98,8 @@ describe("runJudgeGate", () => {
       },
       { seat },
     );
-    expect(outcome).toMatchObject({ decision: "accept", judged: false });
-    expect(seat.runJudge).not.toHaveBeenCalled();
+    expect(outcome).toMatchObject({ decision: "accept", judged: true });
+    expect(seat.runJudge).toHaveBeenCalledOnce();
   });
 
   test("judge confirms → accept", async () => {
@@ -144,5 +144,41 @@ describe("runJudgeGate", () => {
     expect(outcome.verdict?.source).toBe("fail_open");
     expect(outcome.verdict?.failureCause).toBe("seat_error");
     expect(outcome.reason).toMatch(/unavailable/i);
+  });
+});
+
+
+describe("completion requirements remain subject to current evidence", () => {
+  test.each([
+    ["Request amount is 25 EUR", "Request amount is 35 EUR", "Current amount is 35 EUR"],
+    ["Requested status is Draft", "Requested status is Draft", "Current status is Submitted"],
+  ])("does not accept corpus overlap for %s", async (criterion, fact, observation) => {
+    const seat = seatReturning('{"pass":false,"confidence":1,"perCriterion":[{"id":"c1","pass":false}]}');
+    const outcome = await runJudgeGate({
+      claim: criterion, successCriteria: criterion, evidence: [observation],
+      corpusFacts: [{ claimKey: "stored-fact", text: fact, encrypted: false }],
+    }, { seat });
+    expect(outcome).toMatchObject({ decision: "reroute", judged: true });
+    expect(seat.runJudge).toHaveBeenCalledOnce();
+  });
+
+  test.each([
+    "Saved note matches the source tracking number",
+    "Unrelated changes by another editor are preserved",
+  ])("rejects a failing ninth requirement: %s", async (constraint) => {
+    const requirements = ["Correct record is open", "Requested owner is selected",
+      "Requested date is saved", "Requested amount is saved",
+      "Requested currency is saved", "Requested status is saved",
+      "Save confirmation is observed", "Saved values are read back", constraint];
+    const seat: JudgeSeat = { supportsRubricDecision: () => true, runJudge: vi.fn(), runRubricDecision: vi.fn(async (rubric) => {
+      const perCriterion = rubric.criteria.map(c => ({ id: c.id, pass: c.description !== constraint }));
+      return { pass: perCriterion.every(c => c.pass), confidence: 1, perCriterion, entailment: [], source: "judge" as const };
+    }) };
+    const outcome = await runJudgeGate({
+      claim: "Save the requested update", successCriteria: requirements.join("; "),
+      evidence: ["Saved, but the final constraint was violated"], corpusFacts: [],
+    }, { seat });
+    expect(outcome.decision).toBe("reroute");
+    expect(outcome.verdict?.perCriterion).toContainEqual({ id: "c9", pass: false });
   });
 });
