@@ -119,8 +119,8 @@ importers:
         specifier: 2.1.0
         version: 2.1.0(hono@4.13.5)
       "@modelcontextprotocol/sdk":
-        specifier: ^1.30.0
-        version: 1.30.0(zod@4.4.3)
+        specifier: 1.31.0
+        version: 1.31.0(zod@4.4.3)
       "@opentelemetry/api":
         specifier: ^1.9.1
         version: 1.9.1
