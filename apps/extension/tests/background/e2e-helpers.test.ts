@@ -1,7 +1,12 @@
+import fs from "node:fs";
+import { startFixtureServer } from "../e2e/helpers/fixture-server";
 import { describe, expect, it, vi } from "vitest";
 import {
   __testOnly as e2eUtilsTestOnly,
   waitForMonitoredEvent,
+  waitForTaskCompletion,
+  waitForOutcome,
+  setupEventMonitor,
   waitForTabCount,
 } from "../e2e/helpers/utils";
 import { closeExtension } from "../e2e/helpers/browser";
@@ -555,5 +560,44 @@ describe("e2e helper semantics", () => {
 
     expect(close).toHaveBeenCalledOnce();
     expect(kill).toHaveBeenCalledWith("SIGKILL");
+  });
+});
+
+
+describe("completion events survive rolling-buffer eviction", () => {
+  it.each(["completed", "failed"])("observes %s from the control lane", async (status) => {
+    const previous = globalThis.self;
+    Object.defineProperty(globalThis, "self", { configurable: true, value: {
+      __agentEvents: Array.from({ length: 100 }, (_, i) => ({ seq: i + 2, type: "STREAM_CHUNK", workspaceId: "ws" })),
+      __agentControlEvents: [{ seq: 1, type: "TASK_COMPLETION", status, workspaceId: "ws" }],
+    } });
+    const worker = { evaluate: async (fn: (n: number) => unknown, n: number) => fn(n) };
+    try {
+      const result = await waitForTaskCompletion({ serviceWorker: worker } as any, 10, "ws");
+      expect(result.ok).toBe(status === "completed");
+      expect(result.reason).toBe(status === "completed" ? "completed" : "task_failed:unknown");
+      const outcome = await waitForOutcome({} as any, worker as any, async () => ({ saved: true }), 10, "ws");
+      if (status === "completed") expect(outcome.reason).toBe("completed_with_successful_result");
+    } finally {
+      Object.defineProperty(globalThis, "self", { configurable: true, value: previous });
+    }
+  });
+});
+
+
+describe("browser harness prerequisites", () => {
+  it("retries event monitor installation until Chrome messaging is ready", async () => {
+    const worker = { evaluate: vi.fn().mockResolvedValueOnce(false).mockResolvedValue(true) };
+    await setupEventMonitor(worker as any);
+    expect(worker.evaluate).toHaveBeenCalledTimes(2);
+  });
+
+  it("rejects a missing fixture build before opening a server", async () => {
+    const exists = vi.spyOn(fs, "existsSync").mockReturnValue(false);
+    try {
+      await expect(startFixtureServer()).rejects.toThrow("pnpm run fixtures:build");
+    } finally {
+      exists.mockRestore();
+    }
   });
 });

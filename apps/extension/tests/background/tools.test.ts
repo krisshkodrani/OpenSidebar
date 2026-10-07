@@ -920,6 +920,18 @@ describe("Tool Registration", () => {
     expect(inputEvents).toEqual([]);
   });
 
+  test("content-script failures remain errors even without an Error prefix", async () => {
+    (chrome.tabs.sendMessage as any) = vi.fn(async () => ({ payload: {
+      success: false, result: "No element with tag [133] No elements tagged — call read_page to refresh.",
+    } }));
+    const result = await toolRegistry.execute({
+      id: "missing-element", type: "function", function: {
+        name: ToolName.READ_ELEMENT, arguments: JSON.stringify({ id: 133, attribute: "value" }),
+      },
+    } as any, 123);
+    expect(result).toBe("Error: No element with tag [133] No elements tagged — call read_page to refresh.");
+  });
+
   test("click_element does not mirror a successful content-script click", async () => {
     const result = await toolRegistry.execute(
       {

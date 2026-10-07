@@ -105,7 +105,9 @@ via the completion-effect host — rejection bookkeeping, diagnostics, and plan
 rejection all flow through effects, never inline mutation. Supporting pieces:
 guard suite (`completion/guards/` — budget, contract, domain, summary,
 grounding), judge gate (`completion/judge.ts`, dedicated judge model seat),
-entailment gate, preflight, and decision recording.
+preflight, and decision recording. The judge receives every derived completion
+criterion and current evidence. Stored corpus facts provide context; lexical
+overlap cannot bypass judging or remove trailing requirements.
 
 The golden corpus in `tests/fixtures/completion-corpus/` must replay
 byte-identical; regenerate with `UPDATE_COMPLETION_CORPUS=1` only for an

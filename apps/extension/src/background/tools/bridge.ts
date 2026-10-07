@@ -404,11 +404,15 @@ export async function executeContentTool(
       success?: boolean;
     };
   }): string | ToolExecutionResult => {
-    const result = response.payload?.result;
+    let result = response.payload?.result;
     if (typeof result !== "string") {
       throw new Error(
         "Empty response from content script - bridge may be disconnected",
       );
+    }
+    // Preserve the content action's failure across the string-based tool boundary.
+    if (response.payload?.success === false && !result.startsWith("Error:")) {
+      result = `Error: ${result}`;
     }
     if (response.payload?.success && KEYBOARD_TARGET_TOOLS.has(startName))
       frameActionRoutes.rememberKeyboardFrame(tabId,

@@ -36,7 +36,7 @@ export function registerInteractionTools(toolRegistry: ToolRegistry): void {
         // click already activates React/Vue handlers on normal pages; mirroring it
         // here would double-submit buttons and double-advance pagination.
         const resultText = String(result);
-        if (resultText.startsWith("Click intercepted!")) {
+        if (/^(?:Error: )?Click intercepted!/.test(resultText)) {
             const bridged = await clickElementInMainWorld(tabId, args);
             if (bridged) {
                 return `Clicked [${String(args.id)}] via main-world event bridge after content-script interception.`;

@@ -210,6 +210,9 @@ export function recordSuccessfulToolExecution(
     mode: "parallel" | "sequential";
   },
 ): number {
+  if (/^Error(?::| executing\b)/i.test(params.result)) {
+    return recordFailedToolExecution(loop, { ...params, errorMsg: params.result });
+  }
   const toolMs = Date.now() - params.toolStep.timestamp;
   for (const id of extractDiscoveredTagIds(params.toolName, params.result)) {
     params.discoveredTagIds.add(id);

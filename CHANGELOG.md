@@ -1,6 +1,38 @@
 # Changelog
 
-## [0.7.7] - Unreleased
+## [0.7.8] - Unreleased
+
+### Added
+
+- Integrated the updated trace viewer and supervised remote-work interface.
+
+### Fixed
+
+- Preserved content-script action failures through tool results, UI status, and
+  trace recording instead of reporting them as successful calls.
+- Made browser tests wait for event-monitor readiness and retain terminal
+  events across stream output; reject missing fixture builds immediately.
+
+- Invalidated cached judge verdicts when requirement wording changes.
+- Kept all completion requirements in judge evaluation, including constraints
+  beyond the eighth criterion.
+- Required judge evaluation of current evidence even when stored facts have
+  matching wording; stale status and different numeric values cannot bypass it.
+- Included the native editor and completion text-inference fixes merged after
+  0.7.7.
+
+### Security
+
+- Updated production dependencies to patched versions for the release audit.
+
+### Known Limitations
+
+- Broad browser-task completion and model-cost baselines remain unverified.
+  Partial ModelBench runs do not establish a full benchmark score.
+- Remote work remains limited to authorized named testers. See
+  [known limitations](docs/known-limitations.md) for release scope.
+
+## [0.7.7] - 2026-09-29
 
 ### Added
 

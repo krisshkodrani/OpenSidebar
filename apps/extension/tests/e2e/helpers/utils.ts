@@ -495,20 +495,18 @@ export async function setupEventMonitor(worker: WebWorker): Promise<void> {
       g.__agentEvents = [];
       g.__agentControlEvents = [];
       g.__e2eEventBufferLimit = bufferLimit;
-      return;
+      return true;
     }
 
     // Check that chrome.runtime.sendMessage is available (SW should be initialized by now)
     // Note: setTimeout is unavailable in Puppeteer's CDP evaluate context for service workers,
-    // so we cannot poll. If sendMessage isn't ready, we proceed without it.
+    // so the host retries installation until the API is available.
     if (!g.chrome?.runtime?.sendMessage) {
       // One retry via microtask yield
       await Promise.resolve();
     }
     if (!g.chrome?.runtime?.sendMessage) {
-      console.warn("[e2e] chrome.runtime.sendMessage unavailable — event monitor disabled");
-      g.__agentEvents = [];
-      return;
+      return false;
     }
 
     g.__agentEvents = [];
@@ -597,9 +595,15 @@ export async function setupEventMonitor(worker: WebWorker): Promise<void> {
       };
     }
     g.__e2eEventMonitorInstalled = true;
+    return true;
 })()
   `;
-  await worker.evaluate(script);
+  const deadline = Date.now() + 3_000;
+  do {
+    if (await worker.evaluate(script)) return;
+    await new Promise((resolve) => setTimeout(resolve, 50));
+  } while (Date.now() < deadline);
+  throw new Error("Event monitor setup failed: chrome.runtime.sendMessage is unavailable");
 }
 
 /**
@@ -1681,7 +1685,7 @@ export async function waitForTaskCompletion(
   const start = Date.now();
 
   while (Date.now() - start < timeoutMs) {
-    const events = (await getMonitoredEvents(ctx.serviceWorker, 80)).filter(
+    const events = (await getMonitoredEventsWithControlLane(ctx.serviceWorker, 80)).filter(
       (event: any) =>
         event.workspaceId == null || event.workspaceId === workspaceId,
     );
@@ -1765,7 +1769,7 @@ export async function waitForTaskCompletion(
     await new Promise((resolve) => setTimeout(resolve, 1500));
   }
 
-  const finalEvents = await getMonitoredEvents(ctx.serviceWorker, 80).then(
+  const finalEvents = await getMonitoredEventsWithControlLane(ctx.serviceWorker, 80).then(
     (all) =>
       all.filter(
         (event: any) =>
@@ -1827,7 +1831,7 @@ export async function waitForOutcome<T>(
     }
     lastResult = result ?? null;
 
-    const rawEvents = await getMonitoredEvents(worker);
+    const rawEvents = await getMonitoredEventsWithControlLane(worker, 80);
     const events =
       workspaceId == null
         ? rawEvents
@@ -1928,7 +1932,7 @@ export async function waitForOutcome<T>(
     await new Promise((r) => setTimeout(r, 2000));
   }
 
-  const rawEvents = await getMonitoredEvents(worker);
+  const rawEvents = await getMonitoredEventsWithControlLane(worker, 80);
   const events =
     workspaceId == null
       ? rawEvents
