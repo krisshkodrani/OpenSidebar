@@ -11,7 +11,7 @@
 
 <p align="center">
   <a href="https://opensidebar.com"><img src="https://img.shields.io/badge/site-opensidebar.com-4FC3F7" alt="Website" /></a>
-  <a href="https://github.com/krisshkodrani/OpenSidebar/actions/workflows/ci.yml"><img src="https://github.com/krisshkodrani/OpenSidebar/actions/workflows/ci.yml/badge.svg" alt="CI" /></a>
+  <a href="https://github.com/krisshkodrani/OpenSidebar/actions/workflows/ci.yml"><img src="https://github.com/krisshkodrani/OpenSidebar/actions/workflows/ci.yml/badge.svg?branch=main" alt="CI on main" /></a>
   <a href="LICENSE"><img src="https://img.shields.io/badge/License-MIT-blue.svg" alt="License: MIT" /></a>
   <a href="https://nodejs.org/"><img src="https://img.shields.io/badge/node-%3E%3D22-brightgreen" alt="Node.js" /></a>
 </p>
@@ -132,6 +132,24 @@ browser checks, see [the developer guide](docs/developer-guide.md).
 The main remaining engineering costs are large completion/orchestration
 modules, model latency, and ambiguous page state; the repository tracks these
 rather than claiming general-purpose automation is solved.
+
+### Automated checks
+
+Every push and pull request runs independently named checks. Open a run in
+[GitHub Actions](https://github.com/krisshkodrani/OpenSidebar/actions/workflows/ci.yml)
+for formatted results, reproduction commands, and the validated extension build
+(downloadable for 14 days).
+
+| Check | What it verifies |
+| --- | --- |
+| Quality | Lint, TypeScript, RFC/skill rules, and runtime size limits |
+| Tests | Extension, cloud-service, and tooling regression suites |
+| Build | Production Chrome extension and distribution integrity |
+| Security | Known production dependency advisories |
+| Database | Migrations, ownership isolation, OAuth, and remote capabilities on PostgreSQL 16 |
+
+The header badge reports `main`. Browser acceptance with live model calls is a
+separate, supervised check; see the [developer guide](docs/developer-guide.md#native-browser-demonstration).
 
 ### Development
 

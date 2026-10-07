@@ -2,57 +2,98 @@ name: CI
 
 on:
   push:
-    branches: [main]
   pull_request:
     branches: [main]
+  workflow_dispatch:
 
 permissions:
   contents: read
 
-jobs:
-  ci:
-    runs-on: ubuntu-latest
+concurrency:
+  group: ci-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
 
+env:
+  NX_DAEMON: "false"
+  # These jobs use no browser; avoid downloading Chromium on every runner.
+  PUPPETEER_SKIP_DOWNLOAD: "true"
+
+jobs:
+  checks:
+    name: ${{ matrix.name }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: Quality · lint and types
+            gate: quality
+            command: pnpm run ci:lint && pnpm run typecheck && node scripts/loop-ratchet.mjs
+          - name: Tests · extension and cloud
+            gate: tests
+            command: pnpm run ci:test
+          - name: Build · Chrome extension
+            gate: build
+            command: pnpm run ci:build && pnpm run ci:dist
+          - name: Security · dependency audit
+            gate: audit
+            command: pnpm run ci:audit
     steps:
-      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+      - name: Check out source
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
         with:
           persist-credentials: false
-
-      - name: Setup pnpm
+      - name: Set up pnpm
         uses: pnpm/action-setup@0ebf47130e4866e96fce0953f49152a61190b271 # v6
         with:
           version: 11.1.0
-
-      - name: Setup Node.js
+      - name: Set up Node.js
         uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
         with:
           node-version: "22"
-          cache: "pnpm"
+          cache: pnpm
           cache-dependency-path: pnpm-lock.yaml
-
-      - name: Install dependencies
+      - name: Install locked dependencies
+        id: install
         run: pnpm install --frozen-lockfile
-
-      - name: Run linter
-        run: pnpm run ci:lint
-
-      - name: Type check
-        run: pnpm run typecheck
-
-      - name: Run tests
-        run: pnpm run ci:test
-
-      - name: Build project
-        run: pnpm run ci:build
-
-      - name: Verify extension artifact
-        run: pnpm run ci:dist
-
-      - name: Audit production dependencies
-        run: pnpm run ci:audit
+      - name: Run check
+        id: check
+        run: ${{ matrix.command }}
+      - name: Upload validated extension
+        id: artifact
+        if: matrix.gate == 'build'
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
+        with:
+          name: opensidebar-extension-${{ github.sha }}
+          path: dist/
+          include-hidden-files: true # Preserve the validated .vite manifest.
+          if-no-files-found: error
+          retention-days: 14
+      - name: Publish check summary
+        if: always()
+        env:
+          CHECK_NAME: ${{ matrix.name }}
+          CHECK_COMMAND: ${{ matrix.command }}
+          ARTIFACT_URL: ${{ steps.artifact.outputs.artifact-url }}
+          INSTALL_RESULT: ${{ steps.install.outcome }}
+          CHECK_RESULT: ${{ steps.check.outcome }}
+        run: |
+          {
+            printf '## %s\n\n' "$CHECK_NAME"
+            printf '| Step | Result |\n| --- | --- |\n'
+            printf '| Locked dependency install | %s |\n' "$INSTALL_RESULT"
+            printf '| Check | %s |\n\n' "$CHECK_RESULT"
+            printf '**Reproduce locally**\n\n```sh\n%s\n```\n' "$CHECK_COMMAND"
+            if [ -n "$ARTIFACT_URL" ]; then
+              printf '\n[Download the validated Chrome extension](%s) · retained for 14 days\n' "$ARTIFACT_URL"
+            fi
+          } >> "$GITHUB_STEP_SUMMARY"
 
   cloud-postgres:
+    name: Database · PostgreSQL integration
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     services:
       postgres:
         image: postgres:16
@@ -68,19 +109,62 @@ jobs:
           --health-timeout 5s
           --health-retries 10
     steps:
-      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+      - name: Check out source
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
         with:
           persist-credentials: false
-      - uses: pnpm/action-setup@0ebf47130e4866e96fce0953f49152a61190b271 # v6
+      - name: Set up pnpm
+        uses: pnpm/action-setup@0ebf47130e4866e96fce0953f49152a61190b271 # v6
         with:
           version: 11.1.0
-      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
+      - name: Set up Node.js
+        uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
         with:
           node-version: "22"
           cache: pnpm
-      - run: pnpm install --frozen-lockfile
+      - name: Install locked dependencies
+        id: install
+        run: pnpm install --frozen-lockfile
       - name: Exercise migrations, ownership, OAuth and remote capabilities
+        id: database
         run: pnpm run cloud:test:postgres
         env:
           PLAYGROUND_TEST_DATABASE_URL: postgresql://opensidebar_test:disposable-test-password@127.0.0.1:5432/opensidebar_test
           MCP_TEST_DATABASE_URL: postgresql://opensidebar_test:disposable-test-password@127.0.0.1:5432/opensidebar_test
+      - name: Publish database summary
+        if: always()
+        env:
+          INSTALL_RESULT: ${{ steps.install.outcome }}
+          DATABASE_RESULT: ${{ steps.database.outcome }}
+        run: |
+          {
+            printf '## Database · PostgreSQL integration\n\n'
+            printf '| Step | Result |\n| --- | --- |\n'
+            printf '| Locked dependency install | %s |\n' "$INSTALL_RESULT"
+            printf '| PostgreSQL 16 integration | %s |\n\n' "$DATABASE_RESULT"
+            printf 'Exercises migrations, ownership isolation, OAuth, and remote capabilities against a disposable database.\n'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+  ci:
+    # Keep the original check name stable for existing branch protection rules.
+    name: ci
+    if: always()
+    needs: [checks, cloud-postgres]
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Publish overall result
+        env:
+          CHECKS_RESULT: ${{ needs.checks.result }}
+          DATABASE_RESULT: ${{ needs.cloud-postgres.result }}
+        run: |
+          {
+            printf '# OpenSidebar · CI results\n\n'
+            printf '| Required checks | Result |\n| --- | --- |\n'
+            printf '| Quality, tests, build, and dependency audit | %s |\n' "$CHECKS_RESULT"
+            printf '| PostgreSQL integration | %s |\n\n' "$DATABASE_RESULT"
+            printf 'Individual jobs include reproduction commands or coverage details. The build job provides a validated unpacked Chrome extension artifact, retained for 14 days.\n\n'
+            printf 'These automated checks do not run paid model calls or live-site browser tasks.\n'
+          } >> "$GITHUB_STEP_SUMMARY"
+          test "$CHECKS_RESULT" = success
+          test "$DATABASE_RESULT" = success

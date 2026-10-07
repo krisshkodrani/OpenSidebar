@@ -43,10 +43,14 @@ pnpm run test:e2e        # build + real-browser E2E
 
 ## Pull Request Automation
 
-- Pull requests run normal CI: lint, typecheck, tests, build, and distribution
-  validation. The workflow has read-only repository permissions and receives no
-  model-provider API keys.
-- AI review and security review are not automatic. An AI review runs only when
+- Pushes and pull requests run separately named quality, test, build, dependency
+  audit, and PostgreSQL integration checks. Each job writes a formatted Actions
+  summary. The final `ci` check passes only when every required job succeeds.
+- The build job uploads a validated unpacked extension with a 14-day retention
+  period. This is a test artifact, not a published release.
+- CI has read-only repository permissions and receives no model-provider API
+  keys. Live-model browser acceptance remains a separate supervised check.
+- Provider-backed AI review is not automatic. It runs only when
   a maintainer explicitly requests it; outside contributors cannot trigger
   provider-backed review jobs.
 - Never put credentials, cookies, private page data, or unredacted traces in a
