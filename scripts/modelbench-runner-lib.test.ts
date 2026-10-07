@@ -287,3 +287,15 @@ test("suite blocks preserve explicit repetition labels for balanced A/B ordering
 
   assert.deepEqual(observed, [2, 3]);
 });
+
+ test("first-attempt baseline preserves infrastructure failure without retry", async () => {
+  let calls = 0;
+  const attempts = await runModelBenchCase({ definition, configuration, buildRevision: "abc", repetition: 1,
+    retryInfrastructureFailures: false,
+    driver: { async execute() { calls++; return { durationMs: 1, resolvedSeats: {}, usageByRole: {}, artifactRefs: [], failure: { kind: "provider", reason: "unavailable" } }; } },
+  });
+  assert.equal(calls, 1);
+  assert.equal(attempts.length, 1);
+  assert.equal(attempts[0].classification, "provider_failure");
+  assert.equal(attempts[0].retryOfAttemptId, undefined);
+});

@@ -18,6 +18,8 @@ import {
   extractKnowledgeBaseAnswerFromText,
 } from "./knowledge-search-routing";
 import { assessMissingToolEscalation } from "./tool-capabilities";
+import { requestedRecoveryTools } from "./capability-recovery";
+import { toolRegistry } from "../tools/registry";
 import { applyFieldReReadTracking } from "./fill-checklist-policy";
 import { checkNavigateGuard, type NavigateGuardHost } from "./navigate-guard";
 import { runWriterHandoff } from "./writer-handoff";
@@ -81,6 +83,7 @@ export interface AgentLoopToolHandlerHost {
   consecutiveAutoAdvances: number;
   context: any;
   disabledTools: Set<ToolName>;
+  toolAvailability: { active: ToolName[]; requested: Set<ToolName> };
   elementResolver: any;
   escalateModel(): void;
   executeToolCall(toolCall: ToolCall, tabId: number): Promise<string>;
@@ -385,6 +388,23 @@ export async function handleEscalateToolCall(
   prevElementCount: number;
 }> {
   const reason = (args.reason as string) || "";
+  const restored = requestedRecoveryTools(
+    args,
+    loop.getActiveToolNamesForTurn?.() ?? [],
+    toolRegistry.getDefinitions(loop.disabledTools).map((tool) => tool.function.name as ToolName),
+  );
+  if (restored.length > 0) {
+    for (const name of restored) loop.toolAvailability.requested.add(name);
+    loop.context.addMessage({
+      role: "tool",
+      tool_call_id: toolCallId,
+      content: `Restored tools hidden by the step profile or skill: ${restored.join(", ")}. They will be available next turn. Continue with the requested action using current page evidence.`,
+    });
+    loop.traceRecorder?.recordEvent("tool_capability_restored", {
+      turn: loop.turnCount, reason, restoredTools: restored,
+    });
+    return { escalationTier, plannerModelStartTurn, orientationPhase, prevElementCount };
+  }
   const capabilityAssessment = assessMissingToolEscalation({
     args,
     availableToolNames: loop.getActiveToolNamesForTurn?.() ?? [],
@@ -1427,7 +1447,7 @@ export async function handleGenericSequentialToolCall(
     }
   }
 
-  // Post-type_text DOM settle: detect autocomplete/dropdown appearance
+  // Settle after the action. Element-count growth alone cannot identify a widget.
   if (
     !args.pressEnter &&
     !result.includes("ServiceNow reference value committed")
@@ -1437,15 +1457,11 @@ export async function handleGenericSequentialToolCall(
     prevElementCount = await loop.refreshSnapshotWithRetry(tabId, preCount);
     if (prevElementCount > preCount + 2) {
       const delta = prevElementCount - preCount;
-      const content =
-        loop.selectedSkillId === "multi-step-form-wizard"
-          ? `${delta} new elements appeared after typing or a form choice in this turn. Snapshot refreshed. Treat this as current-step state; if these are conditional fields, fill them before advancing. Do not assume they are autocomplete suggestions unless a matching option list is visible.`
-          : `${delta} new elements appeared after typing (autocomplete suggestions or dropdown detected). Snapshot refreshed. IMPORTANT: Do NOT type the full value - select the matching option from the dropdown by clicking it. Typing the complete value will not register as a selection.`;
       loop.context.addMessage({
         role: "user",
-        content,
+        content: `${delta} new elements appeared after the action. Snapshot refreshed. Inspect the current fields and controls before continuing. Do not assume they are autocomplete suggestions unless a matching option list is visible.`,
       });
-      loop.log.info("agent", "Post-type DOM settle: new elements detected", {
+      loop.log.info("agent", "Post-action DOM settle: new elements detected", {
         turn: loop.turnCount,
         preCount,
         postCount: prevElementCount,

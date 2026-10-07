@@ -43,10 +43,8 @@ export class CredentialVault {
     this.kms = kms ?? new KMSClient({});
   }
   async verify(provider: CloudProviderId, credential: string) {
-    const url =
-      provider === "openrouter"
-        ? "https://openrouter.ai/api/v1/key"
-        : "https://api.fireworks.ai/inference/v1/models";
+    if (provider !== "openrouter") throw new ControlPolicyError("invalid_provider");
+    const url = "https://openrouter.ai/api/v1/key";
     const response = await fetch(url, {
       headers: { authorization: `Bearer ${credential}` },
       signal: AbortSignal.timeout(10_000),

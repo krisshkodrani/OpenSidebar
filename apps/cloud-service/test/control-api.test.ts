@@ -516,3 +516,50 @@ test("linked extension session reaches account and revisioned preferences with e
   });
   assert.equal(hostile.status, 403);
 });
+
+test("relay metadata route requires authentication, relay activation and an allowlisted model", async () => {
+  const repository = new MemoryControlRepository();
+  const websitePlayground = {
+    ...playground,
+    session: async (hash: string) => hash === tokenHash("web-token")
+      ? { accountId: "account-1", email: "owner@example.com", csrfHash: tokenHash("csrf-token") } : null,
+  } as unknown as PlaygroundRepository;
+  let decrypts = 0;
+  const vault = { decrypt: async () => { decrypts++; return "vault-key"; } } as unknown as import("../src/credential-vault.js").CredentialVault;
+  const make = (enabled: boolean) => createApp(websitePlayground, { ...baseConfig, relayEnabled: enabled }, undefined, {
+    repository, auth: new ControlAuthService(repository, baseConfig), vault,
+  });
+  const headers = { origin: "https://opensidebar.com", cookie: "__Host-os_session=web-token" };
+  const path = "/api/v1/relay/openrouter/models/allowed/model/endpoints";
+  assert.equal((await make(true).request(path)).status, 401);
+  assert.equal((await make(false).request(path, { headers })).status, 503);
+  assert.equal((await make(true).request(path.replace("allowed/model", "other/model"), { headers })).status, 400);
+  assert.equal(decrypts, 0);
+  const original = globalThis.fetch;
+  globalThis.fetch = async () => Response.json({ data: { endpoints: [] } });
+  try {
+    const response = await make(true).request(path, { headers });
+    assert.equal(response.status, 200);
+    assert.equal(response.headers.get("cache-control"), "no-store");
+    assert.deepEqual(await response.json(), { data: { endpoints: [] } });
+    assert.equal(decrypts, 1);
+  } finally { globalThis.fetch = original; }
+});
+
+
+test("relay metadata rate limiting prevents vault access", async () => {
+  const repository = new MemoryControlRepository();
+  const limited = {
+    ...playground,
+    session: async () => ({ accountId: "account-1", email: "owner@example.com", csrfHash: tokenHash("csrf-token") }),
+    consumeAuthQuota: async () => { throw Object.assign(new Error("limited"), { code: "auth_rate_limit" }); },
+  } as unknown as PlaygroundRepository;
+  const vault = { decrypt: async () => { assert.fail("must not decrypt"); } } as unknown as import("../src/credential-vault.js").CredentialVault;
+  const app = createApp(limited, { ...baseConfig, relayEnabled: true }, undefined, {
+    repository, auth: new ControlAuthService(repository, baseConfig), vault,
+  });
+  const response = await app.request("/api/v1/relay/openrouter/models/allowed/model/endpoints", {
+    headers: { origin: "https://opensidebar.com", cookie: "__Host-os_session=web-token" },
+  });
+  assert.equal(response.status, 429);
+});

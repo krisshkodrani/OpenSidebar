@@ -120,6 +120,10 @@ export interface ReflexionEntry {
 
 export interface TaskNode {
   id: string;
+  /** Cumulative executor turns, including retries; planner/verifier calls are separate. */
+  turnsUsed?: number;
+  /** Turns completed before the current (possibly checkpoint-resumed) attempt. */
+  turnAttemptBase?: number;
   role: Extract<AgentRole, "executor">;
   description: string;
   /**

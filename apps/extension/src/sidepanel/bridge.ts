@@ -148,10 +148,19 @@ export function initializeBridge(
     switch (message.type) {
       case "USER_CHAT_ACCEPTED":
         appendAcceptedUserChat(state, message.payload);
+        // Acceptance is the delivery acknowledgement, even if the request's
+        // response channel stays open. Preserve any newer draft the user typed.
+        if (state.inputText.trim() === message.payload.text.trim()) {
+          state.setInputText("");
+        }
         if (!message.payload.isFeedback) {
           store.setState({
             agentStatus: AgentStatus.THINKING,
             statusDetail: "Starting task...",
+            lastTaskUpdateAt: Date.now(),
+            lastCompletedAction: null,
+            actionPresentation: null,
+            latestStepLabel: null,
             isAgentRunning: true,
             taskProgress: null,
             taskCompletion: null,
@@ -230,12 +239,22 @@ export function initializeBridge(
           });
           break;
         }
+        store.setState({
+          backgroundConnection: "connected",
+          lastTaskUpdateAt: Date.now(),
+        });
         if (
           message.payload.status === AgentStatus.THINKING ||
           message.payload.status === AgentStatus.IDLE ||
           message.payload.status === AgentStatus.ERROR
         ) {
           passiveSuggestionFingerprints.clear();
+        }
+        if (
+          message.payload.status === AgentStatus.IDLE ||
+          message.payload.status === AgentStatus.ERROR
+        ) {
+          store.getState().finalizeStream();
         }
         store.setState((current) => {
           if (
@@ -343,6 +362,15 @@ export function initializeBridge(
         break;
 
       case "AGENT_STEP":
+        store.setState({ lastTaskUpdateAt: Date.now() });
+        if (message.payload.step.status === "done") {
+          store.setState({
+            lastCompletedAction: {
+              label: message.payload.step.label,
+              at: Date.now(),
+            },
+          });
+        }
         if (message.payload.update) {
           state.updateStep(message.payload.step);
         } else {
@@ -356,6 +384,20 @@ export function initializeBridge(
       case "ACTION_PRESENTATION": {
         const presentation = { ...message.payload, receivedAt: Date.now() };
         state.setActionPresentation(presentation);
+        if (
+          store.getState().actionPresentation?.sequence ===
+          presentation.sequence
+        ) {
+          store.setState({ lastTaskUpdateAt: Date.now() });
+          if (presentation.phase === "applied") {
+            store.setState({
+              lastCompletedAction: {
+                label: presentation.label,
+                at: Date.now(),
+              },
+            });
+          }
+        }
         if (
           presentation.phase === "applied" ||
           presentation.phase === "failed" ||
@@ -414,6 +456,7 @@ export function initializeBridge(
           logger.debug("ui", "Ignored stale task progress after completion");
           break;
         }
+        store.setState({ lastTaskUpdateAt: Date.now() });
         state.setTaskProgress(message.payload);
         // Clear stale confirmation so PlanStrip transitions to progress mode
         if (state.pendingPlanConfirmation) {
@@ -422,6 +465,10 @@ export function initializeBridge(
         break;
 
       case "TASK_COMPLETION":
+        store.setState({
+          backgroundConnection: "connected",
+          lastTaskUpdateAt: Date.now(),
+        });
         state.applyTaskCompletion(message.payload);
         break;
 
@@ -472,8 +519,7 @@ export function initializeBridge(
 
   const unsubscribeMessages = uiRuntime.subscribeMessages(listener);
 
-  // Long-lived port to detect SW crashes. When the SW terminates, the port
-  // disconnects and we reset stuck agent state so the user isn't locked out.
+  // Reconnect after transport loss and reconcile with authoritative task state.
   let port: UiRuntimeKeepalivePort | null = null;
   let reconnectTimer: ReturnType<typeof setTimeout> | null = null;
   let reconnectDelay = 1000;
@@ -486,21 +532,14 @@ export function initializeBridge(
       port = uiRuntime.connectKeepalive("sidepanel-keepalive", () => {
         port = null;
         if (tornDown) return;
+        store.setState({ backgroundConnection: "reconnecting" });
         const state = store.getState();
         if (state.isAgentRunning) {
-          logger.warn(
-            "ui",
-            "SW disconnected while agent running — resetting state",
-          );
-          state.setAgentRunning(false);
-          state.updateStatus(AgentStatus.IDLE, "Agent disconnected");
-          state.finalizeStream();
+          logger.info("ui", "Background connection lost — reconnecting");
+          state.updateStatus(state.agentStatus, "Reconnecting to agent…");
         }
-        // Clear any stuck overlays
-        state.clearPendingApproval();
-        state.clearPendingEscalation();
-        state.clearPendingClarification();
-        state.clearPendingPlanConfirmation();
+        // Port loss alone does not prove the task stopped. Preserve the stream
+        // and pending user gates until workspace sync reports the actual state.
         // Reconnect with exponential backoff (SW may restart)
         reconnectTimer = setTimeout(() => {
           reconnectTimer = null;
@@ -522,7 +561,8 @@ export function initializeBridge(
           .catch(() => {});
       }
     } catch {
-      // Extension context invalidated — side panel is closing
+      // Keep connection uncertainty visible if the extension was reloaded.
+      if (!tornDown) store.setState({ backgroundConnection: "reconnecting" });
       return;
     }
   }

@@ -43,12 +43,13 @@ export class DisabledRemoteMissionDeliveryPort implements RemoteMissionDeliveryP
 
 export class HttpRemoteMissionDeliveryPort implements RemoteMissionDeliveryPort {
   readonly enabled = true;
-  constructor(private readonly fetchCloud: AuthenticatedFetch) {}
+  constructor(private readonly fetchCloud: AuthenticatedFetch, private readonly interactive = false) {}
 
   async poll(deviceId: string, afterSequence: number) {
     const query = new URLSearchParams({
       after: String(afterSequence),
       limit: "10",
+      ...(this.interactive ? { interactive: "v1" } : {}),
     });
     const response = await this.fetchCloud(
       `/devices/${encodeURIComponent(deviceId)}/remote-missions?${query}`,

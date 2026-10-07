@@ -4,10 +4,97 @@ import {
   extractModelBenchOutcome,
   extractStoredModelBenchOutcome,
   harnessFailureReason,
+  missingExecutorEvidenceReason,
   modelBenchSettingsPatch,
   observedTabOpeningAction,
+  initializeModelBenchWorkspace,
   providerFailureReason,
+  waitForOutcome,
+  installModelBenchOutcomeObserver,
+  readModelBenchOutcomeEvents,
 } from "./modelbench-extension-driver.js";
+
+test("runtime completion observer retains only background control messages and resets the requested workspace", () => {
+  const scope = globalThis as any;
+  const previous = scope.chrome;
+  let listener: ((message: unknown) => void) | undefined;
+  let subscriptions = 0;
+  scope.chrome = { runtime: { onMessage: { addListener: (callback: typeof listener) => { listener = callback; subscriptions++; } } } };
+  try {
+    installModelBenchOutcomeObserver("one");
+    const completion = { type: "TASK_COMPLETION", source: "background", workspaceId: "one", payload: { status: "completed", summary: "Result" } };
+    listener!({ ...completion, source: "content" });
+    listener!({ ...completion, type: "STREAM_CHUNK" });
+    listener!(completion);
+    listener!({ ...completion, workspaceId: "two" });
+    assert.deepEqual(readModelBenchOutcomeEvents().map((event) => event.workspaceId), ["one", "two"]);
+    installModelBenchOutcomeObserver("one");
+    assert.equal(subscriptions, 1);
+    assert.deepEqual(readModelBenchOutcomeEvents().map((event) => event.workspaceId), ["two"]);
+  } finally {
+    scope.chrome = previous;
+    delete scope.__modelBenchOutcomeEvents;
+    delete scope.__modelBenchOutcomeObserverInstalled;
+  }
+});
+
+test("wire completion is observed without a working service-worker hook or persisted chat", async () => {
+  const completion = { type: "TASK_COMPLETION", workspaceId: "workspace", payload: { status: "completed", summary: "Result" } };
+  const worker = { evaluate: async () => { throw new Error("Worker detached"); } };
+  const page = { evaluate: async () => [completion] };
+  const outcome = await waitForOutcome(worker as never, "workspace", 0, page as never);
+  assert.equal(outcome.kind, "completion");
+  assert.equal(outcome.event?.payload.summary, "Result");
+});
+
+test("the final outcome poll recognizes completion even before chat persistence", async () => {
+  const completion = { type: "TASK_COMPLETION", workspaceId: "workspace", payload: { status: "completed", summary: "Result" } };
+  let reads = 0;
+  const worker = { evaluate: async () => { reads++; return [completion]; } };
+  const outcome = await waitForOutcome(worker as never, "workspace", 0);
+  assert.equal(outcome.kind, "completion");
+  assert.equal(reads, 1);
+});
+
+test("storage observation failures propagate instead of becoming model timeouts", async () => {
+  let reads = 0;
+  const worker = { evaluate: async () => {
+    if (++reads === 1) return [];
+    throw new Error("Execution context was destroyed");
+  } };
+  await assert.rejects(waitForOutcome(worker as never, "workspace", 0), /Execution context was destroyed/);
+});
+
+test("workspace setup uses the real panel-open handler and rejects tracking-only workspaces", async () => {
+  const previous = globalThis.chrome;
+  let groupId = -1;
+  let createGroup = true;
+  let markers: number[] = [99];
+  const messages: unknown[] = [];
+  globalThis.chrome = {
+    tabs: { get: async () => ({ id: 7, windowId: 3, groupId }) },
+    tabGroups: { TAB_GROUP_ID_NONE: -1 },
+    storage: { session: {
+      get: async () => ({ userOpenedPanel: markers }),
+      set: async (value: { userOpenedPanel: number[] }) => { markers = value.userOpenedPanel; },
+    } },
+    runtime: { sendMessage: async (message: unknown) => {
+      messages.push(message);
+      if (createGroup) groupId = 42;
+      return { workspaceId: "real-workspace" };
+    } },
+  } as unknown as typeof chrome;
+  try {
+    assert.equal(await initializeModelBenchWorkspace(7), "real-workspace");
+    assert.deepEqual(markers, [99, 7]);
+    assert.equal((messages[0] as { type: string }).type, "SIDE_PANEL_OPENED");
+    createGroup = false;
+    groupId = -1;
+    await assert.rejects(initializeModelBenchWorkspace(7), /real grouped workspace/);
+  } finally {
+    globalThis.chrome = previous;
+  }
+});
 
 test("maps each benchmark seat into the extension settings contract", () => {
   assert.deepEqual(
@@ -217,4 +304,19 @@ test("a genuine wrong answer is still a model failure", () => {
     },
   };
   assert.equal(providerFailureReason(outcome), undefined);
+});
+
+
+test("a timeout before any observed executor work is inconclusive, not a model failure", () => {
+  const evidence = {
+    telemetry: { turns: 0 }, resolvedSeats: {}, usageByRole: {},
+  } as Parameters<typeof missingExecutorEvidenceReason>[1];
+  assert.match(missingExecutorEvidenceReason({ kind: "timeout", events: [] }, evidence)!, /cannot be attributed/);
+  assert.match(missingExecutorEvidenceReason({ kind: "completion", events: [] }, evidence)!, /cannot be attributed/);
+  assert.equal(missingExecutorEvidenceReason({ kind: "timeout", events: [] }, {
+    ...evidence, telemetry: { ...evidence.telemetry, turns: 1 },
+  }), undefined);
+  assert.equal(missingExecutorEvidenceReason({ kind: "timeout", events: [] }, {
+    ...evidence, usageByRole: { executor: { calls: 1 } as never },
+  }), undefined);
 });

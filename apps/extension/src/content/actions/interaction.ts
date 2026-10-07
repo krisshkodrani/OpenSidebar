@@ -659,6 +659,21 @@ export function executeType(args: TypeTextArgs): {
     };
   }
 
+  // Native date values use ISO format regardless of the displayed locale.
+  const isDate = isInputElement(el) && el.type === "date";
+  if (isDate && args.text) {
+    const probe = el.ownerDocument.createElement("input");
+    probe.type = "date";
+    probe.value = args.text;
+    if (!/^\d{4,}-\d{2}-\d{2}$/.test(args.text) || !probe.value) {
+      return {
+        success: false,
+        result: `Error: Date input [${tagId}] requires a valid YYYY-MM-DD value; the field was not changed.`,
+        navigated: false,
+      };
+    }
+  }
+
   // Scroll into view and focus the element
   if (isHtmlElement(el)) {
     el.scrollIntoView({ behavior: "instant", block: "center" });
@@ -685,8 +700,16 @@ export function executeType(args: TypeTextArgs): {
     };
   }
 
-  // Input/textarea: clear using native setter, then type char-by-char for SPA frameworks
-  {
+  // Dates reject partial prefixes, so commit their complete value atomically.
+  if (isDate) {
+    setNativeValue(el as HTMLInputElement, args.text);
+    el.dispatchEvent(new InputEvent("input", { bubbles: true, data: args.text, inputType: "insertText" }));
+    el.dispatchEvent(new Event("change", { bubbles: true }));
+    if ((el as HTMLInputElement).value !== args.text) {
+      return { success: false, result: `Error: Date input [${tagId}] did not retain the requested value. Read the field before retrying.`, navigated: false };
+    }
+  } else {
+    // Input/textarea: clear, then type char-by-char for SPA frameworks.
     if (isInputElement(el) || isTextAreaElement(el)) {
       setNativeValue(el, "");
       el.dispatchEvent(

@@ -441,6 +441,7 @@ export const MUTATION_SENSITIVE_TOOLS: Set<ToolName> = new Set(
 );
 
 export type ToolProfile =
+  | "remote_interactive"
   | "full"
   | "read_only"
   | "form_fill"
@@ -453,6 +454,15 @@ export type ToolProfile =
   | "navigation_only";
 
 export const TOOL_PROFILES: Record<ToolProfile, ToolName[]> = {
+  remote_interactive: [
+    ToolName.READ_PAGE, ToolName.READ_ELEMENT, ToolName.FIND_ELEMENT,
+    ToolName.EXTRACT_FORM_STATE, ToolName.INSPECT_TABLE, ToolName.INSPECT_CHART,
+    ToolName.SCROLL_PAGE, ToolName.CLICK_ELEMENT, ToolName.TYPE_TEXT,
+    ToolName.SELECT_OPTION, ToolName.SET_CHECKBOX, ToolName.PRESS_KEY,
+    ToolName.NAVIGATE, ToolName.GO_BACK, ToolName.CREATE_TAB, ToolName.SWITCH_TAB,
+    ToolName.LIST_TABS, ToolName.HOVER_ELEMENT, ToolName.WAIT,
+    ToolName.DONE, ToolName.ESCALATE, ToolName.CLARIFY, ToolName.UPDATE_NOTES,
+  ],
   full: [], // empty = no filtering, use all tools as-is
   read_only: [
     // Observe

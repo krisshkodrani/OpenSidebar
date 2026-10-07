@@ -28,6 +28,8 @@ import { createHostedBrowserMcpApi } from "./hosted-browser-mcp-api.js";
 import type { HostedBrowserMcpOperations } from "./hosted-browser-mcp.js";
 import { createModelBenchTargetApi } from "./modelbench-target-api.js";
 
+import { createMcpOAuthApi, type McpOAuthService } from "./mcp-oauth.js";
+
 type Variables = { accountId: string; email: string; csrfHash: string };
 const noStore = (c: Context) => c.header("Cache-Control", "no-store");
 const problem = (
@@ -155,6 +157,7 @@ export function createApp(
     remoteMissionRepository?: RemoteMissionRepository;
     remoteMissionVault?: RemoteMissionVault;
     hostedBrowserMcpOperations?: HostedBrowserMcpOperations;
+    mcpOAuth?: McpOAuthService;
   },
   temporalShadowOutbox?: TemporalShadowOutbox,
 ) {
@@ -225,11 +228,13 @@ export function createApp(
     );
   if (control?.modelBenchRepository)
     app.route("/", createModelBenchTargetApi(control.modelBenchRepository, config));
+  if (config.hostedMcpEnabled && control?.mcpOAuth) app.route("/", createMcpOAuthApi(control.mcpOAuth));
   if (config.hostedMcpEnabled && control?.hostedBrowserMcpOperations)
     app.route("/", createHostedBrowserMcpApi({
       config,
       accounts: control.repository,
       operations: control.hostedBrowserMcpOperations,
+      oauth: control.mcpOAuth,
       quota: repository,
     }));
   if (temporalShadowOutbox)

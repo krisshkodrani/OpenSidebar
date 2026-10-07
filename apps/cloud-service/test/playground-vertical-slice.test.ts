@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { createApp } from "../src/app.js";
+import { tokenHash } from "../src/crypto.js";
 import { loadConfig, type CloudConfig } from "../src/config.js";
 import type {
   AuthFlow,
@@ -32,7 +33,9 @@ class MemoryRepository implements PlaygroundRepository {
   async session(hash: string): Promise<SessionRecord | null> {
     return this.sessions.get(hash) ?? null;
   }
-  async revokeSession(_hash: string) {}
+  async revokeSession(hash: string) {
+    this.sessions.delete(hash);
+  }
   async createAuthFlow(
     stateHash: string,
     codeVerifier: string,
@@ -170,6 +173,51 @@ const json = (body: unknown) => ({
     "idempotency-key": crypto.randomUUID(),
   },
   body: JSON.stringify(body),
+});
+
+test("browser logout requires CSRF, revokes its session and expires both cookies", async () => {
+  const repository = new MemoryRepository();
+  const app = createApp(repository, {
+    ...config,
+    developmentAccountId: undefined,
+  });
+  await repository.createSession(
+    tokenHash("test-session"),
+    "test-account",
+    "tester@example.com",
+    tokenHash("test-csrf"),
+    new Date(),
+  );
+  const headers = {
+    origin: config.controlOrigin,
+    cookie: "__Host-os_session=test-session; os_csrf=test-csrf",
+  };
+  const blocked = await app.request("/api/v1/playground/auth/logout", {
+    method: "POST",
+    headers,
+  });
+  assert.equal(blocked.status, 403);
+  assert.equal(repository.sessions.size, 1);
+  const response = await app.request("/api/v1/playground/auth/logout", {
+    method: "POST",
+    headers: { ...headers, "x-os-csrf": "test-csrf" },
+  });
+  assert.equal(response.status, 204);
+  assert.equal(repository.sessions.size, 0);
+  for (const name of ["__Host-os_session", "os_csrf"]) {
+    assert(
+      response.headers
+        .getSetCookie()
+        .some(
+          (cookie) =>
+            cookie.startsWith(`${name}=`) && cookie.includes("Max-Age=0"),
+        ),
+    );
+  }
+  const session = await app.request("/api/v1/playground/auth/session", {
+    headers,
+  });
+  assert.deepEqual(await session.json(), { authenticated: false });
 });
 
 test("Restock runs complete through control and isolated target APIs", async () => {

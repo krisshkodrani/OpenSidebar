@@ -4,6 +4,7 @@ export function isToolProfileName(
   value: string | undefined,
 ): value is ToolProfile {
   return (
+    value === "remote_interactive" ||
     value === "full" ||
     value === "read_only" ||
     value === "form_fill" ||

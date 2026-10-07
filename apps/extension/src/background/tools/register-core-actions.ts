@@ -10,7 +10,8 @@ import { ToolRegistry } from "./registry";
 import { executeContentTool, waitForNavigation } from "./bridge";
 import { clearTabReady, ensureContentScript, waitForDomReady } from "../tab-ready";
 import { isUsableTabUrl } from "../infrastructure/tab-resolution";
-import { formatControllableTabLines, tryInPageHistoryBack, waitForTabUrlChange } from "./tab-navigation-helpers";
+import { formatControllableTabLines } from "./tab-navigation-helpers";
+import { navigateBackOneEntry } from "./history-navigation";
 import {
     WAIT_DEF,
     DONE_DEF,
@@ -112,35 +113,8 @@ export function registerCoreActionTools(toolRegistry: ToolRegistry): void {
             const before = await chrome.tabs.get(tabId);
             const previousUrl = before.url || "";
 
-            // Attempt 1: chrome.tabs.goBack (browser-level history)
-            let currentUrl: string | null = null;
-            try {
-                clearTabReady(tabId);
-                await chrome.tabs.goBack(tabId);
-                await waitForNavigation(tabId);
-                currentUrl = await waitForTabUrlChange(tabId, previousUrl);
-            } catch {
-                // chrome.tabs.goBack throws when there's no browser history entry
-                // (e.g. SPA navigations via window.location.href within a single tab).
-                // Fall through to the in-page fallback.
-                currentUrl = null;
-            }
-
-            // Attempt 2: window.history.back() via scripting (in-page history)
-            if (!currentUrl || currentUrl === "about:blank") {
-                logger.warn("tools", "tabs.goBack did not change URL, trying in-page history.back()", {
-                    tabId,
-                    previousUrl,
-                });
-                try {
-                    clearTabReady(tabId);
-                    await tryInPageHistoryBack(tabId);
-                    await waitForNavigation(tabId);
-                    currentUrl = await waitForTabUrlChange(tabId, previousUrl);
-                } catch {
-                    currentUrl = null;
-                }
-            }
+            clearTabReady(tabId);
+            const currentUrl = await navigateBackOneEntry(tabId);
 
             if (currentUrl && !isUsableTabUrl(currentUrl)) {
                 logger.warn("tools", "go_back reached an uncontrollable browser page; restoring source URL", {
@@ -158,8 +132,8 @@ export function registerCoreActionTools(toolRegistry: ToolRegistry): void {
 
             if (!currentUrl || currentUrl === "about:blank") {
                 return previousUrl
-                    ? `Error going back: browser remained on ${previousUrl}. History navigation did not reach a previous page.`
-                    : "Error going back: browser history did not advance to a previous page.";
+                    ? `Error going back: no history commit was observed from ${previousUrl}. Re-read the page before deciding whether to navigate again.`
+                    : "Error going back: no history commit was observed. Re-read the page before deciding whether to navigate again.";
             }
             const ready = await ensureContentScript(tabId, 3000);
             if (ready) {

@@ -19,6 +19,8 @@ import {
   type TraceBundleSummary,
 } from "@trace-sync";
 import { AppShell } from "./app/AppShell";
+import { FileUp, KeyRound, LockKeyhole } from "lucide-react";
+import { PageHeader, EmptyState, LoadingState } from "./app/WorkspaceUi";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { accountApi } from "./account-api";
 import { readTraceRecoveryKey, writeTraceRecoveryKey } from "./trace-key-store";
@@ -39,6 +41,7 @@ export function ViewerPage() {
   const [recoveryKey, setRecoveryKey] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const [keyNotice, setKeyNotice] = useState<string | null>(null);
   const cloudQuery = useQuery({
     queryKey: ["cloud-traces"],
     queryFn: async () => {
@@ -95,10 +98,26 @@ export function ViewerPage() {
     }
   };
 
-  const generateRecoveryKey = async () => {
-    const value = await createRecoveryKey();
-    await writeTraceRecoveryKey(value);
-    setRecoveryKey(value);
+  const saveRecoveryKey = async (generate = false) => {
+    if (
+      generate &&
+      recoveryKey &&
+      !window.confirm(
+        "Generate a new recovery key? Keep a copy of your old key so you can still open older encrypted runs.",
+      )
+    )
+      return;
+    try {
+      const value = generate ? await createRecoveryKey() : recoveryKey.trim();
+      await writeTraceRecoveryKey(value);
+      setRecoveryKey(value);
+      setError(null);
+      setKeyNotice(
+        "Recovery key saved on this device. Keep a secure copy for recovery.",
+      );
+    } catch {
+      setError("Could not save the recovery key on this device.");
+    }
   };
 
   const openCloudTrace = async (traceId: string) => {
@@ -129,46 +148,32 @@ export function ViewerPage() {
 
   return (
     <AppShell>
-      <Container as="main" maxW="6xl" py={{ base: "8", md: "14" }}>
-        <Flex justify="space-between" align="start" gap="5" wrap="wrap">
-          <Box>
-            <Text
-              color="accent"
-              fontWeight="700"
-              letterSpacing="wide"
-              textTransform="uppercase"
-              fontSize="xs"
+      <Container className="os-page-container">
+        <PageHeader
+          title="Run viewer"
+          description="Inspect an exported agent run on this device, or open a synced encrypted trace."
+          actions={
+            <Button
+              colorPalette="blue"
+              loading={busy}
+              onClick={() => fileRef.current?.click()}
             >
-              Run Viewer
-            </Text>
-            <Heading size="2xl" mt="2">
-              Understand every agent run.
-            </Heading>
-            <Text color="muted" mt="3" maxW="2xl">
-              Open an exported run to inspect its steps, screenshots, and
-              technical details on this device.
-            </Text>
-          </Box>
-          <Button
-            colorPalette="blue"
-            loading={busy}
-            onClick={() => fileRef.current?.click()}
-          >
-            Import run
-          </Button>
-          <input
-            ref={fileRef}
-            hidden
-            type="file"
-            accept=".json,.ostrace,application/json,application/octet-stream"
-            onChange={(event) => {
-              const file = event.target.files?.[0];
-              if (file) void importFile(file);
-            }}
-          />
-        </Flex>
-
-        <SimpleGrid columns={{ base: 1, lg: 3 }} gap="5" mt="8">
+              <FileUp size={16} aria-hidden="true" />
+              Import run
+            </Button>
+          }
+        />
+        <input
+          ref={fileRef}
+          hidden
+          type="file"
+          accept=".json,.ostrace,application/json,application/octet-stream"
+          onChange={(event) => {
+            const file = event.target.files?.[0];
+            if (file) void importFile(file);
+          }}
+        />
+        <SimpleGrid columns={{ base: 1, lg: 3 }} gap="5">
           <Box
             bg="surface"
             borderWidth="1px"
@@ -219,7 +224,12 @@ export function ViewerPage() {
                         <Text fontSize="xs" color="muted">
                           Step {index + 1}
                         </Text>
-                        <Text fontSize="sm" mt="1" whiteSpace="pre-wrap">
+                        <Text
+                          fontSize="sm"
+                          mt="1"
+                          whiteSpace="pre-wrap"
+                          overflowWrap="anywhere"
+                        >
                           {typeof entry === "string"
                             ? entry
                             : JSON.stringify(entry, null, 2)}
@@ -230,12 +240,21 @@ export function ViewerPage() {
                 </Box>
               </Stack>
             ) : (
-              <Box py="16" textAlign="center">
-                <Heading size="md">No run open</Heading>
-                <Text color="muted" mt="2">
-                  Import a JSON export or an encrypted .ostrace run bundle.
-                </Text>
-              </Box>
+              <EmptyState
+                title="No run open"
+                action={
+                  <button
+                    className="os-button"
+                    onClick={() => fileRef.current?.click()}
+                  >
+                    <FileUp size={16} aria-hidden="true" />
+                    Choose a run file
+                  </button>
+                }
+              >
+                Import a JSON export or an encrypted .ostrace bundle. Local
+                imports stay on this device.
+              </EmptyState>
             )}
           </Box>
 
@@ -247,7 +266,10 @@ export function ViewerPage() {
               borderRadius="card"
               p="5"
             >
-              <Heading size="md">Recovery key</Heading>
+              <Heading size="md" className="os-section-title">
+                <KeyRound size={18} aria-hidden="true" />
+                Recovery key
+              </Heading>
               <Text color="muted" fontSize="sm" mt="2">
                 This key stays in this browser. OpenSidebar cannot recover it or
                 decrypt your traces.
@@ -257,28 +279,54 @@ export function ViewerPage() {
                 type="password"
                 value={recoveryKey}
                 placeholder="Paste recovery key"
+                aria-label="Recovery key"
+                autoComplete="off"
                 onChange={(event) => setRecoveryKey(event.target.value)}
               />
               <Flex mt="3" gap="2" wrap="wrap">
                 <Button
                   size="sm"
                   variant="outline"
-                  onClick={() => {
-                    void writeTraceRecoveryKey(recoveryKey.trim());
-                    setError(null);
-                  }}
+                  onClick={() => void saveRecoveryKey()}
                 >
                   Save on device
                 </Button>
                 <Button
                   size="sm"
                   variant="ghost"
-                  onClick={() => void generateRecoveryKey()}
+                  onClick={() => void saveRecoveryKey(true)}
                 >
                   Generate new
                 </Button>
               </Flex>
             </Box>
+            {keyNotice && (
+              <Text role="status" fontSize="xs" color="muted">
+                {keyNotice}
+              </Text>
+            )}
+            {cloudQuery.isPending && (
+              <LoadingState label="Loading synced runs…" />
+            )}
+            {cloudQuery.isError && (
+              <Box className="os-panel os-panel-body">
+                <Heading size="sm">Synced runs unavailable</Heading>
+                <Text color="muted" fontSize="sm" mt="2">
+                  {cloudQuery.error instanceof Error
+                    ? cloudQuery.error.message
+                    : "Please try again."}{" "}
+                  You can still import a local run.
+                </Text>
+                <Button
+                  mt="3"
+                  size="sm"
+                  variant="outline"
+                  onClick={() => void cloudQuery.refetch()}
+                >
+                  Retry synced runs
+                </Button>
+              </Box>
+            )}
             {cloudQuery.data ? (
               <Box
                 bg="surface"
@@ -288,7 +336,10 @@ export function ViewerPage() {
                 p="5"
               >
                 <Flex align="center" justify="space-between">
-                  <Heading size="md">Synced runs</Heading>
+                  <Heading size="md" className="os-section-title">
+                    <LockKeyhole size={18} aria-hidden="true" />
+                    Synced runs
+                  </Heading>
                   <Badge colorPalette="green">Connected</Badge>
                 </Flex>
                 {
@@ -297,7 +348,11 @@ export function ViewerPage() {
                       {Math.round(
                         cloudQuery.data.usage.usedBytes / 1024 / 1024,
                       )}{" "}
-                      MB of 500 MB · {cloudQuery.data.usage.traceCount} traces
+                      MB of{" "}
+                      {Math.round(
+                        cloudQuery.data.usage.quotaBytes / 1024 / 1024,
+                      )}{" "}
+                      MB · {cloudQuery.data.usage.traceCount} traces
                     </Text>
                     {cloudQuery.data.traces.length === 0 ? (
                       <Text color="muted" fontSize="sm">
@@ -321,7 +376,7 @@ export function ViewerPage() {
                             <Button
                               size="xs"
                               variant="outline"
-                              disabled={item.state !== "available"}
+                              disabled={busy || item.state !== "available"}
                               onClick={() => void openCloudTrace(item.traceId)}
                             >
                               Open
@@ -330,9 +385,15 @@ export function ViewerPage() {
                               size="xs"
                               variant="ghost"
                               colorPalette="red"
-                              onClick={() =>
-                                deleteMutation.mutate(item.traceId)
-                              }
+                              disabled={deleteMutation.isPending}
+                              onClick={() => {
+                                if (
+                                  window.confirm(
+                                    `Delete the synced run “${item.title}”? This removes the cloud copy.`,
+                                  )
+                                )
+                                  deleteMutation.mutate(item.traceId);
+                              }}
                             >
                               Delete
                             </Button>
@@ -346,6 +407,11 @@ export function ViewerPage() {
             ) : null}
           </Stack>
         </SimpleGrid>
+        {deleteMutation.isError && (
+          <Text role="alert" color="danger" mt="4">
+            Could not delete the synced run. Please try again.
+          </Text>
+        )}
         {error ? (
           <Text role="alert" color="danger" mt="5">
             {error}

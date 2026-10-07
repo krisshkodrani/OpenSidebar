@@ -12,10 +12,7 @@ describe("LLM model config", () => {
     // which became OpenRouter on 2026-07-26 — hence the catalog-form id. The
     // Fireworks form still backs the Fireworks-family seats below.
     expect(LLM_MODEL_CONFIG.executor).toBe("minimax/minimax-m3");
-    expect(LLM_MODEL_CONFIG.fireworks.executor).toBe(
-      "accounts/fireworks/models/kimi-k2p7-code",
-    );
-    expect(LLM_MODEL_CONFIG.deepseek.planner).toBe("deepseek-v4-flash");
+    expect(LLM_MODEL_CONFIG.openrouter.planner).toBe("deepseek/deepseek-v4.1-flash");
   });
 
   test("OpenRouter seats use catalog-form ids and a decoupled judge", () => {
@@ -39,7 +36,7 @@ describe("LLM model config", () => {
     // open. The judge is a text-only strict-JSON rubric task — GPT-OSS-120B
     // (Fireworks-served) answers fast enough to actually rule.
     expect(LLM_MODEL_CONFIG.judge).toBe(
-      "accounts/fireworks/models/gpt-oss-120b",
+      "openai/gpt-oss-120b",
     );
     expect(LLM_MODEL_CONFIG.judge).not.toBe(LLM_MODEL_CONFIG.planner);
   });
@@ -64,18 +61,12 @@ describe("LLM model config", () => {
       resolveLLMModelConfig({
         executor: "",
         planner: "custom/planner",
-        deepseek: {
-          planner: "deepseek-custom",
-          plannerPro: "",
-        },
+        openrouter: {planner: "custom/router-planner"},
       }),
     ).toMatchObject({
       executor: DEFAULT_LLM_MODEL_CONFIG.executor,
       planner: "custom/planner",
-      deepseek: {
-        planner: "deepseek-custom",
-        plannerPro: DEFAULT_LLM_MODEL_CONFIG.deepseek.plannerPro,
-      },
+      openrouter: {planner: "custom/router-planner"},
     });
   });
 });

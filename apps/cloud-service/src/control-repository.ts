@@ -69,6 +69,7 @@ export interface ControlRepository {
   markRemoteMissionReady(
     accountId: string,
     deviceId: string,
+    interactive?: boolean,
   ): Promise<boolean>;
   createDeviceSession(session: DeviceSessionWrite): Promise<void>;
   accessPrincipal(accessHash: string): Promise<ControlPrincipal | null>;

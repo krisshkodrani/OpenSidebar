@@ -22,6 +22,7 @@ import {
   repairToolCallPairing,
 } from "./context-formatting";
 import {
+  ACTION_RELEVANT_ATTRS,
   EXECUTOR_PERSONA,
   LastActionOutcome,
   OpenTabInfo,
@@ -30,6 +31,7 @@ import {
   CompressionLevel,
   maxCompressionLevel,
 } from "./context-types";
+import { PageObservationHistory } from "./page-observation-history";
 import { HistoryLog } from "./context-history";
 import type { CompactionCause } from "./context-history";
 import { PrefixResetLedger } from "./prompt-prefix-telemetry";
@@ -60,35 +62,8 @@ export * from "./context-formatting";
 // Do NOT move persona or dynamic content above the static rules.
 const SYSTEM_PROMPT_TEMPLATE = getPromptTemplate("agent.system");
 
-/** Whitelist of action-relevant DOM attributes for NONE/LIGHT compression levels. */
-const ACTION_RELEVANT_ATTRS = new Set([
-  "type",
-  "href",
-  "placeholder",
-  "value",
-  "aria-label",
-  "role",
-  "name",
-  "action",
-  "method",
-  "target",
-  "alt",
-  "title",
-  "min",
-  "max",
-  "pattern",
-  "required",
-  "checked",
-  "selected",
-  "disabled",
-  "readonly",
-  "multiple",
-  "accept",
-  "label",
-  "description",
-]);
-
 export class ContextManager {
+  public readonly pageObservations = new PageObservationHistory();
   /**
    * LP-21 §6: the conversation is an APPEND-ONLY log with an immutable summary
    * chain. `history` is the per-turn projection of it — derived, never the
@@ -474,6 +449,7 @@ export class ContextManager {
 
   public setSnapshot(snapshot: DomSnapshot) {
     this.snapshot = snapshot;
+    this.pageObservations.record(snapshot);
     this.pageContent = snapshot.pageContent ?? null;
     if (snapshot.capturedTexts && snapshot.capturedTexts.length > 0) {
       // Append new texts, avoiding exact immediate duplicates if possible,
@@ -1444,6 +1420,7 @@ Do NOT call done() until every planned step is complete.
   public clear() {
     this.log.clear();
     this.snapshot = null;
+    this.pageObservations.clear();
     this.planStatus = null;
     this.capturedOverlays = [];
     this.triagedPopups = [];

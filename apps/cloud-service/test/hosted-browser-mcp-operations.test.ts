@@ -9,7 +9,7 @@ const principal = {
   scopes: new Set<string>(),
 };
 
-function world(deviceCount = 1) {
+function world(deviceCount = 1, interactiveEnabled = false) {
   const missions = new Map<string, RemoteMissionV1>();
   const idempotentMissions = new Map<string, RemoteMissionV1>();
   const payloads = new Map<string, unknown>();
@@ -79,6 +79,7 @@ function world(deviceCount = 1) {
       if (!value) throw new Error("missing");
       return value;
     },
+    async getAndDecrypt(identity: { missionId: string }) { return payloads.get(identity.missionId); },
     async getResultAndDecrypt() { throw new Error("missing"); },
     async encryptTargetDecisionAndPut(identity: { missionId: string }, value: unknown) {
       targetDecisions.set(identity.missionId, value);
@@ -93,6 +94,7 @@ function world(deviceCount = 1) {
   };
   return {
     operations: createHostedBrowserMcpOperations({
+      interactiveEnabled,
       accounts: accounts as never,
       missions: repository as never,
       vault: vault as never,
@@ -306,4 +308,29 @@ test("keeps user-input requests conversational and supervisor retries idempotent
     (state.supervisorWrites[0] as { decisionId: string }).decisionId,
     (state.supervisorWrites[1] as { decisionId: string }).decisionId,
   );
+});
+
+
+test("interactive tasks require rollout, fresh consent and a capable extension", async () => {
+  const input = { requestId: "interactive-1", objective: "Send the requested test question",
+    successCriteria: ["A response appears"], executionClass: "interactive" };
+  const granted = { ...principal, scopes: new Set(["browser.tasks.interact"]) };
+  await assert.rejects(world().operations.startTask(granted, input), /interactive_access_not_enabled/);
+  const enabled = world(1, true);
+  await assert.rejects(enabled.operations.startTask(principal, input), /interactive_access_not_enabled/);
+  await assert.rejects(enabled.operations.startTask(granted, input), /device_update_required/);
+  (enabled.devices[0]!.capabilities as string[]).push("remote_browser_interactive_v1");
+  const result = await enabled.operations.startTask(granted, input) as { mission: RemoteMissionV1 };
+  assert.equal((enabled.payloads.get(result.mission.missionId) as { executionClass: string }).executionClass, "interactive");
+});
+
+
+test("task idempotency rejects changed content, including an attempted execution upgrade", async () => {
+  const w = world(1, true);
+  const input = { requestId: "same-request", objective: "Read heading", successCriteria: ["Heading returned"] };
+  await w.operations.startTask(principal, input);
+  await w.operations.startTask(principal, input);
+  assert.equal(w.missions.size, 1);
+  await assert.rejects(w.operations.startTask(principal, { ...input, objective: "Send a message" }), /idempotency_conflict/);
+  await assert.rejects(w.operations.startTask({ ...principal, scopes: new Set(["browser.tasks.interact"]) }, { ...input, executionClass: "interactive" }), /idempotency_conflict/);
 });

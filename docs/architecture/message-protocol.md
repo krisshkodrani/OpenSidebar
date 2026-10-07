@@ -115,18 +115,17 @@ Every message carries a `requestId: string` (UUID v4). This enables:
 ## Message Catalog
 
 `RuntimeMessage` (`packages/shared-types/src/messages.ts`) is a union of **seven
-per-domain sub-unions** — 65 concrete variants in total. Add a new message to
+per-domain sub-unions** — 64 concrete variants in total. Add a new message to
 its domain module, not the barrel; domain-scoped consumers should type against
 the sub-union (e.g. `ContentProtocolMessage`), not `RuntimeMessage`.
 
 Payload shapes are intentionally not duplicated here — read them from the
-domain module. The offscreen `TAB_AUDIO_*` protocol is deliberately excluded
-from the union (see the note at the top of `messages.ts`).
+domain module.
 
-### Session — `messages/session.ts` (16 variants)
+### Session — `messages/session.ts` (15 variants)
 
 Chat lifecycle and session control, UI ↔ service worker: `USER_CHAT`,
-`USER_CHAT_ACCEPTED`, `SPEECH_TRANSCRIPTION_REQUEST`, `AGENT_RESPONSE`,
+`USER_CHAT_ACCEPTED`, `AGENT_RESPONSE`,
 `AGENT_STATUS`, `STREAM_CHUNK`, `STOP_AGENT`, `PAUSE_AGENT`, `RESUME_AGENT`,
 `SKIP_SUBTASK`, `SIDE_PANEL_OPENED`, `CLOSE_SIDE_PANEL`, `WORKSPACE_SYNC`,
 `SCREENSHOT_CAPTURED`, `DATA_CONTROL_REQUEST`, `DATA_CONTROL_RESULT`.

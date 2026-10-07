@@ -41,9 +41,9 @@ import {
  * catalog-style "openai/gpt-oss-120b" 404s there (proven live, see
  * apps/extension/src/config/model-config.ts).
  */
-const REVIEWER_MODEL = process.env.AI_REVIEW_MODEL ?? "deepseek-v4-pro";
+const REVIEWER_MODEL = process.env.AI_REVIEW_MODEL ?? "deepseek/deepseek-v4.1-flash";
 const JUDGE_MODEL =
-  process.env.AI_REVIEW_JUDGE_MODEL ?? "accounts/fireworks/models/gpt-oss-120b";
+  process.env.AI_REVIEW_JUDGE_MODEL ?? "openai/gpt-oss-120b";
 
 interface Provider {
   url: string;
@@ -52,21 +52,8 @@ interface Provider {
 
 /** Route by model id, so swapping a seat via env needs no other change. */
 function providerFor(model: string): Provider {
-  if (model.startsWith("accounts/fireworks/")) {
-    return {
-      url: "https://api.fireworks.ai/inference/v1/chat/completions",
-      key: required("FIREWORKS_API_KEY"),
-    };
-  }
-  if (model.startsWith("deepseek")) {
-    return {
-      url: "https://api.deepseek.com/chat/completions",
-      key: required("DEEPSEEK_API_KEY"),
-    };
-  }
-  throw new Error(
-    `unknown model "${model}" — expected an accounts/fireworks/... or deepseek... id`,
-  );
+ if(!model.includes("/") || model.startsWith("accounts/")) throw new Error("Use an OpenRouter catalog model id");
+ return {url:"https://openrouter.ai/api/v1/chat/completions",key:required("OPENROUTER_API_KEY")};
 }
 
 function required(name: string): string {

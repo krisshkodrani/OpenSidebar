@@ -40,6 +40,11 @@ export const createUiSlice: SliceCreator<UiSlice> = (set, get) => ({
       state.pendingClarification = null;
       state.taskRecovery = null;
       state.laneTelemetry = null;
+      state.lastCompletedAction = null;
+      state.lastTaskUpdateAt = null;
+      state.latestStepLabel = null;
+      state.actionPresentation = null;
+      state.isPlanning = false;
       // Reset to defaults — loadAgentStateFromStorage will override with
       // persisted values, then WORKSPACE_SYNC corrects any staleness.
       state.isAgentRunning = false;

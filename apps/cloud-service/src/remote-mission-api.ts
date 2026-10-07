@@ -245,7 +245,7 @@ export function createRemoteMissionApi(deps: Dependencies) {
         limit > 100
       )
         return problem(c, 403, "device_mismatch", "Mission belongs to another device.");
-      if (!(await deps.accounts.markRemoteMissionReady(principal.accountId, deviceId)))
+      if (!(await deps.accounts.markRemoteMissionReady(principal.accountId, deviceId, c.req.query("interactive") === "v1")))
         return problem(c, 403, "device_mismatch", "Device is not available for remote work.");
       const missions = await deps.missions.missions({
         accountId: principal.accountId,

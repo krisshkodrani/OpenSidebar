@@ -84,6 +84,8 @@ export interface MutationLedgerEntry {
   /** Plan step index at the time of recording. */
   planIndex: number;
   snapshotFingerprint: string;
+  /** Environment-neutral live document identity; absent in older checkpoints. */
+  documentInstanceId?: string;
   /** LP-15 Phase 8 dry-run seal: the form + its approved-diff digest. */
   formKey?: string;
   diffHash?: string;

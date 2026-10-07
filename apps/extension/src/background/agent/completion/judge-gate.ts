@@ -1,7 +1,7 @@
 /**
  * High-risk judge gate (RFC LP-15, Phase 10).
  *
- * The orchestration that ties the pure entailment gate to the model judge and
+ * The orchestration that supplies evidence and corpus context to the judge and
  * turns the result into a completion decision adjustment. It runs ONLY for
  * high-risk nodes whose verification already decided `accept` — so it can only
  * make completion STRICTER, never looser: a passing accept is confirmed, and a
@@ -14,14 +14,11 @@
  * (approval-policy.ts) at tool-execution time; this gate governs whether the
  * OUTCOME is trusted enough to mark the node done.
  *
- * Latency discipline: the entailment gate resolves criteria the corpus already
- * entails, so if the corpus knows every criterion the (paid) judge is skipped.
+ * Stored facts provide context, not proof of current completion. Every criterion
+ * reaches the judge: lexical overlap cannot establish values or fresh state.
  */
 
-import {
-  runEntailmentGate,
-  type CorpusFactRef,
-} from "./entailment-gate";
+import type { CorpusFactRef } from "./entailment-gate";
 import {
   runRubricJudge,
   type JudgeCriterion,
@@ -33,7 +30,7 @@ import {
 import type { TrustedCorpusEntry } from "../../memory/trusted-corpus";
 import { corpusEntryToProfileDigestItem } from "../../memory/trusted-corpus-migration";
 
-/** Flatten a corpus entry into a lexical fact ref for the entailment gate. */
+/** Flatten a corpus entry into context for the judge. */
 export function corpusEntryToFactRef(entry: TrustedCorpusEntry): CorpusFactRef {
   let text = "";
   if (!entry.encrypted) {
@@ -47,23 +44,57 @@ export function corpusEntryToFactRef(entry: TrustedCorpusEntry): CorpusFactRef {
   return { claimKey: entry.claimKey, text, encrypted: entry.encrypted };
 }
 
-const MAX_CRITERIA = 8;
-
 /**
  * Split a node's success criteria into individual outcome criteria. Each
  * non-trivial clause becomes a required criterion; a criterion asks whether an
  * end-state holds, so the whole set is `required`. Falls back to the whole
- * string as one criterion.
+ * string as one criterion. Never truncate: a trailing constraint is just as
+ * binding as the first outcome.
  */
 export function deriveCriteria(successCriteria: string): JudgeCriterion[] {
-  const clauses = successCriteria
-    .split(/[\n;.]+/)
+  const parts: string[] = [];
+  let start = 0;
+  let quote: string | null = null;
+  let parenthesisDepth = 0;
+  let escaped = false;
+  for (let i = 0; i < successCriteria.length; i++) {
+    const char = successCriteria[i];
+    if (escaped) {
+      escaped = false;
+      continue;
+    }
+    if (char === "\\") {
+      escaped = true;
+      continue;
+    }
+    if (quote) {
+      if (char === quote) quote = null;
+      continue;
+    }
+    if (char === '"' || char === "“") {
+      quote = char === "“" ? "”" : char;
+      continue;
+    }
+    if (char === "(") parenthesisDepth++;
+    if (char === ")") parenthesisDepth = Math.max(0, parenthesisDepth - 1);
+    if (parenthesisDepth > 0) continue;
+    // A decimal, address, or URL dot is data, not a sentence boundary.
+    if (
+      char === "\n" || char === ";" ||
+      (char === "." &&
+        (i === successCriteria.length - 1 || /\s/.test(successCriteria[i + 1])))
+    ) {
+      parts.push(successCriteria.slice(start, i));
+      start = i + 1;
+    }
+  }
+  parts.push(successCriteria.slice(start));
+  const clauses = parts
     .map((clause) => clause.trim())
     .filter((clause) => clause.length >= 3);
   const chosen = clauses.length > 0 ? clauses : [successCriteria.trim()];
   return chosen
     .filter((description) => description.length > 0)
-    .slice(0, MAX_CRITERIA)
     .map((description, index) => ({
       id: `c${index + 1}`,
       description,
@@ -93,14 +124,14 @@ export interface JudgeGateOutcome {
   /** `accept` — the completion stands; `reroute` — the node must re-plan. */
   decision: "accept" | "reroute";
   reason: string;
-  /** False when the entailment gate resolved everything and the judge was skipped. */
+  /** False when no criteria were supplied and the judge was skipped. */
   judged: boolean;
   verdict?: JudgeVerdict;
 }
 
 /**
- * Run the entailment gate, then (only for still-unresolved criteria) the judge,
- * and map the result to an accept/reroute adjustment. Never throws — the judge
+ * Judge all supplied criteria against observations and corpus context, then
+ * map the result to an accept/reroute adjustment. Never throws — the judge
  * runner already fails open.
  */
 export async function runJudgeGate(
@@ -108,25 +139,17 @@ export async function runJudgeGate(
   deps: JudgeGateDeps,
 ): Promise<JudgeGateOutcome> {
   const criteria = deriveCriteria(input.successCriteria);
-  const gate = runEntailmentGate(
-    criteria.map((c) => c.description),
-    input.corpusFacts,
-  );
-
-  const unresolved = criteria.filter((c) =>
-    gate.unresolved.includes(c.description),
-  );
-  if (unresolved.length === 0) {
+  if (criteria.length === 0) {
     return {
       decision: "accept",
-      reason: "All success criteria are entailed by the trusted corpus.",
+      reason: "No success criteria supplied to the judge gate.",
       judged: false,
     };
   }
 
   const rubric: JudgeRubric = {
     claim: input.claim,
-    criteria: unresolved,
+    criteria,
     evidence: input.evidence,
     corpusFacts: input.corpusFacts
       .filter((fact) => !fact.encrypted && fact.text.length > 0)
@@ -134,6 +157,19 @@ export async function runJudgeGate(
   };
 
   const verdict = await runRubricJudge(rubric, deps);
+
+  if (
+    verdict.source === "fail_open" &&
+    verdict.failureCause === "contract_error"
+  ) {
+    return {
+      decision: "reroute",
+      reason:
+        "Judge response did not match the requested rubric; outcome remains unverified.",
+      judged: true,
+      verdict,
+    };
+  }
 
   if (verdict.source === "fail_open") {
     // Fail-open-to-human (RFC LP-15 Phase 10): when the judge itself is
@@ -157,11 +193,21 @@ export async function runJudgeGate(
     (e) => e.label === "contradicted",
   );
   if (!verdict.pass || contradicted) {
+    const missing = criteria
+      .filter(
+        (criterion) =>
+          !verdict.perCriterion.some(
+            (result) => result.id === criterion.id && result.pass,
+          ),
+      )
+      .map((criterion) => criterion.description);
     return {
       decision: "reroute",
       reason: contradicted
         ? "Verification judge found evidence contradicting a known fact."
-        : "Verification judge did not confirm the task outcome.",
+        : "Verification judge did not confirm: " +
+          (missing.join("; ") || input.claim) +
+          ". Inspect the existing result before repeating any state-changing action.",
       judged: true,
       verdict,
     };

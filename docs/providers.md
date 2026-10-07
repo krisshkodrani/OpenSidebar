@@ -1,45 +1,30 @@
-# Providers
+# OpenRouter inference
 
-OpenSidebar is bring-your-own-key. In local mode, the configured key stays in
-Chrome and model traffic goes directly from the browser to the provider. In
-optional cloud mode, the user explicitly verifies and KMS-encrypts an OpenRouter
-or Fireworks key on their OpenSidebar account; model traffic streams through a
-non-retaining OpenSidebar relay to that provider. Provider behavior, pricing,
-quotas, and downstream retention remain governed by the selected provider.
+OpenSidebar uses OpenRouter exclusively for model calls, including browser-agent
+seats, profile-note analysis and development/review tools. Model vendor names
+identify models; they do not select a direct vendor API or a separate billing key.
 
-## Provider matrix
+In local mode the OpenRouter key stays in Chrome local storage, never sync storage.
+In cloud mode the account explicitly saves an OpenRouter key in its KMS-encrypted
+vault. Requests stream through the account-scoped relay. Other accounts cannot use
+that credential. Request content is transient; aggregate usage is retained.
 
-In local mode, Settings derives this list from keys stored locally. In cloud
-mode, only the account's verified OpenRouter or Fireworks credential is usable,
-and the relay enforces a reviewed model allowlist. Legacy hybrid stacks remain
-local-only.
+Audio input, tab-audio transcription and text-to-speech are removed. No Groq
+credential or audio capture permission is required.
 
-| Provider mode | Required key(s) | Role             | Status              | Notes                                   |
-| ------------- | --------------- | ---------------- | ------------------- | --------------------------------------- |
-| `openrouter`  | OpenRouter key  | Full agent stack | Recommended default | Live catalog with a verified allowlist. |
-| `fireworks`   | Fireworks key   | Full agent stack | Supported           | Curated, compatibility-checked models.  |
+## Migration
 
-Experimental and legacy provider modes remain understood by the runtime for
-migrations and internal evaluation, but are not offered in Settings. A provider
-or model is promoted only after `pnpm models:check` and the release smoke pass.
+Old direct-provider preferences reset to OpenRouter defaults, including model
+seats and upstream pins. Valid OpenRouter selections remain. Old LLM credentials
+are removed from active browser and cloud storage; they are never reused as an
+OpenRouter key. Missing keys stop tasks with setup guidance. Older cloud clients
+requesting a retired provider must update. Historical traces and billing records
+retain their original provider identity.
 
-## What gets sent to the provider
+## Spending and development
 
-When a task needs it, page context (element lists, extracted text) and
-screenshots may be sent to the selected model provider. Local mode connects
-directly. Cloud mode processes the request transiently through OpenSidebar's
-streaming relay; request/response content is not retained, while aggregate
-request and token counts are retained for quota enforcement. The optional
-reliability-summary preview in Settings remains local-only and is not linked to
-the cloud account.
-
-## Failure expectations
-
-- **Invalid key** — requests fail immediately; the side panel surfaces the
-  provider error.
-- **Quota exhausted / rate limit** — the client retries with backoff and fails
-  over between configured pools where possible; persistent 429s surface as a
-  task error.
-- **Model unavailable / provider outage** — the executor falls back to its
-  configured fallback model; if the provider is fully down the task fails with
-  the provider's error message.
+Use one OpenSidebar OpenRouter key across your development tools and your own
+account connection. Configure a monthly limit at OpenRouter; reaching the limit
+must not switch keys or providers. Development runners default to OpenRouter and
+reject direct-provider selections. `pnpm models:check -- --provider=openrouter`
+checks catalog compatibility; `--probe` explicitly enables paid test requests.

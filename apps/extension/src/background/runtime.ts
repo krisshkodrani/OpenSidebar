@@ -63,6 +63,7 @@ export interface AgentRuntime {
     workspaceId: string,
     payload: { approvalId: string; approved: boolean },
   ): boolean;
+  resolvePlanConfirmation(payload: { confirmationId: string; decision: "approve" | "cancel" }): boolean;
   /** Observe task pauses (approvals), correlated by workspaceId. Returns unsubscribe. */
   onTaskPaused(
     listener: (workspaceId: string, payload: TaskPausedPayload) => void,
@@ -82,7 +83,7 @@ export interface AgentRuntimeDeps {
   orchestrator?: Pick<
     typeof defaultOrchestrator,
     "startTask" | "stopTask" | "resolveApprovalResponse"
-  >;
+  > & Partial<Pick<typeof defaultOrchestrator, "resolvePlanConfirmation">>;
 }
 
 export function createAgentRuntime(
@@ -105,6 +106,9 @@ export function createAgentRuntime(
     },
     resolveApproval(workspaceId, payload) {
       return orchestrator.resolveApprovalResponse(payload, workspaceId);
+    },
+    resolvePlanConfirmation(payload) {
+      return orchestrator.resolvePlanConfirmation?.(payload) ?? false;
     },
     onTaskPaused(listener) {
       const off = env.messaging.onMessage((message) => {

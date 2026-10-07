@@ -6,7 +6,7 @@ Get OpenSidebar running in a few minutes.
 
 - Node.js 22+
 - Google Chrome
-- A supported provider API key
+- An OpenRouter API key with available credit
 
 ## Install
 
@@ -14,7 +14,7 @@ Get OpenSidebar running in a few minutes.
 git clone https://github.com/krisshkodrani/OpenSidebar.git
 cd OpenSidebar
 corepack enable
-corepack pnpm install
+corepack pnpm install --frozen-lockfile
 corepack pnpm run dist
 ```
 
@@ -27,22 +27,26 @@ corepack pnpm run dist
 
 ## Configure
 
-1. Open the side panel
-2. Open **Settings**
-3. Add the provider key or key combination you want to use
-4. Choose one of the provider stacks unlocked by those keys
-5. Save changes
+1. Open the side panel and **Settings**.
+2. Under **Advanced → Connections**, enter your OpenRouter API key and save
+   the settings. New installations use direct inference by default. If you
+   previously enabled Cloud mode, switch **Account → Connection method** to
+   **Direct from this browser**. This path does not require an
+   OpenSidebar account or a local backend.
+3. Keep the default models initially. All model calls use OpenRouter; vendor
+   model names do not require separate vendor keys.
+4. Alternatively, sign in under **Account**, connect OpenRouter through the
+   account website, and explicitly select account-backed inference. Cloud mode
+   requires the hosted service and processes requests through its relay.
 
-Settings exposes the two release-verified provider modes: OpenRouter and
-Fireworks AI. Experimental adapters may still be used by internal evaluation
-commands, but are not part of the supported setup surface.
+The extension does not read your repository `.env` for normal tasks. The
+`OPENROUTER_API_KEY` environment variable is for local test/development tools.
+Do not commit a key. Set a spending limit on the key in OpenRouter.
 
-| Provider mode | Required key(s)                         | Notes                                    |
-| ------------- | --------------------------------------- | ---------------------------------------- |
-| OpenRouter    | `OPENROUTER_API_KEY` or key in Settings | Recommended; live verified model list    |
-| Fireworks     | `FIREWORKS_API_KEY` or key in Settings  | Curated compatibility-checked model list |
-
-Provider pricing, quotas, data handling, and rate limits are governed by the provider you configure.
+Only OpenRouter is supported. Old Fireworks and mixed-provider setup instructions
+apply to historical releases, not this source tree. Provider pricing, quotas,
+and retention are governed by OpenRouter and the selected upstream model provider.
+See [Providers](providers.md) and [Privacy](../PRIVACY_POLICY.md).
 
 ## First Safe Task
 

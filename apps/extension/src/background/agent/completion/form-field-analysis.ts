@@ -117,7 +117,7 @@ export function readFormFieldValue(
     return cleanLabel(
       element.attributes.selected ||
         element.attributes.value ||
-        element.text ||
+        (element.tagName.toLowerCase() === "select" ? "" : element.text) ||
         "",
     );
   }

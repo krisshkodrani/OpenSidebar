@@ -87,14 +87,14 @@ function sanitizeUrl(url: string): Result<string> {
 
 ### Secure Storage
 
-- **Chrome local extension storage** - API keys are stored in `chrome.storage.local` for persistence and are never synced
+- **Chrome local extension storage** - Direct-mode keys are stored in `chrome.storage.local`; optional Cloud mode stores a separately connected key in an encrypted account vault
 - **No page storage** - Keys are not stored in website `localStorage`
 - **Permission boundaries** - Keys only accessible to extension
 
 ### Key Usage
 
-- **Direct to providers** - Keys are sent directly to the configured model providers
-- **No model-traffic intermediaries** - Provider calls go directly to the configured provider; the published build has no OpenSidebar telemetry upload endpoint
+- **Direct to providers** - Local-mode requests authenticate directly with OpenRouter
+- **Optional Cloud relay** - Account-backed model requests pass through OpenSidebar to OpenRouter; see the [privacy policy](../../PRIVACY_POLICY.md). Published builds do not upload reliability summaries
 - **HTTPS only** - All API calls encrypted in transit
 
 ### Key Management

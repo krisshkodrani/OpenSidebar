@@ -66,6 +66,9 @@ function mergePendingClarificationDeadline(
 export const createAgentSlice: SliceCreator<AgentSlice> = (set, get) => ({
   agentStatus: AgentStatus.IDLE,
   statusDetail: "Ready",
+  backgroundConnection: "connected",
+  lastTaskUpdateAt: null,
+  lastCompletedAction: null,
   isAgentRunning: false,
   turnProgress: null,
   stagnationState: null,
@@ -165,6 +168,8 @@ export const createAgentSlice: SliceCreator<AgentSlice> = (set, get) => ({
       state.taskProgress = null;
       state.taskCompletion = null;
       state.latestStepLabel = null;
+      state.lastTaskUpdateAt = null;
+      state.lastCompletedAction = null;
     }),
 
   setStagnationState: (stagnationState) =>

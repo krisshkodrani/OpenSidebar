@@ -4,8 +4,7 @@
  * dashboard-to-email, vendor access, and the existing ServiceNow sequence.
  * Watch Mode is intentionally excluded.
  *
- * Add narration with:
- *   node scripts/add-voiceover.mjs --video linkedin-multi
+ *
  */
 
 import { execFileSync } from "node:child_process";

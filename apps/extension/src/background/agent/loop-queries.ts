@@ -16,6 +16,7 @@ import type {
   PendingUserInteraction,
 } from "./loop-types";
 import { buildMutationKey } from "./checkpoint-types";
+import type { PageObservation } from "./page-state";
 
 export interface LoopQueriesHost {
   readonly limits: RuntimeLimits;
@@ -37,12 +38,14 @@ export interface LoopQueriesHost {
   readonly lastPlanIndex: number;
   readonly resumeInteraction: PendingUserInteraction | null;
   readonly guardAfterDoneRejection: boolean;
+  readonly perception?: { getCurrentObservation(): PageObservation | null };
   readonly checkpoints: {
     lookupReplay(
       toolName: ToolName,
       args: Record<string, unknown>,
       snapshot: DomSnapshot | null,
       guardAfterDoneRejection: boolean,
+      documentInstanceId?: string,
     ): { result: string; source: "ledger" | "ephemeral" } | null;
   };
   getWorkspaceTabIds(): Promise<number[] | null | undefined>;
@@ -132,7 +135,19 @@ export function lookupMutationReplay(
     args,
     currentSnapshot,
     host.guardAfterDoneRejection,
+    getMutationDocumentId(host, currentSnapshot),
   );
+}
+
+/** Only attach document identity when it belongs to this exact observation. */
+export function getMutationDocumentId(host: LoopQueriesHost, snapshot?: DomSnapshot | null): string | undefined {
+  const observation = host.perception?.getCurrentObservation();
+  const id = observation?.basis.documentInstanceId;
+  return snapshot && observation?.dom.snapshot === snapshot && id && !id.startsWith("legacy:") ? id : undefined;
+}
+
+export function formatMutationReplayMessage(result: string): string {
+  return result + "\n[This is a previous execution result, not a fresh action or observation. Repeat execution was suppressed; inspect current state before choosing another action.]";
 }
 
 /** The workspace's tabs (or all tabs when no workspace scoping is active). */

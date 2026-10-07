@@ -488,7 +488,7 @@ describe("Orchestrator integration join tests", () => {
     );
   });
 
-  test("passes Fireworks provider settings to verifier and replanner", async () => {
+  test("passes OpenRouter provider settings to verifier and replanner", async () => {
     plannerBuildNodesImpl = async () => [makeNode("n1", "collect data")];
 
     const orchestrator = new Orchestrator(orchestratorDeps);
@@ -498,10 +498,9 @@ describe("Orchestrator integration join tests", () => {
       openRouterApiKey: "fw-test-key",
       settings: {
         ...baseSettings,
-        providerMode: "fireworks",
-        fireworksApiKey: "fw-test-key",
-        executorModel: "accounts/fireworks/routers/kimi-k2p5-turbo",
-        plannerModel: "accounts/fireworks/routers/kimi-k2p5-turbo",
+        providerMode: "openrouter",
+        executorModel: "minimax/minimax-m3",
+        plannerModel: "minimax/minimax-m3",
       },
     });
 
@@ -509,12 +508,29 @@ describe("Orchestrator integration join tests", () => {
     expect(verifierOverrideCalls).toHaveLength(1);
     for (const overrides of [...plannerOverrideCalls, ...verifierOverrideCalls]) {
       expect(overrides).toMatchObject({
-        providerMode: "fireworks",
-        fireworksApiKey: "fw-test-key",
-        executorModel: "accounts/fireworks/routers/kimi-k2p5-turbo",
-        plannerModel: "accounts/fireworks/routers/kimi-k2p5-turbo",
+        providerMode: "openrouter",
+        executorModel: "minimax/minimax-m3",
+        plannerModel: "minimax/minimax-m3",
       });
     }
+  });
+
+  test("reports executor turns in root and subtask completion messages", async () => {
+    const first = makeNode("n1", "Read first record");
+    const second = makeNode("n2", "Read second record");
+    second.dependencies = [first.id];
+    plannerBuildNodesImpl = async () => [first, second];
+    loopStartImpl = async (nodeId) => ({
+      outcome: "completed", summary: `Read ${nodeId}`,
+      turnCount: nodeId === "n1" ? 2 : 4,
+    });
+    const orchestrator = new Orchestrator(orchestratorDeps);
+    activeOrchestrator = orchestrator;
+    await orchestrator.startTask(makeInput("Read both records"));
+    const messages = (globalThis as any).__runtimeMessages as Array<{ type: string; payload: any }>;
+    const completion = messages.find((message) => message.type === "TASK_COMPLETION");
+    expect(completion?.payload.totalTurnsUsed).toBe(6);
+    expect(completion?.payload.subtaskResults.map((result: any) => result.turnsUsed)).toEqual([2, 4]);
   });
 
   test("emits tab coordination state into run traces", async () => {

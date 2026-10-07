@@ -62,7 +62,7 @@ function readEnvFile(envFilePath: string): Record<string, string> {
     if (!trimmed || trimmed.startsWith("#")) continue;
     const match = trimmed.match(/^([A-Za-z_][A-Za-z0-9_]*)=(.*)$/);
     if (!match) continue;
-    values[match[1]] = match[2].trim();
+    values[match[1]] = match[2].trim().replace(/^(['"])(.*)\1$/, "$2");
   }
   return values;
 }
@@ -100,129 +100,11 @@ export function loadApiKey(
   return envValue("OPENROUTER_API_KEY", options);
 }
 
-export function loadGroqApiKey(
-  options: ProviderConfigOptions = {},
-): string | undefined {
-  return envValue("GROQ_API_KEY", options);
-}
-
-export function loadOpenAiApiKey(
-  options: ProviderConfigOptions = {},
-): string | undefined {
-  return envValue("OPENAI_API_KEY", options);
-}
-
-export function loadFireworksApiKey(
-  options: ProviderConfigOptions = {},
-): string | undefined {
-  return envValue("FIREWORKS_API_KEY", options);
-}
-
-export function loadDeepSeekApiKey(
-  options: ProviderConfigOptions = {},
-): string | undefined {
-  return envValue("DEEPSEEK_API_KEY", options);
-}
-
-export function loadKimiApiKey(
-  options: ProviderConfigOptions = {},
-): string | undefined {
-  return envValue("KIMI_API_KEY", options);
-}
-
-export function loadXiaomiApiKey(
-  options: ProviderConfigOptions = {},
-): string | undefined {
-  return envValue("XIAOMI_API_KEY", options);
-}
-
-export function loadCerebrasApiKey(
-  options: ProviderConfigOptions = {},
-): string | undefined {
-  return envValue("CEREBRAS_API_KEY", options);
-}
-
-/** Detect provider mode from E2E config (default: fireworks). */
-export function detectProviderMode(provider: string): ProviderMode {
-  const normalized = provider.toLowerCase();
-  if (normalized === "deepseek" || normalized === "fireworks-deepseek") {
-    return "fireworks-deepseek";
-  }
-  if (normalized === "cerebras" || normalized === "cerebras-fireworks") {
-    return "cerebras-fireworks";
-  }
-  if (normalized === "moonshot" || normalized === "kimi") return "moonshot";
-  if (normalized === "xiaomi" || normalized === "mimo") return "xiaomi";
-  if (normalized === "groq" || normalized === "openrouter-groq") {
-    return "openrouter-groq";
-  }
-  if (normalized === "openai-groq") return "openai-groq";
-  if (normalized === "openrouter") return "openrouter";
-  return "fireworks";
-}
-
-export function deriveLane(providerMode: ProviderMode): E2ELane {
-  return providerMode === "fireworks" ||
-    providerMode === "fireworks-deepseek" ||
-    providerMode === "cerebras-fireworks" ||
-    providerMode === "moonshot" ||
-    providerMode === "xiaomi"
-    ? "dev"
-    : "validation";
-}
-
-export function loadProviderKeys(
-  providerMode: ProviderMode,
-  options: ProviderConfigOptions = {},
-): E2EProviderKeys {
-  return {
-    ...(providerMode === "openrouter" || providerMode === "openrouter-groq"
-      ? { openRouterKey: loadApiKey(options) }
-      : {}),
-    ...(providerMode === "openrouter-groq" || providerMode === "openai-groq"
-      ? { groqKey: loadGroqApiKey(options) }
-      : {}),
-    ...(providerMode === "openai-groq"
-      ? { openAiKey: loadOpenAiApiKey(options) }
-      : {}),
-    ...(providerMode === "fireworks" ||
-    providerMode === "fireworks-deepseek" ||
-    providerMode === "cerebras-fireworks"
-      ? { fireworksKey: loadFireworksApiKey(options) }
-      : {}),
-    ...(providerMode === "fireworks-deepseek"
-      ? { deepseekKey: loadDeepSeekApiKey(options) }
-      : {}),
-    ...(providerMode === "cerebras-fireworks"
-      ? { cerebrasKey: loadCerebrasApiKey(options) }
-      : {}),
-    ...(providerMode === "moonshot" ? { kimiKey: loadKimiApiKey(options) } : {}),
-    ...(providerMode === "xiaomi"
-      ? { xiaomiKey: loadXiaomiApiKey(options) }
-      : {}),
-  };
-}
-
-export function loadActiveProviderApiKey(
-  providerMode: ProviderMode,
-  options: ProviderConfigOptions = {},
-): string | undefined {
-  if (providerMode === "fireworks-deepseek") {
-    const fireworksKey = loadFireworksApiKey(options);
-    const deepseekKey = loadDeepSeekApiKey(options);
-    return fireworksKey && deepseekKey ? fireworksKey : undefined;
-  }
-  if (providerMode === "cerebras-fireworks") {
-    const cerebrasKey = loadCerebrasApiKey(options);
-    const fireworksKey = loadFireworksApiKey(options);
-    return cerebrasKey && fireworksKey ? cerebrasKey : undefined;
-  }
-  if (providerMode === "fireworks") return loadFireworksApiKey(options);
-  if (providerMode === "moonshot") return loadKimiApiKey(options);
-  if (providerMode === "xiaomi") return loadXiaomiApiKey(options);
-  if (providerMode === "openai-groq") return loadOpenAiApiKey(options);
-  return loadApiKey(options);
-}
+/** Development inference uses the same OpenRouter-only boundary as production. */
+export function detectProviderMode(provider: string): ProviderMode {if(provider.toLowerCase() !== "openrouter") throw new Error("Only OpenRouter is supported; set E2E_PROVIDER=openrouter"); return "openrouter";}
+export function deriveLane(_providerMode: ProviderMode): E2ELane {return "dev";}
+export function loadProviderKeys(_providerMode: ProviderMode,options:ProviderConfigOptions={}): E2EProviderKeys {return {openRouterKey:loadApiKey(options)};}
+export function loadActiveProviderApiKey(_providerMode: ProviderMode,options:ProviderConfigOptions={}):string|undefined {return loadApiKey(options);}
 
 export function resolveE2EProviderConfig(
   options: ProviderConfigOptions = {},

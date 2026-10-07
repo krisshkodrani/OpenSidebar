@@ -66,6 +66,20 @@ const session = {
 };
 
 describe("cloud account client", () => {
+  it("distinguishes a rejected extension origin from an invalid link code", async () => {
+    vi.spyOn(globalThis, "fetch").mockResolvedValue(
+      new Response(
+        JSON.stringify({
+          error: { code: "origin_failed", message: "Origin is not allowed." },
+        }),
+        { status: 403 },
+      ),
+    );
+    await expect(linkCloudAccount("ABCDEFGH")).rejects.toThrow(
+      "Your sign-in code has not been checked yet",
+    );
+    expect(runtime.values.has("cloudExtensionSessionV1")).toBe(false);
+  });
   beforeEach(() => {
     runtime.values.clear();
     runtime.storage.get.mockClear();

@@ -45,8 +45,6 @@ Conventions:
   `requestId`, `source`, `payload`, discriminated on the `type` string literal.
 - UI-originated messages use `UiMessageSource` (`SIDEPANEL | UI`) so the same
   payloads work from the production sidepanel and the overlay harness.
-- The offscreen `TAB_AUDIO_*` protocol is intentionally excluded from the
-  union (see the note at the top of `messages.ts`).
 
 ## Related conventions
 

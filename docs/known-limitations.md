@@ -29,14 +29,15 @@ browser agent rather than guaranteed production automation.
 
 - Provider pricing, quotas, logging, retention, model availability, and rate
   limits are governed by the configured provider, not by OpenSidebar.
-- Some provider modes require multiple keys. If one lane is misconfigured, the
-  agent may fail during planning, execution, perception, or verification.
+- OpenRouter is the only supported gateway. An unavailable model, invalid key,
+  or exhausted quota can stop planning, execution, perception, or verification.
 - Model behavior can change without an OpenSidebar release.
 
 ## Local Data And Traces
 
-- API keys are stored in Chrome extension local storage and are never synced by
-  OpenSidebar.
+- Direct-mode keys stay in Chrome extension local storage. Optional Cloud mode
+  stores an explicitly connected OpenRouter key in an encrypted account vault.
+  See the [privacy policy](../PRIVACY_POLICY.md) for optional synchronization.
 - The development log server and trace viewer are local-only tools. Running
   `pnpm run dev` or `pnpm run logs` can write page context, tool outputs, and
   screenshot artifacts under local `logs/`, `traces/`, and `.artifacts/` paths.
@@ -49,4 +50,19 @@ browser agent rather than guaranteed production automation.
   a different extension identity unless the developer-dashboard public key is
   supplied.
 - Source-build users need Node.js 22+, pnpm via Corepack, Chrome, and at least
-  one supported provider key. Cloud accounts remain an allowlisted test feature.
+  one supported provider key. Cloud and remote capabilities depend on account eligibility, server feature
+  flags, and the installed extension build.
+
+## Watch and remote work
+
+- Watch reads the selected tab while Chrome and the extension are running. It
+  does not provide an always-on server monitor or survive browser restarts.
+- Screenshot input requires the watched tab to be active. Background tabs use
+  DOM evidence; browser throttling, canvas-only changes, and model latency can
+  delay detection. A model evaluates the condition, so notifications are not a
+  deterministic guarantee.
+- Read-only remote missions require explicit device enablement. Interactive
+  remote work remains separately gated pending browser acceptance. Local Stop,
+  Deny, site restrictions, and approvals cannot be overridden by a remote client.
+- Cancelling a task cannot undo effects already performed. An uncertain result
+  requires inspection before retrying a consequential action.

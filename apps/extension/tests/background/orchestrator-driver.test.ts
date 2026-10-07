@@ -787,3 +787,38 @@ describe("createBrowserAgentRunner approval forwarding", () => {
     await answer;
   });
 });
+
+
+describe("remote startup deadline", () => {
+  test("a stalled page connection fails without late task dispatch", async () => {
+    vi.useFakeTimers();
+    try {
+      const d = deps();
+      let ready!: () => void;
+      d.ensureTabReady = () => new Promise<void>((resolve) => { ready = resolve; });
+      d.startupTimeoutMs = 100;
+      const report = vi.fn();
+      d.reportActivity = report;
+      const run = createBrowserAgentRunner(d).run({ instruction: "Read page", session: "mission", targetContext: "active_tab" });
+      await vi.advanceTimersByTimeAsync(101);
+      expect(await run).toMatchObject({ status: "error", reason: expect.stringContaining("agent was not started") });
+      ready();
+      await vi.advanceTimersByTimeAsync(1);
+      expect(d.started).toEqual([]);
+      expect(report).toHaveBeenCalledWith("mission", "connecting_page");
+    } finally { vi.useRealTimers(); }
+  });
+
+  test("cancelling during page connection cannot dispatch after readiness", async () => {
+    const d = deps();
+    let ready!: () => void;
+    d.ensureTabReady = () => new Promise<void>((resolve) => { ready = resolve; });
+    const abort = new AbortController();
+    const run = createBrowserAgentRunner(d).run({ instruction: "Read page", targetContext: "active_tab" }, { signal: abort.signal });
+    for (let i = 0; i < 10; i++) await Promise.resolve();
+    abort.abort();
+    ready();
+    expect(await run).toMatchObject({ status: "error" });
+    expect(d.started).toEqual([]);
+  });
+});

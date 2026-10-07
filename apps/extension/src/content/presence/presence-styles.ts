@@ -9,10 +9,16 @@
 export const PRESENCE_ACCENT = "rgba(37, 99, 235, 0.95)";
 export const PRESENCE_ERROR = "rgba(220, 38, 38, 0.9)";
 
-/** Cursor glyph SVG (arrow) — deliberately NOT an OS cursor clone: larger,
+export const CURSOR_SIZE_PX = 32 * 0.67;
+export const CURSOR_HOTSPOT = {
+  x: (4 / 24) * CURSOR_SIZE_PX,
+  y: (2.5 / 24) * CURSOR_SIZE_PX,
+};
+
+/** Cursor glyph SVG (arrow) —
  *  brand-blue fill with a white outline so it reads as "the agent's hand"
  *  on both light and dark pages (owner direction, 2026-07-24). */
-export const CURSOR_ARROW_SVG = `<svg width="32" height="32" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M4 2.5 L4 18.5 L8.2 14.8 L11 21 L13.8 19.8 L11 13.7 L16.8 13.2 Z" fill="#2563eb" stroke="white" stroke-width="1.6" stroke-linejoin="round"/></svg>`;
+export const CURSOR_ARROW_SVG = `<svg width="${CURSOR_SIZE_PX}" height="${CURSOR_SIZE_PX}" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M4 2.5 L4 18.5 L8.2 14.8 L11 21 L13.8 19.8 L11 13.7 L16.8 13.2 Z" fill="#2563eb" stroke="white" stroke-width="1.6" stroke-linejoin="round"/></svg>`;
 
 // Owner direction 2026-07-24: the cursor keeps ONE form — no I-beam or
 // per-control glyph morphing. The focus halo alone marks text-entry targets.
@@ -33,6 +39,7 @@ export const PRESENCE_STYLE_TEXT = `
   left: 0;
   top: 0;
   will-change: transform;
+  transform-origin: ${CURSOR_HOTSPOT.x}px ${CURSOR_HOTSPOT.y}px;
   filter: drop-shadow(0 2px 4px rgba(15, 23, 42, 0.45))
     drop-shadow(0 0 6px rgba(37, 99, 235, 0.35));
   transition: opacity 300ms ease;
@@ -40,7 +47,6 @@ export const PRESENCE_STYLE_TEXT = `
 }
 #cursor.visible { opacity: 1; }
 #cursor.soft-in { animation: presence-soft-in 150ms ease; }
-#cursor.pressing { transform-origin: 4px 3px; }
 #cursor .glyph { display: block; }
 #cursor.shake { animation: presence-shake 240ms ease-in-out 2; }
 

@@ -1,6 +1,6 @@
 # LP-35 — Hosted browser MCP and supervised remote missions
 
-Status: Approved. Superseding owner Decision Stamp recorded 2026-08-12.
+Status: Approved. Owner amendment for interactive and direct control recorded 2026-10-07.
 
 ## Summary
 
@@ -38,7 +38,7 @@ does not become authoritative over local browser behavior.
 
 - Cloud browser planning, DOM interaction, screenshots, cookies, or credentials.
 - Execution without a signed-in, connected extension.
-- Low-level browser primitives for MCP callers.
+- Arbitrary JavaScript, shell execution, credentials, and unrestricted filesystem access.
 - Exactly-once effects on third-party websites.
 - Temporal authority or a permanent offline/local MCP compatibility path.
 
@@ -382,8 +382,9 @@ Do not do:
 - Do not bypass local policy, auto-take over, or retry uncertain consequences.
 - Do not retain localhost MCP as a permanent production alternative.
 - Do not introduce Temporal as an authority or dependency.
-- Do not upload unsubmitted drafts, expose raw browser primitives, or let the
-  supervisor override local policy or uncertainty.
+- Do not upload unsubmitted drafts or let the supervisor override local policy
+  or uncertainty. Typed direct browser actions are permitted by the owner
+  amendment below; arbitrary code execution is not.
 
 Evidence required before merge:
 
@@ -397,3 +398,15 @@ Evidence required before merge:
 Next action:
 
 - Implement
+
+
+## Owner amendment — 2026-10-07
+
+The owner selected tasks plus direct actions, bounded task consent, rollout to
+all approved testers, page structure plus requested screenshots, and explicit
+files plus exports, then instructed implementation of the resulting plan.
+This supersedes the earlier exclusion of direct browser actions. Both modes
+must share extension execution, local policy, exclusive target ownership,
+revocable consent, durable delivery and uncertainty handling. Old grants and
+clients remain read-only. No Temporal. Production gates require real-browser
+acceptance and outstanding AWS credential rotation before access widens.

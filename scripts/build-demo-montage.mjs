@@ -453,8 +453,7 @@ const JOBS = {
 // viewer is dev-only (stripped from the production dist), so store assets must
 // never show it — a Chrome Web Store installer does not get that surface.
 // The fine-print and release-coordination scenes are pitch-only for now. The
-// store cut has a stable 15-second timing contract with SPECS.store in
-// add-voiceover.mjs, independent of the default montage scene length.
+// store cut keeps a stable 15-second timing, independent of the default montage scene length.
 const STORE_ONLY_EXCLUDED = new Set([
   "fine-print-margin",
   "release-coordination",

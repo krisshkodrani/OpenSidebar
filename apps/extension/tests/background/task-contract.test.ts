@@ -671,3 +671,16 @@ describe("task contract helpers", () => {
     );
   });
 });
+
+
+test("does not turn a chat submission into an entity read/report plan", () => {
+  expect(synthesizePlanFromTaskContract(
+    'Open the saved workspace "Release acceptance check". Send exactly one chat message: "Ask me two questions about Cedar and Juniper." Wait for the assistant response and report whether it arrives.'
+  )).toBeNull();
+});
+
+test("does not turn a multi-target message request into read-only reporting", () => {
+  expect(synthesizePlanFromTaskContract(
+    'Open "Customer support" and send the message "Please compare Basic and Standard". Report whether the submission succeeded.'
+  )).toBeNull();
+});

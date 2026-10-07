@@ -42,6 +42,22 @@ export function useComposerDraft(options: {
   }, []);
 
   useEffect(() => {
+    if (!accountId) return;
+    return uiRuntime.subscribeMessages((message) => {
+      if (message.type !== "USER_CHAT_ACCEPTED") return;
+      const acceptedWorkspace = message.payload.workspaceId ?? "default";
+      if (acceptedWorkspace !== (workspaceId || "default")) return;
+      // Sending changes the composer from task to guidance before the next
+      // debounced save. Remove the accepted draft from its original scope.
+      void discardComposerDraft(uiRuntime.storage.local, {
+        accountId,
+        workspaceId: acceptedWorkspace,
+        mode: message.payload.isFeedback ? "guidance" : "task",
+      }).catch(() => {});
+    });
+  }, [accountId, workspaceId]);
+
+  useEffect(() => {
     if (!scope) return;
     const generation = ++loadingScope.current;
     setHydrated(false);

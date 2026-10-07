@@ -1875,51 +1875,8 @@ export function updatePostEscalationPivot(params: {
   return { kind: "none", turnsSinceStepEscalation };
 }
 
-export type StepDurationWatchdogDecision =
-  | { kind: "none" }
-  | { kind: "warn" }
-  | { kind: "defer" }
-  | { kind: "escalate" };
-
-export function assessStepDurationWatchdog(params: {
-  hasTaskId: boolean;
-  planSubtaskCount: number;
-  turnsOnCurrentStep: number;
-  escalationTier: number;
-  cooldownRemaining: number;
-  warnTurns: number;
-  escalateTurns: number;
-  deferForStateChangingAction?: boolean;
-}): StepDurationWatchdogDecision {
-  if (
-    !params.hasTaskId ||
-    params.planSubtaskCount <= 0 ||
-    params.turnsOnCurrentStep <= 0
-  ) {
-    return { kind: "none" };
-  }
-
-  if (
-    params.deferForStateChangingAction &&
-    params.turnsOnCurrentStep >= params.warnTurns
-  ) {
-    return { kind: "defer" };
-  }
-
-  if (
-    params.turnsOnCurrentStep >= params.escalateTurns &&
-    params.escalationTier < 1 &&
-    params.cooldownRemaining <= 0
-  ) {
-    return { kind: "escalate" };
-  }
-
-  if (params.turnsOnCurrentStep === params.warnTurns) {
-    return { kind: "warn" };
-  }
-
-  return { kind: "none" };
-}
+export { assessStepDurationWatchdog } from "./step-duration-watchdog";
+export type { StepDurationWatchdogDecision } from "./step-duration-watchdog";
 
 export type SameUrlEscalationDecision =
   | { kind: "none" }

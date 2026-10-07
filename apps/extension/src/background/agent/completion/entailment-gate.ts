@@ -1,19 +1,8 @@
 /**
- * Entailment gate (RFC LP-15, Phase 10).
- *
- * A pure, zero-model pre-filter that runs BEFORE the judge. It matches the
- * claims a task must satisfy against the trusted corpus's known facts (by
- * lexical overlap of the claim against each fact's claimKey + text) and resolves
- * the ones a corpus fact already entails. Only the unresolved claims reach the
- * (paid, latency-bearing) judge model — so on the common path where the corpus
- * already knows the answer, the judge is never called.
- *
- * The gate is intentionally conservative: lexical overlap can confidently say
- * "a corpus fact supports this claim" (entailed) but cannot reliably detect
- * contradiction, so it only ever emits `entailed` or leaves a claim unresolved.
- * Contradiction / unsupported adjudication is the judge's job (it does the NLI).
- * Encrypted facts carry no lexical signal (their text is opaque ciphertext), so
- * they never entail a claim here and fall through to the judge.
+ * Legacy lexical-overlap matcher, retained for baseline comparisons.
+ * The completion judge gate does not use this as an acceptance shortcut:
+ * token overlap cannot prove exact values, negation, or current browser state.
+ * CorpusFactRef and EntailmentLabel remain shared judge types.
  */
 
 /** Judge/gate shared entailment vocabulary. The gate emits only the first two. */

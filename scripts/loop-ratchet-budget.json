@@ -7,28 +7,27 @@
       "loopMethodLines": 261
     },
     "apps/extension/src/background/agent/completion-kernel.ts": {
-      "fileLines": 5711
+      "fileLines": 5675
     },
     "apps/extension/src/background/tools/index.ts": {
       "fileLines": 132
     },
     "apps/extension/src/background/orchestrator/index.ts": {
-      "fileLines": 5671
+      "fileLines": 5638
     },
     "apps/extension/src/background/orchestrator/skills.ts": {
       "fileLines": 1158
     }
   },
   "oversized": {
-    "apps/extension/src/background/agent/completion/workflow-confirmation-analysis.ts": 3560,
+    "apps/extension/src/background/agent/completion/workflow-confirmation-analysis.ts": 3541,
     "apps/extension/src/background/agent/completion/read-answer-analysis.ts": 3285,
-    "apps/extension/src/background/agent/loop-helpers.ts": 2659,
+    "apps/extension/src/background/agent/loop-helpers.ts": 2616,
     "apps/extension/src/background/tools/servicenow/register.ts": 2405,
     "apps/extension/src/background/agent/planner.ts": 1918,
     "apps/extension/src/background/tools/servicenow/register-list-actions.ts": 1902,
-    "apps/extension/src/background/agent/context.ts": 1553,
-    "apps/extension/src/background/llm/client.ts": 1518,
-    "apps/extension/src/background/orchestrator/planner.ts": 1642,
+    "apps/extension/src/background/agent/context.ts": 1530,
+    "apps/extension/src/background/orchestrator/planner.ts": 1631,
     "apps/extension/src/background/tools/servicenow/navigation.ts": 1596,
     "apps/extension/src/background/orchestrator/skill-bodies.ts": 1557
   }

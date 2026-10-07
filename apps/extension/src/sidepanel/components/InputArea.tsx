@@ -11,7 +11,6 @@ import {
 } from "../interaction-mode";
 import { saveSettings } from "../../utils/settings-storage";
 import { useComposerTextarea } from "../hooks/useComposerTextarea";
-import { useSpeechRecorder } from "../hooks/useSpeechRecorder";
 import { useComposerDraft } from "../hooks/useComposerDraft";
 import { COMPOSER_DRAFT_MAX_CHARS } from "../composer-draft-storage";
 import { uiRuntime } from "../runtime";
@@ -122,34 +121,6 @@ export function InputArea({
     onStop,
   });
 
-  const insertTranscript = useCallback(
-    (transcriptText: string) => {
-      const transcript = transcriptText.trim();
-      if (!transcript) return;
-      const textarea = composer.textareaRef.current;
-      const selectionStart = textarea?.selectionStart ?? inputText.length;
-      const selectionEnd = textarea?.selectionEnd ?? inputText.length;
-      const before = inputText.slice(0, selectionStart);
-      const after = inputText.slice(selectionEnd);
-      const leading = before && !/\s$/.test(before) ? " " : "";
-      const trailing = after && !/^\s/.test(after) ? " " : "";
-      const insertion = `${leading}${transcript}${trailing}`;
-      const nextText = `${before}${insertion}${after}`;
-      const nextCursor = before.length + insertion.length;
-      setInputText(nextText);
-      requestAnimationFrame(() => {
-        textarea?.focus();
-        textarea?.setSelectionRange(nextCursor, nextCursor);
-      });
-    },
-    [composer.textareaRef, inputText, setInputText],
-  );
-
-  const speech = useSpeechRecorder({
-    disabled: Boolean(pendingApproval || pendingEscalation || pendingClarification),
-    onTranscript: insertTranscript,
-  });
-
   const handleInputChange = useCallback(
     (event: React.ChangeEvent<HTMLTextAreaElement>) => {
       setInputText(event.target.value.slice(0, COMPOSER_DRAFT_MAX_CHARS));
@@ -217,14 +188,10 @@ export function InputArea({
             onChange={handleInputChange}
             onFocus={composer.handleFocus}
             onKeyDown={composer.handleKeyDown}
-            onSpeechToggle={
-              settings.groqApiKey?.trim() ? speech.toggle : undefined
-            }
             onSubmit={handleSubmit}
             placeholder={
               isAgentRunning ? "Guide the agent..." : "What can I help with?"
             }
-            speechState={speech.state}
             value={inputText}
           />
           {isAgentRunning ? (

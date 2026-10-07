@@ -1,9 +1,8 @@
 /**
  * Rubric judge (RFC LP-15, Phase 10).
  *
- * The model-backed adjudicator that runs AFTER the pure entailment gate has
- * resolved the claims a corpus fact already entails. It evaluates the remaining
- * claim against an OUTCOME-grounded rubric — each criterion asks "is this
+ * The model-backed adjudicator evaluates completion criteria against current
+ * evidence and corpus context. It uses an OUTCOME-grounded rubric — each criterion asks "is this
  * end-state true given the evidence?", never "was a step performed?" (the lesson
  * from the LP-11 validator failures) — and returns a structured verdict the
  * verifier turns into accept | retry | reroute | human.
@@ -21,6 +20,7 @@
  */
 
 import type { EntailmentLabel } from "./entailment-gate";
+import { parseJevRubricResponse } from "../../llm/jev-decision";
 
 export interface JudgeCriterion {
   id: string;
@@ -68,13 +68,14 @@ export interface JudgeVerdict {
   entailment: ClaimEntailmentVerdict[];
   /** 0..1 self-reported confidence (0 for a fail-open verdict). */
   confidence: number;
+  confidenceKind?: "self_reported" | "classifier";
   /**
    * `judge` — the model decided; `fail_open` — the model timed out / errored /
    * returned garbage, so the consumer must route to a human, not auto-reject.
    */
   source: "judge" | "fail_open";
   /** Why a fail-open verdict failed open (absent on real judge verdicts). */
-  failureCause?: "timeout" | "seat_error" | "parse_error";
+  failureCause?: "timeout" | "seat_error" | "parse_error" | "contract_error";
   /** Truncated seat error message, for seat_error diagnosis. */
   failureDetail?: string;
   /** Wall-clock of the adjudication (absent on cache hits). */
@@ -95,11 +96,13 @@ export interface JudgeSeat {
     maxTokens?: number;
     temperature?: number;
     signal?: AbortSignal;
+    rubric?: JudgeRubric;
   }): Promise<{
     text: string;
     model: string;
     providerId: string;
     usage?: JudgeUsage;
+    decision?: unknown;
   }>;
 }
 
@@ -138,6 +141,8 @@ const JUDGE_SYSTEM_PROMPT = [
   "corpus fact relevant to the claim, label it: 'entailed' (evidence agrees),",
   "'contradicted' (evidence conflicts), or 'unsupported' (evidence is silent).",
   "",
+  "Copy each criterion id exactly as supplied. Return it once; never rename,",
+  "invent, or duplicate ids. Each criterion pass must be a JSON boolean.",
   "Reply with ONLY a JSON object, no prose:",
   '{"pass": boolean, "confidence": 0..1,',
   ' "perCriterion": [{"id": string, "pass": boolean, "rationale": string}],',
@@ -146,11 +151,13 @@ const JUDGE_SYSTEM_PROMPT = [
 
 function renderUserPrompt(rubric: JudgeRubric): string {
   const lines: string[] = [`CLAIM: ${rubric.claim}`, "", "CRITERIA:"];
-  for (const c of rubric.criteria) {
-    lines.push(`- (${c.id})${c.required ? " [required]" : ""} ${c.description}`);
-  }
+  lines.push(JSON.stringify(rubric.criteria));
   lines.push("", "EVIDENCE:");
-  lines.push(...(rubric.evidence.length ? rubric.evidence.map((e) => `- ${e}`) : ["- (none)"]));
+  lines.push(
+    ...(rubric.evidence.length
+      ? rubric.evidence.map((e) => `- ${e}`)
+      : ["- (none)"]),
+  );
   lines.push("", "CORPUS FACTS:");
   lines.push(
     ...(rubric.corpusFacts.length
@@ -164,7 +171,9 @@ function renderUserPrompt(rubric: JudgeRubric): string {
 export function judgeCacheKey(rubric: JudgeRubric): string {
   const material = [
     rubric.claim,
-    ...rubric.criteria.map((c) => `${c.id}:${c.required}`),
+    ...rubric.criteria.map((c) =>
+      JSON.stringify([c.id, c.description, c.required]),
+    ),
     ...rubric.evidence,
     ...rubric.corpusFacts,
   ].join("\0");
@@ -249,6 +258,8 @@ function extractJsonObject(text: string): unknown {
   return null;
 }
 
+class JudgeContractError extends Error {}
+
 function normalizeVerdict(
   parsed: unknown,
   rubric: JudgeRubric,
@@ -265,11 +276,34 @@ function normalizeVerdict(
           return {
             id: r.id,
             pass: r.pass === true,
-            rationale: typeof r.rationale === "string" ? r.rationale : undefined,
+            rationale:
+              typeof r.rationale === "string" ? r.rationale : undefined,
           };
         })
         .filter((c): c is CriterionVerdict => c !== null)
     : [];
+
+  // Identity mistakes are an invalid response, not evidence against the task.
+  // Keep required-id matching strict; the gate must not treat a malformed
+  // decision as approval or guess which criterion the model intended.
+  const knownIds = new Set(rubric.criteria.map((criterion) => criterion.id));
+  const seenIds = new Set<string>();
+  if (Array.isArray(obj.perCriterion)) {
+    for (const raw of obj.perCriterion) {
+      if (
+        !raw ||
+        typeof raw !== "object" ||
+        typeof raw.pass !== "boolean" ||
+        !knownIds.has(raw.id) ||
+        seenIds.has(raw.id)
+      ) {
+        throw new JudgeContractError(
+          "Judge criterion ids or decisions do not match the rubric",
+        );
+      }
+      seenIds.add(raw.id);
+    }
+  }
 
   const entailment: ClaimEntailmentVerdict[] = Array.isArray(obj.entailment)
     ? obj.entailment
@@ -315,6 +349,10 @@ export async function runRubricJudge(
   if (cached) return cached;
 
   const timeoutMs = options.timeoutMs ?? DEFAULT_TIMEOUT_MS;
+  const controller = new AbortController();
+  const signal = options.signal
+    ? AbortSignal.any([options.signal, controller.signal])
+    : controller.signal;
   let timer: ReturnType<typeof setTimeout> | undefined;
   const timeout = new Promise<null>((resolve) => {
     timer = setTimeout(() => resolve(null), timeoutMs);
@@ -327,15 +365,24 @@ export async function runRubricJudge(
       options.seat.runJudge({
         systemPrompt: JUDGE_SYSTEM_PROMPT,
         userPrompt: renderUserPrompt(rubric),
-        signal: options.signal,
+        rubric,
+        signal,
       }),
       timeout,
     ]);
     if (!result) {
       verdict = failOpen("timeout");
     } else {
-      const parsed = normalizeVerdict(extractJsonObject(result.text), rubric);
-      verdict = parsed ?? failOpen("parse_error", result.text);
+      try {
+        const parsed =
+          result.decision !== undefined
+            ? normalizeJevVerdict(result.decision, rubric)
+            : normalizeVerdict(extractJsonObject(result.text), rubric);
+        verdict = parsed ?? failOpen("parse_error", result.text);
+      } catch (error) {
+        if (!(error instanceof JudgeContractError)) throw error;
+        verdict = failOpen("contract_error", error.message);
+      }
       // The call cost tokens whether or not the output parsed — attach usage
       // and provenance to both a real verdict and a parse-error fail-open.
       verdict.model = result.model;
@@ -344,15 +391,46 @@ export async function runRubricJudge(
     }
   } catch (error) {
     verdict = failOpen(
-      "seat_error",
+      error instanceof JudgeContractError ? "contract_error" : "seat_error",
       error instanceof Error ? error.message : String(error),
     );
   } finally {
     if (timer) clearTimeout(timer);
+    controller.abort();
   }
   verdict.durationMs = Date.now() - startedAt;
 
   // Only cache a real decision — a fail-open should be retried next time.
   if (verdict.source === "judge") options.cache?.set(key, verdict);
   return verdict;
+}
+
+function normalizeJevVerdict(raw: unknown, rubric: JudgeRubric): JudgeVerdict {
+  try {
+    const decision = parseJevRubricResponse(rubric, raw);
+    const perCriterion = decision.criteria.map((item) => ({
+      id: item.id,
+      pass: item.choice === "entailed" && item.probabilities.entailed >= 0.9,
+    }));
+    return {
+      pass: decision.criteria.every(
+        (item, index) => !item.required || perCriterion[index].pass,
+      ),
+      perCriterion,
+      entailment: decision.entailment.map((item) => ({
+        claimKey: item.claimKey,
+        label:
+          item.probabilities[item.choice] >= 0.9 ? item.choice : "unsupported",
+      })),
+      confidence: Math.min(
+        ...decision.criteria.map((item) => item.probabilities[item.choice]),
+      ),
+      confidenceKind: "classifier",
+      source: "judge",
+    };
+  } catch (error) {
+    throw new JudgeContractError(
+      error instanceof Error ? error.message : String(error),
+    );
+  }
 }

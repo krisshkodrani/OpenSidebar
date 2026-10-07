@@ -38,6 +38,19 @@ export class LocalRemoteMissionDeliveryJournal {
     return valid(value) ? value : empty();
   }
 
+  async stop(missionId: string) {
+    await this.storage.set({ [`opensidebar:remoteMissionStop:${missionId}`]: true });
+  }
+
+  async isStopped(missionId: string): Promise<boolean> {
+    const key = `opensidebar:remoteMissionStop:${missionId}`;
+    return (await this.storage.get(key))[key] === true;
+  }
+
+  async clearStop(missionId: string) {
+    await this.storage.remove(`opensidebar:remoteMissionStop:${missionId}`);
+  }
+
   async write(value: RemoteMissionDeliveryJournalV1) {
     await this.storage.set({ [REMOTE_MISSION_DELIVERY_JOURNAL_KEY]: value });
   }

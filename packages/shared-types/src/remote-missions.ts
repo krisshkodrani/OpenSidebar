@@ -30,7 +30,8 @@ export interface RemoteMissionV1 {
 export interface RemoteMissionPayloadV1 {
   schemaVersion: typeof REMOTE_MISSION_SCHEMA_VERSION;
   missionId: string;
-  executionClass: "read_only";
+  executionClass: "read_only" | "interactive";
+  requestDigest?: string;
   instruction: string;
   initialUrl?: string;
   /** Selects an existing visible tab or an isolated task tab on the device. */
@@ -118,6 +119,7 @@ export interface MissionStepV1 {
 }
 
 export interface MissionSpecV1 {
+  executionClass?: RemoteMissionPayloadV1["executionClass"];
   schemaVersion: typeof REMOTE_MISSION_SCHEMA_VERSION;
   missionId: string;
   deviceId: string;

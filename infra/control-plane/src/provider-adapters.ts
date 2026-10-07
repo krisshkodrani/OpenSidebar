@@ -5,10 +5,6 @@ const PROVIDERS: Record<CloudProviderId, { modelsUrl: string; completionUrl: str
     modelsUrl: "https://openrouter.ai/api/v1/models",
     completionUrl: "https://openrouter.ai/api/v1/chat/completions",
   },
-  fireworks: {
-    modelsUrl: "https://api.fireworks.ai/inference/v1/models",
-    completionUrl: "https://api.fireworks.ai/inference/v1/chat/completions",
-  },
 };
 
 export class LiveProviderVerifier implements ProviderVerifier {

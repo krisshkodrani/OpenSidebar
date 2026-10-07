@@ -18,6 +18,9 @@ import { useStore } from "./store";
 
 export type TaskUiPhase =
   | "idle"
+  | "reconnecting"
+  | "waiting"
+  | "verifying"
   | "planning"
   | "confirming_plan"
   | "running"
@@ -67,6 +70,7 @@ export interface TaskUiState {
 export interface TaskUiStateInput {
   agentStatus: AgentStatus;
   statusDetail: string;
+  backgroundConnection?: "connected" | "reconnecting";
   isAgentRunning: boolean;
   turnProgress: TurnProgress | null;
   sessionMetrics: SessionMetrics | null;
@@ -121,10 +125,14 @@ function fallbackPrimaryLabel(status: AgentStatus, detail: string): string {
 }
 
 function resolvePhase(input: TaskUiStateInput): TaskUiPhase {
+  if (
+    input.backgroundConnection === "reconnecting" &&
+    (input.isAgentRunning || !input.taskCompletion)
+  )
+    return "reconnecting";
   if (!input.isAgentRunning && input.taskCompletion) {
     return input.taskCompletion.status;
   }
-  if (input.stagnationState) return "stalled";
   if (
     input.pendingApproval ||
     input.pendingEscalation ||
@@ -133,20 +141,33 @@ function resolvePhase(input: TaskUiStateInput): TaskUiPhase {
     return "awaiting_user";
   }
   if (input.pendingPlanConfirmation) return "confirming_plan";
+  if (input.stagnationState) return "stalled";
+  if (input.agentStatus === AgentStatus.ERROR) return "failed";
   if (input.agentStatus === AgentStatus.PAUSED) return "paused";
+  if (input.agentStatus === AgentStatus.WAITING_FOR_PAGE_LOAD) return "waiting";
+  if (
+    input.taskProgress?.subtasks.some(
+      (step) => step.status === "running" && step.workerStatus === "verifying",
+    )
+  )
+    return "verifying";
   if (input.isPlanning) return "planning";
   if (input.isAgentRunning || input.taskProgress || input.turnProgress) {
     return "running";
   }
-  if (input.agentStatus === AgentStatus.ERROR) return "failed";
   if (input.durableRunStatus?.canResume) return "recoverable";
   return "idle";
 }
 
 function resolvePrimaryLabel(input: TaskUiStateInput): string {
-  if (input.stagnationState) {
-    return `The agent may be stuck after ${input.stagnationState.stagnantTurns} turns`;
-  }
+  const phase = resolvePhase(input);
+  if (phase === "reconnecting") return "Reconnecting to the agent";
+  if (phase === "waiting") return "Waiting for the page to load";
+  if (phase === "paused") return "Paused";
+  if (phase === "verifying") return "Checking the result";
+  if (phase === "confirming_plan") return "Review the plan before starting";
+  if (phase === "stalled") return "Progress has stalled";
+  if (phase === "failed") return "Task failed";
   if (input.pendingApproval) {
     return "Approval required before continuing";
   }
@@ -165,7 +186,7 @@ function resolvePrimaryLabel(input: TaskUiStateInput): string {
     return "Task failed";
   }
   if (!input.isAgentRunning && input.durableRunStatus?.canResume) {
-    return "Recoverable durable run";
+    return "Interrupted task available to resume";
   }
   if (input.actionPresentation) return input.actionPresentation.label;
   const latestStepLabel = usefulProgressLabel(input.latestStepLabel);
@@ -176,7 +197,24 @@ function resolvePrimaryLabel(input: TaskUiStateInput): string {
 }
 
 function resolveSecondaryLabel(input: TaskUiStateInput): string {
-  if (input.stagnationState) return "Intervention recommended";
+  const phase = resolvePhase(input);
+  if (phase === "reconnecting")
+    return "Current activity is unconfirmed. Your task state is retained while we reconnect.";
+  if (phase === "waiting")
+    return "Waiting for the page to finish loading. No input needed.";
+  if (phase === "paused") return "Resume when you are ready to continue.";
+  if (phase === "verifying")
+    return (
+      input.taskProgress?.subtasks.find(
+        (step) => step.workerStatus === "verifying",
+      )?.workerStatusDetail ||
+      "Checking the outcome before marking this step complete."
+    );
+  if (phase === "confirming_plan")
+    return "Review the steps below and choose whether to start.";
+  if (!input.isAgentRunning && input.taskCompletion)
+    return input.taskCompletion.summary;
+  if (phase === "stalled") return "Review the recovery options below.";
   if (input.pendingApproval) return "Review the proposed action below";
   if (input.pendingEscalation) return "Choose how the agent should proceed";
   if (input.pendingClarification)
@@ -188,12 +226,7 @@ function resolveSecondaryLabel(input: TaskUiStateInput): string {
   if (input.actionPresentation?.phase === "applied") return "Applied";
   if (input.actionPresentation?.phase === "failed") return "Action failed";
   if (input.taskProgress) {
-    return `Step ${input.taskProgress.currentIndex + 1} of ${
-      input.taskProgress.subtasks.length
-    }`;
-  }
-  if (!input.isAgentRunning && input.taskCompletion) {
-    return `${input.taskCompletion.totalTurnsUsed} turns used`;
+    return "";
   }
   if (!input.isAgentRunning && input.durableRunStatus?.canResume) {
     return input.durableRunStatus.query;
@@ -206,7 +239,18 @@ function resolveSecondaryLabel(input: TaskUiStateInput): string {
 }
 
 function resolveRailTone(input: TaskUiStateInput): TaskRailTone {
-  if (input.stagnationState) return "stalled";
+  const phase = resolvePhase(input);
+  if (
+    [
+      "reconnecting",
+      "awaiting_user",
+      "confirming_plan",
+      "recoverable",
+      "partial",
+    ].includes(phase)
+  )
+    return "paused";
+  if (phase === "stalled") return "stalled";
   if (input.taskCompletion?.status === "completed") return "completed";
   if (input.taskCompletion?.status === "stopped") return "stopped";
   if (
@@ -231,47 +275,46 @@ function canPauseAgent(status: AgentStatus): boolean {
 export function deriveTaskUiState(input: TaskUiStateInput): TaskUiState {
   const hasTerminalCompletion = !input.isAgentRunning && !!input.taskCompletion;
   const showPrimaryRail =
-    !hasTerminalCompletion &&
-    (input.isAgentRunning ||
-      input.agentStatus !== AgentStatus.IDLE ||
-      !!input.durableRunStatus ||
-      !!input.stagnationState ||
-      !!input.pendingApproval ||
-      !!input.pendingEscalation ||
-      !!input.pendingClarification ||
-      !!input.taskProgress ||
-      !!input.turnProgress);
+    hasTerminalCompletion ||
+    input.backgroundConnection === "reconnecting" ||
+    input.isAgentRunning ||
+    input.isPlanning ||
+    !!input.pendingPlanConfirmation ||
+    input.agentStatus !== AgentStatus.IDLE ||
+    !!input.durableRunStatus ||
+    !!input.stagnationState ||
+    !!input.pendingApproval ||
+    !!input.pendingEscalation ||
+    !!input.pendingClarification ||
+    !!input.taskProgress ||
+    !!input.turnProgress;
 
   const phase = resolvePhase(input);
+  const isWorking =
+    ["running", "planning", "verifying"].includes(phase) &&
+    (input.isAgentRunning || input.isPlanning);
   const showPageActivityHud =
-    input.isPlanning ||
-    (input.isAgentRunning &&
-      phase === "running" &&
-      input.agentStatus !== AgentStatus.PAUSED &&
-      !input.stagnationState &&
-      !input.pendingPlanConfirmation);
+    isWorking || (phase === "waiting" && input.isAgentRunning);
 
   return {
     phase,
     hasTerminalCompletion,
-    showAmbientActivity: input.isAgentRunning,
+    showAmbientActivity: isWorking,
     showPageActivityHud,
     showPlanStrip: Boolean(
       input.pendingPlanConfirmation || input.taskProgress || input.isPlanning,
     ),
     showPrimaryRail,
-    showStalledRecovery: Boolean(input.stagnationState),
+    showStalledRecovery: phase === "stalled",
     rail: {
       eyebrow: input.isAgentRunning ? "Now doing" : "Latest run",
       primaryLabel: resolvePrimaryLabel(input),
       secondaryLabel: resolveSecondaryLabel(input),
       tone: resolveRailTone(input),
-      showSpinner:
-        input.isAgentRunning &&
-        input.agentStatus !== AgentStatus.PAUSED &&
-        !input.stagnationState,
-      canPause: canPauseAgent(input.agentStatus),
-      showResume: input.agentStatus === AgentStatus.PAUSED,
+      showSpinner: isWorking,
+      canPause:
+        (isWorking || phase === "waiting") && canPauseAgent(input.agentStatus),
+      showResume: phase === "paused",
       showStop: input.isAgentRunning,
       stopRequested: Boolean(input.durableRunStatus?.stopRequestedAt),
       turnProgress: input.turnProgress,
@@ -282,6 +325,7 @@ export function deriveTaskUiState(input: TaskUiStateInput): TaskUiState {
 
 export function useTaskUiState(): TaskUiState {
   const agentStatus = useStore((s) => s.agentStatus);
+  const backgroundConnection = useStore((s) => s.backgroundConnection);
   const statusDetail = useStore((s) => s.statusDetail);
   const isAgentRunning = useStore((s) => s.isAgentRunning);
   const turnProgress = useStore((s) => s.turnProgress);
@@ -302,6 +346,7 @@ export function useTaskUiState(): TaskUiState {
     () =>
       deriveTaskUiState({
         agentStatus,
+        backgroundConnection,
         statusDetail,
         isAgentRunning,
         turnProgress,
@@ -320,6 +365,7 @@ export function useTaskUiState(): TaskUiState {
       }),
     [
       agentStatus,
+      backgroundConnection,
       statusDetail,
       isAgentRunning,
       turnProgress,

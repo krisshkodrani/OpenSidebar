@@ -100,6 +100,22 @@ const nineFieldForm = () =>
   ]);
 
 describe("computeFillChecklistStatus", () => {
+  test("does not mistake native dropdown option text for committed selections", () => {
+    const fields = [1, 2, 3].map((tag) => ({
+      ...textField(tag, `Choice ${tag}`),
+      tagName: "select",
+      role: "combobox",
+      text: "Choose an optionAlphaBeta",
+      attributes: { label: `Choice ${tag}`, options: "Choose an option | Alpha | Beta" } as Record<string, string>,
+    }));
+    expect(computeFillChecklistStatus(snapshotWith(fields)).filledCount).toBe(0);
+    fields[0].attributes.selected = "Alpha";
+    const status = computeFillChecklistStatus(snapshotWith(fields));
+    expect(status.filledCount).toBe(1);
+    expect(status.emptyLabels).toEqual(["Choice 2", "Choice 3"]);
+    expect(status.line).toContain("Still empty:");
+  });
+
   test("reports filled/empty counts and labels for a form page", () => {
     const status = computeFillChecklistStatus(nineFieldForm());
     expect(status.totalFields).toBe(9);

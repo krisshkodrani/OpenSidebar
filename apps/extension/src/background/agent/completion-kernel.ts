@@ -1,8 +1,9 @@
+import { inferWorkflowUpdateTargetValue } from "./completion/update-target-value";
+import { extractSavedFormReadbackEvidence, snapshotHasFormValidationText } from "./completion/saved-form-readback";
 import type { DomSnapshot, TaggedElement, ToolName } from "../../types";
 import {
   hasDraftPreservedEvidence,
   hasStrongCommunicationSentEvidence,
-  isDraftOnlyCommunicationTask,
 } from "./consequential-action-policy";
 import { assessTaskContractCoverage, buildTaskContract } from "./task-contract";
 import {
@@ -62,6 +63,7 @@ import {
 } from "./completion/navigation-analysis";
 import {
   extractDraftEvidence,
+  isDraftOnlyCommunicationOutcome,
   isLikelyDraftEditorField,
   isLikelyDraftEditorIdentity,
   extractReadElementValueEvidenceText,
@@ -260,7 +262,7 @@ function generateDraftOnlyContract(params: {
   ]
     .filter(Boolean)
     .join("\n");
-  if (!isDraftOnlyCommunicationTask(requestText)) return null;
+  if (!isDraftOnlyCommunicationOutcome(requestText, params.snapshot)) return null;
 
   return {
     contract: {
@@ -830,6 +832,7 @@ function generateWorkflowConfirmationContract(
 }
 
 export function deriveCompletionEvidenceFromToolOutcome(params: {
+  userRequest?: string;
   toolName: ToolName;
   args: Record<string, unknown>;
   result: string;
@@ -956,6 +959,7 @@ export function deriveCompletionEvidenceFromToolOutcome(params: {
   evidence.push(...extractUploadFileResultEvidenceFromToolOutcome(params));
   evidence.push(...extractImportRowStateEvidenceFromToolOutcome(params));
   evidence.push(...extractAttachmentRowStateEvidenceFromToolOutcome(params));
+  evidence.push(...extractSavedFormReadbackEvidence(params));
   evidence.push(...extractDraftSubmissionEvidenceFromToolOutcome(params));
   evidence.push(...extractSubmittedDraftRowEvidenceFromToolOutcome(params));
   evidence.push(...extractInviteRowStateEvidenceFromToolOutcome(params));
@@ -2640,36 +2644,6 @@ function workflowUpdateVisibleStateSnippet(
   return cleanLabel(visibleText.slice(start, end));
 }
 
-function inferWorkflowUpdateTargetValue(value: string): string | null {
-  const text = cleanLabel(value);
-  const patterns = [
-    /\b(?:change|update|set|replace|edit)\b.{0,120}?\b(?:to|as)\s+["']?([^"',.;\n]{1,80})["']?/i,
-    /\b(?:type|enter)\s+["']?([^"'\s,.;\n]{1,80})["']?/i,
-  ];
-  for (const pattern of patterns) {
-    const candidate = normalizeWorkflowUpdateTargetValue(
-      pattern.exec(text)?.[1] ?? "",
-    );
-    if (candidate) return candidate;
-  }
-  return null;
-}
-
-function normalizeWorkflowUpdateTargetValue(value: string): string | null {
-  let targetValue = cleanLabel(value);
-  targetValue = targetValue.replace(
-    /\s+(?:and|then|press|click|confirm|save|submit|verify|check|the\s+subtask\s+outcome|is\s+verified|verified\s+on)\b.*$/i,
-    "",
-  );
-  targetValue = targetValue.replace(/^["']|["']$/g, "");
-  targetValue = cleanLabel(targetValue);
-  if (!targetValue) return null;
-  if (/^(?:confirm|verify|check)\b/i.test(targetValue)) return null;
-  if (!/[0-9$@._-]/.test(targetValue) && !/^.{2,40}$/.test(targetValue)) {
-    return null;
-  }
-  return targetValue.slice(0, 80);
-}
 
 function extractFeedbackEvidence(
   snapshot: DomSnapshot,
@@ -3647,16 +3621,6 @@ function findAttachmentRowStateText(
 function attachmentRowTextHasAttachedState(value: string): boolean {
   return /\b(?:attached|attachment\s+(?:complete|completed|successful|uploaded)|file\s+attached|file\s+uploaded|uploaded)\b/i.test(
     normalizeText(value),
-  );
-}
-
-function snapshotHasFormValidationText(snapshot: DomSnapshot): boolean {
-  const text = [snapshot.title, snapshot.visibleContent, snapshot.pageContent]
-    .filter(Boolean)
-    .join("\n")
-    .slice(0, 20_000);
-  return /\b(?:error|invalid|missing|please fill|please enter|is required|are required|required field|cannot be blank|can't be blank|must be filled)\b/i.test(
-    text,
   );
 }
 
@@ -5635,7 +5599,7 @@ const CURRENT_SUCCESS_CRITERIA_MARKERS: RegExp[] = [
   /\s##\s+/i,
 ];
 
-function extractCanonicalUserRequest(value: string): string {
+export function extractCanonicalUserRequest(value: string): string {
   const originalUserRequest = extractLabeledRequest(value, [
     ...USER_CONTEXT_MARKERS,
   ]);

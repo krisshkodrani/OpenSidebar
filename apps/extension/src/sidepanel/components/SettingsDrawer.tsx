@@ -34,7 +34,6 @@ const FOCUSABLE_SELECTOR =
   'button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])';
 const PROVIDER_CREDENTIAL_KEYS: readonly (keyof UserSettings)[] = [
   "openRouterApiKey",
-  "fireworksApiKey",
 ];
 
 export function SettingsDrawer({ isOpen, onClose }: Props) {

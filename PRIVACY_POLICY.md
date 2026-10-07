@@ -1,7 +1,7 @@
 # Privacy Policy
 
 **OpenSidebar** - Chrome Browser Extension
-Last updated: 2026-08-08
+Last updated: 2026-10-07
 
 ---
 
@@ -18,7 +18,7 @@ OpenSidebar is an open-source browser extension that runs AI-powered tasks in yo
 - We do **not** run advertising analytics, behavioral tracking, or crash reporting. The optional Cloud relay processes task content only while forwarding a request to your selected provider.
 - This release includes an optional local-only reliability-summary preview. It is off by default, and uploading is not enabled in the published build.
 - Task context is sent directly to the configured provider in Local mode, or through the OpenSidebar relay to that provider in explicitly activated Cloud mode.
-- Device-local safety settings, traces, authentication tokens, and diagnostics remain local. Only the closed safe-preference schema is eligible for Cloud synchronization.
+- Safety settings and authentication tokens remain device-local. Account-linked safe preferences can synchronize separately. Optional encrypted personal-data synchronization covers saved prompts, website skills, and profile notes only when you enable the relevant category. Remote missions send bounded instructions and evidence to the service and authorized supervising client.
 
 ---
 
@@ -28,7 +28,13 @@ OpenSidebar is an open-source browser extension that runs AI-powered tasks in yo
 
 When you give the extension a task, it reads the content of the active browser tab, including DOM structure, visible text, page title, URL, and screenshots when visual grounding is enabled. This is necessary for the AI agent to understand the page and perform the actions you request.
 
-Page content is accessed for active tasks. The extension does not passively monitor, index, or record your browsing activity.
+Page content is accessed for tasks and for **Watch mode when you explicitly start
+it**. Watch reads the selected tab after page changes and on periodic checks,
+and sends the observation to the configured inference path to evaluate your
+condition. Optional screenshot input is used when the watched tab is active.
+Stop Watch to end monitoring; it is not an always-on service and does not resume
+after a browser restart. The extension does not automatically monitor every tab
+or build a browsing-history index.
 
 ### Cookies, History, Downloads, And Tabs
 
@@ -50,11 +56,11 @@ Extension data is stored in your browser using Chrome's built-in storage APIs (`
 | Agent session state | `chrome.storage.session` | Temporary state during active tasks |
 | Workspace data | `chrome.storage.local` | Tab group organization |
 | Saved prompts | `chrome.storage.local` | Quick-access prompt templates you create |
-| Personal profile | `chrome.storage.local` | Optional profile notes and the digested facts/preferences you write, used to personalize tasks. Never synced. Items you mark **sensitive**, and the raw profile notes, are encrypted at rest (AES-GCM) under a key kept only on this device |
+| Personal profile | `chrome.storage.local` | Optional profile notes and the digested facts/preferences you write, used to personalize tasks. Local by default; optional profile synchronization uploads an end-to-end encrypted copy when enabled. Items marked **sensitive** and raw notes are also encrypted at rest locally |
 | Diagnostic logs | `chrome.storage.local` | Local ring buffer of structured log entries for debugging |
 | Optional reliability summaries | `chrome.storage.local` | Coarse, sampled outcome data you can inspect and clear. Off by default; the published build cannot upload it |
 
-Chrome encrypts storage data at rest. Synced settings (`chrome.storage.sync`) follow your Chrome profile sync preferences; you can disable Chrome Sync to keep them local to one browser profile.
+Chrome extension storage is not a dedicated secrets vault. Protect your browser profile and operating-system account. Synced settings (`chrome.storage.sync`) follow your Chrome profile sync preferences; disable Chrome Sync to keep them local to one profile.
 
 Stored extension data is removed by Chrome when you uninstall the extension, subject to Chrome's normal sync behavior for synced settings.
 
@@ -64,7 +70,7 @@ Stored extension data is removed by Chrome when you uninstall the extension, sub
 
 ### Model Provider APIs
 
-When performing a task, the extension sends requests to the configured model provider API. Depending on your settings, this may include providers such as Fireworks, OpenRouter, Moonshot/Kimi, Xiaomi MiMo, or advanced mixed-provider modes.
+When performing a task, the extension sends requests to the configured model provider API. The supported gateway is OpenRouter, which routes to the selected upstream model provider. Direct vendor adapters and mixed-provider modes are retired.
 
 Requests may contain:
 
@@ -79,7 +85,33 @@ Requests may contain:
 
 In Local mode, requests are sent over HTTPS directly to the selected provider. In Cloud mode, they are sent over HTTPS to `opensidebar.com`, decrypted only as needed to authenticate the provider call, and streamed to the same selected provider. The relay does not persist prompts, messages, screenshots, tool schemas/results, responses, or reasoning. It retains only coarse operational metadata such as provider/model identifier, status class, token counts, latency bucket, and monthly quota totals. The selected provider's privacy policy governs how that provider handles API traffic in both modes.
 
-Cloud mode supports OpenRouter and Fireworks during limited testing. It does not silently fall back to a local key when the Cloud service is unavailable.
+Cloud mode supports OpenRouter. It does not silently fall back to a local key when the Cloud service is unavailable.
+
+### Remote browser work and MCP
+
+Remote work requires an account-linked browser and explicit device enablement.
+An authorized MCP client can submit task instructions and read bounded progress,
+answers, approval questions, and target-selection evidence. That evidence can
+contain page-derived text, titles, and URLs. Do not authorize tasks over sensitive
+pages unless you intend the resulting evidence to be shared with that client.
+Interactive remote work has additional build and server gates.
+
+The service stores mission metadata and encrypted mission payloads/results for
+delivery and retrieval; unlike the streaming model relay, these are persisted
+records. This encryption is server-managed and is not end-to-end encryption
+against the service. The application supports expiry and cleanup of mission
+records, but delivery expiry is not a promise of immediate storage deletion.
+Local deny, cancel, site restrictions, and approval checks still apply.
+
+### Optional personal-data synchronization
+
+Saved prompts, website skills, and profile notes are separate opt-in sync
+categories, disabled by default. Enabled categories are encrypted on the device
+before upload; the service stores ciphertext and synchronization metadata.
+Another device needs the account's device-key approval flow to decrypt them.
+Turning synchronization off is separate from deleting its cloud copy; the
+settings provide deletion/reset controls. Safe account preferences use a closed
+schema and do not include local safety rules or provider secrets.
 
 ### Optional Local Log Server
 
@@ -91,9 +123,9 @@ If you also expose traces to a local coding agent through the optional observabi
 
 ## What Data We Collect
 
-Without Cloud mode, we do not receive extension API keys, browsing data, tasks, conversation history, traces, logs, or local reliability summaries. The optional reliability-summary preview stores data only in your browser and provides controls to inspect and clear it.
+When using direct inference without optional account services, we do not receive extension API keys, task content, traces, or local reliability summaries. Signing in, personal-data synchronization, and remote work have the separate data flows described above; choosing direct inference alone does not disable them. The optional reliability-summary preview stores data only in your browser and provides controls to inspect and clear it.
 
-When you opt into Cloud mode, the account service stores your Cognito subject, email address, registered-device metadata, revocable session hashes, safe preferences, encrypted provider credentials, and coarse relay usage metadata. Relay content is processed transiently and is not stored. Credential records remain until you delete them; device sessions can be individually revoked or revoked together. Full account deletion is handled manually during the limited test while the self-service account lifecycle is completed.
+When you opt into Cloud mode, the account service stores your Cognito subject, email address, registered-device metadata, revocable session hashes, safe preferences, encrypted provider credentials, and coarse relay usage metadata. Relay content is processed transiently and is not stored. Credential records remain until you delete them; device sessions can be individually revoked or revoked together. Use the account controls to revoke devices and remove provider connections; contact the maintainer through a private channel for account-wide deletion requests that are not exposed in the current UI.
 
 ### Optional OpenSidebar Playground
 
@@ -124,13 +156,11 @@ provider credentials, or unrelated page content through this service.
 | `scripting` | Injecting the content script that reads page structure and executes actions |
 | `webNavigation` | Persisting agent state across page navigations so tasks survive page loads |
 | `alarms` | Keeping long-running tasks active across service-worker lifecycle limits |
-| `offscreen` | Supporting extension-side browser capabilities that need an offscreen document |
-| `tabCapture` | Capturing visible page screenshots for visual grounding when enabled |
 | `search` | Agent tool: performing web searches on your behalf when requested |
 | `downloads` | Agent tool: downloading files when requested |
 | `cookies` | Agent tool: reading or setting cookies when requested |
 | `history` | Agent tool: searching browser history when requested |
-| `identity` | Opening the optional Cognito PKCE sign-in flow and returning its authorization result to the extension |
+| `notifications` (optional) | User-authorized browser notifications when this permission is granted |
 | `<all_urls>` | The agent can interact with websites you choose to automate |
 
 ---
@@ -155,7 +185,7 @@ If this policy changes, the updated version will be published in the [GitHub rep
 
 ## Contact
 
-For privacy questions or concerns, open an issue on [GitHub](https://github.com/krisshkodrani/OpenSidebar/issues).
+For privacy questions, use the private-reporting route in [SECURITY.md](SECURITY.md). If you need a contact address, request one without including personal information, credentials, or private task content in a public issue.
 
 ---
 

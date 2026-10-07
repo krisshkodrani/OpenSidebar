@@ -11,13 +11,15 @@ import type {
   CloudTraceV1,
   TraceUsageV1,
 } from "@opensidebar/shared-types";
-import { controlApi } from "./control-api";
+import { controlApi, sessionExpired } from "./control-api";
 
 async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
   const method = init.method ?? "GET";
   const session = await controlApi.session();
-  if (!session.authenticated)
-    throw new Error("Sign in to manage your OpenSidebar account.");
+  if (!session.authenticated) {
+    sessionExpired();
+    throw new Error("Your session has ended. Sign in again.");
+  }
   const headers = new Headers(init.headers);
   headers.set("accept", "application/json");
   if (init.body) headers.set("content-type", "application/json");
@@ -25,11 +27,13 @@ async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
     headers.set("x-os-csrf", session.csrfToken);
   const response = await fetch(`/api/v1${path}`, {
     ...init,
+    signal: init.signal ?? AbortSignal.timeout(15000),
     headers,
     credentials: "include",
     cache: "no-store",
   });
   if (!response.ok) {
+    if (response.status === 401) sessionExpired();
     const body = (await response.json().catch(() => null)) as {
       error?: { message?: string; code?: string };
     } | null;

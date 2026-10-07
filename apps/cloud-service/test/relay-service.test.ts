@@ -16,8 +16,8 @@ const request = (id: string): RelayRequestV1 => ({
 });
 const fireworksRequest = (id: string): RelayRequestV1 => ({
   ...request(id),
-  provider: "fireworks",
-  modelId: "accounts/fireworks/models/test",
+  provider: "openrouter",
+  modelId: "test/model",
 });
 test("relay streams provider SSE and records metadata-only token usage", async () => {
   const repository = new MemoryControlRepository();
@@ -58,14 +58,14 @@ test("relay streams provider SSE and records metadata-only token usage", async (
     globalThis.fetch = originalFetch;
   }
 });
-test("relay constructs the reviewed Fireworks streaming endpoint without caller headers", async () => {
+test("relay constructs the OpenRouter streaming endpoint without caller headers", async () => {
   const repository = new MemoryControlRepository(),
     relay = new RelayService(repository, { decrypt: async () => "fw-key" }),
     originalFetch = globalThis.fetch;
   globalThis.fetch = async (input, init) => {
     assert.equal(
       String(input),
-      "https://api.fireworks.ai/inference/v1/chat/completions",
+      "https://openrouter.ai/api/v1/chat/completions",
     );
     const headers = new Headers(init?.headers);
     assert.deepEqual([...headers.keys()].sort(), [
@@ -79,7 +79,7 @@ test("relay constructs the reviewed Fireworks streaming endpoint without caller 
       stream_options: { include_usage: boolean };
     };
     assert.deepEqual(payload, {
-      model: "accounts/fireworks/models/test",
+      model: "test/model",
       messages: [{ role: "user", content: "hello" }],
       stream: true,
       stream_options: { include_usage: true },
@@ -93,6 +93,40 @@ test("relay constructs the reviewed Fireworks streaming endpoint without caller 
     const response = await relay.stream(
       "account-1",
       fireworksRequest("97cf1dcc-63b6-4078-9634-0afbd9d6ddb2"),
+      new AbortController().signal,
+    );
+    await response.text();
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test("relay preserves strict OpenRouter provider eligibility and price limits", async () => {
+  const originalFetch = globalThis.fetch;
+  const providerRouting: NonNullable<RelayRequestV1["providerRouting"]> = {
+    only: ["fast/fp8"],
+    order: ["fast/fp8"],
+    allow_fallbacks: false,
+    require_parameters: true,
+    max_price: { completion: 1 },
+  };
+  globalThis.fetch = async (_url, init) => {
+    assert.deepEqual(JSON.parse(String(init?.body)).provider, providerRouting);
+    return new Response("data: [DONE]\n\n", {
+      headers: { "content-type": "text/event-stream" },
+    });
+  };
+  try {
+    const relay = new RelayService(new MemoryControlRepository(), {
+      decrypt: async () => "key",
+    });
+    const response = await relay.stream(
+      "account-1",
+      {
+        ...request("85c67cdc-031d-491e-8f9c-532017e81cdf"),
+        seat: "planner",
+        providerRouting,
+      },
       new AbortController().signal,
     );
     await response.text();
@@ -240,17 +274,23 @@ test("relay records provider 401, 429, and 5xx failures without response content
     globalThis.fetch = originalFetch;
   }
 });
-test("relay forwards explicit cancellation and hard timeout upstream", async () => {
+test("relay forwards explicit cancellation and hard timeout upstream", async (t) => {
+  t.mock.timers.enable({ apis: ["setTimeout"] });
+  let started!: () => void;
+  let requestStarted = new Promise<void>((resolve) => {
+    started = resolve;
+  });
   const originalFetch = globalThis.fetch;
   const repository = new MemoryControlRepository();
   globalThis.fetch = async (_input, init) =>
-    new Promise<Response>((_resolve, reject) =>
+    new Promise<Response>((_resolve, reject) => {
       init?.signal?.addEventListener(
         "abort",
         () => reject(new DOMException("Aborted", "AbortError")),
         { once: true },
-      ),
-    );
+      );
+      started();
+    });
   try {
     const relay = new RelayService(
       repository,
@@ -262,7 +302,13 @@ test("relay forwards explicit cancellation and hard timeout upstream", async () 
       request("9a1348d7-c1c2-49f5-9cb4-77b56dcae4cf"),
       new AbortController().signal,
     );
-    await assert.rejects(pending, /AbortError/);
+    const timedOut = assert.rejects(pending, /AbortError/);
+    await requestStarted;
+    t.mock.timers.tick(10);
+    await timedOut;
+    requestStarted = new Promise<void>((resolve) => {
+      started = resolve;
+    });
     const relay2 = new RelayService(
       repository,
       { decrypt: async () => "key" },
@@ -273,13 +319,13 @@ test("relay forwards explicit cancellation and hard timeout upstream", async () 
       request("1a8e2c54-cc7b-46ed-a49a-6a17d21cd9a5"),
       new AbortController().signal,
     );
-    await new Promise((resolve) => setTimeout(resolve, 0));
+    const rejected = assert.rejects(cancelled, /AbortError/);
+    await requestStarted;
     assert.equal(
       relay2.cancel("account-1", "scope-1a8e2c54-cc7b-46ed-a49a-6a17d21cd9a5"),
       true,
     );
-    await assert.rejects(cancelled, /AbortError/);
-    await new Promise((resolve) => setTimeout(resolve, 0));
+    await rejected;
     assert.equal(
       repository.requests.get("account-1:1a8e2c54-cc7b-46ed-a49a-6a17d21cd9a5")
         ?.status,

@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useState } from "react";
-import { ChevronDown, Eye, Monitor, Square, Volume2 } from "lucide-react";
+import { ChevronDown, Eye, Monitor, Square } from "lucide-react";
 import { clsx } from "clsx";
 import type { ChatEntry, PassiveInputSource } from "../../types";
 import { uiRuntime } from "../runtime";
@@ -15,9 +15,6 @@ export function WatchModeControl({ disabled }: { disabled?: boolean }) {
   const passiveSessionId = useStore((s) => s.passiveSessionId);
   const passiveInstructions = useStore((s) => s.passiveInstructions);
   const passiveInputSources = useStore((s) => s.passiveInputSources);
-  const speechAvailable = useStore((s) =>
-    Boolean(s.settings.groqApiKey?.trim()),
-  );
   const setPassiveInstructions = useStore((s) => s.setPassiveInstructions);
   const setPassiveInputSources = useStore((s) => s.setPassiveInputSources);
   const setPassiveMonitorStatus = useStore((s) => s.setPassiveMonitorStatus);
@@ -27,9 +24,6 @@ export function WatchModeControl({ disabled }: { disabled?: boolean }) {
   const [draft, setDraft] = useState(passiveInstructions);
   const [screenEnabled, setScreenEnabled] = useState(
     passiveInputSources.includes("screenshot"),
-  );
-  const [audioEnabled, setAudioEnabled] = useState(
-    passiveInputSources.includes("tabAudio"),
   );
   const [pending, setPending] = useState(false);
 
@@ -41,18 +35,14 @@ export function WatchModeControl({ disabled }: { disabled?: boolean }) {
 
   useEffect(() => {
     setScreenEnabled(passiveInputSources.includes("screenshot"));
-    setAudioEnabled(
-      speechAvailable && passiveInputSources.includes("tabAudio"),
-    );
-  }, [passiveInputSources, speechAvailable]);
+  }, [passiveInputSources]);
 
   const inputSources = useMemo<PassiveInputSource[]>(
     () => [
       "page",
       ...(screenEnabled ? (["screenshot"] as const) : []),
-      ...(speechAvailable && audioEnabled ? (["tabAudio"] as const) : []),
     ],
-    [audioEnabled, screenEnabled, speechAvailable],
+    [screenEnabled],
   );
 
   const stop = useCallback(async () => {
@@ -242,21 +232,6 @@ export function WatchModeControl({ disabled }: { disabled?: boolean }) {
               <Monitor size={12} />
               <span>Screen</span>
             </label>
-            {speechAvailable ? (
-              <label
-                className="inline-flex h-7 items-center gap-1.5 rounded-md border border-warm-200 bg-white px-2 text-[11px] text-warm-600 dark:border-warm-700 dark:bg-warm-900 dark:text-warm-300"
-                title="Transcribe audio playing in this tab for Watch Mode"
-              >
-                <input
-                  type="checkbox"
-                  checked={audioEnabled}
-                  onChange={(event) => setAudioEnabled(event.target.checked)}
-                  className="h-3 w-3"
-                />
-                <Volume2 size={12} />
-                <span>Audio</span>
-              </label>
-            ) : null}
             <button
               type="button"
               onClick={active ? stop : start}

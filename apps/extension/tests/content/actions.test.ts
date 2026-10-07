@@ -811,6 +811,36 @@ describe("Content Actions", () => {
   });
 
   describe("executeType (type_text) — WI-5 SPA robustness", () => {
+    test("sets native dates atomically and rejects localized text without clearing the field", async () => {
+      document.body.innerHTML = '<input id="date" type="date" value="2027-01-01" />';
+      const input = document.getElementById("date") as HTMLInputElement;
+      const tag = addDynamicTag(input);
+      const changed = vi.fn();
+      input.addEventListener("change", changed);
+
+      const invalid = await executeAction(ToolName.TYPE_TEXT, { id: tag, text: "12.11.2026" });
+      expect(invalid.success).toBe(false);
+      expect(invalid.result).toMatch(/^Error:/);
+      expect(invalid.result).toContain("YYYY-MM-DD");
+      expect(input.value).toBe("2027-01-01");
+      expect(changed).not.toHaveBeenCalled();
+
+      const valid = await executeAction(ToolName.TYPE_TEXT, { id: tag, text: "2026-11-12" });
+      expect(valid.success).toBe(true);
+      expect(input.value).toBe("2026-11-12");
+      expect(changed).toHaveBeenCalledOnce();
+      expect(tagElements().find((element) => element.tag === tag)?.attributes.value).toBe("2026-11-12");
+    });
+
+    test("date snapshots use accepted live values instead of rejected value attributes", () => {
+      document.body.innerHTML = '<input id="date" type="date" value="12.11.2026" />';
+      const input = document.getElementById("date") as HTMLInputElement;
+      // Model the browser's rejected live value; happy-dom preserves initial attributes.
+      input.value = "";
+      expect(input.value).toBe("");
+      expect(tagElements().find((element) => element.attributes.id === "date")?.attributes.value).toBe("");
+    });
+
     test("fires InputEvent with data and inputType properties", async () => {
       document.body.innerHTML = '<input id="inp" type="text" />';
       resetStableIds();

@@ -27,11 +27,11 @@ export interface TaskFleetTelemetryState {
 export function createTaskFleetTelemetryState(
   settings?: Pick<
     UserSettings,
-    "providerMode" | "provider" | "executorModel" | "plannerModel"
+    "providerMode" | "executorModel" | "plannerModel"
   >,
 ): TaskFleetTelemetryState {
   return {
-    providerId: normalizeProviderMode(settings?.providerMode ?? settings?.provider),
+    providerId: normalizeProviderMode(settings?.providerMode),
     executorModel: settings?.executorModel,
     plannerModel: settings?.plannerModel,
     turnCount: 0,
@@ -48,7 +48,10 @@ export function recordTaskFleetLoopResult(
     "turnCount" | "outcome" | "completionEnvelope" | "evidence"
   >,
 ): void {
-  state.turnCount = Math.min(500, state.turnCount + Math.max(0, result.turnCount));
+  state.turnCount = Math.min(
+    500,
+    state.turnCount + Math.max(0, result.turnCount),
+  );
 
   if (result.completionEnvelope) {
     state.completionDecisions.push({
@@ -65,11 +68,15 @@ export function recordTaskFleetLoopResult(
     });
   }
   if (result.outcome === "error") state.errorCodes.push("error");
-  if (result.outcome === "max_turns") state.errorCodes.push("guardrail_exhausted");
+  if (result.outcome === "max_turns")
+    state.errorCodes.push("guardrail_exhausted");
 }
 
 export function buildTaskFleetTelemetryProjectionInput(input: {
-  task: Pick<OrchestratorTask, "nodes" | "createdAt" | "startedAt" | "finishedAt" | "terminationReason">;
+  task: Pick<
+    OrchestratorTask,
+    "nodes" | "createdAt" | "startedAt" | "finishedAt" | "terminationReason"
+  >;
   state: TaskFleetTelemetryState;
   runtime: {
     eventId: string;
@@ -104,7 +111,7 @@ export function buildTaskFleetTelemetryProjectionInput(input: {
     terminalReason:
       outcome === "completed"
         ? "completion_accepted"
-        : input.task.terminationReason ?? null,
+        : (input.task.terminationReason ?? null),
     errorCodes:
       input.completionStatus === "stopped"
         ? ["user_abort"]

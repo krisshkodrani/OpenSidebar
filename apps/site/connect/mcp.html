@@ -1,0 +1,292 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Connect Codex with MCP — OpenSidebar</title>
+    <meta
+      name="description"
+      content="Connect Codex CLI to your linked OpenSidebar browser. Copy the configuration, authorize your account, and verify browser readiness."
+    />
+    <link rel="canonical" href="https://opensidebar.com/connect/mcp" />
+    <link rel="icon" href="/favicon.png" />
+  </head>
+  <body class="mcp-guide">
+    <a class="skip-link" href="#main">Skip to setup</a>
+    <header class="nav">
+      <div class="wrap nav-inner">
+        <a class="brand" href="/"
+          ><img src="/logo.png" alt="" width="28" height="28" /><span
+            >OpenSidebar</span
+          ></a
+        >
+        <nav aria-label="Primary" class="mcp-nav">
+          <a href="/connect/mcp" aria-current="page">MCP guide</a
+          ><a class="btn btn-primary" href="/app/settings/connections"
+            >Your connections</a
+          >
+        </nav>
+      </div>
+    </header>
+    <main id="main" class="wrap mcp-layout">
+      <header class="mcp-hero">
+        <span class="eyebrow">Connect your tools</span>
+        <h1>Your browser.<br />Available to Codex.</h1>
+        <p class="mcp-deck">
+          Let Codex request a page review through OpenSidebar, in the Chrome
+          browser you already use. You can watch the work and stop it locally.
+        </p>
+        <a class="btn btn-primary" href="#setup">Set up Codex CLI</a>
+        <a class="btn" href="#how-it-connects">How the connection works</a>
+      </header>
+      <aside class="mcp-notice">
+        <strong>Hosted MCP is an early-access pilot.</strong>
+        <p>
+          You need an approved OpenSidebar account, a linked extension with
+          remote-task support, and remote browser work enabled. The guide is
+          public; hosted access is not yet open to every account.
+          <a
+            href="mailto:support@playscenario.ai?subject=OpenSidebar%20MCP%20access"
+            >Request access</a
+          >.
+        </p>
+        <p>
+          Remote tasks currently support reading and reviewing pages. Submitting
+          messages, forms, purchases, and uploads through hosted MCP is not
+          enabled.
+        </p>
+      </aside>
+      <section id="how-it-connects" aria-labelledby="connection-title">
+        <h2 id="connection-title">One account. Two connections.</h2>
+        <div class="mcp-cards">
+          <article>
+            <span class="eyebrow">Browser connection</span>
+            <h3>OpenSidebar → Chrome</h3>
+            <p>
+              Sign in to the website and link the installed extension. A
+              single-use browser link code belongs here.
+            </p>
+          </article>
+          <article>
+            <span class="eyebrow">MCP authorization</span>
+            <h3>Codex → OpenSidebar</h3>
+            <p>
+              Authorize Codex once for your account. Codex stores its own
+              credential; it cannot use your website login cookie or extension
+              link code.
+            </p>
+          </article>
+        </div>
+        <p>
+          <strong>Already signed in for 30 days?</strong> Your website session
+          remains valid. OpenSidebar reuses your current website session and
+          shows a consent screen for Codex. Only a missing or expired session
+          asks you to sign in; after that, you return to the pending connection.
+          This does not create another account or unlink Chrome.
+        </p>
+      </section>
+      <section id="setup" aria-labelledby="setup-title">
+        <h2 id="setup-title">Set up Codex CLI</h2>
+        <p>
+          Configuration checked with Codex CLI 0.160.1. Update Codex if your
+          version does not support these OAuth settings.
+        </p>
+        <ol class="mcp-steps">
+          <li>
+            <h3>Get your browser ready</h3>
+            <p>
+              Install OpenSidebar, sign in, and link Chrome in
+              <a href="/app/settings/connections">Connections</a>. In
+              <a href="/app/settings/security">Security</a>, enable remote
+              browser work when you want to accept tasks. Keep Chrome open.
+              Connections should show <strong>Ready for remote reading</strong>.
+            </p>
+          </li>
+          <li>
+            <h3>Add the server configuration</h3>
+            <p>
+              Merge this into <code>~/.codex/config.toml</code>. If an
+              <code>opensidebar</code> section already exists, update it instead
+              of adding a duplicate. Keep your other settings.
+            </p>
+            <div class="mcp-code">
+              <button type="button" class="btn" data-copy="codex-config">
+                Copy configuration
+              </button>
+              <pre
+                tabindex="0"
+                aria-label="Codex TOML configuration"
+              ><code id="codex-config">[mcp_servers.opensidebar]
+url = &quot;https://opensidebar.com/mcp&quot;
+scopes = [
+  &quot;openid&quot;,
+  &quot;https://opensidebar.com/mcp/browser.devices.read&quot;,
+  &quot;https://opensidebar.com/mcp/browser.tasks.create&quot;,
+  &quot;https://opensidebar.com/mcp/browser.tasks.read&quot;,
+  &quot;https://opensidebar.com/mcp/browser.tasks.continue&quot;,
+  &quot;https://opensidebar.com/mcp/browser.tasks.approve&quot;,
+  &quot;https://opensidebar.com/mcp/browser.tasks.cancel&quot;,
+]
+
+[mcp_servers.opensidebar.oauth]
+client_id = &quot;5ncvofhmoi8mgkjpl1focdhdor&quot;
+callback_url = &quot;http://localhost:1455/auth/callback/3MqMAmAkMrwa&quot;
+callback_port = 1455</code></pre>
+            </div>
+            <p class="muted">
+              The client ID is public, not a secret. No client secret, API key,
+              or browser code belongs in this configuration. Leave
+              <code>oauth.resource</code> unset; Codex discovers the resource
+              from the server.
+            </p>
+          </li>
+          <li>
+            <h3>Authorize this Codex client</h3>
+            <p>
+              Run this command in a terminal on the same computer as your
+              browser. Chrome opens the OpenSidebar consent page. Check the
+              account shown and choose Allow Codex. If your website session
+              expired, sign in there first; you will return to consent. Keep any
+              email code in the browser.
+            </p>
+            <div class="mcp-code">
+              <button type="button" class="btn" data-copy="login-command">
+                Copy login command
+              </button>
+              <pre><code id="login-command">codex mcp login opensidebar</code></pre>
+            </div>
+            <p>
+              Wait for the terminal to confirm successful login. This grants the
+              listed MCP scopes; browser execution still follows your
+              remote-work setting and local policy.
+            </p>
+          </li>
+          <li>
+            <h3>Verify before starting a task</h3>
+            <p>Start a new Codex session so it loads the server, then paste:</p>
+            <div class="mcp-code">
+              <button type="button" class="btn" data-copy="check-prompt">
+                Copy check prompt
+              </button>
+              <pre><code id="check-prompt">Use my OpenSidebar MCP connection. Call browser_list_devices and report which browsers are online and ready for remote work. Do not start a task or change settings.</code></pre>
+            </div>
+            <p>
+              Success means Codex actually lists your browser with
+              <code>availability: online</code> and
+              <code>remoteWork: ready</code>. A saved server entry or website
+              label alone is not a connection test.
+            </p>
+          </li>
+        </ol>
+      </section>
+      <section>
+        <h2>Try a small page review</h2>
+        <p>
+          After the readiness check, ask Codex to use your named browser to
+          review a page you choose. For example: “Use OpenSidebar in my Chrome
+          browser to review the public OpenSidebar setup guide and list any
+          unclear instructions. Do not submit forms or change settings.”
+        </p>
+        <p>
+          A task can make model calls under your configured provider and usage
+          limits. Watch progress in the extension, and use Stop if needed.
+        </p>
+      </section>
+      <section id="troubleshooting">
+        <h2>If something does not connect</h2>
+        <details>
+          <summary>I am already signed in to the website</summary>
+          <p>
+            The website and Codex have separate credentials. Your current
+            website session is reused. You should see “You’re already signed in”
+            and a consent screen, not another email-code prompt. If a Cognito
+            login page opens, cancel that old flow and restart the CLI
+            connection to use the current server metadata.
+          </p>
+        </details>
+        <details>
+          <summary>
+            Codex says authorization is saved, but tools are missing
+          </summary>
+          <p>
+            Run <code>codex mcp list</code> to check the server entry, complete
+            <code>codex mcp login opensidebar</code>, then open a new Codex
+            session. The website records past authorization; it cannot confirm
+            the credential in this terminal.
+          </p>
+        </details>
+        <details>
+          <summary>The login has an invalid redirect or scope error</summary>
+          <p>
+            Check the exact server name, URL, scopes, client ID, callback URL,
+            and port above. Do not add a separate resource setting. Port 1455
+            must be available on the computer running Codex. Other callbacks
+            require registration by the operator.
+          </p>
+        </details>
+        <details>
+          <summary>My browser is offline or remote work is unavailable</summary>
+          <p>
+            Open Chrome, confirm the extension is signed in to the same account,
+            and refresh Connections. “Remote work unavailable” means the build
+            has not confirmed support. “Remote work disabled” means the account
+            permission is off.
+          </p>
+        </details>
+        <details>
+          <summary>Access is not enabled, or authorization was revoked</summary>
+          <p>
+            Hosted MCP still requires pilot access. Contact support if access is
+            not enabled. Revoked authorization is deliberately rejected; signing
+            in again may require operator-assisted reactivation. Do not generate
+            browser link codes to fix MCP authorization.
+          </p>
+        </details>
+        <details>
+          <summary>I use another MCP client or a remote terminal</summary>
+          <p>
+            The service uses Streamable HTTP at
+            <code>https://opensidebar.com/mcp</code> with OAuth
+            authorization-code flow and PKCE. The public client above is
+            registered for the shown local Codex callback. Other clients and
+            remote-terminal callbacks need operator configuration; URL-only
+            setup and dynamic client registration are not currently supported.
+          </p>
+        </details>
+      </section>
+      <section>
+        <h2>You stay in control</h2>
+        <p>
+          Stop a task in the extension or ask Codex to cancel it. Turn off
+          remote browser work in
+          <a href="/app/settings/security">Security</a> to stop accepting remote
+          work. Revoke the Codex integration in
+          <a href="/app/settings/connections">Connections</a> to remove its
+          account access. <code>codex mcp logout opensidebar</code> clears this
+          CLI’s saved authorization.
+        </p>
+        <p>
+          <a href="https://developers.openai.com/codex/mcp"
+            >Official Codex MCP documentation</a
+          >
+          ·
+          <a href="https://github.com/krisshkodrani/OpenSidebar">Source code</a>
+        </p>
+      </section>
+      <p
+        id="copy-status"
+        class="mcp-copy-status"
+        role="status"
+        aria-live="polite"
+      ></p>
+    </main>
+    <footer class="footer">
+      <div class="wrap">
+        <a href="/">OpenSidebar</a> ·
+        <a href="/app/settings/connections">Manage connections</a> ·
+        <a href="mailto:support@playscenario.ai">Contact support</a>
+      </div>
+    </footer>
+    <script type="module" src="/src/mcp.ts"></script>
+  </body>
+</html>

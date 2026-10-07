@@ -25,7 +25,7 @@ describe("PrimaryTaskRail label precedence", () => {
         agentStatus: AgentStatus.ACTING,
         statusDetail: "Taking action on the page",
       }),
-    ).toBe("The agent may be stuck after 7 turns");
+    ).toBe("Progress has stalled");
 
     expect(
       resolvePrimaryTaskLabel({
@@ -124,7 +124,7 @@ describe("PrimaryTaskRail label precedence", () => {
     ).toBe("Task stopped");
   });
 
-  test("labels the running stop control as take control", async () => {
+  test("shows a labeled Stop control", async () => {
     const container = document.createElement("div");
     document.body.appendChild(container);
     const root = createRoot(container);
@@ -157,7 +157,7 @@ describe("PrimaryTaskRail label precedence", () => {
       const button = container.querySelector(
         'button[aria-label="Stop agent and take control"]',
       );
-      expect(button?.getAttribute("title")).toBe("Take control");
+      expect(button?.textContent).toBe("Stop");
     } finally {
       await act(async () => {
         root.unmount();
@@ -166,7 +166,7 @@ describe("PrimaryTaskRail label precedence", () => {
     }
   });
 
-  test("keeps long primary labels truncated inside the compact rail", async () => {
+  test("allows primary labels to wrap inside the compact rail", async () => {
     const container = document.createElement("div");
     document.body.appendChild(container);
     const root = createRoot(container);
@@ -216,7 +216,7 @@ describe("PrimaryTaskRail label precedence", () => {
       );
       expect(expectedLabel).toMatch(/\.\.\.$/);
       expect(rail?.className).toContain("rounded-lg");
-      expect(label?.className).toContain("truncate");
+      expect(label?.className).toContain("break-words");
     } finally {
       await act(async () => {
         root.unmount();

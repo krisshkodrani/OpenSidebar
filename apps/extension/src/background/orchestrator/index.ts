@@ -1,3 +1,4 @@
+import { getOrchestratorSnapshot } from "./page-context";
 import { chromePersistencePort } from "../environment/chrome";
 import { getTrustedCorpusStore } from "../memory/corpus-runtime";
 import { extractedFactToCorpusEntry } from "../memory/trusted-corpus-migration";
@@ -56,11 +57,13 @@ import {
 import { PendingFeedbackQueue } from "./pending-feedback-queue";
 import { CompletionWaiterRegistry } from "./completion-waiter-registry";
 import { PendingInteractionTimers } from "./pending-interaction-timers";
+import { observeTaskTurns, stopTrackedWorker, taskTurns, trackNodeTurns } from "./turn-accounting";
 import { buildResumeInput } from "./resume-input";
 import {
   buildTaskManifest,
   buildSyntheticPendingInteractionSummary,
   buildSubtaskResults,
+  buildTaskProgress,
 } from "./builders";
 import {
   classifyEscalationRisk,
@@ -223,7 +226,6 @@ import {
   isLaneIsolationError,
   isUserSkippedNode,
   normalizeEscalationOptionId,
-  toSubtasks,
 } from "./utils";
 import {
   turnCheckpointKey,
@@ -802,7 +804,7 @@ export class Orchestrator {
     let stopped = false;
     for (const worker of workers.values()) {
       if (worker.nodeId !== nodeId) continue;
-      worker.loop.stop();
+      stopTrackedWorker(this.tasksByWorkspace.get(workspaceId), worker);
       workers.delete(worker.workerId);
       stopped = true;
       logger.warn("orchestrator", "Executor worker stopped", {
@@ -871,6 +873,7 @@ export class Orchestrator {
    */
 
   private async persistTaskCheckpoint(task: OrchestratorTask): Promise<void> {
+    observeTaskTurns(task, this.workersByWorkspace.get(task.workspaceId)?.executor.values());
     const checkpoints = await loadOrchestratorCheckpoints();
     const pendingFeedback = this.pendingFeedback.peek(task.workspaceId);
     checkpoints[task.workspaceId] = {
@@ -1005,13 +1008,14 @@ export class Orchestrator {
       payload: { delta: "", done: true },
     });
 
+    const subtaskResults = buildSubtaskResults(task, this.workersByWorkspace.get(task.workspaceId)?.executor.values());
     const completionPayload: TaskCompletionMessage["payload"] = {
       taskId: task.id,
       status: terminalStatus === "completed" ? "completed" : "failed",
-      totalTurnsUsed: 0,
+      totalTurnsUsed: taskTurns(task),
       totalTimeMs: task.finishedAt - (task.startedAt || task.createdAt),
       summary,
-      subtaskResults: buildSubtaskResults(task),
+      subtaskResults,
       urlHistory: [],
       metrics: task.sessionMetrics,
       terminationReason: terminalStatus === "failed" ? summary : undefined,
@@ -1615,7 +1619,7 @@ export class Orchestrator {
       }
     } else {
       // Task finished (completed / failed / stopped) — re-send completion
-      const subtaskResults: SubtaskResult[] = buildSubtaskResults(task);
+      const subtaskResults: SubtaskResult[] = buildSubtaskResults(task, this.workersByWorkspace.get(task.workspaceId)?.executor.values());
       const completed = subtaskResults.filter(
         (r) => r.status === "completed",
       ).length;
@@ -1635,7 +1639,7 @@ export class Orchestrator {
                     ? "completed"
                     : "partial"
                   : "failed",
-          totalTurnsUsed: 0,
+          totalTurnsUsed: taskTurns(task),
           totalTimeMs:
             (task.finishedAt || Date.now()) -
             (task.startedAt || task.createdAt),
@@ -1911,16 +1915,10 @@ export class Orchestrator {
           writerModel: input.settings.writerModel,
           useNitro: input.settings.useNitro,
           providerMode: input.settings.providerMode,
-          provider: input.settings.provider,
-          openaiApiKey: input.settings.openaiApiKey,
-          groqApiKey: input.settings.groqApiKey,
+
           temperature: input.settings.temperature,
           perceptionMode: input.settings.perceptionMode,
-          fireworksApiKey: input.settings.fireworksApiKey,
-          deepseekApiKey: input.settings.deepseekApiKey,
-          kimiApiKey: input.settings.kimiApiKey,
-          xiaomiApiKey: input.settings.xiaomiApiKey,
-          cerebrasApiKey: input.settings.cerebrasApiKey,
+
         };
         const planner = this.deps.createPlanner(
           input.openRouterApiKey,
@@ -1938,7 +1936,7 @@ export class Orchestrator {
             tab.url || "",
             skillCatalogOptions,
             undefined,
-            { displayQuery: input.query },
+            { displayQuery: input.query, pageState: await this.getSnapshot(input.tabId) },
           ),
         );
         nodes = buildResult.nodes;
@@ -2160,15 +2158,9 @@ export class Orchestrator {
               judgeProviderPin: input.settings.judgeProviderPin,
               useNitro: input.settings.useNitro,
               providerMode: input.settings.providerMode,
-              provider: input.settings.provider,
-              openaiApiKey: input.settings.openaiApiKey,
-              groqApiKey: input.settings.groqApiKey,
+
               temperature: input.settings.temperature,
-              fireworksApiKey: input.settings.fireworksApiKey,
-              deepseekApiKey: input.settings.deepseekApiKey,
-              kimiApiKey: input.settings.kimiApiKey,
-              xiaomiApiKey: input.settings.xiaomiApiKey,
-              cerebrasApiKey: input.settings.cerebrasApiKey,
+
             },
           );
           this.attachPlannerUsageTrace(
@@ -2182,7 +2174,7 @@ export class Orchestrator {
             tab.url || "",
             { enabledSkillPackIds: task.enabledSkillPackIds },
             undefined,
-            { displayQuery: revisedQuery },
+            { displayQuery: revisedQuery, pageState: await this.getSnapshot(input.tabId) },
           );
           if (replanResult.nodes.length > 0) {
             nodes = enforceToolProfile(replanResult.nodes, input.executionToolProfile);
@@ -2264,15 +2256,9 @@ export class Orchestrator {
       writerModel: input.settings.writerModel,
       useNitro: input.settings.useNitro,
       providerMode: input.settings.providerMode,
-      provider: input.settings.provider,
-      openaiApiKey: input.settings.openaiApiKey,
-      groqApiKey: input.settings.groqApiKey,
+
       temperature: input.settings.temperature,
-      fireworksApiKey: input.settings.fireworksApiKey,
-      deepseekApiKey: input.settings.deepseekApiKey,
-      kimiApiKey: input.settings.kimiApiKey,
-      xiaomiApiKey: input.settings.xiaomiApiKey,
-      cerebrasApiKey: input.settings.cerebrasApiKey,
+
     };
     const verifier = this.deps.createVerifier(
       input.openRouterApiKey,
@@ -2767,14 +2753,7 @@ export class Orchestrator {
           writerModel: input.settings.writerModel,
           useNitro: input.settings.useNitro,
           providerMode: input.settings.providerMode,
-          provider: input.settings.provider,
-          openaiApiKey: input.settings.openaiApiKey,
-          groqApiKey: input.settings.groqApiKey,
-          fireworksApiKey: input.settings.fireworksApiKey,
-          deepseekApiKey: input.settings.deepseekApiKey,
-          kimiApiKey: input.settings.kimiApiKey,
-          xiaomiApiKey: input.settings.xiaomiApiKey,
-          cerebrasApiKey: input.settings.cerebrasApiKey,
+
           temperature: input.settings.temperature,
           perceptionMode: input.settings.perceptionMode,
           maxImagePromptTokenEstimate:
@@ -2927,10 +2906,9 @@ export class Orchestrator {
         const result = await this.runInLane(
           task,
           "executor",
-          async () =>
-            loop.start(executorInstruction, tabId, snapshot, {
-              clearHistory: true,
-            }),
+          () => trackNodeTurns(node, loop, candidateTurnCheckpoint?.turnCount,
+            Boolean(validatedTurnCheckpoint), () => this.persistTaskCheckpoint(task),
+            () => loop.start(executorInstruction, tabId, snapshot, { clearHistory: true })),
           {
             label: `executor node ${node.id.slice(0, 8)}`,
             nodeId: node.id,
@@ -3045,6 +3023,7 @@ export class Orchestrator {
           result.summary,
         );
         const executorEvidence: StructuredEvidence[] = [
+          ...(result.pageObservations ?? []).map((claim) => ({ claim, basis: "observation" as const })),
           {
             claim: compactResultSummary || "Executor finished without summary.",
             basis: "tool_output",
@@ -3353,8 +3332,7 @@ export class Orchestrator {
             // RFC LP-15 Phase 10: high-risk judge gate. Only for a high-risk
             // node whose verification accepted — it can only make completion
             // stricter (accept -> reroute on a failed / contradicted /
-            // unavailable judge). LOW/MEDIUM add zero latency; the risky action
-            // itself stays human-gated by the consequential-action approval.
+            // unavailable judge). Action approval remains at tool execution.
             if (
               verification.decision === "accept" &&
               (classifyNodeEffect(node) === "consequential_write" ||
@@ -4561,7 +4539,7 @@ export class Orchestrator {
       payload: { delta: "", done: true },
     });
 
-    const subtaskResults = buildSubtaskResults(task);
+    const subtaskResults = buildSubtaskResults(task, this.workersByWorkspace.get(task.workspaceId)?.executor.values());
     const penalizedSkipped = task.nodes.filter(
       (node) =>
         node.status === "skipped" && !isUnpenalizedGoalShortcutSkip(node),
@@ -4645,7 +4623,7 @@ export class Orchestrator {
     const completionPayload: TaskCompletionMessage["payload"] = {
       taskId: task.id,
       status: completionStatus,
-      totalTurnsUsed: 0,
+      totalTurnsUsed: taskTurns(task),
       totalTimeMs: task.finishedAt - (task.startedAt || task.createdAt),
       summary,
       subtaskResults,
@@ -4825,7 +4803,7 @@ export class Orchestrator {
         },
         "system",
       );
-      worker.loop.stop();
+      stopTrackedWorker(task, worker);
       workers?.delete(worker.workerId);
     }
 
@@ -4920,7 +4898,7 @@ export class Orchestrator {
       task.pendingEscalation = undefined;
     }
     // Cancel any pending plan confirmation
-    this.pendingPlanConfirmationResolvers.resolveAll({ decision: "cancel" });
+    this.pendingPlanConfirmationResolvers.resolveScope(workspaceId, { decision: "cancel" });
     if (shouldDrainActiveWorkers) {
       task.status = "stopping";
       void this.persistTaskCheckpoint(task);
@@ -4972,7 +4950,7 @@ export class Orchestrator {
         },
         "system",
       );
-      worker.loop.stop();
+      stopTrackedWorker(task, worker);
     }
     workers?.clear();
     pools?.planner.clear();
@@ -5032,39 +5010,8 @@ export class Orchestrator {
     }
   }
 
-  private async getSnapshot(tabId: number): Promise<any | undefined> {
-    try {
-      try {
-        const manifest = chrome.runtime.getManifest();
-        const contentScriptPath = manifest.content_scripts?.[0]?.js?.[0];
-        if (contentScriptPath) {
-          await chrome.scripting.executeScript({
-            target: { tabId },
-            files: [contentScriptPath],
-          });
-        }
-      } catch {
-        // no-op — content script may already be injected
-      }
-      await this.deps.waitForContentScriptReady(tabId, 3000);
-      const response = await chrome.tabs.sendMessage(tabId, {
-        type: "DOM_SNAPSHOT_REQUEST",
-        requestId: crypto.randomUUID(),
-        source: MessageSource.BACKGROUND,
-        payload: { refresh: true, autoDismiss: false },
-      });
-      return response.payload.snapshot;
-    } catch (err) {
-      logger.warn(
-        "orchestrator",
-        "getSnapshot failed — executor will fetch its own",
-        {
-          tabId,
-          error: err instanceof Error ? err.message : String(err),
-        },
-      );
-      return undefined;
-    }
+  private getSnapshot(tabId: number) {
+    return getOrchestratorSnapshot(tabId, this.deps.waitForContentScriptReady);
   }
 
   private async tryHorizonExpansion(
@@ -5158,12 +5105,7 @@ export class Orchestrator {
   }
 
   private sendProgress(task: OrchestratorTask): void {
-    const payload = {
-      taskId: task.id,
-      subtasks: toSubtasks(task.nodes),
-      currentIndex: task.currentIndex,
-      totalTurnsUsed: 0,
-    };
+    const payload = buildTaskProgress(task, this.workersByWorkspace.get(task.workspaceId)?.executor.values());
     sendMessage({
       type: "TASK_PROGRESS",
       workspaceId: task.workspaceId,
@@ -5258,7 +5200,7 @@ export class Orchestrator {
       payload: { delta: "", done: true },
     });
 
-    const subtaskResults = buildSubtaskResults(task);
+    const subtaskResults = buildSubtaskResults(task, this.workersByWorkspace.get(task.workspaceId)?.executor.values());
     const completed = subtaskResults.filter(
       (r) => r.status === "completed",
     ).length;
@@ -5271,7 +5213,7 @@ export class Orchestrator {
         : hasUsefulPartialProgressHandoff(task.partialHandoff) || completed > 0
           ? "partial"
           : "failed",
-      totalTurnsUsed: 0,
+      totalTurnsUsed: taskTurns(task),
       totalTimeMs:
         (task.finishedAt || Date.now()) - (task.startedAt || task.createdAt),
       summary: terminationReason,
@@ -5660,7 +5602,7 @@ export class Orchestrator {
               "system",
             );
             resolve(result);
-          },
+          }, task.workspaceId,
         );
       },
     );

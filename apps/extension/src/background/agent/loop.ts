@@ -233,6 +233,8 @@ import {
   getWorkspaceTabs,
   isPureListFilterWorkflowRequest,
   lookupMutationReplay,
+  getMutationDocumentId,
+  formatMutationReplayMessage,
   shouldEscalateOnDoneRejection,
   type LoopQueriesHost,
 } from "./loop-queries";
@@ -500,7 +502,7 @@ export class AgentLoop {
   /** Current turn count — exposed via getCurrentTurn() */
   private turnCount = 0;
   /** Tool names exposed to the model for the current LLM turn. */
-  private activeToolNamesForTurn: ToolName[] = [];
+  private toolAvailability = { active: [] as ToolName[], requested: new Set<ToolName>() };
   /** Original user query that started this loop */
   private originalQuery = "";
   public readonly enabledSkillPackIds?: string[];
@@ -516,15 +518,7 @@ export class AgentLoop {
   /** Unified VL executor mode: screenshot sent directly to executor, skip separate perception */
   private useVLExecutor = false;
   private perceptionModeOption?: PerceptionRuntimeMode;
-  private providerModeOption?:
-    | "openrouter"
-    | "openrouter-groq"
-    | "openai-groq"
-    | "fireworks"
-    | "fireworks-deepseek"
-    | "cerebras-fireworks"
-    | "moonshot"
-    | "xiaomi";
+  private providerModeOption?: "openrouter";
   /** When true, mutation replay guard persists across turns (set after done() rejection) */
   private guardAfterDoneRejection = false;
   private pendingFeedback: string | null = null;
@@ -762,23 +756,8 @@ export class AgentLoop {
       judgeProviderPin?: string;
       writerModel?: string;
       useNitro?: boolean;
-      providerMode?:
-        | "openrouter"
-        | "openrouter-groq"
-        | "openai-groq"
-        | "fireworks"
-        | "fireworks-deepseek"
-        | "cerebras-fireworks"
-        | "moonshot"
-        | "xiaomi";
-      provider?: "openrouter" | "openai" | "groq"; // legacy compat
-      openaiApiKey?: string;
-      groqApiKey?: string;
-      fireworksApiKey?: string;
-      deepseekApiKey?: string;
-      kimiApiKey?: string;
-      xiaomiApiKey?: string;
-      cerebrasApiKey?: string;
+      providerMode?: "openrouter";
+
       temperature?: number;
       perceptionMode?: PerceptionRuntimeMode;
       maxImagePromptTokenEstimate?: number;
@@ -855,14 +834,7 @@ export class AgentLoop {
       writerModel: options?.writerModel,
       useNitro: options?.useNitro,
       providerMode: options?.providerMode,
-      provider: options?.provider,
-      openaiApiKey: options?.openaiApiKey,
-      groqApiKey: options?.groqApiKey,
-      fireworksApiKey: options?.fireworksApiKey,
-      deepseekApiKey: options?.deepseekApiKey,
-      kimiApiKey: options?.kimiApiKey,
-      xiaomiApiKey: options?.xiaomiApiKey,
-      cerebrasApiKey: options?.cerebrasApiKey,
+
       temperature: options?.temperature,
     };
     this.llm = new LLMClient(openRouterApiKey, modelOverrides);
@@ -1054,10 +1026,7 @@ export class AgentLoop {
     this.context.addMessage({
       role: "tool",
       tool_call_id: toolCallId,
-      content:
-        replay.result +
-        "\n[Note: This action was already executed earlier in this step. " +
-        "The result above is from the previous execution. The page state already reflects this action — do NOT repeat it.]",
+      content: formatMutationReplayMessage(replay.result),
     });
     return true;
   }
@@ -1073,6 +1042,7 @@ export class AgentLoop {
       args,
       result,
       actionSnapshot,
+      documentInstanceId: getMutationDocumentId(this as unknown as LoopQueriesHost, actionSnapshot ?? this.context.getSnapshot()),
       currentSnapshot: this.context.getSnapshot?.() ?? null,
       planIndex: this.lastPlanIndex,
       turn: this.turnCount,
@@ -3318,7 +3288,7 @@ export class AgentLoop {
   }
 
   public getActiveToolNamesForTurn(): ToolName[] {
-    return [...this.activeToolNamesForTurn];
+    return [...this.toolAvailability.active];
   }
 
   /** Extracted to capture-guard.ts (LP-24) — quota retry lives there. */

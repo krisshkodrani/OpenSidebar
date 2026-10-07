@@ -536,6 +536,24 @@ describe("e2e helper semantics", () => {
     }
   });
 
+  it("kills the browser when panel cleanup stalls before browser.close", async () => {
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    const kill = vi.fn(() => true);
+    const close = vi.fn(async () => {});
+    const ctx = {
+      inPagePanelTargetTabId: 1,
+      helperPage: { isClosed: () => false, url: () => "wrong-url", goto: () => new Promise(() => {}) },
+      browser: { connected: true, close, process: () => ({ killed: false, kill }) },
+    };
+    try {
+      await closeExtension(ctx as any, 5);
+    } finally {
+      warn.mockRestore();
+    }
+    expect(close).not.toHaveBeenCalled();
+    expect(kill).toHaveBeenCalledWith("SIGKILL");
+  });
+
   it("bounds a stuck browser close and kills the browser process", async () => {
     const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
     const kill = vi.fn(() => true);

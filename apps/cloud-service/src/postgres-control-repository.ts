@@ -38,6 +38,7 @@ const deviceRow = (row: {
   extension_version: string;
   connection_kind: CloudDeviceV1["connectionKind"];
   remote_mission_ready_at: Date | null;
+  remote_interactive_ready?: boolean;
   created_at: Date;
   last_seen_at: Date;
   revoked_at: Date | null;
@@ -53,7 +54,7 @@ const deviceRow = (row: {
     !row.revoked_at &&
     row.remote_mission_ready_at &&
     Date.now() - row.remote_mission_ready_at.getTime() <= 3 * 60_000
-      ? ["remote_browser_tasks_v1"]
+      ? ["remote_browser_tasks_v1", ...(row.remote_interactive_ready ? ["remote_browser_interactive_v1" as const] : [])]
       : [],
   availability: row.revoked_at
     ? "revoked"
@@ -91,11 +92,16 @@ export class PostgresControlRepository implements ControlRepository {
     await this.pool.query(
       await readFile(resolve(here, "../migrations/020_remote_mission_capabilities.sql"), "utf8"),
     );
+    await this.pool.query(await readFile(resolve(here, "../migrations/021_openrouter_only.sql"), "utf8"));
+    await this.pool.query(await readFile(resolve(here, "../migrations/022_retire_audio_preferences.sql"), "utf8"));
+    await this.pool.query(await readFile(resolve(here, "../migrations/023_mcp_oauth.sql"), "utf8"));
+    await this.pool.query(await readFile(resolve(here, "../migrations/024_remote_interactive.sql"), "utf8"));
   }
   async health() {
     await this.pool.query("SELECT 1");
   }
   async cleanupExpired() {
+    await this.pool.query("DELETE FROM control.mcp_oauth_grants WHERE family_expires_at <= now()");
     await this.pool.query(
       "DELETE FROM control.device_link_codes WHERE expires_at<=now() OR consumed_at IS NOT NULL",
     );
@@ -134,17 +140,17 @@ export class PostgresControlRepository implements ControlRepository {
       `INSERT INTO control.devices(id,account_id,installation_id,display_name,extension_version,connection_kind)
       VALUES('dev_'||substr(md5(random()::text||clock_timestamp()::text),1,24),$1,$2,$3,$4,$5)
       ON CONFLICT(account_id,installation_id) DO UPDATE SET extension_version=excluded.extension_version,connection_kind=excluded.connection_kind,last_seen_at=now(),revoked_at=CASE WHEN $6 THEN NULL ELSE control.devices.revoked_at END
-      RETURNING id,installation_id,display_name,display_name_revision,extension_version,connection_kind,remote_mission_ready_at,created_at,last_seen_at,revoked_at`,
+      RETURNING id,installation_id,display_name,display_name_revision,extension_version,connection_kind,remote_mission_ready_at,remote_interactive_ready,created_at,last_seen_at,revoked_at`,
       [accountId, installationId, displayName, extensionVersion, connectionKind, revive],
     );
     return deviceRow(result.rows[0]);
   }
-  async markRemoteMissionReady(accountId: string, deviceId: string) {
+  async markRemoteMissionReady(accountId: string, deviceId: string, interactive = false) {
     const result = await this.pool.query(
       `UPDATE control.devices
-       SET remote_mission_ready_at=now(),last_seen_at=now()
+       SET remote_mission_ready_at=now(),last_seen_at=now(),remote_interactive_ready=$3
        WHERE account_id=$1 AND id=$2 AND connection_kind='browser_extension' AND revoked_at IS NULL`,
-      [accountId, deviceId],
+      [accountId, deviceId, interactive],
     );
     return (result.rowCount ?? 0) > 0;
   }
@@ -300,7 +306,7 @@ export class PostgresControlRepository implements ControlRepository {
   }
   async listDevices(accountId: string) {
     const result = await this.pool.query(
-      "SELECT id,installation_id,display_name,display_name_revision,extension_version,connection_kind,remote_mission_ready_at,created_at,last_seen_at,revoked_at FROM control.devices WHERE account_id=$1 ORDER BY last_seen_at DESC",
+      "SELECT id,installation_id,display_name,display_name_revision,extension_version,connection_kind,remote_mission_ready_at,remote_interactive_ready,created_at,last_seen_at,revoked_at FROM control.devices WHERE account_id=$1 ORDER BY last_seen_at DESC",
       [accountId],
     );
     return result.rows.map(deviceRow);
@@ -315,7 +321,7 @@ export class PostgresControlRepository implements ControlRepository {
       `UPDATE control.devices
        SET display_name=$1,display_name_revision=display_name_revision+1
        WHERE account_id=$2 AND id=$3 AND display_name_revision=$4 AND revoked_at IS NULL
-       RETURNING id,installation_id,display_name,display_name_revision,extension_version,connection_kind,remote_mission_ready_at,created_at,last_seen_at,revoked_at`,
+       RETURNING id,installation_id,display_name,display_name_revision,extension_version,connection_kind,remote_mission_ready_at,remote_interactive_ready,created_at,last_seen_at,revoked_at`,
       [displayName, accountId, deviceId, expectedRevision],
     );
     if (result.rows[0]) return deviceRow(result.rows[0]);
@@ -464,7 +470,7 @@ export class PostgresControlRepository implements ControlRepository {
       [accountId],
     );
     const found = new Map(result.rows.map((row) => [row.provider, row]));
-    return (["openrouter", "fireworks"] as const).map((provider) => {
+    return (["openrouter"] as const).map((provider) => {
       const row = found.get(provider);
       return row
         ? {

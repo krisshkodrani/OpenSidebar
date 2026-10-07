@@ -56,6 +56,8 @@ export interface RunCaseOptions {
   driver: ModelBenchDriver;
   buildRevision: string;
   repetition: number;
+  /** Disable automatic infrastructure retries for a first-attempt baseline. */
+  retryInfrastructureFailures?: boolean;
   now?: () => Date;
   id?: () => string;
 }
@@ -184,7 +186,7 @@ export async function runModelBenchCase(
       artifactRefs: result.artifactRefs,
     };
     attempts.push(attempt);
-    if (!retryable(classification) || tryIndex === 1) break;
+    if (options.retryInfrastructureFailures === false || !retryable(classification) || tryIndex === 1) break;
     retryOfAttemptId = attempt.attemptId;
   }
   return attempts;

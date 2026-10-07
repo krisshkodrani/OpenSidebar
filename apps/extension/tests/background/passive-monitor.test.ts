@@ -1,6 +1,9 @@
 import { describe, expect, test, vi } from "vitest";
 import "../setup";
-import { PassiveMonitorController } from "../../src/background/passive-monitor";
+import {
+  PassiveMonitorController,
+  type PassiveEvaluationResult,
+} from "../../src/background/passive-monitor";
 import {
   MessageSource,
   type DomSnapshot,
@@ -106,13 +109,15 @@ function createHarness(
     onTabRemoved: vi.fn(() => () => {}),
     onBeforeNavigate: vi.fn(() => () => {}),
   };
-  const evaluate = vi.fn(async () => ({
-    shouldPost: true,
-    answer: "Answer from watcher",
-    confidence: "high" as const,
-    evidence: ["Question changed"],
-    reason: "new_question",
-  }));
+  const evaluate = vi.fn(
+    async (): Promise<PassiveEvaluationResult> => ({
+      shouldPost: true,
+      answer: "Answer from watcher",
+      confidence: "high" as const,
+      evidence: ["Question changed"],
+      reason: "new_question",
+    }),
+  );
   const controller = new PassiveMonitorController({
     pagePort,
     contentPort,
@@ -209,10 +214,7 @@ describe("PassiveMonitorController", () => {
 
   test("starts its immediate scheduled observation without unbound timer invocation", async () => {
     let timerCalls = 0;
-    const setTimeoutFn = vi.fn(function (
-      this: unknown,
-      callback: () => void,
-    ) {
+    const setTimeoutFn = vi.fn(function (this: unknown, callback: () => void) {
       if (this !== undefined) throw new TypeError("Illegal invocation");
       timerCalls += 1;
       if (timerCalls === 1) callback();
@@ -390,14 +392,15 @@ describe("PassiveMonitorController", () => {
   });
 
   test("blocks observations on URLs denied by site access settings", async () => {
-    const { controller, evaluate, contentPort, broadcasts, pageActivity } = createHarness({
-      tab: { url: "https://blocked.example/quiz" },
-      settings: {
-        ...baseSettings,
-        siteAccessMode: "blocklist",
-        siteAccessBlocklist: ["blocked.example"],
-      },
-    });
+    const { controller, evaluate, contentPort, broadcasts, pageActivity } =
+      createHarness({
+        tab: { url: "https://blocked.example/quiz" },
+        settings: {
+          ...baseSettings,
+          siteAccessMode: "blocklist",
+          siteAccessBlocklist: ["blocked.example"],
+        },
+      });
     await start(controller);
 
     await controller.evaluateNow("ws-1");
@@ -475,31 +478,6 @@ describe("PassiveMonitorController", () => {
     expect(evaluate).toHaveBeenCalledTimes(1);
   });
 
-  test("passes tab audio transcript context to passive evaluator", async () => {
-    const { controller, evaluate } = createHarness();
-    await start(controller, ["page", "tabAudio"]);
-    expect(
-      controller.updateAudioTranscript("ws-1", {
-        source: "tabAudio",
-        text: "The presenter said revenue increased by twelve percent.",
-        startedAt: 1000,
-        endedAt: 2000,
-        chunkCount: 1,
-      }),
-    ).toBe(true);
-
-    await controller.evaluateNow("ws-1");
-
-    expect(evaluate).toHaveBeenCalledWith(
-      expect.objectContaining({
-        audioTranscript: expect.objectContaining({
-          text: "The presenter said revenue increased by twelve percent.",
-          source: "tabAudio",
-        }),
-      }),
-    );
-  });
-
   test("does not evaluate after a session has been stopped", async () => {
     const { controller, evaluate } = createHarness();
     await start(controller);
@@ -508,5 +486,67 @@ describe("PassiveMonitorController", () => {
     await controller.evaluateNow("ws-1");
 
     expect(evaluate).not.toHaveBeenCalled();
+  });
+});
+
+describe("Watch readiness audit", () => {
+  test("stop during capture must not restart watching", async () => {
+    const h = createHarness();
+    const original = h.contentPort.sendMessage;
+    h.contentPort.sendMessage = vi.fn(async (id, message) => {
+      if (message.type === "DOM_SNAPSHOT_REQUEST")
+        h.controller.stopSession("ws-1");
+      return original(id, message);
+    }) as typeof original;
+    h.evaluate.mockResolvedValueOnce({ shouldPost: false });
+    await start(h.controller);
+    await h.controller.evaluateNow("ws-1");
+    expect(h.broadcasts.at(-1)).toMatchObject({
+      payload: { status: "stopped" },
+    });
+    expect(h.evaluate).not.toHaveBeenCalled();
+  });
+  test("replacement session must survive old in-flight action", async () => {
+    const h = createHarness();
+    h.evaluate.mockImplementationOnce(async () => {
+      await start(h.controller);
+      return {
+        shouldPost: true,
+        answer: "Matched",
+        action: "Add one to cart",
+        confidence: "high",
+        evidence: [],
+      };
+    });
+    await start(h.controller);
+    await h.controller.evaluateNow("ws-1");
+    expect(h.controller.hasSession("ws-1")).toBe(true);
+    expect(h.executeAction).not.toHaveBeenCalled();
+  });
+  test("negative in-flight evaluation must preserve pause", async () => {
+    const h = createHarness();
+    h.evaluate.mockImplementationOnce(async () => {
+      h.controller.pauseSession("ws-1");
+      return { shouldPost: false };
+    });
+    await start(h.controller);
+    await h.controller.evaluateNow("ws-1");
+    expect(h.broadcasts.at(-1)).toMatchObject({
+      payload: { status: "paused" },
+    });
+  });
+  test("page text change must be evaluated immediately", async () => {
+    const first = snapshot("Buy");
+    first.visibleContent = first.pageContent = "Stock: 0";
+    const second = {
+      ...first,
+      visibleContent: "Stock: 10",
+      pageContent: "Stock: 10",
+    };
+    const h = createHarness({ snapshots: [first, second], now: () => 1000 });
+    await start(h.controller);
+    await h.controller.evaluateNow("ws-1");
+    await h.controller.evaluateNow("ws-1");
+    expect(h.evaluate).toHaveBeenCalledTimes(2);
   });
 });

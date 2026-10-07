@@ -9,13 +9,6 @@ import {
   MODEL_JUDGE,
   MODEL_PLANNER,
   OPENROUTER_MODEL_PLANNER,
-  FIREWORKS_MODEL_EXECUTOR,
-  MOONSHOT_MODEL_EXECUTOR,
-  MOONSHOT_MODEL_PLANNER,
-  DEEPSEEK_MODEL_PLANNER,
-  DEEPSEEK_MODEL_PLANNER_PRO,
-  XIAOMI_MODEL_EXECUTOR,
-  XIAOMI_MODEL_PLANNER,
 } from "../../src/background/llm/client";
 import type { CompletionRequest } from "../../src/background/llm/types";
 
@@ -36,6 +29,23 @@ function mockFetch(
           : (input as Request).url;
     if (url.startsWith("http://127.0.0.1:7589/")) {
       return new Response(null, { status: 204 });
+    }
+    if (url.endsWith("/endpoints")) {
+      return new Response(
+        JSON.stringify({
+          data: {
+            endpoints: [
+              {
+                tag: "openai",
+                status: 0,
+                pricing: { completion: "0.0000006" },
+                throughput_last_30m: { p50: 80 },
+                latency_last_30m: { p50: 1_000 },
+              },
+            ],
+          },
+        }),
+      );
     }
     return handler(url, init);
   }) as typeof fetch;
@@ -78,7 +88,10 @@ function jsonApiResponse(
 /** Build an SSE ReadableStream response from text chunks. */
 function sseResponse(
   chunks: string[],
-  opts: { usage?: Record<string, unknown>; headers?: Record<string, string> } = {},
+  opts: {
+    usage?: Record<string, unknown>;
+    headers?: Record<string, string>;
+  } = {},
 ): Response {
   const encoder = new TextEncoder();
   const stream = new ReadableStream<Uint8Array>({
@@ -362,12 +375,19 @@ describe("LLMClient construction & tier switching", () => {
     expect(result.text).toBe("Composed.");
   });
 
+  test("OpenRouter preserves the requested GPT-6 Luna executor", () => {
+    const client = new LLMClient("test-api-key", {
+      providerMode: "openrouter",
+      executorModel: "openai/gpt-6-luna",
+    });
+    expect(client.getCurrentModel()).toBe("openai/gpt-6-luna");
+  });
+
   test("judge seat defaults to MODEL_JUDGE on a Fireworks planner (not planner reuse)", async () => {
     // The judge must not queue behind GLM planner traffic — sharing the seat
     // made ~75% of judge calls time out and fail open.
     const client = new LLMClient("test-api-key", {
-      providerMode: "fireworks",
-      fireworksApiKey: "fw-key",
+      providerMode: "openrouter",
     });
     let sentModel = "";
     mockFetch((_url, init) => {
@@ -376,38 +396,29 @@ describe("LLMClient construction & tier switching", () => {
     });
     await client.runJudge({ systemPrompt: "s", userPrompt: "u" });
     expect(sentModel).toBe(MODEL_JUDGE);
-    expect(MODEL_JUDGE).toBe("accounts/fireworks/models/gpt-oss-120b");
+    expect(MODEL_JUDGE).toBe("openai/gpt-oss-120b");
     // Tier restored so the next turn routes normally.
-    expect(client.getCurrentModel()).toBe(FIREWORKS_MODEL_EXECUTOR);
-  });
-
-  test("judge seat keeps planner-pool reuse on non-Fireworks planner providers", async () => {
-    // MODEL_JUDGE is a Fireworks catalog id; a Moonshot planner cannot serve it.
-    const client = new LLMClient("test-api-key", {
-      providerMode: "moonshot",
-      kimiApiKey: "kimi-key",
-    });
-    let sentModel = "";
-    mockFetch((_url, init) => {
-      sentModel = JSON.parse(init!.body as string).model;
-      return jsonApiResponse('{"pass": true}');
-    });
-    await client.runJudge({ systemPrompt: "s", userPrompt: "u" });
-    expect(sentModel).toBe(MOONSHOT_MODEL_PLANNER);
+    expect(client.getCurrentModel()).toBe(MODEL_EXECUTOR);
   });
 
   test("runJudge returns normalized token usage with an estimated cost", async () => {
     // Fireworks forces streaming, so the judge usage arrives in the SSE tail.
     const client = new LLMClient("test-api-key", {
-      providerMode: "fireworks",
-      fireworksApiKey: "fw-key",
+      providerMode: "openrouter",
     });
     mockFetch(() =>
-      sseResponse(['{"pass": true}'], {
-        usage: { prompt_tokens: 1_000_000, completion_tokens: 1_000_000, total_tokens: 2_000_000 },
+      jsonApiResponse('{"pass": true}', {
+        usage: {
+          prompt_tokens: 1_000_000,
+          completion_tokens: 1_000_000,
+          total_tokens: 2_000_000,
+        },
       }),
     );
-    const result = await client.runJudge({ systemPrompt: "s", userPrompt: "u" });
+    const result = await client.runJudge({
+      systemPrompt: "s",
+      userPrompt: "u",
+    });
     expect(result.usage?.promptTokens).toBe(1_000_000);
     expect(result.usage?.completionTokens).toBe(1_000_000);
     expect(result.usage?.totalTokens).toBe(2_000_000);
@@ -417,18 +428,19 @@ describe("LLMClient construction & tier switching", () => {
 
   test("runJudge omits usage when the provider reports none", async () => {
     const client = new LLMClient("test-api-key", {
-      providerMode: "fireworks",
-      fireworksApiKey: "fw-key",
+      providerMode: "openrouter",
     });
-    mockFetch(() => sseResponse(['{"pass": true}']));
-    const result = await client.runJudge({ systemPrompt: "s", userPrompt: "u" });
+    mockFetch(() => jsonApiResponse('{"pass": true}'));
+    const result = await client.runJudge({
+      systemPrompt: "s",
+      userPrompt: "u",
+    });
     expect(result.usage).toBeUndefined();
   });
 
   test("an explicit judgeModel override wins over the default", async () => {
     const client = new LLMClient("test-api-key", {
-      providerMode: "fireworks",
-      fireworksApiKey: "fw-key",
+      providerMode: "openrouter",
       judgeModel: "custom/judge",
     });
     let sentModel = "";
@@ -468,7 +480,13 @@ describe("LLMClient construction & tier switching", () => {
       },
       {
         model: "openai/gpt-5.6-terra",
-        provider: { order: ["OpenAI"], allow_fallbacks: true },
+        provider: {
+          only: ["openai"],
+          order: ["openai"],
+          allow_fallbacks: false,
+          require_parameters: true,
+          max_price: { completion: 1 },
+        },
       },
       {
         model: "openai/gpt-5.6-luna",
@@ -488,9 +506,7 @@ describe("LLMClient construction & tier switching", () => {
   });
 
   test("strips common paste artifacts from API keys before building headers", async () => {
-    const client = new LLMClient(
-      "\uFEFF\u201Ctest-api-key\u200B\u201D",
-    );
+    const client = new LLMClient("\uFEFF\u201Ctest-api-key\u200B\u201D");
     let headers = new Headers();
     mockFetch((_url, init) => {
       headers = new Headers(init!.headers);
@@ -506,32 +522,6 @@ describe("LLMClient construction & tier switching", () => {
     expect(() => new LLMClient("test-api-key\u{1F511}")).toThrow(
       /request header "Authorization" contains a non-ISO-8859-1 character/,
     );
-  });
-
-  test("xiaomi mode preserves Xiaomi provider and model IDs across tier switching", () => {
-    const client = makeClient({
-      providerMode: "xiaomi",
-      xiaomiApiKey: "sk-xiaomi-test",
-    });
-
-    expect(client.getCurrentProvider()).toBe("xiaomi");
-    expect(client.getCurrentModel()).toBe(XIAOMI_MODEL_EXECUTOR);
-    expect(client.getActiveProviderInfo()).toEqual({
-      providerId: "xiaomi",
-      model: XIAOMI_MODEL_EXECUTOR,
-    });
-
-    client.switchToPlanner();
-    expect(client.getCurrentProvider()).toBe("xiaomi");
-    expect(client.getCurrentModel()).toBe(XIAOMI_MODEL_PLANNER);
-    expect(client.getActiveProviderInfo()).toEqual({
-      providerId: "xiaomi",
-      model: XIAOMI_MODEL_PLANNER,
-    });
-
-    client.switchToExecutor();
-    expect(client.getCurrentProvider()).toBe("xiaomi");
-    expect(client.getCurrentModel()).toBe(XIAOMI_MODEL_EXECUTOR);
   });
 
   test("custom model overrides via LLMClientOptions", () => {
@@ -630,188 +620,6 @@ describe("complete() payload & response", () => {
 
     await client.complete(baseRequest());
     expect(payload.tool_choice).toBeUndefined();
-  });
-
-  test("moonshot mode reshapes payload for Kimi compatibility", async () => {
-    const client = makeClient({
-      providerMode: "moonshot",
-      kimiApiKey: "sk-kimi-test",
-    });
-    let url = "";
-    let payload: Record<string, unknown> = {};
-    mockFetch((nextUrl, init) => {
-      url = nextUrl;
-      payload = JSON.parse(init!.body as string);
-      return jsonApiResponse("OK");
-    });
-
-    await client.complete(baseRequest({ max_tokens: 321, tools: sampleTools }));
-    expect(url).toBe("https://api.moonshot.ai/v1/chat/completions");
-    expect(payload.model).toBe(MOONSHOT_MODEL_EXECUTOR);
-    expect(payload.max_tokens).toBeUndefined();
-    expect(payload.max_completion_tokens).toBe(321);
-    expect(payload.temperature).toBeUndefined();
-    expect(payload.thinking).toEqual({ type: "disabled" });
-    expect(payload.tool_choice).toBe("auto");
-  });
-
-  test("fireworks-deepseek uses Fireworks executor and DeepSeek planner", async () => {
-    const client = makeClient({
-      providerMode: "fireworks-deepseek",
-      fireworksApiKey: "fw-test",
-      deepseekApiKey: "sk-deepseek-test",
-    });
-    const requests: Array<{ url: string; payload: Record<string, unknown> }> =
-      [];
-    mockFetch((url, init) => {
-      const payload = JSON.parse(init!.body as string);
-      requests.push({ url, payload });
-      return url.includes("fireworks.ai")
-        ? sseResponse(["Executor OK"])
-        : jsonApiResponse("Planner OK");
-    });
-
-    await client.complete(baseRequest());
-    client.switchToPlanner();
-    await client.complete(baseRequest());
-
-    expect(requests[0].url).toBe(
-      "https://api.fireworks.ai/inference/v1/chat/completions",
-    );
-    expect(requests[0].payload.model).toBe(FIREWORKS_MODEL_EXECUTOR);
-    expect(requests[0].payload.stream).toBe(true);
-    expect(requests[1].url).toBe("https://api.deepseek.com/chat/completions");
-    expect(requests[1].payload.model).toBe(DEEPSEEK_MODEL_PLANNER);
-    expect(requests[1].payload.stream).toBeUndefined();
-  });
-
-  test("fireworks-deepseek planner override accepts DeepSeek V4 Pro", async () => {
-    const client = makeClient({
-      providerMode: "fireworks-deepseek",
-      fireworksApiKey: "fw-test",
-      deepseekApiKey: "sk-deepseek-test",
-      plannerModel: DEEPSEEK_MODEL_PLANNER_PRO,
-    });
-    let url = "";
-    let payload: Record<string, unknown> = {};
-    mockFetch((nextUrl, init) => {
-      url = nextUrl;
-      payload = JSON.parse(init!.body as string);
-      return jsonApiResponse("Planner OK");
-    });
-
-    client.switchToPlanner();
-    await client.complete(baseRequest());
-
-    expect(url).toBe("https://api.deepseek.com/chat/completions");
-    expect(payload.model).toBe("deepseek-v4-pro");
-  });
-
-  test("fireworks mode initializes active provider as Fireworks", () => {
-    const client = makeClient({
-      providerMode: "fireworks",
-      fireworksApiKey: "fw-test",
-    });
-
-    expect(client.getCurrentProvider()).toBe("fireworks");
-    expect(client.getActiveProviderInfo()).toEqual({
-      providerId: "fireworks",
-      model: FIREWORKS_MODEL_EXECUTOR,
-    });
-  });
-
-  test("fireworks requests include per-task cache affinity headers", async () => {
-    const client = makeClient({
-      providerMode: "fireworks",
-      fireworksApiKey: "fw-test",
-    });
-    let headers: Headers | null = null;
-    mockFetch((_url, init) => {
-      headers = new Headers(init!.headers as HeadersInit);
-      return sseResponse(["OK"]);
-    });
-
-    await client.complete(
-      baseRequest({
-        sessionAffinityId: "task-123",
-        multiTurnSessionId: "agent-session-456",
-      }),
-    );
-
-    expect(headers?.get("x-session-affinity")).toBe("task-123");
-    expect(headers?.get("x-multi-turn-session-id")).toBe("agent-session-456");
-  });
-
-  test("fireworks response cache headers supplement streamed usage", async () => {
-    const client = makeClient({
-      providerMode: "fireworks",
-      fireworksApiKey: "fw-test",
-    });
-    mockFetch(() =>
-      sseResponse(["OK"], {
-        headers: {
-          "fireworks-prompt-tokens": "100",
-          "fireworks-cached-prompt-tokens": "80",
-        },
-        usage: {
-          prompt_tokens: 120,
-          completion_tokens: 5,
-          total_tokens: 125,
-        },
-      }),
-    );
-
-    const result = await client.complete(baseRequest());
-
-    expect(result.usage?.prompt_tokens).toBe(100);
-    expect(result.usage?.cached_tokens).toBe(80);
-    expect(result.usage?.cacheTelemetry).toEqual(
-      expect.objectContaining({
-        provider: "fireworks",
-        promptTokens: 100,
-        cachedPromptTokens: 80,
-        cacheHitPct: 80,
-        source: "response_headers",
-      }),
-    );
-  });
-
-  test("xiaomi mode sends OpenAI-compatible requests to Xiaomi MiMo endpoint", async () => {
-    const client = makeClient({
-      providerMode: "xiaomi",
-      xiaomiApiKey: "sk-xiaomi-test",
-    });
-    const requests: Array<{
-      url: string;
-      headers: Headers;
-      payload: Record<string, unknown>;
-    }> = [];
-    mockFetch((url, init) => {
-      requests.push({
-        url,
-        headers: new Headers(init!.headers),
-        payload: JSON.parse(init!.body as string),
-      });
-      return jsonApiResponse("OK");
-    });
-
-    await client.complete(baseRequest({ tools: sampleTools }));
-    client.switchToPlanner();
-    await client.complete(baseRequest());
-
-    expect(requests[0].url).toBe(
-      "https://api.xiaomimimo.com/v1/chat/completions",
-    );
-    expect(requests[0].headers.get("Authorization")).toBe(
-      "Bearer sk-xiaomi-test",
-    );
-    expect(requests[0].payload.model).toBe("mimo-v2-omni");
-    expect(requests[0].payload.tool_choice).toBe("auto");
-    expect(requests[0].payload.stream).toBeUndefined();
-    expect(requests[1].url).toBe(
-      "https://api.xiaomimimo.com/v1/chat/completions",
-    );
-    expect(requests[1].payload.model).toBe("mimo-v2-pro");
   });
 
   test("adds cache_control to system message", async () => {
@@ -1115,25 +923,6 @@ describe("completeStream() specifics", () => {
     expect(payload.stream_options).toEqual({ include_usage: true });
   });
 
-  test("moonshot streaming payload omits temperature and uses max_completion_tokens", async () => {
-    const client = makeClient({
-      providerMode: "moonshot",
-      kimiApiKey: "sk-kimi-test",
-    });
-    let payload: Record<string, unknown> = {};
-    mockFetch((_url, init) => {
-      payload = JSON.parse(init!.body as string);
-      return sseResponse(["Hello"]);
-    });
-
-    await client.completeStream(baseRequest({ max_tokens: 99 }), () => {});
-    expect(payload.max_tokens).toBeUndefined();
-    expect(payload.max_completion_tokens).toBe(99);
-    expect(payload.temperature).toBeUndefined();
-    expect(payload.thinking).toEqual({ type: "disabled" });
-    expect(payload.stream).toBe(true);
-  });
-
   test("throws on null response body", async () => {
     const client = makeClient();
     mockFetch(
@@ -1195,5 +984,21 @@ describe("completeStream() specifics", () => {
     );
     expect(result.finish_reason).toBe("tool_calls");
     expect(result.tool_calls).toHaveLength(1);
+  });
+});
+
+describe("retired provider rejection", () => {
+  test.each([
+    "fireworks",
+    "fireworks-deepseek",
+    "moonshot",
+    "xiaomi",
+    "cerebras-fireworks",
+    "openai-groq",
+    "openrouter-groq",
+  ])("rejects %s before a request", (providerMode) => {
+    expect(
+      () => new LLMClient("test-key", { providerMode: providerMode as never }),
+    ).toThrow(/OpenRouter only/);
   });
 });

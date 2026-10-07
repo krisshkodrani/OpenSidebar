@@ -26,7 +26,7 @@ export function TaskStatusRegion({
 
   return (
     <section
-      className="shrink-0"
+      className="max-h-[55vh] shrink-0 overflow-y-auto"
       data-task-phase={taskUi.phase}
       aria-label="Task status"
     >

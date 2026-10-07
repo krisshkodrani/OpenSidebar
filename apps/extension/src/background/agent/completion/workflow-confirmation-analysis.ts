@@ -21,6 +21,8 @@ import {
   tokenizeCompletionText,
 } from "./text-utils";
 import { valueTokenCoveredBySummary } from "./label-value-types";
+import { elementControlText, isDismissalControl } from "./workflow-control-state";
+export { elementControlText, isDismissalControl } from "./workflow-control-state";
 
 type WorkflowConfirmationTextMode = "summary" | "visible";
 
@@ -953,6 +955,7 @@ export function workflowConfirmationMatchesTarget(
       event.detail.source === "control_state_change" ||
       event.detail.source === "dirty_indicator_cleared" ||
       event.detail.source === "submitted_draft_row" ||
+      event.detail.source === "saved_form_readback" ||
       event.detail.source === "invite_row_state" ||
       event.detail.source === "attachment_row_state" ||
       event.detail.source === "import_row_state" ||
@@ -1082,7 +1085,7 @@ function extractVisibleWorkflowConfirmationTarget(
   action: TargetAwareVisibleWorkflowAction,
   targetLabel: string,
 ): string | null {
-  const normalizedText = cleanLabel(text);
+  const normalizedText = cleanLabel(text).replace(/(?:^|\s)#{1,6}\s+/g, "\n");
   if (!normalizedText) return null;
 
   const targetTokens = tokenizeCompletionText(targetLabel);
@@ -1121,7 +1124,7 @@ function extractVisibleWorkflowConfirmationTarget(
     if (firstCandidate) return firstCandidate;
   }
   const beforeResult = new RegExp(
-    `(.{2,180}?)\\s+(?:was\\s+)?${resultTerms}\\s+(?:successfully|complete|completed|confirmed)\\b`,
+    `(.{2,180}?) +(?:was +)?${resultTerms} +(?:successfully|complete|completed|confirmed)\\b`,
     "i",
   ).exec(normalizedText)?.[1];
   const beforeCandidate = normalizeWorkflowTargetTail(
@@ -1131,7 +1134,7 @@ function extractVisibleWorkflowConfirmationTarget(
   if (beforeCandidate) return beforeCandidate;
 
   const afterResult = new RegExp(
-    `\\b${resultTerms}\\s+(.{2,180}?)\\s+(?:successfully|complete|completed|confirmed)\\b`,
+    `\\b${resultTerms} +(?!(?:successfully|complete|completed|confirmed)\\b)(.{2,180}?) +(?:successfully|complete|completed|confirmed)\\b`,
     "i",
   ).exec(normalizedText)?.[1];
   const afterCandidate = normalizeWorkflowTargetHead(
@@ -1141,7 +1144,7 @@ function extractVisibleWorkflowConfirmationTarget(
   if (afterCandidate) return afterCandidate;
 
   const beforeNoun = new RegExp(
-    `(.{2,180}?)\\s+${nounTerms}\\s+(?:complete|completed|confirmed|successful)\\b`,
+    `(.{2,180}?) +${nounTerms} +(?:complete|completed|confirmed|successful)\\b`,
     "i",
   ).exec(normalizedText)?.[1];
   return normalizeWorkflowTargetTail(beforeNoun ?? "", targetTokenCount);
@@ -3534,26 +3537,4 @@ export function inferControlStateChangeAction(
   if (/\bstart(?:ed|ing)?\b/i.test(text)) return "start";
   if (/\bstop(?:ped|ping)?\b/i.test(text)) return "stop";
   return null;
-}
-
-export function elementControlText(element: TaggedElement): string {
-  return [
-    element.text,
-    element.attributes.label,
-    element.attributes["aria-label"],
-    element.attributes.title,
-    element.attributes.name,
-    element.attributes.id,
-    element.attributes.value,
-  ]
-    .filter(Boolean)
-    .join(" ");
-}
-
-export function isDismissalControl(element: TaggedElement): boolean {
-  const text = normalizeText(elementControlText(element));
-  if (!text) return false;
-  return /\b(?:close|dismiss|no thanks|not now|cancel|got it|ok|okay|done|hide|skip|continue|accept|accept all|reject|decline|allow)\b/i.test(
-    text,
-  );
 }

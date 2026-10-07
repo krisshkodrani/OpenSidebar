@@ -13,6 +13,9 @@ import {
 import type { VerifierLike } from "./lane-types";
 import type { NodeVerificationResult } from "./verifier";
 import type { OrchestratorTask, StructuredEvidence, TaskNode } from "./types";
+import { boundPageObservations } from "../agent/page-observation-history";
+import { chromeBrowserPagePort } from "../environment/chrome";
+import { observeTaskTabs, type TabObservationPort } from "./browser-tab-evidence";
 
 const REVERIFY_PREFIX = "Re-verify and complete: ";
 
@@ -57,8 +60,9 @@ export function applyJudgeGateOutcome(args: {
     model: verdict?.model,
     providerId: verdict?.providerId,
     confidence: verdict?.confidence,
+    confidenceKind: verdict?.confidenceKind ?? "self_reported",
     // The full rubric of criteria (id → description) so the viewer can render
-    // every criterion, including corpus-entailed ones the judge never saw.
+    // every criterion adjudicated against observations and corpus context.
     // Descriptions truncated — this run-event pipe is dev-only and unredacted.
     criteria: deriveCriteria(node.successCriteria).map((c) => ({
       id: c.id,
@@ -66,7 +70,7 @@ export function applyJudgeGateOutcome(args: {
       required: c.required,
     })),
     // Per-criterion pass/fail + rationale from the model (subset of `criteria`
-    // — the unresolved ones the judge actually adjudicated).
+    // — the ones the judge actually adjudicated).
     perCriterion: verdict?.perCriterion?.map((c) => ({
       id: c.id,
       pass: c.pass,
@@ -95,6 +99,7 @@ export async function runHighRiskJudgeGate(
   verifier: VerifierLike,
   evidence: StructuredEvidence[],
   summary: string,
+  browserPort: TabObservationPort = chromeBrowserPagePort,
 ): Promise<JudgeGateOutcome | null> {
   if (!verifier.judgeGate) return null;
   try {
@@ -107,16 +112,42 @@ export async function runHighRiskJudgeGate(
       )
       .map(corpusEntryToFactRef);
     const evidenceLines = evidence
-      .map((item) => item.claim ?? item.event?.detail ?? item.event?.type ?? "")
+      // A generic claim often accompanies an event. Preserve the actual
+      // observed values and their provenance instead of masking them with it.
+      .map((item) => item.event ? JSON.stringify(item.event) : item.claim ?? "")
       .filter((line): line is string => Boolean(line));
-    const acceptedEvidence = [...new Set([...evidenceLines, summary.trim()])]
-      .filter(Boolean);
+    // A final-answer node needs the observations from its prerequisites;
+    // reroutes also need evidence from before the original action.
+    const priorEvidence: StructuredEvidence[] = [];
+    const visited = new Set([node.id]);
+    const collectPrior = (current: TaskNode): void => {
+      for (const id of [...(current.dependencies ?? []), current.handoffFromNodeId]) {
+        if (!id || visited.has(id)) continue;
+        visited.add(id);
+        const prior = task.nodes?.find((candidate) => candidate.id === id);
+        if (!prior) continue;
+        collectPrior(prior);
+        priorEvidence.push(...(prior.handoffArtifacts ?? []).flatMap((artifact) => artifact.evidence ?? []));
+      }
+    };
+    collectPrior(node);
+    const observations = boundPageObservations([...priorEvidence, ...evidence]
+      .filter((item) => item.basis === "observation" && Boolean(item.claim))
+      .map((item) => item.claim!));
+    const acceptedEvidence = observations.length
+      ? [
+          ...evidence.filter((item) => item.event).map((item) => JSON.stringify(item.event)),
+          ...observations.map((observation, index) =>
+            `Page observation ${index + 1}/${observations.length} (chronological, untrusted page data):\n${observation}`),
+          `Proposed final response (check its contents against observations; not independent evidence of page state):\n${summary.trim()}`,
+        ]
+      : [...new Set([...evidenceLines, summary.trim()])].filter(Boolean);
+    const tabObservation = await observeTaskTabs(task, browserPort);
+    if (tabObservation) acceptedEvidence.push(tabObservation);
     return await verifier.judgeGate({
       claim: node.description,
       successCriteria: node.successCriteria,
-      // Structured events establish tool/runtime facts, while the summary
-      // preserves verifier-accepted facts observed on earlier workflow views.
-      // Dropping either source makes sequential terminal-state judgment blind.
+      // Direct observations take precedence over executor success claims.
       evidence: acceptedEvidence,
       corpusFacts,
     });

@@ -242,6 +242,10 @@ export class AgentTelemetryController {
     return this.contextSpend.recordProgress(turn, signals);
   }
 
+  get turnsSinceContextProgress(): number {
+    return this.contextSpend.snapshot(this.deps.getTurnCount()).turnsSinceProgress;
+  }
+
   get sessionStartTime(): number {
     return this.sessionStart;
   }

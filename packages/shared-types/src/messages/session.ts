@@ -42,19 +42,6 @@ export interface UserChatAcceptedMessage extends BaseMessage {
   };
 }
 
-/** Side panel asks the background to transcribe user-captured audio. */
-export interface SpeechTranscriptionRequestMessage extends BaseMessage {
-  type: "SPEECH_TRANSCRIPTION_REQUEST";
-  source: UiMessageSource;
-  payload: {
-    audioBase64: string;
-    mimeType: string;
-    workspaceId: string | null;
-    language?: string;
-    prompt?: string;
-  };
-}
-
 /** Background sends a completed agent response to the side panel */
 export interface AgentResponseMessage extends BaseMessage {
   type: "AGENT_RESPONSE";
@@ -323,7 +310,6 @@ export type CloudDeviceTakeoverResponse =
 export type SessionMessage =
   | UserChatMessage
   | UserChatAcceptedMessage
-  | SpeechTranscriptionRequestMessage
   | AgentResponseMessage
   | AgentStatusMessage
   | StreamChunkMessage

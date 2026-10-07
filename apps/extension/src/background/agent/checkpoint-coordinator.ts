@@ -42,12 +42,14 @@ export class CheckpointCoordinator {
     args: Record<string, unknown>,
     snapshot: DomSnapshot | null | undefined,
     guardAfterDoneRejection: boolean,
+    documentInstanceId?: string,
   ): MutationReplayHit | null {
     return this.ledger.lookup(
       toolName,
       args,
       snapshot,
       guardAfterDoneRejection,
+      documentInstanceId,
     );
   }
 

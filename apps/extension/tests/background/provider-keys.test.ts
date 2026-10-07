@@ -1,242 +1,25 @@
-import { describe, expect, test } from "vitest";
-import "../setup";
+import { describe, test, expect } from "vitest";
 import {
   getAvailableProviderStacks,
   getProviderKeyStatus,
-  reconcileProviderSelection,
-  resolveAvailableProviderMode,
+  formatMissingProviderKeys,
 } from "../../src/utils/provider-keys";
-
-describe("provider key status", () => {
-  test("cloud mode supports only the stable relay providers without a local key", () => {
+describe("OpenRouter credentials", () => {
+  test("offers exactly one gateway with a configured key", () => {
     expect(
-      getProviderKeyStatus({
-        inferenceMode: "cloud",
-        providerMode: "openrouter",
-        openRouterApiKey: "",
-      }),
-    ).toMatchObject({
-      activeKey: "__opensidebar_cloud__",
-      hasRequiredKeys: true,
-    });
-    expect(
-      getProviderKeyStatus({
-        inferenceMode: "cloud",
-        providerMode: "fireworks",
-        openRouterApiKey: "",
-        fireworksApiKey: "",
-      }),
-    ).toMatchObject({
-      activeKey: "__opensidebar_cloud__",
-      hasRequiredKeys: true,
-    });
-    expect(
-      getProviderKeyStatus({
-        inferenceMode: "cloud",
-        providerMode: "moonshot",
-        openRouterApiKey: "",
-        kimiApiKey: "",
-      }).hasRequiredKeys,
-    ).toBe(false);
+      getAvailableProviderStacks({ openRouterApiKey: "key" }).map(
+        (x) => x.mode,
+      ),
+    ).toEqual(["openrouter"]);
   });
-  test("switching explicitly to local mode never retains the cloud sentinel", () => {
-    expect(
-      getProviderKeyStatus({
-        inferenceMode: "local",
-        providerMode: "openrouter",
-        openRouterApiKey: "local-key",
-      }),
-    ).toMatchObject({
-      activeKey: "local-key",
-      activeKeyName: "OpenRouter",
-      hasRequiredKeys: true,
-    });
-    expect(
-      getProviderKeyStatus({
-        inferenceMode: "local",
-        providerMode: "openrouter",
-        openRouterApiKey: "",
-      }),
-    ).toMatchObject({ hasRequiredKeys: false });
+  test("shows missing-key guidance without another provider fallback", () => {
+    const status = getProviderKeyStatus({ openRouterApiKey: "" });
+    expect(status.hasRequiredKeys).toBe(false);
+    expect(formatMissingProviderKeys(status)).toBe("OpenRouter");
   });
-  test("requires both executor and planner keys for OpenRouter + Groq mode", () => {
-    expect(
-      getProviderKeyStatus({
-        providerMode: "openrouter-groq",
-        openRouterApiKey: "sk-openrouter-test",
-        groqApiKey: "",
-      }),
-    ).toMatchObject({
-      activeKeyName: "OpenRouter and Groq",
-      missingKeyNames: ["Groq"],
-      hasRequiredKeys: false,
-    });
-
-    expect(
-      getProviderKeyStatus({
-        providerMode: "openrouter-groq",
-        openRouterApiKey: "",
-        groqApiKey: "sk-groq-test",
-      }),
-    ).toMatchObject({
-      missingKeyNames: ["OpenRouter"],
-      hasRequiredKeys: false,
-    });
-
-    expect(
-      getProviderKeyStatus({
-        providerMode: "openrouter-groq",
-        openRouterApiKey: "sk-openrouter-test",
-        groqApiKey: "sk-groq-test",
-      }),
-    ).toMatchObject({
-      activeKey: "sk-openrouter-test",
-      activeKeyName: "OpenRouter and Groq",
-      hasRequiredKeys: true,
-    });
-  });
-
-  test("requires both executor and planner keys for OpenAI + Groq mode", () => {
-    expect(
-      getProviderKeyStatus({
-        providerMode: "openai-groq",
-        openRouterApiKey: "",
-        openaiApiKey: "sk-openai-test",
-        groqApiKey: "",
-      }),
-    ).toMatchObject({
-      activeKeyName: "OpenAI and Groq",
-      missingKeyNames: ["Groq"],
-      hasRequiredKeys: false,
-    });
-
-    expect(
-      getProviderKeyStatus({
-        providerMode: "openai-groq",
-        openRouterApiKey: "",
-        openaiApiKey: "sk-openai-test",
-        groqApiKey: "sk-groq-test",
-      }),
-    ).toMatchObject({
-      activeKey: "sk-openai-test",
-      activeKeyName: "OpenAI and Groq",
-      hasRequiredKeys: true,
-    });
-  });
-
-  test("requires Xiaomi MiMo key for xiaomi mode", () => {
-    expect(
-      getProviderKeyStatus({
-        providerMode: "xiaomi",
-        openRouterApiKey: "",
-        xiaomiApiKey: "",
-      }),
-    ).toMatchObject({
-      activeKeyName: "Xiaomi MiMo",
-      missingKeyNames: ["Xiaomi MiMo"],
-      hasRequiredKeys: false,
-    });
-
-    expect(
-      getProviderKeyStatus({
-        providerMode: "xiaomi",
-        openRouterApiKey: "",
-        xiaomiApiKey: "sk-xiaomi-test",
-      }),
-    ).toMatchObject({
-      activeKey: "sk-xiaomi-test",
-      activeKeyName: "Xiaomi MiMo",
-      hasRequiredKeys: true,
-    });
-  });
-
-  test("only exposes stacks backed by the configured keys", () => {
-    expect(
-      getAvailableProviderStacks({
-        providerMode: "openrouter",
-        openRouterApiKey: "sk-openrouter-test",
-        fireworksApiKey: "fw-test",
-        groqApiKey: "",
-        deepseekApiKey: "",
-      }).map((option) => option.mode),
-    ).toEqual(["openrouter", "fireworks"]);
-
-    expect(
-      getAvailableProviderStacks({
-        providerMode: "openrouter",
-        openRouterApiKey: "sk-openrouter-test",
-        fireworksApiKey: "fw-test",
-        groqApiKey: "gsk-test",
-        deepseekApiKey: "sk-deepseek-test",
-      }).map((option) => option.mode),
-    ).toEqual(["openrouter", "fireworks"]);
-  });
-
-  test("does not expose experimental, hybrid, or legacy stacks", () => {
-    expect(
-      getAvailableProviderStacks({
-        providerMode: "openai-groq",
-        openRouterApiKey: "",
-        openaiApiKey: "sk-openai-test",
-        groqApiKey: "gsk-test",
-        deepseekApiKey: "sk-deepseek-test",
-        cerebrasApiKey: "csk-test",
-      }),
-    ).toEqual([]);
-  });
-
-  test("keeps a valid selection and otherwise chooses the first usable stack", () => {
-    expect(
-      resolveAvailableProviderMode({
-        providerMode: "fireworks",
-        openRouterApiKey: "sk-openrouter-test",
-        fireworksApiKey: "fw-test",
-      }),
-    ).toBe("fireworks");
-
-    expect(
-      resolveAvailableProviderMode({
-        providerMode: "fireworks-deepseek",
-        openRouterApiKey: "sk-openrouter-test",
-        fireworksApiKey: "fw-test",
-        deepseekApiKey: "",
-      }),
-    ).toBe("fireworks");
-
-    expect(
-      resolveAvailableProviderMode({
-        providerMode: "xiaomi",
-        openRouterApiKey: "sk-openrouter-test",
-        xiaomiApiKey: "",
-      }),
-    ).toBe("openrouter");
-
-    expect(
-      resolveAvailableProviderMode({
-        providerMode: "openrouter",
-        openRouterApiKey: "   ",
-      }),
-    ).toBeUndefined();
-  });
-
-  test("falls back safely and clears provider-specific model overrides", () => {
-    const reconciled = reconcileProviderSelection({
-      providerMode: "openrouter-groq",
-      openRouterApiKey: "sk-openrouter-test",
-      groqApiKey: "",
-      executorModel: "openai/gpt-5.4-mini",
-      plannerModel: "openai/gpt-oss-120b",
-      writerModel: "anthropic/claude-test",
-      maxTurns: 100,
-      theme: "system",
-      showSessionMetrics: true,
-      requireApprovals: true,
-      allowNavigation: true,
-    });
-
-    expect(reconciled.providerMode).toBe("openrouter");
-    expect("executorModel" in reconciled).toBe(false);
-    expect("plannerModel" in reconciled).toBe(false);
-    expect("writerModel" in reconciled).toBe(false);
+  test("trims the local credential", () => {
+    expect(getProviderKeyStatus({ openRouterApiKey: " key " }).activeKey).toBe(
+      "key",
+    );
   });
 });

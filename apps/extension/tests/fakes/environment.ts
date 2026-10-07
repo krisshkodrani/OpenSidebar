@@ -8,7 +8,6 @@
  */
 
 import type {
-  AudioCapturePort,
   BrowserPagePort,
   ContentBridgePort,
   NotificationCreateOptions,
@@ -99,16 +98,6 @@ function createFakeNotificationsPort(): NotificationsPort {
   };
 }
 
-function createFakeAudioCapturePort(): AudioCapturePort {
-  return {
-    isAvailable: () => false,
-    async getMediaStreamId() {
-      return "fake-stream-id";
-    },
-    async ensureOffscreenDocument() {},
-    async closeOffscreenDocument() {},
-  };
-}
 
 export interface FakeEnvironmentHandles {
   env: RuntimeEnvironment;
@@ -132,7 +121,6 @@ export function createFakeEnvironment(
     search: createFakeSearchPort(),
     windows: createFakeWindowsPort(),
     notifications: createFakeNotificationsPort(),
-    audioCapture: createFakeAudioCapturePort(),
     ...overrides,
   };
   return { env, messaging: (overrides.messaging as FakeRuntimeMessagingPort) ?? messaging };

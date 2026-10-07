@@ -357,6 +357,8 @@ export function sanitizeTaskNode(raw: unknown): TaskNode | null {
     handoffDepth: raw.handoffDepth,
     status: raw.status,
     retries: raw.retries,
+    ...(isNonNegativeInteger(raw.turnsUsed) ? { turnsUsed: raw.turnsUsed } : {}),
+    ...(isNonNegativeInteger(raw.turnAttemptBase) ? { turnAttemptBase: raw.turnAttemptBase } : {}),
   };
   if (
     typeof raw.selectedSkillId === "string" &&

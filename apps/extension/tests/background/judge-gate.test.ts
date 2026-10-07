@@ -42,6 +42,30 @@ describe("deriveCriteria", () => {
   test("falls back to the whole string when unsplittable", () => {
     expect(deriveCriteria("just one criterion")).toHaveLength(1);
   });
+
+  test("keeps punctuation inside a quoted objective in its outcome criterion", () => {
+    const criterion = 'The subtask outcome for "Save the purchase request as a draft; preserve the other editor\'s changes." is verified on the page or in tool output';
+    expect(deriveCriteria(`${criterion}.`)).toEqual([
+      { id: "c1", description: criterion, required: true },
+    ]);
+  });
+
+  test("preserves decimals, email addresses, and URLs while separating sentences", () => {
+    expect(deriveCriteria("Total is €24.50. Contact is sam@example.com; URL is https://example.com/record. Status is Draft.").map((c) => c.description)).toEqual([
+      "Total is €24.50",
+      "Contact is sam@example.com",
+      "URL is https://example.com/record",
+      "Status is Draft",
+    ]);
+  });
+
+  test("keeps parenthetical examples and nested clauses attached to their outcome", () => {
+    const criterion = "The selection view is visible (e.g. a table (with sort controls); current rows shown)";
+    expect(deriveCriteria(`${criterion}. The record is saved.`)).toEqual([
+      { id: "c1", description: criterion, required: true },
+      { id: "c2", description: "The record is saved", required: true },
+    ]);
+  });
 });
 
 describe("corpusEntryToFactRef", () => {
@@ -70,8 +94,8 @@ describe("corpusEntryToFactRef", () => {
 describe("runJudgeGate", () => {
   const evidence = ["submitted email sam@x.com"];
 
-  test("skips the judge when the corpus entails every criterion", async () => {
-    const seat = seatReturning("{}");
+  test("judges current evidence even when a corpus fact exactly matches", async () => {
+    const seat = seatReturning('{"pass":true,"confidence":1,"perCriterion":[{"id":"c1","pass":true}]}');
     const outcome = await runJudgeGate(
       {
         claim: "email matches",
@@ -83,8 +107,75 @@ describe("runJudgeGate", () => {
       },
       { seat },
     );
-    expect(outcome).toMatchObject({ decision: "accept", judged: false });
-    expect(seat.runJudge).not.toHaveBeenCalled();
+    expect(outcome).toMatchObject({ decision: "accept", judged: true });
+    expect(seat.runJudge).toHaveBeenCalledWith(expect.objectContaining({
+      rubric: expect.objectContaining({ evidence, corpusFacts: ["k = submitted email equals primary email address"] }),
+    }));
+  });
+
+  test.each([
+    ["Customer billing country is France", "Customer billing country is Germany", "Current billing country: Germany"],
+    ["Request amount is 25 EUR", "Request amount is 35 EUR", "Current request amount: 35 EUR"],
+    ["Requested status is Draft", "Requested status is Draft", "Current record status: Submitted"],
+  ])("does not bypass the judge for corpus overlap: %s", async (criterion, fact, observation) => {
+    const seat = seatReturning('{"pass":false,"confidence":1,"perCriterion":[{"id":"c1","pass":false}]}');
+    const outcome = await runJudgeGate({
+      claim: criterion, successCriteria: criterion, evidence: [observation],
+      corpusFacts: [{ claimKey: "stored-fact", text: fact, encrypted: false }],
+    }, { seat });
+    expect(seat.runJudge).toHaveBeenCalledOnce();
+    expect(outcome).toMatchObject({ decision: "reroute", judged: true });
+  });
+
+  test("malformed criterion ids cannot use the unavailable-judge acceptance path", async () => {
+    const outcome = await runJudgeGate(
+      { claim: "Saved", successCriteria: "Correct persisted value", evidence: ["Saved successfully"], corpusFacts: [] },
+      { seat: seatReturning('{"pass":true,"perCriterion":[{"id":"renamed","pass":true}]}') },
+    );
+    expect(outcome.decision).toBe("reroute");
+    expect(outcome.verdict?.failureCause).toBe("contract_error");
+  });
+
+  test.each([
+    ["order note", "Saved note matches the tracking number observed on the source order"],
+    ["request update", "Unrelated cost center changes by another editor are preserved"],
+  ])("does not accept %s when a requirement after the eighth fails", async (_workflow, constraint) => {
+    const satisfied = [
+      "Correct record is open", "Requested owner is selected",
+      "Requested date is saved", "Requested amount is saved",
+      "Requested currency is saved", "Requested status is saved",
+      "Save confirmation is observed", "Saved values are read back",
+    ];
+    const seat: JudgeSeat = {
+      runJudge: vi.fn(async ({ rubric }) => {
+        const perCriterion = rubric!.criteria.map((criterion) => ({
+          id: criterion.id,
+          pass: criterion.description !== constraint,
+        }));
+        return {
+          text: "",
+          model: "typesafe/jev-1.13-20260917", providerId: "openrouter",
+          decision: {
+            model: "typesafe/jev-1.13-20260917",
+            answers: Object.fromEntries(perCriterion.map((criterion, index) => [
+              `q${index}`,
+              { type: "choice", choice: criterion.pass ? "entailed" : "contradicted",
+                confidence: 1, probabilities: { entailed: criterion.pass ? 1 : 0,
+                  contradicted: criterion.pass ? 0 : 1, unsupported: 0 } },
+            ])),
+          },
+        };
+      }),
+    };
+    const outcome = await runJudgeGate({
+      claim: "Complete the requested update while preserving all constraints",
+      successCriteria: [...satisfied, constraint].join("; "),
+      evidence: ["Saved values confirmed, but the final constraint was violated"],
+      corpusFacts: [],
+    }, { seat });
+    expect(outcome.decision).toBe("reroute");
+    expect(outcome.reason).toContain(constraint);
+    expect(outcome.verdict?.perCriterion).toContainEqual({ id: "c9", pass: false });
   });
 
   test("judge confirms → accept", async () => {
@@ -104,6 +195,7 @@ describe("runJudgeGate", () => {
       { seat },
     );
     expect(outcome.decision).toBe("reroute");
+    expect(outcome.reason).toContain("obscure unmatched criterion phrase");
   });
 
   test("judge finds a contradiction → reroute", async () => {

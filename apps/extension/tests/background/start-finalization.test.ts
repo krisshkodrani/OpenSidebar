@@ -34,6 +34,7 @@ function makeDeps(result: LoopResult, overrides = {}) {
       ],
     },
     context: {
+      pageObservations: { toArray: () => ['{"content":"Saved request 17"}'] },
       getMessages: () => [
         {
           role: "assistant",
@@ -86,6 +87,7 @@ describe("finalizeStartResult", () => {
 
     expect(result.sideEffectsLog).toHaveLength(1);
     expect(result.evidence).toHaveLength(1);
+    expect(result.pageObservations).toEqual(['{"content":"Saved request 17"}']);
     expect(result.trajectory).toHaveLength(1);
     expect(result.trajectory?.[0]).toContain("click_element [1]");
     expect(result.trajectory?.[0]).toContain("Clicked submit");
@@ -145,6 +147,7 @@ describe("finalizeStartResult", () => {
     };
     const deps = makeDeps(result, {
       context: {
+        pageObservations: { toArray: () => [] },
         getMessages: () => [
           {
             role: "assistant",

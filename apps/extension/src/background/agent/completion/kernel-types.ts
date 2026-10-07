@@ -98,6 +98,7 @@ export type CompletionEvidence =
           | "duplicate_row_state"
           | "draft_disappearance"
           | "submitted_draft_row"
+          | "saved_form_readback"
           | "invite_row_state"
           | "attachment_row_state"
           | "import_row_state"

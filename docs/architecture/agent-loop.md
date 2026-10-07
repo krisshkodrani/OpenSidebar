@@ -119,7 +119,9 @@ via the completion-effect host — rejection bookkeeping, diagnostics, and plan
 rejection all flow through effects, never inline mutation. Supporting pieces:
 guard suite (`completion/guards/` — budget, contract, domain, summary,
 grounding), judge gate (`completion/judge.ts`, dedicated judge model seat),
-entailment gate, preflight, and decision recording.
+preflight, and decision recording. The completion judge receives every supplied
+criterion with current observations and corpus context. Stored-fact word overlap
+does not establish current completion and cannot skip judging.
 
 The golden corpus in `tests/fixtures/completion-corpus/` must replay
 byte-identical; regenerate with `UPDATE_COMPLETION_CORPUS=1` only for an
@@ -136,6 +138,21 @@ replan/strategy-pivot on no verified progress), with progress-gated
 de-escalation and cooldowns (`ESCALATION_RESCUE` in `constants.ts`). Context
 distillation (`summarizeTrajectory()`) compresses history into a structured
 timeline before planner handoff.
+
+Missing-tool escalation first restores the requested tools or capabilities that
+an advisory step profile or skill hid. This does not change models or expand the
+executor's permitted tool set; enforced read-only access and global tool flags
+still apply. Skill suppression runs only when selecting tools for a turn, rather
+than also becoming a permanent role prohibition. Restored tools remain available
+for the loop's remaining turns. Platform-specific adapters advertise their scoped
+capabilities rather than claiming to provide generic form interaction.
+
+Orchestrator turn telemetry counts executor turns across nodes and retries.
+Each attempt persists its prior-turn base before execution; a durable resume
+adds only the new turns beyond its cumulative checkpoint count. Progress and
+completion messages use the same node totals, and forced stops capture the
+worker's count before removing it. Planner and verifier calls remain separate
+LLM-usage metrics rather than executor turns.
 
 ## Context management
 
@@ -196,10 +213,38 @@ Model configuration is per-provider-mode in
 `apps/extension/src/config/model-config.ts` with executor eligibility in
 `apps/extension/src/utils/executor-model-policy.ts` — trust those files over
 any list here. Current default seats (OpenRouter provider mode): executor
-`minimax/minimax-m3`, planner `z-ai/glm-5.2`, judge
+`minimax/minimax-m3`, planner `deepseek/deepseek-v4.1-flash`, judge
 `openai/gpt-oss-120b` (a dormant writer seat also exists). The release UI
 offers OpenRouter and Fireworks; experimental adapters remain available to
 internal evaluation. All modes draw from `ProviderPool` slots.
+
+OpenRouter planner calls use a strict gate in
+`background/llm/openrouter-quality-routing.ts`: output price ≤$1/M tokens,
+median throughput >50 tokens/sec, and median time to first token <2 seconds.
+The gate reads endpoint metadata (30-minute p50 measurements; latency arrives
+in milliseconds and is converted to seconds, as documented by
+[OpenRouter’s endpoint tool](https://github.com/OpenRouterTeam/skills/blob/main/skills/openrouter-models/scripts/get-endpoints.ts)).
+It caches metadata for 60 seconds after successful retrieval per client and
+excludes missing measurements and unavailable endpoints. Eligible endpoint slugs rank by throughput descending, latency
+ascending, then output price ascending. An explicit planner provider preference
+may promote an eligible host but cannot bypass eligibility. Requests use an
+allowlist and ordered eligible fallbacks with a server-side output price cap;
+Nitro cannot expand this allowlist. No eligible provider or failed lookup blocks
+planning with an explicit error. These are historical performance checks, not
+guarantees about the next request or measurements of model reasoning quality.
+Retries and provider/model failover reapply the gate to each outgoing planner
+request. The request retains its original seat across asynchronous work.
+Cloud metadata discovery uses the authenticated, model-allowlisted
+`GET /api/v1/relay/openrouter/models/:author/:slug/endpoints` route and the vaulted
+provider key; public unauthenticated OpenRouter responses omit performance data.
+Only endpoint metrics and output pricing return to the extension. The route is
+relay-flag gated and rate limited; upstream lookup is bounded to five seconds
+and 512 KiB.
+The cloud relay preserves the routing constraints. Deploy the compatible relay
+before distributing the new extension; `RELAY_MODEL_ALLOWLIST` must also include
+`deepseek/deepseek-v4.1-flash`. Older clients may omit the optional routing field.
+Saved custom planner models remain selected and receive the same strict gate.
+Other model seats and direct providers retain their existing routing.
 
 ## Perception
 

@@ -38,11 +38,14 @@
 import type { BrowserToolRequest } from "@shared-types/browser-bridge";
 import type { RemoteMissionTargetSelectionV1 } from "@shared-types/remote-missions";
 
+import { REMOTE_MISSION_ACTIVITY_KEY, type RemoteMissionActivity } from "../../remote-mission-local-status";
 import type { UserSettings } from "../../types";
 import { chromeRuntimeEnvironment } from "../environment/chrome";
 import { loadApiKey, loadSettings } from "../../utils/settings-storage";
 import { getProviderKeyStatus } from "../../utils/provider-keys";
 import { getBlockedRuleForUrl } from "../../utils/site-access";
+import { startKeepalive } from "../infrastructure/keepalive";
+import { PlanApprovalBridge } from "./plan-approval";
 import { ensureContentScript } from "../infrastructure/tab-ready";
 import {
   createAgentRuntime,
@@ -55,6 +58,7 @@ import type { AgentRunOptions, AgentRunOutcome, AgentRunner, AgentTask } from ".
 // sidepanel uses — instead of importing the orchestrator directly (RFC LP-15,
 // Phase 5).
 const browserRuntime = createAgentRuntime(chromeRuntimeEnvironment);
+const planApprovals = new PlanApprovalBridge(chromeRuntimeEnvironment.messaging, (payload) => browserRuntime.resolvePlanConfirmation(payload));
 
 /**
  * A TASK_COMPLETION payload as observed off the messaging port. `Partial`
@@ -138,6 +142,10 @@ export interface BrowserTaskDeps {
   addPauseListener(
     fn: (workspaceId: string, payload: PausePayload) => void,
   ): () => void;
+  reportActivity?(missionId: string, phase: RemoteMissionActivity["phase"]): void;
+  observeActivity?(workspaceId: string, listener: () => void): () => void;
+  /** Maximum time to connect the target before dispatch; separate from run time. */
+  startupTimeoutMs?: number;
   /** Overridable for tests. */
   timeoutMs?: number;
 }
@@ -314,7 +322,7 @@ export function createBrowserAgentRunner(deps: BrowserTaskDeps): AgentRunner {
   function waitForOutcome(
     workspaceId: string,
     signal: AbortSignal | undefined,
-    start: () => Promise<void>,
+    start: (isActive: () => boolean) => Promise<void>,
   ): Promise<AgentRunOutcome> {
     return new Promise<AgentRunOutcome>((resolve) => {
       let settled = false;
@@ -351,7 +359,7 @@ export function createBrowserAgentRunner(deps: BrowserTaskDeps): AgentRunner {
         finish(pauseToOutcome(payload));
       });
       signal?.addEventListener("abort", onAbort);
-      start()
+      start(() => !settled && !signal?.aborted)
         .then(() => {
           // An abort that landed while start was in flight found nothing to
           // stop — re-issue now that the task is registered.
@@ -379,17 +387,42 @@ export function createBrowserAgentRunner(deps: BrowserTaskDeps): AgentRunner {
       return Promise.resolve({ status: "error", reason: CANCELED_REASON });
     }
     const workspaceId = entry?.workspaceId ?? newWorkspaceId();
-    return waitForOutcome(workspaceId, signal, async () => {
-      const tabId = await resolveTab(task, entry);
-      workspaceTabs.set(workspaceId, tabId);
-      await deps.ensureTabReady?.(tabId);
+    const report = (phase: RemoteMissionActivity["phase"]) => {
+      if (task.session) deps.reportActivity?.(task.session, phase);
+    };
+    const offActivity = deps.observeActivity?.(workspaceId, () => report("agent_active"));
+    return waitForOutcome(workspaceId, signal, async (isActive) => {
+      let startupActive = true;
+      let timer: ReturnType<typeof setTimeout> | undefined;
+      let tabId: number;
+      try {
+        tabId = await Promise.race([
+          (async () => {
+            report("finding_tab");
+            const selected = await resolveTab(task, entry);
+            if (!startupActive || !isActive()) throw new Error(CANCELED_REASON);
+            workspaceTabs.set(workspaceId, selected);
+            report("connecting_page");
+            await deps.ensureTabReady?.(selected);
+            return selected;
+          })(),
+          new Promise<never>((_, reject) => {
+            timer = setTimeout(() => reject(new Error("Could not connect to the browser page. The agent was not started. Reload the page and retry.")), deps.startupTimeoutMs ?? 15_000);
+          }),
+        ]);
+      } finally {
+        startupActive = false;
+        clearTimeout(timer);
+      }
+      if (!isActive()) throw new Error(CANCELED_REASON);
+      report("starting_agent");
       await deps.startTask({
         query: task.instruction,
         tabId,
         workspaceId,
         executionToolProfile: task.executionToolProfile,
       });
-    });
+    }).finally(() => offActivity?.());
   }
 
   return {
@@ -530,6 +563,18 @@ export function createDefaultBrowserTaskDeps(): BrowserTaskDeps {
     async navigateTab(tabId, url) {
       await chrome.tabs.update(tabId, { url });
     },
+    reportActivity(missionId, phase) {
+      void chromeRuntimeEnvironment.persistence.local.set({
+        [REMOTE_MISSION_ACTIVITY_KEY]: { missionId, phase, updatedAt: new Date().toISOString() },
+      }).catch(() => {});
+    },
+    observeActivity(workspaceId, listener) {
+      return chromeRuntimeEnvironment.messaging.onMessage((value) => {
+        const message = value as { workspaceId?: string; type?: string };
+        if (message.workspaceId === workspaceId &&
+          ["TASK_PROGRESS", "AGENT_STATUS", "AGENT_STEP"].includes(message.type ?? "")) listener();
+      });
+    },
     async ensureTabReady(tabId) {
       if (!(await ensureContentScript(tabId, 10_000)))
         throw new Error("Browser page did not become ready for the remote task.");
@@ -548,11 +593,12 @@ export function createDefaultBrowserTaskDeps(): BrowserTaskDeps {
       await browserRuntime.stopTask(workspaceId);
     },
     resolveApproval(workspaceId, payload) {
-      return browserRuntime.resolveApproval(workspaceId, payload);
+      return planApprovals.resolve(workspaceId, payload.approvalId, payload.approved) ?? browserRuntime.resolveApproval(workspaceId, payload);
     },
     async startTask({ query, tabId, workspaceId, executionToolProfile }) {
       const settings = (await loadSettings()) ?? ({} as UserSettings);
       const apiKey = await loadApiKey();
+      await startKeepalive();
       await browserRuntime.startTask({
         query,
         tabId,
@@ -571,7 +617,9 @@ export function createDefaultBrowserTaskDeps(): BrowserTaskDeps {
       return browserRuntime.onTaskCompletion(fn);
     },
     addPauseListener(fn) {
-      return browserRuntime.onTaskPaused(fn);
+      const offTask = browserRuntime.onTaskPaused(fn);
+      const offPlan = planApprovals.observe(fn);
+      return () => { offTask(); offPlan(); };
     },
   };
 }

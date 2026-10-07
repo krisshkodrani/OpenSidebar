@@ -1,8 +1,14 @@
+import { routes, signInHref } from "./app/routes";
 import type {
   SandboxControlCommand,
   SandboxRun,
   ScenarioId,
 } from "@sandbox-contracts";
+
+export function sessionExpired() {
+  csrfToken = null;
+  window.dispatchEvent(new Event("os:session-expired"));
+}
 
 type ApiError = Error & { status?: number };
 export type SandboxSession = {
@@ -16,24 +22,30 @@ async function ensureCsrf(): Promise<string> {
   const response = await fetch("/api/v1/playground/auth/session", {
     credentials: "include",
     cache: "no-store",
+    signal: AbortSignal.timeout(15000),
   });
+  if (!response.ok) throw new Error("We couldn’t check your session. Please try again.");
   const payload = (await response.json()) as {
     authenticated?: boolean;
     csrfToken?: string;
   };
-  if (!payload.authenticated || !payload.csrfToken)
-    throw new Error("Sign in to use Sandbox.");
+  if (!payload.authenticated || !payload.csrfToken) {
+    sessionExpired();
+    throw new Error("Your session has ended. Sign in again.");
+  }
   csrfToken = payload.csrfToken;
   return csrfToken;
 }
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
   const method = init?.method ?? "GET";
   const csrf =
-    ["POST", "DELETE", "PATCH"].includes(method) && !path.startsWith("/auth/")
+    ["POST", "DELETE", "PATCH"].includes(method) &&
+    (!path.startsWith("/auth/") || path === "/auth/logout")
       ? await ensureCsrf()
       : null;
   const response = await fetch(`/api/v1/playground${path}`, {
     ...init,
+    signal: init?.signal ?? AbortSignal.timeout(15000),
     credentials: "include",
     cache: "no-store",
     headers: {
@@ -45,6 +57,7 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
     },
   });
   if (!response.ok) {
+    if (response.status === 401 && !path.startsWith("/auth/")) sessionExpired();
     const payload = (await response.json().catch(() => null)) as {
       error?: { message?: string };
     } | null;
@@ -96,10 +109,10 @@ export const controlApi = {
       )
     ).launchUrl,
   login: () => {
-    window.location.assign("/playground?auth=1");
+    window.location.assign(signInHref(routes.playground));
   },
   hostedLogin: () => {
-    window.location.assign("/api/v1/playground/auth/login");
+    window.location.assign(signInHref());
   },
   logout: async () => {
     await request<void>("/auth/logout", { method: "POST" });

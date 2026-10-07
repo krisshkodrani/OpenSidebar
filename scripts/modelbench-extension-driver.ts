@@ -1,9 +1,14 @@
 import { execFileSync } from "node:child_process";
 import { resolve } from "node:path";
+import { readFileSync } from "node:fs";
+import { ModelBenchBudget } from "./modelbench-budget.js";
+import { installModelBenchBudgetProxy } from "./modelbench-budget-proxy.js";
 import type { ScenarioRunV2 } from "@opensidebar/scenario-contracts";
 import { createE2EHarness } from "../apps/extension/tests/e2e/helpers/harness.js";
 import {
   openHelperPage,
+  closeExtension,
+  withTimeout,
   withLiveServiceWorker,
 } from "../apps/extension/tests/e2e/helpers/browser.js";
 import {
@@ -20,6 +25,7 @@ import type {
   ModelBenchDriverResult,
 } from "./modelbench-runner-lib.js";
 import { startModelBenchTargetServer } from "./modelbench-target-server.js";
+import { preflightBrowserCapture } from "./modelbench-browser-preflight.js";
 import { collectModelBenchTraceEvidence } from "./modelbench-trace-evidence.js";
 
 type EventRecord = Record<string, any>;
@@ -30,6 +36,33 @@ interface DriverOutcome {
   event?: EventRecord;
 }
 
+type OutcomeObserverPage = Awaited<ReturnType<typeof openHelperPage>>;
+type OutcomeObserverGlobal = typeof globalThis & {
+  __modelBenchOutcomeEvents?: EventRecord[];
+  __modelBenchOutcomeObserverInstalled?: boolean;
+};
+
+/** Browser-side listener: observe the real wire, independently of worker hooks. */
+export function installModelBenchOutcomeObserver(workspaceId: string): void {
+  const scope = globalThis as OutcomeObserverGlobal;
+  scope.__modelBenchOutcomeEvents = (scope.__modelBenchOutcomeEvents ?? [])
+    .filter((event) => event.workspaceId !== workspaceId);
+  if (scope.__modelBenchOutcomeObserverInstalled) return;
+  chrome.runtime.onMessage.addListener((message) => {
+    if (message?.source !== "background" || typeof message.workspaceId !== "string") return;
+    if (message.type !== "TASK_COMPLETION" && message.type !== "CLARIFICATION_REQUEST" &&
+      !(message.type === "AGENT_STATUS" && message.payload?.status === "ERROR")) return;
+    const events = scope.__modelBenchOutcomeEvents ??= [];
+    events.push({ ...message, timestamp: Date.now() });
+    if (events.length > 100) events.shift();
+  });
+  scope.__modelBenchOutcomeObserverInstalled = true;
+}
+
+export function readModelBenchOutcomeEvents(): EventRecord[] {
+  return (globalThis as OutcomeObserverGlobal).__modelBenchOutcomeEvents ?? [];
+}
+
 export function observedTabOpeningAction(turns: readonly EventRecord[]): boolean {
   return turns.some((turn) =>
     Array.isArray(turn.toolCalls) &&
@@ -37,6 +70,27 @@ export function observedTabOpeningAction(turns: readonly EventRecord[]): boolean
       call?.name === "create_tab" || call?.name === "click_element"
     )
   );
+}
+
+/** Browser-side setup: exercise normal panel-open workspace creation. */
+export async function initializeModelBenchWorkspace(tabId: number): Promise<string> {
+  const tab = await chrome.tabs.get(tabId);
+  // Seed only the user-gesture marker that Chrome automation cannot emit.
+  const stored = await chrome.storage.session.get("userOpenedPanel");
+  const opened: number[] = Array.isArray(stored.userOpenedPanel) ? stored.userOpenedPanel : [];
+  await chrome.storage.session.set({ userOpenedPanel: [...new Set([...opened, tabId])] });
+  const response = await chrome.runtime.sendMessage({
+    type: "SIDE_PANEL_OPENED",
+    requestId: crypto.randomUUID(),
+    source: "sidepanel",
+    payload: { tabId, windowId: tab.windowId },
+  });
+  const grouped = await chrome.tabs.get(tabId);
+  if (!response?.workspaceId || typeof grouped.groupId !== "number" ||
+    grouped.groupId === chrome.tabGroups.TAB_GROUP_ID_NONE) {
+    throw new Error("ModelBench requires a real grouped workspace before model dispatch.");
+  }
+  return response.workspaceId;
 }
 
 async function collectBrowserDriverEvidence(input: {
@@ -177,7 +231,7 @@ export function modelBenchSettingsPatch(
   };
 }
 
-async function applyModelBenchSettings(
+export async function applyModelBenchSettings(
   ctx: Parameters<typeof openHelperPage>[0],
   input: ModelBenchDriverInput,
 ): Promise<Record<string, string>> {
@@ -271,28 +325,30 @@ async function readStoredOutcome(
   worker: Parameters<typeof getMonitoredEventsWithControlLane>[0],
   workspaceId: string,
 ): Promise<DriverOutcome | null> {
-  try {
-    const messages = await worker.evaluate(async (storageKey: string) => {
-      const stored = await chrome.storage.local.get(storageKey);
-      return stored[storageKey] ?? null;
-    }, `chatMessages:${workspaceId}`);
-    return extractStoredModelBenchOutcome(messages, workspaceId);
-  } catch {
-    return null;
-  }
+  const messages = await worker.evaluate(async (storageKey: string) => {
+    const stored = await chrome.storage.local.get(storageKey);
+    return stored[storageKey] ?? null;
+  }, `chatMessages:${workspaceId}`);
+  // Let the caller reattach a detached worker or report an observation error.
+  // A failed read is not evidence that the task has no completion.
+  return extractStoredModelBenchOutcome(messages, workspaceId);
 }
 
-async function waitForOutcome(
+export async function waitForOutcome(
   worker: Parameters<typeof getMonitoredEventsWithControlLane>[0],
   workspaceId: string,
   timeoutMs: number,
+  outcomePage?: OutcomeObserverPage,
 ): Promise<DriverOutcome> {
   const startedAt = Date.now();
+  const readEvents = async () => workspaceEvents(
+    outcomePage
+      ? await withTimeout(outcomePage.evaluate(readModelBenchOutcomeEvents), 5_000, "Completion event read")
+      : await getMonitoredEventsWithControlLane(worker, 160),
+    workspaceId,
+  );
   while (Date.now() - startedAt < timeoutMs) {
-    const events = workspaceEvents(
-      await getMonitoredEventsWithControlLane(worker, 160),
-      workspaceId,
-    );
+    const events = await readEvents();
     const outcome = extractModelBenchOutcome(events) ??
       await readStoredOutcome(worker, workspaceId);
     if (outcome) {
@@ -302,10 +358,9 @@ async function waitForOutcome(
     }
     await new Promise((resolve) => setTimeout(resolve, 1_000));
   }
-  const events = workspaceEvents(
-    await getMonitoredEventsWithControlLane(worker, 160),
-    workspaceId,
-  );
+  const events = await readEvents();
+  const terminal = extractModelBenchOutcome(events);
+  if (terminal) return terminal;
   const stored = await readStoredOutcome(worker, workspaceId);
   return stored
     ? { ...stored, events: [...events, ...stored.events] }
@@ -357,12 +412,36 @@ export function harnessFailureReason(outcome: DriverOutcome): string | undefined
     : undefined;
 }
 
-async function preflightProviderNetwork(
+export function missingExecutorEvidenceReason(
+  outcome: DriverOutcome,
+  evidence: ReturnType<typeof collectModelBenchTraceEvidence>,
+): string | undefined {
+  return (outcome.kind === "timeout" || outcome.kind === "completion") &&
+    evidence.telemetry.turns === 0 &&
+    !evidence.resolvedSeats.executor &&
+    (evidence.usageByRole.executor?.calls ?? 0) === 0
+    ? "Task ended without executor trace evidence; outcome cannot be attributed to the requested model."
+    : undefined;
+}
+
+export async function preflightProviderNetwork(
   provider: string,
   ctx: Parameters<typeof openHelperPage>[0],
+  budget?: ModelBenchBudget,
 ): Promise<void> {
   if (provider !== "openrouter") return;
   const page = await openHelperPage(ctx);
+  if (budget) {
+    const directBlocked = await page.evaluate(async () => {
+      try {
+        await fetch("https://openrouter.ai/api/v1/models", { signal: AbortSignal.timeout(5000) });
+        return false;
+      } catch { return true; }
+    });
+    if (!directBlocked) throw new Error("Budget egress isolation failed");
+    const bounds = JSON.parse(readFileSync(process.env.MODEL_BENCH_BUDGET_BOUNDS!, "utf8"));
+    await installModelBenchBudgetProxy(page, budget, bounds);
+  }
   const result = await page.evaluate(async () => {
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), 10_000);
@@ -396,10 +475,16 @@ async function preflightProviderNetwork(
     const scope = globalThis as typeof globalThis & Record<string, unknown>;
     if (scope[marker]) return;
     scope[marker] = true;
+    const pending = new Map<string, AbortController>();
     chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
+      if (message?.type === "E2E_NETWORK_PROXY_ABORT") {
+        pending.get(message.requestId)?.abort();
+        return false;
+      }
       if (message?.type !== "E2E_NETWORK_PROXY_FETCH") return false;
       void (async () => {
         const controller = new AbortController();
+        pending.set(message.requestId, controller);
         const timer = setTimeout(() => controller.abort(), 120_000);
         try {
           const response = await fetch(message.url, {
@@ -423,6 +508,7 @@ async function preflightProviderNetwork(
           });
         } finally {
           clearTimeout(timer);
+          pending.delete(message.requestId);
         }
       })();
       return true;
@@ -444,13 +530,25 @@ async function preflightProviderNetwork(
         const body = ["GET", "HEAD"].includes(request.method)
           ? undefined
           : await request.text();
-        const result = await chrome.runtime.sendMessage({
+        request.signal.throwIfAborted();
+        const requestId = crypto.randomUUID();
+        let abort: EventListenerObject | undefined;
+        const cancelled = new Promise<never>((_, reject) => {
+          abort = { handleEvent() {
+            void chrome.runtime.sendMessage({ type: "E2E_NETWORK_PROXY_ABORT", requestId }).catch(() => {});
+            reject(request.signal.reason);
+          } };
+          request.signal.addEventListener("abort", abort, { once: true });
+        });
+        try {
+        const result = await Promise.race([chrome.runtime.sendMessage({
           type: "E2E_NETWORK_PROXY_FETCH",
+          requestId,
           url: request.url,
           method: request.method,
           headers: Object.fromEntries(request.headers.entries()),
           body,
-        });
+        }), cancelled]);
         if (!result?.ok) {
           throw new TypeError(result?.detail || "E2E network proxy failed.");
         }
@@ -459,6 +557,7 @@ async function preflightProviderNetwork(
           statusText: result.statusText,
           headers: result.headers,
         });
+        } finally { if (abort) request.signal.removeEventListener("abort", abort); }
       };
     }),
   );
@@ -484,10 +583,27 @@ export async function createModelBenchDriver(): Promise<ModelBenchDriver> {
       execFileSync(process.execPath, args, { stdio: "inherit" });
     }
   }
-  const target = await startModelBenchTargetServer();
+  const target = await startModelBenchTargetServer({ staticDirectory: process.env.MODEL_BENCH_TARGET_DIST });
+  const budget = process.env.MODEL_BENCH_BUDGET_LEDGER
+    ? new ModelBenchBudget(process.env.MODEL_BENCH_BUDGET_LEDGER, Number(process.env.MODEL_BENCH_BUDGET_CAP))
+    : undefined;
   let closed = false;
   return {
     async execute(input): Promise<ModelBenchDriverResult> {
+      // Fail before launching a case rather than letting a denied planner call
+      // silently turn the configured stack into executor-only fallback.
+      if (budget) {
+        const bounds = JSON.parse(readFileSync(process.env.MODEL_BENCH_BUDGET_BOUNDS!, "utf8"));
+        for (const seat of Object.values(input.configuration.seats)) {
+          if (!seat) continue;
+          const bound = bounds[seat.model];
+          if (!bound) throw new Error(`Unpriced model: ${seat.model}`);
+          budget.assertCanReserve(bound.decisionInputPricePerToken !== undefined
+            ? bound.contextLength * bound.decisionInputPricePerToken
+            : (bound.contextLength * (bound.inputUsdPerMillion ?? 1) +
+              bound.maxOutputTokens * (bound.outputUsdPerMillion ?? 5)) / 1e6);
+        }
+      }
       const startedAt = Date.now();
       const restoreEnvironment = configureEnvironment(input);
       const harness = createE2EHarness({
@@ -499,8 +615,12 @@ export async function createModelBenchDriver(): Promise<ModelBenchDriver> {
       let beforeEachComplete = false;
       let workspaceId: string | null = null;
       let appliedSettings: Record<string, string> = {};
+      let capturePreflight: Awaited<ReturnType<typeof preflightBrowserCapture>> | undefined;
       let approvals: { stop(): Promise<void> } | null = null;
       try {
+        if (budget && input.configuration.provider !== "openrouter") {
+          throw new Error("Budgeted ModelBench supports OpenRouter only");
+        }
         const create = await fetch(`${target.origin}/api/v2/modelbench/runs`, {
           method: "POST",
           headers: { "content-type": "application/json" },
@@ -517,7 +637,6 @@ export async function createModelBenchDriver(): Promise<ModelBenchDriver> {
         await harness.beforeEachHook();
         beforeEachComplete = true;
         appliedSettings = await applyModelBenchSettings(harness.ctx, input);
-        await preflightProviderNetwork(input.configuration.provider, harness.ctx);
         await navigateAndWait(harness.page, created.launchUrl);
         const tabId = await withLiveServiceWorker(harness.ctx, (worker) =>
           resolveTargetTabId(worker, target.origin),
@@ -527,10 +646,16 @@ export async function createModelBenchDriver(): Promise<ModelBenchDriver> {
             `ModelBench target tab (${target.origin}) was not found.`,
           );
         }
+        capturePreflight = await preflightBrowserCapture(harness.ctx, harness.page, tabId);
+        workspaceId = await (await openHelperPage(harness.ctx)).evaluate(initializeModelBenchWorkspace, tabId);
+        await preflightProviderNetwork(input.configuration.provider, harness.ctx, budget);
+        const outcomePage = await openHelperPage(harness.ctx);
+        await outcomePage.evaluate(installModelBenchOutcomeObserver, workspaceId);
         workspaceId = await sendUserChat(
           harness.ctx,
           input.definition.contract.prompt,
           tabId,
+          workspaceId,
         );
         if (input.definition.contract.approvalPolicy === "confirm-consequential") {
           approvals = startApprovalAutoResponder(
@@ -543,14 +668,15 @@ export async function createModelBenchDriver(): Promise<ModelBenchDriver> {
         const timeoutMs = Number(process.env.MODEL_BENCH_CASE_TIMEOUT_MS ?? 300_000);
         // A case can outlive the MV3 idle timer, so re-attach to a restarted
         // worker and read the run's real outcome instead of failing the case.
-        const outcome = await withLiveServiceWorker(harness.ctx, (worker) =>
+        const outcome = await withTimeout(withLiveServiceWorker(harness.ctx, (worker) =>
           waitForOutcome(
             worker,
             workspaceId,
             Number.isFinite(timeoutMs) && timeoutMs > 0 ? timeoutMs : 300_000,
+            outcomePage,
           ),
-        );
-        await approvals?.stop();
+        ), (Number.isFinite(timeoutMs) && timeoutMs > 0 ? timeoutMs : 300_000) + 5_000, "ModelBench outcome observation");
+        if (approvals) await withTimeout(approvals.stop(), 2_000, "Approval observer stop");
         approvals = null;
         const traceSummary = await harness.printTraceSummary(workspaceId);
         const evidence = collectModelBenchTraceEvidence({
@@ -558,7 +684,7 @@ export async function createModelBenchDriver(): Promise<ModelBenchDriver> {
           requestedSeats: input.configuration.seats,
         });
         const run = await readRun(target.origin, created.runId);
-        const driverEvidence = await withLiveServiceWorker(
+        const driverEvidence = await withTimeout(withLiveServiceWorker(
           harness.ctx,
           (worker) =>
             collectBrowserDriverEvidence({
@@ -567,9 +693,10 @@ export async function createModelBenchDriver(): Promise<ModelBenchDriver> {
               targetOrigin: target.origin,
               turns: traceSummary.turns,
             }),
-        );
+        ), 5_000, "Browser evidence collection");
         const providerFailure = providerFailureReason(outcome);
         const harnessFailure = harnessFailureReason(outcome);
+        const missingEvidence = missingExecutorEvidenceReason(outcome, evidence);
         return {
           durationMs: Date.now() - startedAt,
           finalState: run.state,
@@ -594,6 +721,8 @@ export async function createModelBenchDriver(): Promise<ModelBenchDriver> {
                   reason: harnessFailure,
                 },
               }
+            : missingEvidence
+            ? { failure: { kind: "indeterminate" as const, reason: missingEvidence } }
             : {}),
           diagnostics: {
             runId: created.runId,
@@ -603,12 +732,22 @@ export async function createModelBenchDriver(): Promise<ModelBenchDriver> {
             // invisible in the attempt record.
             caseTimeoutMs: timeoutMs,
             outcome: outcome.kind,
+            outcomeObservationMode: "runtime_message_listener_with_storage_fallback",
+            completionStatus: eventStatus(outcome.event ?? {}),
+            // Preserve control observations when completion delivery fails;
+            // executor traces alone cannot explain a runner-side timeout.
+            ...(outcome.kind === "timeout" ? {
+              outcomeEvents: outcome.events.filter((event) =>
+                ["TASK_COMPLETION", "AGENT_STATUS", "USER_CHAT_ACCEPTED", "CLARIFICATION_REQUEST"].includes(event.type)
+              ),
+            } : {}),
             runIds: evidence.runIds,
             ambiguousSeats: evidence.ambiguousSeats,
             imageArtifacts: evidence.imageArtifacts,
             pageUrls: evidence.pageUrls,
             canvasObserved: evidence.canvasObserved,
             appliedSettings,
+            capturePreflight,
             driverEvidence,
           },
         };
@@ -622,18 +761,19 @@ export async function createModelBenchDriver(): Promise<ModelBenchDriver> {
             kind: providerError(error) ? "provider" : "harness",
             reason: error instanceof Error ? error.message : String(error),
           },
-          diagnostics: { workspaceId },
+          diagnostics: { workspaceId, ...(capturePreflight ? { capturePreflight } : {}) },
         };
       } finally {
-        await approvals?.stop().catch(() => {});
+        if (approvals) await withTimeout(approvals.stop(), 2_000, "Approval observer stop").catch(() => {});
         if (beforeEachComplete) {
-          await harness.afterEachHook(
+          await withTimeout(harness.afterEachHook(
             `modelbench-${input.definition.contract.id}`,
-          ).catch(() => {});
+          ), 10_000, "ModelBench artifact cleanup").catch(() => {});
         }
         if (beforeAllComplete) {
-          await resetExtensionState(harness.ctx).catch(() => {});
-          await harness.afterAllHook().catch(() => {});
+          await withTimeout(resetExtensionState(harness.ctx), 5_000, "ModelBench state reset").catch(() => {});
+          await withTimeout(harness.afterAllHook(), 10_000, "ModelBench teardown")
+            .catch(() => closeExtension(harness.ctx));
         }
         restoreEnvironment();
       }
@@ -642,6 +782,7 @@ export async function createModelBenchDriver(): Promise<ModelBenchDriver> {
       if (closed) return;
       closed = true;
       await target.close();
+      budget?.close();
     },
   };
 }

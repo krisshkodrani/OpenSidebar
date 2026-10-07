@@ -30,7 +30,7 @@ function baseState(
 }
 
 describe("deriveTaskUiState", () => {
-  test("does not show the primary rail for terminal completion cards", () => {
+  test("keeps the completed outcome visible in the primary rail", () => {
     const state = deriveTaskUiState(
       baseState({
         taskCompletion: {
@@ -47,7 +47,7 @@ describe("deriveTaskUiState", () => {
 
     expect(state.phase).toBe("completed");
     expect(state.hasTerminalCompletion).toBe(true);
-    expect(state.showPrimaryRail).toBe(false);
+    expect(state.showPrimaryRail).toBe(true);
     expect(state.showPlanStrip).toBe(false);
     expect(state.showPageActivityHud).toBe(false);
   });
@@ -91,6 +91,8 @@ describe("deriveTaskUiState", () => {
     expect(state.showPrimaryRail).toBe(true);
     expect(state.showPageActivityHud).toBe(false);
     expect(state.rail.primaryLabel).toBe("The agent needs more information");
+    expect(state.showAmbientActivity).toBe(false);
+    expect(state.rail.showSpinner).toBe(false);
   });
 
   test("uses the current task instead of a generic thinking label", () => {
@@ -119,7 +121,7 @@ describe("deriveTaskUiState", () => {
     expect(state.rail.primaryLabel).toBe(
       "Write a proper summary with complete sentences.",
     );
-    expect(state.rail.secondaryLabel).toBe("Step 1 of 1");
+    expect(state.rail.secondaryLabel).toBe("");
   });
 
   test("prefers the planner display label over the raw instruction in the rail", () => {
@@ -202,25 +204,23 @@ describe("deriveTaskUiState", () => {
     expect(state.rail.secondaryLabel).toBe("");
   });
 
-
   test("shows the page HUD only for active non-interruption work", () => {
     expect(
       deriveTaskUiState(
         baseState({ agentStatus: AgentStatus.ACTING, isAgentRunning: true }),
       ).showPageActivityHud,
     ).toBe(true);
-    expect(deriveTaskUiState(baseState({ isPlanning: true })).showPageActivityHud).toBe(
-      true,
-    );
+    expect(
+      deriveTaskUiState(baseState({ isPlanning: true })).showPageActivityHud,
+    ).toBe(true);
     expect(
       deriveTaskUiState(
         baseState({ agentStatus: AgentStatus.PAUSED, isAgentRunning: true }),
       ).showPageActivityHud,
     ).toBe(false);
     expect(
-      deriveTaskUiState(
-        baseState({ turnProgress: { turn: 3, maxTurns: 8 } }),
-      ).showPageActivityHud,
+      deriveTaskUiState(baseState({ turnProgress: { turn: 3, maxTurns: 8 } }))
+        .showPageActivityHud,
     ).toBe(false);
     expect(
       deriveTaskUiState(
@@ -253,9 +253,9 @@ describe("deriveTaskUiState", () => {
   });
 
   test("shows plan strip only for active planning states", () => {
-    expect(deriveTaskUiState(baseState({ isPlanning: true })).showPlanStrip).toBe(
-      true,
-    );
+    expect(
+      deriveTaskUiState(baseState({ isPlanning: true })).showPlanStrip,
+    ).toBe(true);
     expect(
       deriveTaskUiState(
         baseState({
@@ -269,5 +269,87 @@ describe("deriveTaskUiState", () => {
       ).showPlanStrip,
     ).toBe(true);
     expect(deriveTaskUiState(baseState()).showPlanStrip).toBe(false);
+  });
+});
+
+describe("task connection and wait states", () => {
+  test("reconnection overrides stale action, plan, and pending approval without pretending to work", () => {
+    const input = baseState({
+      isAgentRunning: true,
+      agentStatus: AgentStatus.ACTING,
+      backgroundConnection: "reconnecting",
+      latestStepLabel: "Clicking Submit",
+      actionPresentation: {
+        sequence: 1,
+        toolCallId: "call-1",
+        phase: "acting",
+        label: "Submitting",
+        toolName: "click_element",
+        receivedAt: 1,
+      } as TaskUiStateInput["actionPresentation"],
+      pendingClarification: {
+        clarificationId: "q",
+        question: "Which account?",
+        requestedAt: 1,
+        timeoutMs: 30000,
+      },
+    });
+    const state = deriveTaskUiState(input);
+    expect(state.phase).toBe("reconnecting");
+    expect(state.rail.primaryLabel).toBe("Reconnecting to the agent");
+    expect(state.rail.secondaryLabel).toContain("unconfirmed");
+    expect(state.rail.showSpinner).toBe(false);
+    expect(state.rail.canPause).toBe(false);
+    expect(state.showAmbientActivity).toBe(false);
+    expect(state.showPageActivityHud).toBe(false);
+    expect(
+      deriveTaskUiState({ ...input, backgroundConnection: "connected" }).phase,
+    ).toBe("awaiting_user");
+  });
+
+  test("page waits and pauses override an old action label", () => {
+    for (const [status, phase, label] of [
+      [
+        AgentStatus.WAITING_FOR_PAGE_LOAD,
+        "waiting",
+        "Waiting for the page to load",
+      ],
+      [AgentStatus.PAUSED, "paused", "Paused"],
+    ] as const) {
+      const state = deriveTaskUiState(
+        baseState({
+          isAgentRunning: true,
+          agentStatus: status,
+          latestStepLabel: "Clicking Submit",
+        }),
+      );
+      expect(state.phase).toBe(phase);
+      expect(state.rail.primaryLabel).toBe(label);
+      expect(state.rail.showSpinner).toBe(false);
+    }
+  });
+
+  test("verification is displayed only when a worker reports verification", () => {
+    const input = baseState({
+      isAgentRunning: true,
+      agentStatus: AgentStatus.ACTING,
+      taskProgress: {
+        taskId: "t",
+        currentIndex: 0,
+        totalTurnsUsed: 2,
+        subtasks: [
+          {
+            description: "Update address",
+            status: "running",
+            workerStatus: "verifying",
+            turnsUsed: 2,
+            turnBudget: 5,
+          },
+        ],
+      },
+    });
+    expect(deriveTaskUiState(input).phase).toBe("verifying");
+    input.taskProgress!.subtasks[0].workerStatus = "running";
+    expect(deriveTaskUiState(input).phase).toBe("running");
   });
 });

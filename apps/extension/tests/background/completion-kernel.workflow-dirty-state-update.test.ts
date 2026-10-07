@@ -238,3 +238,26 @@ describe("completion kernel workflow update dirty-state confirmation", () => {
   });
 
 });
+describe("requested workflow values", () => {
+  test.each([
+    "Enter only the identifier read from the linked record into the delivery memo, then save the memo.",
+    "Enter the value shown on the other page into the delivery memo, then save the memo.",
+    "Enter identifier read from the linked record into the delivery memo, then save the memo.",
+    "Set the delivery memo to the value copied from the linked record, then save.",
+    "Set the delivery memo to identifier read from the linked record, then save.",
+  ])("does not invent a literal for a referenced value: %s", (userRequest) => {
+    const generated = generateCompletionContract({ userRequest, snapshot: workflowSnapshot() });
+    expect(generated?.contract.kind).toBe("workflow_confirmation");
+    expect(generated?.contract).not.toHaveProperty("targetValue");
+  });
+  test.each([
+    ['Enter "only" into the delivery memo, then save the memo.', "only"],
+    ['Enter "Ready for review" into the delivery memo, then save the memo.', "Ready for review"],
+    ['Enter only "the value" into the delivery memo, then save the memo.', "the value"],
+    ['Enter ABC-123 into the delivery memo, then save the memo.', "ABC-123"],
+    ['Set the delivery memo to Draft, then save.', "Draft"],
+  ])("retains an explicit literal: %s", (userRequest, targetValue) => {
+    const generated = generateCompletionContract({ userRequest, snapshot: workflowSnapshot() });
+    expect(generated?.contract).toMatchObject({ kind: "workflow_confirmation", targetValue });
+  });
+});

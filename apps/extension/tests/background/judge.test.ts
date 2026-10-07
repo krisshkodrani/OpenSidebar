@@ -48,12 +48,33 @@ describe("runRubricJudge", () => {
     await runRubricJudge(rubric, { seat });
 
     const call = vi.mocked(seat.runJudge).mock.calls[0]?.[0];
+    const criteriaJson = call!.userPrompt.split("CRITERIA:\n")[1]!.split("\n\nEVIDENCE:")[0]!;
+    expect(JSON.parse(criteriaJson)).toEqual(rubric.criteria);
     expect(call?.systemPrompt).toContain(
       "preserved trajectory evidence may establish that criterion",
     );
     expect(call?.systemPrompt).toContain(
       "not require the old control or table to coexist with terminal confirmation",
     );
+  });
+
+  test.each([
+    [{ id: "renamed-c1", pass: true }, { id: "c2", pass: true }],
+    [{ id: "c1", pass: false }, { id: "c1", pass: true }],
+    [{ id: "c1", pass: "true" }, { id: "c2", pass: true }],
+  ])("rejects invalid criterion identities or decisions without caching", async (...criteria) => {
+    const seat = seatReturningWithUsage(JSON.stringify({ pass: true, confidence: 1, perCriterion: criteria }), { promptTokens: 10, completionTokens: 5, totalTokens: 15 });
+    const cache = createJudgeVerdictCache();
+    const verdict = await runRubricJudge(rubric, { seat, cache });
+    expect(verdict).toMatchObject({ pass: false, source: "fail_open", failureCause: "contract_error" });
+    expect(verdict.usage?.totalTokens).toBe(15);
+    await runRubricJudge(rubric, { seat, cache });
+    expect(seat.runJudge).toHaveBeenCalledTimes(2);
+  });
+
+  test("criterion descriptions participate in the verdict cache", async () => {
+    const changed = { ...rubric, criteria: rubric.criteria.map(c => ({ ...c, description: "A different required outcome" })) };
+    expect(judgeCacheKey(changed)).not.toBe(judgeCacheKey(rubric));
   });
 
   test("parses a passing verdict", async () => {
@@ -158,5 +179,38 @@ describe("runRubricJudge", () => {
     await runRubricJudge(other, { seat: bad, cache });
     await runRubricJudge(other, { seat: bad, cache });
     expect(bad.runJudge).toHaveBeenCalledTimes(2); // fail-open not cached → retried
+  });
+});
+
+describe("typed Jev runtime decisions", () => {
+  const typedRubric = { claim: "Saved record", criteria: [{ id: "record", description: "Requested record saved", required: true }], evidence: ["Record 42 saved"], corpusFacts: [] };
+  const answer = (probability: number) => ({ model: "typesafe/jev-1.13-20260917", answers: { q0: { type: "choice", choice: "entailed", confidence: 1, probabilities: { entailed: probability, contradicted: 0, unsupported: 1 - probability } } } });
+  const seat = (decision: unknown): JudgeSeat => ({ runJudge: async args => {
+    expect(args.rubric).toEqual(typedRubric);
+    return { text: "", model: "typesafe/jev-1.13-20260917", providerId: "openrouter", decision, usage: { promptTokens: 20, completionTokens: 5, totalTokens: 25, costUsd: 0.000001 } };
+  } });
+  test("uses entailment probability, preserves criterion identity and cost without invented rationale", async () => {
+    const result = await runRubricJudge(typedRubric, { seat: seat(answer(0.95)) });
+    expect(result.pass).toBe(true);
+    expect(result.confidenceKind).toBe("classifier");
+    expect(result.confidence).toBe(0.95);
+    expect(result.perCriterion).toEqual([{ id: "record", pass: true }]);
+    expect(result.usage?.costUsd).toBe(0.000001);
+    expect((await runRubricJudge(typedRubric, { seat: seat(answer(0.6)) })).pass).toBe(false);
+  });
+  test("malformed or mismatched decision remains a contract failure with its cost", async () => {
+    const result = await runRubricJudge(typedRubric, { seat: seat({ ...answer(0.95), answers: {} }) });
+    expect(result.failureCause).toBe("contract_error");
+    expect(result.pass).toBe(false);
+    expect(result.usage?.costUsd).toBe(0.000001);
+  });
+  test("timeout aborts the actual seat request", async () => {
+    let signal: AbortSignal | undefined;
+    const result = await runRubricJudge(typedRubric, { timeoutMs: 5, seat: { runJudge: args => {
+      signal = args.signal;
+      return new Promise(() => {});
+    } } });
+    expect(result.failureCause).toBe("timeout");
+    expect(signal?.aborted).toBe(true);
   });
 });

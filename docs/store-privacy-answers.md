@@ -19,12 +19,10 @@ dashboard's justification field as-is.
 | -------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `sidePanel`                | The entire user interface lives in Chrome's side panel: the task composer, the agent's step-by-step progress, and the approval prompts.                                                                                                                                                                                                                           |
 | `storage`                  | Stores local-mode provider keys, settings, saved prompts, optional personal-profile notes, workspace/session state, diagnostic summaries, and—when cloud mode is enabled—opaque account/device session tokens. Optional cloud mode separately stores an encrypted provider credential and an allowlisted subset of preferences on the user's OpenSidebar account. |
-| `activeTab`                | Reads the current tab's content when the user sends a task so the agent can understand the page it was asked to act on.                                                                                                                                                                                                                                           |
+| `activeTab`                | Reads the selected tab for a user-requested task or explicitly enabled Watch session.                                                                                                                                                                                                                                           |
 | `scripting`                | Injects the content script that reads page structure and executes the user's requested actions (click, type, scroll, select) on the page.                                                                                                                                                                                                                         |
 | `tabs`                     | Multi-step tasks span tabs: the agent opens, switches, lists, and closes tabs (e.g. reading data on one page to fill a form on another) and reports which tab it is working in.                                                                                                                                                                                   |
 | `tabGroups`                | Organizes the tabs a task creates into a workspace tab group so users can see and clean up everything a task touched.                                                                                                                                                                                                                                             |
-| `tabCapture`               | Captures a screenshot of the visible page as visual grounding for the AI model, so it can see the page the way the user does. Screenshots are captured during active tasks only.                                                                                                                                                                                  |
-| `offscreen`                | Hosts an offscreen document for capabilities the MV3 service worker cannot run directly (e.g. audio transcription of voice input).                                                                                                                                                                                                                                |
 | `webNavigation`            | Detects page loads and navigations during a task so the agent can wait for pages to finish loading and keep a task alive across navigations.                                                                                                                                                                                                                      |
 | `alarms`                   | Keeps long-running tasks alive across Chrome's MV3 service-worker suspension by scheduling wake-ups.                                                                                                                                                                                                                                                              |
 | `search`                   | Agent tool: performs a web search when the user's task asks for one (e.g. "search for X and open the first result").                                                                                                                                                                                                                                              |
@@ -36,7 +34,7 @@ dashboard's justification field as-is.
 ### Host Permission Justification (`<all_urls>`)
 
 ```text
-OpenSidebar is a general-purpose browser agent: the user chooses which website to automate by giving it a task on that site, so the content script must be able to run on whatever site the user directs it to. The extension only acts on a page during an active user-initiated task; it does not passively monitor, index, or record browsing. High-risk actions are gated behind configurable approval settings.
+OpenSidebar is a general-purpose browser agent: the user chooses which website to automate by giving it a task on that site, so the content script must be able to run on whatever site the user directs it to. The extension acts during user-authorized tasks and reads the selected tab during explicitly enabled Watch sessions. It does not automatically monitor all browsing. High-risk actions are gated behind configurable approval settings.
 ```
 
 ## Data Usage Disclosures
@@ -48,7 +46,7 @@ provider requests stream through OpenSidebar's non-retaining relay. Relay
 prompts, page content, screenshots, tool calls, and responses are processed in
 memory and are not retained. The account service retains identity/device
 metadata, safe preferences, credential ciphertext, and aggregate request/token
-counts. Local reliability summaries remain off by default, inspectable, and
+counts. Enabled remote missions also persist encrypted instructions/results and share bounded evidence with the authorized supervising client. Optional personal-data sync stores encrypted copies of categories the user enables. Local reliability summaries remain off by default, inspectable, and
 clearable and are not linked to the cloud account.
 
 | Dashboard category                                                | Declare? | Why                                                                                                                                                                                                                                                                                                                                                     |
@@ -65,7 +63,7 @@ clearable and are not linked to the cloud account.
 
 ### Required certifications (all truthfully "yes")
 
-- I do not sell or transfer user data to third parties, outside of the approved use cases. ✔ (Task data goes only to the model provider the user configured, directly or through the user-enabled non-retaining relay—that is the product's core, user-directed function.)
+- I do not sell or transfer user data to third parties, outside of the approved use cases. ✔ (Task data goes to OpenRouter directly or through the user-enabled relay; explicitly enabled remote missions also share bounded task evidence with the authorized supervising client—that is the product's core, user-directed function.)
 - I do not use or transfer user data for purposes that are unrelated to my item's single purpose. ✔
 - I do not use or transfer user data to determine creditworthiness or for lending purposes. ✔
 

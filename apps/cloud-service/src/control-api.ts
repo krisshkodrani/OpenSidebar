@@ -25,6 +25,7 @@ import type { CommandVault } from "./command-vault.js";
 import type { DeviceCommandRepository } from "./device-command-repository.js";
 import type { PlaygroundRepository } from "./repository.js";
 import type { PasswordlessAuthProvider } from "./passwordless-auth.js";
+import { readOpenRouterEndpoints } from "./relay-metadata.js";
 import type { RelayService } from "./relay-service.js";
 import type { SessionRepository } from "./session-repository.js";
 import type { DeviceCoordinationRepository } from "./device-coordination-repository.js";
@@ -278,7 +279,9 @@ export function createControlApi(deps: ControlApiDependencies) {
         code,
         status === 500
           ? "Request could not be completed."
-          : code.replaceAll("_", " "),
+          : code === "invalid_provider"
+            ? "OpenSidebar now supports OpenRouter only. Update the extension and reconnect OpenRouter in Settings."
+            : code.replaceAll("_", " "),
       );
     }
   };
@@ -1661,6 +1664,22 @@ export function createControlApi(deps: ControlApiDependencies) {
       ...usage,
       concurrentStreams: relay?.concurrent(accountId) ?? 0,
       limits: { requests: 2_000, tokens: 10_000_000, concurrentStreams: 2 },
+    });
+  });
+  api.get("/relay/openrouter/models/:author/:slug/endpoints", async (c) => {
+    if (!config.relayEnabled || !vault)
+      return problem(c, 503, "relay_disabled", "Cloud relay is not enabled.");
+    return attempt(c, async () => {
+      await authQuota(c, `relay-metadata:${c.get("principal").accountId}`, 60, 60);
+      return c.json(
+        await readOpenRouterEndpoints(
+          vault,
+          c.get("principal").accountId,
+          `${c.req.param("author")}/${c.req.param("slug")}`,
+          config.relayModelAllowlist,
+          c.req.raw.signal,
+        ),
+      );
     });
   });
   api.post("/relay/chat/completions", async (c) => {

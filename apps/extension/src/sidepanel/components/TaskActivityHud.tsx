@@ -1,6 +1,5 @@
 import React from "react";
 import { AlertTriangle, Check, Loader2, MousePointer2 } from "lucide-react";
-import { costLabel, formatTokens } from "../task-status-format";
 import { useStore } from "../store";
 import { useTaskUiState, type TaskRailTone } from "../task-ui-state";
 
@@ -13,7 +12,6 @@ function dotClass(tone: TaskRailTone) {
 
 export function TaskActivityHud() {
   const taskUi = useTaskUiState();
-  const showSessionMetrics = useStore((s) => s.settings.showSessionMetrics);
   const actionPresentation = useStore((s) => s.actionPresentation);
   const { rail } = taskUi;
 
@@ -53,7 +51,7 @@ export function TaskActivityHud() {
       ) : rail.showSpinner ? (
         <Loader2
           size={15}
-          className="shrink-0 animate-spin text-primary-500"
+          className="shrink-0 animate-spin motion-reduce:animate-none text-teal-600"
           aria-label="Agent running"
         />
       ) : (
@@ -65,26 +63,6 @@ export function TaskActivityHud() {
       <span className="min-w-0 truncate text-sm font-medium leading-5">
         {rail.primaryLabel}
       </span>
-      {rail.turnProgress?.provider ? (
-        <span className="hidden shrink-0 rounded-md border border-slate-200/80 bg-white/70 px-1.5 py-0.5 text-[10px] font-medium text-slate-500 dark:border-slate-700 dark:bg-slate-900/70 dark:text-slate-400 sm:inline">
-          {rail.turnProgress.provider}
-        </span>
-      ) : null}
-      {rail.turnProgress ? (
-        <span className="shrink-0 rounded-md border border-slate-200/80 bg-white/70 px-1.5 py-0.5 text-[10px] tabular-nums text-slate-500 dark:border-slate-700 dark:bg-slate-900/70 dark:text-slate-400">
-          {rail.turnProgress.turn}/{rail.turnProgress.maxTurns}
-        </span>
-      ) : null}
-      {showSessionMetrics &&
-      rail.sessionMetrics &&
-      rail.sessionMetrics.totalTokens > 0 ? (
-        <span className="hidden shrink-0 rounded-md border border-slate-200/80 bg-white/70 px-1.5 py-0.5 text-[10px] tabular-nums text-slate-500 dark:border-slate-700 dark:bg-slate-900/70 dark:text-slate-400 sm:inline">
-          {formatTokens(rail.sessionMetrics.totalTokens)}
-          {rail.sessionMetrics.totalCost > 0
-            ? ` / ${costLabel(rail.sessionMetrics)}`
-            : ""}
-        </span>
-      ) : null}
     </div>
   );
 }

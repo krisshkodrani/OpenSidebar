@@ -4,8 +4,7 @@
  * cinematic E2E take. The cut starts just before the first visible field
  * change and ends on the submitted confirmation state.
  *
- * Add narration with:
- *   node scripts/add-voiceover.mjs --video vendor
+ *
  */
 
 import { execFileSync } from "node:child_process";

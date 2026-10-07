@@ -1,3 +1,5 @@
+import { McpOAuthService } from "./mcp-oauth.js";
+import { PostgresMcpOAuthStore } from "./mcp-oauth-store.js";
 import { serve } from "@hono/node-server";
 import { createApp } from "./app.js";
 import { loadConfig } from "./config.js";
@@ -118,6 +120,7 @@ const remoteMissionVault =
     : undefined;
 const hostedBrowserMcpOperations = remoteMissionVault
   ? createHostedBrowserMcpOperations({
+      interactiveEnabled: config.hostedMcpInteractiveEnabled,
       accounts: controlRepository,
       missions: remoteMissionRepository,
       vault: remoteMissionVault,
@@ -129,6 +132,7 @@ const sessionJobs = sessionObjectStore
 const control = {
   repository: controlRepository,
   auth: new ControlAuthService(controlRepository, config),
+  mcpOAuth: new McpOAuthService({ config, accounts: controlRepository, web: repository, store: new PostgresMcpOAuthStore(controlRepository.pool) }),
   vault,
   relay: vault ? new RelayService(controlRepository, vault) : undefined,
   sessionRepository,

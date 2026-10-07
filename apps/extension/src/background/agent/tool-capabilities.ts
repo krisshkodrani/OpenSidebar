@@ -82,21 +82,14 @@ const TOOL_CAPABILITIES: Partial<Record<ToolName, ToolCapability[]>> = {
 
   [ToolName.CONFIGURE_SERVICENOW_FORM]: [
     "service_now_forms",
-    "fill_text_fields",
-    "select_options",
-    "set_binary_controls",
-    "submit_forms",
   ],
   [ToolName.CONFIGURE_CATALOG_ITEM]: [
     "service_now_forms",
-    "fill_text_fields",
-    "submit_forms",
   ],
   [ToolName.APPLY_LIST_FILTER]: ["list_and_table_workflows"],
   [ToolName.APPLY_LIST_SORT]: ["list_and_table_workflows"],
   [ToolName.APPLY_LIST_ACTION]: [
     "list_and_table_workflows",
-    "interact_with_page",
   ],
 };
 

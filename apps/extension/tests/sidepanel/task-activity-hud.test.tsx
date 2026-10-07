@@ -39,7 +39,8 @@ describe("TaskActivityHud", () => {
     const root = await renderHud(container);
     try {
       expect(container.textContent).toContain("Clicking checkout");
-      expect(container.textContent).toContain("2/8");
+      expect(container.textContent).not.toContain("2/8");
+      expect(container.textContent).not.toContain("fireworks");
       expect(container.querySelector("[data-opensidebar-activity-hud]")).toBeTruthy();
     } finally {
       await act(async () => root.unmount());

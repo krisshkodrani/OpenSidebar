@@ -1,7 +1,7 @@
 const SUMMARY_INTENT_RE =
   /\b(summarize|summary|overview|describe|extract|report|review|read|list|identify)\b/i;
 
-const TERMINAL_PUNCTUATION_RE = /[.!?。！？)\]}>"']$/;
+const TERMINAL_PUNCTUATION_RE = /[.!?。！？)\]}>”’»"']$/;
 
 // Trailing Markdown emphasis/formatting (e.g. **bold.**, _italic._, `code`)
 // is not real punctuation but otherwise trips the "complete sentence" check.

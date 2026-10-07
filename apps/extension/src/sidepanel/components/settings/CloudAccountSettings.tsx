@@ -235,7 +235,7 @@ export function CloudAccountSettings({
     );
 
   const provider =
-    formState.providerMode === "fireworks" ? "fireworks" : "openrouter";
+    "openrouter";
   const ready = account.providers.has(provider);
   return (
     <section className="space-y-4">

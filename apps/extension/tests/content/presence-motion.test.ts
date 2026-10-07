@@ -34,7 +34,7 @@ describe("presence motion math", () => {
     expect(mid).toBeLessThanOrEqual(320);
   });
 
-  test("cinematic pacing is ×1.8 over subtle, floored at 300ms", () => {
+  test("cinematic and subtle use the same bounded travel duration", () => {
     const subtle = glideDurationMs(A, B, 40, "subtle");
     const cinematic = glideDurationMs(A, B, 40, "cinematic");
     expect(cinematic).toBe(subtle);
@@ -49,8 +49,10 @@ describe("presence motion math", () => {
 
   test("arc control point bulges perpendicular, capped at 25px", () => {
     const control = arcControlPoint(A, B);
-    const mid = { x: 400, y: 250 };
-    const bulge = distance(control, mid);
+    const bulge =
+      Math.abs(
+        (control.x - A.x) * (B.y - A.y) - (control.y - A.y) * (B.x - A.x),
+      ) / distance(A, B);
     expect(bulge).toBeGreaterThan(1);
     expect(bulge).toBeLessThanOrEqual(25.001);
   });
@@ -70,6 +72,27 @@ describe("presence motion math", () => {
     expect(ballisticEase(1)).toBe(1);
   });
 
+  test("travel accelerates from rest and brakes smoothly at the target", () => {
+    const { points } = sampleGlide(A, B, 40, "subtle");
+    const steps = points.slice(1).map((p, i) => distance(points[i], p));
+    expect(steps[0]).toBeLessThan(Math.max(...steps) * 0.15);
+    expect(steps.at(-1)!).toBeLessThan(Math.max(...steps) * 0.15);
+    for (let i = 1; i <= 100; i++) {
+      expect(ballisticEase(i / 100)).toBeGreaterThanOrEqual(
+        ballisticEase((i - 1) / 100),
+      );
+    }
+  });
+
+  test("cinematic correction is spread over multiple frames", () => {
+    const { points } = sampleGlide(A, B, 40, "cinematic");
+    const correction = points.slice(-4).map((point) => distance(point, B));
+    expect(correction[0]).toBeGreaterThan(correction[1]);
+    expect(correction[1]).toBeGreaterThan(correction[2]);
+    expect(correction[2]).toBeGreaterThan(0);
+    expect(correction[3]).toBe(0);
+  });
+
   test("overshoot only on long cinematic glides, settling on the true target", () => {
     expect(hasOvershoot(A, B, "subtle")).toBe(false);
     expect(hasOvershoot(A, { x: 150, y: 120 }, "cinematic")).toBe(false);
@@ -83,6 +106,7 @@ describe("presence motion math", () => {
 
   test("glide always ends exactly on the target in subtle mode", () => {
     const { points } = sampleGlide(A, B, 40, "subtle");
+    expect(points[0]).toEqual(A);
     const last = points[points.length - 1];
     expect(last.x).toBeCloseTo(B.x, 6);
     expect(last.y).toBeCloseTo(B.y, 6);

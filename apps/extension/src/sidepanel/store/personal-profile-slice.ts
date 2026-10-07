@@ -60,7 +60,7 @@ export const createPersonalProfileSlice: SliceCreator<PersonalProfileSlice> = (
     const startedAt = Date.now();
     logger.info("ui", "Profile notes analysis started", {
       notesLength: current.notesMarkdown.length,
-      hasFireworksApiKey: Boolean(settings.fireworksApiKey?.trim()),
+      hasOpenRouterApiKey: Boolean(settings.openRouterApiKey?.trim()),
     });
 
     let result: ProfileAnalysisResult;

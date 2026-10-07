@@ -8,10 +8,6 @@
  * sub-union (e.g. `ContentProtocolMessage`), keeping their switches
  * meaningfully exhaustive.
  *
- * Note: the offscreen tab-audio capture protocol (`TAB_AUDIO_*`) is
- * intentionally NOT part of this union — it is a self-contained
- * background ↔ offscreen-document protocol typed locally at both ends
- * (`background/speech/tab-audio.ts`, `offscreen/audio.ts`).
  */
 
 import type { SessionMessage } from "./messages/session";

@@ -19,14 +19,16 @@
 <p align="center">
   <a href="https://opensidebar.com/#showcase"><b>Customer tour</b></a> ·
   <a href="https://opensidebar.com/#developers"><b>Developer tour</b></a> ·
-  <a href="#install-from-source">Install</a> ·
+  <a href="#install">Install</a> ·
   <a href="docs/getting-started.md">Docs</a> ·
   <a href="CONTRIBUTING.md">Contribute</a>
 </p>
 
 <p align="center">
-  <img src="docs/assets/opensidebar-1.png" alt="OpenSidebar side panel running a browser task" width="820" />
+  <img src="docs/assets/opensidebar-1.png" alt="OpenSidebar native side panel after summarizing a local demonstration article" width="440" />
 </p>
+
+<p align="center"><em>Native Chrome side panel · local demonstration article · live OpenRouter summary.</em></p>
 
 ## For people who want work done
 
@@ -36,15 +38,20 @@ OpenSidebar can:
 - read information on one page and use it on another;
 - watch a page and report when something changes;
 - pause before consequential actions so you can review them;
-- use OpenRouter by default, or the supported Fireworks stack.
+- use OpenRouter for all LLM requests.
 
-It is bring-your-own-key software: there is no OpenSidebar subscription,
-hosted model relay, analytics client, or first-party telemetry upload endpoint
-in the published build. Optional reliability summaries stay local in Chrome.
-Page context goes only to the model provider you configure. See
-[Privacy](PRIVACY_POLICY.md), [Security](SECURITY.md), and
-[Known limitations](docs/known-limitations.md) before using it on sensitive
-sites.
+OpenSidebar is a supervised browser-agent preview. You supply an OpenRouter
+key and pay OpenRouter for model usage. In **Direct from this browser** mode,
+model requests go from the extension to OpenRouter. Optional **Cloud** mode
+stores your key in an encrypted account vault and forwards model requests
+through the OpenSidebar relay. Account features and remote browser work require
+sign-in and service availability; a local source build can run without them.
+
+Watch mode monitors only the tab you explicitly select. Local approval and site
+rules remain in force for remote tasks. Optional reliability summaries stay
+local in published builds. See [Privacy](PRIVACY_POLICY.md),
+[Security](SECURITY.md), and [Known limitations](docs/known-limitations.md) for
+data flows and the current feature boundaries.
 
 Watch the concise [customer tour](https://opensidebar.com/#showcase).
 
@@ -58,13 +65,14 @@ or build the current source locally:
 git clone https://github.com/krisshkodrani/OpenSidebar.git
 cd OpenSidebar
 corepack enable
-corepack pnpm install
+corepack pnpm install --frozen-lockfile
 corepack pnpm run dist
 ```
 
 Then open `chrome://extensions`, enable **Developer mode**, choose **Load
 unpacked**, and select `dist/`. Open the side panel and add an OpenRouter key
-in Settings (recommended), or use the supported Fireworks stack. The current
+under Settings → Advanced → Connections, or sign in and use your
+encrypted OpenRouter account connection. The current
 provider matrix is maintained in [docs/providers.md](docs/providers.md).
 
 ## For developers
@@ -86,8 +94,44 @@ remain attached to the task. Watch the
 [architecture overview](docs/architecture/overview.md) and
 [runtime boundaries](docs/architecture/runtime-boundaries.md).
 
-The release-verified BYOK modes are OpenRouter (recommended and default) and
-Fireworks.
+OpenRouter is the only supported LLM gateway in both direct and cloud mode.
+
+### Engineering case study
+
+The core problem is keeping a model-driven browser task grounded while pages,
+tabs, and extension service workers change underneath it. This repository
+contains the extension runtime, React interfaces, cloud/MCP service, and
+reproducible evaluation tools. The git history records implementation and review
+contributions; architecture decisions and unresolved tradeoffs are documented
+alongside the code.
+
+Three decisions shape the implementation:
+
+- **Small runtime ports:** the native side panel and browser-test overlay share
+  UI behavior through explicit ports. Chrome lifecycle code stays in the
+  production shell. A full headless agent runtime is still deferred.
+- **Evidence before completion:** task success depends on observed page state,
+  persisted readback where available, and verification. Plans and model claims
+  alone are insufficient; traces retain the evidence used for decisions.
+- **Local authority for remote work:** an MCP client can supervise a linked
+  browser, but browser policy, bounded approvals, stale-action checks, and local
+  Stop/Deny controls remain enforced on the device.
+
+The October 7, 2026 verification passed 5,674 extension tests, 140 cloud
+tests, and 68 tooling tests. Four additional PostgreSQL integration tests passed
+against a disposable database, and three Watch scenarios passed in Chrome with
+a deterministic mock provider. These are regression checks, **not a browser-task
+success rate**. CI also exercises the cloud tests against isolated PostgreSQL. ModelBench's scripted
+oracle validates scenarios and graders; a representative model success rate
+requires separate live runs and audited validators. See the
+[acceptance record](docs/engineering/modelbench-100-acceptance.md).
+
+For a safe demonstration, follow [Getting Started](docs/getting-started.md#first-safe-task)
+and summarize a public page without changing it. For reproducible local
+browser checks, see [the developer guide](docs/developer-guide.md).
+The main remaining engineering costs are large completion/orchestration
+modules, model latency, and ambiguous page state; the repository tracks these
+rather than claiming general-purpose automation is solved.
 
 ### Development
 
@@ -95,7 +139,7 @@ Use the Corepack-managed pnpm version pinned by the repository:
 
 ```bash
 corepack enable
-corepack pnpm install
+corepack pnpm install --frozen-lockfile
 pnpm run dev
 ```
 

@@ -1,13 +1,15 @@
 import { execFileSync } from "child_process";
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from "fs";
+import {
+  cpSync,
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  writeFileSync,
+} from "fs";
 import { dirname, relative, resolve } from "path";
 import { fileURLToPath } from "url";
 import type { Page } from "puppeteer";
-import {
-  closeExtension,
-  launchWithExtension,
-  openHelperPage,
-} from "../apps/extension/tests/e2e/helpers/browser";
 import {
   getFixtureUrl,
   startFixtureServer,
@@ -76,9 +78,7 @@ function withTimeout<T>(
       () => reject(new Error(`${label} timed out after ${timeoutMs}ms`)),
       timeoutMs,
     );
-    promise
-      .then(resolve, reject)
-      .finally(() => clearTimeout(timer));
+    promise.then(resolve, reject).finally(() => clearTimeout(timer));
   });
 }
 
@@ -92,7 +92,11 @@ function normalizeShortcutKey(key: string): string {
 function normalizeModifier(modifier: string): string {
   const normalized = modifier.trim().toLowerCase();
   if (normalized === "ctrl" || normalized === "control") return "Control";
-  if (normalized === "cmd" || normalized === "command" || normalized === "meta") {
+  if (
+    normalized === "cmd" ||
+    normalized === "command" ||
+    normalized === "meta"
+  ) {
     return "Meta";
   }
   if (normalized === "shift") return "Shift";
@@ -123,7 +127,7 @@ async function pressShortcut(page: Page, shortcut: string): Promise<void> {
 }
 
 async function openNativePanelFromHelper(
-  helper: Awaited<ReturnType<typeof openHelperPage>>,
+  helper: Page,
   tabId: number,
 ): Promise<NativePanelOpenResult> {
   await helper.evaluate((targetTabId: number) => {
@@ -136,7 +140,8 @@ async function openNativePanelFromHelper(
     button.addEventListener("click", async () => {
       try {
         const tab = await chrome.tabs.get(targetTabId);
-        if (tab.windowId) await chrome.windows.update(tab.windowId, { focused: true });
+        if (tab.windowId)
+          await chrome.windows.update(tab.windowId, { focused: true });
         await chrome.tabs.update(targetTabId, { active: true });
         const data = await chrome.storage.session.get("userOpenedPanel");
         const opened = Array.isArray(data.userOpenedPanel)
@@ -223,7 +228,7 @@ function artifactPath(): string {
 }
 
 async function readSmokeState(
-  helper: Awaited<ReturnType<typeof openHelperPage>>,
+  helper: Page,
   tabId: number,
 ): Promise<SmokeState> {
   return helper.evaluate(async (targetTabId: number) => {
@@ -275,7 +280,8 @@ Options:
   --shortcut=<combo>          Keyboard shortcut to trigger the extension action. Default: Control+Shift+Y
   --manual-only               Do not press the action shortcut automatically
   --no-helper-open            Do not use the extension helper-page open fallback
-  --no-provider-seed          Do not seed Fireworks settings even if FIREWORKS_API_KEY exists
+  --no-provider-seed          Do not seed OpenRouter settings even if OPENROUTER_API_KEY exists
+  --demo                      Run a paid, read-only summary of the local article and capture the native panel
   --help                      Show this help
 `);
 }
@@ -289,15 +295,16 @@ async function main(): Promise<void> {
   process.env.E2E_PROFILE = "headed";
   process.env.E2E_ARTIFACTS = "no-panel";
 
-  const route = parseArg("route") ?? "login";
+  const demo = hasFlag("demo");
+  const route = demo ? "summarize" : (parseArg("route") ?? "login");
   const timeoutMs = Number(parseArg("timeoutMs") ?? "120000");
   const holdMs = Number(parseArg("holdMs") ?? "5000");
   const shortcut = parseArg("shortcut") ?? "Control+Shift+Y";
   const manualOnly = hasFlag("manual-only");
   const helperOpen = !hasFlag("no-helper-open");
   const shouldSeedProvider = !hasFlag("no-provider-seed");
-  const fireworksKey = shouldSeedProvider
-    ? readEnvValue("FIREWORKS_API_KEY")
+  const openRouterKey = shouldSeedProvider
+    ? readEnvValue("OPENROUTER_API_KEY")
     : undefined;
   const startedAt = new Date().toISOString();
   const outputPath = artifactPath();
@@ -307,6 +314,18 @@ async function main(): Promise<void> {
     : "shortcut";
   let helperOpenResult: NativePanelOpenResult | null = null;
 
+  if (demo && !openRouterKey)
+    throw new Error("--demo requires OPENROUTER_API_KEY.");
+  mkdirSync(dirname(outputPath), { recursive: true });
+  // The browser harness adds helper pages. Use an isolated copy so dist/ stays
+  // byte-for-byte packageable after the native smoke.
+  if (!process.env.E2E_DIST_PATH) {
+    const runtimePath = mkdtempSync(resolve(dirname(outputPath), "runtime-"));
+    cpSync(resolve(repoRoot, "dist"), runtimePath, { recursive: true });
+    process.env.E2E_DIST_PATH = runtimePath;
+  }
+  const { closeExtension, launchWithExtension, openHelperPage } =
+    await import("../apps/extension/tests/e2e/helpers/browser");
   await startFixtureServer();
   const ctx = await launchWithExtension();
   try {
@@ -323,11 +342,10 @@ async function main(): Promise<void> {
     }, fixtureUrl);
     if (tabId <= 0) throw new Error("Could not resolve fixture tab.");
 
-    if (fireworksKey) {
+    if (openRouterKey) {
       await helper.evaluate(async (key: string) => {
         await chrome.storage.local.set({
-          fireworksApiKey_local: key,
-          openRouterApiKey_local: "",
+          openRouterApiKey_local: key,
           openaiApiKey_local: "",
           groqApiKey_local: "",
           geminiApiKey_local: "",
@@ -337,14 +355,16 @@ async function main(): Promise<void> {
         });
         await chrome.storage.sync.set({
           userSettings: {
-            providerMode: "fireworks",
-            requireApprovals: false,
+            providerMode: "openrouter",
+            requireApprovals: true,
+            inferenceMode: "local",
+            maxTurns: 6,
             allowNavigation: false,
             requirePlanConfirmation: false,
             showElementTags: false,
           },
         });
-      }, fireworksKey);
+      }, openRouterKey);
     }
 
     await helper.evaluate(async () => {
@@ -359,7 +379,8 @@ async function main(): Promise<void> {
 
     await helper.evaluate(async (targetTabId: number) => {
       const tab = await chrome.tabs.get(targetTabId);
-      if (tab.windowId) await chrome.windows.update(tab.windowId, { focused: true });
+      if (tab.windowId)
+        await chrome.windows.update(tab.windowId, { focused: true });
       await chrome.tabs.update(targetTabId, { active: true });
     }, tabId);
     await page.bringToFront();
@@ -406,8 +427,14 @@ async function main(): Promise<void> {
         lastState.workspace &&
         lastState.sidePanelOptions?.path === "src/sidepanel/index.html"
       ) {
+        const demoEvidence = demo
+          ? await (
+              await import("./native-sidepanel-demo")
+            ).runNativePanelDemo(ctx, page, dirname(outputPath))
+          : undefined;
         const evidence = {
           result: "passed",
+          demo: demoEvidence,
           startedAt,
           completedAt: new Date().toISOString(),
           commit: readGitCommit(),
@@ -415,7 +442,7 @@ async function main(): Promise<void> {
           fixtureUrl,
           extensionId: ctx.extensionId,
           tabId,
-          providerSeeded: Boolean(fireworksKey),
+          providerSeeded: Boolean(openRouterKey),
           trigger,
           helperOpenResult,
           state: lastState,
@@ -426,7 +453,9 @@ async function main(): Promise<void> {
           `[native-sidepanel-smoke] Passed. Evidence: ${relative(repoRoot, outputPath)}`,
         );
         if (holdMs > 0) {
-          console.log(`[native-sidepanel-smoke] Holding Chrome open for ${holdMs}ms.`);
+          console.log(
+            `[native-sidepanel-smoke] Holding Chrome open for ${holdMs}ms.`,
+          );
           await sleep(holdMs);
         }
         return;
@@ -443,11 +472,12 @@ async function main(): Promise<void> {
       fixtureUrl,
       extensionId: ctx.extensionId,
       tabId,
-      providerSeeded: Boolean(fireworksKey),
+      providerSeeded: Boolean(openRouterKey),
       trigger,
       helperOpenResult,
       lastState,
-      reason: "Timed out waiting for a workspace created by native side-panel open.",
+      reason:
+        "Timed out waiting for a workspace created by native side-panel open.",
     };
     mkdirSync(dirname(outputPath), { recursive: true });
     writeFileSync(outputPath, `${JSON.stringify(evidence, null, 2)}\n`);

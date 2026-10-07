@@ -3,6 +3,7 @@
  */
 
 import { EscalationOptionId, SubtaskSummary } from "../../types";
+import { nodeTurns } from "./turn-accounting";
 import { TaskNode } from "./types";
 import { NodeVerificationResult } from "./verifier";
 import { LaneIsolationError, RuntimeLane } from "./lane-types";
@@ -111,7 +112,7 @@ export function toSubtasks(nodes: TaskNode[]): SubtaskSummary[] {
               : node.status === "running"
                 ? "running"
                 : "pending",
-      turnsUsed: 0,
+      turnsUsed: nodeTurns(node),
       turnBudget: 0,
       result: node.result || node.error,
       nodeId: node.id,

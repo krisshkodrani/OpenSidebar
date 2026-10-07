@@ -10,20 +10,10 @@ import {
 } from "../e2e/helpers/e2e-provider-config";
 
 describe("E2E provider config", () => {
-  test("normalizes provider aliases and derives lane", () => {
-    const config = resolveE2EProviderConfig({
-      env: {
-        E2E_PROVIDER: "kimi",
-        KIMI_API_KEY: "kimi-secret",
-      },
-    });
-
-    expect(config.providerMode).toBe("moonshot");
-    expect(config.lane).toBe("dev");
-    expect(config.apiKey).toBe("kimi-secret");
-    expect(config.keys.kimiKey).toBe("kimi-secret");
+  test("rejects direct-provider aliases", () => {
+    for (const provider of ["kimi", "fireworks", "groq", "unknown"])
+      expect(() => detectProviderMode(provider)).toThrow(/Only OpenRouter/);
   });
-
   test("loads API keys from env before .env without exposing secrets in diagnostics", () => {
     const dir = mkdtempSync(join(tmpdir(), "opensidebar-provider-config-"));
     const envFilePath = join(dir, ".env");
@@ -38,8 +28,8 @@ describe("E2E provider config", () => {
       ).toBe("env-secret");
 
       const config = resolveE2EProviderConfig({
-        config: readE2EConfig({ env: { E2E_PROVIDER: "fireworks" } }),
-        env: { FIREWORKS_API_KEY: "fw-secret" },
+        config: readE2EConfig({ env: { E2E_PROVIDER: "openrouter" } }),
+        env: { OPENROUTER_API_KEY: "fw-secret" },
         envFilePath,
       });
       expect(JSON.stringify(config.diagnostics)).not.toContain("fw-secret");
@@ -50,8 +40,8 @@ describe("E2E provider config", () => {
 
   test("reports missing active provider key with sanitized context", () => {
     const config = resolveE2EProviderConfig({
-      config: readE2EConfig({ env: { E2E_PROVIDER: "fireworks" } }),
-      env: { FIREWORKS_API_KEY: "" },
+      config: readE2EConfig({ env: { E2E_PROVIDER: "openrouter" } }),
+      env: { OPENROUTER_API_KEY: "" },
       envFilePath: join(tmpdir(), "opensidebar-missing-provider-env"),
     });
 
@@ -61,14 +51,14 @@ describe("E2E provider config", () => {
         severity: "warning",
         message: "Active E2E provider API key is not configured.",
         context: {
-          providerMode: "fireworks",
+          providerMode: "openrouter",
           lane: "dev",
         },
       }),
     ]);
   });
 
-  test("keeps unknown providers on the default fireworks path", () => {
-    expect(detectProviderMode("unknown")).toBe("fireworks");
+  test("defaults to OpenRouter", () => {
+    expect(readE2EConfig({ env: {} }).provider).toBe("openrouter");
   });
 });

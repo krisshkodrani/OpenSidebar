@@ -1,0 +1,161 @@
+.mcp-guide .skip-link {
+  position: absolute;
+  left: 1rem;
+  top: -8rem;
+  z-index: 100;
+  padding: 1rem;
+  background: var(--surface);
+}
+.mcp-guide .skip-link:focus {
+  top: 1rem;
+}
+.mcp-nav {
+  display: flex;
+  align-items: center;
+  gap: 1.25rem;
+}
+.mcp-layout {
+  max-width: 1000px;
+  padding-block: 3rem 5rem;
+}
+.mcp-hero {
+  padding-block: 2rem 3rem;
+}
+.mcp-hero h1 {
+  font-size: clamp(2.6rem, 6vw, 4.5rem);
+  margin: 1rem 0;
+}
+.mcp-deck {
+  font-size: 1.2rem;
+  max-width: 680px;
+  margin-block: 1.5rem 2rem;
+}
+.mcp-layout section {
+  margin-top: 3.5rem;
+  scroll-margin-top: 7rem;
+}
+.mcp-layout h2 {
+  font-size: clamp(1.7rem, 4vw, 2.3rem);
+  margin-bottom: 1.3rem;
+}
+.mcp-layout h3 {
+  font-size: 1.35rem;
+  line-height: 1.3;
+}
+.mcp-notice,
+.mcp-cards article {
+  padding: 1.5rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--surface);
+}
+.mcp-notice {
+  border-left: 4px solid var(--warning);
+}
+.mcp-notice p:last-child {
+  margin-bottom: 0;
+}
+.mcp-cards {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 1rem;
+}
+.mcp-cards h3 {
+  margin-top: 0.75rem;
+}
+.mcp-steps {
+  padding-left: 1.5rem;
+}
+.mcp-steps > li {
+  padding-left: 0.5rem;
+  margin-block: 2rem;
+}
+.mcp-steps > li::marker {
+  color: var(--action);
+  font-weight: 700;
+}
+.mcp-code {
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--surface);
+  padding: 1rem;
+  margin-block: 1rem;
+}
+.mcp-code .btn {
+  font-size: 0.85rem;
+  padding: 0.5rem 0.8rem;
+}
+.mcp-layout pre {
+  font: 0.85rem/1.65 var(--mono);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  margin-bottom: 0;
+}
+.mcp-layout code {
+  font-family: var(--mono);
+  font-size: 0.9em;
+  overflow-wrap: anywhere;
+}
+.mcp-layout a:not(.btn) {
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+.mcp-layout details {
+  border-bottom: 1px solid var(--border);
+  padding-block: 1rem;
+}
+.mcp-layout summary {
+  cursor: pointer;
+  font-weight: 600;
+  padding-block: 0.4rem;
+}
+.mcp-copy-status:not(:empty) {
+  position: fixed;
+  bottom: 1rem;
+  left: 50%;
+  transform: translateX(-50%);
+  max-width: calc(100% - 2rem);
+  padding: 0.75rem 1.25rem;
+  background: var(--brand);
+  color: var(--brand-ink);
+  border-radius: var(--radius-sm);
+  box-shadow: var(--shadow-card);
+  z-index: 20;
+}
+.mcp-guide :focus-visible {
+  outline: 3px solid var(--action);
+  outline-offset: 4px;
+}
+@media (max-width: 600px) {
+  .mcp-cards {
+    grid-template-columns: 1fr;
+  }
+  .mcp-guide .nav-inner {
+    flex-wrap: wrap;
+    gap: 0.75rem;
+    padding-block: 0.75rem;
+  }
+  .mcp-nav {
+    width: 100%;
+    justify-content: space-between;
+  }
+  .mcp-layout {
+    padding-top: 1rem;
+  }
+  .mcp-hero .btn {
+    margin-bottom: 0.75rem;
+  }
+  .mcp-code {
+    padding: 0.75rem;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .mcp-guide {
+    scroll-behavior: auto;
+  }
+  html:has(.mcp-guide) {
+    scroll-behavior: auto;
+  }
+}
+
+.mcp-nav > a:not(.btn) { color: var(--header-text); }

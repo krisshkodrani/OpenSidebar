@@ -1,0 +1,1 @@
+{"name":"opensidebar-email-sender","private":true,"type":"module","scripts":{"test":"node --test *.test.mjs"},"engines":{"node":">=22"},"dependencies":{"@aws-crypto/client-node":"5.0.2","@aws-sdk/client-sesv2":"3.1147.0"}}

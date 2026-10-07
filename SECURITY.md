@@ -14,18 +14,22 @@ For sensitive security reports, use GitHub private vulnerability reporting for t
 
 ## Security Measures
 
-### API Key Storage
+### Credentials and data paths
 
-- API keys are stored locally in `chrome.storage.local` and are not synced by OpenSidebar.
-- Treat the browser profile and operating-system account as part of the trust boundary; extension storage is not a dedicated secrets vault.
-- Keys are only sent to configured model providers over HTTPS for authentication.
-- OpenSidebar does not operate a hosted relay, telemetry endpoint, or crash reporter.
-
-### Data Privacy
-
-- Settings, keys, and local diagnostics stay in browser storage unless you run the optional local development log server.
-- Page context and screenshots may be sent directly to the model provider you configure when you run a task.
-- No OpenSidebar-hosted analytics or tracking is used.
+- In **Direct from this browser** mode, the OpenRouter key stays in
+  `chrome.storage.local`; requests go directly to OpenRouter over HTTPS.
+- Optional **Cloud** mode uses an account-linked, KMS-encrypted credential vault
+  and an OpenSidebar-hosted model relay. The relay processes task content while
+  forwarding it; its application does not persist request/response bodies.
+- Browser storage is not a dedicated secrets vault. Local access tokens, keys,
+  and diagnostics rely on the browser profile and operating-system boundary.
+- Signing in, enabling remote work, and enabling personal-data synchronization
+  are separate choices. Remote missions send bounded task instructions and
+  evidence through the service to the authorized supervising client.
+- Published builds do not upload local reliability summaries. Development logs
+  and traces can contain sensitive page data; redact them before sharing.
+- See [PRIVACY_POLICY.md](PRIVACY_POLICY.md) for Cloud, Watch, synchronization,
+  retention, and permission details.
 
 ### URL Sanitization
 
@@ -38,3 +42,18 @@ For sensitive security reports, use GitHub private vulnerability reporting for t
 - Interaction settings can require plan confirmation and approval for high-risk actions.
 - The Stop control lets users abort active runs.
 - Tool calls are logged in the UI and local traces for review.
+
+### Remote supervision
+
+MCP instructions tell the supervising client to preserve task scope, treat page
+content as untrusted, obtain applicable action authorization, and report unknown
+outcomes honestly. These instructions supplement runtime checks. Local site
+policy, digest- and expiry-bound approvals, target grounding, and Stop/Deny
+controls remain enforced in the browser. Cancellation is not rollback.
+
+### Dependency and release checks
+
+`pnpm run release:verify` includes the production dependency audit. CI exercises
+cloud-service tests as well as extension tests, with a separate disposable
+PostgreSQL integration job. A green test suite does not establish that every
+browser task is safe or that every dependency advisory is unreachable.

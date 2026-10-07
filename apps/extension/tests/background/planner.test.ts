@@ -1,6 +1,7 @@
 import { describe, test, expect, vi, beforeEach } from "vitest";
 import "../setup";
 import { ToolName } from "../../src/types";
+import { deriveCriteria } from "../../src/background/agent/completion/judge-gate";
 
 /**
  * Planner + Done Guard tests.
@@ -88,6 +89,18 @@ import {
 // ═══════════════════════════════════════════════════════════
 
 describe("TaskPlanner.decompose", () => {
+    test("orchestrator decomposition receives the observed open form", async () => {
+        completeImpl = () => ({ role: "assistant", content: JSON.stringify({ isMultiStep: false, steps: [{ objective: "Save the requested update", successCriteria: "Saved update visible" }] }), finish_reason: "stop" });
+        const planner = new OrchestratorPlanner("test-key");
+        await planner.buildNodes("Add the requested update", "Workspace", "https://example.test/edit", undefined, undefined, {
+            pageState: { title: "Workspace", url: "https://example.test/edit", pageContent: "Project Beacon — Update editor", elements: [{ tag: 1, tagName: "textarea", text: "", attributes: { label: "Update text" } }] } as any,
+        });
+        const request = mockComplete.mock.calls.at(-1)?.[0];
+        expect(request.messages[1].content).toContain("Project Beacon — Update editor");
+        expect(request.messages[1].content).toContain("Update text");
+        expect(request.messages[0].content).toContain("Start from the observed page state");
+    });
+
     beforeEach(() => {
         mockComplete.mockClear();
     });
@@ -148,6 +161,21 @@ describe("TaskPlanner.decompose", () => {
         // rather than being forced to a hard false.
         expect(result).not.toBeNull();
         expect(result!.requiresTabManagement).toBeUndefined();
+    });
+
+    test("preserves record-save criteria when Draft is a business status", async () => {
+        completeImpl = () => ({ role: "assistant", content: JSON.stringify({
+            isMultiStep: true,
+            steps: [
+                { objective: "Open the record edit form", successCriteria: "Record edit form visible", dependencies: [], toolProfile: "navigate" },
+                { objective: "Save the request with the supplied quantity while keeping Draft status", successCriteria: "Saved quantity and Draft status visible on the record", dependencies: [0], toolProfile: "submit_form" },
+            ],
+        }), finish_reason: "stop" });
+        const result = await new TaskPlanner("test-key").decompose(
+            "Update purchase request PR-417 quantity to 12. Keep it as a draft.", "Request details", "https://example.test/requests/417",
+        );
+        expect(result?.steps?.at(-1)?.successCriteria).toBe("Saved quantity and Draft status visible on the record");
+        expect(result?.steps?.at(-1)?.toolProfile).toBe("submit_form");
     });
 
     test("stops review-first message drafts after the unsent copy is visible", async () => {
@@ -433,6 +461,28 @@ describe("TaskPlanner.decompose", () => {
         expect(result!.steps![0].objective).toContain('Caller="Joe Employee"');
         expect(result!.steps![0].toolProfile).toBe("form_fill");
         expect(result!.steps![1].toolProfile).toBe("submit_form");
+    });
+
+    test("preserves explicit success criteria and verification for a single record edit", async () => {
+        const step = {
+            objective: "Edit and save the purchase request.",
+            successCriteria: "Purchase request PR-72 shows quantity 12 and status Draft after saving.",
+            toolProfile: "form_fill",
+            verifyAfter: { trigger: "Saved request details are visible", action: "call_done" },
+            assumptions: ["The request detail is open"],
+        };
+        completeImpl = () => Promise.resolve({
+            role: "assistant",
+            content: JSON.stringify({ isMultiStep: false, difficulty: "moderate", steps: [step] }),
+            finish_reason: "stop",
+        });
+        const result = await new TaskPlanner("test-key").decompose(
+            "Update purchase request PR-72 to quantity 12, save the changes, and keep it as a draft.",
+            "Purchase request PR-72",
+            "https://example.test/requests/PR-72",
+        );
+        expect(result?.steps).toEqual([expect.objectContaining(step)]);
+        expect(result?.subtasks).toEqual([step.objective]);
     });
 
     test("preserves sequential multi-step plans even when the planner marks difficulty as simple", async () => {
@@ -1495,6 +1545,31 @@ describe("OrchestratorPlanner.buildNodes returns BuildNodesResult", () => {
         expect(result.nodes).toHaveLength(3);
     });
 
+    test("keeps opening an editor with its record update instead of gating on an invented field inventory", async () => {
+        completeImpl = () => Promise.resolve({
+            role: "assistant",
+            content: JSON.stringify({
+                isMultiStep: true, difficulty: "moderate", steps: [
+                    { objective: "Open the edit form for purchase request PR-72.", successCriteria: "All quantity, amount, and cost center inputs are visible together", toolProfile: "navigate", dependencies: [] },
+                    { objective: "Fill the requested quantity and amount, save the request as Draft, and read back the saved record.", successCriteria: "Saved PR-72 shows quantity 12, amount 240, and status Draft", toolProfile: "form_fill", dependencies: [0] },
+                ],
+            }),
+            finish_reason: "stop",
+        });
+        const result = await new OrchestratorPlanner("test-key").buildNodes(
+            "Update purchase request PR-72: quantity 12, amount 240. Keep it as a draft and preserve other editors' changes.",
+            "Purchase request PR-72", "https://example.test/requests/PR-72",
+        );
+        expect(result.nodes).toHaveLength(1);
+        expect(result.nodes[0].description).toMatch(/open the edit form/i);
+        expect(result.nodes[0].description).toMatch(/save the request/i);
+        expect(result.nodes[0].successCriteria).toContain("PR-72: quantity 12, amount 240");
+        expect(result.nodes[0].successCriteria).toContain("preserve other editors' changes");
+        expect(result.nodes[0].successCriteria).not.toContain("inputs are visible together");
+        expect(result.nodes[0].allowedTools).toContain(ToolName.TYPE_TEXT);
+        expect(result.nodes[0].toolProfile).not.toBe("navigate");
+    });
+
     test("uses compact exhaustive fallback graph when planner decomposition collapses to a single fallback node", async () => {
         completeImpl = () => Promise.resolve({
             role: "assistant",
@@ -1967,7 +2042,7 @@ describe("OrchestratorPlanner.buildNodes returns BuildNodesResult", () => {
         expect(result.isSingleNode).toBe(true);
         expect(result.nodes[0].selectedSkillId).toBe("list-filter-workflow");
         expect(result.nodes[0].description).toContain("Complete the workflow for the original request");
-        expect(result.nodes[0].successCriteria).toContain("not merely an intermediate");
+        expect(result.nodes[0].successCriteria).toContain("Every requested outcome and explicit constraint");
         expect(result.nodes[0].allowedTools).toContain(ToolName.INSPECT_FILTER_STATE);
         expect(result.nodes[0].allowedTools).toContain(ToolName.APPLY_LIST_FILTER);
         expect(result.nodes[0].allowedTools).toContain(ToolName.INSPECT_TABLE);
@@ -2059,7 +2134,7 @@ describe("OrchestratorPlanner.buildNodes returns BuildNodesResult", () => {
             "Complete the workflow for the original request",
         );
         expect(result.nodes[0].successCriteria).toContain(
-            "not merely an intermediate",
+            "Every requested outcome and explicit constraint",
         );
         expect(result.nodes[0].allowedTools).toContain(
             ToolName.CONFIGURE_SERVICENOW_FORM,
@@ -2174,9 +2249,34 @@ describe("OrchestratorPlanner.buildNodes returns BuildNodesResult", () => {
         expect(result.nodes[0].selectedSkillId).toBe(
             "progressive-repeatable-form",
         );
+        expect(result.nodes[0].successCriteria).toContain("leave the application unsubmitted");
+        expect(result.nodes[0].successCriteria).not.toContain("Profile roles are available");
         expect(result.nodes[0].description).toContain(
             "Complete the workflow for the original request",
         );
+    });
+
+    test.each([
+        ["Generic registration", "https://example.com/registration", "Register Sam Rivera with email sam@example.com.\nReview the values before submitting and report the saved confirmation."],
+        ["New Incident | ServiceNow", "https://example.service-now.com/incident.do", 'Create an incident with Short description "Printer offline", Caller "Joe Employee", and Priority "2 - High". Review those values before submitting.'],
+    ])("whole-workflow criteria preserve user constraints without predicted screens: %s", async (title, url, query) => {
+        completeImpl = () => Promise.resolve({
+            role: "assistant",
+            content: JSON.stringify({ isMultiStep: true, difficulty: "moderate", steps: [
+                { objective: "Open the registration or record form and enter the requested values", successCriteria: "Step 2 heading visible with all requested values selected", dependencies: [], assumptions: [] },
+                { objective: "Review and submit the requested record", successCriteria: "A green modal is visible with a confirmation code", dependencies: [0], assumptions: [] },
+            ] }),
+            finish_reason: "stop",
+        });
+        const result = await new OrchestratorPlanner("test-key").buildNodes(query, title, url);
+        expect(result.nodes).toHaveLength(1);
+        const criteria = result.nodes[0].successCriteria;
+        expect(criteria).toContain(JSON.stringify(query));
+        expect(criteria).not.toContain("Step 2");
+        expect(criteria).not.toContain("green modal");
+        // Quoting keeps all explicit values and ordering constraints together;
+        // punctuation in the request cannot split or truncate the contract.
+        expect(deriveCriteria(criteria)).toHaveLength(1);
     });
 
     test("collapses structured form fill and submit plans into one skill-owned workflow node", async () => {
@@ -2222,7 +2322,7 @@ describe("OrchestratorPlanner.buildNodes returns BuildNodesResult", () => {
             "Complete the workflow for the original request",
         );
         expect(result.nodes[0].successCriteria).toContain(
-            "not merely an intermediate",
+            "Every requested outcome and explicit constraint",
         );
     });
 
@@ -2279,7 +2379,7 @@ describe("OrchestratorPlanner.buildNodes returns BuildNodesResult", () => {
         expect(result.nodes[0].description).toContain("2026-06-01");
         expect(result.nodes[0].description).toContain("FINAL_LITERAL_MARKER");
         expect(result.nodes[0].successCriteria).toContain(
-            "not merely an intermediate",
+            "Every requested outcome and explicit constraint",
         );
     });
 
@@ -2468,7 +2568,7 @@ describe("OrchestratorPlanner.buildNodes returns BuildNodesResult", () => {
             "Go to Electronics under the Products menu",
         );
         expect(result.nodes[0].successCriteria).toContain(
-            "The original request is fully completed and verified",
+            "Every requested outcome and explicit constraint",
         );
     });
 
@@ -3390,21 +3490,6 @@ describe("selectPrimarySkill", () => {
         expect(suppression?.temporarilySuppressedTools).toContain(ToolName.CREATE_TAB);
     });
 
-    test("keeps recommendation list reviews out of paginated aggregate scans", () => {
-        expect(
-            selectPrimarySkill({
-                query:
-                    "I'm a senior frontend engineer looking for a fully remote position in the $120K-$160K salary range. Review the job listings and tell me which ones are the best matches for my profile and why.",
-                objective:
-                    "Read all job listings on the TechJobs Board page, analyze each against the user's profile, and report the best matches with reasoning",
-                successCriteria:
-                    "Best job recommendations are grounded in reviewed listing details",
-                pageTitle: "TechJobs Board",
-                pageUrl: "https://example.com/job-board",
-            })?.id,
-        ).toBe("list-detail-review-loop");
-    });
-
     test("matches cross-tab compare workflows", () => {
         expect(
             selectPrimarySkill({
@@ -4125,13 +4210,14 @@ describe("collapseSameContextSequentialNodes (LP-17 P7)", () => {
         );
     }
 
-    test("merges a serialized same-page chain into one node with unioned criteria", async () => {
+    test("merges a serialized same-page chain with the full user outcome contract", async () => {
         const merged = await collapse(
             makeChain([
                 "Pick the Large size in the size selector",
                 "Enable the custom engraving checkbox",
                 "Add the configured product to the cart",
             ]),
+            "Choose Large, enable engraving, and add the product to the cart",
         );
         expect(merged).toHaveLength(1);
         expect(merged[0].description).toContain(
@@ -4140,7 +4226,7 @@ describe("collapseSameContextSequentialNodes (LP-17 P7)", () => {
         expect(merged[0].description).toContain("engraving");
         expect(merged[0].dependencies).toEqual([]);
         expect(merged[0].successCriteria).toContain("cart");
-        expect(merged[0].successCriteria).toContain("; ");
+        expect(merged[0].successCriteria).toContain("Every requested outcome and explicit constraint");
     });
 
     test("redundant ancestor dependencies still collapse a serialized chain", async () => {
@@ -4160,6 +4246,42 @@ describe("collapseSameContextSequentialNodes (LP-17 P7)", () => {
             "Enter the payment details",
         ]);
         expect(await collapse(nodes)).toHaveLength(3);
+    });
+
+    test.each([
+        "Open the editor and stop before changing anything.",
+        "Open the editor, ask me for approval, then fill the fields.",
+        "Make separate updates to the form.",
+    ])("preserves the explicit boundary: %s", async (query) => {
+        const nodes = makeChain(
+            ["Open the edit form for the request.", "Fill the fields and save the request."],
+            [{ toolProfile: "navigate" }, { toolProfile: "form_fill" }],
+        );
+        expect(await collapse(nodes, query)).toBe(nodes);
+    });
+
+    test.each([
+        ["Open the editor in a new tab.", "Fill the fields and save the request."],
+        ["Open the editor at https://a.example/edit.", "Fill the form at https://b.example/edit."],
+    ])("preserves editor navigation across tabs or origins", async (first, second) => {
+        const nodes = makeChain([first, second], [{ toolProfile: "navigate" }, { toolProfile: "form_fill" }]);
+        expect(await collapse(nodes)).toBe(nodes);
+    });
+
+    test("preserves an editor inspection without dependent form edits", async () => {
+        const nodes = makeChain(
+            ["Open the editor.", "Report which fields are available."],
+            [{ toolProfile: "navigate" }, { toolProfile: "read_only" }],
+        );
+        expect(await collapse(nodes)).toBe(nodes);
+    });
+
+    test("keeps the existing description-size bound when folding editor entry", async () => {
+        const nodes = makeChain(
+            ["Open the editor.", `Fill the fields. ${"Preserve the requested values. ".repeat(30)}`],
+            [{ toolProfile: "navigate" }, { toolProfile: "form_fill" }],
+        );
+        expect(await collapse(nodes)).toBe(nodes);
     });
 
     test("distinct URL origins block the merge", async () => {
@@ -4222,7 +4344,7 @@ describe("collapseSameContextSequentialNodes (LP-17 P7)", () => {
             "https://shop.example/order",
         );
         expect(result.nodes).toHaveLength(1);
-        expect(result.nodes[0].successCriteria.toLowerCase()).toContain("confirmation");
+        expect(result.nodes[0].successCriteria).toContain("Fill in the order form and place the order");
     });
 });
 

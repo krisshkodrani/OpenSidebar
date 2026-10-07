@@ -10,10 +10,13 @@
  */
 
 export class PendingResolverRegistry<T> {
+  private scopes = new Map<string, string>();
   private resolvers = new Map<string, (value: T) => void>();
 
   /** Park a resolver under a request id (overwrites any prior one). */
-  register(id: string, resolver: (value: T) => void): void {
+  register(id: string, resolver: (value: T) => void, scope?: string): void {
+    if (scope !== undefined) this.scopes.set(id, scope);
+    else this.scopes.delete(id);
     this.resolvers.set(id, resolver);
   }
 
@@ -25,13 +28,22 @@ export class PendingResolverRegistry<T> {
   /** Drop a request id's resolver. */
   delete(id: string): void {
     this.resolvers.delete(id);
+    this.scopes.delete(id);
+  }
+
+  resolveScope(scope: string, value: T): void {
+    for (const [id, resolve] of [...this.resolvers]) {
+      if (this.scopes.get(id) !== scope) continue;
+      resolve(value);
+      this.delete(id);
+    }
   }
 
   /** Resolve every pending request with the same value, then clear them all. */
   resolveAll(value: T): void {
     for (const [id, resolve] of this.resolvers) {
       resolve(value);
-      this.resolvers.delete(id);
+      this.delete(id);
     }
   }
 }

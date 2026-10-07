@@ -18,9 +18,10 @@ async function session(): Promise<StoredSession> {
     );
   return value;
 }
-async function refreshed(current: StoredSession) {
+async function refreshed(current: StoredSession, signal?: AbortSignal) {
   const response = await fetch(`${API_ORIGIN}/api/v1/extension/auth/refresh`, {
     method: "POST",
+    signal,
     headers: { "content-type": "application/json" },
     body: JSON.stringify({ refreshToken: current.refreshToken }),
   });
@@ -51,12 +52,16 @@ export async function cloudRelayFetch(
   seat: "executor" | "planner" | "writer" | "judge",
   signal?: AbortSignal,
 ) {
-  if (providerId !== "openrouter" && providerId !== "fireworks")
+  if (providerId !== "openrouter")
     throw new Error(
       `Provider ${providerId} is not available through OpenSidebar Cloud.`,
     );
+  signal?.throwIfAborted();
   let auth = await session();
-  if (auth.accessExpiresAt < Date.now() + 30_000) auth = await refreshed(auth);
+  signal?.throwIfAborted();
+  if (auth.accessExpiresAt < Date.now() + 30_000)
+    auth = await refreshed(auth, signal);
+  signal?.throwIfAborted();
   const request = {
     schemaVersion: 1,
     requestId: crypto.randomUUID(),
@@ -71,6 +76,11 @@ export async function cloudRelayFetch(
     stop: payload.stop,
     responseFormat: payload.response_format,
     toolChoice: payload.tool_choice,
+    ...(providerId === "openrouter" &&
+    payload.provider &&
+    (payload.provider as { only?: string[] }).only
+      ? { providerRouting: payload.provider }
+      : {}),
   };
   signal?.addEventListener(
     "abort",
@@ -100,8 +110,36 @@ export async function cloudRelayFetch(
     });
   let response = await send(auth.accessToken);
   if (response.status === 401) {
-    auth = await refreshed(auth);
+    auth = await refreshed(auth, signal);
     response = await send(auth.accessToken);
+  }
+  return response;
+}
+
+/** Metadata needs the vaulted OpenRouter key; the key never leaves the server. */
+export async function cloudEndpointMetadataFetch(
+  model: string,
+  signal?: AbortSignal,
+) {
+  signal?.throwIfAborted();
+  let auth = await session();
+  signal?.throwIfAborted();
+  if (auth.accessExpiresAt < Date.now() + 30_000)
+    auth = await refreshed(auth, signal);
+  const send = () => {
+    signal?.throwIfAborted();
+    return fetch(
+      `${API_ORIGIN}/api/v1/relay/openrouter/models/${model.split("/").map(encodeURIComponent).join("/")}/endpoints`,
+      {
+        signal,
+        headers: { authorization: `Bearer ${auth.accessToken}` },
+      },
+    );
+  };
+  let response = await send();
+  if (response.status === 401) {
+    auth = await refreshed(auth, signal);
+    response = await send();
   }
   return response;
 }

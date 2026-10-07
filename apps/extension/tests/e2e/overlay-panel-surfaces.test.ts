@@ -6,7 +6,7 @@ import {
 } from "./helpers/overlay-harness";
 
 const LOCAL_API_KEY_SEED = {
-  fireworksApiKey_local: "fake-fireworks-key",
+  openRouterApiKey_local: "fake-openrouter-key",
 };
 
 describe("Overlay panel product surfaces", () => {
@@ -130,9 +130,9 @@ describe("Overlay panel product surfaces", () => {
       expect.stringMatching(/^enc:v1:/),
     );
     expect(persistedProfile.notesMarkdown).not.toBe(notes);
-    expect(
-      snapshot.storage.local["opensidebar:personalProfile:cek"],
-    ).toEqual(expect.any(String));
+    expect(snapshot.storage.local["opensidebar:personalProfile:cek"]).toEqual(
+      expect.any(String),
+    );
     expect(runner.pageErrors).toEqual([]);
   }, 120_000);
 
@@ -165,6 +165,7 @@ describe("Overlay panel product surfaces", () => {
     const runner = await setupRunner();
 
     await runner.clickOverlayButton("Settings");
+    await clickOverlayButtonByText(runner, "agent");
     await runner.waitForOverlayText("Appearance");
     await clickOverlayButtonByText(runner, "dark");
     await clickOverlayButtonByText(runner, "Fast");
@@ -173,13 +174,7 @@ describe("Overlay panel product surfaces", () => {
     await setOverlayCheckboxByLabel(runner, "Session metrics", true);
     await clickOverlayButtonByText(runner, "Save Changes");
 
-    await waitForStoragePath(
-      runner,
-      "sync",
-      "userSettings",
-      ["theme"],
-      "dark",
-    );
+    await waitForStoragePath(runner, "sync", "userSettings", ["theme"], "dark");
     await waitForStoragePath(
       runner,
       "sync",
@@ -346,26 +341,18 @@ describe("Overlay panel product surfaces", () => {
       "Do not submit the quiz.\nDo not choose unrelated answers.",
     );
     await clickOverlayButtonByText(runner, "Save");
-    await waitForLocalArrayItemMatch(
-      runner,
-      "opensidebar:userWebsiteSkills",
-      {
-        name: "Updated harness workflow",
-        triggerPhrase: "updated harness",
-        pathPattern: "/course/*/learn/quiz/*",
-      },
-    );
+    await waitForLocalArrayItemMatch(runner, "opensidebar:userWebsiteSkills", {
+      name: "Updated harness workflow",
+      triggerPhrase: "updated harness",
+      pathPattern: "/course/*/learn/quiz/*",
+    });
     await runner.waitForOverlayText("Do not submit the quiz.");
 
     await setOverlayCheckboxByLabel(runner, "On", false);
-    await waitForLocalArrayItemMatch(
-      runner,
-      "opensidebar:userWebsiteSkills",
-      {
-        name: "Updated harness workflow",
-        enabled: false,
-      },
-    );
+    await waitForLocalArrayItemMatch(runner, "opensidebar:userWebsiteSkills", {
+      name: "Updated harness workflow",
+      enabled: false,
+    });
 
     await runner.clickOverlayButton("Delete Updated harness workflow");
     await waitForLocalArrayMissing(runner, "opensidebar:userWebsiteSkills", {
@@ -434,7 +421,10 @@ describe("Overlay panel product surfaces", () => {
 
     await clickOverlayButtonByText(runner, "Cancel");
     await runner.waitForFakeBackgroundHandled("SKILL_RECORDING_CANCEL");
-    await waitForOverlayTextAbsent(runner, "Recording paused on restricted page");
+    await waitForOverlayTextAbsent(
+      runner,
+      "Recording paused on restricted page",
+    );
     expect(runner.pageErrors).toEqual([]);
   }, 120_000);
 });
@@ -456,13 +446,17 @@ async function clickOverlayButtonByText(
 ): Promise<void> {
   const handle = await runner.page.waitForFunction(
     (expectedText) => {
-      const root = document.getElementById("opensidebar-harness-host")
-        ?.shadowRoot;
+      const root = document.getElementById(
+        "opensidebar-harness-host",
+      )?.shadowRoot;
       const normalize = (value: string | null | undefined) =>
         (value ?? "").replace(/\s+/g, " ").trim();
       return (
-        Array.from(root?.querySelectorAll("button") ?? []).find((button) =>
-          normalize(button.textContent).includes(expectedText),
+        Array.from(root?.querySelectorAll("button") ?? []).find(
+          (button) =>
+            normalize(button.textContent) === expectedText &&
+            button.getBoundingClientRect().width > 0 &&
+            button.getBoundingClientRect().height > 0,
         ) ?? false
       );
     },
@@ -475,6 +469,27 @@ async function clickOverlayButtonByText(
     throw new Error(`Overlay button text was not found: ${text}`);
   }
   try {
+    // Drawer transitions move controls into the viewport after they enter the DOM.
+    await element.evaluate(async (control) => {
+      const animations: Animation[] = [];
+      for (
+        let current: Element | null = control;
+        current;
+        current = current.parentElement
+      ) {
+        animations.push(
+          ...current
+            .getAnimations()
+            .filter(
+              (animation) =>
+                animation.effect?.getComputedTiming().iterations !== Infinity,
+            ),
+        );
+      }
+      await Promise.all(
+        animations.map((animation) => animation.finished.catch(() => {})),
+      );
+    });
     await element.click();
   } finally {
     await element.dispose();
@@ -488,8 +503,9 @@ async function fillOverlayControl(
 ): Promise<void> {
   await runner.page.waitForFunction(
     (target) => {
-      const root = document.getElementById("opensidebar-harness-host")
-        ?.shadowRoot;
+      const root = document.getElementById(
+        "opensidebar-harness-host",
+      )?.shadowRoot;
       if (!root) return false;
       const normalize = (text: string | null | undefined) =>
         (text ?? "").replace(/\s+/g, " ").trim();
@@ -497,13 +513,12 @@ async function fillOverlayControl(
         Array.from(root.querySelectorAll("label")).find((label) =>
           normalize(label.textContent).includes(target),
         ) ||
-          Array.from(root.querySelectorAll("input, textarea")).find(
-            (control) =>
-              control instanceof HTMLInputElement ||
-              control instanceof HTMLTextAreaElement
-                ? control.placeholder === target
-                : false,
-          ),
+        Array.from(root.querySelectorAll("input, textarea")).find((control) =>
+          control instanceof HTMLInputElement ||
+          control instanceof HTMLTextAreaElement
+            ? control.placeholder === target
+            : false,
+        ),
       );
     },
     {},
@@ -512,8 +527,9 @@ async function fillOverlayControl(
 
   await runner.page.evaluate(
     ({ target, nextValue }) => {
-      const root = document.getElementById("opensidebar-harness-host")
-        ?.shadowRoot;
+      const root = document.getElementById(
+        "opensidebar-harness-host",
+      )?.shadowRoot;
       if (!root) throw new Error("Overlay root was not found.");
       const normalize = (text: string | null | undefined) =>
         (text ?? "").replace(/\s+/g, " ").trim();
@@ -596,9 +612,7 @@ async function waitForStorageStringPrefix(
       for (const segment of valuePath) {
         current = (current as Record<string, unknown> | undefined)?.[segment];
       }
-      return (
-        typeof current === "string" && current.startsWith(expectedPrefix)
-      );
+      return typeof current === "string" && current.startsWith(expectedPrefix);
     },
     {},
     {
@@ -707,8 +721,9 @@ async function waitForOverlayTextAbsent(
 ): Promise<void> {
   await runner.page.waitForFunction(
     (expectedText) => {
-      const root = document.getElementById("opensidebar-harness-host")
-        ?.shadowRoot;
+      const root = document.getElementById(
+        "opensidebar-harness-host",
+      )?.shadowRoot;
       return !root?.textContent?.includes(expectedText);
     },
     {},
@@ -722,15 +737,18 @@ async function clickOverlayText(
 ): Promise<void> {
   const handle = await runner.page.waitForFunction(
     (expectedText) => {
-      const root = document.getElementById("opensidebar-harness-host")
-        ?.shadowRoot;
+      const root = document.getElementById(
+        "opensidebar-harness-host",
+      )?.shadowRoot;
       const normalize = (value: string | null | undefined) =>
         (value ?? "").replace(/\s+/g, " ").trim();
       return (
         Array.from(
           root?.querySelectorAll("button, summary, [role='button'], div") ?? [],
         )
-          .filter((element) => normalize(element.textContent).includes(expectedText))
+          .filter((element) =>
+            normalize(element.textContent).includes(expectedText),
+          )
           .sort(
             (left, right) =>
               normalize(left.textContent).length -
@@ -747,6 +765,27 @@ async function clickOverlayText(
     throw new Error(`Overlay text target was not found: ${text}`);
   }
   try {
+    // Drawer transitions move controls into the viewport after they enter the DOM.
+    await element.evaluate(async (control) => {
+      const animations: Animation[] = [];
+      for (
+        let current: Element | null = control;
+        current;
+        current = current.parentElement
+      ) {
+        animations.push(
+          ...current
+            .getAnimations()
+            .filter(
+              (animation) =>
+                animation.effect?.getComputedTiming().iterations !== Infinity,
+            ),
+        );
+      }
+      await Promise.all(
+        animations.map((animation) => animation.finished.catch(() => {})),
+      );
+    });
     await element.click();
   } finally {
     await element.dispose();
@@ -760,11 +799,12 @@ async function waitForOverlayTextareaValue(
 ): Promise<void> {
   await runner.page.waitForFunction(
     ({ targetPlaceholder, expectedValue }) => {
-      const root = document.getElementById("opensidebar-harness-host")
-        ?.shadowRoot;
-      const textarea = Array.from(root?.querySelectorAll("textarea") ?? []).find(
-        (item) => item.placeholder === targetPlaceholder,
-      );
+      const root = document.getElementById(
+        "opensidebar-harness-host",
+      )?.shadowRoot;
+      const textarea = Array.from(
+        root?.querySelectorAll("textarea") ?? [],
+      ).find((item) => item.placeholder === targetPlaceholder);
       return textarea?.value === expectedValue;
     },
     {},
@@ -779,8 +819,9 @@ async function setOverlayCheckboxByLabel(
 ): Promise<void> {
   await runner.page.waitForFunction(
     (expectedLabel) => {
-      const root = document.getElementById("opensidebar-harness-host")
-        ?.shadowRoot;
+      const root = document.getElementById(
+        "opensidebar-harness-host",
+      )?.shadowRoot;
       const normalize = (value: string | null | undefined) =>
         (value ?? "").replace(/\s+/g, " ").trim();
       return Boolean(
@@ -794,8 +835,9 @@ async function setOverlayCheckboxByLabel(
   );
   await runner.page.evaluate(
     ({ expectedLabel, nextChecked }) => {
-      const root = document.getElementById("opensidebar-harness-host")
-        ?.shadowRoot;
+      const root = document.getElementById(
+        "opensidebar-harness-host",
+      )?.shadowRoot;
       if (!root) throw new Error("Overlay root was not found.");
       const normalize = (value: string | null | undefined) =>
         (value ?? "").replace(/\s+/g, " ").trim();

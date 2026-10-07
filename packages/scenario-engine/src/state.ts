@@ -174,7 +174,27 @@ export function reduceScenarioState(
       if (!("expected" in control)) {
         throw new Error("Scenario does not define a case submission result.");
       }
-      if (control.submissionKind === "value") {
+      if (control.submissionKind === "fields") {
+        const fields = objectValue(payload.fields);
+        const interaction = objectValue(publicData.interaction);
+        const definitions = interaction && Array.isArray(interaction.fields) ? interaction.fields : [];
+        if (!fields || definitions.length === 0 || Object.keys(fields).length !== definitions.length) {
+          throw new Error("Complete all record fields before saving.");
+        }
+        for (const definition of definitions) {
+          const field = objectValue(definition);
+          if (!field || typeof field.key !== "string" || !Array.isArray(field.options) || !field.options.includes(fields[field.key]!)) {
+            throw new Error("Choose an available value for every record field.");
+          }
+        }
+        caseState.fields = cloneJson(fields);
+      } else if (control.submissionKind === "note") {
+        if (typeof payload.value !== "string" || !payload.value.trim() ||
+            (payload.visibility !== "internal" && payload.visibility !== "public")) {
+          throw new Error("A note requires text and a visibility selection.");
+        }
+        caseState.note = { text: payload.value.trim(), visibility: payload.visibility };
+      } else if (control.submissionKind === "value") {
         const normalize = (value: unknown) => String(value ?? "")
           .trim()
           .toLocaleLowerCase()

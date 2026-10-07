@@ -93,5 +93,11 @@ export function actionMemoryKey(
   ) {
     return rawArgsKey;
   }
-  return `${rawArgsKey}@${getSnapshotFingerprint(snapshot ?? null)}`;
+  // Text and element count can stay identical when a form enables its action.
+  // Attempts made while disabled must not poison a now-actionable target.
+  const target = snapshot?.elements.find((element) => element.tag === Number(args.id));
+  const disabled = target
+    ? Boolean(target.isDisabled || target.attributes.disabled === "true" || target.attributes["aria-disabled"] === "true")
+    : "unknown";
+  return `${rawArgsKey}@${getSnapshotFingerprint(snapshot ?? null)}|disabled:${disabled}`;
 }

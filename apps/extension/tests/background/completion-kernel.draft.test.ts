@@ -383,3 +383,22 @@ describe("completion kernel draft workflows", () => {
     expect(generated?.contract.kind).not.toBe("draft_only");
   });
 });
+
+describe("record draft status versus unsent communication", () => {
+  test.each([
+    "Update purchase request PR-417 quantity to 12. Keep it as a draft.",
+    "Update the travel request destination and budget. Keep it as a draft and preserve other editors' changes.",
+  ])("does not demand a message editor for a business record: %s", (userRequest) => {
+    const generated = generateCompletionContract({
+      userRequest,
+      activeObjective: "Open the record edit form",
+      successCriteria: "Record edit form and budget input visible",
+      snapshot: draftSnapshot({ title: "Record budget", url: "https://example.test/record/edit", pageContent: "Record budget — Draft", visibleContent: "Record budget — Draft", elements: [textField(1, "Estimated budget", "")] }),
+    });
+    expect(generated?.contract.kind).not.toBe("draft_only");
+  });
+  test("still requires an unsent draft for an implicit request in a visible message editor", () => {
+    const generated = generateCompletionContract({ userRequest: "Keep it as a draft.", snapshot: draftSnapshot() });
+    expect(generated?.contract.kind).toBe("draft_only");
+  });
+});

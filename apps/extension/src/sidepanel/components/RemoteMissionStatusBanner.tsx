@@ -2,6 +2,8 @@ import { useEffect, useState } from "react";
 import { MessageSource } from "../../types";
 import {
   REMOTE_MISSION_LOCAL_STATUS_KEY,
+  REMOTE_MISSION_ACTIVITY_KEY,
+  type RemoteMissionActivity,
   type RemoteMissionLocalStatus,
 } from "../../remote-mission-local-status";
 import { uiRuntime } from "../runtime";
@@ -9,7 +11,7 @@ import { uiRuntime } from "../runtime";
 const labels: Record<RemoteMissionLocalStatus["state"], string> = {
   queued: "Waiting for this browser",
   accepted: "Accepted on this browser",
-  running: "Running on this browser",
+  running: "Preparing remote task",
   target_selection_required: "Choose a browser target in Codex",
   supervision_required: "Waiting for Codex to review evidence",
   approval_required: "Waiting for your approval",
@@ -17,6 +19,13 @@ const labels: Record<RemoteMissionLocalStatus["state"], string> = {
   failed: "Not completed",
   cancelled: "Cancelled",
   outcome_unknown: "Outcome needs review",
+};
+
+const activityLabels: Record<RemoteMissionActivity["phase"], string> = {
+  finding_tab: "Finding the requested tab",
+  connecting_page: "Connecting to the page",
+  starting_agent: "Starting the browser agent",
+  agent_active: "Browser agent is working",
 };
 
 const targets = {
@@ -38,8 +47,14 @@ const parse = (value: unknown): RemoteMissionLocalStatus | null => {
 
 type ControlResponse = { ok: boolean; detail?: string };
 
-export function RemoteMissionStatusBanner() {
+export function RemoteMissionStatusBanner({
+  onPresenceChange,
+}: {
+  onPresenceChange?: (present: boolean) => void;
+} = {}) {
   const [status, setStatus] = useState<RemoteMissionLocalStatus | null>(null);
+  const [activity, setActivity] = useState<RemoteMissionActivity | null>(null);
+  const [now, setNow] = useState(Date.now());
   const [pending, setPending] = useState<"cancel" | "deny" | null>(null);
   const [error, setError] = useState<string | null>(null);
 
@@ -48,7 +63,15 @@ export function RemoteMissionStatusBanner() {
     void uiRuntime.storage.local.get(REMOTE_MISSION_LOCAL_STATUS_KEY).then((stored) => {
       if (active) setStatus(parse(stored[REMOTE_MISSION_LOCAL_STATUS_KEY]));
     });
+    const readActivity = (value: unknown) => {
+      const candidate = value as Partial<RemoteMissionActivity> | null;
+      if (active) setActivity(candidate && typeof candidate.missionId === "string" &&
+        typeof candidate.phase === "string" && candidate.phase in activityLabels &&
+        typeof candidate.updatedAt === "string" ? candidate as RemoteMissionActivity : null);
+    };
+    void uiRuntime.storage.local.get(REMOTE_MISSION_ACTIVITY_KEY).then((stored) => readActivity(stored[REMOTE_MISSION_ACTIVITY_KEY]));
     const unsubscribe = uiRuntime.storage.local.onChanged?.((changes) => {
+      if (REMOTE_MISSION_ACTIVITY_KEY in changes) readActivity(changes[REMOTE_MISSION_ACTIVITY_KEY]?.newValue);
       if (REMOTE_MISSION_LOCAL_STATUS_KEY in changes) {
         setStatus(parse(changes[REMOTE_MISSION_LOCAL_STATUS_KEY]?.newValue));
         setPending(null);
@@ -61,7 +84,20 @@ export function RemoteMissionStatusBanner() {
     };
   }, []);
 
+  useEffect(() => {
+    onPresenceChange?.(status !== null);
+  }, [status, onPresenceChange]);
+
+  useEffect(() => {
+    if (status?.state !== "running") return;
+    const timer = setInterval(() => setNow(Date.now()), 1_000);
+    return () => clearInterval(timer);
+  }, [status?.state]);
+
   if (!status) return null;
+  const currentActivity = activity?.missionId === status.missionId ? activity : null;
+  const waitingSeconds = Math.max(0, Math.floor((now - Date.parse(currentActivity?.updatedAt ?? status.updatedAt)) / 1_000));
+
   const isActive =
     status.state === "accepted" ||
     status.state === "running" ||
@@ -101,7 +137,7 @@ export function RemoteMissionStatusBanner() {
             Remote task
           </div>
           <div className="mt-0.5 font-semibold" role="status" aria-live="polite">
-            {labels[status.state]}
+            {status.state === "running" && currentActivity ? activityLabels[currentActivity.phase] : labels[status.state]}
           </div>
         </div>
         <span className="rounded-full border border-current/15 bg-white/50 px-2 py-1 text-[10px] font-medium dark:bg-black/10">
@@ -110,6 +146,11 @@ export function RemoteMissionStatusBanner() {
       </div>
 
       <div className="border-t border-current/10 px-3 py-2.5">
+        {status.state === "running" && waitingSeconds >= 15 ? (
+          <p role="status" className="mb-2">
+            No new activity for {waitingSeconds} seconds. You can cancel this task.
+          </p>
+        ) : null}
         <dl className="grid grid-cols-[auto_1fr] gap-x-3 gap-y-1 text-[10px]">
           <dt className="opacity-60">Requested by</dt>
           <dd className="truncate text-right font-medium">

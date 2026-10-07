@@ -19,6 +19,7 @@ globalThis.chrome = {
 // Import after mocking
 import { ContextManager } from "../../src/background/agent/context";
 import { LLMMessage } from "../../src/background/llm/types";
+import type { DomSnapshot } from "../../src/types";
 import { pageContentRedTeamCases } from "../fixtures/page-content-redteam";
 
 /**
@@ -55,6 +56,19 @@ describe("ContextManager", () => {
     context = new ContextManager();
     // Reset mocks
     (chrome.storage.session.set as any).mockClear();
+  });
+
+  test("page observations survive conversation clearing but reset for a new task", () => {
+    const snapshot = {
+      url: "https://example.test/record/17", title: "Record 17",
+      pageContent: "Other editor changed cost center to Research", elements: [],
+    } as unknown as DomSnapshot;
+    context.setSnapshot(snapshot);
+    context.clearHistory();
+    context.setSnapshot({ ...snapshot, pageContent: "Saved. Cost center Research" });
+    expect(context.pageObservations.toArray()).toHaveLength(2);
+    context.clear();
+    expect(context.pageObservations.toArray()).toEqual([]);
   });
 
   // Helper to create messages

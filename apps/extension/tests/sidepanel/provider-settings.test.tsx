@@ -34,7 +34,7 @@ describe("key-driven provider settings", () => {
       );
     });
 
-    expect(container.textContent).toContain("Connect an AI provider");
+    expect(container.textContent).toContain("Connect OpenRouter");
     expect(
       container.querySelectorAll('button[aria-pressed="false"]'),
     ).toHaveLength(0);
@@ -62,15 +62,15 @@ describe("key-driven provider settings", () => {
 
     const stackButtons = container.querySelectorAll("button[aria-pressed]");
     const connectionRows = container.querySelectorAll("details > summary");
-    expect(connectionRows).toHaveLength(3);
+    expect(connectionRows).toHaveLength(2);
     expect(connectionRows[0]?.textContent).toContain("OpenRouter");
-    expect(connectionRows[1]?.textContent).toContain("Fireworks");
-    expect(connectionRows[2]?.textContent).toContain("Advanced model settings");
-    expect(container.querySelectorAll("details")[2]?.hasAttribute("open")).toBe(
+    expect(container.textContent).not.toContain("Fireworks");
+    expect(connectionRows[1]?.textContent).toContain("Advanced model settings");
+    expect(container.querySelectorAll("details")[1]?.hasAttribute("open")).toBe(
       false,
     );
-    expect(stackButtons).toHaveLength(1);
-    expect(stackButtons[0]?.textContent).toContain("OpenRouter");
+    expect(stackButtons).toHaveLength(0);
+    expect(container.textContent).toContain("OpenRouter");
     expect(container.textContent).not.toContain("OpenRouter + Groq");
     expect(container.textContent).not.toContain("Fireworks + DeepSeek");
     expect(container.textContent).not.toContain("Moonshot AI");

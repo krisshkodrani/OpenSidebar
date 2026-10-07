@@ -127,9 +127,9 @@
   },
   {
     "id": "planner.decompose.system",
-    "version": "v8",
-    "hash": "ce0d4298",
-    "description": "Planner decomposition system prompt for the task planner. v8: structured whole-document form inspection. v7: per-step display label for the UI.",
+    "version": "v10",
+    "hash": "def34762",
+    "description": "Planner decomposition system prompt for the task planner. v10: preserve record-edit workflow continuity. v9: plan from observed page state.",
     "sourcePath": "prompts/runtime/planner/decompose_system.md"
   },
   {

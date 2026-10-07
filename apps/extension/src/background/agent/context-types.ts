@@ -87,3 +87,31 @@ export const REFERENCE_VALUE_TOOLS: ReadonlySet<string> = new Set([
   "search_history",
   "read_element",
 ]);
+
+/** Whitelist of action-relevant DOM attributes for NONE/LIGHT compression levels. */
+export const ACTION_RELEVANT_ATTRS = new Set([
+  "type",
+  "href",
+  "placeholder",
+  "value",
+  "aria-label",
+  "role",
+  "name",
+  "action",
+  "method",
+  "target",
+  "alt",
+  "title",
+  "min",
+  "max",
+  "pattern",
+  "required",
+  "checked",
+  "selected",
+  "disabled",
+  "readonly",
+  "multiple",
+  "accept",
+  "label",
+  "description",
+]);

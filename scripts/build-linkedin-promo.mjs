@@ -4,8 +4,7 @@
  *
  * Uses reviewed beats from the canonical silent promo, removes the consumer
  * shopping beat, and supplies a light original plucked bed with no sustained
- * low-frequency drone. Add narration with:
- *   node scripts/add-voiceover.mjs --video linkedin
+ * low-frequency drone.
  *
  * Usage: node scripts/build-linkedin-promo.mjs
  */

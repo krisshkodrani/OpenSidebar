@@ -79,7 +79,7 @@ test("direct lane classifies HTTP errors as provider failures", async () => {
   const result = await runDirectPerceptionProbe({
     case: MODEL_BENCH_PERCEPTION_CASES[0]!,
     image: image(),
-    requested: { provider: "fireworks", model: "vision" },
+    requested: { provider: "openrouter", model: "vision" },
     apiKey: "test-key",
     fetchImpl: async () => new Response("rate limited", { status: 429 }),
   });

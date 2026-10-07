@@ -16,6 +16,21 @@ import {
 } from "../environment";
 import type { PageDocumentState } from "../../types";
 
+/** Enforce deadlines in the sender: a content-script payload is not a timeout. */
+async function bounded<T>(operation: Promise<T>, timeoutMs: number): Promise<T> {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  try {
+    return await Promise.race([
+      operation,
+      new Promise<never>((_, reject) => {
+        timer = setTimeout(() => reject(new Error("Content bridge timed out")), Math.max(0, timeoutMs));
+      }),
+    ]);
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
 /** Set of tab IDs whose content scripts have reported ready */
 const readyTabs = new Set<number>();
 
@@ -111,6 +126,7 @@ export function waitForContentScriptReady(
             source: MessageSource.BACKGROUND,
             payload: { timeoutMs: 50 },
           });
+          if (resolved) return;
           // If we got a response, the content script is alive
           readyTabs.add(tabId);
           done();
@@ -133,12 +149,12 @@ export async function probeContentScript(
   bridgePort: ContentBridgePort = chromeContentBridgePort,
 ): Promise<boolean> {
   try {
-    await bridgePort.sendMessage(tabId, {
+    await bounded(bridgePort.sendMessage(tabId, {
       type: "DOM_READY_PROBE",
       requestId: crypto.randomUUID(),
       source: MessageSource.BACKGROUND,
       payload: { timeoutMs },
-    });
+    }), timeoutMs);
     readyTabs.add(tabId);
     return true;
   } catch {
@@ -205,6 +221,8 @@ export async function ensureContentScript(
   timeoutMs = 5000,
   bridgePort: ContentBridgePort = chromeContentBridgePort,
 ): Promise<boolean> {
+  const deadline = Date.now() + timeoutMs;
+  const remaining = () => Math.max(0, deadline - Date.now());
   if (readyTabs.has(tabId)) {
     const stillResponsive = await probeContentScript(
       tabId,
@@ -219,15 +237,16 @@ export async function ensureContentScript(
   try {
     const contentScriptFiles = bridgePort.getContentScriptFiles();
     if (contentScriptFiles?.length) {
-      await bridgePort.executeContentScripts(tabId, contentScriptFiles);
+      await bounded(bridgePort.executeContentScripts(tabId, contentScriptFiles), remaining());
     }
   } catch {
     // May fail on chrome:// pages or if already injected - that's fine
   }
 
   // Wait for the content script to signal ready
-  await waitForContentScriptReady(tabId, timeoutMs, bridgePort);
+  if (remaining() <= 0) return false;
+  await waitForContentScriptReady(tabId, remaining(), bridgePort);
   if (readyTabs.has(tabId)) return true;
 
-  return probeContentScript(tabId, Math.min(250, timeoutMs), bridgePort);
+  return remaining() > 0 && probeContentScript(tabId, Math.min(250, remaining()), bridgePort);
 }

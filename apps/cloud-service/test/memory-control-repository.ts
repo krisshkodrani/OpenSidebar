@@ -234,7 +234,7 @@ export class MemoryControlRepository implements ControlRepository {
     );
   }
   async credentialStatuses(accountId: string): Promise<CredentialStatusV1[]> {
-    return (["openrouter", "fireworks"] as const).map((provider) => {
+    return (["openrouter"] as const).map((provider) => {
       const item = this.credentials.get(
         this.credentialKey(accountId, provider),
       );

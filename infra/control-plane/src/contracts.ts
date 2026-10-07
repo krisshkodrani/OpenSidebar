@@ -1,4 +1,4 @@
-export type CloudProviderId = "openrouter" | "fireworks";
+export type CloudProviderId = "openrouter";
 
 export interface EncryptedCredential {
   accountId: string;

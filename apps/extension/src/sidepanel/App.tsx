@@ -36,7 +36,6 @@ import { useSidepanelBridge } from "./hooks/useSidepanelBridge";
 import { useTranscriptAutoScroll } from "./hooks/useTranscriptAutoScroll";
 import { useComposerActions } from "./hooks/useComposerActions";
 import { useSkillRecordingActions } from "./hooks/useSkillRecordingActions";
-import { useTaskUiState } from "./task-ui-state";
 import { getAvailableProviderStacks } from "../utils/provider-keys";
 import {
   cloudSession,
@@ -85,6 +84,7 @@ export default function App({ themeRoot, activityHudRoot }: AppProps = {}) {
   const skillRecordingStatus = useStore((s) => s.skillRecordingStatus);
   const activeUserWebsiteSkill = useStore((s) => s.activeUserWebsiteSkill);
   const isAgentRunning = useStore((s) => s.isAgentRunning);
+  const [hasRemoteMission, setHasRemoteMission] = useState(false);
   // Avoid re-running filter/map work on every streaming delta.
   const visibleMessages = useMemo(
     () =>
@@ -109,7 +109,7 @@ export default function App({ themeRoot, activityHudRoot }: AppProps = {}) {
 
   // Auto-expand on confirmation arrival
   useEffect(() => {
-    if (pendingPlanConfirmation) setIsPlanExpanded(true);
+    setIsPlanExpanded(Boolean(pendingPlanConfirmation));
   }, [pendingPlanConfirmation]);
 
   // Keep execution plans compact by default; confirmations still expand
@@ -150,7 +150,7 @@ export default function App({ themeRoot, activityHudRoot }: AppProps = {}) {
         setAccountEmail(session?.account.email ?? null);
         if (!session) return setAccountProviderReady(false);
         const provider =
-          settings.providerMode === "fireworks" ? "fireworks" : "openrouter";
+          "openrouter";
         const statuses = await credentialStatuses().catch(() => []);
         if (active)
           setAccountProviderReady(
@@ -189,7 +189,6 @@ export default function App({ themeRoot, activityHudRoot }: AppProps = {}) {
   useSidepanelBootstrap();
   const blockedSiteWarning = useWorkspaceSync(settings);
   const { screenshot, clearScreenshot } = useSidepanelBridge();
-  const taskUi = useTaskUiState();
 
   // Dark Mode Logic
   useEffect(() => {
@@ -260,18 +259,7 @@ export default function App({ themeRoot, activityHudRoot }: AppProps = {}) {
 
   return (
     <ErrorBoundary>
-      <div className="flex flex-col h-full bg-warm-gradient text-warm-800 dark:text-warm-100 font-sans transition-colors duration-200">
-        {/* Thin ambient activity bar while the agent is running. */}
-        {taskUi.showAmbientActivity && (
-          <div
-            className="h-0.5 shrink-0 animate-shimmer"
-            style={{
-              background:
-                "linear-gradient(90deg, transparent, var(--tw-gradient-via, #0d9488), transparent)",
-              backgroundSize: "200% 100%",
-            }}
-          />
-        )}
+      <div className="flex flex-col h-full bg-warm-50 dark:bg-warm-950 text-warm-800 dark:text-warm-100 font-sans transition-colors duration-200">
         <Header
           onOpenSettings={() => setIsSettingsOpen(true)}
           onOpenWebsiteSkills={() => setIsWebsiteSkillsOpen(true)}
@@ -287,7 +275,7 @@ export default function App({ themeRoot, activityHudRoot }: AppProps = {}) {
           }
           recordingActive={skillRecordingStatus === "recording"}
         />
-        <RemoteMissionStatusBanner />
+        <RemoteMissionStatusBanner onPresenceChange={setHasRemoteMission} />
 
         {/* Drawers are only mounted while open so closed drawers do no store
             subscriptions, grouping, or hashing work. Each resets its draft
@@ -380,7 +368,7 @@ export default function App({ themeRoot, activityHudRoot }: AppProps = {}) {
             </div>
           )}
           <div ref={scrollRef} className="flex-1 overflow-y-auto p-4">
-            {messages.length === 0 ? (
+            {messages.length === 0 && !hasRemoteMission ? (
               <div className="h-full flex flex-col items-center justify-center text-center p-8">
                 <div className="max-w-[260px]">
                   <div className="w-14 h-14 rounded-2xl overflow-hidden mb-5 flex items-center justify-center mx-auto shadow-sm shadow-primary-600/15">
@@ -416,7 +404,7 @@ export default function App({ themeRoot, activityHudRoot }: AppProps = {}) {
                           <span>
                             {accountProviderReady
                               ? "AI provider connected securely"
-                              : "Connect OpenRouter or Fireworks"}
+                              : "Connect OpenRouter"}
                           </span>
                         </li>
                         <li className="flex gap-2">

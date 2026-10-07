@@ -20,3 +20,10 @@ export type RemoteMissionLocalStatus = {
   /** Acceptance-build-only local diagnostic. Never sent to cloud. */
   diagnostic?: string;
 };
+
+export const REMOTE_MISSION_ACTIVITY_KEY = "opensidebar:remoteMissionActivity:v1";
+export type RemoteMissionActivity = {
+  missionId: string;
+  phase: "finding_tab" | "connecting_page" | "starting_agent" | "agent_active";
+  updatedAt: string;
+};

@@ -34,6 +34,8 @@ export function getMutationReplayFingerprint(
         attributes["aria-label"],
         attributes.placeholder,
         attributes.value,
+        attributes.selected,
+        attributes.checked,
         attributes.title,
         attributes.href,
       ]
@@ -66,7 +68,7 @@ export function getMutationReplayScopedKey(
 }
 
 export class MutationLedger {
-  private executedActions = new Map<string, string>();
+  private executedActions = new Map<string, Pick<MutationLedgerEntry, "result" | "documentInstanceId">>();
   private stepMutationLedger: MutationLedgerEntry[] = [];
   private sideEffectsLog: SideEffectEntry[] = [];
   private actionReceipts: ActionReceipt[] = [];
@@ -121,6 +123,7 @@ export class MutationLedger {
     args: Record<string, unknown>,
     snapshot: DomSnapshot | null | undefined,
     guardAfterDoneRejection: boolean,
+    documentInstanceId?: string,
   ): MutationReplayHit | null {
     if (!MUTATION_SENSITIVE_TOOLS.has(toolName)) return null;
 
@@ -129,6 +132,7 @@ export class MutationLedger {
     const ledgerHit = this.stepMutationLedger.find(
       (entry) =>
         entry.key === mutationKey &&
+        (!entry.documentInstanceId || !documentInstanceId || entry.documentInstanceId === documentInstanceId) &&
         entry.snapshotFingerprint === currentFingerprint,
     );
     if (ledgerHit) {
@@ -140,8 +144,9 @@ export class MutationLedger {
           getMutationReplayScopedKey(mutationKey, snapshot),
         )
       : null;
-    if (ephemeralHit) {
-      return { result: ephemeralHit, source: "ephemeral" };
+    if (ephemeralHit?.result &&
+      (!ephemeralHit.documentInstanceId || !documentInstanceId || ephemeralHit.documentInstanceId === documentInstanceId)) {
+      return { result: ephemeralHit.result, source: "ephemeral" };
     }
 
     return null;
@@ -153,6 +158,7 @@ export class MutationLedger {
     result: string;
     actionSnapshot?: DomSnapshot | null;
     currentSnapshot?: DomSnapshot | null;
+    documentInstanceId?: string;
     planIndex: number;
     turn: number;
     /** LP-15 Phase 8: seal a form-submit dry-run (bypasses the sensitive gate). */
@@ -167,6 +173,7 @@ export class MutationLedger {
       planIndex,
       turn,
       formSubmitSeal,
+      documentInstanceId,
     } = params;
     // Mutation-sensitive tools seal automatically; a form-submit dry-run seals
     // explicitly via formSubmitSeal even though the submit tool isn't sensitive.
@@ -177,7 +184,7 @@ export class MutationLedger {
     const replayFingerprint = getMutationReplayFingerprint(snapshotForReplay);
     this.executedActions.set(
       getMutationReplayScopedKey(mutationKey, snapshotForReplay),
-      result,
+      { result, documentInstanceId },
     );
 
     const ledgerEntry: MutationLedgerEntry = {
@@ -188,6 +195,7 @@ export class MutationLedger {
       recordedAt: this.now(),
       planIndex,
       snapshotFingerprint: replayFingerprint,
+      ...(documentInstanceId ? { documentInstanceId } : {}),
       ...(formSubmitSeal
         ? {
             formKey: formSubmitSeal.formKey,

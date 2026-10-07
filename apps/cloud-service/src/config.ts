@@ -24,6 +24,7 @@ export type CloudConfig = {
   deviceTakeoverEnabled: boolean;
   remoteMissionsEnabled?: boolean;
   hostedMcpEnabled?: boolean;
+  hostedMcpInteractiveEnabled?: boolean;
   cognitoMcpClientId?: string;
   mcpScopePrefix?: string;
   temporalShadowEnabled: boolean;
@@ -320,6 +321,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): CloudConfig {
       deviceCommandsEnabled && enabled("DEVICE_TAKEOVER_ENABLED"),
     remoteMissionsEnabled,
     hostedMcpEnabled,
+    hostedMcpInteractiveEnabled: hostedMcpEnabled && enabled("HOSTED_MCP_INTERACTIVE_ENABLED"),
     cognitoMcpClientId,
     mcpScopePrefix,
     temporalShadowEnabled,

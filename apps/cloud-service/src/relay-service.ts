@@ -104,6 +104,7 @@ export class RelayService {
     request: RelayRequestV1,
     clientSignal: AbortSignal,
   ): Promise<Response> {
+    if (request.provider !== "openrouter") throw new ControlPolicyError("invalid_provider");
     if (
       this.active.size >= this.limits.globalStreams ||
       this.concurrent(accountId) >= this.limits.accountStreams
@@ -171,9 +172,7 @@ export class RelayService {
       recorded = true;
       const credential = await this.vault.decrypt(accountId, request.provider);
       const endpoint =
-        request.provider === "openrouter"
-          ? "https://openrouter.ai/api/v1/chat/completions"
-          : "https://api.fireworks.ai/inference/v1/chat/completions";
+        "https://openrouter.ai/api/v1/chat/completions";
       let upstream: Response;
       try {
         upstream = await fetch(endpoint, {
@@ -193,6 +192,7 @@ export class RelayService {
             stop: request.stop,
             response_format: request.responseFormat,
             tool_choice: request.toolChoice,
+            ...(request.providerRouting ? { provider: request.providerRouting } : {}),
             stream: true,
             stream_options: { include_usage: true },
           }),

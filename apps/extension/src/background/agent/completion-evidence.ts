@@ -17,6 +17,7 @@ import type { TraceRecorder } from "./trace";
 import type { PlanStep } from "./planner";
 import {
   deriveCompletionEvidenceFromSnapshot,
+  extractCanonicalUserRequest,
   deriveCompletionEvidenceFromToolOutcome,
   buildCompletionRecoveryHint,
   type CompletionEvidenceLedger,
@@ -35,6 +36,18 @@ export interface CompletionEvidenceHost {
   readonly originalQuery: string;
   lastCompletionRejection: CompletionEvaluation | null;
   lastCompletionRecoveryHint: string | null;
+}
+
+// A click returns before the post-action observation arrives. Keep only the
+// latest click, and consume it against the next fresh snapshot before completion.
+const pendingToolEvidence = new WeakMap<CompletionEvidenceHost, Parameters<typeof deriveCompletionEvidenceFromToolOutcome>[0]>();
+
+function flushPendingToolEvidence(host: CompletionEvidenceHost): void {
+  const pending = pendingToolEvidence.get(host);
+  const currentSnapshot = host.context.getSnapshot();
+  if (!pending || !currentSnapshot || currentSnapshot === pending.preActionSnapshot) return;
+  pendingToolEvidence.delete(host);
+  recordCompletionEvidence(host, deriveCompletionEvidenceFromToolOutcome({ ...pending, currentSnapshot }), "post_action_observation");
 }
 
 export function getActiveCompletionContext(host: CompletionEvidenceHost): {
@@ -84,6 +97,7 @@ export function recordCompletionEvidence(host: CompletionEvidenceHost,
 }
 
 export function refreshCompletionEvidenceFromSnapshot(host: CompletionEvidenceHost, source: string): void {
+  flushPendingToolEvidence(host);
   recordCompletionEvidence(host, 
     deriveCompletionEvidenceFromSnapshot(
       host.context.getSnapshot(),
@@ -99,8 +113,15 @@ export function recordCompletionToolEvidence(host: CompletionEvidenceHost,
   result: string,
   preActionSnapshot?: DomSnapshot | null,
 ): void {
+  flushPendingToolEvidence(host);
+  pendingToolEvidence.delete(host);
+  const userRequest = extractCanonicalUserRequest(host.originalQuery);
+  if (toolName === "click_element" && preActionSnapshot && !/^Error:/i.test(result)) {
+    pendingToolEvidence.set(host, { toolName, args, result, preActionSnapshot, userRequest, turn: host.turnCount });
+  }
   const added = recordCompletionEvidence(host, 
     deriveCompletionEvidenceFromToolOutcome({
+      userRequest,
       toolName,
       args,
       result,

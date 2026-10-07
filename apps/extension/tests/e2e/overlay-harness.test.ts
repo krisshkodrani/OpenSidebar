@@ -129,7 +129,7 @@ describe("Overlay harness browser injection", () => {
       runtimeOptions: {
         storage: {
           local: {
-            fireworksApiKey_local: "fake-fireworks-key",
+            openRouterApiKey_local: "fake-openrouter-key",
           },
         },
       },
@@ -251,7 +251,7 @@ describe("Overlay harness browser injection", () => {
       runtimeOptions: {
         storage: {
           local: {
-            fireworksApiKey_local: "fake-fireworks-key",
+            openRouterApiKey_local: "fake-openrouter-key",
           },
         },
       },
@@ -312,7 +312,7 @@ describe("Overlay harness browser injection", () => {
         window: { id: 7 },
         storage: {
           local: {
-            fireworksApiKey_local: "fake-fireworks-key",
+            openRouterApiKey_local: "fake-openrouter-key",
             "overlay:local-probe": { ok: true },
           },
           sync: {

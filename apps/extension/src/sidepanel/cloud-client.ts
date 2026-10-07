@@ -84,6 +84,11 @@ async function responseError(response: Response) {
   const value = (await response.json().catch(() => null)) as {
     error?: { message?: string; code?: string };
   } | null;
+  if (value?.error?.code === "origin_failed") {
+    return new Error(
+      "This extension build is not approved for account connections. For an unpacked build, ask your OpenSidebar operator to approve its extension ID from chrome://extensions. Your sign-in code has not been checked yet.",
+    );
+  }
   return new Error(
     value?.error?.message ??
       value?.error?.code ??
@@ -254,7 +259,7 @@ export async function disableRemoteWork(expectedRevision: number) {
   return response.json() as Promise<CloudRemoteWorkSettingsV1>;
 }
 export async function uploadCredential(
-  provider: "openrouter" | "fireworks",
+  provider: "openrouter",
   credential: string,
 ) {
   const response = await cloudFetch(`/credentials/${provider}`, {
@@ -302,8 +307,7 @@ export async function syncCloudPreferences(settings: UserSettings) {
     schemaVersion: 1,
     revision,
     inferenceMode: settings.inferenceMode ?? "local",
-    providerMode:
-      settings.providerMode === "fireworks" ? "fireworks" : "openrouter",
+    providerMode: "openrouter",
     executorModel: settings.executorModel,
     plannerModel: settings.plannerModel,
     writerModel: settings.writerModel,

@@ -1,6 +1,9 @@
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 import "../setup";
-import { cloudRelayFetch } from "../../src/background/llm/cloud-relay";
+import {
+  cloudRelayFetch,
+  cloudEndpointMetadataFetch,
+} from "../../src/background/llm/cloud-relay";
 
 describe("cloud relay transport", () => {
   const originalGet = chrome.storage.local.get;
@@ -95,10 +98,85 @@ describe("cloud relay transport", () => {
         model: "allowed/model",
         messages: [{ role: "user", content: "hello" }],
       },
-      "fireworks",
+      "openrouter",
       "executor",
     );
     expect(response.status).toBe(200);
+    expect(chrome.storage.local.set).toHaveBeenCalledOnce();
+  });
+
+  test("preserves strict provider routing through the cloud envelope", async () => {
+    const routing = {
+      only: ["fast/fp8"],
+      order: ["fast/fp8"],
+      allow_fallbacks: false,
+      require_parameters: true,
+      max_price: { completion: 1 },
+    };
+    globalThis.fetch = vi.fn(async (_input, init) => {
+      expect(JSON.parse(String(init?.body)).providerRouting).toEqual(routing);
+      return new Response("ok");
+    }) as typeof fetch;
+    await cloudRelayFetch(
+      { model: "allowed/model", messages: [], provider: routing },
+      "openrouter",
+      "planner",
+    );
+  });
+
+  test("cancellation while reading the session prevents any network request", async () => {
+    const controller = new AbortController();
+    chrome.storage.local.get = vi.fn(async () => {
+      controller.abort();
+      return {
+        cloudExtensionSessionV1: {
+          accessToken: "access",
+          accessExpiresAt: Date.now() + 60_000,
+        },
+      };
+    }) as typeof chrome.storage.local.get;
+    globalThis.fetch = vi.fn();
+    await expect(
+      cloudRelayFetch(
+        { model: "allowed/model" },
+        "openrouter",
+        "planner",
+        controller.signal,
+      ),
+    ).rejects.toThrow();
+    expect(globalThis.fetch).not.toHaveBeenCalled();
+  });
+
+  test("cloud metadata refreshes authentication without forwarding provider credentials", async () => {
+    let lookups = 0;
+    const controller = new AbortController();
+    globalThis.fetch = vi.fn(async (input, init) => {
+      const url = String(input);
+      expect(init?.signal).toBe(controller.signal);
+      if (url.endsWith("/auth/refresh")) {
+        return Response.json({
+          accessToken: "access-new",
+          refreshToken: "refresh-new",
+          accessExpiresInSeconds: 3600,
+        });
+      }
+      expect(url).toBe(
+        "https://opensidebar.com/api/v1/relay/openrouter/models/custom/planner/endpoints",
+      );
+      const auth = new Headers(init?.headers).get("authorization");
+      expect(auth).toBe(
+        lookups === 0 ? "Bearer access-old" : "Bearer access-new",
+      );
+      return ++lookups === 1
+        ? new Response(null, { status: 401 })
+        : Response.json({ data: { endpoints: [] } });
+    }) as typeof fetch;
+    const response = await cloudEndpointMetadataFetch(
+      "custom/planner",
+      controller.signal,
+    );
+    expect(response.status).toBe(200);
+    expect(lookups).toBe(2);
     expect(chrome.storage.local.set).toHaveBeenCalledOnce();
   });
 

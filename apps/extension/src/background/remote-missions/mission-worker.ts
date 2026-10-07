@@ -284,7 +284,7 @@ export class MissionWorker {
         attemptId,
         planRevision: step.planRevision,
         state: "accepted",
-        mayHaveConsequentialEffect: step.risk === "consequential",
+        mayHaveConsequentialEffect: mission.executionClass === "interactive" || step.risk === "consequential",
         updatedAt: new Date().toISOString(),
       };
       await this.journal.write(accepted);
@@ -293,7 +293,7 @@ export class MissionWorker {
       const payload: RemoteMissionPayloadV1 = {
         schemaVersion: 1,
         missionId: mission.missionId,
-        executionClass: "read_only",
+        executionClass: mission.executionClass ?? "read_only",
         instruction: instructionFor(step, guidance),
         ...(options?.initialUrl ? { initialUrl: options.initialUrl } : {}),
         targetContext: mission.targetContext,

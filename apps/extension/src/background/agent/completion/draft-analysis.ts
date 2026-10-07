@@ -11,6 +11,34 @@ import type {
 } from "./kernel-types";
 import { cleanLabel, compactKey, normalizeText } from "./text-utils";
 import { extractFormFieldObservations } from "./form-field-analysis";
+import { isDraftOnlyCommunicationTask } from "../consequential-action-policy";
+
+/** A record's Draft status alone is not evidence of an unsent communication. */
+export function isDraftOnlyCommunicationOutcome(
+  requestText: string,
+  snapshot?: DomSnapshot | null,
+): boolean {
+  if (!isDraftOnlyCommunicationTask(requestText)) return false;
+  if (
+    /\b(?:reply|respond|response|email|e-mail|message|thread|comment|post|compose)\b/i.test(
+      requestText,
+    ) ||
+    /\b(?:draft|write|prepare|create)\b[^\n]{0,80}\b(?:copy|text)\b/i.test(
+      requestText,
+    )
+  )
+    return true;
+  return (
+    !!snapshot &&
+    extractFormFieldObservations(snapshot).some(
+      (field) =>
+        field.kind === "text" &&
+        /\b(?:reply|response|message|comment|body|compose|post)\b/i.test(
+          [field.label, field.stableKey].join(" "),
+        ),
+    )
+  );
+}
 
 export function draftStateEvidence(
   params: FormFieldObservation & {

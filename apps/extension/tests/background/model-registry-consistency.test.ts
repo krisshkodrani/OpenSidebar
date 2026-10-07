@@ -6,15 +6,6 @@ import {
   DEFAULT_MULTIMODAL_EXECUTOR_BY_PROVIDER,
   isExecutorEligible,
 } from "../../src/utils/executor-model-policy";
-import {
-  CEREBRAS_MODELS,
-  DEEPSEEK_MODELS,
-  FIREWORKS_MODELS,
-  GROQ_MODELS,
-  MOONSHOT_MODELS,
-  XIAOMI_MODELS,
-  type ProviderModelOption,
-} from "../../src/sidepanel/hooks/useOpenRouterModels";
 
 /**
  * Cross-checks the three hand-maintained model sources — seat defaults
@@ -27,12 +18,6 @@ import {
  */
 
 const PRICED_MODEL_IDS = new Set(DEFAULT_MODEL_PRICING.map((p) => p.model));
-
-function pricingRow(providerId: string, model: string) {
-  return DEFAULT_MODEL_PRICING.find(
-    (p) => p.providerId === providerId && p.model === model,
-  );
-}
 
 function seatDefaults(): Array<{ seat: string; model: string }> {
   const out: Array<{ seat: string; model: string }> = [];
@@ -70,66 +55,10 @@ describe("model registry consistency", () => {
     }
   });
 
-  test("curated sidepanel catalogs agree with pricing-data on provider and rates", () => {
-    const catalogs: ProviderModelOption[] = [
-      ...FIREWORKS_MODELS,
-      ...MOONSHOT_MODELS,
-      ...XIAOMI_MODELS,
-      ...DEEPSEEK_MODELS,
-      ...GROQ_MODELS,
-      ...CEREBRAS_MODELS,
-    ];
-    for (const option of catalogs) {
-      const row = pricingRow(option.provider!, option.id);
-      expect(row, `${option.provider}/${option.id} missing from pricing-data`)
-        .toBeDefined();
-      expect(
-        option.promptPrice * 1_000_000,
-        `${option.id} prompt price drifted from pricing-data`,
-      ).toBeCloseTo(row!.inputUsdPerMillion, 6);
-      expect(
-        option.completionPrice * 1_000_000,
-        `${option.id} completion price drifted from pricing-data`,
-      ).toBeCloseTo(row!.outputUsdPerMillion, 6);
-    }
-  });
-
-  /**
-   * Fireworks addresses models as `accounts/fireworks/models/...`; a
-   * catalog-style id 404s on that endpoint (proven live for
-   * `openai/gpt-oss-120b` — the judge-seat incident).
-   *
-   * `qwen/qwen3-vl-30b-a3b-instruct` predates that finding and is the one
-   * catalog-form id still in the Fireworks catalog. It is listed here rather
-   * than silently rewritten because nothing proves its correct Fireworks id:
-   * no recorded run has ever exercised it, so it cannot be corrected without
-   * a live check against the API. Verify it with a Fireworks key and either
-   * fix the id or drop the entry — then delete this exception.
-   */
-  const UNVERIFIED_FIREWORKS_CATALOG_IDS = new Set([
-    "qwen/qwen3-vl-30b-a3b-instruct",
-  ]);
-
-  test("Fireworks-served ids use the accounts/... API form", () => {
-    for (const option of FIREWORKS_MODELS) {
-      if (UNVERIFIED_FIREWORKS_CATALOG_IDS.has(option.id)) continue;
-      expect(
-        option.id.startsWith("accounts/"),
-        `${option.id} is a catalog-style id; Fireworks needs accounts/...`,
-      ).toBe(true);
-    }
-    const fireworksSeatDefaults = [
-      DEFAULT_LLM_MODEL_CONFIG.planner,
-      DEFAULT_LLM_MODEL_CONFIG.writer,
-      DEFAULT_LLM_MODEL_CONFIG.judge,
-      DEFAULT_LLM_MODEL_CONFIG.fireworks.executor,
-      DEFAULT_LLM_MODEL_CONFIG.fireworks.planner,
-    ];
-    for (const model of fireworksSeatDefaults) {
-      expect(
-        model.startsWith("accounts/"),
-        `${model} is a catalog-style id; Fireworks needs accounts/...`,
-      ).toBe(true);
+  test("all current seat defaults use OpenRouter catalog ids", () => {
+    for (const { model } of seatDefaults()) {
+      expect(model).toContain("/");
+      expect(model.startsWith("accounts/")).toBe(false);
     }
   });
 });

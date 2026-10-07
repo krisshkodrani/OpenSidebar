@@ -944,6 +944,10 @@ export function synthesizePlanFromTaskContract(
     return null;
   }
 
+  // Entity extraction must not replace an action request with a read/report plan.
+  // Unsupported mutations belong to the model planner, which retains the request.
+  if (reportTargets.length > 0 && hasUrlMutationIntent(query)) return null;
+
   const steps: SynthesizedPlanStep[] = [];
 
   const returnTarget = contract.returnTargets[0] || null;

@@ -11,7 +11,6 @@ import {
   XCircle,
 } from "lucide-react";
 import type { TaskCompletionMessage } from "../../../types";
-import { formatTokensCompact } from "../../message-formatting";
 import { PlanStepIcon } from "../PlanStepIcon";
 import { MetricsSummary } from "./MetricsSummary";
 
@@ -93,9 +92,6 @@ export function CompletionDetails({
       ? `${data.subtaskResults.length} ${
           data.subtaskResults.length === 1 ? "step" : "steps"
         }`
-      : null,
-    data.metrics
-      ? `${formatTokensCompact(data.metrics.totalTokens)} tokens`
       : null,
   ].filter(Boolean);
   const hasDetails = Boolean(
@@ -179,11 +175,7 @@ function HandoffBullets({
   );
 }
 
-export function PartialHandoffPanel({
-  handoff,
-}: {
-  handoff?: PartialHandoff;
-}) {
+export function PartialHandoffPanel({ handoff }: { handoff?: PartialHandoff }) {
   const [copied, setCopied] = useState(false);
   if (!handoff) return null;
 
@@ -198,7 +190,7 @@ export function PartialHandoffPanel({
       <div className="flex items-center gap-2">
         <AlertTriangle size={13} className="shrink-0 text-yellow-500" />
         <div className="min-w-0 text-xs font-semibold text-warm-700 dark:text-warm-200">
-          Partial handoff
+          Completed work and next steps
         </div>
         <button
           type="button"

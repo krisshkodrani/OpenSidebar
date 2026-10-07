@@ -18,49 +18,9 @@ export async function buildResumeInput(
   resumeTabId: number,
 ): Promise<OrchestratorStartInput | null> {
   const settings = (await loadSettings()) ?? ({} as UserSettings);
-  type ProviderMode = NonNullable<UserSettings["providerMode"]>;
-  const pickFallbackProvider = (): {
-    mode: ProviderMode;
-    activeKey: string;
-  } | null => {
-    const candidateModes: ProviderMode[] = [
-      "openrouter",
-      "fireworks-deepseek",
-      "fireworks",
-      "moonshot",
-      "xiaomi",
-      "openai-groq",
-    ];
-    for (const mode of candidateModes) {
-      const status = getProviderKeyStatus({
-        ...settings,
-        providerMode: mode,
-      });
-      if (status.hasRequiredKeys && status.activeKey) {
-        return { mode, activeKey: status.activeKey };
-      }
-    }
-    return null;
-  };
-  const configuredMode: ProviderMode =
-    settings.providerMode ??
-    (settings.openRouterApiKey
-      ? "openrouter"
-      : settings.fireworksApiKey && settings.deepseekApiKey
-        ? "fireworks-deepseek"
-        : settings.kimiApiKey
-          ? "moonshot"
-          : settings.xiaomiApiKey
-            ? "xiaomi"
-            : "fireworks");
-  const configuredStatus = getProviderKeyStatus({
-    ...settings,
-    providerMode: configuredMode,
-  });
-  const provider =
-    configuredStatus.hasRequiredKeys && configuredStatus.activeKey
-      ? { mode: configuredMode, activeKey: configuredStatus.activeKey }
-      : pickFallbackProvider();
+  const configuredMode = "openrouter";
+  const configuredStatus = getProviderKeyStatus({...settings,providerMode:configuredMode});
+  const provider = configuredStatus.hasRequiredKeys && configuredStatus.activeKey ? {mode:configuredMode,activeKey:configuredStatus.activeKey} as const : null;
   if (!provider) {
     logger.warn(
       "orchestrator",

@@ -2,24 +2,18 @@
 
 Use this checklist when preparing a new OpenSidebar release.
 
-## Current RC Status - 2026-08-08
+## Current source candidate
 
-The `0.7.2` update is submitted for Chrome Web Store review under the stable ID
-`hakbnbbkiehiofnafdkcibbnkbdmjiha`; existing users remain on the previously
-published version until Google approves the update.
+The source package and extension manifest declare `0.7.4`. A version number or
+an earlier passing run is not release acceptance. Run the gates below on the
+exact candidate commit and record its SHA, commands, results, and native-browser
+evidence under `.artifacts/`. Chrome Web Store publication is a separate action;
+this checklist does not assert the current store review status.
 
-| Gate                       | Status               | Evidence / next action                                                                                                                                                                              |
-| -------------------------- | -------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Code and UI                | Passed               | Compact task rail, OpenRouter default/recommendation, provider migration, local reliability summaries, recovery paths, and the staged composer/workspace fixes are present; focused tests passed.   |
-| Listing material           | Passed               | Rebuilt the four customer-only screenshots, promo tile, and marquee under `.artifacts/store/`; OpenRouter is selected in the provider capture and developer-only viewer images are excluded.        |
-| Audience videos            | Passed               | Revalidated both British-female films under `.artifacts/publish/`; rebuilt the customer film with OpenRouter attribution and retained the already accurate developer film.                          |
-| Manifest/version alignment | Passed               | `package.json`, source manifest, and built `dist/manifest.json` declare `0.7.2`; the build contains the exact production Cognito domain/client.                                                     |
-| Site material              | Passed               | Rebuilt and verified both tours and posters from the cache-immutable `v8` media path; the production site build passed with no failed media requests.                                               |
-| Full release verification  | Passed               | RFC validation, lint, typecheck, 5,286 extension tests, production build, dist validation, and production audit passed on the reconciled candidate.                                                 |
-| Native task completion     | Pending              | Re-run deterministic native login/navigation and the native side-panel smoke on the exact release commit.                                                                                           |
-| Release package/preflight  | Pending exact commit | The `0.7.2` zip, checksum, notes, and manifest pass `release:preflight --allow-dirty`; regenerate and run the strict native/preflight gate after committing.                                        |
-| Chrome Web Store upload    | Submitted for review | Package 0.7.2 plus the Cloud-mode privacy and listing disclosures are saved and submitted on the existing item; wait for Published or reviewer feedback.                                            |
-| Production activation      | Blocked on approval  | Follow [cloud-production-activation-runbook.md](engineering/cloud-production-activation-runbook.md); keep credential, preference, relay, session, checkpoint, command, and Temporal flags disabled. |
+Historical 0.7.2 and 0.7.3 rollout evidence remains in
+[the Cloud acceptance report](engineering/cloud-byok-072-acceptance-report.md)
+and [the 0.7.3 candidate report](engineering/073-release-candidate-report.md).
+Those reports are dated records, not current gates.
 
 ## 1. Freeze The Release Candidate
 
@@ -40,7 +34,7 @@ This runs:
 - lint across maintained app source, shared packages, active tests, and TypeScript tooling scripts
 - TypeScript project references typecheck
 - extension tests
-- backend tests
+- cloud-service tests (database integration tests require the isolated database job)
 - production build
 - extension artifact verification for the generated `dist/` manifest, side panel, trace viewer, service worker import, icons, content scripts, web-accessible resources, and Vite manifest
 - production dependency audit for known advisories

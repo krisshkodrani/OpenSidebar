@@ -1,3 +1,4 @@
+import { cloudRelayFetch } from "../background/llm/cloud-relay";
 import type { UserSettings } from "../types";
 import {
   PROFILE_CEK_STORAGE_KEY,
@@ -17,8 +18,8 @@ export const PROFILE_DIGEST_RUNTIME_MAX_ITEMS = 12;
 export const PROFILE_DIGEST_LABEL_MAX_CHARS = 80;
 export const PROFILE_DIGEST_VALUE_MAX_CHARS = 500;
 export const PROFILE_DIGEST_SOURCE_QUOTE_MAX_CHARS = 240;
-export const FIREWORKS_PROFILE_ANALYZER_MODEL =
-  "accounts/fireworks/routers/kimi-k2p6-turbo";
+export const OPENROUTER_PROFILE_ANALYZER_MODEL =
+  "deepseek/deepseek-v4.1-flash";
 
 export type PersonalProfileStorageKeys =
   | string
@@ -953,7 +954,7 @@ export function buildProfileAnalyzerUserPrompt(notesMarkdown: string): string {
   ].join("\n");
 }
 
-async function readFireworksCompletionText(response: Response): Promise<string> {
+async function readCompletionText(response: Response): Promise<string> {
   if (!response.body) {
     const parsed = (await response.json()) as any;
     return String(parsed?.choices?.[0]?.message?.content ?? "");
@@ -1019,7 +1020,7 @@ export function buildProfileDigestFromAnalyzerOutput(params: {
 
 export async function analyzePersonalProfileNotes(params: {
   notesMarkdown: string;
-  settings: Pick<UserSettings, "fireworksApiKey">;
+  settings: Pick<UserSettings, "openRouterApiKey" | "inferenceMode">;
   fetchImpl?: typeof fetch;
 }): Promise<ProfileAnalysisResult> {
   const notesMarkdown = params.notesMarkdown;
@@ -1031,15 +1032,17 @@ export async function analyzePersonalProfileNotes(params: {
       `Profile Notes must be ${PROFILE_NOTES_MAX_CHARS.toLocaleString()} characters or fewer.`,
     );
   }
-  const apiKey = params.settings.fireworksApiKey?.trim();
-  if (!apiKey) {
-    throw new Error("Add a Fireworks API key in Settings before analyzing notes.");
+  const apiKey = params.settings.openRouterApiKey?.trim();
+  if (!apiKey && params.settings.inferenceMode !== "cloud") {
+    throw new Error("Add an OpenRouter API key in Settings before analyzing notes.");
   }
 
-  const fetchImpl = params.fetchImpl ?? fetch;
+  const fetchImpl = params.fetchImpl ?? (params.settings.inferenceMode === "cloud"
+    ? ((_url: RequestInfo | URL, init?: RequestInit) => cloudRelayFetch(JSON.parse(String(init?.body)), "openrouter", "planner")) as typeof fetch
+    : fetch);
   const notesHash = hashProfileNotes(notesMarkdown);
   const response = await fetchImpl(
-    "https://api.fireworks.ai/inference/v1/chat/completions",
+    "https://openrouter.ai/api/v1/chat/completions",
     {
       method: "POST",
       headers: {
@@ -1047,7 +1050,7 @@ export async function analyzePersonalProfileNotes(params: {
         Authorization: `Bearer ${apiKey}`,
       },
       body: JSON.stringify({
-        model: FIREWORKS_PROFILE_ANALYZER_MODEL,
+        model: OPENROUTER_PROFILE_ANALYZER_MODEL,
         temperature: 0,
         stream: true,
         messages: [
@@ -1061,13 +1064,13 @@ export async function analyzePersonalProfileNotes(params: {
     throw new Error(`Profile analysis failed with status ${response.status}.`);
   }
 
-  const content = await readFireworksCompletionText(response);
+  const content = await readCompletionText(response);
   const output = parseProfileAnalyzerJson(content);
   return {
     digest: buildProfileDigestFromAnalyzerOutput({ output, notesHash }),
     analyzer: {
-      provider: "fireworks",
-      model: FIREWORKS_PROFILE_ANALYZER_MODEL,
+      provider: "openrouter",
+      model: OPENROUTER_PROFILE_ANALYZER_MODEL,
       analyzerVersion: PROFILE_ANALYZER_VERSION,
       analyzedAt: Date.now(),
     },

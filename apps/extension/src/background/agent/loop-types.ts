@@ -65,6 +65,8 @@ export interface LoopResult {
   /** Condensed action history for handoff to next node on the same tab.
    *  Produced by summarizeHistory() — e.g. "T1: click [39] → Added to cart." */
   trajectory?: string[];
+  /** Bounded chronological page observations, separate from executor claims. */
+  pageObservations?: string[];
   /** Pending user interaction that paused execution. */
   pendingInteraction?: PendingUserInteraction;
   /** Durable side-effect log captured by the loop for failure reporting. */

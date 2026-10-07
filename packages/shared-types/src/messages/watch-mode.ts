@@ -7,7 +7,7 @@
 import type { MessageSource } from "../enums";
 import type { BaseMessage, UiMessageSource } from "./base";
 
-export type PassiveInputSource = "page" | "screenshot" | "tabAudio";
+export type PassiveInputSource = "page" | "screenshot";
 export type PassiveMonitorStatus =
   | "watching"
   | "paused"

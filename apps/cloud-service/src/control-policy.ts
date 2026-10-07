@@ -20,7 +20,7 @@ export class ControlPolicyError extends Error {
 }
 
 export const providerId = (value: unknown): CloudProviderId => {
-  if (value !== "openrouter" && value !== "fireworks")
+  if (value !== "openrouter")
     throw new ControlPolicyError("invalid_provider");
   return value;
 };
@@ -65,6 +65,7 @@ export function parseCloudPreferences(value: unknown): CloudPreferencesV1 {
   if (!value || typeof value !== "object" || Array.isArray(value))
     throw new ControlPolicyError("invalid_request");
   const raw = value as Record<string, unknown>;
+  if (raw.providerMode !== undefined) providerId(raw.providerMode);
   if (Object.keys(raw).some((key) => !preferenceKeys.has(key)))
     throw new ControlPolicyError("invalid_request");
   if (
@@ -72,7 +73,7 @@ export function parseCloudPreferences(value: unknown): CloudPreferencesV1 {
     !Number.isSafeInteger(raw.revision) ||
     Number(raw.revision) < 1 ||
     !(["local", "cloud"] as unknown[]).includes(raw.inferenceMode) ||
-    !(["openrouter", "fireworks"] as unknown[]).includes(raw.providerMode) ||
+    !(["openrouter"] as unknown[]).includes(raw.providerMode) ||
     !Number.isInteger(raw.maxTurns) ||
     Number(raw.maxTurns) < 1 ||
     Number(raw.maxTurns) > 200 ||
@@ -155,6 +156,7 @@ const relayKeys = new Set([
   "stop",
   "responseFormat",
   "toolChoice",
+  "providerRouting",
 ]);
 const messageKeys = new Set([
   "role",
@@ -168,6 +170,46 @@ const exactKeys = (
   value: Record<string, unknown>,
   allowed: readonly string[],
 ) => Object.keys(value).every((key) => allowed.includes(key));
+const validProviderRouting = (value: unknown): boolean => {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return false;
+  const raw = value as Record<string, unknown>;
+  const slugs = (items: unknown): items is string[] =>
+    Array.isArray(items) &&
+    items.length > 0 &&
+    items.length <= 100 &&
+    items.every(
+      (item) =>
+        typeof item === "string" &&
+        /^[a-z0-9-]+(?:\/[a-z0-9-]+)*$/.test(item) &&
+        item.length <= 128,
+    );
+  if (
+    !exactKeys(raw, [
+      "only",
+      "order",
+      "allow_fallbacks",
+      "require_parameters",
+      "max_price",
+    ]) ||
+    !slugs(raw.only) ||
+    !slugs(raw.order) ||
+    !raw.order.every((slug) => (raw.only as string[]).includes(slug)) ||
+    raw.allow_fallbacks !== false ||
+    raw.require_parameters !== true ||
+    !raw.max_price ||
+    typeof raw.max_price !== "object" ||
+    Array.isArray(raw.max_price)
+  )
+    return false;
+  const price = raw.max_price as Record<string, unknown>;
+  return (
+    exactKeys(price, ["completion"]) &&
+    typeof price.completion === "number" &&
+    Number.isFinite(price.completion) &&
+    price.completion >= 0 &&
+    price.completion <= 1
+  );
+};
 const validToolCall = (value: unknown) => {
   if (!value || typeof value !== "object" || Array.isArray(value)) return false;
   const raw = value as Record<string, unknown>,
@@ -365,6 +407,7 @@ export function parseRelayRequest(
   )
     throw new ControlPolicyError("invalid_request");
   const raw = value as Record<string, unknown>;
+  if (raw.provider === "fireworks") throw new ControlPolicyError("invalid_provider");
   if (
     Object.keys(raw).some((key) => !relayKeys.has(key)) ||
     raw.schemaVersion !== 1 ||
@@ -373,7 +416,7 @@ export function parseRelayRequest(
     typeof raw.abortScopeId !== "string" ||
     raw.abortScopeId.length < 1 ||
     raw.abortScopeId.length > 128 ||
-    !(["openrouter", "fireworks"] as unknown[]).includes(raw.provider) ||
+    !(["openrouter"] as unknown[]).includes(raw.provider) ||
     typeof raw.modelId !== "string" ||
     !modelAllowlist.has(raw.modelId) ||
     !(["executor", "planner", "writer", "judge"] as unknown[]).includes(
@@ -383,6 +426,12 @@ export function parseRelayRequest(
     raw.messages.length === 0 ||
     raw.messages.length > 500 ||
     !raw.messages.every(validMessage)
+  )
+    throw new ControlPolicyError("invalid_request");
+  if (
+    raw.providerRouting !== undefined &&
+    (raw.provider !== "openrouter" ||
+      !validProviderRouting(raw.providerRouting))
   )
     throw new ControlPolicyError("invalid_request");
   if (

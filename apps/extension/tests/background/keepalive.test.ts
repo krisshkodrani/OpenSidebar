@@ -3,10 +3,14 @@
  * Tests for service worker keepalive alarm functionality.
  */
 
-import { describe, test, expect, beforeEach, vi } from "vitest";
+import { describe, test, expect, beforeEach, afterEach, vi } from "vitest";
 
 // Mock chrome APIs
 globalThis.chrome = {
+    runtime: {
+        getPlatformInfo: vi.fn(async () => ({})),
+        onConnect: { addListener: vi.fn() },
+    },
     alarms: {
         create: vi.fn(async () => { }),
         clear: vi.fn(async () => { }),
@@ -23,9 +27,40 @@ import {
 
 describe("Keepalive Module", () => {
     beforeEach(() => {
-        // Reset mocks
-        (chrome.alarms.create as any).mockClear();
-        (chrome.alarms.clear as any).mockClear();
+        vi.useFakeTimers();
+        vi.clearAllMocks();
+    });
+
+    afterEach(async () => {
+        await stopKeepalive();
+        vi.useRealTimers();
+    });
+
+    test("keeps pending work alive without a panel and stops when work ends", async () => {
+        await startKeepalive();
+        await startKeepalive();
+        await vi.advanceTimersByTimeAsync(60_000);
+        expect(chrome.runtime.getPlatformInfo).toHaveBeenCalledTimes(3);
+        await stopKeepalive();
+        await vi.advanceTimersByTimeAsync(40_000);
+        expect(chrome.runtime.getPlatformInfo).toHaveBeenCalledTimes(3);
+    });
+
+    test("heartbeat survives alarm creation failure", async () => {
+        vi.mocked(chrome.alarms.create).mockRejectedValueOnce(new Error("alarm unavailable"));
+        await startKeepalive();
+        await vi.advanceTimersByTimeAsync(20_000);
+        expect(chrome.runtime.getPlatformInfo).toHaveBeenCalledTimes(1);
+    });
+
+    test("registers a receiver for the sidepanel connection", () => {
+        registerAlarmListener();
+        const connect = vi.mocked(chrome.runtime.onConnect.addListener).mock.calls[0][0];
+        const addListener = vi.fn();
+        connect({ name: "sidepanel-keepalive", onDisconnect: { addListener } } as any);
+        expect(addListener).toHaveBeenCalledTimes(1);
+        connect({ name: "unrelated", onDisconnect: { addListener } } as any);
+        expect(addListener).toHaveBeenCalledTimes(1);
     });
 
     describe("startKeepalive", () => {

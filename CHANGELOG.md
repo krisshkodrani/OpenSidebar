@@ -1,5 +1,24 @@
 # Changelog
 
+## [Unreleased]
+
+### Fixed
+
+- Ignore stale Watch observations after pause, stop, or replacement, and detect
+  changes to page text even when interactive elements stay the same.
+- Hide introductory chat suggestions while a remote mission is present and give
+  connected Codex clients the browser safety rules; runtime approval gates remain.
+- Clear submitted composer drafts on acknowledgement so completed tasks do not
+  restore their prompts as unsent drafts.
+- Update vulnerable production dependencies to patched releases.
+
+### Changed
+
+- Align public setup, privacy, security, and architecture documentation with
+  OpenRouter, optional account services, and supervised remote browser work.
+- Include cloud-service tests and disposable PostgreSQL integration checks in CI.
+- Add a reproducible native sidepanel summary demo for release verification.
+
 ## [0.7.4] - 2026-08-13
 
 ### Added

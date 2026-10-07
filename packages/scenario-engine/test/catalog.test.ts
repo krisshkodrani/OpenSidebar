@@ -332,3 +332,54 @@ test("canvas answers tolerate punctuation without accepting a wrong value", () =
   assert.equal(validateAnswer("Aurora: $82"), "pass");
   assert.equal(validateAnswer("Aurora: $28"), "fail");
 });
+
+test("note completion requires saved text and visibility, not a success flag", () => {
+  const definition = MODEL_BENCH_CASES.find((entry) => entry.contract.id === "crm.add-internal-note")!;
+  const initialState = scenarioEngine.initialize(definition.contract.id);
+  const prepared = definition.oracle.actions.slice(0, -1).reduce(
+    (state, action) => scenarioEngine.apply(state, action), initialState,
+  );
+  const validate = (finalState: typeof initialState) => scenarioEngine.validate({ definition, initialState, finalState });
+  const text = "The timeout was reproduced and logs were requested.";
+  const submit = (value: string, visibility: string) => scenarioEngine.apply(prepared, {
+    type: "case.submit", payload: { value, visibility },
+  });
+  assert.equal(definition.contract.version, 2);
+  assert.throws(() => scenarioEngine.apply(prepared, { type: "case.submit", payload: { decision: "apply" } }), /note requires/);
+  assert.throws(() => submit(text, ""), /visibility/);
+  assert.equal(validate(submit(text, "internal")).verdict, "pass");
+  assert.equal(validate(submit(text, "public")).verdict, "fail");
+  assert.equal(validate(submit("Logs were requested.", "internal")).verdict, "fail");
+  const flagOnly = [
+    { type: "set", payload: { path: "public.case.status", value: "complete" } },
+    { type: "set", payload: { path: "public.case.value", value: "note-added" } },
+  ].reduce((state, action) => scenarioEngine.apply(state, action), prepared);
+  assert.equal(validate(flagOnly).verdict, "fail");
+  const saved = scenarioEngine.targetView(submit(text, "internal"));
+  assert.deepEqual((saved.data.case as Record<string, unknown>).note, { text, visibility: "internal" });
+});
+
+test("exchange completion verifies saved choices and rejects marker-only success", () => {
+  const definition = MODEL_BENCH_CASES.find(entry => entry.contract.id === "retail.exchange-and-reorder")!;
+  const initialState = scenarioEngine.initialize(definition.contract.id);
+  const prepared = definition.oracle.actions.slice(0, -1).reduce((state, action) => scenarioEngine.apply(state, action), initialState);
+  const fields = { order: "NW-1048", originalSize: "Medium", replacementSize: "Large", returnOption: "Ground — $0" };
+  const submit = (value: Record<string, string>) => scenarioEngine.apply(prepared, { type: "case.submit", payload: { fields: value } });
+  const validate = (finalState: typeof initialState) => scenarioEngine.validate({ definition, initialState, finalState });
+  assert.equal(definition.contract.version, 2);
+  assert.throws(() => scenarioEngine.apply(prepared, { type: "case.submit", payload: { decision: "apply" } }), /all record fields/);
+  assert.throws(() => submit({ ...fields, replacementSize: "XXL" }), /available value/);
+  assert.throws(() => submit({ ...fields, unexpected: "value" }), /all record fields/);
+  assert.equal(validate(submit(fields)).verdict, "pass");
+  for (const wrong of [
+    { order: "NW-1049" }, { originalSize: "Small" },
+    { replacementSize: "Medium" }, { returnOption: "Express — $12" },
+  ]) assert.equal(validate(submit({ ...fields, ...wrong })).verdict, "fail");
+  const markerOnly = [
+    { type: "set", payload: { path: "public.case.status", value: "complete" } },
+    { type: "set", payload: { path: "public.case.value", value: "exchange-created" } },
+  ].reduce((state, action) => scenarioEngine.apply(state, action), prepared);
+  assert.equal(validate(markerOnly).verdict, "fail");
+  assert.deepEqual((scenarioEngine.targetView(submit(fields)).data.case as Record<string, unknown>).fields, fields);
+  assert.deepEqual((scenarioEngine.targetView(submit({ ...fields, returnOption: "Express — $12" })).data.case as Record<string, unknown>).fields, { ...fields, returnOption: "Express — $12" });
+});

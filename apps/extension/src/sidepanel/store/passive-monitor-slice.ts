@@ -6,7 +6,7 @@ function normalizeInputSources(
 ): PassiveInputSource[] {
   const out = sources.filter(
     (source, index) =>
-      (source === "page" || source === "screenshot" || source === "tabAudio") &&
+      (source === "page" || source === "screenshot") &&
       sources.indexOf(source) === index,
   );
   return out.length > 0 ? out : ["page"];

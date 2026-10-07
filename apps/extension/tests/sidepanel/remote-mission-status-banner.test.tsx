@@ -42,8 +42,9 @@ describe("remote mission status banner", () => {
   });
 
   test("reacts to local running and terminal states without page content", async () => {
+    const onPresenceChange = vi.fn();
     await act(async () => {
-      root.render(<RemoteMissionStatusBanner />);
+      root.render(<RemoteMissionStatusBanner onPresenceChange={onPresenceChange} />);
       await Promise.resolve();
       await local.set({
         [REMOTE_MISSION_LOCAL_STATUS_KEY]: {
@@ -53,7 +54,8 @@ describe("remote mission status banner", () => {
         },
       });
     });
-    expect(container.textContent).toContain("Running on this browser");
+    expect(container.textContent).toContain("Preparing remote task");
+    expect(onPresenceChange).toHaveBeenLastCalledWith(true);
     expect(container.textContent).not.toContain("Read the visible page heading");
 
     await act(async () => {
@@ -66,6 +68,13 @@ describe("remote mission status banner", () => {
       });
     });
     expect(container.textContent).toContain("Completed");
+    expect(onPresenceChange).toHaveBeenLastCalledWith(true);
+
+    await act(async () => {
+      await local.remove(REMOTE_MISSION_LOCAL_STATUS_KEY);
+    });
+    expect(onPresenceChange).toHaveBeenLastCalledWith(false);
+    expect(container.textContent).toBe("");
   });
 
   test("shows an acceptance diagnostic stored only in local status", async () => {

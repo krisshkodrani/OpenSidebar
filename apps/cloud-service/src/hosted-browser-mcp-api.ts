@@ -10,7 +10,10 @@ import {
   type HostedBrowserMcpPrincipal,
 } from "./hosted-browser-mcp.js";
 
+import type { McpOAuthService } from "./mcp-oauth.js";
+
 type Dependencies = {
+  oauth?: McpOAuthService;
   config: CloudConfig;
   accounts: ControlRepository;
   operations: HostedBrowserMcpOperations;
@@ -21,6 +24,7 @@ type Dependencies = {
 const expectedScopes = new Set([
   "browser.devices.read",
   "browser.tasks.create",
+  "browser.tasks.interact",
   "browser.tasks.read",
   "browser.tasks.continue",
   "browser.tasks.approve",
@@ -84,6 +88,7 @@ export async function authenticateHostedMcp(
 ): Promise<HostedBrowserMcpPrincipal> {
   const token = authorization?.match(/^Bearer ([A-Za-z0-9._~-]+)$/)?.[1];
   const resource = `${deps.config.controlOrigin}/mcp`;
+  if (token?.startsWith("osm_") && deps.oauth) return deps.oauth.authenticate(token);
   if (
     !token ||
     token.length > MAX_BEARER_TOKEN_LENGTH ||
@@ -175,7 +180,7 @@ export function createHostedBrowserMcpApi(deps: Dependencies) {
   const metadata = `${deps.config.controlOrigin}/.well-known/oauth-protected-resource/mcp`;
   app.get("/.well-known/oauth-protected-resource/mcp", (c) => c.json({
     resource,
-    authorization_servers: [deps.config.cognitoIssuer],
+    authorization_servers: [deps.oauth?.issuer ?? deps.config.cognitoIssuer],
     scopes_supported: [
       "openid",
       ...[...expectedScopes].map(
@@ -183,7 +188,7 @@ export function createHostedBrowserMcpApi(deps: Dependencies) {
       ),
     ],
     bearer_methods_supported: ["header"],
-    resource_documentation: `${deps.config.controlOrigin}/docs/hosted-browser`,
+    resource_documentation: `${deps.config.controlOrigin}/connect/mcp`,
   }));
   app.all("/mcp", async (c) => {
     let principal: HostedBrowserMcpPrincipal;

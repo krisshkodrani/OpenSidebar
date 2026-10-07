@@ -2,6 +2,12 @@
 
 This is the quickest accurate map of the current codebase.
 
+## Hosted MCP and Playground production
+
+The public setup guide is <https://opensidebar.com/connect/mcp>. See
+[hosted MCP operations](guides/hosted-mcp-operations.md) for session behavior,
+production routing, release checks, and rollback locations.
+
 ## Start Here
 
 Most development work starts with the same small command set:
@@ -168,21 +174,51 @@ pnpm run traces:compact              # index, then delete old raw files
 - content script: DOM tagging, snapshots, page actions
 - prompts: compiled prompt registry under `packages/prompts/`
 
-## Current Model Defaults
+## Model configuration
 
-| Role           | Default                                                           |
-| -------------- | ----------------------------------------------------------------- |
-| Provider stack | `openrouter`                                                      |
-| Executor       | `minimax/minimax-m3`                                              |
-| Planner        | `z-ai/glm-5.2`                                                    |
-| Judge          | `openai/gpt-oss-120b`                                             |
-| Perception     | `unified_vl` by default; structured fallback is provider-specific |
+OpenRouter is the only supported gateway for both local and Cloud inference.
+Executor, planner, and judge defaults live in
+[`model-config.ts`](../apps/extension/src/config/model-config.ts) and
+[`executor-model-policy.ts`](../apps/extension/src/utils/executor-model-policy.ts).
+Settings can override model choices; historical traces preserve retired provider
+names but those adapters are not supported for new runs.
 
-Authoritative defaults live in `apps/extension/src/config/model-config.ts` and
-`apps/extension/src/utils/executor-model-policy.ts`. Settings overrides live in
-`apps/extension/src/types/settings.ts` and are exposed in the settings drawer.
-The release UI offers OpenRouter and Fireworks; other adapters remain available
-for internal evaluation.
+## Native browser demonstration
+
+Build the extension and local article fixture, then run a read-only task through
+Chrome's actual side-panel composer:
+
+```bash
+pnpm run dist
+pnpm run fixtures:build
+# Requires OPENROUTER_API_KEY in the environment or untracked .env; uses paid inference.
+pnpm run release:smoke:native-panel -- --demo --manual-only --no-helper-open --holdMs=1000
+```
+
+The script uses a fresh browser profile and a copy of the production build,
+opens the local article, verifies a completed answer and unchanged page text,
+and saves the native-panel screenshot and commit-tagged result under
+`.artifacts/e2e/native-sidepanel/`. The helper page is test instrumentation and
+is added only to the isolated copy, never the release artifact. This proves one
+read-only workflow, not general agent reliability. Without `--demo`, the smoke
+only verifies native-panel opening and workspace association.
+
+## Cloud and database checks
+
+`pnpm run verify` and CI run extension and cloud-service tests. Database tests
+require disposable PostgreSQL databases and run in a separate CI service job:
+
+```bash
+# These tests reset schemas. Never point them at an account or production DB.
+export PLAYGROUND_TEST_DATABASE_URL=postgresql://localhost/opensidebar_test
+export MCP_TEST_DATABASE_URL=postgresql://localhost/opensidebar_test
+pnpm run cloud:test:postgres
+```
+
+The runner fails when either variable is missing and executes the migration,
+ownership, OAuth, and capability tests serially because they share schemas.
+`pnpm run cloud:test` runs ordinary service tests without requiring PostgreSQL;
+database-dependent cases are reported as skipped when it is unavailable.
 
 ## Observation Path
 
@@ -308,7 +344,7 @@ The pnpm package scripts are the stable day-to-day entry points. Use direct Nx c
 | ------------------------------------------------------ | --------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `pnpm test`                                            | you want the normal fast test suite                                   | extension tests; excludes browser E2E                                                                                                                         |
 | `pnpm run test:e2e`                                    | you need the normal budgeted E2E sequence                             | alias for staged E2E                                                                                                                                          |
-| `pnpm run test:e2e:smoke`                              | you need cheap real-browser confidence                                | uses Fireworks by default                                                                                                                                     |
+| `pnpm run test:e2e:smoke`                              | you need cheap real-browser confidence                                | uses OpenRouter by default                                                                                                                                     |
 | `pnpm run test:e2e:staged`                             | you need the normal budgeted E2E sequence                             | smoke + interactions + runtime                                                                                                                                |
 | `pnpm exec tsx scripts/workarena-first-task.ts`        | you need a safe first real WorkArena candidate                        | metadata-only; no reset or LLM calls                                                                                                                          |
 | `pnpm exec tsx scripts/workarena-category-coverage.ts` | you need to verify local analog coverage for every WorkArena category | metadata-only; writes `.artifacts/e2e/` report                                                                                                                |

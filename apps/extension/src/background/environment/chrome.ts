@@ -1,5 +1,4 @@
 import type {
-  AudioCapturePort,
   BrowserCaptureOptions,
   BrowserPagePort,
   BrowserPageTab,
@@ -383,57 +382,6 @@ export const chromeNotificationsPort: NotificationsPort = {
   },
 };
 
-export const chromeAudioCapturePort: AudioCapturePort = {
-  isAvailable() {
-    return (
-      typeof chrome !== "undefined" &&
-      typeof chrome.tabCapture?.getMediaStreamId === "function" &&
-      typeof chrome.offscreen?.createDocument === "function"
-    );
-  },
-  getMediaStreamId(tabId) {
-    return new Promise((resolve, reject) => {
-      chrome.tabCapture.getMediaStreamId({ targetTabId: tabId }, (streamId) => {
-        const error = chrome.runtime.lastError?.message;
-        if (error || !streamId) {
-          reject(new Error(error ?? "Failed to get media stream id"));
-          return;
-        }
-        resolve(streamId);
-      });
-    });
-  },
-  async ensureOffscreenDocument(path, justification) {
-    const offscreenUrl = chrome.runtime.getURL(path);
-    const runtimeWithContexts = chrome.runtime as typeof chrome.runtime & {
-      getContexts?: (filter: {
-        contextTypes: string[];
-        documentUrls?: string[];
-      }) => Promise<Array<{ documentUrl?: string }>>;
-    };
-    if (runtimeWithContexts.getContexts) {
-      const contexts = await runtimeWithContexts.getContexts({
-        contextTypes: ["OFFSCREEN_DOCUMENT"],
-        documentUrls: [offscreenUrl],
-      });
-      if (contexts.length > 0) return;
-    }
-    await chrome.offscreen.createDocument({
-      url: path,
-      reasons: ["USER_MEDIA" as chrome.offscreen.Reason],
-      justification,
-    });
-  },
-  async closeOffscreenDocument() {
-    const offscreen = chrome.offscreen as
-      | { closeDocument?: () => Promise<void> }
-      | undefined;
-    if (typeof offscreen?.closeDocument === "function") {
-      await offscreen.closeDocument();
-    }
-  },
-};
-
 /** The production environment: every port backed by chrome.* (RFC LP-15). */
 export const chromeRuntimeEnvironment: RuntimeEnvironment = {
   persistence: chromePersistencePort,
@@ -448,5 +396,4 @@ export const chromeRuntimeEnvironment: RuntimeEnvironment = {
   search: chromeSearchPort,
   windows: chromeWindowsPort,
   notifications: chromeNotificationsPort,
-  audioCapture: chromeAudioCapturePort,
 };

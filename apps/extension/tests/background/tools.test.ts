@@ -6989,147 +6989,81 @@ describe("Tool Registration", () => {
     }
   });
 
-  test("go_back reports the destination URL after history navigation changes the page", async () => {
-    let currentUrl = "https://example.com/step-3";
-    (chrome.tabs as any).get = vi.fn(async (_tabId: number) => ({
-      id: 123,
-      url: currentUrl,
-      title: "History page",
-      groupId: -1,
-    }));
-    (chrome.tabs as any).goBack = vi.fn(async () => {
-      currentUrl = "https://example.com/step-2";
+  describe("one-entry history navigation", () => {
+    const listeners = new Map<string, Set<(details: any) => void>>();
+    const emit = (event: string, url: string, tabId = 123, frameId = 0) => {
+      for (const callback of listeners.get(event) ?? []) callback({ tabId, frameId, url });
+    };
+    beforeEach(() => {
+      listeners.clear();
+      for (const event of ["onCommitted", "onHistoryStateUpdated", "onReferenceFragmentUpdated"]) {
+        const callbacks = new Set<(details: any) => void>();
+        listeners.set(event, callbacks);
+        (chrome.webNavigation as any)[event] = {
+          addListener: (cb: any) => callbacks.add(cb),
+          removeListener: (cb: any) => callbacks.delete(cb),
+        };
+      }
+    });
+    afterEach(() => {
+      expect([...listeners.values()].every((callbacks) => callbacks.size === 0)).toBe(true);
     });
 
-    const result = await toolRegistry.execute(
-      {
-        id: "tool-1",
-        type: "function",
-        function: {
-          name: ToolName.GO_BACK,
-          arguments: "{}",
-        },
-      } as any,
-      123,
-    );
-
-    expect(result).toContain("Navigated back to https://example.com/step-2");
-  });
-
-  test("go_back returns an error when browser history stays on the same URL", async () => {
-    const currentUrl = "https://example.com/step-2";
-    (chrome.tabs as any).get = vi.fn(async (_tabId: number) => ({
-      id: 123,
-      url: currentUrl,
-      title: "History page",
-      groupId: -1,
-    }));
-    (chrome.tabs as any).goBack = vi.fn(async () => {});
-
-    const result = await toolRegistry.execute(
-      {
-        id: "tool-2",
-        type: "function",
-        function: {
-          name: ToolName.GO_BACK,
-          arguments: "{}",
-        },
-      } as any,
-      123,
-    );
-
-    expect(result).toContain("browser remained on https://example.com/step-2");
-  }, 8000);
-
-  test("go_back falls back to in-page history.back when tabs.goBack does not move", async () => {
-    let currentUrl = "https://example.com/step-3";
-    (chrome.tabs as any).get = vi.fn(async (_tabId: number) => ({
-      id: 123,
-      url: currentUrl,
-      title: "History page",
-      groupId: -1,
-    }));
-    (chrome.tabs as any).goBack = vi.fn(async () => {});
-    (chrome.scripting as any).executeScript = vi.fn(async () => {
-      currentUrl = "https://example.com/step-2";
-      return [{ result: undefined }];
+    test.each([
+      ["onCommitted", "https://example.com/step-2"],
+      ["onHistoryStateUpdated", "https://example.com/start"],
+      ["onReferenceFragmentUpdated", "https://example.com/start#details"],
+    ])("observes %s without issuing a second Back action", async (event, url) => {
+      (chrome.scripting as any).executeScript = vi.fn(async () => {
+        emit(event, url);
+        return [{ result: undefined }];
+      });
+      const result = await toolRegistry.execute(toolCall(ToolName.GO_BACK), 123);
+      expect(result).toContain(`Navigated back to ${url}`);
+      expect(chrome.scripting.executeScript).toHaveBeenCalledTimes(1);
+      expect(chrome.tabs.goBack).not.toHaveBeenCalled();
     });
 
-    const result = await toolRegistry.execute(
-      {
-        id: "tool-2b",
-        type: "function",
-        function: {
-          name: ToolName.GO_BACK,
-          arguments: "{}",
-        },
-      } as any,
-      123,
-    );
-
-    expect(chrome.scripting.executeScript).toHaveBeenCalled();
-    expect(result).toContain("Navigated back to https://example.com/step-2");
-  });
-
-  test("go_back ignores transient about:blank and waits for the final destination URL", async () => {
-    const urls = [
-      "https://example.com/step-3",
-      "about:blank",
-      "https://example.com/step-2",
-    ];
-    (chrome.tabs as any).get = vi.fn(async (_tabId: number) => ({
-      id: 123,
-      url: urls.length > 1 ? urls.shift() : urls[0],
-      title: "History page",
-      groupId: -1,
-    }));
-    (chrome.tabs as any).goBack = vi.fn(async () => {});
-
-    const result = await toolRegistry.execute(
-      {
-        id: "tool-3",
-        type: "function",
-        function: {
-          name: ToolName.GO_BACK,
-          arguments: "{}",
-        },
-      } as any,
-      123,
-    );
-
-    expect(result).toContain("Navigated back to https://example.com/step-2");
-    expect(result).not.toContain("about:blank");
-  });
-
-  test("go_back restores the source page when history reaches an extension page", async () => {
-    let currentUrl = "https://example.com/task";
-    (chrome.tabs as any).get = vi.fn(async (_tabId: number) => ({
-      id: 123,
-      url: currentUrl,
-      title: "Task",
-      groupId: -1,
-    }));
-    (chrome.tabs as any).goBack = vi.fn(async () => {
-      currentUrl = "chrome-extension://test/sidepanel.html";
-    });
-    (chrome.tabs as any).update = vi.fn(async (_tabId: number, update: { url: string }) => {
-      currentUrl = update.url;
-      return { id: 123, url: currentUrl };
+    test("does not retry an unobserved navigation", async () => {
+      const result = await toolRegistry.execute(toolCall(ToolName.GO_BACK), 123);
+      expect(result).toContain("no history commit was observed");
+      expect(chrome.scripting.executeScript).toHaveBeenCalledTimes(1);
+      expect(chrome.tabs.goBack).not.toHaveBeenCalled();
     });
 
-    const result = await toolRegistry.execute(
-      {
-        id: "tool-4",
-        type: "function",
-        function: { name: ToolName.GO_BACK, arguments: "{}" },
-      } as any,
-      123,
+    test("waits through transient blank pages and ignores other tabs and subframes", async () => {
+      (chrome.scripting as any).executeScript = vi.fn(async () => {
+        emit("onCommitted", "https://unrelated.test", 99);
+        emit("onCommitted", "https://frame.test", 123, 1);
+        emit("onCommitted", "about:blank");
+        emit("onCommitted", "https://example.com/step-2");
+        return [{ result: undefined }];
+      });
+      const result = await toolRegistry.execute(toolCall(ToolName.GO_BACK), 123);
+      expect(result).toContain("Navigated back to https://example.com/step-2");
+      expect(chrome.tabs.update).not.toHaveBeenCalled();
+    });
+
+    test.each(["about:blank", "chrome-extension://test/sidepanel.html"])(
+      "restores the source after history reaches %s", async (url) => {
+        (chrome.scripting as any).executeScript = vi.fn(async () => {
+          emit("onCommitted", url);
+          return [{ result: undefined }];
+        });
+        const result = await toolRegistry.execute(toolCall(ToolName.GO_BACK), 123);
+        expect(chrome.tabs.update).toHaveBeenCalledWith(123, { url: "https://example.com/start" });
+        expect(result).toContain("Restored https://example.com/start");
+        expect(chrome.scripting.executeScript).toHaveBeenCalledTimes(1);
+        expect(chrome.tabs.goBack).not.toHaveBeenCalled();
+      },
     );
 
-    expect(chrome.tabs.update).toHaveBeenCalledWith(123, {
-      url: "https://example.com/task",
+    test("does not issue a second Back after an injection failure", async () => {
+      (chrome.scripting as any).executeScript = vi.fn(async () => { throw new Error("Page disconnected"); });
+      const result = await toolRegistry.execute(toolCall(ToolName.GO_BACK), 123);
+      expect(result).toContain("Error going back: Page disconnected");
+      expect(chrome.scripting.executeScript).toHaveBeenCalledTimes(1);
+      expect(chrome.tabs.goBack).not.toHaveBeenCalled();
     });
-    expect(result).toContain("uncontrollable page");
-    expect(result).toContain("Restored https://example.com/task");
   });
 });

@@ -48,29 +48,32 @@ export class CodexHandoffSupervisor implements MissionSupervisorPort {
   }
 }
 
-const specFor = (delivery: DeliveredRemoteMissionV1): MissionSpecV1 => ({
-  schemaVersion: 1,
-  missionId: delivery.mission.missionId,
-  deviceId: delivery.mission.deviceId,
-  objective: delivery.payload.instruction,
-  successCriteria: ["Return a grounded answer using read-only browser observations."],
-  constraints: ["Do not change website, browser, or account state."],
-  prohibitedEffects: ["Do not click, type, submit, download, or modify data."],
-  planRevision: 1,
-  expiresAt: delivery.mission.expiresAt,
-  targetContext: delivery.payload.targetContext ?? "isolated_tab",
-  steps: [{
-    schemaVersion: 1,
-    missionId: delivery.mission.missionId,
-    stepId: `${delivery.mission.missionId}:read`,
-    planRevision: 1,
-    risk: "read_only",
-    objective: delivery.payload.instruction,
-    successCriteria: ["Return a grounded answer using read-only browser observations."],
-    constraints: ["Do not change website, browser, or account state."],
-    prohibitedEffects: ["Do not click, type, submit, download, or modify data."],
-  }],
-});
+const specFor = (delivery: DeliveredRemoteMissionV1): MissionSpecV1 => {
+  const interactive = delivery.payload.executionClass === "interactive";
+  const criteria = interactive
+    ? ["Verify the requested outcome against fresh browser evidence."]
+    : ["Return a grounded answer using read-only browser observations."];
+  const constraints = interactive
+    ? ["Stay within the authorized task and obey local approval and site policy."]
+    : ["Do not change website, browser, or account state."];
+  const prohibitedEffects = interactive
+    ? ["Do not repeat an uncertain submission or bypass a local stop or denial."]
+    : ["Do not click, type, submit, download, or modify data."];
+  return {
+    schemaVersion: 1, missionId: delivery.mission.missionId,
+    deviceId: delivery.mission.deviceId,
+    executionClass: delivery.payload.executionClass,
+    objective: delivery.payload.instruction, successCriteria: criteria,
+    constraints, prohibitedEffects, planRevision: 1,
+    expiresAt: delivery.mission.expiresAt,
+    targetContext: delivery.payload.targetContext ?? "isolated_tab",
+    steps: [{ schemaVersion: 1, missionId: delivery.mission.missionId,
+      stepId: `${delivery.mission.missionId}:${interactive ? "interact" : "read"}`,
+      planRevision: 1, risk: interactive ? "consequential" : "read_only",
+      objective: delivery.payload.instruction, successCriteria: criteria,
+      constraints, prohibitedEffects }],
+  };
+};
 
 const terminal = (outcome: MissionWorkerOutcome, aborted: boolean) => {
   if (aborted || outcome.state === "cancelled")
@@ -115,6 +118,15 @@ const encryptedResult = (
 
 export class RemoteMissionDeliveryController {
   private inFlight: Promise<void> | null = null;
+  private readonly activeControllers = new Map<string, AbortController>();
+  private readonly localStops = new Set<string>();
+
+  async stopLocally(missionId: string) {
+    // Abort synchronously before storage or network can block. Persist before acknowledging.
+    this.localStops.add(missionId);
+    this.activeControllers.get(missionId)?.abort();
+    await this.journal.stop(missionId);
+  }
 
   constructor(
     private readonly transport: RemoteMissionDeliveryPort,
@@ -123,6 +135,7 @@ export class RemoteMissionDeliveryController {
     private readonly deviceId: () => Promise<string | null>,
     private readonly onStatus?: (status: RemoteMissionLocalStatus) => Promise<void> | void,
     private readonly cancellationPollMilliseconds = 1_000,
+    private readonly interactiveEnabled = false,
   ) {}
 
   private progress(
@@ -167,10 +180,16 @@ export class RemoteMissionDeliveryController {
     });
   }
 
-  private cancellationSignal(missionId: string, parent?: AbortSignal) {
+  private cancellationSignal(missionId: string, parent?: AbortSignal, expiresAt?: string) {
     const controller = new AbortController();
+    this.activeControllers.set(missionId, controller);
+    if (parent?.aborted || this.localStops.has(missionId)) controller.abort();
     const onParentAbort = () => controller.abort();
     parent?.addEventListener("abort", onParentAbort, { once: true });
+    const remaining = expiresAt ? Date.parse(expiresAt) - Date.now() : undefined;
+    if (remaining !== undefined && (!Number.isFinite(remaining) || remaining <= 0)) controller.abort();
+    const expiryTimer = remaining !== undefined && remaining > 0
+      ? setTimeout(() => controller.abort(), Math.min(remaining, 2_147_483_647)) : undefined;
     let checking = false;
     const timer = setInterval(() => {
       if (checking || controller.signal.aborted) return;
@@ -186,6 +205,8 @@ export class RemoteMissionDeliveryController {
       signal: controller.signal,
       stop: () => {
         clearInterval(timer);
+        clearTimeout(expiryTimer);
+        this.activeControllers.delete(missionId);
         parent?.removeEventListener("abort", onParentAbort);
       },
     };
@@ -219,9 +240,15 @@ export class RemoteMissionDeliveryController {
     if (
       mission.deviceId !== deviceId ||
       payload.missionId !== mission.missionId ||
-      payload.executionClass !== "read_only"
+      (payload.executionClass !== "read_only" && !(this.interactiveEnabled && payload.executionClass === "interactive"))
     ) throw new Error("remote_mission_delivery_mismatch");
     if (mission.sequence <= journal.lastSequence) return journal;
+    if (this.localStops.has(mission.missionId) || await this.journal.isStopped(mission.missionId)) {
+      // Reconcile only: a persisted local stop can never dispatch browser work.
+      await this.transport.cancel(mission.missionId);
+      await this.report(delivery, "cancelled");
+      return this.completeJournal(journal, mission);
+    }
     if (new Date(mission.expiresAt).getTime() <= Date.now()) {
       if (
         mission.state === "queued" ||
@@ -260,7 +287,7 @@ export class RemoteMissionDeliveryController {
         new Date(decision.decidedAt).getTime() < new Date(status!.progress!.updatedAt).getTime()
       ) throw new Error("remote_mission_supervisor_decision_mismatch");
       current = await this.transport.transition(current, "running");
-      const cancellation = this.cancellationSignal(mission.missionId, signal);
+      const cancellation = this.cancellationSignal(mission.missionId, signal, mission.expiresAt);
       try {
         outcome = await this.worker.resumeSupervision(
           { ...specFor(delivery), planRevision: pendingStep.planRevision, steps: [pendingStep] },
@@ -274,7 +301,7 @@ export class RemoteMissionDeliveryController {
         );
       } catch (error) {
         outcome = {
-          state: "failed",
+          state: payload.executionClass === "interactive" ? "outcome_unknown" : "failed",
           reason: error instanceof Error ? error.message : "Supervised continuation failed.",
         };
       } finally {
@@ -303,7 +330,7 @@ export class RemoteMissionDeliveryController {
         new Date(decision.decidedAt).getTime() > new Date(targetSelection.expiresAt).getTime()
       ) throw new Error("remote_mission_target_decision_mismatch");
       current = await this.transport.transition(current, "running");
-      const cancellation = this.cancellationSignal(mission.missionId, signal);
+      const cancellation = this.cancellationSignal(mission.missionId, signal, mission.expiresAt);
       try {
         outcome = await this.worker.resumeTargetSelection(
           specFor(delivery),
@@ -313,7 +340,7 @@ export class RemoteMissionDeliveryController {
         );
       } catch (error) {
         outcome = {
-          state: "failed",
+          state: payload.executionClass === "interactive" ? "outcome_unknown" : "failed",
           reason: error instanceof Error ? error.message : "Target continuation failed.",
         };
       } finally {
@@ -350,14 +377,14 @@ export class RemoteMissionDeliveryController {
           new Date(approval.expiresAt).getTime()
       ) throw new Error("remote_mission_approval_decision_mismatch");
       current = await this.transport.transition(current, "running");
-      const cancellation = this.cancellationSignal(mission.missionId, signal);
+      const cancellation = this.cancellationSignal(mission.missionId, signal, mission.expiresAt);
       try {
         outcome = await this.worker.resumeApproval(specFor(delivery), decision, {
           signal: cancellation.signal,
         });
       } catch (error) {
         outcome = {
-          state: "failed",
+          state: payload.executionClass === "interactive" ? "outcome_unknown" : "failed",
           reason: error instanceof Error ? error.message : "Approval continuation failed.",
         };
       } finally {
@@ -388,14 +415,14 @@ export class RemoteMissionDeliveryController {
     }
 
     if (!outcome) {
-      const cancellation = this.cancellationSignal(mission.missionId, signal);
+      const cancellation = this.cancellationSignal(mission.missionId, signal, mission.expiresAt);
       try {
         outcome = await this.worker.run(specFor(delivery), {
           signal: cancellation.signal,
           initialUrl: payload.initialUrl,
         });
       } catch (error) {
-        outcome = { state: "failed", reason: error instanceof Error ? error.message : "Remote mission failed." };
+        outcome = { state: payload.executionClass === "interactive" ? "outcome_unknown" : "failed", reason: error instanceof Error ? error.message : "Remote mission failed." };
       } finally {
         cancellation.stop();
       }
@@ -472,6 +499,8 @@ export class RemoteMissionDeliveryController {
       lastSequence: Math.max(journal.lastSequence, mission.sequence),
     };
     await this.journal.write(completed);
+    await this.journal.clearStop(mission.missionId);
+    this.localStops.delete(mission.missionId);
     return completed;
   }
 }

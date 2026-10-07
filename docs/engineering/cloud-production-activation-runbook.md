@@ -66,7 +66,7 @@ Rollback disables `EXTENSION_AUTH_ENABLED` and verifies Local mode still starts.
 
 Enable `CREDENTIAL_WRITES_ENABLED` for the allowlisted tester only.
 
-1. Upload one OpenRouter or Fireworks key through the migration UI.
+1. Upload an OpenRouter key through the migration UI.
 2. Verify the provider accepts it and the account reports only fingerprint and
    verification status.
 3. Confirm the original key remains in local storage before activation.

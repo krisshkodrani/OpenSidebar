@@ -22,8 +22,13 @@ function describeRisk(toolName: string): string {
 
 export function ApprovalOverlay() {
   const pendingApproval = useStore((s) => s.pendingApproval);
+  const reconnecting = useStore(
+    (s) => s.backgroundConnection === "reconnecting",
+  );
   const clearPendingApproval = useStore((s) => s.clearPendingApproval);
   const [nowMs, setNowMs] = useState(Date.now());
+  const [sending, setSending] = useState(false);
+  const [decisionError, setDecisionError] = useState<string | null>(null);
   const approveButtonRef = useRef<HTMLButtonElement>(null);
   const titleId = useId();
   const descriptionId = useId();
@@ -55,6 +60,7 @@ export function ApprovalOverlay() {
   useEffect(() => {
     if (!pendingApproval) return;
     setNowMs(Date.now());
+    setDecisionError(null);
     approveButtonRef.current?.focus();
 
     const tick = setInterval(() => setNowMs(Date.now()), 250);
@@ -72,7 +78,9 @@ export function ApprovalOverlay() {
 
   const sendDecision = useCallback(
     async (approved: boolean) => {
-      if (!pendingApproval) return;
+      if (!pendingApproval || sending || reconnecting) return;
+      setSending(true);
+      setDecisionError(null);
       try {
         await uiRuntime.sendMessage({
           type: "APPROVAL_RESPONSE",
@@ -84,13 +92,19 @@ export function ApprovalOverlay() {
             approved,
           },
         });
+        if (
+          useStore.getState().pendingApproval?.approvalId ===
+          pendingApproval.approvalId
+        )
+          clearPendingApproval();
       } catch (error) {
+        setDecisionError("Your decision was not sent. Please try again.");
         logger.error("ui", "Failed to send approval response", { error });
       } finally {
-        clearPendingApproval();
+        setSending(false);
       }
     },
-    [pendingApproval, clearPendingApproval],
+    [pendingApproval, clearPendingApproval, sending, reconnecting],
   );
 
   if (!pendingApproval) return null;
@@ -101,30 +115,30 @@ export function ApprovalOverlay() {
       aria-modal="false"
       aria-labelledby={titleId}
       aria-describedby={descriptionId}
-      className="rounded-lg border border-red-200 dark:border-red-800 bg-red-50/80 dark:bg-red-900/20 p-2.5"
+      className="rounded-lg border border-amber-200 dark:border-amber-800 bg-amber-50/80 dark:bg-amber-900/20 p-2.5"
     >
       <div className="flex items-start gap-2 mb-2">
         <AlertTriangle
           size={14}
-          className="mt-0.5 shrink-0 text-red-600 dark:text-red-400"
+          className="mt-0.5 shrink-0 text-amber-600 dark:text-amber-400"
         />
         <div className="min-w-0 flex-1">
           <div
             id={titleId}
-            className="text-xs font-medium uppercase tracking-[0.08em] text-red-800 dark:text-red-200"
+            className="text-xs font-medium uppercase tracking-[0.08em] text-amber-800 dark:text-amber-200"
           >
             Approval required
           </div>
-          <div className="mt-1 text-sm font-medium leading-snug text-red-900 dark:text-red-100">
+          <div className="mt-1 text-sm font-medium leading-snug text-amber-900 dark:text-amber-100">
             {proposedAction}
           </div>
           <div
             id={descriptionId}
-            className="mt-1 text-xs leading-relaxed text-red-700 dark:text-red-300"
+            className="mt-1 text-xs leading-relaxed text-amber-700 dark:text-amber-300"
           >
             {pendingApproval.context}
           </div>
-          <div className="mt-1 text-[11px] leading-relaxed text-red-700/90 dark:text-red-300/90">
+          <div className="mt-1 text-[11px] leading-relaxed text-amber-700/90 dark:text-amber-300/90">
             {riskDescription}
           </div>
         </div>
@@ -132,17 +146,27 @@ export function ApprovalOverlay() {
 
       {/* Progress bar */}
       <div className="flex items-center gap-2 mb-2">
-        <div className="flex-1 h-1 rounded-full bg-red-100 dark:bg-red-950/40 overflow-hidden">
+        <div className="flex-1 h-1 rounded-full bg-amber-100 dark:bg-amber-950/40 overflow-hidden">
           <div
-            className="h-full bg-red-500 transition-[width] duration-200"
+            className="h-full bg-amber-500 transition-[width] duration-200"
             style={{ width: `${progressPct}%` }}
           />
         </div>
-        <span className="text-[10px] tabular-nums text-red-600 dark:text-red-400 shrink-0">
+        <span className="text-[10px] tabular-nums text-amber-600 dark:text-amber-400 shrink-0">
           Auto-rejects in {Math.ceil(remainingMs / 1000)}s
         </span>
       </div>
 
+      {decisionError ? (
+        <p role="alert" className="mb-2 text-xs text-red-700 dark:text-red-300">
+          {decisionError}
+        </p>
+      ) : null}
+      {reconnecting ? (
+        <p className="mb-2 text-xs text-amber-700 dark:text-amber-300">
+          Reconnect before sending a decision.
+        </p>
+      ) : null}
       {/* Buttons */}
       <div className="flex items-center gap-2">
         <Button
@@ -150,19 +174,21 @@ export function ApprovalOverlay() {
           variant="outline"
           size="sm"
           onClick={() => void sendDecision(false)}
-          className="flex-1 border-red-300 text-xs text-red-700 hover:bg-red-100 dark:border-red-700 dark:text-red-300 dark:hover:bg-red-900/40"
+          disabled={sending || reconnecting}
+          className="flex-1 border-amber-300 text-xs text-amber-700 hover:bg-amber-100 dark:border-amber-700 dark:text-amber-300 dark:hover:bg-amber-900/40"
         >
           Reject
         </Button>
         <Button
           type="button"
-          variant="destructive"
+          variant={pendingApproval.risk === "high" ? "destructive" : "default"}
           size="sm"
           onClick={() => void sendDecision(true)}
           ref={approveButtonRef}
-          className="flex-1 text-xs"
+          disabled={sending || reconnecting}
+          className="h-auto min-h-9 flex-1 whitespace-normal text-xs"
         >
-          Approve action
+          Approve: {proposedAction}
         </Button>
       </div>
     </Card>

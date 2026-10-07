@@ -38,13 +38,13 @@ export interface RelayTokenUsage {
 }
 
 export const CLOUD_CONTROL_SCHEMA_VERSION = 1 as const;
-export type CloudProviderId = "openrouter" | "fireworks";
+export type CloudProviderId = "openrouter";
 
 export interface CloudPreferencesV1 {
   schemaVersion: typeof CLOUD_CONTROL_SCHEMA_VERSION;
   revision: number;
   inferenceMode: "local" | "cloud";
-  providerMode: "openrouter" | "fireworks";
+  providerMode: "openrouter";
   executorModel?: string;
   plannerModel?: string;
   writerModel?: string;
@@ -98,6 +98,14 @@ export interface RelayRequestV1 {
   stop?: string[];
   responseFormat?: { type: "json_object" };
   toolChoice?: "auto" | "required" | "none";
+  /** Restricted OpenRouter routing; preserves client quality gates through relay. */
+  providerRouting?: {
+    only: string[];
+    order: string[];
+    allow_fallbacks: false;
+    require_parameters: true;
+    max_price: { completion: number };
+  };
 }
 
 export interface CloudAccountV1 {
@@ -108,7 +116,7 @@ export interface CloudAccountV1 {
   sessionEpoch: number;
 }
 
-export type CloudDeviceCapability = "remote_browser_tasks_v1";
+export type CloudDeviceCapability = "remote_browser_tasks_v1" | "remote_browser_interactive_v1";
 
 export interface CloudDeviceV1 {
   schemaVersion: typeof CLOUD_CONTROL_SCHEMA_VERSION;

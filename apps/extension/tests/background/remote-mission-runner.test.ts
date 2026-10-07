@@ -85,3 +85,10 @@ describe("RemoteMissionRunner", () => {
     });
   });
 });
+
+
+test("interactive missions use the bounded remote profile, never full tool access", async () => {
+  const run = vi.fn().mockResolvedValue({ status: "completed", summary: "Verified." });
+  await adaptAgentRunner({ run } as AgentRunner).run({ ...payload, executionClass: "interactive" });
+  expect(run).toHaveBeenCalledWith(expect.objectContaining({ executionToolProfile: "remote_interactive" }), undefined);
+});

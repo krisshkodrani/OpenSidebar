@@ -36,9 +36,6 @@ function endpoint(provider: string): string {
   if (provider === "openrouter") {
     return "https://openrouter.ai/api/v1/chat/completions";
   }
-  if (provider === "fireworks") {
-    return "https://api.fireworks.ai/inference/v1/chat/completions";
-  }
   throw new Error(
     `Perception direct lane does not support provider '${provider}'.`,
   );

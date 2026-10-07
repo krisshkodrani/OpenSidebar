@@ -130,10 +130,7 @@ async function readOverlayBundlePath(): Promise<string> {
     );
   }
 
-  const manifest = JSON.parse(manifestRaw) as Record<
-    string,
-    ViteManifestEntry
-  >;
+  const manifest = JSON.parse(manifestRaw) as Record<string, ViteManifestEntry>;
   const overlayEntry = manifest[OVERLAY_ENTRY];
   if (!overlayEntry?.file) {
     throw new Error(
@@ -263,9 +260,10 @@ async function installFakeBackgroundController(
     };
 
     const readSkills = async (): Promise<unknown[]> => {
-      const result = await window.__opensidebarOverlayRuntime?.port.storage.local
-        .get(WEBSITE_SKILLS_STORAGE_KEY)
-        .catch(() => ({}));
+      const result =
+        await window.__opensidebarOverlayRuntime?.port.storage.local
+          .get(WEBSITE_SKILLS_STORAGE_KEY)
+          .catch(() => ({}));
       const raw = result?.[WEBSITE_SKILLS_STORAGE_KEY];
       return Array.isArray(raw) ? raw : (state.skills ?? []);
     };
@@ -446,8 +444,8 @@ async function installFakeBackgroundController(
           "review",
           [
             "Saw Course: [Practice Exams] AWS Certified AI Practitioner",
-            "Checked \"AWS Trainium\"",
-            "Checked \"Amazon SageMaker JumpStart\"",
+            'Checked "AWS Trainium"',
+            'Checked "Amazon SageMaker JumpStart"',
           ],
           draft,
         );
@@ -490,8 +488,7 @@ async function installFakeBackgroundController(
             payload: {
               status: "THINKING",
               detail:
-                controllerOptions.resumedDetail ??
-                "Fake background resumed",
+                controllerOptions.resumedDetail ?? "Fake background resumed",
             },
           });
         });
@@ -524,8 +521,7 @@ async function installFakeBackgroundController(
       state.lastUserText = userText;
       const sequence = ++nextSequence;
       const responseText =
-        controllerOptions.responseText ??
-        `Fake overlay response: ${userText}`;
+        controllerOptions.responseText ?? `Fake overlay response: ${userText}`;
       const thinkingDetail =
         controllerOptions.thinkingDetail ??
         "Fake background processing feedback";
@@ -717,9 +713,11 @@ export async function createOverlayHarnessRunner(
             window.__overlaySmoke.outboundMessages.push(message);
           }
         });
-        window.__opensidebarOverlayRuntime?.port.subscribeMessages((message) => {
-          window.__overlaySmoke.inboundTypes.push(message.type);
-        });
+        window.__opensidebarOverlayRuntime?.port.subscribeMessages(
+          (message) => {
+            window.__overlaySmoke.inboundTypes.push(message.type);
+          },
+        );
       });
     },
 
@@ -884,7 +882,10 @@ export async function createOverlayHarnessRunner(
           });
         };
 
-        window.addEventListener("opensidebar:overlay:send-message", onUiMessage);
+        window.addEventListener(
+          "opensidebar:overlay:send-message",
+          onUiMessage,
+        );
         window.__overlayFakeBackground = {
           state,
           dispose() {
@@ -901,7 +902,9 @@ export async function createOverlayHarnessRunner(
       return browserPage.evaluate(() => {
         const state = window.__overlayFakeBackground?.state;
         if (!state) {
-          throw new Error("Overlay fake background controller was not started.");
+          throw new Error(
+            "Overlay fake background controller was not started.",
+          );
         }
         return state;
       });
@@ -923,8 +926,9 @@ export async function createOverlayHarnessRunner(
     async waitForOverlayText(text: string) {
       await browserPage.waitForFunction(
         (expectedText) => {
-          const root = document.getElementById("opensidebar-harness-host")
-            ?.shadowRoot;
+          const root = document.getElementById(
+            "opensidebar-harness-host",
+          )?.shadowRoot;
           return Boolean(root?.textContent?.includes(expectedText));
         },
         {},
@@ -935,8 +939,9 @@ export async function createOverlayHarnessRunner(
     async clickOverlayButton(ariaLabel: string) {
       const buttonHandle = await page.waitForFunction(
         (label) => {
-          const root = document.getElementById("opensidebar-harness-host")
-            ?.shadowRoot;
+          const root = document.getElementById(
+            "opensidebar-harness-host",
+          )?.shadowRoot;
           return (
             Array.from(root?.querySelectorAll("button") ?? []).find(
               (button) => button.getAttribute("aria-label") === label,
@@ -952,6 +957,27 @@ export async function createOverlayHarnessRunner(
         throw new Error(`Overlay button was not found: ${ariaLabel}`);
       }
       try {
+        await button.evaluate(async (control) => {
+          const animations: Animation[] = [];
+          for (
+            let current: Element | null = control;
+            current;
+            current = current.parentElement
+          ) {
+            animations.push(
+              ...current
+                .getAnimations()
+                .filter(
+                  (animation) =>
+                    animation.effect?.getComputedTiming().iterations !==
+                    Infinity,
+                ),
+            );
+          }
+          await Promise.all(
+            animations.map((animation) => animation.finished.catch(() => {})),
+          );
+        });
         await button.click();
       } finally {
         await button.dispose();
@@ -978,15 +1004,17 @@ export async function createOverlayHarnessRunner(
 
     async sendPrimaryMessageThroughUi(text: string) {
       await browserPage.waitForFunction(() => {
-        const root = document.getElementById("opensidebar-harness-host")
-          ?.shadowRoot;
+        const root = document.getElementById(
+          "opensidebar-harness-host",
+        )?.shadowRoot;
         return Boolean(
           root?.querySelector('textarea[placeholder="What can I help with?"]'),
         );
       });
       await browserPage.evaluate((value) => {
-        const root = document.getElementById("opensidebar-harness-host")
-          ?.shadowRoot;
+        const root = document.getElementById(
+          "opensidebar-harness-host",
+        )?.shadowRoot;
         const textarea = root?.querySelector(
           'textarea[placeholder="What can I help with?"]',
         ) as HTMLTextAreaElement | null;
@@ -1001,13 +1029,17 @@ export async function createOverlayHarnessRunner(
         textarea.dispatchEvent(new Event("input", { bubbles: true }));
       }, text);
       await browserPage.waitForFunction(() => {
-        const root = document.getElementById("opensidebar-harness-host")
-          ?.shadowRoot;
-        return Boolean(root?.querySelector('button[aria-label="Send message"]'));
+        const root = document.getElementById(
+          "opensidebar-harness-host",
+        )?.shadowRoot;
+        return Boolean(
+          root?.querySelector('button[aria-label="Send message"]'),
+        );
       });
       await browserPage.evaluate(() => {
-        const root = document.getElementById("opensidebar-harness-host")
-          ?.shadowRoot;
+        const root = document.getElementById(
+          "opensidebar-harness-host",
+        )?.shadowRoot;
         const button = root?.querySelector(
           'button[aria-label="Send message"]',
         ) as HTMLButtonElement | null;
@@ -1020,15 +1052,17 @@ export async function createOverlayHarnessRunner(
 
     async sendFeedbackThroughUi(text: string) {
       await browserPage.waitForFunction(() => {
-        const root = document.getElementById("opensidebar-harness-host")
-          ?.shadowRoot;
+        const root = document.getElementById(
+          "opensidebar-harness-host",
+        )?.shadowRoot;
         return Boolean(
           root?.querySelector('textarea[placeholder="Guide the agent..."]'),
         );
       });
       await browserPage.evaluate((value) => {
-        const root = document.getElementById("opensidebar-harness-host")
-          ?.shadowRoot;
+        const root = document.getElementById(
+          "opensidebar-harness-host",
+        )?.shadowRoot;
         const textarea = root?.querySelector(
           'textarea[placeholder="Guide the agent..."]',
         ) as HTMLTextAreaElement | null;
@@ -1043,15 +1077,17 @@ export async function createOverlayHarnessRunner(
         textarea.dispatchEvent(new Event("input", { bubbles: true }));
       }, text);
       await browserPage.waitForFunction(() => {
-        const root = document.getElementById("opensidebar-harness-host")
-          ?.shadowRoot;
+        const root = document.getElementById(
+          "opensidebar-harness-host",
+        )?.shadowRoot;
         return Boolean(
           root?.querySelector('button[aria-label="Send guidance"]'),
         );
       });
       await browserPage.evaluate(() => {
-        const root = document.getElementById("opensidebar-harness-host")
-          ?.shadowRoot;
+        const root = document.getElementById(
+          "opensidebar-harness-host",
+        )?.shadowRoot;
         const button = root?.querySelector(
           'button[aria-label="Send guidance"]',
         ) as HTMLButtonElement | null;

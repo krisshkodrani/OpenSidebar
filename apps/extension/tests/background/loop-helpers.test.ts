@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import { ACTION_EFFECT } from "../../src/background/agent/constants";
+import { ContextSpendTracker } from "../../src/background/agent/context-economy";
 import {
   assessElementIdPreDispatch,
   assessDeadEndPattern,
@@ -1144,6 +1145,44 @@ describe("assessStepDurationWatchdog", () => {
     warnTurns: 3,
     escalateTurns: 5,
   };
+
+  it("lets a long form recover after recent observed progress, but escalates sustained stagnation", () => {
+    const progress = new ContextSpendTracker();
+    for (let turn = 1; turn <= 6; turn++) {
+      progress.recordUsage(turn, undefined);
+      progress.recordProgress(turn, [
+        { strength: "strong", label: "action_effect_delta", observed: true },
+      ]);
+    }
+    for (let turn = 7; turn <= 11; turn++) {
+      const spend = progress.recordUsage(turn, undefined);
+      const decision = assessStepDurationWatchdog({
+        ...base,
+        turnsOnCurrentStep: turn,
+        turnsSinceProgress: spend.turnsSinceProgress,
+      });
+      expect(decision.kind).toBe(
+        turn === 11 ? "escalate" : turn === 9 ? "warn" : "none",
+      );
+    }
+  });
+
+  it("does not treat narration as observed progress", () => {
+    const progress = new ContextSpendTracker();
+    for (let turn = 1; turn <= 5; turn++) {
+      progress.recordUsage(turn, undefined);
+      progress.recordProgress(turn, [
+        { strength: "strong", label: "claimed_progress", observed: false },
+      ]);
+    }
+    expect(
+      assessStepDurationWatchdog({
+        ...base,
+        turnsOnCurrentStep: 5,
+        turnsSinceProgress: progress.snapshot(5).turnsSinceProgress,
+      }),
+    ).toEqual({ kind: "escalate" });
+  });
 
   it("stays inactive without an active planned task", () => {
     expect(

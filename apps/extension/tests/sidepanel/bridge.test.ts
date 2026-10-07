@@ -217,6 +217,21 @@ describe("Bridge Message Routing", () => {
         expect(useStore.getState().messages).toHaveLength(1);
     });
 
+    test.each(["Summarize this page", "My next question"])(
+        "acceptance clears only the submitted draft: %s",
+        (draft) => {
+            useStore.setState({ inputText: draft });
+            setupBridge();
+            send("USER_CHAT_ACCEPTED", {
+                text: "Summarize this page", tabId: 123, workspaceId: "ws-1",
+                messageId: "accepted-draft", timestamp: 1000,
+            });
+            expect(useStore.getState().inputText).toBe(
+                draft === "Summarize this page" ? "" : draft,
+            );
+        },
+    );
+
     test("AGENT_STATUS updates status and running state", () => {
         setupBridge();
         send("AGENT_STATUS", {
@@ -1215,15 +1230,15 @@ describe("Bridge Port Keepalive", () => {
         });
     });
 
-    test("port disconnect resets isAgentRunning when agent was running", () => {
+    test("port disconnect preserves running state until workspace sync", () => {
         useStore.getState().setAgentRunning(true);
         setupBridge();
 
-        // Simulate SW crash
         capturedPortDisconnectListener!();
 
-        expect(useStore.getState().isAgentRunning).toBe(false);
-        expect(useStore.getState().agentStatus).toBe(AgentStatus.IDLE);
+        expect(useStore.getState().isAgentRunning).toBe(true);
+        expect(useStore.getState().statusDetail).toBe("Reconnecting to agent…");
+        expect(useStore.getState().backgroundConnection).toBe("reconnecting");
     });
 
     test("port disconnect does not change status when agent was idle", () => {
@@ -1236,7 +1251,7 @@ describe("Bridge Port Keepalive", () => {
         expect(useStore.getState().agentStatus).toBe(AgentStatus.IDLE);
     });
 
-    test("port disconnect clears all pending overlays", () => {
+    test("port disconnect preserves pending user gates", () => {
         useStore.getState().setPendingApproval({
             approvalId: "a1",
             toolName: "navigate" as any,
@@ -1286,11 +1301,40 @@ describe("Bridge Port Keepalive", () => {
         setupBridge();
         capturedPortDisconnectListener!();
 
-        expect(useStore.getState().pendingApproval).toBeNull();
-        expect(useStore.getState().pendingEscalation).toBeNull();
-        expect(useStore.getState().pendingPlanConfirmation).toBeNull();
-        expect(useStore.getState().pendingClarification).toBeNull();
+        expect(useStore.getState().pendingApproval).not.toBeNull();
+        expect(useStore.getState().pendingEscalation).not.toBeNull();
+        expect(useStore.getState().pendingPlanConfirmation).not.toBeNull();
+        expect(useStore.getState().pendingClarification).not.toBeNull();
     });
+
+    test.each([AgentStatus.ACTING, AgentStatus.IDLE])(
+        "reconnect reconciles task state from background status %s",
+        (status) => {
+            useStore.setState({ activeWorkspaceId: "ws-1", isAgentRunning: true });
+            const { cleanup } = setupBridge();
+            const finalize = vi.spyOn(useStore.getState(), "finalizeStream");
+            capturedPortDisconnectListener!();
+            expect(finalize).not.toHaveBeenCalled();
+            vi.advanceTimersByTime(1000);
+            expect(chrome.runtime.sendMessage).toHaveBeenLastCalledWith(
+                expect.objectContaining({
+                    type: "WORKSPACE_SYNC",
+                    payload: { workspaceId: "ws-1" },
+                }),
+            );
+            capturedListener!({
+                type: "AGENT_STATUS",
+                source: MessageSource.BACKGROUND,
+                workspaceId: "ws-1",
+                payload: { status, detail: "Synced" },
+            });
+            expect(useStore.getState().isAgentRunning).toBe(status !== AgentStatus.IDLE);
+            expect(useStore.getState().backgroundConnection).toBe("connected");
+            expect(finalize).toHaveBeenCalledTimes(status === AgentStatus.IDLE ? 1 : 0);
+            finalize.mockRestore();
+            cleanup();
+        },
+    );
 
     test("port disconnect schedules reconnect after delay", () => {
         setupBridge();

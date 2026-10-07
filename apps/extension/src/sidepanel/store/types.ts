@@ -62,6 +62,9 @@ export interface ChatSlice {
 export interface AgentSlice {
   agentStatus: AgentStatus;
   statusDetail: string;
+  backgroundConnection: "connected" | "reconnecting";
+  lastTaskUpdateAt: number | null;
+  lastCompletedAction: { label: string; at: number } | null;
   isAgentRunning: boolean;
   turnProgress: TurnProgress | null;
   stagnationState: StagnationState | null;

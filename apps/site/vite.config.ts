@@ -9,6 +9,7 @@ const root = resolve(__dirname);
 const baseUrl = process.env.SITE_BASE_URL ?? "";
 
 const cleanUrlPages: Record<string, string> = {
+  "/connect/mcp": "/connect/mcp.html",
   "/walkthrough": "/walkthrough.html",
   "/ideas": "/ideas/index.html",
   "/ideas/done-means-verified": "/ideas/done-means-verified.html",
@@ -59,6 +60,7 @@ export default defineConfig({
     rollupOptions: {
       input: {
         main: resolve(root, "index.html"),
+        mcp: resolve(root, "connect/mcp.html"),
         walkthrough: resolve(root, "walkthrough.html"),
         ideas: resolve(root, "ideas/index.html"),
         doneMeansVerified: resolve(root, "ideas/done-means-verified.html"),

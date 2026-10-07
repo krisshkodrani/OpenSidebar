@@ -11,9 +11,9 @@ runtime can use conservatively.
 ## V2 Decisions
 
 1. Profile Notes are stored locally in the browser runtime storage adapter.
+   Optional profile sync uploads an end-to-end encrypted copy only when enabled.
 2. Digest analysis is explicit; it is not run on every edit.
-3. Fireworks Kimi K2.6 is the initial analyzer when a Fireworks key is
-   configured.
+3. Explicit analysis uses the configured OpenRouter connection.
 4. The digest is stale when the notes hash, digest schema version, or analyzer
    version changes.
 5. V2 supports only one local notes profile. Multiple personas are out of scope.

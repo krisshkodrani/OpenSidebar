@@ -11,7 +11,6 @@ export const MAX_CREDENTIAL_BYTES = 8 * 1024;
 export const MAX_RELAY_BYTES = 8 * 1024 * 1024;
 export const ALLOWED_PROVIDERS = new Set<CloudProviderId>([
   "openrouter",
-  "fireworks",
 ]);
 
 export class PolicyError extends Error {
@@ -35,7 +34,7 @@ export function requireAccountId(value: unknown): string {
 }
 
 export function requireProvider(value: unknown): CloudProviderId {
-  if (value !== "openrouter" && value !== "fireworks") {
+  if (value !== "openrouter") {
     throw new PolicyError("invalid_provider", "Provider is not enabled");
   }
   return value;
@@ -118,7 +117,7 @@ export function parseSafePreferences(value: unknown): SafePreferences {
     raw.schemaVersion !== 1 ||
     !Number.isSafeInteger(raw.revision) ||
     (raw.revision as number) < 0 ||
-    (raw.providerMode !== "openrouter" && raw.providerMode !== "fireworks") ||
+    raw.providerMode !== "openrouter" ||
     !["light", "dark", "system"].includes(String(raw.theme)) ||
     typeof raw.showSessionMetrics !== "boolean"
   ) {

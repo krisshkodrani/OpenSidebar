@@ -113,6 +113,7 @@ export interface PostToolGuardsHost {
   };
   readonly stagnation: { sameUrlTurns: number; resetEscalation(): void };
   readonly telemetry: {
+    readonly turnsSinceContextProgress: number;
     recordContextProgress(
       turn: number,
       signals: ContextProgressSignal[],
@@ -651,6 +652,7 @@ export async function runPostToolGuardsPhase(
         hasTaskId: Boolean(host.taskId),
         planSubtaskCount: host.planSubtasks.length,
         turnsOnCurrentStep: host.turnsOnCurrentStep,
+        turnsSinceProgress: host.telemetry.turnsSinceContextProgress,
         escalationTier: esc.tier,
         cooldownRemaining: esc.cooldownRemaining,
         warnTurns: host.limits.stepWarnTurns,

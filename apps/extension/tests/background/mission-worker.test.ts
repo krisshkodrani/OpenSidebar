@@ -297,3 +297,16 @@ describe("MissionWorker", () => {
     expect(run.mock.calls[1]?.[0].instruction).toContain("Inspect the main region.");
   });
 });
+
+
+test("interactive execution remains mutation-sensitive even if a supervisor labels its step read-only", async () => {
+  const journal = new MemoryMissionAttemptJournal();
+  const run = vi.fn().mockRejectedValue(new Error("worker suspended"));
+  const worker = new MissionWorker({run}, new ScriptedMissionSupervisor([]), journal);
+  const input = { ...mission(), executionClass: "interactive" as const };
+  await expect(worker.run(input)).rejects.toThrow("worker suspended");
+  expect(await journal.read(input.missionId)).toMatchObject({mayHaveConsequentialEffect:true,state:"running"});
+  const restarted = new MissionWorker({run}, new ScriptedMissionSupervisor([]), journal);
+  expect(await restarted.run(input)).toMatchObject({state:"outcome_unknown"});
+  expect(run).toHaveBeenCalledTimes(1);
+});

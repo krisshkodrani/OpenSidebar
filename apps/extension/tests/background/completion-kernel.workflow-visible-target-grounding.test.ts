@@ -21,6 +21,23 @@ function workflowSnapshot(overrides: Partial<DomSnapshot> = {}): DomSnapshot {
 }
 
 describe("completion kernel visible workflow confirmation target grounding", () => {
+  test.each([
+    ["## Shipment memo\nDetails\nRevision 4\n## Saved successfully\nThe change is complete.", "accepted"],
+    ["## Shipment memo\nDetails\nRevision 4\n## Other memo saved successfully.", "rejected"],
+    ["## Other memo\nDetails\nRevision 4\n## Saved successfully\nThe change is complete.", "rejected"],
+  ])("keeps confirmation subjects within their section: %s", (pageContent, status) => {
+    const snapshot = workflowSnapshot({ pageContent, visibleContent: pageContent });
+    const generated = generateCompletionContract({ userRequest: "Save the shipment memo.", snapshot });
+    const decision = evaluateCompletionContract({
+      contract: generated?.contract,
+      evidence: deriveCompletionEvidenceFromSnapshot(snapshot, 2),
+      snapshot,
+      candidateSource: "model_done",
+      summary: "Saved the shipment memo.",
+    });
+    expect(decision.status).toBe(status);
+  });
+
   test("accepts target-aware visible delete confirmation for the requested target", () => {
     const snap = workflowSnapshot({
       visibleContent:

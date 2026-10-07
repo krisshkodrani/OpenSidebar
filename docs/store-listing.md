@@ -56,7 +56,7 @@ YOU STAY IN CONTROL
 
 BRING YOUR OWN KEY
 
-- Use OpenRouter (recommended and default), or the supported Fireworks stack
+- Use OpenRouter as the model gateway in direct or optional account-backed mode
 - Use the recommended account connection, where your verified key is KMS-encrypted and a non-retaining relay streams requests to your provider
 - Or choose Direct from this browser, where your key stays in Chrome and requests go directly to your provider
 - Account connections are revocable, quota-limited, and never return the provider key to the extension

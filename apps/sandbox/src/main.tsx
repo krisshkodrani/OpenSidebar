@@ -25,6 +25,21 @@ import { AccountPage } from "./account";
 import { DashboardPage } from "./dashboard";
 import { AppShell } from "./app/AppShell";
 import { ViewerPage } from "./viewer";
+import { McpConsentPage } from "./app/McpConsentPage";
+import { SignInPage } from "./app/SignInPage";
+import { SessionsPage } from "./app/SessionsPage";
+import { ActivationPage } from "./app/ActivationPage";
+import { RequireSession } from "./app/RequireSession";
+import { PageHeader, LoadingState, ErrorState } from "./app/WorkspaceUi";
+import { Eye, MousePointer2, SearchCode } from "lucide-react";
+import {
+  routes,
+  isSettingsRoute,
+  isAppRoute,
+  normalizeAppUrl,
+} from "./app/routes";
+import { initializeAppearance } from "./app/appearance";
+import "./app/workspace.css";
 
 // The control-session cookie is intentionally host-only. Keep the Control
 // Center on its canonical host so a visit through www cannot create a separate
@@ -35,20 +50,9 @@ if (window.location.hostname === "www.opensidebar.com") {
   );
 }
 
-const legacyAppRoutes: Record<string, string> = {
-  "/dashboard": "/app",
-  "/dashboard/activation": "/app/internal/activation",
-  "/sessions": "/app/sessions",
-  "/account": "/app/account",
-  "/settings": "/app/settings",
-  "/playground": "/app/playground",
-  "/viewer": "/app/viewer",
-};
-if (legacyAppRoutes[location.pathname]) {
-  location.replace(
-    `${legacyAppRoutes[location.pathname]}${location.search}${location.hash}`,
-  );
-}
+const normalizedUrl = normalizeAppUrl(new URL(location.href));
+if (normalizedUrl) history.replaceState(null, "", normalizedUrl);
+if (location.pathname.startsWith("/app")) initializeAppearance();
 
 const enabled = new Set([
   "restock-alert",
@@ -219,7 +223,16 @@ function useRuns() {
     }
     setRuns((all) => all.filter((run) => run.id !== id));
   };
-  return { runs, create, command, remove, remote };
+  return {
+    runs,
+    create,
+    command,
+    remove,
+    remote,
+    loading: remote && runsQuery.isPending,
+    loadError: remote ? runsQuery.error : null,
+    retry: runsQuery.refetch,
+  };
 }
 
 function ScenarioCard({
@@ -231,10 +244,22 @@ function ScenarioCard({
   onStart: () => void;
   starting: boolean;
 }) {
-  const available = enabled.has(scenario.id);
+  // Match the deployed Cloud API slice; additional scenarios remain local-only.
+  const available =
+    enabled.has(scenario.id) &&
+    (import.meta.env.DEV || scenario.id === "restock-alert");
+  const ScenarioIcon =
+    scenario.category === "watch"
+      ? Eye
+      : scenario.category === "read"
+        ? SearchCode
+        : MousePointer2;
   return (
     <article className="card scenario-card">
-      <span className="eyebrow">{scenario.category}</span>
+      <span className="os-scenario-type">
+        <ScenarioIcon size={20} aria-hidden="true" />
+        <span className="eyebrow">{scenario.category}</span>
+      </span>
       <h2>{scenario.title}</h2>
       <p>{scenario.description}</p>
       <div className="meta">
@@ -246,7 +271,7 @@ function ScenarioCard({
         disabled={!available || starting}
         onClick={onStart}
       >
-        {starting ? "Starting…" : available ? "Start scenario" : "Coming soon"}
+        {starting ? "Starting…" : available ? "Start scenario" : "Not enabled"}
       </button>
     </article>
   );
@@ -363,129 +388,6 @@ function TargetLanding() {
   );
 }
 
-function SignIn() {
-  const [email, setEmail] = useState("");
-  const [code, setCode] = useState("");
-  const [challengeId, setChallengeId] = useState<string | null>(null);
-  const [message, setMessage] = useState<string | null>(null);
-  const [busy, setBusy] = useState(false);
-  const send = async () => {
-    if (!email.trim()) {
-      setMessage("Enter your email address.");
-      return;
-    }
-    setBusy(true);
-    setMessage(null);
-    try {
-      const result = await controlApi.requestCode(email);
-      setChallengeId(result.challengeId);
-      setMessage(
-        "Check your inbox or spam folder for the sign-in code. It expires in 10 minutes.",
-      );
-    } catch (e) {
-      setMessage(e instanceof Error ? e.message : "Could not send a code.");
-    } finally {
-      setBusy(false);
-    }
-  };
-  const verify = async () => {
-    if (!challengeId) return;
-    if (!/^\d{6,8}$/.test(code)) {
-      setMessage("Enter the 6 to 8 digit code from your email.");
-      return;
-    }
-    setBusy(true);
-    setMessage(null);
-    try {
-      await controlApi.verifyCode(challengeId, email, code);
-      location.assign("/playground");
-    } catch (e) {
-      setMessage(e instanceof Error ? e.message : "That code did not work.");
-    } finally {
-      setBusy(false);
-    }
-  };
-  return (
-    <main className="empty signin-shell">
-      <span className="eyebrow">
-        OpenSidebar Playground · Private Control Center
-      </span>
-      <h1>
-        {challengeId
-          ? "Enter your one-time code."
-          : "Set up the room behind the experiment."}
-      </h1>
-      <p>
-        We’ll send a one-time code. No password is created or stored in this
-        app.
-      </p>
-      <label>
-        Email{" "}
-        <input
-          type="email"
-          value={email}
-          autoComplete="email"
-          placeholder="you@company.com"
-          disabled={Boolean(challengeId) || busy}
-          onChange={(e) => setEmail(e.target.value)}
-          required
-        />
-      </label>
-      {challengeId && (
-        <label>
-          Sign-in code{" "}
-          <input
-            inputMode="numeric"
-            autoComplete="one-time-code"
-            pattern="[0-9]{6,8}"
-            placeholder="Enter code"
-            value={code}
-            disabled={busy}
-            onChange={(e) =>
-              setCode(e.target.value.replace(/\D/g, "").slice(0, 8))
-            }
-            required
-          />
-        </label>
-      )}
-      {message && (
-        <p className="signin-message" role="status">
-          {message}
-        </p>
-      )}
-      <div className="actions">
-        <button
-          className="btn btn-primary"
-          disabled={busy}
-          onClick={() => void (challengeId ? verify() : send())}
-        >
-          {busy
-            ? "Working…"
-            : challengeId
-              ? "Verify and enter Playground"
-              : "Send sign-in code"}
-        </button>
-        {challengeId && (
-          <button
-            className="btn btn-ghost"
-            disabled={busy}
-            onClick={() => {
-              setChallengeId(null);
-              setCode("");
-              setMessage("Enter your email to request a new code.");
-            }}
-          >
-            Use another email or request a new code
-          </button>
-        )}
-        <a className="btn btn-ghost" href="/playground">
-          Back to Playground
-        </a>
-      </div>
-    </main>
-  );
-}
-
 function visibleSummary(run: SandboxRun) {
   const s = run.state as Record<string, unknown>;
   if (run.scenarioId === "restock-alert")
@@ -565,7 +467,8 @@ function visibleSummary(run: SandboxRun) {
 }
 
 function ControlCenter() {
-  const { runs, create, command, remove, remote } = useRuns();
+  const { runs, create, command, remove, remote, loading, loadError, retry } =
+    useRuns();
   const [selected, setSelected] = useState<string | null>(null);
   const [creatingRun, setCreatingRun] = useState(false);
   const [delay, setDelay] = useState(30);
@@ -700,9 +603,12 @@ function ControlCenter() {
       setLaunching(false);
     }
   };
+  if (loading) return <LoadingState label="Loading playground runs…" />;
+  if (loadError)
+    return <ErrorState error={loadError} retry={() => void retry()} />;
   if (!run || creatingRun)
     return (
-      <main className="empty playground-catalog">
+      <section className="empty playground-catalog">
         {creatingRun && (
           <header className="catalog-heading">
             <h1>Choose a new scenario</h1>
@@ -723,7 +629,7 @@ function ControlCenter() {
           </p>
         )}
         <section className="catalog">
-          {creatingRun ? <h2>Scenarios</h2> : <h1>Choose a scenario</h1>}
+          <h2>Choose a scenario</h2>
           <div className="grid">
             {scenarios.map((scenario) => (
               <ScenarioCard
@@ -744,7 +650,7 @@ function ControlCenter() {
             Back to active run
           </button>
         )}
-      </main>
+      </section>
     );
   const state = run.state as Record<string, unknown>;
   const feasibility = state.feasibility as string | undefined;
@@ -820,7 +726,7 @@ function ControlCenter() {
     }
   };
   return (
-    <main className="workspace">
+    <section className="workspace">
       <aside>
         <a className="brand" href="/">
           OpenSidebar <small>Playground</small>
@@ -1077,7 +983,7 @@ function ControlCenter() {
           </button>
         </footer>
       </section>
-    </main>
+    </section>
   );
 }
 
@@ -1472,32 +1378,51 @@ function Target() {
   );
 }
 function App() {
-  return location.pathname === "/app" ||
-    location.pathname === "/app/internal/activation" ||
-    location.pathname === "/app/sessions" ? (
-    <DashboardPage />
-  ) : location.pathname === "/app/account" ||
-    location.pathname === "/app/settings" ? (
-    <AccountPage />
-  ) : location.pathname === "/app/sign-in" ? (
-    <AppShell>
-      <SignIn />
-    </AppShell>
-  ) : location.pathname === "/app/playground" ? (
-    <AppShell>
-      <ControlCenter />
-    </AppShell>
-  ) : location.pathname === "/app/viewer" ? (
-    <ViewerPage />
-  ) : location.pathname.startsWith("/run/") ? (
-    <Target />
-  ) : !import.meta.env.DEV && location.pathname === "/" ? (
-    <TargetLanding />
-  ) : new URLSearchParams(location.search).has("auth") ? (
-    <SignIn />
-  ) : (
-    <ControlCenter />
-  );
+  const path = location.pathname;
+  if (path === routes.signIn) return <SignInPage />;
+  if (path === routes.mcpConsent) return <RequireSession><McpConsentPage /></RequireSession>;
+  if (path.startsWith("/app")) {
+    if (!isAppRoute(path))
+      return (
+        <RequireSession>
+          <AppShell>
+            <PageHeader
+              title="Page not found"
+              description="This workspace address doesn’t exist. Your account and data are unchanged."
+            />
+            <a className="os-button os-primary" href={routes.overview}>
+              Back to overview
+            </a>
+          </AppShell>
+        </RequireSession>
+      );
+    return (
+      <RequireSession>
+        {path === routes.overview ? (
+          <DashboardPage />
+        ) : path === routes.sessions ? (
+          <SessionsPage />
+        ) : path === routes.activation ? (
+          <ActivationPage />
+        ) : isSettingsRoute(path) ? (
+          <AccountPage />
+        ) : path === routes.viewer ? (
+          <ViewerPage />
+        ) : (
+          <AppShell>
+            <PageHeader
+              title="Playground"
+              description="Try a browser task in an isolated scenario. You control the conditions and can review what happens."
+            />
+            <ControlCenter />
+          </AppShell>
+        )}
+      </RequireSession>
+    );
+  }
+  if (path.startsWith("/run/")) return <Target />;
+  if (!import.meta.env.DEV && path === "/") return <TargetLanding />;
+  return <ControlCenter />;
 }
 const isTargetSurface =
   location.pathname.startsWith("/run/") ||

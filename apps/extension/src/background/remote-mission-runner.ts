@@ -65,7 +65,7 @@ export function adaptAgentRunner(runner: AgentRunner): RemoteMissionRunner {
             instruction: payload.instruction,
             ...(payload.initialUrl ? { url: payload.initialUrl } : {}),
             session: payload.missionId,
-            executionToolProfile: payload.executionClass,
+            executionToolProfile: payload.executionClass === "interactive" ? "remote_interactive" : "read_only",
             targetContext: payload.targetContext ?? "isolated_tab",
           },
           options,
@@ -104,7 +104,7 @@ export function adaptAgentRunner(runner: AgentRunner): RemoteMissionRunner {
               instruction: payload.instruction,
               ...(payload.initialUrl ? { url: payload.initialUrl } : {}),
               session: payload.missionId,
-              executionToolProfile: payload.executionClass,
+              executionToolProfile: payload.executionClass === "interactive" ? "remote_interactive" : "read_only",
               targetContext: payload.targetContext ?? "isolated_tab",
               targetHandle: decision.targetHandle,
             }, options));

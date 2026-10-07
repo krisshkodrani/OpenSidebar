@@ -4,14 +4,11 @@ OpenSidebar combines a fast executor with a planner, verifier, and visual percep
 
 ## Model Roles
 
-| Role | Model | Provider | Purpose |
-| --- | --- | --- | --- |
-| Executor | `accounts/fireworks/models/kimi-k2p7-code` | Fireworks | Default action loop |
-| Executor fallback | `accounts/fireworks/models/kimi-k2p7-code` | Fireworks | Runtime fallback for empty-response issues |
-| Planner | `accounts/fireworks/routers/kimi-k2p6-turbo` | Fireworks | Planning, rerouting, verification |
-| Perception | `unified_vl` by default; structured fallback is provider-specific | Configured provider | Visual grounding |
-
-Xiaomi MiMo can be selected as an agent provider with `XIAOMI_API_KEY`. In that mode, the executor uses `mimo-v2-omni` and planner choices are limited to curated MiMo V2 models.
+The executor takes browser actions, the planner decomposes and reroutes work,
+and the judge evaluates completion evidence. Unified visual grounding sends
+screenshots to the executor; structured mode uses DOM evidence. All model calls
+use OpenRouter. See the [architecture overview](../architecture/overview.md#model-stack)
+for the source of current defaults.
 
 ## Runtime Capabilities
 

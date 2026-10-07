@@ -268,13 +268,27 @@ export class PresenceCoordinator {
     if (!follower && (await this.cursor.animateGlide(points, durationMs))) {
       return;
     }
-    for (const point of points) {
+    const startedAt = performance.now();
+    let progress = 0;
+    do {
+      await new Promise<void>((resolve) => this.raf(resolve));
+      progress =
+        durationMs === 0
+          ? 1
+          : Math.min(1, (performance.now() - startedAt) / durationMs);
+      const index = progress * (points.length - 1);
+      const before = points[Math.floor(index)];
+      const after = points[Math.min(points.length - 1, Math.ceil(index))];
+      const fraction = index - Math.floor(index);
+      const point = {
+        x: before.x + (after.x - before.x) * fraction,
+        y: before.y + (after.y - before.y) * fraction,
+      };
       this.cursor.moveTo(point);
       if (follower) {
         follower.style.transform = `translate3d(${point.x + 8}px, ${point.y + 8}px, 0)`;
       }
-      await new Promise<void>((resolve) => this.raf(resolve));
-    }
+    } while (progress < 1);
   }
 
   private dwell(): Promise<void> {

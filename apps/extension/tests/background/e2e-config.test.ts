@@ -40,7 +40,7 @@ describe("E2E config", () => {
     const config = readE2EConfig({ env: {} });
 
     expect(config.profile).toBe("local");
-    expect(config.provider).toBe("fireworks");
+    expect(config.provider).toBe("openrouter");
     expect(config.browser.headless).toBe(false);
     expect(config.browser.panelMode).toBe("overlay");
     expect(config.artifacts.finalScreenshot).toBe(true);
@@ -101,7 +101,7 @@ describe("E2E config", () => {
     const config = readE2EConfig({
       env: {
         E2E_PROFILE: "video",
-        E2E_PROVIDER: "fireworks",
+        E2E_PROVIDER: "openrouter",
         E2E_MODEL: "test-model",
         E2E_PLANNER_MODEL: "test-planner",
         E2E_JUDGE_MODEL: "test-judge",
@@ -115,7 +115,7 @@ describe("E2E config", () => {
     const childEnv = withE2EConfigEnv({}, config);
 
     expect(childEnv.E2E_PROFILE).toBe("video");
-    expect(childEnv.E2E_PROVIDER).toBe("fireworks");
+    expect(childEnv.E2E_PROVIDER).toBe("openrouter");
     expect(childEnv.E2E_MODEL).toBe("test-model");
     expect(childEnv.E2E_PLANNER_MODEL).toBe("test-planner");
     expect(childEnv.E2E_JUDGE_MODEL).toBe("test-judge");

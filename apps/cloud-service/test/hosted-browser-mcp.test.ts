@@ -103,6 +103,9 @@ test("a Codex-like MCP client discovers only granted tools and server guidance",
     ],
   );
   assert.match(client.getInstructions() ?? "", /explicitly authorizes browser execution/i);
+  assert.match(client.getInstructions() ?? "", /Safety rules for the supervising client/);
+  assert.match(client.getInstructions() ?? "", /user has authorized that specific action and scope/);
+  assert.match(client.getInstructions() ?? "", /local deny\/cancel controls always apply/);
   await client.close();
   await server.close();
 });

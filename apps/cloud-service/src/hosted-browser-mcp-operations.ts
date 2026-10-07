@@ -15,6 +15,7 @@ import type { RemoteMissionVault } from "./remote-mission-vault.js";
 import { parseRemoteMissionSupervisorDecision } from "./remote-mission-policy.js";
 
 type Dependencies = {
+  interactiveEnabled?: boolean;
   accounts: ControlRepository;
   missions: RemoteMissionRepository;
   vault: RemoteMissionVault;
@@ -81,6 +82,13 @@ export function createHostedBrowserMcpOperations(
           name: device.displayName,
           availability: device.availability,
           extensionVersion: device.extensionVersion,
+          interactiveWork: !deps.interactiveEnabled
+            ? "not_enabled"
+            : !principal.scopes.has("browser.tasks.interact")
+              ? "consent_required"
+              : !device.capabilities.includes("remote_browser_interactive_v1")
+                ? "update_required"
+                : device.availability === "online" ? "ready" : "offline",
           remoteWork:
             device.capabilities.includes("remote_browser_tasks_v1") &&
             device.availability === "online"
@@ -93,6 +101,35 @@ export function createHostedBrowserMcpOperations(
     },
 
     async startTask(principal, input) {
+      const criteria = (input.successCriteria as string[]).map((value) => `- ${value.trim()}`).join("\n");
+      const constraints = Array.isArray(input.constraints) && input.constraints.length
+        ? `\n\nConstraints:\n${input.constraints.map((value) => `- ${String(value).trim()}`).join("\n")}`
+        : "";
+      const prohibited = Array.isArray(input.prohibitedEffects) && input.prohibitedEffects.length
+        ? `\n\nDo not:\n${input.prohibitedEffects.map((value) => `- ${String(value).trim()}`).join("\n")}`
+        : "";
+      const instruction = `${text(input, "objective")}\n\nSuccess criteria:\n${criteria}${constraints}${prohibited}`;
+      if (instruction.length > 16_000) throw new Error("mission_instruction_too_large");
+
+      const executionClass = input.executionClass ?? "read_only";
+      const requestDigest = createHash("sha256").update(JSON.stringify({
+        deviceId: input.deviceId ?? null, objective: input.objective,
+        successCriteria: input.successCriteria, constraints: input.constraints ?? [],
+        prohibitedEffects: input.prohibitedEffects ?? [], initialUrl: input.initialUrl ?? null,
+        targetContext: input.targetContext ?? "isolated_tab", executionClass,
+      })).digest("hex");
+      const assertReplay = async (mission: RemoteMissionV1) => {
+        const original = await deps.vault.getAndDecrypt(identity(principal.accountId, mission));
+        const legacyMatch = !original.requestDigest && executionClass === "read_only" &&
+          original.executionClass === "read_only" && original.instruction === instruction &&
+          original.initialUrl === input.initialUrl &&
+          (original.targetContext ?? "isolated_tab") === (input.targetContext ?? "isolated_tab") &&
+          (!input.deviceId || input.deviceId === mission.deviceId);
+        if (original.requestDigest !== requestDigest && !legacyMatch) throw new Error("idempotency_conflict");
+      };
+      if (executionClass !== "read_only" && executionClass !== "interactive") throw new Error("invalid_executionClass");
+      if (executionClass === "interactive" && (!deps.interactiveEnabled || !principal.scopes.has("browser.tasks.interact")))
+        throw new Error("interactive_access_not_enabled");
       if (!(await deps.accounts.remoteWorkSettings(principal.accountId)).enabled)
         throw new Error("remote_work_disabled");
       const devices = await deps.accounts.listDevices(principal.accountId);
@@ -104,6 +141,7 @@ export function createHostedBrowserMcpOperations(
         idempotencyHash,
       );
       if (replay) {
+        await assertReplay(replay);
         const selected = devices.find((device) => device.id === replay.deviceId);
         return {
           mission: replay,
@@ -131,22 +169,16 @@ export function createHostedBrowserMcpOperations(
         throw new Error(
           requested ? "device_remote_work_unavailable" : "device_selection_required",
         );
+      if (executionClass === "interactive" && !device.capabilities.includes("remote_browser_interactive_v1"))
+        throw new Error("device_update_required");
       const missionId = crypto.randomUUID();
       const now = new Date();
       const location = { accountId: principal.accountId, deviceId: device.id, missionId };
-      const criteria = (input.successCriteria as string[]).map((value) => `- ${value.trim()}`).join("\n");
-      const constraints = Array.isArray(input.constraints) && input.constraints.length
-        ? `\n\nConstraints:\n${input.constraints.map((value) => `- ${String(value).trim()}`).join("\n")}`
-        : "";
-      const prohibited = Array.isArray(input.prohibitedEffects) && input.prohibitedEffects.length
-        ? `\n\nDo not:\n${input.prohibitedEffects.map((value) => `- ${String(value).trim()}`).join("\n")}`
-        : "";
-      const instruction = `${text(input, "objective")}\n\nSuccess criteria:\n${criteria}${constraints}${prohibited}`;
-      if (instruction.length > 16_000) throw new Error("mission_instruction_too_large");
       const stored = await deps.vault.encryptAndPut(location, {
         schemaVersion: 1,
         missionId,
-        executionClass: "read_only",
+        executionClass,
+        requestDigest,
         instruction,
         ...(typeof input.initialUrl === "string" ? { initialUrl: input.initialUrl } : {}),
         ...(input.targetContext === "active_tab" ||
@@ -168,8 +200,10 @@ export function createHostedBrowserMcpOperations(
         await deps.vault.delete(location).catch(() => undefined);
         throw new Error(created.kind);
       }
-      if (created.kind === "replayed")
+      if (created.kind === "replayed") {
         await deps.vault.delete(location).catch(() => undefined);
+        await assertReplay(created.value);
+      }
       const selected = devices.find((candidate) => candidate.id === created.value.deviceId);
       return {
         mission: created.value,

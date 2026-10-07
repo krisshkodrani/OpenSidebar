@@ -55,15 +55,9 @@ test("credential vault verifies then envelope-encrypts with account/provider con
       await vault.decrypt("account-1", "openrouter"),
       "sk-replacement-value",
     );
-    await vault.put("account-1", "fireworks", "fw-secret-value");
-    assert.equal(
-      await vault.decrypt("account-1", "fireworks"),
-      "fw-secret-value",
-    );
-    assert.ok(verificationUrls.includes("https://openrouter.ai/api/v1/key"));
-    assert.ok(
-      verificationUrls.includes("https://api.fireworks.ai/inference/v1/models"),
-    );
+    // Untrusted callers cannot use the retired provider, even with a stale client.
+    await assert.rejects(vault.put("account-1", "fireworks" as never, "fw-secret-value"), /invalid_provider/);
+    assert.deepEqual([...new Set(verificationUrls)], ["https://openrouter.ai/api/v1/key"]);
     await repository.putCredential({ ...stored, accountId: "account-2" });
     await assert.rejects(
       vault.decrypt("account-2", "openrouter"),

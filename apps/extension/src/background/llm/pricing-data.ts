@@ -2,6 +2,17 @@ import type { ModelPricing } from "./pricing";
 
 export const DEFAULT_MODEL_PRICING: ModelPricing[] = [
   {
+    providerId: "openrouter",
+    model: "deepseek/deepseek-v4.1-flash",
+    // Fallback estimate at DeepSeek's endpoint rate; routed hosts vary.
+    inputUsdPerMillion: 0.15,
+    outputUsdPerMillion: 0.6,
+    cachedInputUsdPerMillion: 0.003,
+    effectiveDate: "2026-10-05",
+    sourceUrl: "https://openrouter.ai/api/v1/models/deepseek/deepseek-v4.1-flash/endpoints",
+    confidence: "best_effort",
+  },
+  {
     providerId: "groq",
     model: "openai/gpt-oss-120b",
     inputUsdPerMillion: 0.15,

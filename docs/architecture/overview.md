@@ -16,19 +16,19 @@ The same side panel React app also runs inside the overlay harness for browser-d
 
 ## Model Stack
 
-| Role          | Current Default                                                                        |
-| ------------- | -------------------------------------------------------------------------------------- |
-| Provider mode | `openrouter`                                                                           |
-| Executor      | `minimax/minimax-m3`                                                                   |
-| Planner       | `z-ai/glm-5.2`                                                                         |
-| Judge         | `openai/gpt-oss-120b`                                                                  |
-| Perception    | `unified_vl` through the executor by default; structured fallback is provider-specific |
+All inference seats use OpenRouter. The executor handles browser actions and
+visual grounding; the planner decomposes tasks; the judge assesses evidence.
+Model identifiers are maintained in
+[`model-config.ts`](../../apps/extension/src/config/model-config.ts) and
+[`executor-model-policy.ts`](../../apps/extension/src/utils/executor-model-policy.ts)
+to avoid a second, stale default table in documentation.
 
-Defaults live in `apps/extension/src/config/model-config.ts` and
-`apps/extension/src/utils/executor-model-policy.ts`; trust those over this
-table when they disagree. Settings offers the release-verified OpenRouter and
-Fireworks modes. Experimental adapters remain available to internal evaluation
-commands but are not part of the supported setup surface.
+In local mode the extension calls OpenRouter directly. Optional Cloud mode
+uses the account-scoped relay and encrypted credential vault in
+`apps/cloud-service`. The hosted MCP service can submit and supervise remote
+missions on an explicitly enabled browser. Local policy and approval checks
+remain authoritative. Interactive remote execution is gated separately from
+read-only remote work; see [hosted MCP operations](../guides/hosted-mcp-operations.md).
 
 ## Core Subsystems
 

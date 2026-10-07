@@ -115,3 +115,33 @@ describe("remote mission local controls", () => {
     expect(cloud.cancel).not.toHaveBeenCalled();
   });
 });
+
+
+test("local Stop completes while the cloud is offline", async () => {
+  const cloud = transport();
+  const events: string[] = [];
+  cloud.cancel.mockImplementation(async () => { events.push("network"); throw new Error("offline"); });
+  const write = vi.fn();
+  const controls = new RemoteMissionLocalControls(cloud,
+    { read: async () => active(), write }, vi.fn(),
+    async () => { events.push("local-stop"); });
+  await controls.cancel(missionId);
+  expect(events).toEqual(["local-stop", "network"]);
+  expect(write).toHaveBeenLastCalledWith(expect.objectContaining({ state: "cancelled" }));
+});
+
+
+test("local denial stops execution even when a remote approval already won the network race", async () => {
+  const cloud = transport();
+  cloud.putApprovalDecision.mockRejectedValue(new Error("approval_decision_conflict"));
+  const stop = vi.fn().mockResolvedValue(undefined);
+  const controls = new RemoteMissionLocalControls(cloud, {
+    read: async () => ({ ...active(), state: "approval_required", approval: {
+      approvalId: "approve", actionDigest: "digest", question: "Send?",
+      expiresAt: new Date(Date.now() + 60000).toISOString(),
+    } }), write: vi.fn(),
+  }, vi.fn(), stop);
+  await controls.deny(missionId);
+  expect(stop).toHaveBeenCalledWith(missionId);
+  expect(cloud.cancel).toHaveBeenCalledWith(missionId);
+});

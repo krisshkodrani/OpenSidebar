@@ -1,4 +1,4 @@
-import { describe, test, expect, beforeEach } from "vitest";
+import { describe, test, expect, beforeEach, afterEach, vi } from "vitest";
 import "../setup";
 import {
     detectViewportCoveringOverlays,
@@ -6,6 +6,10 @@ import {
     findCloseButton,
     extractOverlayText,
 } from "../../src/content/content";
+
+// Geometry assertions must not depend on CPU scheduling exhausting the scan budget.
+beforeEach(() => { vi.spyOn(performance, "now").mockReturnValue(0); });
+afterEach(() => { vi.restoreAllMocks(); });
 
 // Mock viewport dimensions (happy-dom defaults to 0x0)
 Object.defineProperty(window, "innerWidth", { value: 1024, writable: true });

@@ -21,7 +21,7 @@ export async function handler(event: APIGatewayProxyEvent): Promise<APIGatewayPr
     const method = event.httpMethod;
     const resource = event.resource;
     if (resource === "/credentials" && method === "GET") {
-      const statuses = await Promise.all((["openrouter", "fireworks"] as const).map(async provider => {
+      const statuses = await Promise.all((["openrouter"] as const).map(async provider => {
         const item = await credentials.get(accountId, provider);
         return item ? {
           schemaVersion: 1,

@@ -249,6 +249,11 @@ export function extractAttributes(el: Element): Record<string, string> {
     attrs[name] = val.slice(0, ATTR_TRUNCATION);
   }
 
+  // The value attribute is a default/attempted value, not the accepted date.
+  if (isInputElement(el) && el.type === "date") {
+    attrs["value"] = el.value.slice(0, ATTR_TRUNCATION);
+  }
+
   const checkboxOrRadio = getCheckboxOrRadioControl(el);
   if (checkboxOrRadio) {
     attrs["type"] = checkboxOrRadio.type;

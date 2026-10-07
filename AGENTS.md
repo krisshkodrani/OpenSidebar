@@ -213,7 +213,7 @@ before any submit) are mandatory. Design and rationale: RFC LP-22. Safety model:
 
 ### Runtime defaults
 
-- Provider mode: `fireworks`; lane: `dev`; executor/planner model: the Fireworks default unless overridden.
+- Provider mode: `openrouter`; lane: `dev`; executor/planner model: the OpenRouter default unless overridden. Direct-provider modes are retired.
 - Override env vars: `E2E_PROVIDER`, `E2E_EXECUTOR_MODEL`, `E2E_TEMPERATURE`, `E2E_USE_VL_EXECUTOR`, `E2E_DIAGNOSTIC`.
 - Keep harness config minimal; prefer runtime fixes over provider-specific test branching.
 

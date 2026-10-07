@@ -35,7 +35,7 @@ skills/
 
 ## Roadmap
 
-See [docs/skills-roadmap-2026-04-13.md](../docs/skills-roadmap-2026-04-13.md) for:
+See [docs/skills-roadmap-2026-04-13.md](../docs/engineering/skills-tools-roadmap-2026-07-23.md) for:
 
 - the current runtime workflow skills
 - the next worthwhile product skills

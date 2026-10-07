@@ -400,6 +400,8 @@ export const createChatSlice: SliceCreator<ChatSlice> = (set, get) => ({
       state.taskRecovery = null;
       state.laneTelemetry = null;
       state.latestStepLabel = null;
+      state.lastTaskUpdateAt = null;
+      state.lastCompletedAction = null;
     });
     persistMessages(get().messages, get().activeWorkspaceId);
     persistCompletedAgentState(get().activeWorkspaceId);
@@ -488,6 +490,8 @@ export const createChatSlice: SliceCreator<ChatSlice> = (set, get) => ({
       state.taskRecovery = null;
       state.laneTelemetry = null;
       state.latestStepLabel = null;
+      state.lastTaskUpdateAt = null;
+      state.lastCompletedAction = null;
       state.sessionMetrics = null;
       state.durableRunStatus = null;
       state.isPlanning = false;

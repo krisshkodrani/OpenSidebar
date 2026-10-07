@@ -83,10 +83,6 @@ export default defineConfig(({ mode }) => {
       chunkSizeWarningLimit: 750,
       rollupOptions: {
         input: {
-          "offscreen-audio": path.resolve(
-            __dirname,
-            "src/offscreen/audio.html",
-          ),
           // The overlay harness drives headed E2E; the e2e-mode build
           // (dist-dev with __DEV__ surface) needs it just like prod.
           ...(isProductionLike || mode === "e2e"

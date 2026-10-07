@@ -40,6 +40,20 @@ describe("done summary completeness guard", () => {
     ).toBeNull();
   });
 
+  test.each(["”", "’", "»"])(
+    "allows a completed quotation ending with %s",
+    (quote) => {
+      expect(
+        getIncompleteDoneSummaryReason({
+          summary:
+            "The requested update was saved and verified on the record. The visibility remained internal, and the saved text was checked against the request: “The timeout was reproduced and logs were requested." +
+            quote,
+          taskContext: "Read back the saved note and report the result",
+        }),
+      ).toBeNull();
+    },
+  );
+
   test("does not apply summarize punctuation checks to draft review tasks", () => {
     const summary =
       "- Drafted the German apology message in the composer\n" +

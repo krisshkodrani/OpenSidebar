@@ -203,7 +203,12 @@ export const chromeUiRuntimePort: UiRuntimePort = {
 
   connectKeepalive(name, onDisconnect) {
     const port = chrome.runtime.connect({ name });
-    port.onDisconnect.addListener(onDisconnect);
+    port.onDisconnect.addListener(() => {
+      // Read lastError in the callback so failed connections do not produce an
+      // unchecked runtime error. The bridge reconnects and re-syncs task state.
+      void chrome.runtime.lastError;
+      onDisconnect();
+    });
     return {
       disconnect() {
         port.disconnect();

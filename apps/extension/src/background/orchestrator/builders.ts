@@ -7,7 +7,8 @@ import { listPromptDescriptors } from "../../prompts";
 import type { RunManifest } from "../../utils";
 import type { SubtaskResult } from "../../types";
 import type { PendingUserInteraction } from "../agent/loop-types";
-import { isUserSkippedNode } from "./utils";
+import { isUserSkippedNode, toSubtasks } from "./utils";
+import { nodeTurns, observeTaskTurns, taskTurns, type TurnWorker } from "./turn-accounting";
 import type { OrchestratorStartInput, OrchestratorTask } from "./types";
 
 export function buildTaskManifest(
@@ -44,7 +45,8 @@ export function buildSyntheticPendingInteractionSummary(
     : "E2E synthetic clarification recovered without an answer.";
 }
 
-export function buildSubtaskResults(task: OrchestratorTask): SubtaskResult[] {
+export function buildSubtaskResults(task: OrchestratorTask, workers?: Iterable<TurnWorker>): SubtaskResult[] {
+  observeTaskTurns(task, workers);
   const taskStopped = task.status === "stopped" || task.status === "stopping";
   return task.nodes.map((node) => ({
     description: node.description,
@@ -60,7 +62,17 @@ export function buildSubtaskResults(task: OrchestratorTask): SubtaskResult[] {
                 ))
             ? "stopped"
             : "failed",
-    turnsUsed: 0,
+    turnsUsed: nodeTurns(node),
     result: node.result || node.error || "",
   }));
+}
+
+export function buildTaskProgress(task: OrchestratorTask, workers?: Iterable<TurnWorker>) {
+  observeTaskTurns(task, workers);
+  return {
+    taskId: task.id,
+    subtasks: toSubtasks(task.nodes),
+    currentIndex: task.currentIndex,
+    totalTurnsUsed: taskTurns(task),
+  };
 }

@@ -164,6 +164,27 @@ function genericParams(
 }
 
 describe("executeSequentialToolCalls", () => {
+  test.each([
+    [ToolName.CLICK_ELEMENT, "continuation-edit"],
+    [ToolName.TYPE_TEXT, null],
+    [ToolName.SELECT_OPTION, "multi-step-form-wizard"],
+  ] as const)("reports DOM growth without inventing autocomplete after %s", async (name, skill) => {
+    const host = createHost() as unknown as AgentLoopToolHandlerHost;
+    host.selectedSkillId = skill;
+    vi.mocked(host.executeToolCall).mockResolvedValue("Action completed.");
+    vi.mocked(host.refreshSnapshotWithRetry).mockResolvedValue(3);
+
+    await handleGenericSequentialToolCall(host, genericParams(name, { id: 1, text: "AB" }));
+
+    const notices = vi.mocked(host.context.addMessage).mock.calls
+      .map(([message]) => String(message.content))
+      .filter((content) => content.includes("new elements appeared"));
+    expect(notices).toHaveLength(1);
+    expect(notices[0]).toContain("after the action");
+    expect(notices[0]).toContain("unless a matching option list is visible");
+    expect(notices[0]).not.toMatch(/after typing|Do NOT type the full value|dropdown detected/);
+  });
+
   test("accepts done tool calls and returns completion state", async () => {
     const host = createHost();
     const completed = vi.fn();

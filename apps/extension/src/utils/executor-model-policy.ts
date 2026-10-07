@@ -2,82 +2,10 @@ import type { UserSettings } from "../types";
 
 export type ProviderMode = NonNullable<UserSettings["providerMode"]>;
 
-/**
- * The recommended stack, and what a fresh install gets (owner decision
- * 2026-07-26). OpenRouter reaches the same models Fireworks serves, but spreads
- * each across competing hosts — so a seat can be pointed at whichever host is
- * cheapest or fastest that week instead of one vendor's single rate.
- *
- * Sizing note, so nobody quotes a saving this does not deliver: on the EXECUTOR
- * seat — ~98% of measured spend — OpenRouter's list rate for minimax-m3 is
- * identical to Fireworks' (0.30/1.20/0.06), and OpenRouter adds a 5.5% Stripe
- * credit fee. The wins are on the planner (glm-5.2, ~39% under Fireworks) and
- * judge (gpt-oss-120b, ~63% under) seats, which carry a small share of traffic,
- * plus the kimi-k2.7-code fallback where OpenRouter is cheaper AND ~2.9x faster
- * against a Fireworks route sitting at 93.4% uptime. Treat the headline as
- * "more routing choice and better tail reliability", not a large bill cut.
- */
+/** OpenRouter is the only supported inference gateway. */
 export const DEFAULT_PROVIDER_MODE: ProviderMode = "openrouter";
+export const DEFAULT_MULTIMODAL_EXECUTOR_BY_PROVIDER: Record<ProviderMode,string> = {openrouter:"minimax/minimax-m3"};
 
-// Fireworks' live model metadata is the source of truth for executor
-// compatibility. Kimi K2.7 Code is the stable default because it currently
-// advertises serverless image input and tool support. MiniMax M3 remains useful
-// for text seats, but Fireworks reports supportsImageInput=false, so it must not
-// occupy the unified-VL executor seat.
-export const DEFAULT_MULTIMODAL_EXECUTOR_BY_PROVIDER: Record<
-  ProviderMode,
-  string
-> = {
-  // OpenRouter addresses models by CATALOG id (`minimax/minimax-m3`). The
-  // Fireworks `accounts/...` form 404s there, exactly as the catalog form 404s
-  // on Fireworks — the same id-form trap as the 2026-07-10 judge-seat incident,
-  // but in the opposite direction. Both OpenRouter modes carried the Fireworks
-  // form until 2026-07-26, which made the whole OpenRouter stack unusable on
-  // its own default; fixed here as a precondition of recommending it.
-  openrouter: "minimax/minimax-m3",
-  "openrouter-groq": "minimax/minimax-m3",
-  // openai-groq stays on the Fireworks form on purpose: that mode's "OpenAI
-  // compatible" executor endpoint is Fireworks-backed (see the settings
-  // one-liner), so it wants the accounts/... id, not a catalog one.
-  "openai-groq": "accounts/fireworks/models/kimi-k2p7-code",
-  fireworks: "accounts/fireworks/models/kimi-k2p7-code",
-  "fireworks-deepseek": "accounts/fireworks/models/kimi-k2p7-code",
-  "cerebras-fireworks": "gemma-4-31b",
-  moonshot: "kimi-k2.6",
-  xiaomi: "mimo-v2-omni",
-};
-
-const FIREWORKS_EXECUTOR_MODELS = new Set([
-  "accounts/fireworks/models/kimi-k2p7-code",
-  "accounts/fireworks/models/kimi-k2p6",
-  "accounts/fireworks/models/qwen3p7-plus",
-]);
-
-const MOONSHOT_EXECUTOR_MODELS = new Set(["kimi-k2.6", "kimi-k2.5"]);
-
-const XIAOMI_EXECUTOR_MODELS = new Set(["mimo-v2-omni"]);
-
-/**
- * Cerebras executor candidates (eval, 2026-07-09): gemma-4-31b is multimodal
- * and under evaluation against the K2.7-Code reliability floor — listed here
- * so the cerebras-fireworks mode can seat it; not part of any other
- * provider's curated set.
- */
-const CEREBRAS_EXECUTOR_MODELS = new Set(["gemma-4-31b"]);
-
-/**
- * OpenRouter-served executor candidates, in OpenRouter's catalog id form.
- *
- * This set deliberately does NOT spread the Fireworks/Moonshot sets: those hold
- * provider-native ids (`accounts/fireworks/...`, bare `kimi-k2.6`) that 404 on
- * OpenRouter. Every id below was verified against the live OpenRouter catalog
- * on 2026-07-26, and every one is image-capable — the executor sees the
- * screenshot on unified_vl turns.
- *
- * Removed in the same pass: `x-ai/grok-4.1-fast`, which OpenRouter has retired
- * (the catalog now carries grok-4.3/4.5/4.20), and the bare `gpt-5.4-mini`
- * alias, which is not a routable id.
- */
 const OPENROUTER_EXECUTOR_MODELS = new Set([
   "stealth/ox-alpha",
   "minimax/minimax-m3",
@@ -86,6 +14,8 @@ const OPENROUTER_EXECUTOR_MODELS = new Set([
   "moonshotai/kimi-k2.5",
   "qwen/qwen3.7-plus",
   "qwen/qwen3-vl-30b-a3b-instruct",
+  // LP-39: image input + tools verified against the catalog on 2026-10-05.
+  "openai/gpt-6-luna",
   "openai/gpt-5.6-luna",
   "openai/gpt-5.4-mini",
   "x-ai/grok-4.5",
@@ -100,30 +30,9 @@ const OPENROUTER_EXECUTOR_MODELS = new Set([
  * planner/writer/perception seats. The per-provider sets above are the
  * provider-scoped views of this policy.
  */
-export const EXECUTOR_ELIGIBLE_MODELS: ReadonlySet<string> = new Set([
-  // Each provider set is spread explicitly. Until 2026-07-26 the Fireworks and
-  // Moonshot ids reached this union only by being spread INTO the OpenRouter
-  // set; once that set was narrowed to OpenRouter's own id form they would have
-  // silently dropped out of the union, taking isVLCapable() with them.
-  ...OPENROUTER_EXECUTOR_MODELS,
-  ...FIREWORKS_EXECUTOR_MODELS,
-  ...MOONSHOT_EXECUTOR_MODELS,
-  ...XIAOMI_EXECUTOR_MODELS,
-  ...CEREBRAS_EXECUTOR_MODELS,
-]);
-
+export const EXECUTOR_ELIGIBLE_MODELS: ReadonlySet<string> = OPENROUTER_EXECUTOR_MODELS;
 function executorModelSet(providerMode: ProviderMode): ReadonlySet<string> {
-  if (providerMode === "moonshot") return MOONSHOT_EXECUTOR_MODELS;
-  if (providerMode === "xiaomi") return XIAOMI_EXECUTOR_MODELS;
-  if (providerMode === "cerebras-fireworks") return CEREBRAS_EXECUTOR_MODELS;
-  if (
-    providerMode === "fireworks" ||
-    providerMode === "fireworks-deepseek" ||
-    providerMode === "openai-groq"
-  ) {
-    return FIREWORKS_EXECUTOR_MODELS;
-  }
-  return OPENROUTER_EXECUTOR_MODELS;
+ return providerMode === "openrouter" ? OPENROUTER_EXECUTOR_MODELS : new Set();
 }
 
 /** Provider-scoped ids used by catalog checks and the executor picker. */

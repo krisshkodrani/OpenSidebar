@@ -1,7 +1,10 @@
+import { plannerPageState, type BuildNodesOptions } from "./page-context";
 import { MAX_PLANNER_ASSUMPTIONS, TaskPlanner } from "../agent/planner";
 import { composeCollapsedDisplayLabel } from "../agent/plan-display-label";
 import {
   compactText,
+  foldEditorEntryPlan,
+  wholeWorkflowSuccessCriteria,
   dedupeStrings,
   isSerializedDependencyChain,
   nodeUrlOrigins,
@@ -161,10 +164,6 @@ interface DecompositionStep {
     pattern?: string;
   };
   toolProfile?: ToolProfile;
-}
-
-export interface BuildNodesOptions {
-  displayQuery?: string;
 }
 
 const MULTI_TAB_CHECKLIST_SKILL_ID = "multi-tab-checklist-workflow";
@@ -580,7 +579,7 @@ function collapseSkillOwnedWorkflowNodes(
         nodes[1].successCriteria,
       ]
         .filter(Boolean)
-        .join(" "),
+        .join("; "),
     );
   } else {
     // LP-17b CM-3: the appended per-node descriptions are planner
@@ -593,12 +592,7 @@ function collapseSkillOwnedWorkflowNodes(
         ),
       ].join(" "),
     );
-    successCriteria = compactText(
-      [
-        "The original request is fully completed and verified, not merely an intermediate page, control, result, or form state.",
-        ...nodes.map((node) => node.successCriteria),
-      ].join(" "),
-    );
+    successCriteria = wholeWorkflowSuccessCriteria(displayQuery?.trim() ? displayQuery : query);
   }
 
   return [
@@ -713,10 +707,7 @@ const ITEMWISE_ORDINAL_TARGET =
  * whose failure kills everything downstream. Serialized + same page + same
  * skill = no parallelism gained, pure overhead.
  *
- * Load-bearing guard: cross-view plans always contain a navigation step (the
- * prompt's VIEW-STATE rule), so refusing to merge across navigation verbs or
- * distinct origins keeps genuinely multi-page plans intact. The user's
- * explicit "separate updates" phrasing also opts out.
+ * Editor entry may fold into form work; other navigation and user boundaries remain separate.
  */
 export function collapseSameContextSequentialNodes(
   nodes: TaskNode[],
@@ -733,6 +724,8 @@ export function collapseSameContextSequentialNodes(
   if (shouldPreserveSeparateFormUpdateNodes(nodes, taskLabelQuery)) {
     return nodes;
   }
+  const editorPlan = foldEditorEntryPlan(nodes, displayQuery?.trim() ? displayQuery : query, SAME_PAGE_COLLAPSE_MAX_DESCRIPTION_CHARS);
+  if (editorPlan !== nodes) return editorPlan;
   if (!isSerializedDependencyChain(nodes)) return nodes;
   if (
     nodes.some(
@@ -786,12 +779,7 @@ export function collapseSameContextSequentialNodes(
       selectedSkillReason: mergedSkill?.reason,
       description,
       displayLabel,
-      successCriteria: compactText(
-        // Keep each source node's observable outcome as a distinct rubric
-        // criterion. Joining with spaces fused unrelated transient and terminal
-        // states into one malformed judge criterion after a same-page collapse.
-        dedupeStrings(nodes.map((node) => node.successCriteria)).join("; "),
-      ),
+      successCriteria: wholeWorkflowSuccessCriteria(displayQuery?.trim() ? displayQuery : query),
       allowedTools: unionTools(nodes),
       assumptions: dedupeStrings(nodes.flatMap((node) => node.assumptions)),
       handoffArtifacts: nodes.flatMap((node) => node.handoffArtifacts),
@@ -1279,6 +1267,7 @@ export class OrchestratorPlanner {
       pageTitle,
       pageUrl,
       signal,
+      plannerPageState(options?.pageState),
     );
     const batchedExhaustiveFallback = synthesizeBatchedExhaustivePlan(query);
 

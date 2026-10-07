@@ -107,6 +107,8 @@ function setup(items = [delivery()]) {
   );
   return {
     controller,
+    transport,
+    worker,
     journal,
     run,
     resumeApproval,
@@ -412,4 +414,32 @@ describe("remote mission delivery", () => {
     expect(world.transitions).toEqual(["accepted", "running"]);
     expect((await world.journal.read()).lastSequence).toBe(1);
   });
+});
+
+
+test("a persisted local stop prevents execution after controller restart", async () => {
+  const fixture = setup();
+  await fixture.controller.stopLocally(missionId);
+  const restarted = new RemoteMissionDeliveryController(fixture.transport, fixture.journal, fixture.worker, async () => deviceId);
+  await restarted.pollOnce();
+  expect(fixture.run).not.toHaveBeenCalled();
+});
+
+
+test("local stop aborts a running worker before any cloud response", async () => {
+  const w = setup();
+  let started!: () => void;
+  const ready = new Promise<void>(resolve => { started = resolve; });
+  let signal: AbortSignal | undefined;
+  w.run.mockImplementation(async (_spec, options) => {
+    signal = options.signal;
+    started();
+    await new Promise<void>(resolve => signal!.addEventListener("abort", () => resolve(), {once:true}));
+    return { state: "cancelled" };
+  });
+  const running = w.controller.pollOnce();
+  await ready;
+  await w.controller.stopLocally(missionId);
+  expect(signal?.aborted).toBe(true);
+  await running;
 });

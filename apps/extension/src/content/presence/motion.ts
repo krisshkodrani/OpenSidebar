@@ -16,8 +16,7 @@ export interface Point {
 /** Cinematic pacing multiplier over subtle-mode durations (RFC §4). */
 export const CINEMATIC_PACE = 1;
 
-/** Cinematic glide floor: short hops at 1.8×90ms ≈ 162ms are ~5 video frames
- *  — nearly a jump on camera. Every cinematic movement must be perceivable. */
+/** Minimum visible travel time, shared by both presentation modes. */
 export const CINEMATIC_MIN_GLIDE_MS = 90;
 
 /** Dwell after arrival before the press begins, ms (RFC §4). */
@@ -43,8 +42,8 @@ export function distance(from: Point, to: Point): number {
 
 /**
  * Fitts-inspired glide duration (RFC §4):
- * clamp(90, 60 + 70 × log2(distance / targetWidth + 1), 420) ms in subtle,
- * ×1.8 in cinematic.
+ * Smaller targets allow more time for the final approach; both modes remain
+ * bounded to 90–320ms so presentation does not hold up the real action.
  */
 export function glideDurationMs(
   from: Point,
@@ -55,7 +54,7 @@ export function glideDurationMs(
   const dist = distance(from, to);
   if (dist < 1) return 0;
   const width = Math.max(8, targetWidth);
-  const base = 55 + 45 * Math.log2(dist / width + 1);
+  const base = 65 + 55 * Math.log2(dist / width + 1);
   const clamped = Math.round(Math.min(320, Math.max(90, base)));
   return mode === "cinematic"
     ? Math.max(CINEMATIC_MIN_GLIDE_MS, Math.round(clamped * CINEMATIC_PACE))
@@ -64,19 +63,24 @@ export function glideDurationMs(
 
 /**
  * Control point for the quadratic Bézier glide arc: perpendicular to the
- * chord at min(0.18 × distance, 60px), side chosen deterministically from
- * the endpoint hash (RFC §4).
+ * chord, with a gently varied apex and curvature from the endpoint hash.
+ * Short hops stay nearly straight; long paths bend by at most 25px.
  */
 export function arcControlPoint(from: Point, to: Point): Point {
   const dist = distance(from, to);
   const mid = { x: (from.x + to.x) / 2, y: (from.y + to.y) / 2 };
   if (dist < 1) return mid;
-  const bulge = Math.min(0.1 * dist, 25);
-  const side = pathSeed(from, to) % 2 === 0 ? 1 : -1;
+  const seed = pathSeed(from, to);
+  const bulge = Math.min((0.035 + ((seed >>> 1) % 66) / 1000) * dist, 25);
+  const side = seed % 2 === 0 ? 1 : -1;
+  const apex = 0.4 + ((seed >>> 8) % 201) / 1000;
   // Unit perpendicular to the chord.
   const px = -(to.y - from.y) / dist;
   const py = (to.x - from.x) / dist;
-  return { x: mid.x + px * bulge * side, y: mid.y + py * bulge * side };
+  return {
+    x: from.x + (to.x - from.x) * apex + px * bulge * side,
+    y: from.y + (to.y - from.y) * apex + py * bulge * side,
+  };
 }
 
 /** Point on the quadratic Bézier at t ∈ [0, 1]. */
@@ -98,11 +102,12 @@ export function easeInOut(t: number): number {
   return 0.5 - 0.5 * Math.cos(Math.PI * Math.min(1, Math.max(0, t)));
 }
 
-/** Fast-launch, controlled-deceleration curve used by visible cursor travel. */
+/** Smooth launch and stop, with a slightly earlier speed peak and longer braking. */
 export function ballisticEase(t: number): number {
   const clamped = Math.min(1, Math.max(0, t));
-  const u = 1 - clamped;
-  return 3 * u * u * clamped * 0.72 + 3 * u * clamped * clamped + clamped ** 3;
+  const u = clamped + 0.12 * Math.sin(Math.PI * clamped);
+  // Quintic smoothstep gives zero velocity and acceleration at both ends.
+  return u * u * u * (10 + u * (-15 + 6 * u));
 }
 
 /**
@@ -146,11 +151,28 @@ export function sampleGlide(
   const overshoot = hasOvershoot(from, to, mode);
   const glideTarget = overshoot ? overshootPoint(from, to) : to;
   const points: Point[] = [];
-  for (let i = 1; i <= frames; i++) {
-    points.push(
-      bezierPoint(from, control, glideTarget, ballisticEase(i / frames)),
-    );
+  for (let i = 0; i <= frames; i++) {
+    const t = i / frames;
+    // Give the tiny correction a real settling interval, rather than snapping
+    // back in one frame. The click still lands at the exact requested point.
+    if (overshoot && t > 0.8) {
+      const settle = ballisticEase((t - 0.8) / 0.2);
+      points.push({
+        x: glideTarget.x + (to.x - glideTarget.x) * settle,
+        y: glideTarget.y + (to.y - glideTarget.y) * settle,
+      });
+    } else {
+      points.push(
+        bezierPoint(
+          from,
+          control,
+          glideTarget,
+          ballisticEase(t / (overshoot ? 0.8 : 1)),
+        ),
+      );
+    }
   }
-  if (overshoot) points.push(to); // settle frame back onto the true target
+  points[0] = from;
+  points[points.length - 1] = to;
   return { points, durationMs };
 }

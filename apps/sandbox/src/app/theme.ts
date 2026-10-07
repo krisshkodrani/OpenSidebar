@@ -1,38 +1,30 @@
 import { createSystem, defaultConfig, defineConfig } from "@chakra-ui/react";
-import productTokens from "../../../../packages/ui-tokens/tokens.json";
-
 const config = defineConfig({
   theme: {
     tokens: {
       colors: {
-        paper: { value: productTokens.colors.canvas },
-        surface: { value: productTokens.colors.surface },
-        ink: { value: productTokens.colors.text },
-        muted: { value: productTokens.colors.textMuted },
-        accent: { value: productTokens.colors.accent },
-        accentStrong: { value: productTokens.colors.accentStrong },
-        line: { value: productTokens.colors.line },
-        success: { value: productTokens.colors.success },
-        danger: { value: productTokens.colors.danger },
+        paper: { value: "var(--os-canvas)" },
+        surface: { value: "var(--os-surface)" },
+        ink: { value: "var(--os-text)" },
+        muted: { value: "var(--os-muted)" },
+        accent: { value: "var(--os-accent)" },
+        accentStrong: { value: "var(--os-accent-strong)" },
+        line: { value: "var(--os-line)" },
+        success: { value: "var(--os-success)" },
+        danger: { value: "var(--os-danger)" },
       },
       fonts: {
-        body: { value: "'Segoe UI', system-ui, sans-serif" },
-        heading: {
-          value: "'Iowan Old Style', 'Palatino Linotype', Georgia, serif",
-        },
+        body: { value: "'OpenSidebar Sans', system-ui, sans-serif" },
+        heading: { value: "'OpenSidebar Sans', system-ui, sans-serif" },
       },
-      radii: { card: { value: productTokens.radii.card } },
-      shadows: {
-        card: {
-          value: productTokens.shadows.card,
-        },
-      },
+      radii: { card: { value: "10px" } },
+      shadows: { card: { value: "none" } },
     },
     semanticTokens: {
       colors: {
-        bg: { value: { base: "{colors.paper}" } },
-        fg: { value: { base: "{colors.ink}" } },
-        focusRing: { value: { base: "{colors.accent}" } },
+        bg: { value: "{colors.paper}" },
+        fg: { value: "{colors.ink}" },
+        focusRing: { value: "{colors.accent}" },
       },
     },
   },
@@ -42,9 +34,8 @@ const config = defineConfig({
     "*:focus-visible": {
       outline: "3px solid",
       outlineColor: "focusRing",
-      outlineOffset: "2px",
+      outlineOffset: "3px",
     },
   },
 });
-
 export const openSidebarSystem = createSystem(defaultConfig, config);

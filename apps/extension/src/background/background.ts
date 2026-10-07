@@ -37,8 +37,6 @@ import {
 import { orchestrator } from "./orchestrator";
 import { setDisabledSkillIds } from "./orchestrator/skills";
 import { PassiveMonitorController } from "./passive-monitor";
-import { transcribeWithGroq } from "./speech/groq";
-import { TabAudioCaptureController } from "./speech/tab-audio";
 import { perceptionWarmup } from "./perception-warmup";
 import { agentNotifications } from "./notifications";
 import {
@@ -150,14 +148,6 @@ const passiveMonitor = new PassiveMonitorController({
   },
 });
 
-const tabAudioCapture = new TabAudioCaptureController({
-  loadSettings,
-  updateTranscript: (workspaceId, transcript) =>
-    passiveMonitor.updateAudioTranscript(workspaceId, transcript),
-  setStatusDetail: (workspaceId, detail) =>
-    passiveMonitor.setStatusDetail(workspaceId, detail),
-});
-
 // 1. Initialize Tools
 registerTools();
 
@@ -192,13 +182,11 @@ agentNotifications.registerHandlers();
 chrome.webNavigation?.onCommitted.addListener((details) => {
   if (details.frameId === 0) {
     perceptionWarmup.invalidate(details.tabId);
-    tabAudioCapture.clearTranscriptsForTab(details.tabId);
   }
 });
 chrome.tabs.onRemoved.addListener((tabId) => {
   perceptionWarmup.invalidate(tabId);
   passiveMonitor.stopSessionsForTab(tabId);
-  tabAudioCapture.stopSessionsForTab(tabId);
   void maybeStopKeepalive();
 });
 
@@ -262,7 +250,8 @@ const noWebPageTaskRecovery = new NoWebPageTaskRecovery({
 });
 
 function isE2EWorkspaceId(workspaceId: string | null | undefined): boolean {
-  return typeof workspaceId === "string" && workspaceId.startsWith("e2e-");
+  return typeof workspaceId === "string" &&
+    (workspaceId.startsWith("e2e-") || import.meta.env.MODE === "e2e");
 }
 
 function rememberE2EOverlayTarget(workspaceId: string, tabId: number): void {
@@ -637,11 +626,6 @@ chrome.tabs.onRemoved.addListener(async (tabId) => {
 
 chrome.runtime.onMessage.addListener(
   (message: RuntimeMessage, sender, sendResponse) => {
-    if (tabAudioCapture.isOffscreenMessage(message)) {
-      tabAudioCapture.handleMessage(message);
-      return false;
-    }
-
     const cloudRoute = routeCloudRuntimeMessage(message, sendResponse);
     if (cloudRoute) return cloudRoute === "async";
 
@@ -774,37 +758,6 @@ chrome.runtime.onMessage.addListener(
 
     if (
       isUiMessageSource(message.source) &&
-      message.type === "SPEECH_TRANSCRIPTION_REQUEST"
-    ) {
-      void (async () => {
-        const settings =
-          cachedSettings ?? (await loadSettings()) ?? ({} as UserSettings);
-        const result = await transcribeWithGroq({
-          apiKey: settings.groqApiKey,
-          audioBase64: message.payload.audioBase64,
-          mimeType: message.payload.mimeType,
-          language: message.payload.language,
-          prompt: message.payload.prompt,
-        });
-        sendResponse({
-          ok: true,
-          text: result.text,
-          durationMs: result.durationMs,
-        });
-      })().catch((error: any) => {
-        logger.warn("recording", "Speech transcription failed", {
-          error: error?.message ?? String(error),
-        });
-        sendResponse({
-          ok: false,
-          detail: error?.message ?? "Audio transcription failed.",
-        });
-      });
-      return true;
-    }
-
-    if (
-      isUiMessageSource(message.source) &&
       message.type === "PASSIVE_MONITOR_START"
     ) {
       void (async () => {
@@ -849,23 +802,6 @@ chrome.runtime.onMessage.addListener(
           minIntervalMs: message.payload.minIntervalMs,
           maxSuggestionsPerMinute: message.payload.maxSuggestionsPerMinute,
         });
-        if (result.ok && message.payload.inputSources.includes("tabAudio")) {
-          await tabAudioCapture
-            .start({ workspaceId: resolvedWsId, tabId })
-            .catch((error: any) => {
-              logger.warn("recording", "Failed to start tab audio capture", {
-                workspaceId: resolvedWsId,
-                tabId,
-                error: error?.message ?? String(error),
-              });
-              passiveMonitor.setStatusDetail(
-                resolvedWsId,
-                error?.message
-                  ? `Audio unavailable: ${error.message}`
-                  : "Audio transcription is unavailable.",
-              );
-            });
-        }
         sendResponse(result);
       })().catch((error: any) => {
         sendResponse({
@@ -898,7 +834,6 @@ chrome.runtime.onMessage.addListener(
           (message.payload.workspaceId === null ? null : undefined);
         const stopped = passiveMonitor.stopSessionById(message.payload.sessionId) ||
           passiveMonitor.stopSession(wsId);
-        await tabAudioCapture.stop(wsId);
         await maybeStopKeepalive();
         sendResponse({ ok: true, stopped });
       })().catch((error: any) => {
@@ -1387,10 +1322,9 @@ async function handleUserChat(payload: UserChatPayload, workspaceId: string) {
       await startKeepalive();
       const passiveWasActive = passiveMonitor.hasSession(workspaceId);
       if (passiveWasActive) {
-        await tabAudioCapture.stop(workspaceId);
         passiveMonitor.pauseSession(
           workspaceId,
-          "Paused while an active agent task runs in this workspace. Audio capture stopped.",
+          "Paused while an active agent task runs in this workspace.",
         );
       }
       try {

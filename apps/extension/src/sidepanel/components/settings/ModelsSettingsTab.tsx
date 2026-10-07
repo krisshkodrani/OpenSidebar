@@ -34,19 +34,12 @@ const API_KEY_FIELDS = [
     placeholder: "sk-or-...",
     description: "Full agent stack and live model catalog.",
   },
-  {
-    key: "fireworksApiKey",
-    label: "Fireworks AI",
-    placeholder: "fw_...",
-    description: "Full agent stack with curated models.",
-  },
 ] as const;
 
 type ActiveProviderMode = NonNullable<UserSettings["providerMode"]>;
 
-function defaultPlannerModel(providerMode: ActiveProviderMode) {
-  if (providerMode === "openrouter") return LLM_MODEL_CONFIG.openrouter.planner;
-  return LLM_MODEL_CONFIG.fireworks.planner;
+function defaultPlannerModel(_providerMode: ActiveProviderMode) {
+  return LLM_MODEL_CONFIG.openrouter.planner;
 }
 
 function defaultWriterModel(providerMode: ActiveProviderMode) {
@@ -139,7 +132,7 @@ export function ModelsSettingsTab({
                 AI provider
               </h3>
               <p className="mt-1 text-xs text-warm-500 dark:text-warm-400">
-                Choose which provider runs the agent.
+                All model requests and spending go through OpenRouter.
               </p>
             </div>
             {availableStacks.length === 0 ? (
@@ -150,10 +143,10 @@ export function ModelsSettingsTab({
                   aria-hidden="true"
                 />
                 <p className="text-sm font-medium text-warm-700 dark:text-warm-200">
-                  Connect an AI provider
+                  Connect OpenRouter
                 </p>
                 <p className="mt-1 text-xs text-warm-500 dark:text-warm-400">
-                  Sign in and connect OpenRouter or Fireworks, or configure
+                  Sign in and connect OpenRouter, or configure
                   Direct from this browser under Advanced.
                 </p>
               </div>
@@ -162,11 +155,8 @@ export function ModelsSettingsTab({
                 {availableStacks.map((stack) => {
                   const selected = stack.mode === providerMode;
                   return (
-                    <button
+                    <div
                       key={stack.mode}
-                      type="button"
-                      aria-pressed={selected}
-                      onClick={() => onChange("providerMode", stack.mode)}
                       className={`w-full rounded-lg border p-3 text-left transition-colors ${
                         selected
                           ? "border-primary-500 bg-primary-50 ring-1 ring-primary-500/20 dark:bg-primary-900/20"
@@ -201,7 +191,7 @@ export function ModelsSettingsTab({
                           ) : null}
                         </span>
                       </div>
-                    </button>
+                    </div>
                   );
                 })}
               </div>
@@ -307,6 +297,15 @@ export function ModelsSettingsTab({
                     <p className="text-xs text-warm-400 dark:text-warm-500">
                       Task decomposition and escalation
                     </p>
+                    {providerMode === "openrouter" && (
+                      <p className="text-xs text-warm-500 dark:text-warm-400">
+                        Providers must cost at most $1 per million output tokens,
+                        show median throughput above 50 tokens/sec and median time
+                        to first token below 2s in recent measurements. These are
+                        historical checks, not response-time guarantees. Missing
+                        measurements block planning, including custom models.
+                      </p>
+                    )}
                     <p className="text-xs text-warm-500 dark:text-warm-400">
                       {getProviderModelCatalogNote({
                         providerMode,

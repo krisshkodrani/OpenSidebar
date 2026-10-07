@@ -42,7 +42,9 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 // E2E loads the dev-surface build (dist-dev, `nx run extension:build-e2e`):
 // the production dist compiles out the trace drain and e2e helper surface,
 // so trace-based assertions are impossible against it.
-const DIST_PATH = path.resolve(__dirname, "../../../../../dist-dev");
+const DIST_PATH = process.env.E2E_DIST_PATH
+  ? path.resolve(process.env.E2E_DIST_PATH)
+  : path.resolve(__dirname, "../../../../../dist-dev");
 const DIST_MANIFEST_PATH = path.join(DIST_PATH, ".vite", "manifest.json");
 const HELPER_PATH = "/e2e-helper.html";
 const SIDE_PANEL_PATH = "/src/sidepanel/index.html";
@@ -112,7 +114,7 @@ async function readOverlayBundlePath(): Promise<string> {
   return overlayBundlePathPromise;
 }
 
-function withTimeout<T>(
+export function withTimeout<T>(
   operation: Promise<T>,
   timeoutMs: number,
   label: string,
@@ -150,7 +152,7 @@ async function forceKillBrowser(browser: Browser): Promise<boolean> {
       await execFileAsync(
         "taskkill",
         ["/PID", String(browserProcess.pid), "/T", "/F"],
-        { windowsHide: true },
+        { windowsHide: true, timeout: 3_000 },
       );
       return true;
     } catch {
@@ -293,12 +295,14 @@ export async function launchWithExtension(): Promise<ExtensionContext> {
   const headless = shouldRunHeadless();
   const browser = await puppeteer.launch({
     headless,
-    enableExtensions: true,
+    enableExtensions: [DIST_PATH],
+    pipe: true,
     waitForInitialPage: false,
     defaultViewport: headless ? HEADLESS_VIEWPORT : null,
     args: [
-      `--disable-extensions-except=${DIST_PATH}`,
-      `--load-extension=${DIST_PATH}`,
+      ...(process.env.MODEL_BENCH_BUDGET_LEDGER
+        ? ["--host-resolver-rules=MAP openrouter.ai ~NOTFOUND", "--no-proxy-server"]
+        : []),
       "--no-first-run",
       "--no-sandbox",
       "--disable-gpu",
@@ -363,9 +367,11 @@ export async function closeExtension(
   ctx: ExtensionContext,
   timeoutMs: number = DEFAULT_BROWSER_CLOSE_TIMEOUT_MS,
 ): Promise<void> {
-  await closeE2EPanel(ctx).catch(() => {});
   try {
-    await withTimeout(ctx.browser.close(), timeoutMs, "Browser close");
+    await withTimeout((async () => {
+      await closeE2EPanel(ctx).catch(() => {});
+      await ctx.browser.close();
+    })(), timeoutMs, "Browser close");
   } catch (error) {
     const killed = await forceKillBrowser(ctx.browser);
     const reason = error instanceof Error ? error.message : String(error);

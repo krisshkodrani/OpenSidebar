@@ -7,6 +7,8 @@ import {
 } from "../../src/background/agent/mutation-ledger";
 import type { DomSnapshot } from "../../src/types";
 import { ToolName } from "../../src/types";
+import { CheckpointCoordinator } from "../../src/background/agent/checkpoint-coordinator";
+import { getMutationDocumentId, lookupMutationReplay, type LoopQueriesHost } from "../../src/background/agent/loop-queries";
 
 function snapshot(overrides: Partial<DomSnapshot> = {}): DomSnapshot {
   return {
@@ -22,6 +24,61 @@ function snapshot(overrides: Partial<DomSnapshot> = {}): DomSnapshot {
 }
 
 describe("MutationLedger", () => {
+  test("loop replay forwards the identity of its actual observed snapshot", () => {
+    const ledger = new MutationLedger();
+    const snap = snapshot();
+    let documentInstanceId = "original-document";
+    const host = {
+      context: { getSnapshot: () => snap },
+      perception: { getCurrentObservation: () => ({ basis: { documentInstanceId }, dom: { snapshot: snap } }) },
+      guardAfterDoneRejection: true,
+      checkpoints: new CheckpointCoordinator(undefined, ledger),
+    } as unknown as LoopQueriesHost;
+    ledger.record({ toolName: ToolName.SELECT_OPTION, args: { id: 1, value: "Open" }, result: "Selected",
+      actionSnapshot: snap, documentInstanceId: getMutationDocumentId(host, snap), planIndex: 0, turn: 1 });
+    expect(lookupMutationReplay(host, ToolName.SELECT_OPTION, { id: 1, value: "Open" })).not.toBeNull();
+    documentInstanceId = "returned-document";
+    expect(lookupMutationReplay(host, ToolName.SELECT_OPTION, { id: 1, value: "Open" })).toBeNull();
+    expect(getMutationDocumentId(host, snapshot())).toBeUndefined();
+    documentInstanceId = "legacy:https://example.com";
+    expect(getMutationDocumentId(host, snap)).toBeUndefined();
+  });
+
+  test("select readback participates in the action fingerprint", () => {
+    const withSelection = (selected: string) => snapshot({ elements: [{
+      tag: 1, tagName: "select", role: "combobox", text: "AllOpenClosed",
+      attributes: { selected },
+    }] });
+    expect(getMutationReplayFingerprint(withSelection("All")))
+      .not.toBe(getMutationReplayFingerprint(withSelection("Open")));
+  });
+
+  test.each([ToolName.SELECT_OPTION, ToolName.CLICK_ELEMENT])(
+    "does not replay %s when navigation returns to an identical page in a new document",
+    (toolName) => {
+      const ledger = new MutationLedger();
+      const snap = snapshot({ pageContent: "Search results. Filters: All" });
+      const args = toolName === ToolName.SELECT_OPTION ? { id: 1, value: "Open" } : { id: 8 };
+      ledger.record({ toolName, args, result: "Executed", actionSnapshot: snap,
+        documentInstanceId: "document-before-navigation", planIndex: 0, turn: 1 });
+      expect(ledger.lookup(toolName, args, snap, true, "document-before-navigation")).not.toBeNull();
+      expect(ledger.lookup(toolName, args, snap, true, "document-after-navigation")).toBeNull();
+      ledger.clearStepLedger();
+      expect(ledger.lookup(toolName, args, snap, true, "document-after-navigation")).toBeNull();
+    },
+  );
+
+  test("restored submission replay stays protected in the same document or when identity is unavailable", () => {
+    const ledger = new MutationLedger();
+    const snap = snapshot({ pageContent: "Submit application" });
+    ledger.record({ toolName: ToolName.CLICK_ELEMENT, args: { id: 5 }, result: "Submitted",
+      actionSnapshot: snap, documentInstanceId: "submission-document", planIndex: 0, turn: 1 });
+    const restored = new MutationLedger();
+    restored.restore(JSON.parse(JSON.stringify(ledger.entries)), []);
+    expect(restored.lookup(ToolName.CLICK_ELEMENT, { id: 5 }, snap, true, "submission-document")?.result).toBe("Submitted");
+    expect(restored.lookup(ToolName.CLICK_ELEMENT, { id: 5 }, snap, true)?.result).toBe("Submitted");
+  });
+
   test("ignores read-only tools", () => {
     const ledger = new MutationLedger(() => 1, () => "id-1");
     const snap = snapshot();

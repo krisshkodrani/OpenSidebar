@@ -446,13 +446,13 @@ export const ESCALATE_DEF: ToolDefinition = {
   function: {
     name: ToolName.ESCALATE,
     description:
-      "Switch to the planner model for complex reasoning. Use when stuck on riddles, puzzles, math, or multi-step logic. Do not use this only because an action tool seems missing until you have checked the Available Tool Capabilities catalog at the end of this conversation.",
+      "Request missing tools or switch to the planner model for complex reasoning. Check the Available Tool Capabilities catalog first. For a missing tool, name the needed tool or capability: permitted tools hidden by a step profile or skill can be restored without switching models. Use complex_reasoning when stuck on riddles, puzzles, math, or multi-step logic.",
     parameters: {
       type: "object",
       properties: {
         reason: {
           type: "string",
-          description: "Why the current model can't handle this.",
+          description: "What is blocking progress, including the specific tool needed if one is missing.",
         },
         reasonCode: {
           type: "string",

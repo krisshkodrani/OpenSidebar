@@ -13,7 +13,7 @@ export type FinalizeStartResultDeps = {
   planSubtasks: SubtaskSummary[];
   mutationLedger: MutationLedger;
   evidenceAccumulator: EvidenceAccumulator;
-  context: Pick<ContextManager, "getMessages">;
+  context: Pick<ContextManager, "getMessages" | "pageObservations">;
   traceRecorder: TraceRecorder | null;
   toolCache: ToolResultCache;
   clearTurnCheckpoint: () => Promise<void>;
@@ -33,6 +33,7 @@ export async function finalizeStartResult(
 
   result.sideEffectsLog = [...deps.mutationLedger.sideEffects];
   result.evidence = deps.evidenceAccumulator.toArray();
+  result.pageObservations = deps.context.pageObservations.toArray();
 
   const shouldRetainTerminalCompletionCheckpoint =
     result.outcome === "completed" && Boolean(result.completionEnvelope);

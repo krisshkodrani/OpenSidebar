@@ -8,7 +8,11 @@
  */
 
 import type { Point } from "./motion";
-import { CURSOR_ARROW_SVG, PRESENCE_STYLE_TEXT } from "./presence-styles";
+import {
+  CURSOR_ARROW_SVG,
+  CURSOR_HOTSPOT,
+  PRESENCE_STYLE_TEXT,
+} from "./presence-styles";
 
 export const PRESENCE_HOST_TAG = "opensidebar-presence";
 
@@ -121,15 +125,10 @@ export class PresenceCursor {
     if (!el || typeof el.animate !== "function" || points.length === 0) {
       return Promise.resolve(false);
     }
-    // Downsample to ≤16 keyframes — the points are already eased, so equal
-    // keyframe spacing with linear easing preserves the acceleration curve.
-    const step = Math.max(1, Math.floor(points.length / 15));
-    const sampled = points.filter((_, i) => i % step === 0);
-    if (sampled[sampled.length - 1] !== points[points.length - 1]) {
-      sampled.push(points[points.length - 1]);
-    }
-    const keyframes = sampled.map((p) => ({
-      transform: `translate3d(${p.x - 5}px, ${p.y - 3}px, 0)`,
+    // Preserve every time sample, including the exact starting position.
+    const keyframes = points.map((p, i) => ({
+      transform: this.transformAt(p),
+      offset: points.length === 1 ? 1 : i / (points.length - 1),
     }));
     const animation = el.animate(keyframes, {
       duration: Math.max(1, durationMs),
@@ -138,7 +137,11 @@ export class PresenceCursor {
     });
     const target = points[points.length - 1];
     return new Promise<boolean>((resolve) => {
+      let settled = false;
       const settle = () => {
+        if (settled) return;
+        settled = true;
+        clearTimeout(timeout);
         this.position = target;
         this.applyPosition();
         try {
@@ -148,17 +151,20 @@ export class PresenceCursor {
         }
         resolve(true);
       };
-      animation.finished.then(settle).catch(settle);
       // Guard: a paused/throttled document must not strand the glide.
-      setTimeout(settle, durationMs + 400);
+      const timeout = setTimeout(settle, durationMs + 400);
+      animation.finished.then(settle).catch(settle);
     });
+  }
+
+  private transformAt(point: Point): string {
+    return `translate3d(${point.x - CURSOR_HOTSPOT.x}px, ${point.y - CURSOR_HOTSPOT.y}px, 0)`;
   }
 
   private applyPosition(): void {
     if (!this.cursorEl) return;
-    // Hotspot registration: the arrow TIP sits ~(5,3)px inside the 32px SVG;
-    // offset so the tip — not the glyph's corner — lands on the target.
-    this.cursorEl.style.transform = `translate3d(${this.position.x - 5}px, ${this.position.y - 3}px, 0)`;
+    // Keep the tip registered after resizing, including during press scaling.
+    this.cursorEl.style.transform = this.transformAt(this.position);
   }
 
   /**

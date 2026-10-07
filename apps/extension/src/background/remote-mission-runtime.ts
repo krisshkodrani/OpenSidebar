@@ -19,7 +19,7 @@ import {
 } from "./remote-missions/http-delivery-port";
 import { RemoteMissionLocalControls } from "./remote-missions/local-controls";
 import { isUiMessageSource } from "./ui-message-source";
-import { REMOTE_BROWSER_WORK_SUPPORTED } from "../remote-work-capabilities";
+import { REMOTE_BROWSER_WORK_SUPPORTED, REMOTE_INTERACTIVE_SUPPORTED } from "../remote-work-capabilities";
 
 const ALARM_NAME = "opensidebar:remote-mission-poll";
 const POLL_PERIOD_MINUTES = 1;
@@ -28,7 +28,7 @@ export const remoteMissionDeliveryEnabled =
 
 const cloud = new CloudAuthenticatedFetch(chromePersistencePort.local);
 const transport = remoteMissionDeliveryEnabled
-  ? new HttpRemoteMissionDeliveryPort((path, init) => cloud.request(path, init))
+  ? new HttpRemoteMissionDeliveryPort((path, init) => cloud.request(path, init), REMOTE_INTERACTIVE_SUPPORTED)
   : new DisabledRemoteMissionDeliveryPort();
 const worker = new MissionWorker(
   createDefaultRemoteMissionRunner(),
@@ -65,6 +65,8 @@ const controller = new RemoteMissionDeliveryController(
   worker,
   readDeviceId,
   writeStatus,
+  1_000,
+  REMOTE_INTERACTIVE_SUPPORTED,
 );
 
 export const pollRemoteMissions = () => controller.pollOnce();
@@ -82,6 +84,7 @@ const localControls = new RemoteMissionLocalControls(
   transport,
   { read: readLocalStatus, write: writeStatus },
   pollRemoteMissions,
+  (missionId) => controller.stopLocally(missionId),
 );
 
 export const cancelRemoteMissionLocally = (missionId: string) =>

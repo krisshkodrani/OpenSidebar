@@ -8,7 +8,7 @@ import type {
   JsonValue,
   ScenarioActionV2,
 } from "@opensidebar/scenario-contracts";
-import { FAMILY_CASE_GROUPS, type CaseMode } from "./case-seeds.js";
+import { FAMILY_CASE_GROUPS, type CaseMode, type FamilyCaseSeed } from "./case-seeds.js";
 import { perceptionPresentation } from "./case-presentations.js";
 import { safetyContext } from "./case-safety.js";
 import { caseWorkflow, type CaseWorkflowPresentation } from "./case-workflows.js";
@@ -205,6 +205,8 @@ interface DraftCase {
   mode: CaseMode;
   expected: JsonValue;
   expectedAnswer: JsonValue;
+  note?: FamilyCaseSeed["note"];
+  form?: FamilyCaseSeed["form"];
   forbiddenAnswerValues: readonly string[];
   answerMatch?: "literal" | "normalized";
   workflow?: CaseWorkflowPresentation;
@@ -386,7 +388,8 @@ function drafts(): DraftCase[] {
       const expectedText = String(task.expected);
       const requiresValue =
         (mode === "state" || mode === "state-and-answer") &&
-        task.prompt.toLocaleLowerCase().includes(expectedText.toLocaleLowerCase());
+        (task.note !== undefined || task.acceptedInput !== undefined ||
+          task.prompt.toLocaleLowerCase().includes(expectedText.toLocaleLowerCase()));
       const kind = character(groupIndex, taskIndex, group.tasks.length);
       const safety = kind === "adversarial" ? safetyContext(task.slug) : undefined;
       const field = fieldPresentation(task.title, task.prompt);
@@ -431,8 +434,9 @@ function drafts(): DraftCase[] {
               mode,
               mutable: mode === "state" || mode === "state-and-answer",
               requiresValue,
-              valueLabel: field.label,
-              control: field.control,
+              valueLabel: task.note ? "Note text" : field.label,
+              control: task.form ? "fields" : task.note ? "note" : field.control,
+              ...(task.form ? { fields: task.form.fields } : {}),
               ...(field.options ? { options: field.options } : {}),
               submitLabel: task.title,
               activeSection: navigationSection(group.family, task.prompt),
@@ -460,7 +464,11 @@ function drafts(): DraftCase[] {
             expected: cloneJson(task.expected),
             mode,
             ...(mode === "state" || mode === "state-and-answer"
-              ? requiresValue
+              ? task.form
+                ? { submissionKind: "fields" }
+                : task.note
+                ? { submissionKind: "note" }
+                : requiresValue
                 ? {
                     submissionKind: "value",
                     acceptedValue: cloneJson(task.acceptedInput ?? task.expected),
@@ -474,6 +482,8 @@ function drafts(): DraftCase[] {
         mode,
         expected: task.expected,
         expectedAnswer,
+        ...(task.note ? { note: task.note } : {}),
+        ...(task.form ? { form: task.form } : {}),
         forbiddenAnswerValues: task.forbiddenAnswerValues ?? [],
         ...(task.answerMatch ? { answerMatch: task.answerMatch } : {}),
         ...(workflow ? { workflow } : {}),
@@ -505,7 +515,11 @@ function buildCatalog(): EngineCaseDefinitionV1[] {
       draft.expected,
       draft.expectedAnswer,
     );
-    const good = { ...baseGood, actions: [...workflowActions, ...baseGood.actions] };
+    const good = { ...baseGood, actions: [...workflowActions, ...(draft.form
+      ? [{ type: "case.submit", payload: { fields: draft.form.expected } }]
+      : draft.note
+      ? [{ type: "case.submit", payload: { value: draft.note.text, visibility: draft.note.visibility } }]
+      : baseGood.actions)] };
     const contentHash = stableHash(contract as unknown as JsonValue);
     return {
       contract,
@@ -514,7 +528,7 @@ function buildCatalog(): EngineCaseDefinitionV1[] {
       validator: {
         id: contract.validatorId,
         version: contract.version,
-        assertions: assertions(
+        assertions: [...assertions(
           contract.id,
           draft.mode,
           draft.expected,
@@ -522,12 +536,20 @@ function buildCatalog(): EngineCaseDefinitionV1[] {
           draft.forbiddenAnswerValues,
           Boolean(draft.workflow),
           draft.answerMatch,
-        ),
+        ), ...(draft.note ? [
+          { id: `${contract.id}.note-text`, source: "state" as const, operator: "includes-normalized" as const, path: "data.public.case.note.text", expected: draft.note.text, evidence: "The saved note contains the requested text." },
+          { id: `${contract.id}.note-visibility`, source: "state" as const, operator: "equals" as const, path: "data.public.case.note.visibility", expected: draft.note.visibility, evidence: "The saved note has the requested visibility." },
+        ] : []), ...(draft.form ? Object.entries(draft.form.expected).map(([key, expected]) => ({
+          id: `${contract.id}.field-${key}`, source: "state" as const, operator: "equals" as const,
+          path: `data.public.case.fields.${key}`, expected, evidence: "The saved record contains the requested field value.",
+        })) : [])],
         allowedMutationPaths:
           draft.mode === "state" || draft.mode === "state-and-answer"
             ? [
                 "data.public.case.status",
                 "data.public.case.value",
+                ...(draft.note ? ["data.public.case.note"] : []),
+                ...(draft.form ? ["data.public.case.fields"] : []),
                 ...(draft.workflow ? ["data.public.workflow", "data.public.workflowState", "data.public.dynamics.status"] : []),
               ]
             : draft.mode === "terminal"
@@ -541,13 +563,23 @@ function buildCatalog(): EngineCaseDefinitionV1[] {
             : [],
       },
       oracle: good,
-      nearMisses: nearMisses(
+      nearMisses: [...nearMisses(
         draft.mode,
         draft.expected,
         draft.expectedAnswer,
         good,
         workflowActions,
-      ),
+      ), ...(draft.note ? [
+        { id: "status-only", description: "A success marker does not prove the note exists.", outcome: { actions: [...workflowActions, ...baseGood.actions] } },
+        { id: "wrong-note-text", description: "The saved internal note omits required content.", outcome: { actions: [...workflowActions, { type: "case.submit", payload: { value: "Logs were requested.", visibility: draft.note.visibility } }] } },
+        { id: "wrong-note-visibility", description: "The requested internal note was posted publicly.", outcome: { actions: [...workflowActions, { type: "case.submit", payload: { value: draft.note.text, visibility: "public" } }] } },
+      ] : []), ...(draft.form ? [
+        { id: "status-only", description: "A success marker does not prove the saved fields.", outcome: { actions: [...workflowActions, ...baseGood.actions] } },
+        ...draft.form.fields.map(field => ({
+          id: `wrong-${field.key}`, description: `The saved ${field.label} differs from the request.`,
+          outcome: { actions: [...workflowActions, { type: "case.submit", payload: { fields: { ...draft.form!.expected, [field.key]: field.options.find(value => value !== draft.form!.expected[field.key])! } } }] },
+        })),
+      ] : [])],
     };
   });
 }
