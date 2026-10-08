@@ -62,7 +62,6 @@ function makeDeps(
       warn: vi.fn(),
     },
     statusHandler: (status, message) => statuses.push({ status, message }),
-    rewriteListDetailWorkflowToolCall: vi.fn(() => false),
     events,
     messages,
     statuses,
@@ -186,51 +185,37 @@ describe("prepareToolCallBranch", () => {
     ]);
   });
 
-  test("uses the original allowed batch shape for workflow redirect mode", () => {
+  test("preserves every requested action instead of replacing a batch with a workflow redirect", () => {
     const hidden = makeToolCall("hidden", ToolName.INSPECT_HIDDEN);
-    const table = makeToolCall("table", ToolName.INSPECT_TABLE, {
-      query: "example",
-    });
-    const rewriteListDetailWorkflowToolCall = vi.fn((toolCall: ToolCall) => {
-      return toolCall.id === "table";
-    });
+    const table = makeToolCall("table", ToolName.INSPECT_TABLE, { query: "example" });
+    const requested = structuredClone([hidden, table]);
     const deps = makeDeps({
       response: makeResponse([hidden, table], "I will inspect page details."),
-      consecutiveBlindToolTurns: 4,
-      rewriteListDetailWorkflowToolCall,
     });
 
     const result = prepareToolCallBranch(deps);
 
-    expect(result).toMatchObject({
-      consecutiveBlindToolTurns: 0,
-      allCallsBlocked: false,
-      canParallelize: false,
+    expect(deps.response.tool_calls).toEqual(requested);
+    expect(result.canParallelize).toBe(true);
+    expect(deps.messages).toContainEqual({
+      role: "assistant",
+      content: "I will inspect page details.",
+      tool_calls: requested,
     });
-    expect(rewriteListDetailWorkflowToolCall).toHaveBeenNthCalledWith(
-      1,
-      hidden,
-      "parallel",
-    );
-    expect(rewriteListDetailWorkflowToolCall).toHaveBeenNthCalledWith(
-      2,
-      table,
-      "parallel",
-    );
-    expect(deps.response.tool_calls).toEqual([table]);
-    expect(deps.messages).toEqual([
-      {
-        role: "assistant",
-        content: "I will inspect page details.",
-        tool_calls: [
-          {
-            id: "table",
-            type: "function",
-            function: table.function,
-          },
-        ],
-      },
-    ]);
+  });
+
+  test("keeps requested order in history when a middle call is blocked", () => {
+    const first = makeToolCall("first", ToolName.READ_PAGE);
+    const blocked = makeToolCall("blocked", ToolName.NAVIGATE, { url: "javascript:void(0)" });
+    const last = makeToolCall("last", ToolName.READ_ELEMENT, { id: 9 });
+    const requested = structuredClone([first, blocked, last]);
+    const deps = makeDeps({ response: makeResponse([first, blocked, last]) });
+
+    prepareToolCallBranch(deps);
+
+    expect(deps.response.tool_calls).toEqual([first, last]);
+    expect(deps.messages[0]).toMatchObject({ role: "assistant", tool_calls: requested });
+    expect(deps.messages[1]).toMatchObject({ role: "tool", tool_call_id: "blocked" });
   });
 
   test("keeps allowed read-only batches parallelizable when no redirect applies", () => {

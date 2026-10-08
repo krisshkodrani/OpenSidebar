@@ -2,12 +2,10 @@ import { describe, expect, test } from "vitest";
 import "../setup";
 
 import {
-  assessAutocompleteTextRewrite,
   assessInlineEditNavigationGuard,
   assessInlineEditTextEntryRetarget,
   assessTextEntryClickGuard,
   getAutocompleteSuggestionDoneRejection,
-  rewriteAutocompleteTextEntry,
   validateTextEntryTarget,
 } from "../../src/background/agent/text-entry-guards";
 import type { DomSnapshot } from "../../src/types";
@@ -79,7 +77,7 @@ describe("text entry guards", () => {
     ).toBeNull();
   });
 
-  test("blocks clicking a text input when the objective requires typing a value", () => {
+  test("allows focusing a text input before entering the requested value", () => {
     expect(
       assessTextEntryClickGuard({
         objectiveText: "Set the email address with user@example.com",
@@ -89,10 +87,7 @@ describe("text entry guards", () => {
         targetId: 7,
       }),
     ).toEqual({
-      explicitValue: "user@example.com",
-      blockReason:
-        'Error: This step requires entering "user@example.com" into [7]. ' +
-        "Use type_text instead of click_element on this input.",
+      blockReason: null,
     });
   });
 
@@ -104,7 +99,6 @@ describe("text entry guards", () => {
         targetId: 7,
       }),
     ).toEqual({
-      explicitValue: null,
       blockReason: null,
     });
   });
@@ -257,45 +251,6 @@ describe("text entry guards", () => {
     });
 
     expect(result).toContain('needs "999"');
-  });
-
-  test("rewrites autocomplete text entry to a prefix", () => {
-    const result = rewriteAutocompleteTextEntry({
-      objectiveText: "Choose the matching suggestion from the dropdown",
-      element: element({
-        role: "combobox",
-        attributes: { "aria-autocomplete": "list" },
-      }),
-      typedText: "Acme Corporation",
-    });
-
-    expect(result?.rewrittenText).toBe("Acme C");
-    expect(result?.reason).toContain("Autocomplete guard");
-  });
-
-  test("assesses autocomplete rewrite from tool args", () => {
-    const result = assessAutocompleteTextRewrite({
-      objectiveText: "Choose the matching suggestion from the dropdown",
-      originalQuery: "Choose Acme Corporation from suggestions",
-      element: element({
-        role: "combobox",
-        attributes: { "aria-autocomplete": "list" },
-      }),
-      args: { text: "Acme Corporation" },
-    });
-
-    expect(result?.rewrittenText).toBe("Acme C");
-    expect(result?.reason).toContain("Autocomplete guard");
-  });
-
-  test("does not rewrite normal input fields", () => {
-    expect(
-      rewriteAutocompleteTextEntry({
-        objectiveText: "Choose the matching suggestion from the dropdown",
-        element: element({ attributes: { placeholder: "Name" } }),
-        typedText: "Acme Corporation",
-      }),
-    ).toBeNull();
   });
 
   test("allows done for a committed custom combobox (empty input, selected value surfaced, menu closed)", () => {

@@ -11,6 +11,19 @@ import {
 } from "../../src/background/agent/task-contract";
 
 describe("task contract helpers", () => {
+  test("comparison coverage accepts named subjects without repeating their shared noun", () => {
+    const contract = buildTaskContract("Compare the Alpha and Beta plans for a team of five. Ignore Gamma.");
+    expect(assessTaskContractCoverage({ contract, text: "Alpha costs $20 monthly with 10 GB. Beta costs $30 monthly with 50 GB." }).satisfied).toBe(true);
+    expect(assessTaskContractCoverage({ contract, text: "Alpha costs $20 monthly with 10 GB." }).satisfied).toBe(false);
+  });
+
+  test("comparison scope modifier is not appended to entity names", () => {
+    const contract = buildTaskContract("Compare Alpha and Beta only; ignore the other listings.");
+    expect(contract.requiredEntities).toEqual(["alpha", "beta"]);
+    expect(assessTaskContractCoverage({ contract, text: "Alpha costs $20; Beta costs $30." }).satisfied).toBe(true);
+    expect(assessTaskContractCoverage({ contract, text: "Alpha costs $20." }).satisfied).toBe(false);
+  });
+
   test("extracts round-trip targets and report entities from navigation task", () => {
     const contract = buildTaskContract(
       [
@@ -144,7 +157,7 @@ describe("task contract helpers", () => {
 
     expect(contract.multiReturnCount).toBe(2);
     expect(contract.requiredEntities).toEqual(
-      expect.arrayContaining(["travel policy", "expense policy"]),
+      expect.arrayContaining(["travel", "expense"]),
     );
   });
 

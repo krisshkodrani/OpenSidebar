@@ -33,9 +33,9 @@ function ctx(over: Partial<CompletionGuardContext> = {}): CompletionGuardContext
     hasExplicitPageRead: true,
     hasTaskId: false,
     missingRequiredEvidence: [],
-    listDetailReviewedCount: 0,
-    listDetailOpenedCount: 0,
-    listDetailVisibleActionCount: 0,
+
+
+
     moneyTableIncompleteScanReason: null,
     moneyTableIncorrectAnswerReason: null,
     ...over,

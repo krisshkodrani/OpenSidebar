@@ -153,7 +153,6 @@ import {
   maybeInferServiceNowModuleNavigationEvidence,
   type ModuleNavEvidenceHost,
   type ServiceNowMissingFieldSearchEvidence,
-  type TrustedCatalogOrderSubmission,
 } from "./servicenow/trusted-workflow-adapter";
 import {
   assessServiceNowMissingFieldInfeasibility,
@@ -168,13 +167,6 @@ import {
   startServiceNowRecordControllerTraceTurn,
   type ServiceNowRecordFormHost,
 } from "./servicenow/record-form-controller";
-import {
-  maybeAutoSubmitConfiguredCatalogItem,
-  maybeCompleteCatalogOrderFromSnapshot,
-  maybeCompleteTrustedCatalogOrderSubmit,
-  shouldAutoSubmitConfiguredCatalogItem,
-  type ServiceNowCatalogHost,
-} from "./servicenow/catalog-controller";
 import { resolveInitialSnapshot } from "./initial-snapshot";
 import { bootstrapRuntimePlan } from "./start-planner-bootstrap";
 import { PendingInteractionYield, runStartExecution } from "./start-result";
@@ -230,7 +222,6 @@ import {
   captureRecentSubtaskResult,
   getMatchingApprovalInteraction,
   getMatchingClarificationInteraction,
-  getWorkspaceTabs,
   isPureListFilterWorkflowRequest,
   lookupMutationReplay,
   getMutationDocumentId,
@@ -242,25 +233,11 @@ import type { MoneyTableAggregate } from "./money-table-aggregate";
 import { normalizeGuardText } from "./text-entry-guards";
 import { getUncommittedInlineEditDoneRejection } from "./inline-edit-policy";
 import { assessRepeatedAddItemClick } from "./repeated-add-item-policy";
-export {
-  rewriteAutocompleteTextEntry,
-  validateTextEntryTarget,
-} from "./text-entry-guards";
+export { validateTextEntryTarget } from "./text-entry-guards";
 import {
-  countVisibleListDetailActions,
-  getListDetailReturnControl,
-  getListDetailWorkflowBlock,
-  getNextUnreviewedListDetailAction,
-  hasListDetailReturnControl,
   isListDetailReturnControlRepeatExempt,
-  listDetailActionTargetLabel,
-  listDetailElementLabel,
 } from "./list-detail-policy";
 export {
-  countVisibleListDetailActions,
-  getListDetailDoneRejection,
-  getListDetailWorkflowBlock,
-  getNextUnreviewedListDetailAction,
   isListDetailReturnControlRepeatExempt,
   requiresBroadListDetailReview,
 } from "./list-detail-policy";
@@ -316,7 +293,6 @@ import { APPROVAL_TIMEOUT_MS, MAX_SESSION_MS } from "./loop-metrics";
 import type { LoopResult } from "./loop-types";
 import type { PendingUserInteraction } from "./loop-types";
 import { getLoadedSkillContract } from "../orchestrator/skills";
-import { evaluateWorkflowTabRedirect } from "./workflow-tab-controller";
 import {
   BlockedAction,
   buildStructuredFailureContext,
@@ -341,8 +317,6 @@ import {
 } from "./loop-plan-progress";
 import {
   applySkillToolRanking,
-  applySkillToolSuppression,
-  applyToolProfile,
   classifySkillToolPreference,
   getActiveSkillToolPolicy,
   getActiveToolProfileForStep,
@@ -423,13 +397,6 @@ export class AgentLoop {
     );
   }
 
-  private applySkillToolSuppression(tools: ToolDefinition[]): ToolDefinition[] {
-    return applySkillToolSuppression(
-      this as unknown as AgentLoopSkillToolsHost,
-      tools,
-    );
-  }
-
   private recordSkillToolSelection(
     toolName: ToolName,
     mode: "parallel" | "sequential",
@@ -502,7 +469,7 @@ export class AgentLoop {
   /** Current turn count — exposed via getCurrentTurn() */
   private turnCount = 0;
   /** Tool names exposed to the model for the current LLM turn. */
-  private toolAvailability = { active: [] as ToolName[], requested: new Set<ToolName>() };
+  private toolAvailability = { active: [] as ToolName[] };
   /** Original user query that started this loop */
   private originalQuery = "";
   public readonly enabledSkillPackIds?: string[];
@@ -560,20 +527,6 @@ export class AgentLoop {
   private escalationsOnCurrentStep = 0;
   /** Consecutive done()-based auto-advances without a DOM-modifying action in between */
   private consecutiveAutoAdvances = 0;
-  /** Detail targets opened while executing a list/detail review skill. */
-  private listDetailOpenedTargets = new Set<string>();
-  /** Detail targets that have evidence from a detail read or saved note. */
-  private listDetailReviewedTargets = new Set<string>();
-  /** Current detail target opened from the list and awaiting evidence capture. */
-  private listDetailCurrentTarget: string | null = null;
-  /** Whether the current detail target has had a detail-page read. */
-  private listDetailCurrentTargetRead = false;
-  /** Largest visible detail-action set observed for the active list/detail review. */
-  private listDetailVisibleActionCount = 0;
-  /** Trusted catalog helper evidence waiting for the next request confirmation page. */
-  private trustedCatalogOrderSubmission: TrustedCatalogOrderSubmission | null =
-    null;
-
   /** Task planning state */
   private taskId: string | null = null;
   private planSubtasks: SubtaskSummary[] = [];
@@ -1863,12 +1816,6 @@ export class AgentLoop {
       missingRequiredEvidence: this.getMissingRequiredEvidenceTypes(),
       activeObjective: completionContext.activeObjective,
       successCriteria: completionContext.successCriteria,
-      listDetailReviewedCount: this.listDetailReviewedTargets.size,
-      listDetailOpenedCount: this.listDetailOpenedTargets.size,
-      listDetailVisibleActionCount: Math.max(
-        this.listDetailVisibleActionCount,
-        countVisibleListDetailActions(snapshot),
-      ),
       moneyTableIncompleteScanReason: incompleteMoneyTableScan,
       moneyTableIncorrectAnswerReason: incompleteMoneyTableScan
         ? null
@@ -3037,69 +2984,11 @@ export class AgentLoop {
     return ws?.tabIds ?? null;
   }
 
-  private shouldBlockTabManagementTools(): boolean {
+  private shouldBlockTabClosing(): boolean {
     if (userExplicitlyRequestedTabManagement(this.originalQuery)) return false;
     if (this.selectedSkillId === "multi-tab-checklist-workflow") return false;
     if (this.planRequiresTabManagement) return false;
     return true;
-  }
-
-  private async getWorkflowTabToolRedirect(params: {
-    toolName: ToolName;
-    args: Record<string, unknown>;
-    currentTabId: number;
-  }): Promise<string | null> {
-    const { toolName, args, currentTabId } = params;
-    const snapshot = this.context.getSnapshot();
-    const targetId =
-      typeof args.id === "number"
-        ? args.id
-        : typeof args.id === "string"
-          ? parseInt(args.id, 10)
-          : null;
-    const target =
-      (toolName === ToolName.CLICK_ELEMENT ||
-        toolName === ToolName.RIGHT_CLICK) &&
-      targetId
-        ? snapshot?.elements?.find((element) => element.tag === targetId)
-        : null;
-    const targetHref =
-      typeof target?.attributes?.href === "string"
-        ? target.attributes.href
-        : toolName === ToolName.CREATE_TAB && typeof args.url === "string"
-          ? (args.url as string)
-          : null;
-    if (!targetHref) return null;
-
-    let resolvedHref: string | null = null;
-    try {
-      resolvedHref = new URL(
-        targetHref,
-        this.context.getCurrentUrl() || "http://127.0.0.1/",
-      ).toString();
-    } catch {
-      return null;
-    }
-    const tabs = await getWorkspaceTabs(this as unknown as LoopQueriesHost);
-    const decision = evaluateWorkflowTabRedirect({
-      skillId: this.selectedSkillId,
-      toolName,
-      currentTabId,
-      currentUrl: this.context.getCurrentUrl(),
-      targetUrl: resolvedHref,
-      workspaceTabs: tabs,
-    });
-    if (!decision) return null;
-    this.traceRecorder?.recordEvent(decision.traceEvent, {
-      turn: this.turnCount,
-      toolName,
-      controllerId: decision.controllerId,
-      currentTabId,
-      currentUrl: this.context.getCurrentUrl(),
-      targetUrl: resolvedHref,
-      message: decision.message,
-    });
-    return decision.message;
   }
 
   /** De-escalate back to executor mode when progress resumes after escalation. */
@@ -3274,17 +3163,6 @@ export class AgentLoop {
       }
     }
     return -1;
-  }
-
-  /**
-   * Apply tool profile filtering based on the current plan step.
-   * If the running subtask has an explicit toolProfile, use it.
-   * Otherwise, use DOM-aware profiling: inspect the current snapshot's
-   * elements to determine which tools are relevant (e.g., draggable
-   * elements → include drag_and_drop, file inputs → include upload_file).
-   */
-  private applyToolProfile(tools: ToolDefinition[]): ToolDefinition[] {
-    return applyToolProfile(this as unknown as AgentLoopSkillToolsHost, tools);
   }
 
   public getActiveToolNamesForTurn(): ToolName[] {
@@ -3893,226 +3771,6 @@ export class AgentLoop {
             event.confidence !== "low",
         ),
     );
-  }
-
-  private trackListDetailToolSuccess(
-    toolName: ToolName,
-    args: Record<string, unknown>,
-    preActionSnapshot: DomSnapshot | null,
-  ): void {
-    if (this.selectedSkillId !== "list-detail-review-loop") return;
-    const visibleCount = countVisibleListDetailActions(preActionSnapshot);
-    if (visibleCount > this.listDetailVisibleActionCount) {
-      this.listDetailVisibleActionCount = visibleCount;
-    }
-
-    if (toolName === ToolName.CLICK_ELEMENT) {
-      const id = typeof args.id === "number" ? args.id : Number(args.id);
-      if (!Number.isFinite(id)) return;
-      const target = preActionSnapshot?.elements.find(
-        (element) => element.tag === id,
-      );
-      const label = listDetailActionTargetLabel(target);
-      if (!label) return;
-
-      this.listDetailOpenedTargets.add(label);
-      this.listDetailCurrentTarget = label;
-      this.listDetailCurrentTargetRead = false;
-      this.traceRecorder?.recordEvent("list_detail_item_opened", {
-        turn: this.turnCount,
-        openedCount: this.listDetailOpenedTargets.size,
-        reviewedCount: this.listDetailReviewedTargets.size,
-        visibleActionCount: this.listDetailVisibleActionCount,
-        target: label.slice(0, 160),
-      });
-      return;
-    }
-
-    if (
-      toolName === ToolName.READ_PAGE ||
-      toolName === ToolName.XRAY_PAGE ||
-      toolName === ToolName.UPDATE_NOTES
-    ) {
-      const appearsToBeListPage =
-        countVisibleListDetailActions(preActionSnapshot) >= 3;
-      if (appearsToBeListPage && toolName !== ToolName.UPDATE_NOTES) {
-        return;
-      }
-      if (
-        appearsToBeListPage &&
-        toolName === ToolName.UPDATE_NOTES &&
-        !this.listDetailCurrentTargetRead
-      ) {
-        return;
-      }
-      this.markCurrentListDetailReviewed(
-        toolName === ToolName.UPDATE_NOTES ? "note" : "read",
-      );
-    }
-  }
-
-  private markCurrentListDetailReviewed(source: "read" | "note"): void {
-    if (this.selectedSkillId !== "list-detail-review-loop") return;
-    if (!this.listDetailCurrentTarget) return;
-    if (source === "read") {
-      this.listDetailCurrentTargetRead = true;
-    }
-
-    const target = this.listDetailCurrentTarget;
-    this.listDetailReviewedTargets.add(target);
-    this.traceRecorder?.recordEvent("list_detail_item_reviewed", {
-      turn: this.turnCount,
-      source,
-      openedCount: this.listDetailOpenedTargets.size,
-      reviewedCount: this.listDetailReviewedTargets.size,
-      visibleActionCount: this.listDetailVisibleActionCount,
-      target: target.slice(0, 160),
-    });
-  }
-
-  private rewriteListDetailWorkflowToolCall(
-    toolCall: ToolCall,
-    mode: "parallel" | "sequential",
-  ): boolean {
-    if (!this.isSkillOwnedListDetailReview()) return false;
-
-    const toolName = toolCall.function.name as ToolName;
-    let args: Record<string, unknown> = {};
-    try {
-      args = JSON.parse(toolCall.function.arguments || "{}");
-    } catch {
-      args = {};
-    }
-
-    const currentSnapshot = this.context.getSnapshot();
-    const visibleDetailActionCount =
-      countVisibleListDetailActions(currentSnapshot);
-    if (visibleDetailActionCount > this.listDetailVisibleActionCount) {
-      this.listDetailVisibleActionCount = visibleDetailActionCount;
-    }
-
-    const currentTargetKey = normalizeGuardText(
-      this.listDetailCurrentTarget || "",
-    );
-    const currentTargetNeedsRead =
-      !!currentTargetKey &&
-      !this.listDetailReviewedTargets.has(currentTargetKey);
-    const isOpenDetailSurface =
-      currentTargetNeedsRead &&
-      visibleDetailActionCount < 3 &&
-      hasListDetailReturnControl(currentSnapshot);
-    if (
-      isOpenDetailSurface &&
-      toolName !== ToolName.READ_PAGE &&
-      toolName !== ToolName.XRAY_PAGE &&
-      toolName !== ToolName.UPDATE_NOTES &&
-      toolName !== ToolName.ESCALATE &&
-      toolName !== ToolName.DONE
-    ) {
-      toolCall.function.name = ToolName.READ_PAGE;
-      toolCall.function.arguments = "{}";
-      this.traceRecorder?.recordEvent("list_detail_workflow_tool_redirected", {
-        turn: this.turnCount,
-        mode,
-        fromTool: toolName,
-        toTool: ToolName.READ_PAGE,
-        target: this.listDetailCurrentTarget?.slice(0, 160),
-        openedDetailCount: this.listDetailOpenedTargets.size,
-        reviewedDetailCount: this.listDetailReviewedTargets.size,
-        visibleDetailActionCount: this.listDetailVisibleActionCount,
-        reason: "current_detail_needs_read",
-      });
-      this.log.info("agent", "List-detail workflow tool redirected", {
-        turn: this.turnCount,
-        mode,
-        fromTool: toolName,
-        toTool: ToolName.READ_PAGE,
-        reason: "current_detail_needs_read",
-      });
-      return true;
-    }
-
-    const returnControl = getListDetailReturnControl(currentSnapshot);
-    const clickId = typeof args.id === "number" ? args.id : Number(args.id);
-    const isReturnControlClick =
-      toolName === ToolName.CLICK_ELEMENT &&
-      Number.isFinite(clickId) &&
-      returnControl?.tag === clickId;
-    const isDetailReadTool =
-      toolName === ToolName.READ_PAGE || toolName === ToolName.XRAY_PAGE;
-    const allowDetailReadTool = currentTargetNeedsRead && isDetailReadTool;
-    if (
-      returnControl &&
-      visibleDetailActionCount < 3 &&
-      !isReturnControlClick &&
-      !allowDetailReadTool &&
-      toolName !== ToolName.ESCALATE &&
-      toolName !== ToolName.DONE &&
-      toolName !== ToolName.UPDATE_NOTES
-    ) {
-      toolCall.function.name = ToolName.CLICK_ELEMENT;
-      toolCall.function.arguments = JSON.stringify({ id: returnControl.tag });
-      this.traceRecorder?.recordEvent("list_detail_workflow_tool_redirected", {
-        turn: this.turnCount,
-        mode,
-        fromTool: toolName,
-        toTool: ToolName.CLICK_ELEMENT,
-        targetId: returnControl.tag,
-        target: listDetailElementLabel(returnControl).slice(0, 160),
-        openedDetailCount: this.listDetailOpenedTargets.size,
-        reviewedDetailCount: this.listDetailReviewedTargets.size,
-        visibleDetailActionCount: this.listDetailVisibleActionCount,
-        reason: "return_to_list_required",
-      });
-      this.log.info("agent", "List-detail workflow tool redirected", {
-        turn: this.turnCount,
-        mode,
-        fromTool: toolName,
-        toTool: ToolName.CLICK_ELEMENT,
-        targetId: returnControl.tag,
-        reason: "return_to_list_required",
-      });
-      return true;
-    }
-
-    const block = getListDetailWorkflowBlock({
-      selectedSkillId: this.selectedSkillId,
-      query: this.originalQuery,
-      toolName,
-      args,
-      snapshot: currentSnapshot,
-      reviewedTargets: this.listDetailReviewedTargets,
-      openedTargets: this.listDetailOpenedTargets,
-      visibleDetailActionCount: this.listDetailVisibleActionCount,
-    });
-    if (!block) return false;
-
-    const next = getNextUnreviewedListDetailAction(
-      currentSnapshot,
-      this.listDetailReviewedTargets,
-    );
-    if (!next) return false;
-
-    toolCall.function.name = ToolName.CLICK_ELEMENT;
-    toolCall.function.arguments = JSON.stringify({ id: next.id });
-    this.traceRecorder?.recordEvent("list_detail_workflow_tool_redirected", {
-      turn: this.turnCount,
-      mode,
-      fromTool: toolName,
-      toTool: ToolName.CLICK_ELEMENT,
-      targetId: next.id,
-      target: next.label.slice(0, 160),
-      openedDetailCount: this.listDetailOpenedTargets.size,
-      reviewedDetailCount: this.listDetailReviewedTargets.size,
-      visibleDetailActionCount: this.listDetailVisibleActionCount,
-    });
-    this.log.info("agent", "List-detail workflow tool redirected", {
-      turn: this.turnCount,
-      mode,
-      fromTool: toolName,
-      targetId: next.id,
-    });
-    return true;
   }
 
   /** Execute a tool call via the tool registry. */
@@ -4940,53 +4598,6 @@ export class AgentLoop {
     return { finalSummary: signal.reason, newIndex, completionCandidate };
   }
 
-  // --- ServiceNow catalog-order controller (quarantined adapter) ---
-  // Thin delegates into ./servicenow/catalog-controller.ts; the loop passes
-  // itself as the dispatch host (every host member is a real loop field).
-
-  private maybeCompleteCatalogOrderFromSnapshot(): LoopResult | null {
-    return maybeCompleteCatalogOrderFromSnapshot(
-      this as unknown as ServiceNowCatalogHost,
-    );
-  }
-
-  private shouldAutoSubmitConfiguredCatalogItem(params: {
-    toolName: string;
-    toolArgs?: Record<string, unknown>;
-    toolResult: string;
-  }): boolean {
-    return shouldAutoSubmitConfiguredCatalogItem(
-      this as unknown as ServiceNowCatalogHost,
-      params,
-    );
-  }
-
-  async maybeCompleteTrustedCatalogOrderSubmit(params: {
-    toolName: string;
-    toolArgs?: Record<string, unknown>;
-    toolResult: string;
-    tabId: number;
-    mode: "parallel" | "sequential";
-  }): Promise<{ finalSummary: string } | null> {
-    return maybeCompleteTrustedCatalogOrderSubmit(
-      this as unknown as ServiceNowCatalogHost,
-      params,
-    );
-  }
-
-  private async maybeAutoSubmitConfiguredCatalogItem(params: {
-    toolName: string;
-    toolArgs?: Record<string, unknown>;
-    toolResult: string;
-    tabId: number;
-    mode: "parallel" | "sequential";
-  }): Promise<void> {
-    return maybeAutoSubmitConfiguredCatalogItem(
-      this as unknown as ServiceNowCatalogHost,
-      params,
-    );
-  }
-
   private completeSubmitFormReset(
     currentIndex: number,
     signal: NonNullable<ReturnType<typeof detectFormSubmissionResetSuccess>>,
@@ -5112,7 +4723,7 @@ export class AgentLoop {
     // start at tier 1 (planner) for orientation, then hand off to tier 0
     // (executor). Exception: preferredModelTier="executor" skips orientation.
     // Run-scoped turn accumulators (LP-15 Phase 6): same-tool failure counts,
-    // the recent-success / recent-tool-call windows, result-page progress, and
+    // the recent-success / recent-tool-call windows and
     // find_element-discovered tag IDs. Owned by TurnState; consumed by the
     // dispatchers + stagnation-adjacent policies by reference.
     const turnState = new TurnState();
@@ -5170,13 +4781,11 @@ export class AgentLoop {
       runFeedbackPhase(this as unknown as FeedbackPhaseHost);
 
       // Pre-inference turn bookkeeping: turn-progress broadcast, time context,
-      // budget-urgency trace, money-table refresh, catalog-order snapshot
-      // completion. Extracted (RFC LP-16 Phase 3b).
-      const turnContext = runPrepareTurnContextPhase(
+      // budget-urgency trace and money-table refresh (RFC LP-16 Phase 3b).
+      runPrepareTurnContextPhase(
         this as unknown as PrepareTurnContextHost,
         session,
       );
-      if (turnContext.kind === "end_task") return turnContext.result;
 
       // Escalation phase: escalation-rescue policy (RFC LP-2) — fail-fast or
       // replan/strategy-pivot on no verified progress. Extracted (LP-16 Phase 3).

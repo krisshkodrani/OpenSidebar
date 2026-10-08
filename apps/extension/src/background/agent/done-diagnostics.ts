@@ -15,7 +15,6 @@ import type { SubtaskSummary } from "../../types";
 import {
   evaluateCompletionEarlyMultiStepPreflight,
   evaluateCompletionGroundingReadPreflight,
-  evaluateCompletionListDetailReviewPreflight,
   evaluateCompletionMoneyTableAggregatePreflight,
   evaluateCompletionPendingAutocompletePreflight,
   evaluateCompletionRequiredEvidencePreflight,
@@ -23,7 +22,6 @@ import {
   evaluateCompletionTaskContractPreflight,
   evaluateCompletionWorkflowContractPreflight,
 } from "./completion-kernel";
-import { countVisibleListDetailActions } from "./list-detail-policy";
 
 export interface DoneDiagnosticsHost {
   readonly originalQuery: string;
@@ -37,8 +35,6 @@ export interface DoneDiagnosticsHost {
   readonly doneRejections: number;
   readonly hasReadPage: boolean;
   readonly hasExplicitPageRead: boolean;
-  readonly listDetailVisibleActionCount: number;
-  readonly listDetailReviewedTargets: ReadonlySet<string>;
   isSkillOwnedListDetailReview(): boolean;
   getMissingRequiredEvidenceTypes(): string[];
   getIncorrectMoneyTableAggregateDoneRejection(summary: string): string | null;
@@ -124,20 +120,6 @@ summary: string,
   });
   if (workflowDoneGuard.blocked) {
     addIssue("workflow contract", workflowDoneGuard.reason);
-  }
-
-  const visibleDetailActionCount = Math.max(
-    host.listDetailVisibleActionCount,
-    countVisibleListDetailActions(host.context.getSnapshot()),
-  );
-  const listDetailPreflight = evaluateCompletionListDetailReviewPreflight({
-    selectedSkillId: host.selectedSkillId,
-    userRequest: host.originalQuery,
-    reviewedDetailCount: host.listDetailReviewedTargets.size,
-    visibleDetailActionCount,
-  });
-  if (listDetailPreflight.status !== "valid") {
-    addIssue("list-detail review", listDetailPreflight.reason);
   }
 
   const activePlanIdx =

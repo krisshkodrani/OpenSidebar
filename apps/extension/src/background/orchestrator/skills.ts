@@ -3,14 +3,12 @@ import type { ToolProfile } from "../tools/metadata";
 
 import { SKILL_CATALOG } from "./skill-catalog";
 import { SKILL_BODIES } from "./skill-bodies";
-import { SKILL_TOOL_SUPPRESSION_POLICIES } from "./skill-suppression-policies";
 import type {
   SkillCapability,
   SkillDescriptor,
   SkillPack,
   SkillCatalogOptions,
   SkillToolPolicy,
-  SkillToolSuppressionPolicy,
   SkillSelection,
   SkillMatcherInput,
   SkillActivationSignalStrength,
@@ -20,6 +18,7 @@ import type {
 } from "./skill-types";
 import { classifyNodeEffect } from "./node-effect-policy";
 import { buildCorpus, buildRoutingCorpus } from "./skill-routing-corpus";
+import { stripProhibitedWorkflowClauses } from "../agent/completion/text-utils";
 export * from "./skill-types";
 
 const MAX_ROUTED_SKILL_CANDIDATES = 32;
@@ -60,12 +59,10 @@ const hoverRevealPattern =
   /\b(hover|hover over|tooltip|flyout|reveal menu|products menu|under the .* menu)\b/i;
 const budgetPattern =
   /\b(turn budget|remaining turns|max turns|max_turns|turn limit|budget exhaustion|conservation mode)\b/i;
-const continuationPattern =
-  /\b(change|revise|rewrite|edit|one more change|previous draft|draft reply|continue previous task|make (?:it|the tone)|reply|casual)\b/i;
+const continuationRequestPattern =
+  /(?:^|[.!?;]\s*|\b(?:and|then|also|please)\s+|\b(?:can|could|would|will)\s+you\s+|\b(?:need|want)\s+(?:you\s+)?to\s+)(?:please\s+)?(?:change|revise|rewrite|edit|continue previous task|make (?:it|the tone))\b/i;
 const continuationArtifactPattern =
   /\b(draft|reply|tone|email|message|copy|text|wording|paragraph|sentence)\b/i;
-const continuationRevisionPattern =
-  /\b(change|revise|rewrite|edit|one more change|previous draft|current draft|make (?:it|the tone)|keep the rest|preserve)\b/i;
 const gridEditPattern = /\b(spreadsheet|grid|cell|row|column|sheet|table)\b/i;
 const inlineEditPattern =
   /\b(rename|inline edit|inline rename|change .* value|update .* value|replace .* value|edit .* cell|rename .* to|filename|file name|document name|table cell|grid cell)\b/i;
@@ -625,15 +622,6 @@ export function resolveSkillToolProfile(
   return currentProfile;
 }
 
-export function getSkillToolSuppressionPolicy(
-  id?: string,
-  options?: SkillCatalogOptions,
-): SkillToolSuppressionPolicy | null {
-  if (!id) return null;
-  if (!getSkillDescriptor(id, options)) return null;
-  return SKILL_TOOL_SUPPRESSION_POLICIES[id] ?? null;
-}
-
 export function summarizeSkillForVerifier(
   contract: LoadedSkillContract | null,
 ): string {
@@ -695,9 +683,10 @@ function selectPrimarySkillWithKeywordMatcher(
     (gridEditPattern.test(stepCorpus) || inlineEditPattern.test(stepCorpus)) &&
     /\b(change|edit|update|set|replace|rename|enter|type)\b/i.test(stepCorpus);
   const currentStepLooksLikeContinuationRevision =
-    continuationPattern.test(corpus) &&
+    continuationRequestPattern.test(
+      stripProhibitedWorkflowClauses(input.objective || input.query || ""),
+    ) &&
     continuationArtifactPattern.test(corpus) &&
-    continuationRevisionPattern.test(corpus) &&
     !gridEditPattern.test(stepCorpus) &&
     !crmTicketPattern.test(corpus);
   const currentStepLooksLikeFormFill =
@@ -994,20 +983,6 @@ function selectPrimarySkillWithKeywordMatcher(
       input,
       "crm-ticket-update",
       "Task requires updating a CRM or support ticket record after reading case context and verifying field or note changes.",
-    );
-    if (selection) return selection;
-  }
-
-  if (
-    continuationPattern.test(corpus) &&
-    continuationArtifactPattern.test(corpus) &&
-    !gridEditPattern.test(stepCorpus) &&
-    !crmTicketPattern.test(corpus)
-  ) {
-    const selection = selectEnabledSkill(
-      input,
-      "continuation-edit",
-      "Task requests revising prior work while preserving earlier intent.",
     );
     if (selection) return selection;
   }

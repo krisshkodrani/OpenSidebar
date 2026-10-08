@@ -3,7 +3,6 @@ import "../setup";
 import {
   evaluateCompletionEarlyMultiStepPreflight,
   evaluateCompletionGroundingReadPreflight,
-  evaluateCompletionListDetailReviewPreflight,
   evaluateCompletionMoneyTableAggregatePreflight,
   evaluateCompletionPendingAutocompletePreflight,
   evaluateCompletionRequiredEvidencePreflight,
@@ -199,33 +198,7 @@ describe("completion kernel preflights", () => {
     });
   });
 
-  test("rejects incomplete list-detail review through kernel preflight", () => {
-    const decision = evaluateCompletionListDetailReviewPreflight({
-      selectedSkillId: "list-detail-review-loop",
-      userRequest:
-        "Review the job listings and tell me which ones are the best matches for my profile and why.",
-      reviewedDetailCount: 2,
-      visibleDetailActionCount: 10,
-    });
 
-    expect(decision).toMatchObject({
-      status: "rejected",
-      kind: "incomplete_list_detail_review",
-      reason: expect.stringContaining("reviewed 2/10 visible detail pages"),
-    });
-  });
-
-  test("accepts list-detail review once visible candidates are reviewed", () => {
-    const decision = evaluateCompletionListDetailReviewPreflight({
-      selectedSkillId: "list-detail-review-loop",
-      userRequest:
-        "Review the job listings and tell me which ones are the best matches for my profile and why.",
-      reviewedDetailCount: 10,
-      visibleDetailActionCount: 10,
-    });
-
-    expect(decision).toEqual({ status: "valid" });
-  });
 
   test("rejects interim workflow completion through kernel preflight", () => {
     const decision = evaluateCompletionWorkflowContractPreflight({

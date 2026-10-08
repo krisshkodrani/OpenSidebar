@@ -240,14 +240,20 @@ function hasReviewBeforeSendIntent(taskText: string): boolean {
 }
 
 export function hasStrongCommunicationSentEvidence(text: string): boolean {
+  // A negated status is not a send confirmation. Remove only the negated
+  // predicate so a separate affirmative confirmation still counts.
+  const affirmativeText = text.replace(
+    /\b(?:not|never|(?:was|is|has|have|had)n['’]t)(?:\s+(?:yet|been|successfully)){0,2}\s+(?:sent|posted|submitted|published)\b/gi,
+    "",
+  );
   return /\b(?:message|reply|email|e-mail|comment|post)\b[\s\S]{0,50}\b(?:sent|posted|submitted|published)\b/i.test(
-    text,
+    affirmativeText,
   ) ||
     /\b(?:sent|posted|submitted|published)\b[\s\S]{0,50}\b(?:message|reply|email|e-mail|comment|post)\b/i.test(
-      text,
+      affirmativeText,
     ) ||
     /\b(?:sent just now|message sent|sent mail|send confirmation|successfully sent|successfully posted)\b/i.test(
-      text,
+      affirmativeText,
     );
 }
 

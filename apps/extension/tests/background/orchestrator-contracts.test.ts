@@ -5,10 +5,10 @@ import { TaskNode } from "../../src/background/orchestrator/types";
 import { buildRoleExecutionContract } from "../../src/background/orchestrator/contracts";
 import { getSkillToolPolicy } from "../../src/background/orchestrator/skills";
 
-import { applySkillToolSuppression, type AgentLoopSkillToolsHost } from "../../src/background/agent/loop-skill-tools";
+import { applySkillToolRanking, type AgentLoopSkillToolsHost } from "../../src/background/agent/loop-skill-tools";
 
 function visibleSkillTools(node: TaskNode, permitted: ToolName[]): ToolName[] {
-  // Requested tools remain authorized; suppression only shapes the initial turn.
+  // Skill advice must preserve every role-permitted tool.
   expect(permitted).toEqual(expect.arrayContaining(node.allowedTools));
   const host = {
     selectedSkillId: node.selectedSkillId, turnCount: 1,
@@ -17,7 +17,7 @@ function visibleSkillTools(node: TaskNode, permitted: ToolName[]): ToolName[] {
   const definitions = permitted.map((name) => ({
     type: "function", function: { name, description: "", parameters: {} },
   })) as ToolDefinition[];
-  return applySkillToolSuppression(host, definitions).map((tool) => tool.function.name as ToolName);
+  return applySkillToolRanking(host, definitions).map((tool) => tool.function.name as ToolName);
 }
 
 const baseSettings: UserSettings = {
@@ -101,7 +101,7 @@ describe("Orchestrator role contracts", () => {
     expect(contract.disabledTools.has(ToolName.NAVIGATE)).toBe(true);
   });
 
-  test("structured-form-fill suppresses press_key while keeping exempt tools", () => {
+  test("structured-form-fill keeps press_key available alongside its preferred tools", () => {
     const node = makeNode(
       [
         ToolName.READ_PAGE,
@@ -117,14 +117,14 @@ describe("Orchestrator role contracts", () => {
     const contract = buildRoleExecutionContract("executor", baseSettings, node);
     const visibleTools = visibleSkillTools(node, contract.allowedTools);
 
-    expect(visibleTools.includes(ToolName.PRESS_KEY)).toBe(false);
+    expect(visibleTools.includes(ToolName.PRESS_KEY)).toBe(true);
     expect(contract.disabledTools.has(ToolName.PRESS_KEY)).toBe(false);
     expect(visibleTools.includes(ToolName.DONE)).toBe(true);
     expect(visibleTools.includes(ToolName.UPDATE_NOTES)).toBe(true);
     expect(visibleTools.includes(ToolName.CLARIFY)).toBe(true);
   });
 
-  test("progressive-repeatable-form suppresses shortcut actions while preserving form tools", () => {
+  test("progressive-repeatable-form keeps permitted navigation and form tools available", () => {
     const node = makeNode(
       [
         ToolName.READ_PAGE,
@@ -146,16 +146,16 @@ describe("Orchestrator role contracts", () => {
     expect(visibleTools.includes(ToolName.READ_PAGE)).toBe(true);
     expect(visibleTools.includes(ToolName.CLICK_ELEMENT)).toBe(true);
     expect(visibleTools.includes(ToolName.TYPE_TEXT)).toBe(true);
-    expect(visibleTools.includes(ToolName.NAVIGATE)).toBe(false);
+    expect(visibleTools.includes(ToolName.NAVIGATE)).toBe(true);
     expect(visibleTools.includes(ToolName.OPEN_SERVICENOW_MODULE)).toBe(
-      false,
+      true,
     );
-    expect(visibleTools.includes(ToolName.PRESS_KEY)).toBe(false);
-    expect(visibleTools.includes(ToolName.CLICK_COORDINATES)).toBe(false);
+    expect(visibleTools.includes(ToolName.PRESS_KEY)).toBe(true);
+    expect(visibleTools.includes(ToolName.CLICK_COORDINATES)).toBe(true);
     expect(visibleTools.includes(ToolName.UPDATE_NOTES)).toBe(true);
   });
 
-  test("multi-step-form-wizard suppresses navigation shortcuts while preserving form tools", () => {
+  test("multi-step-form-wizard keeps permitted navigation and form tools available", () => {
     const node = makeNode(
       [
         ToolName.READ_PAGE,
@@ -180,13 +180,13 @@ describe("Orchestrator role contracts", () => {
     expect(visibleTools.includes(ToolName.TYPE_TEXT)).toBe(true);
     expect(visibleTools.includes(ToolName.SELECT_OPTION)).toBe(true);
     expect(visibleTools.includes(ToolName.SET_CHECKBOX)).toBe(true);
-    expect(visibleTools.includes(ToolName.NAVIGATE)).toBe(false);
-    expect(visibleTools.includes(ToolName.PRESS_KEY)).toBe(false);
-    expect(visibleTools.includes(ToolName.CLICK_COORDINATES)).toBe(false);
+    expect(visibleTools.includes(ToolName.NAVIGATE)).toBe(true);
+    expect(visibleTools.includes(ToolName.PRESS_KEY)).toBe(true);
+    expect(visibleTools.includes(ToolName.CLICK_COORDINATES)).toBe(true);
     expect(visibleTools.includes(ToolName.UPDATE_NOTES)).toBe(true);
   });
 
-  test("modal-overlay-recovery suppresses broad actions but keeps recovery exits available", () => {
+  test("modal-overlay-recovery keeps permitted actions and recovery exits available", () => {
     const node = makeNode(
       [
         ToolName.READ_PAGE,
@@ -211,7 +211,7 @@ describe("Orchestrator role contracts", () => {
     // "close popups then fill the form" tasks, and suppressing type_text made
     // an agent type an email one press_key at a time (2026-07-23 baseline).
     expect(visibleTools.includes(ToolName.DISMISS_OVERLAYS)).toBe(true);
-    expect(visibleTools.includes(ToolName.NAVIGATE)).toBe(false);
+    expect(visibleTools.includes(ToolName.NAVIGATE)).toBe(true);
     expect(visibleTools.includes(ToolName.TYPE_TEXT)).toBe(true);
     expect(visibleTools.includes(ToolName.CLICK_ELEMENT)).toBe(true);
     expect(visibleTools.includes(ToolName.ESCALATE)).toBe(true);
@@ -223,7 +223,7 @@ describe("Orchestrator role contracts", () => {
     ).not.toContain(ToolName.DONE);
   });
 
-  test("inline-edit-surface suppresses coordinate fallback while keeping commit tools", () => {
+  test("inline-edit-surface keeps coordinate fallback and commit tools available", () => {
     const node = makeNode(
       [
         ToolName.CLICK_ELEMENT,
@@ -239,14 +239,14 @@ describe("Orchestrator role contracts", () => {
     const contract = buildRoleExecutionContract("executor", baseSettings, node);
     const visibleTools = visibleSkillTools(node, contract.allowedTools);
 
-    expect(visibleTools.includes(ToolName.CLICK_COORDINATES)).toBe(false);
+    expect(visibleTools.includes(ToolName.CLICK_COORDINATES)).toBe(true);
     expect(visibleTools.includes(ToolName.CLICK_ELEMENT)).toBe(true);
     expect(visibleTools.includes(ToolName.PRESS_KEY)).toBe(true);
     expect(visibleTools.includes(ToolName.TYPE_TEXT)).toBe(true);
     expect(visibleTools.includes(ToolName.DONE)).toBe(true);
   });
 
-  test("multi-tab-checklist-workflow suppresses history navigation while keeping tab workflow tools", () => {
+  test("multi-tab-checklist-workflow keeps history navigation and tab workflow tools available", () => {
     const node = makeNode(
       [
         ToolName.READ_PAGE,
@@ -270,13 +270,13 @@ describe("Orchestrator role contracts", () => {
     const contract = buildRoleExecutionContract("executor", baseSettings, node);
     const visibleTools = visibleSkillTools(node, contract.allowedTools);
 
-    expect(visibleTools.includes(ToolName.NAVIGATE)).toBe(false);
-    expect(visibleTools.includes(ToolName.GO_BACK)).toBe(false);
-    expect(visibleTools.includes(ToolName.READ_ELEMENT)).toBe(false);
-    expect(visibleTools.includes(ToolName.LIST_TABS)).toBe(false);
-    expect(visibleTools.includes(ToolName.INSPECT_HIDDEN)).toBe(false);
-    expect(visibleTools.includes(ToolName.XRAY_PAGE)).toBe(false);
-    expect(visibleTools.includes(ToolName.CLICK_COORDINATES)).toBe(false);
+    expect(visibleTools.includes(ToolName.NAVIGATE)).toBe(true);
+    expect(visibleTools.includes(ToolName.GO_BACK)).toBe(true);
+    expect(visibleTools.includes(ToolName.READ_ELEMENT)).toBe(true);
+    expect(visibleTools.includes(ToolName.LIST_TABS)).toBe(true);
+    expect(visibleTools.includes(ToolName.INSPECT_HIDDEN)).toBe(true);
+    expect(visibleTools.includes(ToolName.XRAY_PAGE)).toBe(true);
+    expect(visibleTools.includes(ToolName.CLICK_COORDINATES)).toBe(true);
     expect(visibleTools.includes(ToolName.CREATE_TAB)).toBe(true);
     expect(visibleTools.includes(ToolName.SWITCH_TAB)).toBe(true);
     expect(visibleTools.includes(ToolName.CLICK_ELEMENT)).toBe(true);
@@ -285,7 +285,7 @@ describe("Orchestrator role contracts", () => {
     expect(visibleTools.includes(ToolName.DONE)).toBe(true);
   });
 
-  test("list-detail-review-loop suppresses browser navigation while keeping list-review tools", () => {
+  test("list-detail-review-loop keeps permitted navigation and list-review tools", () => {
     const node = makeNode(
       [
         ToolName.CLICK_ELEMENT,
@@ -307,21 +307,21 @@ describe("Orchestrator role contracts", () => {
     const contract = buildRoleExecutionContract("executor", baseSettings, node);
     const visibleTools = visibleSkillTools(node, contract.allowedTools);
 
-    expect(visibleTools.includes(ToolName.NAVIGATE)).toBe(false);
-    expect(visibleTools.includes(ToolName.GO_BACK)).toBe(false);
-    expect(visibleTools.includes(ToolName.PRESS_KEY)).toBe(false);
-    expect(visibleTools.includes(ToolName.READ_ELEMENT)).toBe(false);
-    expect(visibleTools.includes(ToolName.FIND_ELEMENT)).toBe(false);
-    expect(visibleTools.includes(ToolName.INSPECT_HIDDEN)).toBe(false);
-    expect(visibleTools.includes(ToolName.XRAY_PAGE)).toBe(false);
-    expect(visibleTools.includes(ToolName.CLICK_COORDINATES)).toBe(false);
+    expect(visibleTools.includes(ToolName.NAVIGATE)).toBe(true);
+    expect(visibleTools.includes(ToolName.GO_BACK)).toBe(true);
+    expect(visibleTools.includes(ToolName.PRESS_KEY)).toBe(true);
+    expect(visibleTools.includes(ToolName.READ_ELEMENT)).toBe(true);
+    expect(visibleTools.includes(ToolName.FIND_ELEMENT)).toBe(true);
+    expect(visibleTools.includes(ToolName.INSPECT_HIDDEN)).toBe(true);
+    expect(visibleTools.includes(ToolName.XRAY_PAGE)).toBe(true);
+    expect(visibleTools.includes(ToolName.CLICK_COORDINATES)).toBe(true);
     expect(visibleTools.includes(ToolName.CLICK_ELEMENT)).toBe(true);
     expect(visibleTools.includes(ToolName.READ_PAGE)).toBe(true);
     expect(visibleTools.includes(ToolName.UPDATE_NOTES)).toBe(true);
     expect(visibleTools.includes(ToolName.DONE)).toBe(true);
   });
 
-  test("paginated-table-scan suppresses search and keyboard tools while keeping scan tools", () => {
+  test("paginated-table-scan keeps permitted search, keyboard, and scan tools", () => {
     const node = makeNode(
       [
         ToolName.READ_PAGE,
@@ -344,22 +344,22 @@ describe("Orchestrator role contracts", () => {
     const contract = buildRoleExecutionContract("executor", baseSettings, node);
     const visibleTools = visibleSkillTools(node, contract.allowedTools);
 
-    expect(visibleTools.includes(ToolName.FIND_ELEMENT)).toBe(false);
-    expect(visibleTools.includes(ToolName.TYPE_TEXT)).toBe(false);
-    expect(visibleTools.includes(ToolName.PRESS_KEY)).toBe(false);
-    expect(visibleTools.includes(ToolName.SELECT_OPTION)).toBe(false);
-    expect(visibleTools.includes(ToolName.SET_CHECKBOX)).toBe(false);
-    expect(visibleTools.includes(ToolName.READ_ELEMENT)).toBe(false);
-    expect(visibleTools.includes(ToolName.SCROLL_PAGE)).toBe(false);
-    expect(visibleTools.includes(ToolName.CREATE_TAB)).toBe(false);
-    expect(visibleTools.includes(ToolName.CLICK_COORDINATES)).toBe(false);
+    expect(visibleTools.includes(ToolName.FIND_ELEMENT)).toBe(true);
+    expect(visibleTools.includes(ToolName.TYPE_TEXT)).toBe(true);
+    expect(visibleTools.includes(ToolName.PRESS_KEY)).toBe(true);
+    expect(visibleTools.includes(ToolName.SELECT_OPTION)).toBe(true);
+    expect(visibleTools.includes(ToolName.SET_CHECKBOX)).toBe(true);
+    expect(visibleTools.includes(ToolName.READ_ELEMENT)).toBe(true);
+    expect(visibleTools.includes(ToolName.SCROLL_PAGE)).toBe(true);
+    expect(visibleTools.includes(ToolName.CREATE_TAB)).toBe(true);
+    expect(visibleTools.includes(ToolName.CLICK_COORDINATES)).toBe(true);
     expect(visibleTools.includes(ToolName.READ_PAGE)).toBe(true);
     expect(visibleTools.includes(ToolName.CLICK_ELEMENT)).toBe(true);
     expect(visibleTools.includes(ToolName.UPDATE_NOTES)).toBe(true);
     expect(visibleTools.includes(ToolName.DONE)).toBe(true);
   });
 
-  test("paginated-record-lookup suppresses exploratory tools while keeping search and pagination tools", () => {
+  test("paginated-record-lookup keeps exploratory, search, and pagination tools available", () => {
     const node = makeNode(
       [
         ToolName.READ_PAGE,
@@ -382,12 +382,12 @@ describe("Orchestrator role contracts", () => {
     const contract = buildRoleExecutionContract("executor", baseSettings, node);
     const visibleTools = visibleSkillTools(node, contract.allowedTools);
 
-    expect(visibleTools.includes(ToolName.READ_ELEMENT)).toBe(false);
-    expect(visibleTools.includes(ToolName.PRESS_KEY)).toBe(false);
-    expect(visibleTools.includes(ToolName.INSPECT_HIDDEN)).toBe(false);
-    expect(visibleTools.includes(ToolName.XRAY_PAGE)).toBe(false);
-    expect(visibleTools.includes(ToolName.CLICK_COORDINATES)).toBe(false);
-    expect(visibleTools.includes(ToolName.CREATE_TAB)).toBe(false);
+    expect(visibleTools.includes(ToolName.READ_ELEMENT)).toBe(true);
+    expect(visibleTools.includes(ToolName.PRESS_KEY)).toBe(true);
+    expect(visibleTools.includes(ToolName.INSPECT_HIDDEN)).toBe(true);
+    expect(visibleTools.includes(ToolName.XRAY_PAGE)).toBe(true);
+    expect(visibleTools.includes(ToolName.CLICK_COORDINATES)).toBe(true);
+    expect(visibleTools.includes(ToolName.CREATE_TAB)).toBe(true);
     expect(visibleTools.includes(ToolName.READ_PAGE)).toBe(true);
     expect(visibleTools.includes(ToolName.FIND_ELEMENT)).toBe(true);
     expect(visibleTools.includes(ToolName.TYPE_TEXT)).toBe(true);
@@ -397,7 +397,7 @@ describe("Orchestrator role contracts", () => {
     expect(visibleTools.includes(ToolName.DONE)).toBe(true);
   });
 
-  test("cross-tab-compare suppresses history navigation while keeping synthesis tools", () => {
+  test("cross-tab-compare keeps history navigation and synthesis tools available", () => {
     const node = makeNode(
       [
         ToolName.READ_PAGE,
@@ -415,9 +415,9 @@ describe("Orchestrator role contracts", () => {
     const contract = buildRoleExecutionContract("executor", baseSettings, node);
     const visibleTools = visibleSkillTools(node, contract.allowedTools);
 
-    expect(visibleTools.includes(ToolName.NAVIGATE)).toBe(false);
-    expect(visibleTools.includes(ToolName.GO_BACK)).toBe(false);
-    expect(visibleTools.includes(ToolName.CLICK_COORDINATES)).toBe(false);
+    expect(visibleTools.includes(ToolName.NAVIGATE)).toBe(true);
+    expect(visibleTools.includes(ToolName.GO_BACK)).toBe(true);
+    expect(visibleTools.includes(ToolName.CLICK_COORDINATES)).toBe(true);
     expect(visibleTools.includes(ToolName.READ_PAGE)).toBe(true);
     expect(visibleTools.includes(ToolName.READ_ELEMENT)).toBe(true);
     expect(visibleTools.includes(ToolName.SWITCH_TAB)).toBe(true);

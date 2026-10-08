@@ -85,9 +85,9 @@
   },
   {
     "id": "agent.system",
-    "version": "v10",
-    "hash": "dfdf5d2a",
-    "description": "Core executor system prompt for browser automation turns. v10: preserve requested facts before prioritizing an action that replaces their visible page state.",
+    "version": "v11",
+    "hash": "bbb605e4",
+    "description": "Core executor system prompt for browser automation turns. v11: honor requested stopping boundaries and allow evidence-driven inspection.",
     "sourcePath": "prompts/runtime/agent/system.md"
   },
   {
@@ -96,13 +96,6 @@
     "hash": "7981a852",
     "description": "Built-in demonstration for multi-item shopping: add multiple products, apply coupon, checkout.",
     "sourcePath": "prompts/runtime/demos/multi_item_shopping.md"
-  },
-  {
-    "id": "orchestrator.advisory.system",
-    "version": "v1",
-    "hash": "cd82de63",
-    "description": "Pre-execution advisory for retried/rerouted nodes.",
-    "sourcePath": "prompts/runtime/orchestrator/advisory_system.md"
   },
   {
     "id": "orchestrator.site_knowledge_extraction.system",

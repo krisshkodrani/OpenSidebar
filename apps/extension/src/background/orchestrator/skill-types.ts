@@ -65,11 +65,6 @@ export interface SkillToolPolicy {
   discouragedTools: ToolName[];
 }
 
-export interface SkillToolSuppressionPolicy {
-  temporarilySuppressedTools: ToolName[];
-  exemptTools: ToolName[];
-}
-
 export interface SkillSelection {
   id: string;
   reason: string;

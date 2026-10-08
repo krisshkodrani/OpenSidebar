@@ -18,8 +18,7 @@ import { PageStateCoordinator, type ObservationBasis } from "../page-state";
 import { TraceRecorder } from "../trace";
 import type { TurnCarry } from "../turn-carry";
 import { logger, SessionScopedLogger } from "../../../utils";
-import type { AgentStep, ToolName } from "../../../types";
-import { restoreRecoveryTools } from "../capability-recovery";
+import type { AgentStep } from "../../../types";
 import type { LoopResult } from "../loop-types";
 import {
   prepareLlmTurnRequest,
@@ -56,10 +55,8 @@ export interface PrepareModelTurnHost {
   readonly taskId: string | null;
   readonly runId: string | null;
   readonly telemetry: { readonly turnCarry: TurnCarry };
-  toolAvailability: { active: string[]; requested: Set<ToolName> };
+  toolAvailability: { active: string[] };
   modelTurnObservationBasis: ObservationBasis | null;
-  applyToolProfile(tools: ToolDefs): ToolDefs;
-  applySkillToolSuppression(tools: ToolDefs): ToolDefs;
   applySkillToolRanking(tools: ToolDefs): ToolDefs;
   broadcast: TurnCompletionDeps["broadcast"];
   stepHandler: TurnCompletionDeps["stepHandler"];
@@ -104,11 +101,9 @@ export async function runPrepareModelTurnPhase(
     previousElementCount,
     context: host.context,
     allTools,
-    // Apply plan/DOM filtering first, then skill-based ranking within the survivors.
+    // Permissions define availability; skill preferences only rank that set.
     selectTools: (definitions) => {
-      const selected = restoreRecoveryTools(host.applySkillToolRanking(
-        host.applySkillToolSuppression(host.applyToolProfile(definitions)),
-      ), definitions, host.toolAvailability.requested);
+      const selected = host.applySkillToolRanking(definitions);
       host.toolAvailability.active = selected.map(
         (definition) => definition.function.name,
       );

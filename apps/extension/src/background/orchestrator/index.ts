@@ -2837,65 +2837,6 @@ export class Orchestrator {
           }
         }
 
-        if (
-          (node.retries > 0 || node.handoffFromNodeId) &&
-          verifier.advise &&
-          snapshot
-        ) {
-          try {
-            const advisory = await this.runInLane(task, "verifier", async () =>
-              verifier.advise!({
-                executorInstruction,
-                pageTitle: snapshot.title || "",
-                pageUrl: snapshot.url || "",
-                visibleContent:
-                  snapshot.pageContent || snapshot.visibleContent || "",
-              }),
-            );
-            if (advisory) {
-              executorInstruction += `\n\nPre-execution advisory:\n${advisory}`;
-              appendHandoffArtifact(node, {
-                role: "verifier",
-                phase: "verifier_advisory",
-                note: advisory.slice(0, 200),
-              });
-              logger.debug(
-                "orchestrator",
-                "Advisory appended to executor instruction",
-                {
-                  taskId: task.id,
-                  nodeId: node.id,
-                  advisoryChars: advisory.length,
-                },
-              );
-              this.emitTraceEvent(
-                task,
-                "advisory_issued",
-                {
-                  nodeId: node.id,
-                  advisoryChars: advisory.length,
-                  retries: node.retries,
-                  hasHandoff: Boolean(node.handoffFromNodeId),
-                },
-                "verifier",
-              );
-            }
-          } catch (error) {
-            if (isLaneIsolationError(error, "verifier")) {
-              throw error;
-            }
-            logger.warn(
-              "orchestrator",
-              "Advisory call failed, continuing without",
-              {
-                taskId: task.id,
-                nodeId: node.id,
-                error,
-              },
-            );
-          }
-        }
-
         logger.debug("orchestrator", "Executor instruction prepared", {
           taskId: task.id,
           nodeId: node.id,

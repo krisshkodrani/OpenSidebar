@@ -1,5 +1,4 @@
 import { AgentStatus } from "../../types";
-import type { ToolCall } from "../../types";
 import type { logger } from "../../utils";
 import { validateToolCalls } from "../security";
 import type { CompletionResponse } from "../llm/types";
@@ -10,7 +9,6 @@ import type { TraceRecorder } from "./trace";
 
 type ToolCallBranchSetupLogger = Pick<typeof logger, "warn">;
 type ToolCallBranchSetupContext = Pick<ContextManager, "addMessage">;
-type WorkflowRedirectMode = "parallel" | "sequential";
 
 export type ToolCallBranchSetupDeps = {
   response: CompletionResponse;
@@ -23,10 +21,7 @@ export type ToolCallBranchSetupDeps = {
   traceRecorder: TraceRecorder | null;
   log: ToolCallBranchSetupLogger;
   statusHandler: (status: AgentStatus, message: string) => void;
-  rewriteListDetailWorkflowToolCall: (
-    toolCall: ToolCall,
-    mode: WorkflowRedirectMode,
-  ) => boolean;
+
 };
 
 export type ToolCallBranchSetupResult = {
@@ -94,29 +89,13 @@ export function prepareToolCallBranch(
     .filter((v) => !v.blocked)
     .map((v) => v.original);
 
-  const originalCanParallelize = assessParallelToolCalls(
-    deps.response.tool_calls,
-  ).canParallelize;
-  const workflowRedirectMode = originalCanParallelize
-    ? "parallel"
-    : "sequential";
-  for (const toolCall of deps.response.tool_calls) {
-    if (
-      deps.rewriteListDetailWorkflowToolCall(toolCall, workflowRedirectMode)
-    ) {
-      deps.response.tool_calls = [toolCall];
-      break;
-    }
-  }
-
-  const finalToolCalls = [
-    ...blockedCalls.map((b) => b.original),
-    ...deps.response.tool_calls,
-  ];
+  // Keep the model's request, including blocked calls, in its original order.
+  // Admission controls execution; it must not rewrite conversation history.
+  const requestedToolCalls = validated.map((entry) => entry.original);
   deps.context.addMessage({
     role: "assistant",
     content: deps.response.content,
-    tool_calls: finalToolCalls.map((tc) => ({
+    tool_calls: requestedToolCalls.map((tc) => ({
       id: tc.id,
       type: "function",
       function: {

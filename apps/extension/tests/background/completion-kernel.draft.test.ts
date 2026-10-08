@@ -201,6 +201,15 @@ describe("completion kernel draft workflows", () => {
     expect(evidence).toEqual([]);
   });
 
+  test.each(["Draft saved. Not sent.", "The email has not been sent.", "The reply hasn't been sent."])("accepts explicit unsent page status: %s", (status) => {
+    const snap = draftSnapshot({ visibleContent: `Message editor Send email ${status}`, pageContent: `Message editor Send email ${status}` });
+    const generated = generateCompletionContract({ userRequest: "Save a draft reply and leave it unsent.", snapshot: snap });
+    const decision = evaluateCompletionContract({ contract: generated?.contract,
+      evidence: deriveCompletionEvidenceFromSnapshot(snap, 7), snapshot: snap,
+      candidateSource: "model_done", summary: "Saved the draft for review without sending it." });
+    expect(decision.status).toBe("accepted");
+  });
+
   test("accepts draft-only completion when an unsent draft is visible", () => {
     const snap = draftSnapshot();
     const generated = generateCompletionContract({

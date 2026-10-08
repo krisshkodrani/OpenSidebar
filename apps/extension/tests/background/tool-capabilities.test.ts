@@ -10,6 +10,21 @@ import {
 } from "../../src/background/agent/tool-capabilities";
 
 describe("tool capability catalog", () => {
+  test("platform adapters do not falsely promise generic form capabilities", () => {
+    const active = [ToolName.READ_PAGE, ToolName.CONFIGURE_SERVICENOW_FORM];
+    const catalog = buildToolCapabilityCatalog(active);
+    expect(catalog).toContain("service_now_forms: configure_servicenow_form");
+    expect(catalog).not.toContain("fill_text_fields");
+    expect(assessMissingToolEscalation({
+      args: {
+        reason: "The regular HTML form needs type_text or click_element.",
+        reasonCode: "missing_tool",
+        requiredCapability: "fill_text_fields",
+      },
+      availableToolNames: active,
+    }).reason).toBe("capability_unavailable");
+  });
+
   test("maps common form tools to user-level capabilities", () => {
     const capabilities = getToolCapabilities([
       ToolName.READ_PAGE,

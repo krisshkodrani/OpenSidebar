@@ -1067,9 +1067,8 @@ function stepsToNodes(
       step.successCriteria ||
       `The subtask outcome for "${step.objective}" is verified on the page or in tool output.`,
     // Always use the full default tool set for orchestrator nodes.
-    // Per-step profile filtering is handled by applyToolProfile() inside
-    // the agent loop — restricting here causes permanent tool blocking
-    // when the loop internally advances past the node's original objective.
+    // Step profiles are planning hints, not availability gates. User flags
+    // and enforced access ceilings are applied by the role contract.
     allowedTools: [...EXECUTOR_DEFAULT_TOOLS],
     dependencies: (() => {
       const explicit = (step.dependencies || [])

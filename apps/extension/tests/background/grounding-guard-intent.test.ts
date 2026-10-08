@@ -47,9 +47,9 @@ function baseCtx(
     selectedSkillId: null,
     isOrchestratorNode: true,
     missingRequiredEvidence: [],
-    listDetailReviewedCount: 0,
-    listDetailOpenedCount: 0,
-    listDetailVisibleActionCount: 0,
+
+
+
     moneyTableIncompleteScanReason: null,
     moneyTableIncorrectAnswerReason: null,
     ...overrides,

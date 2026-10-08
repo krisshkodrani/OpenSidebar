@@ -81,15 +81,70 @@ thin delegator methods so call sites stay stable.
 | `approval-policy.ts`, `approval-enforcement.ts`, `consequential-action-policy.ts`        | High-risk action approval gating                                          |
 | `mutation-ledger.ts`, `evidence.ts`, `verification.ts`                                   | State-diff verification evidence                                          |
 | `partial-progress-handoff.ts`                                                            | Structured handoff when the turn budget runs out                          |
-| `loop-skill-tools.ts`, `skill-turn-cap-policy.ts`                                        | Skill-scoped tool ranking/suppression                                     |
+| `loop-skill-tools.ts`, `skill-turn-cap-policy.ts`                                        | Skill-scoped tool ranking and turn limits                                     |
 | `servicenow/`                                                                            | Quarantined ServiceNow domain controllers                                 |
 | `tool-recovery.ts`                                                                       | Recover tool calls from plain-text LLM responses                          |
 | `trace.ts`                                                                               | `TraceRecorder` — full-fidelity session recording (dev-only)              |
 | `constants.ts`                                                                           | Centralized thresholds and limits — source of truth for the numbers below |
 
 Many small `*-policy.ts` modules (blind-tool-call, repeat-action,
-ambiguous-choice, navigate-guard, popup-triage, …) hold single behaviors;
+ambiguous-choice, popup-triage, …) hold single behaviors;
 prefer extending those over adding logic to `AgentLoop`.
+
+Tool preparation preserves the model's requested call order in conversation history,
+including calls rejected by security admission. Only admitted calls reach dispatch;
+list/detail skills do not substitute different calls during preparation. Skill tool
+preferences rank the available definitions without a separate suppression layer.
+Role permissions and user-disabled tools constrain availability. Advisory step
+profiles and the current DOM do not hide permitted tools.
+Continuation-edit guidance requires a requested revision in the current objective
+(or user request when there is no step objective). Page titles, success criteria
+describing past edits, and prohibited actions do not independently select it.
+Browser input adaptations operate on a dispatch copy. The model's original call
+remains in history, while execution records retain the actual dispatched inputs
+under the same call ID.
+Dispatch does not replace requested text with saved profile literals. The profile
+tool supplies source values to the model, and repeatable-form guidance preserves
+those facts while allowing transformations explicitly requested by the user.
+Autocomplete inputs likewise receive the text chosen by the model, including full
+labels or shorter queries. Dispatch does not invent a prefix. Completion checks
+still distinguish typed text from a required option selection.
+Catalog workflow skills guide configuration and evidence gathering without
+blocking manual option selection, related-item inspection, or receipt detail
+reads. Ordinary text fields may be focused before typing. File-picker limitations,
+consequential-action checks, and mutation replay protection remain enforced.
+
+The executor may open and switch workspace tabs without a user-keyword or planner
+gate. Skills do not veto a link because a matching URL is already open, and no
+fixture-specific tab controller rewrites that choice. Workspace membership, safe
+URLs, browser-page restrictions, approvals, and duplicate-effect checks still
+apply. Closing existing tabs retains its separate gate because it can discard
+open user state. Historical workflow-tab redirect events remain readable in traces.
+
+Result-page heuristics do not replace requested actions with ranked navigation,
+extra reads, or generated not-found completions. Knowledge-base skills also leave
+search queries and navigation choices to the executor. The executor chooses its next
+action from the observed results; completion still passes through the pipeline.
+
+List/detail skills guide evidence gathering without imposing visit-count quotas or
+blocking other permitted actions. Comparisons of listings, candidates, and profiles
+use the existing read-answer evidence checks. Explicit user scope and return
+requirements still apply.
+
+Comparison coverage tracks the named subjects without requiring repetition of an
+inferred category word. Draft verification distinguishes a negated send status
+from an affirmative send confirmation; separate affirmative evidence still counts.
+
+Completion rejection counts are diagnostic and drive recovery. Repeating `done()`
+with unchanged missing or contradictory evidence does not bypass the completion
+kernel. Newly sufficient evidence can still complete the task after earlier
+rejections.
+
+Orchestrator retries and reroutes pass verifier feedback and existing page history
+directly to the executor. A reroute retains the latest executor result and its
+evidence in the handoff. There is no separate model advisory before execution,
+and a retry does not require a different strategy when the existing state only
+needs verification.
 
 ## AgentLoop public API
 
@@ -108,20 +163,30 @@ class AgentLoop {
 }
 ```
 
-## Completion: one authority
+## Completion
 
-"Is the task done?" is decided in exactly one place: the pure pipeline in
+Model-requested DONE is evaluated by the pipeline in
 `agent/completion/pipeline.ts`. The kernel (`completion-kernel.ts` plus the
 per-contract-kind analysis modules under `completion/`) decides accept/reject
-first; the absorbed pre-pipeline guard chain runs as ordered stages after it.
+after summary and grounding preflights; inconclusive kernel results proceed
+through the remaining ordered guards. Grounding is checked once per candidate.
 The pipeline returns a verdict plus **effects-as-data**, applied by the loop
 via the completion-effect host — rejection bookkeeping, diagnostics, and plan
 rejection all flow through effects, never inline mutation. Supporting pieces:
 guard suite (`completion/guards/` — budget, contract, domain, summary,
 grounding), judge gate (`completion/judge.ts`, dedicated judge model seat),
 preflight, and decision recording. The completion judge receives every supplied
-criterion with current observations and corpus context. Stored-fact word overlap
+criterion with current observations and corpus context. The orchestrator also
+supplies the original user request as objective context, so criteria referring to
+requested values can be checked against observations. The request itself is not
+evidence of completion. Stored-fact word overlap
 does not establish current completion and cannot skip judging.
+
+Catalog receipt and submit shortcuts have been removed. Some trusted form/list
+controllers still finalize through `completeTaskResult` with a trusted candidate;
+these are exceptions to the model-DONE pipeline, not evidence that every terminal
+path has been consolidated. Their consolidation needs objective-scope regressions
+and platform validation.
 
 The golden corpus in `tests/fixtures/completion-corpus/` must replay
 byte-identical; regenerate with `UPDATE_COMPLETION_CORPUS=1` only for an
@@ -139,13 +204,11 @@ de-escalation and cooldowns (`ESCALATION_RESCUE` in `constants.ts`). Context
 distillation (`summarizeTrajectory()`) compresses history into a structured
 timeline before planner handoff.
 
-Missing-tool escalation first restores the requested tools or capabilities that
-an advisory step profile or skill hid. This does not change models or expand the
-executor's permitted tool set; enforced read-only access and global tool flags
-still apply. Skill suppression runs only when selecting tools for a turn, rather
-than also becoming a permanent role prohibition. Restored tools remain available
-for the loop's remaining turns. Platform-specific adapters advertise their scoped
-capabilities rather than claiming to provide generic form interaction.
+All permitted tools are available from the first turn, without profile-based
+hiding or restoration state. Missing-tool reports are checked against the actual
+available inventory. Enforced read-only access and global tool flags still apply.
+Platform-specific adapters advertise their scoped capabilities rather than
+claiming to provide generic form interaction.
 
 Orchestrator turn telemetry counts executor turns across nodes and retries.
 Each attempt persists its prior-turn base before execution; a durable resume
@@ -174,6 +237,12 @@ tools complete. HIGH-risk tools are gated behind explicit user approval
 (`approval-policy.ts`) — risk is enforced, not informational. Per-tool and
 consecutive-failure circuit breakers live in `constants.ts`
 (`TOOL_FAILURE_THRESHOLDS`, `MAX_CONSECUTIVE_ALL_FAIL`).
+
+Catalog configuration with `submit: false` only configures the item. The executor
+must explicitly request submission; the runtime no longer appends a second
+configure-and-submit call based on order-related words in the objective. A catalog
+receipt is an observation, not an automatic terminal decision: the executor can
+finish requested follow-up work, then invoke DONE through the completion pipeline.
 
 ## Safety & limits
 

@@ -2002,6 +2002,39 @@ describe("Orchestrator integration join tests", () => {
     expect(capturedInstructions[1].instruction).toContain("Objective: alternate route");
   });
 
+  test.each(["retry", "reroute"] as const)(
+    "%s passes observed recovery context directly to the executor without another advisory model call",
+    async (decision) => {
+      let verifyCalls = 0;
+      plannerBuildNodesImpl = async () => [makeNode("n1", "Inspect the saved record")];
+      verifierDecisionImpl = async () => ++verifyCalls === 1
+        ? {
+            decision,
+            reason: "The saved record needs a fresh readback, not another save.",
+            confidence: 0.9,
+            failureType: "insufficient_evidence",
+            ...(decision === "reroute" ? { rerouteObjective: "Read back the existing record" } : {}),
+          }
+        : { decision: "accept", reason: "Readback confirmed the saved record" };
+      loopStartImpl = async () => ({
+        outcome: "completed",
+        summary: "Record 741 was saved. Preserve the existing saved value.",
+      });
+      const advise = vi.fn().mockResolvedValue("Try another save to be sure.");
+      const createVerifier = orchestratorDeps.createVerifier!;
+      orchestratorDeps.createVerifier = (...args) => ({ ...createVerifier(...args), advise });
+      const orchestrator = new Orchestrator(orchestratorDeps);
+      activeOrchestrator = orchestrator;
+      await orchestrator.startTask(makeInput("Inspect the saved record"));
+
+      expect(createdLoopNodeIds).toHaveLength(2);
+      expect(capturedInstructions[1].instruction).toContain("fresh readback, not another save");
+      expect(capturedInstructions[1].instruction).toContain("Record 741 was saved");
+      expect(advise).not.toHaveBeenCalled();
+      expect(capturedInstructions[1].instruction).not.toContain("Try another save to be sure");
+    },
+  );
+
   test("restores checkpoints with dependency/assumption fields and resumes", async () => {
     const checkpointStore = (globalThis as any).__checkpointStore as Record<string, unknown>;
     checkpointStore["ws-1"] = {

@@ -890,43 +890,6 @@ export class OrchestratorVerifier {
     });
   }
 
-  async advise(
-    input: {
-      executorInstruction: string;
-      pageTitle: string;
-      pageUrl: string;
-      visibleContent: string;
-    },
-    signal?: AbortSignal,
-  ): Promise<string | null> {
-    const ADVISORY_SYSTEM = renderPrompt("orchestrator.advisory.system");
-    try {
-      const response = await this.llm.complete({
-        messages: [
-          { role: "system", content: ADVISORY_SYSTEM },
-          {
-            role: "user",
-            content:
-              `Executor instruction:\n${input.executorInstruction}\n\n` +
-              `Current page: ${input.pageTitle} (${input.pageUrl})\n` +
-              `Visible content (first 500 chars):\n${input.visibleContent.slice(0, 500)}`,
-          },
-        ],
-        max_tokens: 4096,
-        temperature: 0,
-        signal,
-      });
-      const text = (response.content || "").trim();
-      if (!text || text.toLowerCase().includes("no advisory needed")) {
-        return null;
-      }
-      return text;
-    } catch (error) {
-      logger.warn("orchestrator", "Advisory call failed, skipping", { error });
-      return null;
-    }
-  }
-
   async verifyNode(
     input: NodeVerificationInput,
     signal?: AbortSignal,

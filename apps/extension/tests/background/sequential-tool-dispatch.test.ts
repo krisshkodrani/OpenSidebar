@@ -72,16 +72,15 @@ function createHost(): SequentialToolDispatchHost {
     getConsequentialActionTaskText: () => "finish the task",
     getPendingInlineEditVerificationBlock: () => null,
     getUncommittedInlineEditDoneRejection: () => null,
-    getWorkflowTabToolRedirect: vi.fn(async () => null),
     hasExplicitPageRead: false,
     hasReadPage: false,
     handleClarifyToolCall: vi.fn(),
     handleDoneToolCall: vi.fn(async () => true),
     isRunning: true,
     lastDomStep: null,
-    listDetailOpenedTargets: new Set<string>(),
-    listDetailReviewedTargets: new Set<string>(),
-    listDetailVisibleActionCount: 0,
+
+
+
     log: {
       info: vi.fn(),
       warn: vi.fn(),
@@ -93,8 +92,6 @@ function createHost(): SequentialToolDispatchHost {
     maybeCompleteTrustedFormSubmitStep: vi.fn(() => null),
     maybeCompleteTrustedListSortStep: vi.fn(() => null),
     maybeCompleteTrustedListFilterStep: vi.fn(() => null),
-    maybeCompleteTrustedCatalogOrderSubmit: vi.fn(async () => null),
-    maybeAutoSubmitConfiguredCatalogItem: vi.fn(async () => {}),
     middleware: {
       evaluatePreTool: (toolName: ToolName) => ({
         toolName,
@@ -120,7 +117,7 @@ function createHost(): SequentialToolDispatchHost {
     stepHandler: vi.fn(),
     throwIfGracefulStopRequested: vi.fn(),
     toolCache: new ToolResultCache(),
-    trackListDetailToolSuccess: vi.fn(),
+
     traceRecorder: {
       recordEvent: vi.fn(),
       recordToolExecution: vi.fn(),
@@ -141,7 +138,6 @@ function genericParams(
     args,
     tabId: 1,
     prevElementCount: 0,
-    autocompleteRewriteReason: null,
     discoveredTagIds: new Set<number>(),
     preDecision: {
       toolName: name,
@@ -164,6 +160,182 @@ function genericParams(
 }
 
 describe("executeSequentialToolCalls", () => {
+  test.each(["receipt detail", "manual option", "related item", "input focus"])("allows model-owned workflow action: %s", async (scenario) => {
+    const host = createHost();
+    const receipt = scenario === "receipt detail";
+    const option = scenario === "manual option";
+    const focus = scenario === "input focus";
+    const query = focus ? "Set the email address with user@example.com" : option ? "Order the monitor with 'Warranty': 'Extended'." : receipt ? "Order the monitor and read the requested-item details for its delivery information." : "Order 'Laptop'; first inspect the related monitor for compatibility.";
+    Object.assign(host, { originalQuery: query, getConsequentialActionTaskText: () => query, selectedSkillId: focus ? null : "catalog-order-workflow" });
+    const target = { tag: 7, tagName: focus || option ? "input" : "a", role: focus ? "textbox" : option ? "radio" : "link", text: focus ? "" : option ? "Extended" : receipt ? "RITM001234" : "Monitor", attributes: focus ? { type: "email", placeholder: "Email" } : option ? { type: "radio", label: "Extended" } : { href: receipt ? "/sc_req_item.do?sys_id=1234" : "/catalog_item?sys_id=monitor" }, rect: { x: 10, y: 10, width: 120, height: 30 }, isVisible: true, isDisabled: false };
+    Object.assign(host.context, { getSnapshot: () => ({ url: option ? "https://instance.test/servicecatalog_cat_item" : "https://instance.test/catalog", title: receipt ? "Order status REQ001234" : "Catalog", pageContent: receipt ? "Order status REQ001234" : option ? "Order this item" : "Laptop and Monitor", visibleContent: "", timestamp: Date.now(), elements: [target] }) });
+    const requested = toolCall(receipt ? ToolName.READ_ELEMENT : ToolName.CLICK_ELEMENT, { id: 7 });
+    vi.mocked(host.executeToolCall).mockResolvedValue("Requested page action completed.");
+    await executeSequentialToolCalls.call(host, { toolCalls: [requested], repeatActionWindow: 20, llmIntention: null, signalCompletedResult: vi.fn(), state: baseState() });
+    expect(host.executeToolCall).toHaveBeenCalledWith(requested, 1);
+  });
+
+  test.each(["Acme Corporation", "Acme"])("types the model's chosen autocomplete query unchanged: %s", async (text) => {
+    const host = createHost();
+    Object.assign(host, { originalQuery: "Choose Acme Corporation from the account suggestions.", llm: { hasWriterModel: () => false } });
+    Object.assign(host.context, { getSnapshot: () => ({
+      url: "https://example.test/accounts", title: "Account lookup", timestamp: Date.now(),
+      elements: [{ tag: 31, tagName: "input", role: "combobox", text: "", attributes: { "aria-autocomplete": "list", "aria-label": "Account" }, rect: { x: 10, y: 10, width: 200, height: 30 }, isVisible: true, isDisabled: false }],
+    }) });
+    const requested = toolCall(ToolName.TYPE_TEXT, { id: 31, text });
+    vi.mocked(host.executeToolCall).mockResolvedValue("Input updated; matching suggestions are visible.");
+    await executeSequentialToolCalls.call(host, { toolCalls: [requested], repeatActionWindow: 20, llmIntention: null, signalCompletedResult: vi.fn(), state: baseState() });
+    expect(host.executeToolCall).toHaveBeenCalledWith(requested, 1);
+    expect(host.traceRecorder?.recordToolExecution).toHaveBeenCalledWith(requested.id, ToolName.TYPE_TEXT, { id: 31, text }, expect.any(String), true, expect.any(Number), RiskLevel.LOW);
+  });
+
+  test("preserves a requested shortened profile summary during repeated-form entry", async () => {
+    const host = createHost();
+    const requestedText = "Built workflow tools.";
+    Object.assign(host, {
+      selectedSkillId: "progressive-repeatable-form",
+      originalQuery: `Fill the experience form from my profile, but shorten the first summary to "${requestedText}".`,
+      llm: { hasWriterModel: () => false },
+    });
+    Object.assign(host.context, {
+      getMessages: () => [{ role: "tool", content: 'PROFILE FIELDS:\n- experience.roles: [{"summary":"Built React and TypeScript workflow tools for enterprise teams."}]' }],
+      getSnapshot: () => ({ url: "https://example.test/form", title: "Experience", timestamp: Date.now(), elements: [{
+        tag: 126, tagName: "textarea", role: "textbox", text: "", attributes: { name: "experiences[0].summary", "aria-label": "Experience 1 summary" },
+        rect: { x: 10, y: 10, width: 300, height: 80 }, isVisible: true, isDisabled: false,
+      }] }),
+    });
+    const requested = toolCall(ToolName.TYPE_TEXT, { id: 126, text: requestedText });
+    vi.mocked(host.executeToolCall).mockResolvedValue("Typed requested summary.");
+    await executeSequentialToolCalls.call(host, { toolCalls: [requested], repeatActionWindow: 20, llmIntention: null, signalCompletedResult: vi.fn(), state: baseState() });
+    expect(host.executeToolCall).toHaveBeenCalledWith(requested, 1);
+    expect(host.traceRecorder?.recordToolExecution).toHaveBeenCalledWith(
+      requested.id, ToolName.TYPE_TEXT, { id: 126, text: requestedText }, expect.any(String), true, expect.any(Number), RiskLevel.LOW,
+    );
+  });
+
+  test("inline editor adaptation preserves the model request and records actual execution", async () => {
+    const host = createHost();
+    Object.assign(host, { llm: { hasWriterModel: () => false }, getActiveToolProfileForStep: () => "edit_surface" });
+    Object.assign(host.context, { getSnapshot: () => ({
+      url: "https://example.test", title: "Sheet", timestamp: Date.now(),
+      elements: [
+        { tag: 37, tagName: "td", role: "gridcell", text: "130", attributes: {}, isVisible: true, isDisabled: false, rect: { x: 10, y: 10, width: 80, height: 24 } },
+        { tag: 44, tagName: "input", role: "textbox", text: "130", attributes: { type: "text", value: "130", "aria-label": "Sales editor" }, isVisible: true, isDisabled: false, rect: { x: 12, y: 12, width: 76, height: 20 } },
+      ],
+    }) });
+    vi.mocked(host.executeToolCall).mockResolvedValue("Typed 200 into the editor.");
+    const requested = toolCall(ToolName.TYPE_TEXT, { id: 37, text: "200" });
+    const original = structuredClone(requested);
+    await executeSequentialToolCalls.call(host, { toolCalls: [requested], repeatActionWindow: 20, llmIntention: null, signalCompletedResult: vi.fn(), state: baseState() });
+    expect(host.executeToolCall).toHaveBeenCalledWith({ ...original, function: {
+      ...original.function, arguments: JSON.stringify({ id: 44, text: "200" }),
+    } }, 1);
+    expect(host.traceRecorder?.recordToolExecution).toHaveBeenCalledWith(
+      original.id, ToolName.TYPE_TEXT, { id: 44, text: "200" }, expect.any(String), true, expect.any(Number), RiskLevel.LOW,
+    );
+    expect(requested).toEqual(original);
+  });
+
+  test.each(["Compare Alpha and Beta only; ignore the other listings.", "Review all listings before recommending one."])("allows evidence gathering without a list-detail sequence: %s", async (query) => {
+    const host = createHost();
+    Object.assign(host, { selectedSkillId: "list-detail-review-loop", originalQuery: query });
+    Object.assign(host.context, { getSnapshot: () => ({ url: "https://example.test/list", title: "Results", timestamp: Date.now(), elements: ["Alpha", "Beta", "Gamma"].map((name, i) => ({ tag: i + 1, tagName: "button", text: `View details for ${name}`, attributes: {}, isVisible: true, isDisabled: false })) }) });
+    const requested = toolCall(ToolName.READ_PAGE);
+    vi.mocked(host.executeToolCall).mockResolvedValue("Page evidence.");
+    await executeSequentialToolCalls.call(host, { toolCalls: [requested], repeatActionWindow: 20, llmIntention: null, signalCompletedResult: vi.fn(), state: baseState() });
+    expect(host.executeToolCall).toHaveBeenCalledWith(requested, 1);
+  });
+
+  test.each(["first navigation", "refined search", "rendered results"])("preserves executor choice during knowledge workflow: %s", async (scenario) => {
+    const host = createHost();
+    const currentUrl = scenario === "rendered results"
+      ? "https://example.test/kb?id=kb_search&query=audit"
+      : "https://example.test/kb";
+    const messages = scenario === "first navigation" ? [] : [{ role: "tool", content:
+      scenario === "refined search"
+        ? "Knowledge base search result. No answer candidate found. Rendered results: https://example.test/kb?id=kb_search&query=audit"
+        : "Page: Knowledge Search\n[Audit article](https://example.test/kb?id=kb_article_view&sys_kb_id=42)\nFinancial audit requirements."
+    }];
+    Object.assign(host, { selectedSkillId: "search-answer-extraction", originalQuery: "Find the audit requirements in the knowledge base." });
+    Object.assign(host.context, { getCurrentUrl: () => currentUrl, getMessages: () => messages });
+    vi.mocked(host.executeToolCall).mockResolvedValue("No answer candidate found.");
+    const requested = scenario === "first navigation"
+      ? toolCall(ToolName.NAVIGATE, { url: "https://example.test/other-source" })
+      : toolCall(ToolName.SEARCH_KNOWLEDGE_BASE, { question: "What are the audit requirements?", query: "audit requirements 2026" });
+    const original = structuredClone(requested);
+    await executeSequentialToolCalls.call(host, {
+      toolCalls: [requested], repeatActionWindow: 20, llmIntention: null,
+      signalCompletedResult: vi.fn(), state: baseState(),
+    });
+    expect(requested).toEqual(original);
+    expect(host.executeToolCall).toHaveBeenCalledWith(original, 1);
+    expect(host.handleDoneToolCall).not.toHaveBeenCalled();
+  });
+
+  test.each(["ranked candidate", "exhausted results"])("preserves requested navigation after %s", async (scenario) => {
+    const host = createHost();
+    const currentUrl = "https://example.test/search?q=audit";
+    const content = `Page: Search Results\nURL: ${currentUrl}\n` + (scenario === "ranked candidate"
+      ? "Search Results: [Audit guide](https://example.test/audit-guide)"
+      : "0 results for audit. No results found.");
+    const observation = { role: "tool", content };
+    const messages = [observation, { role: "assistant", content: "I will try another source." }, observation];
+    Object.assign(host, { selectedSkillId: "search-answer-extraction", originalQuery: "Find the audit requirements." });
+    Object.assign(host.context, { getCurrentUrl: () => currentUrl, getMessages: () => messages });
+    vi.mocked(host.executeToolCall).mockResolvedValue("Navigated successfully.");
+    const requested = toolCall(ToolName.NAVIGATE, { url: "https://example.test/other-source" });
+    const original = structuredClone(requested);
+    const completed = vi.fn();
+    await executeSequentialToolCalls.call(host, {
+      toolCalls: [requested], repeatActionWindow: 20, llmIntention: null,
+      signalCompletedResult: completed, state: baseState(),
+    });
+    expect(requested).toEqual(original);
+    expect(host.executeToolCall).toHaveBeenCalledWith(original, 1);
+    expect(host.handleDoneToolCall).not.toHaveBeenCalled();
+    expect(completed).not.toHaveBeenCalled();
+  });
+
+  test.each([
+    ["https://example.test/app#/account/details", "https://example.test/app#/account/activity"],
+    ["https://example.test/receipt/42", "https://example.test/receipt/42"],
+    ["https://instance.test/incident.do?sys_id=record-42", "https://instance.test/incident.do?sys_id=record-42"],
+  ])("allows objective-driven navigation after a completed step at %s", async (completedAtUrl, url) => {
+    const host = createHost();
+    Object.assign(host, { planSubtasks: [
+      { description: "Read the saved record", status: "completed", turnsUsed: 1, turnBudget: 10, completedAtUrl },
+      { description: "Revisit the record and verify its activity", status: "running", turnsUsed: 0, turnBudget: 10 },
+    ] });
+    vi.mocked(host.executeToolCall).mockResolvedValue("Navigated successfully.");
+    const requested = toolCall(ToolName.NAVIGATE, { url });
+    await executeSequentialToolCalls.call(host, {
+      toolCalls: [requested], repeatActionWindow: 20, llmIntention: null,
+      signalCompletedResult: vi.fn(), state: baseState(),
+    });
+    expect(host.executeToolCall).toHaveBeenCalledWith(requested, 1);
+    expect(host.context.addMessage).not.toHaveBeenCalledWith(expect.objectContaining({ content: expect.stringContaining("would undo progress") }));
+  });
+
+  test.each(["approval", "pending edit", "stop"])("preserves %s protection before navigation", async (protection) => {
+    const host = createHost();
+    if (protection === "approval") {
+      Object.assign(host.middleware, { evaluatePreTool: (toolName: ToolName) => ({
+        toolName, riskLevel: RiskLevel.HIGH, allowed: true, requiresApproval: true,
+        approvalMode: "always", approvalReason: "test",
+      }) });
+      vi.mocked(host.ensureToolApproval).mockResolvedValue(false);
+    }
+    if (protection === "pending edit") Object.assign(host, { getPendingInlineEditVerificationBlock: () => "Verify the pending edit before leaving." });
+    if (protection === "stop") vi.mocked(host.throwIfGracefulStopRequested).mockImplementation(() => { throw new Error("Stopped"); });
+    const run = executeSequentialToolCalls.call(host, {
+      toolCalls: [toolCall(ToolName.NAVIGATE, { url: "https://example.test/receipt/42" })],
+      repeatActionWindow: 20, llmIntention: null, signalCompletedResult: vi.fn(), state: baseState(),
+    });
+    if (protection === "stop") await expect(run).rejects.toThrow("Stopped");
+    else await run;
+    expect(host.executeToolCall).not.toHaveBeenCalled();
+  });
+
   test.each([
     [ToolName.CLICK_ELEMENT, "continuation-edit"],
     [ToolName.TYPE_TEXT, null],
@@ -480,46 +652,7 @@ describe("executeSequentialToolCalls", () => {
     );
   });
 
-  test("passes catalog-order trusted completion candidate to completion signal", async () => {
-    const host = createHost();
-    const completed = vi.fn();
-    const completionCandidate = {
-      contractKind: "workflow_confirmation",
-      decisionReason: "Catalog order submitted by trusted workflow.",
-      evidence: [
-        {
-          type: "confirmation_state",
-          confidence: "high",
-          logicalKey: "trusted:catalog-order:completion",
-          turn: 4,
-          source: "tool_result",
-          detail: {
-            source: "trusted_workflow",
-            message: "Catalog order submitted.",
-          },
-        },
-      ],
-    };
-    (host.executeToolCall as any).mockResolvedValue("Order placed.");
-    (host.maybeCompleteTrustedCatalogOrderSubmit as any).mockResolvedValue({
-      finalSummary: "Catalog order submitted.",
-      completionCandidate,
-    });
 
-    const output = await executeSequentialToolCalls.call(host, {
-      toolCalls: [toolCall(ToolName.CLICK_ELEMENT, { id: 7 }, "submit-order")],
-      repeatActionWindow: 20,
-      llmIntention: null,
-      signalCompletedResult: completed,
-      state: baseState(),
-    });
-
-    expect(completed).toHaveBeenCalledWith("Catalog order submitted.", {
-      completionCandidate,
-    });
-    expect(output.doneSignaled).toBe(true);
-    expect(output.doneSummary).toBe("Catalog order submitted.");
-  });
 });
 
 describe("fill-checklist re-read note (LP-17)", () => {

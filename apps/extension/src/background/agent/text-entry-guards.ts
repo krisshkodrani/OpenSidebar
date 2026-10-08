@@ -184,7 +184,6 @@ export function validateTextEntryTarget(
 
 export interface TextEntryClickGuardDecision {
   blockReason: string | null;
-  explicitValue: string | null;
 }
 
 export function assessTextEntryClickGuard(params: {
@@ -197,27 +196,13 @@ export function assessTextEntryClickGuard(params: {
     shouldUseFileUploadTool(params.objectiveText)
   ) {
     return {
-      explicitValue: null,
       blockReason:
         `Error: [${params.targetId}] is a file input. Use upload_file with ` +
         `{"id":${params.targetId}} and a url instead of clicking it.`,
     };
   }
 
-  const explicitValue = extractExplicitInputValueForElement(
-    params.objectiveText,
-    params.element,
-  );
-  if (!isTextLikeInputElement(params.element) || !explicitValue) {
-    return { blockReason: null, explicitValue };
-  }
-
-  return {
-    explicitValue,
-    blockReason:
-      `Error: This step requires entering "${explicitValue}" into [${params.targetId}]. ` +
-      `Use type_text instead of click_element on this input.`,
-  };
+  return { blockReason: null };
 }
 
 export function assessInlineEditTextEntryRetarget(params: {
@@ -380,15 +365,6 @@ function isAutocompleteLikeElement(
       semanticAttributeBlob,
     ) ||
     /\b(combobox|autocomplete|typeahead|suggest)\b/.test(identifierBlob)
-  );
-}
-
-function indicatesAutocompleteSelectionIntent(objectiveText: string): boolean {
-  const objective = normalizeGuardText(objectiveText);
-  if (!objective) return false;
-
-  return /\b(suggestion|suggestions|autocomplete|typeahead|dropdown)\b/.test(
-    objective,
   );
 }
 
@@ -565,65 +541,4 @@ export function getAutocompleteSuggestionDoneRejection(params: {
   }
 
   return null;
-}
-
-function buildAutocompletePrefix(text: string): string {
-  const trimmed = text.trim();
-  if (trimmed.length <= 3) return trimmed;
-
-  const prefixLength = Math.min(8, Math.max(3, Math.ceil(trimmed.length / 3)));
-  const candidate = trimmed.slice(0, prefixLength).trimEnd();
-  return candidate.length >= 3 ? candidate : trimmed.slice(0, 3);
-}
-
-export function rewriteAutocompleteTextEntry(params: {
-  objectiveText: string;
-  originalQuery?: string;
-  element: DomSnapshot["elements"][number] | null | undefined;
-  typedText: string;
-}): {
-  rewrittenText: string;
-  reason: string;
-} | null {
-  const { objectiveText, originalQuery, element, typedText } = params;
-  const trimmed = typedText.trim();
-  if (trimmed.length < 4) return null;
-  // Intent check: step objective is the primary source.
-  // Original query is a fallback for when the planner dropped
-  // the autocomplete wording from the active step's objective.
-  if (
-    !indicatesAutocompleteSelectionIntent(objectiveText) &&
-    !indicatesAutocompleteSelectionIntent(originalQuery ?? "")
-  )
-    return null;
-  // Element classification: the hard safety boundary.
-  // Even if intent is detected, normal text inputs are never rewritten.
-  if (!isAutocompleteLikeElement(element)) return null;
-
-  const rewrittenText = buildAutocompletePrefix(trimmed);
-  if (rewrittenText === trimmed) return null;
-
-  return {
-    rewrittenText,
-    reason:
-      `Autocomplete guard: blocked full-value typing for [${element?.tag ?? "?"}]. ` +
-      `Typed partial text "${rewrittenText}" only. Wait for suggestions/dropdown, then click the exact match "${trimmed}".`,
-  };
-}
-
-export function assessAutocompleteTextRewrite(params: {
-  objectiveText: string;
-  originalQuery: string;
-  element: DomSnapshot["elements"][number] | null | undefined;
-  args: Record<string, unknown>;
-}): {
-  rewrittenText: string;
-  reason: string;
-} | null {
-  return rewriteAutocompleteTextEntry({
-    objectiveText: params.objectiveText,
-    originalQuery: params.originalQuery,
-    element: params.element,
-    typedText: String(params.args.text || ""),
-  });
 }

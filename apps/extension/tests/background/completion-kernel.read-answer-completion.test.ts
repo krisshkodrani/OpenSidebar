@@ -69,6 +69,65 @@ function workflowSnapshot(overrides: Partial<DomSnapshot> = {}): DomSnapshot {
 }
 
 describe("completion kernel read-answer completion", () => {
+  test.each(["saved", "removed", "sent"])(
+    "reads reports of a past %s action without requiring a new action",
+    (pastAction) => {
+      const text = `Repeated recovery. Open. The reported failure repeated an already ${pastAction} operation. Verification remained unresolved, so the runtime retried the same operation three times before reaching the turn limit. The follow-up is to preserve observed effects across recovery and avoid repeating an operation without new evidence.`;
+      const snap = workflowSnapshot({
+        visibleContent: text,
+        pageContent: text,
+      });
+      const request =
+        "Read this issue. Give me its title, whether it is open or closed, and a brief explanation of the reported failure. Do not change it.";
+      const generated = generateCompletionContract({
+        userRequest: request,
+        activeObjective:
+          "Read the current issue’s title, status, and body. Report the title, whether it is open or closed, and a brief explanation of the reported failure without changing the issue.",
+        successCriteria: `The response explains the repeated operation despite an already ${pastAction} draft.`,
+        snapshot: snap,
+      });
+      expect(generated?.contract.kind).toBe("read_answer");
+      const evidence = deriveCompletionEvidenceFromToolOutcome({
+        toolName: "read_page",
+        args: {},
+        result: text,
+        currentSnapshot: snap,
+        turn: 1,
+      });
+      const decision = evaluateCompletionContract({
+        contract: generated?.contract,
+        evidence,
+        snapshot: snap,
+        candidateSource: "model_done",
+        summary: text,
+      });
+      expect(decision.status, JSON.stringify(decision)).toBe("accepted");
+    },
+  );
+
+  test("still requires confirmation when reading is followed by an explicit save", () => {
+    const request =
+      "Read the record, report its status, and save the updated record.";
+    const snap = workflowSnapshot();
+    const generated = generateCompletionContract({
+      userRequest: request,
+      snapshot: snap,
+    });
+    expect(generated?.contract).toMatchObject({
+      kind: "workflow_confirmation",
+      action: "save",
+    });
+    expect(
+      evaluateCompletionContract({
+        contract: generated?.contract,
+        evidence: [],
+        snapshot: snap,
+        candidateSource: "model_done",
+        summary: "The record is open.",
+      }).status,
+    ).not.toBe("accepted");
+  });
+
   test("keeps a mixed find-and-create objective under workflow confirmation", () => {
     const snap = workflowSnapshot({
       title: "Coordinate meeting",
@@ -289,7 +348,7 @@ describe("completion kernel read-answer completion", () => {
       taskContract: { multiReturnCount: 2 },
     });
     expect(decision.status).toBe("rejected");
-    expect(decision.reason).toContain("travel policy");
+    expect(decision.reason).toContain("Missing: travel.");
   });
 
   test("derives read-answer evidence from read_page results", () => {

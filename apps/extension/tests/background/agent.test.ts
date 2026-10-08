@@ -1,6 +1,67 @@
 import { describe, test, expect, vi, beforeEach } from "vitest";
 import "../setup";
 import { AgentStatus, ToolName } from "../../src/types";
+import { runPrepareTurnContextPhase } from "../../src/background/agent/turn-phases/prepare-turn-context";
+import { executeParallelToolCalls } from "../../src/background/agent/parallel-tool-dispatch";
+import { executeSequentialToolCalls } from "../../src/background/agent/sequential-tool-dispatch";
+
+async function expectWorkflowClickExecuted(
+  agent: any,
+  id: number,
+  mode: string,
+  catalogConfiguration = false,
+  catalogSubmit = false,
+) {
+  const requested = {
+    id: "workflow-click",
+    type: "function" as const,
+    function: {
+      name: catalogConfiguration ? ToolName.CONFIGURE_CATALOG_ITEM : ToolName.CLICK_ELEMENT,
+      arguments: JSON.stringify(catalogConfiguration ? { quantity: "10", submit: catalogSubmit, ...(catalogSubmit ? { continueToCheckout: true } : {}) } : { id }),
+    },
+  };
+  agent.isRunning = true;
+  agent.executeToolCall = vi.fn(async () => catalogConfiguration ? "Configured catalog item.\nConfigured:\n- Catalog item=Premium Monitor\n- Quantity=10" : "Clicked requested link.");
+  agent.refreshPerceptionAndTriage = vi.fn();
+  agent.refreshSnapshotWithRetry = vi.fn(async () => 1);
+  const state = {
+    recentToolCalls: [],
+    verifiedFinalClickBypassKeys: new Set<string>(),
+    lastReadElementId: null,
+    consecutiveReadElementSameId: 0,
+    blockedActions: [],
+    recentSuccesses: [],
+    discoveredTagIds: new Set<number>(),
+    orientationPhase: false,
+    orientationToolsUsed: new Set<string>(),
+    domModified: false,
+    visuallyModified: false,
+    lastDomAffectingToolName: null,
+    tabId: 123,
+    prevElementCount: 1,
+    escalationTier: 0,
+    plannerModelStartTurn: 0,
+    doneSignaled: false,
+    doneSummary: "",
+  };
+  const input = {
+    toolCalls: [requested],
+    tabId: 123,
+    repeatActionWindow: 20,
+    llmIntention: null,
+    state,
+    signalCompletedResult: vi.fn(),
+  };
+  if (mode === "parallel") await executeParallelToolCalls(agent, input);
+  else await executeSequentialToolCalls.call(agent, input);
+  expect(agent.executeToolCall).toHaveBeenCalledWith(requested, 123);
+  if (catalogConfiguration) expect(agent.executeToolCall).toHaveBeenCalledTimes(1);
+  if (catalogSubmit) {
+    expect(agent.completedResult).toBeNull();
+    expect(input.signalCompletedResult).not.toHaveBeenCalled();
+  }
+}
+
 
 // Default completeStream implementation (text only, no tool calls)
 const defaultCompleteStreamFn = (
@@ -90,14 +151,9 @@ import {
 } from "../../src/background/agent/servicenow/trusted-workflow-adapter";
 import {
   AgentLoop,
-  countVisibleListDetailActions,
-  getListDetailDoneRejection,
-  getListDetailWorkflowBlock,
-  getNextUnreviewedListDetailAction,
   isListDetailReturnControlRepeatExempt,
   isPerceptionFailurePlaceholder,
   requiresBroadListDetailReview,
-  rewriteAutocompleteTextEntry,
   shouldOmitPerceptionForDoneValidation,
   validateTextEntryTarget,
 } from "../../src/background/agent/loop";
@@ -120,7 +176,6 @@ import {
   detectExplicitSuccessSignalInSnapshot,
   type ExplicitSuccessSignalHost,
 } from "../../src/background/agent/explicit-success-signal";
-import { buildDomAwareProfile } from "../../src/background/tools/metadata";
 import { workspaceManager } from "../../src/background/workspaces/manager";
 import type { TaggedElement } from "../../src/types";
 
@@ -507,154 +562,6 @@ describe("AgentLoop", () => {
     expect(error).toContain("looks like a name field");
   });
 
-  test("rewriteAutocompleteTextEntry truncates full values for suggestion fields", () => {
-    const target: TaggedElement = {
-      tag: 31,
-      tagName: "input",
-      role: "textbox",
-      text: "",
-      attributes: {
-        type: "text",
-        placeholder: "Start typing an address...",
-        id: "address-input",
-        autocomplete: "off",
-      },
-      rect: { x: 0, y: 0, width: 200, height: 30 },
-      isVisible: true,
-      isDisabled: false,
-    };
-
-    const rewrite = rewriteAutocompleteTextEntry({
-      objectiveText:
-        "Select the address suggestion for 123 Main Street, Springfield, IL 62704 from the dropdown.",
-      originalQuery: "",
-      element: target,
-      typedText: "123 Main Street, Springfield, IL 62704",
-    });
-
-    expect(rewrite).not.toBeNull();
-    expect(rewrite?.rewrittenText).not.toBe(
-      "123 Main Street, Springfield, IL 62704",
-    );
-    expect(rewrite?.rewrittenText.length).toBeLessThan(
-      "123 Main Street, Springfield, IL 62704".length,
-    );
-    expect(rewrite?.reason).toContain("Wait for suggestions/dropdown");
-  });
-
-  test("rewriteAutocompleteTextEntry does not rewrite normal text entry", () => {
-    const target: TaggedElement = {
-      tag: 32,
-      tagName: "input",
-      role: "textbox",
-      text: "",
-      attributes: {
-        type: "email",
-        placeholder: "Email address",
-        id: "email",
-      },
-      rect: { x: 0, y: 0, width: 200, height: 30 },
-      isVisible: true,
-      isDisabled: false,
-    };
-
-    const rewrite = rewriteAutocompleteTextEntry({
-      objectiveText: "Type alex.morgan@example.com into the email field.",
-      originalQuery: "",
-      element: target,
-      typedText: "alex.morgan@example.com",
-    });
-
-    expect(rewrite).toBeNull();
-  });
-
-  test("rewriteAutocompleteTextEntry falls back to original query for autocomplete element", () => {
-    const target: TaggedElement = {
-      tag: 33,
-      tagName: "input",
-      role: "textbox",
-      text: "",
-      attributes: {
-        type: "text",
-        placeholder: "Start typing to search products...",
-        id: "product-input",
-        autocomplete: "off",
-      },
-      rect: { x: 0, y: 0, width: 200, height: 30 },
-      isVisible: true,
-      isDisabled: false,
-    };
-
-    // Step objective does NOT mention suggestions, but original query does
-    const rewrite = rewriteAutocompleteTextEntry({
-      objectiveText: "Search for Laptop Stand in the product search field",
-      originalQuery:
-        "Fill in the address with '123 Main Street' from the suggestions, and search for 'Laptop Stand' in the product search.",
-      element: target,
-      typedText: "Laptop Stand",
-    });
-
-    expect(rewrite).not.toBeNull();
-    expect(rewrite?.rewrittenText.length).toBeLessThan("Laptop Stand".length);
-  });
-
-  test("rewriteAutocompleteTextEntry does not rewrite normal input even when query mentions suggestions", () => {
-    const target: TaggedElement = {
-      tag: 34,
-      tagName: "input",
-      role: "textbox",
-      text: "",
-      attributes: {
-        type: "tel",
-        placeholder: "Phone number",
-        id: "phone",
-      },
-      rect: { x: 0, y: 0, width: 200, height: 30 },
-      isVisible: true,
-      isDisabled: false,
-    };
-
-    // Original query mentions suggestions, but the element is a normal phone input
-    const rewrite = rewriteAutocompleteTextEntry({
-      objectiveText: "Type the phone number into the form",
-      originalQuery:
-        "Fill in the address from the suggestions, then enter your phone number 555-0123",
-      element: target,
-      typedText: "555-0123",
-    });
-
-    expect(rewrite).toBeNull();
-  });
-
-  test("rewriteAutocompleteTextEntry does not rewrite plain search input without autocomplete cues", () => {
-    const target: TaggedElement = {
-      tag: 35,
-      tagName: "input",
-      role: "textbox",
-      text: "",
-      attributes: {
-        type: "text",
-        placeholder: "Enter SKU (e.g. SKU-4829)",
-        id: "sku-search",
-        name: "skuSearch",
-      },
-      rect: { x: 0, y: 0, width: 240, height: 30 },
-      isVisible: true,
-      isDisabled: false,
-    };
-
-    const rewrite = rewriteAutocompleteTextEntry({
-      objectiveText:
-        "Search for the SKU number for Widget X in the search field.",
-      originalQuery:
-        "Go to Electronics under the Products menu, find the SKU number for Widget X, and search for it.",
-      element: target,
-      typedText: "SKU-4829",
-    });
-
-    expect(rewrite).toBeNull();
-  });
-
   test("runs simple conversation with streaming", async () => {
     const onStatus = vi.fn();
     const onMessage = vi.fn();
@@ -767,71 +674,6 @@ describe("AgentLoop", () => {
     expect(tiers.indexOf("planner")).toBeLessThan(tiers.indexOf("executor"));
   });
 
-  test("uses DOM-aware profiling when no plan status exists", () => {
-    const agent = new AgentLoop("test-key", {
-      onStatusUpdate: vi.fn(),
-      onMessage: vi.fn(),
-      onStep: vi.fn(),
-    });
-
-    (agent as any).originalQuery =
-      "Enter the secret code into the input and submit it";
-    (agent as any).context.getPlanStatusRaw = vi.fn(() => null);
-    // Provide a snapshot with a draggable element — drag_and_drop should be included
-    (agent as any).context.getSnapshot = vi.fn(() => ({
-      elements: [
-        { tagName: "input", attributes: { type: "text" } },
-        { tagName: "div", attributes: { draggable: "true" } },
-      ],
-    }));
-
-    const tools = [
-      { function: { name: ToolName.TYPE_TEXT } },
-      { function: { name: ToolName.CLICK_ELEMENT } },
-      { function: { name: ToolName.DRAG_AND_DROP } },
-      { function: { name: ToolName.DONE } },
-    ] as any;
-
-    const filtered = (agent as any).applyToolProfile(tools);
-    const names = filtered.map((t: any) => t.function.name);
-
-    expect(names).toContain(ToolName.TYPE_TEXT);
-    expect(names).toContain(ToolName.CLICK_ELEMENT);
-    expect(names).toContain(ToolName.DRAG_AND_DROP); // DOM-aware: draggable detected
-    expect(names).toContain(ToolName.DONE);
-  });
-
-  test("DOM-aware profiling always includes nav tools", () => {
-    const agent = new AgentLoop("test-key", {
-      onStatusUpdate: vi.fn(),
-      onMessage: vi.fn(),
-      onStep: vi.fn(),
-    });
-
-    (agent as any).originalQuery = "Go back to previous page";
-    (agent as any).context.getPlanStatusRaw = vi.fn(() => null);
-    (agent as any).context.getSnapshot = vi.fn(() => ({
-      elements: [
-        { tagName: "button", attributes: {} }, // no links, just buttons
-      ],
-    }));
-
-    const tools = [
-      { function: { name: ToolName.READ_PAGE } },
-      { function: { name: ToolName.NAVIGATE } },
-      { function: { name: ToolName.GO_BACK } },
-      { function: { name: ToolName.CLICK_ELEMENT } },
-      { function: { name: ToolName.DONE } },
-    ] as any;
-
-    const filtered = (agent as any).applyToolProfile(tools);
-    const names = filtered.map((t: any) => t.function.name);
-
-    expect(names).toContain(ToolName.NAVIGATE); // always in base set
-    expect(names).toContain(ToolName.GO_BACK); // always in base set
-    expect(names).toContain(ToolName.CLICK_ELEMENT);
-  });
-
   test("treats the provider-exhausted marker as a perception failure placeholder", () => {
     expect(
       isPerceptionFailurePlaceholder(
@@ -859,440 +701,6 @@ describe("AgentLoop", () => {
         originalQuery: "Open checkout and place the order",
       }),
     ).toBe(false);
-  });
-
-  test("uses DOM-aware profiling when plan status has no running subtask", () => {
-    const agent = new AgentLoop("test-key", {
-      onStatusUpdate: vi.fn(),
-      onMessage: vi.fn(),
-      onStep: vi.fn(),
-    });
-
-    const logInfo = vi.spyOn((agent as any).log, "info");
-    (agent as any).originalQuery =
-      "Enter the secret code into the input and submit it";
-    (agent as any).context.getPlanStatusRaw = vi.fn(() => ({
-      currentIndex: 0,
-      subtasks: [{ description: "Old step", status: "pending" }],
-    }));
-    (agent as any).context.getSnapshot = vi.fn(() => ({
-      elements: [{ tagName: "input", attributes: { type: "text" } }],
-    }));
-
-    const tools = [
-      { function: { name: ToolName.TYPE_TEXT } },
-      { function: { name: ToolName.CLICK_ELEMENT } },
-      { function: { name: ToolName.EXECUTE_JS } },
-      { function: { name: ToolName.DONE } },
-    ] as any;
-
-    (agent as any).applyToolProfile(tools);
-
-    const event = logInfo.mock.calls.find(
-      (call: any[]) => call[1] === "Tool profile applied",
-    );
-    expect(event).toBeDefined();
-    expect(event![2].profile).toBe("dom_aware");
-    expect(event![2].source).toBe("dom_snapshot");
-  });
-
-  test("uses injected plan status before fallback inference", () => {
-    const agent = new AgentLoop(
-      "test-key",
-      {
-        onStatusUpdate: vi.fn(),
-        onMessage: vi.fn(),
-        onStep: vi.fn(),
-      },
-      {
-        taskId: "task-1",
-        initialPlanState: {
-          currentIndex: 0,
-          subtasks: [
-            {
-              description: "Enter the secret code",
-              status: "running",
-              toolProfile: "enter_code",
-            },
-            {
-              description: "Submit the form",
-              status: "pending",
-              toolProfile: "submit_form",
-            },
-          ],
-        },
-      },
-    );
-
-    const logInfo = vi.spyOn((agent as any).log, "info");
-    (agent as any).originalQuery = "Do something else entirely";
-
-    const tools = [
-      { function: { name: ToolName.TYPE_TEXT } },
-      { function: { name: ToolName.CLICK_ELEMENT } },
-      { function: { name: ToolName.EXECUTE_JS } },
-      { function: { name: ToolName.DONE } },
-    ] as any;
-
-    const filtered = (agent as any).applyToolProfile(tools);
-    const names = filtered.map((t: any) => t.function.name);
-    const event = logInfo.mock.calls.find(
-      (call: any[]) => call[1] === "Tool profile applied",
-    );
-
-    expect(event).toBeDefined();
-    expect(event![2].source).toBe("plan_status");
-    expect(names).toContain(ToolName.TYPE_TEXT);
-    expect(names).not.toContain(ToolName.EXECUTE_JS);
-  });
-
-  test("infers edit-surface tool profile from the running step when planner omitted one", () => {
-    const agent = new AgentLoop(
-      "test-key",
-      {
-        onStatusUpdate: vi.fn(),
-        onMessage: vi.fn(),
-        onStep: vi.fn(),
-      },
-      {
-        taskId: "task-1",
-        initialPlanState: {
-          currentIndex: 0,
-          subtasks: [
-            {
-              description:
-                "Rename the document Q3 Report.pdf to Q3 Financial Report 2026.pdf",
-              status: "running",
-            },
-          ],
-        },
-      },
-    );
-
-    const logInfo = vi.spyOn((agent as any).log, "info");
-    (agent as any).planSteps = [
-      {
-        successCriteria: "The document list shows Q3 Financial Report 2026.pdf",
-      },
-    ];
-
-    const tools = [
-      { function: { name: ToolName.RIGHT_CLICK } },
-      { function: { name: ToolName.CLICK_ELEMENT } },
-      { function: { name: ToolName.TYPE_TEXT } },
-      { function: { name: ToolName.PRESS_KEY } },
-      { function: { name: ToolName.EXECUTE_JS } },
-      { function: { name: ToolName.CLICK_COORDINATES } },
-      { function: { name: ToolName.DONE } },
-    ] as any;
-
-    const filtered = (agent as any).applyToolProfile(tools);
-    const names = filtered.map((t: any) => t.function.name);
-    const event = logInfo.mock.calls.find(
-      (call: any[]) => call[1] === "Tool profile applied",
-    );
-
-    expect(event).toBeDefined();
-    expect(event![2].profile).toBe("edit_surface");
-    expect(event![2].source).toBe("step_inference");
-    expect(names).toContain(ToolName.RIGHT_CLICK);
-    expect(names).toContain(ToolName.TYPE_TEXT);
-    expect(names).toContain(ToolName.PRESS_KEY);
-    expect(names).not.toContain(ToolName.EXECUTE_JS);
-    expect(names).not.toContain(ToolName.CLICK_COORDINATES);
-  });
-
-  test("widens injected tool profile after step stagnation", () => {
-    const agent = new AgentLoop(
-      "test-key",
-      {
-        onStatusUpdate: vi.fn(),
-        onMessage: vi.fn(),
-        onStep: vi.fn(),
-      },
-      {
-        taskId: "task-1",
-        initialPlanState: {
-          currentIndex: 0,
-          subtasks: [
-            {
-              description: "Enter the secret code",
-              status: "running",
-              toolProfile: "enter_code",
-            },
-          ],
-        },
-      },
-    );
-
-    const logInfo = vi.spyOn((agent as any).log, "info");
-    (agent as any).turnsOnCurrentStep = (agent as any).limits.stepWarnTurns;
-
-    const tools = [
-      { function: { name: ToolName.TYPE_TEXT } },
-      { function: { name: ToolName.CLICK_ELEMENT } },
-      { function: { name: ToolName.EXECUTE_JS } },
-      { function: { name: ToolName.DONE } },
-    ] as any;
-
-    const filtered = (agent as any).applyToolProfile(tools);
-    const event = logInfo.mock.calls.find(
-      (call: any[]) =>
-        call[1] === "Tool profile widened due to step stagnation",
-    );
-
-    expect(filtered).toHaveLength(tools.length);
-    expect(event).toBeDefined();
-  });
-
-  test("upgrades careful messaging reply steps to submit-capable tools", () => {
-    const agent = new AgentLoop(
-      "test-key",
-      {
-        onStatusUpdate: vi.fn(),
-        onMessage: vi.fn(),
-        onStep: vi.fn(),
-      },
-      {
-        selectedSkillId: "thread-message-careful",
-        taskId: "task-1",
-        initialPlanState: {
-          currentIndex: 0,
-          subtasks: [
-            {
-              description:
-                "Reply in the project-updates channel with the release timing, changelog owner, and blocker",
-              status: "running",
-              toolProfile: "read_only",
-            },
-          ],
-        },
-      },
-    );
-
-    const tools = [
-      { function: { name: ToolName.READ_PAGE } },
-      { function: { name: ToolName.TYPE_TEXT } },
-      { function: { name: ToolName.CLICK_ELEMENT } },
-      { function: { name: ToolName.EXECUTE_JS } },
-      { function: { name: ToolName.DONE } },
-    ] as any;
-
-    const filtered = (agent as any).applyToolProfile(tools);
-    const names = filtered.map((t: any) => t.function.name);
-
-    expect(names).toContain(ToolName.TYPE_TEXT);
-    expect(names).toContain(ToolName.CLICK_ELEMENT);
-    expect(names).not.toContain(ToolName.EXECUTE_JS);
-  });
-
-  test("keeps careful messaging read steps read-only", () => {
-    const agent = new AgentLoop(
-      "test-key",
-      {
-        onStatusUpdate: vi.fn(),
-        onMessage: vi.fn(),
-        onStep: vi.fn(),
-      },
-      {
-        selectedSkillId: "thread-message-careful",
-        taskId: "task-1",
-        initialPlanState: {
-          currentIndex: 0,
-          subtasks: [
-            {
-              description:
-                "Read the project-updates thread and identify Sarah's questions",
-              status: "running",
-              toolProfile: "read_only",
-            },
-          ],
-        },
-      },
-    );
-
-    const tools = [
-      { function: { name: ToolName.READ_PAGE } },
-      { function: { name: ToolName.TYPE_TEXT } },
-      { function: { name: ToolName.CLICK_ELEMENT } },
-      { function: { name: ToolName.DONE } },
-    ] as any;
-
-    const filtered = (agent as any).applyToolProfile(tools);
-    const names = filtered.map((t: any) => t.function.name);
-
-    expect(names).toContain(ToolName.READ_PAGE);
-    expect(names).not.toContain(ToolName.TYPE_TEXT);
-    expect(names).not.toContain(ToolName.CLICK_ELEMENT);
-  });
-
-  test("keeps careful messaging read steps with message wording read-only", () => {
-    const agent = new AgentLoop(
-      "test-key",
-      {
-        onStatusUpdate: vi.fn(),
-        onMessage: vi.fn(),
-        onStep: vi.fn(),
-      },
-      {
-        selectedSkillId: "thread-message-careful",
-        taskId: "task-1",
-        initialPlanState: {
-          currentIndex: 0,
-          subtasks: [
-            {
-              description:
-                "Read the customer message thread and summarize the blocker",
-              status: "running",
-              toolProfile: "read_only",
-            },
-          ],
-        },
-      },
-    );
-
-    const tools = [
-      { function: { name: ToolName.READ_PAGE } },
-      { function: { name: ToolName.TYPE_TEXT } },
-      { function: { name: ToolName.CLICK_ELEMENT } },
-      { function: { name: ToolName.DONE } },
-    ] as any;
-
-    const filtered = (agent as any).applyToolProfile(tools);
-    const names = filtered.map((t: any) => t.function.name);
-
-    expect(names).toContain(ToolName.READ_PAGE);
-    expect(names).not.toContain(ToolName.TYPE_TEXT);
-    expect(names).not.toContain(ToolName.CLICK_ELEMENT);
-  });
-
-  test("keeps careful messaging read steps with unrelated draft wording read-only", () => {
-    const agent = new AgentLoop(
-      "test-key",
-      {
-        onStatusUpdate: vi.fn(),
-        onMessage: vi.fn(),
-        onStep: vi.fn(),
-      },
-      {
-        selectedSkillId: "thread-message-careful",
-        taskId: "task-1",
-        initialPlanState: {
-          currentIndex: 0,
-          subtasks: [
-            {
-              description:
-                "Read the project-updates channel to identify who should draft the changelog",
-              status: "running",
-              toolProfile: "read_only",
-            },
-          ],
-        },
-      },
-    );
-
-    const tools = [
-      { function: { name: ToolName.READ_PAGE } },
-      { function: { name: ToolName.TYPE_TEXT } },
-      { function: { name: ToolName.CLICK_ELEMENT } },
-      { function: { name: ToolName.DONE } },
-    ] as any;
-
-    const filtered = (agent as any).applyToolProfile(tools);
-    const names = filtered.map((t: any) => t.function.name);
-
-    expect(names).toContain(ToolName.READ_PAGE);
-    expect(names).not.toContain(ToolName.TYPE_TEXT);
-    expect(names).not.toContain(ToolName.CLICK_ELEMENT);
-  });
-
-  test("upgrades CRM mutation steps to record-update tools", () => {
-    const agent = new AgentLoop(
-      "test-key",
-      {
-        onStatusUpdate: vi.fn(),
-        onMessage: vi.fn(),
-        onStep: vi.fn(),
-      },
-      {
-        selectedSkillId: "crm-ticket-update",
-        taskId: "task-1",
-        initialPlanState: {
-          currentIndex: 0,
-          subtasks: [
-            {
-              description:
-                "Update the ticket status to escalated, assign the owner, and add an internal note",
-              status: "running",
-              toolProfile: "read_only",
-            },
-          ],
-        },
-      },
-    );
-
-    const tools = [
-      { function: { name: ToolName.READ_PAGE } },
-      { function: { name: ToolName.TYPE_TEXT } },
-      { function: { name: ToolName.CLICK_ELEMENT } },
-      { function: { name: ToolName.SELECT_OPTION } },
-      { function: { name: ToolName.SET_CHECKBOX } },
-      { function: { name: ToolName.EXECUTE_JS } },
-      { function: { name: ToolName.DONE } },
-    ] as any;
-
-    const filtered = (agent as any).applyToolProfile(tools);
-    const names = filtered.map((t: any) => t.function.name);
-
-    expect(names).toContain(ToolName.SELECT_OPTION);
-    expect(names).toContain(ToolName.SET_CHECKBOX);
-    expect(names).toContain(ToolName.TYPE_TEXT);
-    expect(names).toContain(ToolName.CLICK_ELEMENT);
-    expect(names).not.toContain(ToolName.EXECUTE_JS);
-  });
-
-  test("keeps CRM ticket review steps read-only", () => {
-    const agent = new AgentLoop(
-      "test-key",
-      {
-        onStatusUpdate: vi.fn(),
-        onMessage: vi.fn(),
-        onStep: vi.fn(),
-      },
-      {
-        selectedSkillId: "crm-ticket-update",
-        taskId: "task-1",
-        initialPlanState: {
-          currentIndex: 0,
-          subtasks: [
-            {
-              description:
-                "Read the ticket details including current status, priority, assignee, and customer impact",
-              status: "running",
-              toolProfile: "read_only",
-            },
-          ],
-        },
-      },
-    );
-
-    const tools = [
-      { function: { name: ToolName.READ_PAGE } },
-      { function: { name: ToolName.TYPE_TEXT } },
-      { function: { name: ToolName.CLICK_ELEMENT } },
-      { function: { name: ToolName.SELECT_OPTION } },
-      { function: { name: ToolName.SET_CHECKBOX } },
-      { function: { name: ToolName.DONE } },
-    ] as any;
-
-    const filtered = (agent as any).applyToolProfile(tools);
-    const names = filtered.map((t: any) => t.function.name);
-
-    expect(names).toContain(ToolName.READ_PAGE);
-    expect(names).not.toContain(ToolName.TYPE_TEXT);
-    expect(names).not.toContain(ToolName.CLICK_ELEMENT);
-    expect(names).not.toContain(ToolName.SELECT_OPTION);
-    expect(names).not.toContain(ToolName.SET_CHECKBOX);
   });
 
   test("applySkillToolRanking prefers skill tools and demotes discouraged ones", () => {
@@ -1538,258 +946,70 @@ describe("AgentLoop", () => {
     expect(completion).toBeNull();
   });
 
-  test("catalog order snapshot completion accepts visible request confirmation", () => {
-    const onStatus = vi.fn();
+  test.each([
+    'Order 10 "Premium Monitor" from the hardware catalog.',
+    'Prepare an order for 10 "Premium Monitor", but do not submit it.',
+  ])("leaves catalog submission to the model after configuration: %s", async (query) => {
+    const agent = new AgentLoop("test-key", {
+      onStatusUpdate: vi.fn(), onMessage: vi.fn(), onStep: vi.fn(),
+    }, { selectedSkillId: "catalog-order-workflow" });
+    (agent as any).originalQuery = query;
+    await expectWorkflowClickExecuted(agent, 0, "sequential", true);
+  });
+
+  test.each([
+    'Order 10 "Premium Monitor", then open the requested-item details and report delivery information.',
+    'Read the existing order for "Premium Monitor" and report its delivery information.',
+  ])("keeps the executor active at a catalog receipt with follow-up work: %s", (query) => {
     const onMessage = vi.fn();
-    const agent = new AgentLoop(
-      "test-key",
-      {
-        onStatusUpdate: onStatus,
-        onMessage,
-        onStep: vi.fn(),
-      },
-      {
-        selectedSkillId: "catalog-order-workflow",
-      },
-    );
-    (agent as any).originalQuery =
-      'Order 10 "Premium Monitor" from the hardware catalog.';
+    const agent = new AgentLoop("test-key", {
+      onStatusUpdate: vi.fn(), onMessage, onStep: vi.fn(),
+    }, { selectedSkillId: "catalog-order-workflow" });
+    (agent as any).originalQuery = query;
     (agent as any).context.setSnapshot({
       title: "Order Status: REQ0025875 | ServiceNow",
       url: "https://example.service-now.com/checkout",
-      visibleContent:
-        "Order Status REQ0025875 Premium Monitor Quantity 10 Total $11,000.00",
-      pageContent:
-        "Order Status REQ0025875 Premium Monitor Quantity 10 Total $11,000.00",
+      visibleContent: "Order Status REQ0025875 Premium Monitor Quantity 10",
+      pageContent: "Order Status REQ0025875 Premium Monitor Quantity 10",
       elements: [],
     });
-
-    const completion = (agent as any).maybeCompleteCatalogOrderFromSnapshot();
-
-    expect(completion?.outcome).toBe("completed");
-    expect(completion?.summary).toContain("REQ0025875");
-    expect(completion?.summary).toContain("Premium Monitor");
-    expect(completion?.summary).toContain("Quantity: 10");
-    expect(
-      (agent as any).completionEvidence
-        .toArray()
-        .some(
-          (event: any) =>
-            event.type === "confirmation_state" &&
-            event.detail?.source === "trusted_workflow" &&
-            event.detail?.recordId === "REQ0025875" &&
-            event.detail?.targetText === "Premium Monitor",
-        ),
-    ).toBe(true);
-    expect(onStatus).toHaveBeenCalledWith(AgentStatus.IDLE, "Done");
-    expect(onMessage).toHaveBeenCalledWith(
-      expect.stringContaining("REQ0025875"),
-      [],
-    );
+    const result = runPrepareTurnContextPhase(agent as any, { previousBudgetUrgencyLevel: "normal" } as any);
+    expect(result).toEqual({ kind: "continue" });
+    expect((agent as any).completedResult).toBeNull();
+    expect(onMessage).not.toHaveBeenCalled();
   });
 
-  test("catalog order snapshot completion accepts named catalog items", () => {
-    const agent = new AgentLoop(
-      "test-key",
-      {
-        onStatusUpdate: vi.fn(),
-        onMessage: vi.fn(),
-        onStep: vi.fn(),
-      },
-      {
-        selectedSkillId: "catalog-order-workflow",
-      },
-    );
-    (agent as any).originalQuery =
-      'Request quantity 2 of catalog item named Facilities Access Package with approval notes "front desk".';
+  test("does not finish the user task just because a catalog submission succeeded", async () => {
+    const agent = new AgentLoop("test-key", {
+      onStatusUpdate: vi.fn(), onMessage: vi.fn(), onStep: vi.fn(),
+    }, { selectedSkillId: "catalog-order-workflow" });
+    (agent as any).originalQuery = 'Order 10 "Premium Monitor", then report delivery information.';
     (agent as any).context.setSnapshot({
-      title: "Order Status: REQ0025876 | ServiceNow",
-      url: "https://example.service-now.com/checkout",
-      visibleContent:
-        "Request Number REQ0025876 Facilities Access Package Quantity 2",
-      pageContent:
-        "Request Number REQ0025876 Facilities Access Package Quantity 2",
-      elements: [],
+      title: "Order Status REQ0025875", url: "https://example.service-now.com/checkout",
+      visibleContent: "Order Status REQ0025875 Premium Monitor Quantity 10",
+      pageContent: "Order Status REQ0025875 Premium Monitor Quantity 10", elements: [],
     });
-
-    const completion = (agent as any).maybeCompleteCatalogOrderFromSnapshot();
-
-    expect(completion?.outcome).toBe("completed");
-    expect(completion?.summary).toContain("REQ0025876");
-    expect(completion?.summary).toContain("Facilities Access Package");
-    expect(completion?.summary).toContain("Quantity: 2");
+    await expectWorkflowClickExecuted(agent, 0, "sequential", true, true);
   });
 
-  test("catalog order snapshot completion accepts catalog SKU aliases after trusted configuration", async () => {
-    const agent = new AgentLoop(
-      "test-key",
-      {
-        onStatusUpdate: vi.fn(),
-        onMessage: vi.fn(),
-        onStep: vi.fn(),
-      },
-      {
-        selectedSkillId: "catalog-order-workflow",
-      },
-    );
-    (agent as any).originalQuery =
-      'Go to the hardware store and order 1 "Development Laptop (PC)" with configuration {\'Please specify an operating system\': \'Windows 8\', \'What size solid state drive do you want?\': \'250\'}';
-    vi.spyOn(agent as any, "executeToolCall").mockResolvedValue(
-      "Configured catalog item.\nClicked submit control: Add to Cart",
-    );
-    vi.spyOn(agent as any, "refreshSnapshotWithRetry").mockResolvedValue(0);
-
-    await (agent as any).maybeAutoSubmitConfiguredCatalogItem({
-      toolName: ToolName.CONFIGURE_CATALOG_ITEM,
-      toolArgs: { quantity: "1", submit: false },
-      toolResult:
-        "Configured catalog item.\n" +
-        "Configured:\n" +
-        "- Please specify an operating system=Windows 8\n" +
-        "- What size solid state drive do you want?=250 GB\n" +
-        "- Quantity=1",
-      tabId: 123,
-      mode: "sequential",
-    });
+  test.each(["Premium Monitor", "PM-27 display"])("accepts an explicit catalog DONE with current order confirmation: %s", async (receiptItem) => {
+    const agent = new AgentLoop("test-key", {
+      onStatusUpdate: vi.fn(), onMessage: vi.fn(), onStep: vi.fn(),
+    }, { selectedSkillId: "catalog-order-workflow" });
+    (agent as any).originalQuery = 'Order 10 "Premium Monitor" from the hardware catalog.';
+    (agent as any).hasReadPage = true;
+    (agent as any).hasExplicitPageRead = true;
     (agent as any).context.setSnapshot({
-      title: "Order Status: REQ0024215 | ServiceNow",
-      url: "https://example.service-now.com/checkout",
-      visibleContent:
-        "Order Status REQ0024215 Thank you, your request has been submitted Description Dell XPS 13 Quantity 1 Total $1,100.00",
-      pageContent:
-        "Order Status REQ0024215 Thank you, your request has been submitted Description Dell XPS 13 Quantity 1 Total $1,100.00",
-      elements: [],
+      title: "Order Status REQ0025875", url: "https://example.service-now.com/checkout",
+      visibleContent: `Order Status REQ0025875 ${receiptItem} Quantity 10. Your request has been submitted.`,
+      pageContent: `Order Status REQ0025875 ${receiptItem} Quantity 10. Your request has been submitted.`,
+      elements: [], viewport: { width: 1280, height: 720 },
+      scroll: { x: 0, y: 0, maxY: 0, viewportHeight: 720 },
     });
-
-    const completion = (agent as any).maybeCompleteCatalogOrderFromSnapshot();
-
-    expect(completion?.outcome).toBe("completed");
-    expect(completion?.summary).toContain("REQ0024215");
-    expect(completion?.summary).toContain("Development Laptop (PC)");
-    expect(completion?.summary).toContain(
-      "Requested configuration verified before submission.",
-    );
-  });
-
-  test("catalog order helper auto-submits after trusted configuration", async () => {
-    const agent = new AgentLoop(
-      "test-key",
-      {
-        onStatusUpdate: vi.fn(),
-        onMessage: vi.fn(),
-        onStep: vi.fn(),
-      },
-      {
-        selectedSkillId: "catalog-order-workflow",
-      },
-    );
-    (agent as any).originalQuery =
-      'Go to the hardware store and order 10 "Premium Monitor".';
-    const executeToolCall = vi
-      .spyOn(agent as any, "executeToolCall")
-      .mockResolvedValue(
-        "Configured catalog item.\nClicked submit control: Add to Cart",
-      );
-    vi.spyOn(agent as any, "refreshSnapshotWithRetry").mockResolvedValue(0);
-
-    await (agent as any).maybeAutoSubmitConfiguredCatalogItem({
-      toolName: ToolName.CONFIGURE_CATALOG_ITEM,
-      toolArgs: { quantity: "10", submit: false },
-      toolResult:
-        "Configured catalog item.\nConfigured:\n- Quantity=10\n- Adobe Acrobat=checked",
-      tabId: 123,
-      mode: "sequential",
-    });
-
-    expect(executeToolCall).toHaveBeenCalledTimes(1);
-    expect(
-      JSON.parse(executeToolCall.mock.calls[0][0].function.arguments),
-    ).toEqual({ quantity: "10", submit: true, continueToCheckout: true });
-  });
-
-  test("catalog order direct submit completes from refreshed order status", async () => {
-    const agent = new AgentLoop(
-      "test-key",
-      {
-        onStatusUpdate: vi.fn(),
-        onMessage: vi.fn(),
-        onStep: vi.fn(),
-      },
-      {
-        selectedSkillId: "catalog-order-workflow",
-      },
-    );
-    (agent as any).originalQuery =
-      'Go to the hardware store and order 1 "Development Laptop (PC)" with configuration {\'Please specify an operating system\': \'Windows 8\'}';
-    vi.spyOn(agent as any, "refreshSnapshotWithRetry").mockImplementation(
-      async () => {
-        (agent as any).context.setSnapshot({
-          title: "Order Status: REQ0024319 | ServiceNow",
-          url: "https://example.service-now.com/checkout",
-          visibleContent:
-            "Order Status REQ0024319 Thank you, your request has been submitted",
-          pageContent:
-            "Order Status REQ0024319 Thank you, your request has been submitted",
-          elements: [],
-        });
-        return 0;
-      },
-    );
-
-    const completion = await (
-      agent as any
-    ).maybeCompleteTrustedCatalogOrderSubmit({
-      toolName: ToolName.CONFIGURE_CATALOG_ITEM,
-      toolArgs: { quantity: "1", submit: true },
-      toolResult:
-        "Configured catalog item.\n" +
-        "Configured:\n" +
-        "- Catalog item=Development Laptop (PC)\n" +
-        "- Please specify an operating system=Windows 8\n" +
-        "- Quantity=1",
-      tabId: 123,
-      mode: "sequential",
-    });
-
-    expect(completion?.finalSummary).toContain("REQ0024319");
-    expect(completion?.finalSummary).toContain("Development Laptop (PC)");
-    expect(completion?.finalSummary).toContain(
-      "Requested configuration verified before submission.",
-    );
-  });
-
-  test("catalog order helper waits when explicit configuration fields are missing", async () => {
-    const agent = new AgentLoop(
-      "test-key",
-      {
-        onStatusUpdate: vi.fn(),
-        onMessage: vi.fn(),
-        onStep: vi.fn(),
-      },
-      {
-        selectedSkillId: "catalog-order-workflow",
-      },
-    );
-    (agent as any).originalQuery =
-      'Go to the hardware store and order 5 "Loaner Laptop" with configuration {\'How long do you need it for ?\': \'1 week\', \'When do you need it ?\': \'On time for the next meeting\'}';
-
-    expect(
-      (agent as any).shouldAutoSubmitConfiguredCatalogItem({
-        toolName: ToolName.CONFIGURE_CATALOG_ITEM,
-        toolArgs: { quantity: "5", submit: false },
-        toolResult:
-          'Configured catalog item.\nConfigured:\n- Quantity=5\n- When do you need it ?="On time for the next meeting"',
-      }),
-    ).toBe(false);
-
-    expect(
-      (agent as any).shouldAutoSubmitConfiguredCatalogItem({
-        toolName: ToolName.CONFIGURE_CATALOG_ITEM,
-        toolArgs: { quantity: "5", submit: false },
-        toolResult:
-          'Configured catalog item.\nConfigured:\n- Quantity=5\n- How long do you need it for ?=1 week\n- When do you need it ?="On time for the next meeting"',
-      }),
-    ).toBe(true);
+    await expectWorkflowClickExecuted(agent, 0, "sequential", true, true);
+    const accepted = await (agent as any).handleDoneToolCall("done-catalog", "Ordered 10 Premium Monitor. Request REQ0025875 has been submitted.", 123);
+    expect(accepted).toBe(true);
+    expect((agent as any).completedResult?.completionEnvelope?.source).toBe("model_done");
   });
 
   test("auto-submit gate applies only to task-level ServiceNow record workflows", () => {
@@ -3303,7 +2523,7 @@ describe("AgentLoop", () => {
     );
   });
 
-  test("done rejects incomplete list-detail review through kernel preflight", async () => {
+  test("done rejects list comparison without grounded answer evidence", async () => {
     const recordEvent = vi.fn();
     const agent = new AgentLoop(
       "test-key",
@@ -3323,7 +2543,6 @@ describe("AgentLoop", () => {
       approved: true,
       reason: "planner should not be reached",
     }));
-    (agent as any).listDetailReviewedTargets = new Set(["frontend engineer"]);
     (agent as any).context.setSnapshot({
       title: "Job Listings",
       url: "https://jobs.example.test/listings",
@@ -3378,11 +2597,8 @@ describe("AgentLoop", () => {
     expect((agent as any).doneRejections).toBe(1);
     expect((agent as any).planner.validateDone).not.toHaveBeenCalled();
     expect(recordEvent).toHaveBeenCalledWith(
-      "done_rejected_list_detail_incomplete",
-      expect.objectContaining({
-        reviewedDetailCount: 1,
-        visibleDetailActionCount: 3,
-      }),
+      "completion_decision",
+      expect.objectContaining({ contractKind: "read_answer", status: "needs_verification" }),
     );
 
     const messages = (agent as any).context.getMessages();
@@ -3390,9 +2606,28 @@ describe("AgentLoop", () => {
       role: "tool",
       tool_call_id: "done-call-list-detail",
       content: expect.stringContaining(
-        "Do NOT synthesize the recommendation from list-card snippets alone.",
+        "no grounded page-read evidence",
       ),
     });
+  });
+
+  test("done accepts grounded comparison without visiting unrelated detail links", async () => {
+    const agent = new AgentLoop("test-key", {
+      onStatusUpdate: vi.fn(), onMessage: vi.fn(), onStep: vi.fn(),
+    }, { selectedSkillId: "list-detail-review-loop" });
+    (agent as any).originalQuery = "Compare Alpha and Beta only; ignore the other listings.";
+    const facts = "Alpha costs twenty dollars per month and includes the standard support package. Beta costs thirty dollars per month and includes priority support. Alpha is cheaper; Beta offers faster support.";
+    (agent as any).context.setSnapshot({
+      title: "Listings", url: "https://example.test/listings", timestamp: Date.now(),
+      visibleContent: facts, pageContent: facts,
+      elements: ["Alpha", "Beta", "Gamma"].map((name, i) => ({
+        tag: i + 1, tagName: "button", role: "button", text: `View details for ${name}`,
+        attributes: {}, rect: { x: 0, y: i * 30, width: 100, height: 24 }, isVisible: true, isDisabled: false,
+      })), viewport: { width: 1280, height: 720 }, scroll: { x: 0, y: 0, maxY: 0, viewportHeight: 720 },
+    });
+    const accepted = await (agent as any).handleDoneToolCall("done-grounded-comparison", facts, 123);
+    expect(accepted).toBe(true);
+    expect((agent as any).completedResult).not.toBeNull();
   });
 
   test("done rejects interim workflow completion through kernel preflight", async () => {
@@ -4676,775 +3911,13 @@ Showing 6-10 of 50`,
     ).toBe(false);
   });
 
-  test("counts visible list-detail actions for broad review guards", () => {
-    const count = countVisibleListDetailActions({
-      url: "https://example.com/jobs",
-      title: "Jobs",
-      timestamp: Date.now(),
-      elements: [
-        {
-          tag: 35,
-          tagName: "button",
-          role: "button",
-          text: "View details for Senior Frontend Engineer at Nextera Tech",
-          attributes: {},
-          rect: { x: 0, y: 0, width: 1, height: 1 },
-          isVisible: true,
-          isDisabled: false,
-        },
-        {
-          tag: 36,
-          tagName: "button",
-          role: "button",
-          text: "View details for Full Stack Engineer at DataPulse",
-          attributes: {},
-          rect: { x: 0, y: 0, width: 1, height: 1 },
-          isVisible: true,
-          isDisabled: false,
-        },
-        {
-          tag: 45,
-          tagName: "button",
-          role: "button",
-          text: "Back to Listings",
-          attributes: {},
-          rect: { x: 0, y: 0, width: 1, height: 1 },
-          isVisible: true,
-          isDisabled: false,
-        },
-      ],
-    } as any);
 
-    expect(count).toBe(2);
-  });
 
-  test("finds the next unreviewed visible list-detail action", () => {
-    const next = getNextUnreviewedListDetailAction(
-      {
-        url: "https://example.com/jobs",
-        title: "Jobs",
-        timestamp: Date.now(),
-        elements: [
-          {
-            tag: 35,
-            tagName: "button",
-            role: "button",
-            text: "View details for Senior Frontend Engineer at Nextera Tech",
-            attributes: {},
-            rect: { x: 0, y: 0, width: 1, height: 1 },
-            isVisible: true,
-            isDisabled: false,
-          },
-          {
-            tag: 36,
-            tagName: "button",
-            role: "button",
-            text: "View details for Full Stack Engineer at DataPulse",
-            attributes: {},
-            rect: { x: 0, y: 0, width: 1, height: 1 },
-            isVisible: true,
-            isDisabled: false,
-          },
-        ],
-      } as any,
-      ["senior frontend engineer at nextera tech"],
-    );
 
-    expect(next).toEqual({
-      id: 36,
-      label: "full stack engineer at datapulse",
-    });
-  });
 
-  test("ignores cosmetic attributes when deriving list-detail labels", () => {
-    const next = getNextUnreviewedListDetailAction(
-      {
-        url: "https://example.com/jobs",
-        title: "Jobs",
-        timestamp: Date.now(),
-        elements: [
-          {
-            tag: 35,
-            tagName: "button",
-            role: "button",
-            text: "View details for Senior Frontend Engineer at Nextera Tech",
-            attributes: {
-              "aria-label":
-                "View details for Senior Frontend Engineer at Nextera Tech",
-              style:
-                "background-color: rgb(37, 99, 235); color: rgb(255, 255, 255);",
-            },
-            rect: { x: 0, y: 0, width: 1, height: 1 },
-            isVisible: true,
-            isDisabled: false,
-          },
-          {
-            tag: 36,
-            tagName: "button",
-            role: "button",
-            text: "View details for Full Stack Engineer at DataPulse",
-            attributes: {
-              style:
-                "background-color: rgb(37, 99, 235); color: rgb(255, 255, 255);",
-            },
-            rect: { x: 0, y: 0, width: 1, height: 1 },
-            isVisible: true,
-            isDisabled: false,
-          },
-        ],
-      } as any,
-      ["senior frontend engineer at nextera tech"],
-    );
 
-    expect(next).toEqual({
-      id: 36,
-      label: "full stack engineer at datapulse",
-    });
-  });
 
-  test("blocks off-workflow tools when visible list details remain", () => {
-    const block = getListDetailWorkflowBlock({
-      selectedSkillId: "list-detail-review-loop",
-      query:
-        "Review the job listings and tell me which ones are the best matches for my profile and why.",
-      toolName: ToolName.RIGHT_CLICK,
-      args: { id: 12 },
-      visibleDetailActionCount: 3,
-      reviewedTargets: ["senior frontend engineer at nextera tech"],
-      snapshot: {
-        url: "https://example.com/jobs",
-        title: "Jobs",
-        timestamp: Date.now(),
-        elements: [
-          {
-            tag: 35,
-            tagName: "button",
-            role: "button",
-            text: "View details for Senior Frontend Engineer at Nextera Tech",
-            attributes: {},
-            rect: { x: 0, y: 0, width: 1, height: 1 },
-            isVisible: true,
-            isDisabled: false,
-          },
-          {
-            tag: 36,
-            tagName: "button",
-            role: "button",
-            text: "View details for Full Stack Engineer at DataPulse",
-            attributes: {},
-            rect: { x: 0, y: 0, width: 1, height: 1 },
-            isVisible: true,
-            isDisabled: false,
-          },
-          {
-            tag: 37,
-            tagName: "button",
-            role: "button",
-            text: "View details for QA Engineer at ClearWorks",
-            attributes: {},
-            rect: { x: 0, y: 0, width: 1, height: 1 },
-            isVisible: true,
-            isDisabled: false,
-          },
-        ],
-      } as any,
-    });
 
-    expect(block).toContain("off workflow");
-    expect(block).toContain('[36] "full stack engineer at datapulse"');
-  });
-
-  test("allows clicking an unreviewed list-detail action", () => {
-    const block = getListDetailWorkflowBlock({
-      selectedSkillId: "list-detail-review-loop",
-      query:
-        "Review the job listings and tell me which ones are the best matches for my profile and why.",
-      toolName: ToolName.CLICK_ELEMENT,
-      args: { id: 36 },
-      visibleDetailActionCount: 3,
-      reviewedTargets: ["senior frontend engineer at nextera tech"],
-      snapshot: {
-        url: "https://example.com/jobs",
-        title: "Jobs",
-        timestamp: Date.now(),
-        elements: [
-          {
-            tag: 35,
-            tagName: "button",
-            role: "button",
-            text: "View details for Senior Frontend Engineer at Nextera Tech",
-            attributes: {},
-            rect: { x: 0, y: 0, width: 1, height: 1 },
-            isVisible: true,
-            isDisabled: false,
-          },
-          {
-            tag: 36,
-            tagName: "button",
-            role: "button",
-            text: "View details for Full Stack Engineer at DataPulse",
-            attributes: {},
-            rect: { x: 0, y: 0, width: 1, height: 1 },
-            isVisible: true,
-            isDisabled: false,
-          },
-        ],
-      } as any,
-    });
-
-    expect(block).toBeNull();
-  });
-
-  test("blocks clicking an already reviewed list-detail action", () => {
-    const block = getListDetailWorkflowBlock({
-      selectedSkillId: "list-detail-review-loop",
-      query:
-        "Review the job listings and tell me which ones are the best matches for my profile and why.",
-      toolName: ToolName.CLICK_ELEMENT,
-      args: { id: 35 },
-      visibleDetailActionCount: 3,
-      reviewedTargets: ["senior frontend engineer at nextera tech"],
-      snapshot: {
-        url: "https://example.com/jobs",
-        title: "Jobs",
-        timestamp: Date.now(),
-        elements: [
-          {
-            tag: 35,
-            tagName: "button",
-            role: "button",
-            text: "View details for Senior Frontend Engineer at Nextera Tech",
-            attributes: {},
-            rect: { x: 0, y: 0, width: 1, height: 1 },
-            isVisible: true,
-            isDisabled: false,
-          },
-          {
-            tag: 36,
-            tagName: "button",
-            role: "button",
-            text: "View details for Full Stack Engineer at DataPulse",
-            attributes: {},
-            rect: { x: 0, y: 0, width: 1, height: 1 },
-            isVisible: true,
-            isDisabled: false,
-          },
-          {
-            tag: 37,
-            tagName: "button",
-            role: "button",
-            text: "View details for QA Engineer at ClearWorks",
-            attributes: {},
-            rect: { x: 0, y: 0, width: 1, height: 1 },
-            isVisible: true,
-            isDisabled: false,
-          },
-        ],
-      } as any,
-    });
-
-    expect(block).toContain("already been reviewed");
-    expect(block).toContain("[36]");
-  });
-
-  test("tracks list-detail opened and reviewed state separately", () => {
-    const agent = new AgentLoop(
-      "test-key",
-      {
-        onStatusUpdate: vi.fn(),
-        onMessage: vi.fn(),
-        onStep: vi.fn(),
-      },
-      {
-        selectedSkillId: "list-detail-review-loop",
-      },
-    );
-    const recordEvent = vi.fn();
-    (agent as any).traceRecorder = { recordEvent };
-    (agent as any).turnCount = 4;
-
-    const listSnapshot = {
-      url: "https://example.com/jobs",
-      title: "Jobs",
-      timestamp: Date.now(),
-      elements: [
-        {
-          tag: 35,
-          tagName: "button",
-          role: "button",
-          text: "View details for Senior Frontend Engineer at Nextera Tech",
-          attributes: {},
-          rect: { x: 0, y: 0, width: 1, height: 1 },
-          isVisible: true,
-          isDisabled: false,
-        },
-        {
-          tag: 36,
-          tagName: "button",
-          role: "button",
-          text: "View details for Full Stack Engineer at DataPulse",
-          attributes: {},
-          rect: { x: 0, y: 0, width: 1, height: 1 },
-          isVisible: true,
-          isDisabled: false,
-        },
-        {
-          tag: 37,
-          tagName: "button",
-          role: "button",
-          text: "View details for QA Engineer at ClearWorks",
-          attributes: {},
-          rect: { x: 0, y: 0, width: 1, height: 1 },
-          isVisible: true,
-          isDisabled: false,
-        },
-      ],
-    } as any;
-    const detailSnapshot = {
-      ...listSnapshot,
-      url: "https://example.com/jobs/senior-frontend",
-      title: "Senior Frontend Engineer",
-      elements: [],
-    };
-
-    (agent as any).trackListDetailToolSuccess(
-      ToolName.CLICK_ELEMENT,
-      { id: 35 },
-      listSnapshot,
-    );
-
-    expect((agent as any).listDetailOpenedTargets.size).toBe(1);
-    expect((agent as any).listDetailReviewedTargets.size).toBe(0);
-
-    (agent as any).trackListDetailToolSuccess(
-      ToolName.READ_PAGE,
-      {},
-      detailSnapshot,
-    );
-
-    expect((agent as any).listDetailOpenedTargets.size).toBe(1);
-    expect((agent as any).listDetailReviewedTargets.size).toBe(1);
-    expect(recordEvent).toHaveBeenCalledWith(
-      "list_detail_item_reviewed",
-      expect.objectContaining({
-        source: "read",
-        openedCount: 1,
-        reviewedCount: 1,
-      }),
-    );
-  });
-
-  test("does not count a list-page read as reviewing an opened detail", () => {
-    const agent = new AgentLoop(
-      "test-key",
-      {
-        onStatusUpdate: vi.fn(),
-        onMessage: vi.fn(),
-        onStep: vi.fn(),
-      },
-      {
-        selectedSkillId: "list-detail-review-loop",
-      },
-    );
-
-    const listSnapshot = {
-      url: "https://example.com/jobs",
-      title: "Jobs",
-      timestamp: Date.now(),
-      elements: [
-        {
-          tag: 35,
-          tagName: "button",
-          role: "button",
-          text: "View details for Senior Frontend Engineer at Nextera Tech",
-          attributes: {},
-          rect: { x: 0, y: 0, width: 1, height: 1 },
-          isVisible: true,
-          isDisabled: false,
-        },
-        {
-          tag: 36,
-          tagName: "button",
-          role: "button",
-          text: "View details for Full Stack Engineer at DataPulse",
-          attributes: {},
-          rect: { x: 0, y: 0, width: 1, height: 1 },
-          isVisible: true,
-          isDisabled: false,
-        },
-        {
-          tag: 37,
-          tagName: "button",
-          role: "button",
-          text: "View details for QA Engineer at ClearWorks",
-          attributes: {},
-          rect: { x: 0, y: 0, width: 1, height: 1 },
-          isVisible: true,
-          isDisabled: false,
-        },
-      ],
-    } as any;
-
-    (agent as any).trackListDetailToolSuccess(
-      ToolName.CLICK_ELEMENT,
-      { id: 35 },
-      listSnapshot,
-    );
-    (agent as any).trackListDetailToolSuccess(
-      ToolName.READ_PAGE,
-      {},
-      listSnapshot,
-    );
-
-    expect((agent as any).listDetailOpenedTargets.size).toBe(1);
-    expect((agent as any).listDetailReviewedTargets.size).toBe(0);
-  });
-
-  test("redirects off-workflow list-detail tool calls to the next review action", () => {
-    const agent = new AgentLoop(
-      "test-key",
-      {
-        onStatusUpdate: vi.fn(),
-        onMessage: vi.fn(),
-        onStep: vi.fn(),
-      },
-      {
-        selectedSkillId: "list-detail-review-loop",
-      },
-    );
-    const recordEvent = vi.fn();
-    (agent as any).originalQuery =
-      "Review the job listings and tell me which ones are the best matches for my profile and why.";
-    (agent as any).traceRecorder = { recordEvent };
-    (agent as any).listDetailVisibleActionCount = 3;
-    (agent as any).listDetailReviewedTargets = new Set([
-      "senior frontend engineer at nextera tech",
-    ]);
-    (agent as any).context.setSnapshot({
-      url: "https://example.com/jobs",
-      title: "Jobs",
-      timestamp: Date.now(),
-      elements: [
-        {
-          tag: 35,
-          tagName: "button",
-          role: "button",
-          text: "View details for Senior Frontend Engineer at Nextera Tech",
-          attributes: {},
-          rect: { x: 0, y: 0, width: 1, height: 1 },
-          isVisible: true,
-          isDisabled: false,
-        },
-        {
-          tag: 36,
-          tagName: "button",
-          role: "button",
-          text: "View details for Full Stack Engineer at DataPulse",
-          attributes: {},
-          rect: { x: 0, y: 0, width: 1, height: 1 },
-          isVisible: true,
-          isDisabled: false,
-        },
-        {
-          tag: 37,
-          tagName: "button",
-          role: "button",
-          text: "View details for QA Engineer at ClearWorks",
-          attributes: {},
-          rect: { x: 0, y: 0, width: 1, height: 1 },
-          isVisible: true,
-          isDisabled: false,
-        },
-      ],
-    } as any);
-    const toolCall = {
-      id: "call-1",
-      type: "function",
-      function: {
-        name: ToolName.READ_PAGE,
-        arguments: "{}",
-      },
-    } as any;
-
-    const redirected = (agent as any).rewriteListDetailWorkflowToolCall(
-      toolCall,
-      "sequential",
-    );
-
-    expect(redirected).toBe(true);
-    expect(toolCall.function.name).toBe(ToolName.CLICK_ELEMENT);
-    expect(JSON.parse(toolCall.function.arguments)).toEqual({ id: 36 });
-    expect(recordEvent).toHaveBeenCalledWith(
-      "list_detail_workflow_tool_redirected",
-      expect.objectContaining({
-        fromTool: ToolName.READ_PAGE,
-        toTool: ToolName.CLICK_ELEMENT,
-        targetId: 36,
-      }),
-    );
-  });
-
-  test("redirects off-workflow detail-page actions to reading the open detail", () => {
-    const agent = new AgentLoop(
-      "test-key",
-      {
-        onStatusUpdate: vi.fn(),
-        onMessage: vi.fn(),
-        onStep: vi.fn(),
-      },
-      {
-        selectedSkillId: "list-detail-review-loop",
-      },
-    );
-    const recordEvent = vi.fn();
-    (agent as any).originalQuery =
-      "Review the job listings and tell me which ones are the best matches for my profile and why.";
-    (agent as any).traceRecorder = { recordEvent };
-    (agent as any).listDetailVisibleActionCount = 10;
-    (agent as any).listDetailCurrentTarget = "full stack engineer at datapulse";
-    (agent as any).listDetailOpenedTargets = new Set([
-      "full stack engineer at datapulse",
-    ]);
-    (agent as any).context.setSnapshot({
-      url: "https://example.com/jobs",
-      title: "Full Stack Engineer",
-      timestamp: Date.now(),
-      elements: [
-        {
-          tag: 45,
-          tagName: "button",
-          role: "button",
-          text: "Back to Listings",
-          attributes: {},
-          rect: { x: 0, y: 0, width: 1, height: 1 },
-          isVisible: true,
-          isDisabled: false,
-        },
-      ],
-    } as any);
-    const toolCall = {
-      id: "call-1",
-      type: "function",
-      function: {
-        name: ToolName.CLICK_ELEMENT,
-        arguments: JSON.stringify({ id: 37 }),
-      },
-    } as any;
-
-    const redirected = (agent as any).rewriteListDetailWorkflowToolCall(
-      toolCall,
-      "sequential",
-    );
-
-    expect(redirected).toBe(true);
-    expect(toolCall.function.name).toBe(ToolName.READ_PAGE);
-    expect(toolCall.function.arguments).toBe("{}");
-    expect(recordEvent).toHaveBeenCalledWith(
-      "list_detail_workflow_tool_redirected",
-      expect.objectContaining({
-        fromTool: ToolName.CLICK_ELEMENT,
-        toTool: ToolName.READ_PAGE,
-        reason: "current_detail_needs_read",
-      }),
-    );
-  });
-
-  test("allows reading an unread detail page instead of returning to the list", () => {
-    const agent = new AgentLoop(
-      "test-key",
-      {
-        onStatusUpdate: vi.fn(),
-        onMessage: vi.fn(),
-        onStep: vi.fn(),
-      },
-      {
-        selectedSkillId: "list-detail-review-loop",
-      },
-    );
-    (agent as any).originalQuery =
-      "Review the job listings and tell me which ones are the best matches for my profile and why.";
-    (agent as any).listDetailVisibleActionCount = 10;
-    (agent as any).listDetailCurrentTarget =
-      "frontend developer at startupgrid";
-    (agent as any).listDetailOpenedTargets = new Set([
-      "frontend developer at startupgrid",
-    ]);
-    (agent as any).context.setSnapshot({
-      url: "https://example.com/jobs",
-      title: "Frontend Developer",
-      timestamp: Date.now(),
-      elements: [
-        {
-          tag: 45,
-          tagName: "button",
-          role: "button",
-          text: "Back to Listings",
-          attributes: {},
-          rect: { x: 0, y: 0, width: 1, height: 1 },
-          isVisible: true,
-          isDisabled: false,
-        },
-      ],
-    } as any);
-    const toolCall = {
-      id: "call-1",
-      type: "function",
-      function: {
-        name: ToolName.READ_PAGE,
-        arguments: "{}",
-      },
-    } as any;
-
-    const redirected = (agent as any).rewriteListDetailWorkflowToolCall(
-      toolCall,
-      "sequential",
-    );
-
-    expect(redirected).toBe(false);
-    expect(toolCall.function.name).toBe(ToolName.READ_PAGE);
-  });
-
-  test("redirects repeated reads on a reviewed detail page back to the listings", () => {
-    const agent = new AgentLoop(
-      "test-key",
-      {
-        onStatusUpdate: vi.fn(),
-        onMessage: vi.fn(),
-        onStep: vi.fn(),
-      },
-      {
-        selectedSkillId: "list-detail-review-loop",
-      },
-    );
-    const recordEvent = vi.fn();
-    (agent as any).originalQuery =
-      "Review the job listings and tell me which ones are the best matches for my profile and why.";
-    (agent as any).traceRecorder = { recordEvent };
-    (agent as any).listDetailVisibleActionCount = 10;
-    (agent as any).listDetailCurrentTarget =
-      "frontend developer at startupgrid";
-    (agent as any).listDetailReviewedTargets = new Set([
-      "frontend developer at startupgrid",
-    ]);
-    (agent as any).context.setSnapshot({
-      url: "https://example.com/jobs",
-      title: "Frontend Developer",
-      timestamp: Date.now(),
-      elements: [
-        {
-          tag: 45,
-          tagName: "button",
-          role: "button",
-          text: "Back to Listings",
-          attributes: {},
-          rect: { x: 0, y: 0, width: 1, height: 1 },
-          isVisible: true,
-          isDisabled: false,
-        },
-      ],
-    } as any);
-    const toolCall = {
-      id: "call-1",
-      type: "function",
-      function: {
-        name: ToolName.READ_PAGE,
-        arguments: "{}",
-      },
-    } as any;
-
-    const redirected = (agent as any).rewriteListDetailWorkflowToolCall(
-      toolCall,
-      "sequential",
-    );
-
-    expect(redirected).toBe(true);
-    expect(toolCall.function.name).toBe(ToolName.CLICK_ELEMENT);
-    expect(JSON.parse(toolCall.function.arguments)).toEqual({ id: 45 });
-    expect(recordEvent).toHaveBeenCalledWith(
-      "list_detail_workflow_tool_redirected",
-      expect.objectContaining({
-        fromTool: ToolName.READ_PAGE,
-        toTool: ToolName.CLICK_ELEMENT,
-        reason: "return_to_list_required",
-      }),
-    );
-  });
-
-  test("redirects detail-page drift back to the listings page after reading", () => {
-    const agent = new AgentLoop(
-      "test-key",
-      {
-        onStatusUpdate: vi.fn(),
-        onMessage: vi.fn(),
-        onStep: vi.fn(),
-      },
-      {
-        selectedSkillId: "list-detail-review-loop",
-      },
-    );
-    const recordEvent = vi.fn();
-    (agent as any).originalQuery =
-      "Review the job listings and tell me which ones are the best matches for my profile and why.";
-    (agent as any).traceRecorder = { recordEvent };
-    (agent as any).listDetailVisibleActionCount = 10;
-    (agent as any).listDetailCurrentTarget = "full stack engineer at datapulse";
-    (agent as any).listDetailReviewedTargets = new Set([
-      "full stack engineer at datapulse",
-    ]);
-    (agent as any).context.setSnapshot({
-      url: "https://example.com/jobs",
-      title: "Full Stack Engineer",
-      timestamp: Date.now(),
-      elements: [
-        {
-          tag: 12,
-          tagName: "a",
-          role: "link",
-          text: "GoBack",
-          attributes: { href: "/go-back-chain" },
-          rect: { x: 0, y: 0, width: 1, height: 1 },
-          isVisible: true,
-          isDisabled: false,
-        },
-        {
-          tag: 45,
-          tagName: "button",
-          role: "button",
-          text: "Back to Listings",
-          attributes: {},
-          rect: { x: 0, y: 0, width: 1, height: 1 },
-          isVisible: true,
-          isDisabled: false,
-        },
-      ],
-    } as any);
-    const toolCall = {
-      id: "call-1",
-      type: "function",
-      function: {
-        name: ToolName.CLICK_ELEMENT,
-        arguments: JSON.stringify({ id: 12 }),
-      },
-    } as any;
-
-    const redirected = (agent as any).rewriteListDetailWorkflowToolCall(
-      toolCall,
-      "sequential",
-    );
-
-    expect(redirected).toBe(true);
-    expect(toolCall.function.name).toBe(ToolName.CLICK_ELEMENT);
-    expect(JSON.parse(toolCall.function.arguments)).toEqual({ id: 45 });
-    expect(recordEvent).toHaveBeenCalledWith(
-      "list_detail_workflow_tool_redirected",
-      expect.objectContaining({
-        fromTool: ToolName.CLICK_ELEMENT,
-        toTool: ToolName.CLICK_ELEMENT,
-        targetId: 45,
-        reason: "return_to_list_required",
-      }),
-    );
-  });
 
   test("skips replanning for skill-owned broad list-detail reviews", async () => {
     const agent = new AgentLoop(
@@ -5541,35 +4014,7 @@ Showing 6-10 of 50`,
     );
   });
 
-  test("rejects done for incomplete broad list-detail recommendation reviews", () => {
-    expect(
-      requiresBroadListDetailReview(
-        "Review the job listings and tell me which ones are the best matches for my profile and why.",
-      ),
-    ).toBe(true);
 
-    const rejection = getListDetailDoneRejection({
-      selectedSkillId: "list-detail-review-loop",
-      query:
-        "Review the job listings and tell me which ones are the best matches for my profile and why.",
-      reviewedDetailCount: 2,
-      visibleDetailActionCount: 10,
-    });
-
-    expect(rejection).toContain("reviewed 2/10 visible detail pages");
-  });
-
-  test("allows done once the visible list-detail candidate set is reviewed", () => {
-    const rejection = getListDetailDoneRejection({
-      selectedSkillId: "list-detail-review-loop",
-      query:
-        "Review the job listings and tell me which ones are the best matches for my profile and why.",
-      reviewedDetailCount: 10,
-      visibleDetailActionCount: 10,
-    });
-
-    expect(rejection).toBeNull();
-  });
 
   test("recordSkillToolSelection traces the chosen tool preference for the active skill", () => {
     const agent = new AgentLoop(
@@ -6362,7 +4807,7 @@ Showing 6-10 of 50`,
     expect(result).toBe(true);
   });
 
-  test("allows tab management tools for skill-owned procurement loops", () => {
+  test("retains tab closing for skill-owned procurement loops", () => {
     const agent = new AgentLoop(
       "test-key",
       {
@@ -6377,10 +4822,10 @@ Showing 6-10 of 50`,
     (agent as any).originalQuery =
       "Buy the first two items from the procurement list and mark them complete.";
 
-    expect((agent as any).shouldBlockTabManagementTools()).toBe(false);
+    expect((agent as any).shouldBlockTabClosing()).toBe(false);
   });
 
-  test("re-opens the tab-management gate when the plan later requires tabs (no session latch)", () => {
+  test("re-opens the close-tab gate when the plan later requires tabs (no session latch)", () => {
     const agent = new AgentLoop(
       "test-key",
       {
@@ -6392,12 +4837,12 @@ Showing 6-10 of 50`,
     );
     // A generic query with no explicit tab phrasing and no skill: gate is closed.
     (agent as any).originalQuery = "Look at this page and tell me what it says.";
-    expect((agent as any).shouldBlockTabManagementTools()).toBe(true);
+    expect((agent as any).shouldBlockTabClosing()).toBe(true);
 
     // Once the planner declares multi-tab intent mid-run, the gate must re-open.
     // Blocking an earlier call must not have permanently disabled the tab tools.
     (agent as any).planRequiresTabManagement = true;
-    expect((agent as any).shouldBlockTabManagementTools()).toBe(false);
+    expect((agent as any).shouldBlockTabClosing()).toBe(false);
     expect((agent as any).disabledTools.size).toBe(0);
   });
 
@@ -6769,7 +5214,7 @@ Showing 6-10 of 50`,
     expect(result).toBe(false);
   });
 
-  test("redirects procurement return to the existing checklist tab", async () => {
+  test.each(["parallel", "sequential"])("executes checklist return link even with an existing checklist tab: %s", async (mode) => {
     const agent = new AgentLoop(
       "test-key",
       {
@@ -6820,6 +5265,7 @@ Showing 6-10 of 50`,
           role: "link",
           text: "Procurement",
           attributes: { href: "/procurement" },
+          rect: { x: 10, y: 10, width: 120, height: 24 },
           isVisible: true,
           isDisabled: false,
         },
@@ -6834,20 +5280,13 @@ Showing 6-10 of 50`,
       () => "http://127.0.0.1:65055/procurement?store=techdirect",
     );
 
-    const redirect = await (agent as any).getWorkflowTabToolRedirect({
-      toolName: ToolName.CLICK_ELEMENT,
-      args: { id: 17 },
-      currentTabId: 123,
-    });
-
-    expect(redirect).toContain('switch_tab({"tabId": 789})');
-    expect(redirect).toContain("checklist");
+    await expectWorkflowClickExecuted(agent, 17, mode);
 
     (chrome.tabs as any).get = originalGet;
     workspaceManager.getWorkspaceById = originalGetWorkspaceById;
   });
 
-  test("redirects procurement store reopen to the existing store tab", async () => {
+  test.each(["parallel", "sequential"])("executes store link even with an existing store tab: %s", async (mode) => {
     const agent = new AgentLoop(
       "test-key",
       {
@@ -6898,6 +5337,7 @@ Showing 6-10 of 50`,
           role: "link",
           text: "Open TechDirect",
           attributes: { href: "/procurement?store=techdirect" },
+          rect: { x: 10, y: 10, width: 120, height: 24 },
           isVisible: true,
           isDisabled: false,
         },
@@ -6912,20 +5352,13 @@ Showing 6-10 of 50`,
       () => "http://127.0.0.1:65055/procurement",
     );
 
-    const redirect = await (agent as any).getWorkflowTabToolRedirect({
-      toolName: ToolName.CLICK_ELEMENT,
-      args: { id: 38 },
-      currentTabId: 123,
-    });
-
-    expect(redirect).toContain('switch_tab({"tabId": 789})');
-    expect(redirect).toContain("already open");
+    await expectWorkflowClickExecuted(agent, 38, mode);
 
     (chrome.tabs as any).get = originalGet;
     workspaceManager.getWorkspaceById = originalGetWorkspaceById;
   });
 
-  test("redirects cross-tab compare to an already open matching tab", async () => {
+  test.each(["parallel", "sequential"])("executes comparison link even with a matching open tab: %s", async (mode) => {
     const agent = new AgentLoop(
       "test-key",
       {
@@ -6976,6 +5409,7 @@ Showing 6-10 of 50`,
           role: "link",
           text: "Q1 report",
           attributes: { href: "/reports/q1" },
+          rect: { x: 10, y: 10, width: 120, height: 24 },
           isVisible: true,
           isDisabled: false,
         },
@@ -6990,14 +5424,7 @@ Showing 6-10 of 50`,
       () => "http://127.0.0.1:65055/compare",
     );
 
-    const redirect = await (agent as any).getWorkflowTabToolRedirect({
-      toolName: ToolName.CLICK_ELEMENT,
-      args: { id: 44 },
-      currentTabId: 123,
-    });
-
-    expect(redirect).toContain('switch_tab({"tabId": 789})');
-    expect(redirect).toContain("comparison page is already open");
+    await expectWorkflowClickExecuted(agent, 44, mode);
 
     (chrome.tabs as any).get = originalGet;
     workspaceManager.getWorkspaceById = originalGetWorkspaceById;
@@ -7742,85 +6169,4 @@ describe("Workspace-scoped tab operations", () => {
     (chrome.tabs as any).query = originalQuery;
   });
 
-  test("applyToolProfile returns all tools when no snapshot available", () => {
-    const agent = new AgentLoop("test-key", {
-      onStatusUpdate: vi.fn(),
-      onMessage: vi.fn(),
-      onStep: vi.fn(),
-    });
-
-    (agent as any).originalQuery = "Do something";
-    (agent as any).context.getPlanStatusRaw = vi.fn(() => null);
-    (agent as any).context.getSnapshot = vi.fn(() => null);
-
-    const tools = [
-      { function: { name: ToolName.TYPE_TEXT } },
-      { function: { name: ToolName.DRAG_AND_DROP } },
-      { function: { name: ToolName.EXECUTE_JS } },
-      { function: { name: ToolName.DONE } },
-    ] as any;
-
-    const filtered = (agent as any).applyToolProfile(tools);
-    expect(filtered).toHaveLength(tools.length); // all tools pass through
-  });
-});
-
-describe("buildDomAwareProfile", () => {
-  test("empty elements returns base set without extras", () => {
-    const profile = buildDomAwareProfile([]);
-    expect(profile.has(ToolName.CLICK_ELEMENT)).toBe(true);
-    expect(profile.has(ToolName.TYPE_TEXT)).toBe(true);
-    expect(profile.has(ToolName.DONE)).toBe(true);
-    expect(profile.has(ToolName.SEARCH_KNOWLEDGE_BASE)).toBe(true);
-    expect(profile.has(ToolName.NAVIGATE)).toBe(true); // nav always in base
-    expect(profile.has(ToolName.GO_BACK)).toBe(true);
-    // Extras not included without matching elements
-    expect(profile.has(ToolName.DRAG_AND_DROP)).toBe(false);
-    expect(profile.has(ToolName.UPLOAD_FILE)).toBe(false);
-  });
-
-  test("draggable elements add drag_and_drop", () => {
-    const profile = buildDomAwareProfile([
-      { tagName: "div", attributes: { draggable: "true" } },
-    ]);
-    expect(profile.has(ToolName.DRAG_AND_DROP)).toBe(true);
-  });
-
-  test("file input adds upload_file", () => {
-    const profile = buildDomAwareProfile([
-      { tagName: "input", attributes: { type: "file" } },
-    ]);
-    expect(profile.has(ToolName.UPLOAD_FILE)).toBe(true);
-  });
-
-  test("canvas adds click_coordinates", () => {
-    const profile = buildDomAwareProfile([
-      { tagName: "canvas", attributes: {} },
-    ]);
-    expect(profile.has(ToolName.CLICK_COORDINATES)).toBe(true);
-  });
-
-  test("navigation tools always in base set regardless of elements", () => {
-    // Nav tools are always available — agent may need go_back from any page
-    const profile = buildDomAwareProfile([]);
-    expect(profile.has(ToolName.NAVIGATE)).toBe(true);
-    expect(profile.has(ToolName.GO_BACK)).toBe(true);
-    expect(profile.has(ToolName.CREATE_TAB)).toBe(true);
-    expect(profile.has(ToolName.SWITCH_TAB)).toBe(true);
-    expect(profile.has(ToolName.CLOSE_TAB)).toBe(true);
-    expect(profile.has(ToolName.LIST_TABS)).toBe(true);
-  });
-
-  test("mixed elements include all relevant extras", () => {
-    const profile = buildDomAwareProfile([
-      { tagName: "div", attributes: { draggable: "true" } },
-      { tagName: "input", attributes: { type: "file" } },
-      { tagName: "a", attributes: { href: "/page" } },
-      { tagName: "canvas", attributes: {} },
-    ]);
-    expect(profile.has(ToolName.DRAG_AND_DROP)).toBe(true);
-    expect(profile.has(ToolName.UPLOAD_FILE)).toBe(true);
-    expect(profile.has(ToolName.NAVIGATE)).toBe(true);
-    expect(profile.has(ToolName.CLICK_COORDINATES)).toBe(true);
-  });
 });

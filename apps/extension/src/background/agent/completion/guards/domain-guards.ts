@@ -14,7 +14,6 @@
 
 import {
   evaluateCompletionEarlyMultiStepPreflight,
-  evaluateCompletionListDetailReviewPreflight,
   evaluateCompletionMoneyTableAggregatePreflight,
   evaluateCompletionPendingAutocompletePreflight,
 } from "../preflight";
@@ -88,37 +87,6 @@ export function assessMoneyTableGuard(
       summary: ctx.summary,
       primaryReason: preflight.reason,
       fallbackInstruction: "Use the tracked aggregate candidate in the final answer.",
-    }),
-  };
-}
-
-export function assessListDetailGuard(
-  ctx: CompletionGuardContext,
-): GuardOutcome {
-  const preflight = evaluateCompletionListDetailReviewPreflight({
-    selectedSkillId: ctx.selectedSkillId,
-    userRequest: ctx.userRequest,
-    reviewedDetailCount: ctx.listDetailReviewedCount,
-    visibleDetailActionCount: ctx.listDetailVisibleActionCount,
-  });
-  if (preflight.status === "valid") return { kind: "pass" };
-
-  return {
-    kind: "reject",
-    guardId: "list_detail",
-    reason: preflight.reason ?? "List-detail review remains incomplete.",
-    effects: countingRejectEffects({
-      traceEvent: "done_rejected_list_detail_incomplete",
-      traceData: {
-        rejections: ctx.doneRejections + 1,
-        openedDetailCount: ctx.listDetailOpenedCount,
-        reviewedDetailCount: ctx.listDetailReviewedCount,
-        visibleDetailActionCount: ctx.listDetailVisibleActionCount,
-      },
-      summary: ctx.summary,
-      primaryReason: preflight.reason ?? "List-detail review remains incomplete.",
-      fallbackInstruction:
-        "Do NOT synthesize the recommendation from list-card snippets alone.",
     }),
   };
 }

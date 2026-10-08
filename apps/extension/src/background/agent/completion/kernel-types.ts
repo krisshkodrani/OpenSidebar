@@ -293,14 +293,6 @@ export type CompletionPendingAutocompletePreflight =
       kind: "pending_autocomplete_suggestion";
     } & AutocompleteSuggestionDoneRejection);
 
-export type CompletionListDetailReviewPreflight =
-  | { status: "valid" }
-  | {
-      status: "rejected";
-      kind: "incomplete_list_detail_review";
-      reason: string;
-    };
-
 export type CompletionGroundingReadPreflight =
   | { status: "valid"; needsGroundingRead: boolean }
   | {

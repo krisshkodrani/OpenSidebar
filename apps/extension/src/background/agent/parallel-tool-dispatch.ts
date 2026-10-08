@@ -1,20 +1,13 @@
 import { AgentStep, ToolCall, ToolName } from "../../types";
-import { resolveProfileFields } from "../../utils/personal-profile";
 import { DOM_MODIFYING_TOOLS } from "../tools/metadata";
 import {
   hasRecentExactTextFieldRead,
   isFinalCommunicationClick,
 } from "./action-exemption-policy";
 import { assessAmbiguousChoiceClickGuard } from "./ambiguous-choice-policy";
-import {
-  assessCatalogOrderConfigurationClick,
-  assessCatalogOrderItemSelectionClick,
-  assessCatalogOrderPostConfirmationClick,
-} from "./servicenow/catalog-order-policy";
 import { assessConsequentialFinalActionBlock } from "./consequential-action-policy";
 import { INVESTIGATION_TOOLS, TOOL_CACHE } from "./constants";
 import {
-  assessListDetailWorkflow,
   isListDetailReturnControlRepeatExempt,
 } from "./list-detail-policy";
 import {
@@ -39,11 +32,6 @@ import {
 import type { PreToolDecision } from "./middleware";
 import type { ParallelToolExecutionResult } from "./parallel-tool-execution";
 import {
-  assessProfileLiteralTextRewrite,
-  collectProfileRecordSetsFromValues,
-  getProfileLiteralFallbackFields,
-} from "./profile-literal-guards";
-import {
   actionMemoryKey,
   assessRepeatAction,
   rememberRepeatAction,
@@ -51,29 +39,19 @@ import {
 import { getPreToolDeniedReason } from "./sequential-pre-tool-gate";
 import { formatStepLabel } from "../../utils/step-labels";
 import {
-  assessAutocompleteTextRewrite,
   assessInlineEditNavigationGuard,
   assessInlineEditTextEntryRetarget,
   assessTextEntryClickGuard,
   validateTextEntryTarget,
 } from "./text-entry-guards";
-import { shouldCheckWorkflowTabRedirect } from "./workflow-tab-controller";
 
 type ToolExecutionMode = "parallel" | "sequential";
 
 export interface ParallelToolDispatchHost extends AgentLoopToolHandlerHost {
   getActiveToolProfileForStep(stepIndex: number): string | null | undefined;
   getConsequentialActionTaskText(): string;
-  getWorkflowTabToolRedirect(params: {
-    toolName: ToolName;
-    args: Record<string, unknown>;
-    currentTabId: number;
-  }): Promise<string | null>;
   recordSkillToolSelection(toolName: ToolName, mode: ToolExecutionMode): void;
   selectedSkillId: string | null;
-  listDetailOpenedTargets: Set<string>;
-  listDetailReviewedTargets: Set<string>;
-  listDetailVisibleActionCount: number;
 }
 
 export interface ParallelToolDispatchState {
@@ -108,7 +86,9 @@ export async function executeParallelToolCalls(
 ): Promise<ParallelToolDispatchOutput> {
   const { tabId, state } = params;
   const results = await Promise.all(
-    params.toolCalls.map(async (toolCall) => {
+    params.toolCalls.map(async (requestedToolCall) => {
+      // Execution records carry adapted inputs; model history keeps its request.
+      const toolCall = structuredClone(requestedToolCall);
       const toolName = toolCall.function.name as ToolName;
       const rawArgsKey = toolCall.function.arguments.slice(0, 100);
       let args: Record<string, unknown> = {};
@@ -392,40 +372,6 @@ export async function executeParallelToolCalls(
         return { toolCall, result: null, error: preflight.error };
       }
 
-      const currentSnapshot = host.context.getSnapshot();
-      const listDetailWorkflow = assessListDetailWorkflow({
-        selectedSkillId: host.selectedSkillId,
-        query: host.originalQuery,
-        toolName,
-        args,
-        snapshot: currentSnapshot,
-        reviewedTargets: host.listDetailReviewedTargets,
-        openedTargets: host.listDetailOpenedTargets,
-        previousVisibleDetailActionCount: host.listDetailVisibleActionCount,
-      });
-      host.listDetailVisibleActionCount =
-        listDetailWorkflow.visibleDetailActionCount;
-      if (listDetailWorkflow.block) {
-        host.log.warn("agent", "List-detail workflow tool blocked", {
-          turn: host.turnCount,
-          tool: toolName,
-          mode: "parallel",
-        });
-        host.traceRecorder?.recordEvent("list_detail_workflow_tool_blocked", {
-          turn: host.turnCount,
-          tool: toolName,
-          mode: "parallel",
-          openedDetailCount: host.listDetailOpenedTargets.size,
-          reviewedDetailCount: host.listDetailReviewedTargets.size,
-          visibleDetailActionCount: host.listDetailVisibleActionCount,
-        });
-        return {
-          toolCall,
-          result: listDetailWorkflow.block,
-          error: null,
-        };
-      }
-
       if (
         toolName === ToolName.TYPE_TEXT &&
         typeof args.id === "number" &&
@@ -463,123 +409,11 @@ export async function executeParallelToolCalls(
           });
           return { toolCall, result: null, error: targetError };
         }
-        let profileLiteralRewrite = assessProfileLiteralTextRewrite({
-          selectedSkillId: host.selectedSkillId,
-          messages: host.context.getMessages(),
-          element: target,
-          text: args.text,
-        });
-        if (!profileLiteralRewrite) {
-          const fallbackFields = getProfileLiteralFallbackFields(target);
-          if (fallbackFields.length > 0) {
-            const resolvedProfile = await resolveProfileFields(fallbackFields);
-            if (resolvedProfile) {
-              profileLiteralRewrite = assessProfileLiteralTextRewrite({
-                selectedSkillId: host.selectedSkillId,
-                messages: [],
-                recordSets: collectProfileRecordSetsFromValues(
-                  resolvedProfile.values,
-                ),
-                element: target,
-                text: args.text,
-              });
-            }
-          }
-        }
-        if (profileLiteralRewrite) {
-          args.text = profileLiteralRewrite.rewrittenText;
-          toolCall.function.arguments = JSON.stringify(args);
-          host.context.addMessage({
-            role: "user",
-            content: profileLiteralRewrite.reason,
-          });
-          host.log.info("agent", "Profile literal text rewrite applied", {
-            turn: host.turnCount,
-            tool: toolName,
-            id: args.id,
-            skillId: host.selectedSkillId,
-            mode: "parallel",
-          });
-          host.traceRecorder?.recordEvent("profile_literal_text_rewrite", {
-            turn: host.turnCount,
-            tool: toolName,
-            id: args.id,
-            skillId: host.selectedSkillId ?? "unknown",
-            mode: "parallel",
-          });
-        }
       }
 
       const snapshot = host.context.getSnapshot();
-      const catalogPostConfirmationBlock =
-        assessCatalogOrderPostConfirmationClick({
-          selectedSkillId: host.selectedSkillId,
-          toolName,
-          args,
-          snapshot,
-        });
-      if (catalogPostConfirmationBlock) {
-        host.log.warn("agent", "Catalog post-confirmation action blocked", {
-          turn: host.turnCount,
-          tool: toolName,
-          id: args.id,
-          mode: "parallel",
-        });
-        host.traceRecorder?.recordEvent(
-          "catalog_post_confirmation_action_blocked",
-          {
-            turn: host.turnCount,
-            tool: toolName,
-            id: args.id,
-            mode: "parallel",
-          },
-        );
-        return {
-          toolCall,
-          result: null,
-          error: catalogPostConfirmationBlock,
-        };
-      }
-
       if (toolName === ToolName.CLICK_ELEMENT && typeof args.id === "number") {
         const target = snapshot?.elements.find((el: any) => el.tag === args.id);
-        const catalogConfirmationClickBlock =
-          assessCatalogOrderItemSelectionClick({
-            selectedSkillId: host.selectedSkillId,
-            toolName,
-            args,
-            snapshot,
-            originalQuery: host.originalQuery,
-          }) ||
-          assessCatalogOrderConfigurationClick({
-            selectedSkillId: host.selectedSkillId,
-            toolName,
-            args,
-            snapshot,
-            originalQuery: host.originalQuery,
-          });
-        if (catalogConfirmationClickBlock) {
-          host.log.warn("agent", "Catalog confirmation drill-in click blocked", {
-            turn: host.turnCount,
-            tool: toolName,
-            id: args.id,
-            mode: "parallel",
-          });
-          host.traceRecorder?.recordEvent(
-            "catalog_confirmation_drill_in_blocked",
-            {
-              turn: host.turnCount,
-              tool: toolName,
-              id: args.id,
-              mode: "parallel",
-            },
-          );
-          return {
-            toolCall,
-            result: null,
-            error: catalogConfirmationClickBlock,
-          };
-        }
         const planStatus = host.context.getPlanStatusRaw();
         const activeObjective =
           planStatus?.subtasks[planStatus.currentIndex]?.description ??
@@ -623,7 +457,6 @@ export async function executeParallelToolCalls(
             turn: host.turnCount,
             tool: toolName,
             id: args.id,
-            explicitValue: textEntryClickGuard.explicitValue,
             mode: "parallel",
           });
           return {
@@ -654,55 +487,6 @@ export async function executeParallelToolCalls(
             result: null,
             error: ambiguousChoiceGuard.blockReason,
           };
-        }
-      }
-
-      if (shouldCheckWorkflowTabRedirect(toolName)) {
-        const workflowRedirect = await host.getWorkflowTabToolRedirect({
-          toolName,
-          args,
-          currentTabId: tabId,
-        });
-        if (workflowRedirect) {
-          host.log.info(
-            "agent",
-            "Workflow tab controller redirected tool call",
-            {
-              turn: host.turnCount,
-              tool: toolName,
-              mode: "parallel",
-              skillId: host.selectedSkillId,
-            },
-          );
-          return {
-            toolCall,
-            result: workflowRedirect,
-            error: null,
-          };
-        }
-      }
-
-      let autocompleteRewriteReason: string | null = null;
-      if (toolName === ToolName.TYPE_TEXT && args.id != null) {
-        const snapshot = host.context.getSnapshot();
-        const targetId = Number(args.id);
-        const target = Number.isFinite(targetId)
-          ? snapshot?.elements.find((el: any) => el.tag === targetId)
-          : null;
-        const planStatus = host.context.getPlanStatusRaw();
-        const activeObjective =
-          planStatus?.subtasks[planStatus.currentIndex]?.description ??
-          host.originalQuery;
-        const rewrite = assessAutocompleteTextRewrite({
-          objectiveText: activeObjective,
-          originalQuery: host.originalQuery,
-          element: target,
-          args,
-        });
-        if (rewrite) {
-          args.text = rewrite.rewrittenText;
-          toolCall.function.arguments = JSON.stringify(args);
-          autocompleteRewriteReason = rewrite.reason;
         }
       }
 
@@ -748,9 +532,6 @@ export async function executeParallelToolCalls(
       try {
         const preActionSnapshot = host.context.getSnapshot();
         let result = await host.executeToolCall(toolCall, tabId);
-        if (autocompleteRewriteReason) {
-          result = `${result}\n${autocompleteRewriteReason}`;
-        }
         // LP-17 fill checklist: ledger the read + append a truthful re-read note.
         result = applyFieldReReadTracking({
           toolName,
@@ -760,7 +541,6 @@ export async function executeParallelToolCalls(
           ledger: host.context.getFieldReadLedger(),
           turn: host.turnCount,
         });
-        host.trackListDetailToolSuccess(toolName, args, preActionSnapshot);
         host.recordCompletionToolEvidence?.(
           toolName,
           args,

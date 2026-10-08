@@ -17,7 +17,6 @@ export function buildTaskManifest(
 ): RunManifest {
   const promptSet = listPromptDescriptors([
     "orchestrator.verifier.system",
-    "orchestrator.advisory.system",
   ]);
   return {
     runId: task.runId || task.id,

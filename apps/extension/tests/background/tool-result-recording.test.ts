@@ -12,7 +12,6 @@ import type { PreToolDecision } from "../../src/background/agent/middleware";
 
 function host(): AgentLoopToolHandlerHost {
   return {
-    checkNavigateGuard: vi.fn(),
     consecutiveAutoAdvances: 0,
     context: {
       getSnapshot: vi.fn(() => null),
@@ -43,7 +42,7 @@ function host(): AgentLoopToolHandlerHost {
     refreshPerceptionAndTriage: vi.fn(),
     refreshSnapshotWithRetry: vi.fn(),
     replayMutationSensitiveAction: vi.fn(),
-    shouldBlockTabManagementTools: vi.fn(),
+    shouldBlockTabClosing: vi.fn(),
     statusHandler: vi.fn(),
     stepHandler: vi.fn(),
     toolCache: {
@@ -52,7 +51,7 @@ function host(): AgentLoopToolHandlerHost {
     traceRecorder: {
       recordToolExecution: vi.fn(),
     },
-    trackListDetailToolSuccess: vi.fn(),
+
     turnCount: 4,
     updateMoneyTableAggregate: vi.fn(),
     workspaceId: null,

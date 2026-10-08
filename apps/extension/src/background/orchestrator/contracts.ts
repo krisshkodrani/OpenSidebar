@@ -61,7 +61,7 @@ export function buildRoleExecutionContract(
   }
   // Executor must always be able to finalize a subtask.
   allowed.add(ToolName.DONE);
-  // Skill suppression is advisory and applied per turn, so recovery can restore tools.
+  // Skill preferences do not override user flags or the enforced tool ceiling.
   applyGlobalToolFlags(settings, allowed);
   const ceiling = resolveToolProfile(enforcedProfile);
   if (ceiling) {

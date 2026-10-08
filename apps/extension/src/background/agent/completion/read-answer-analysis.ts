@@ -194,7 +194,7 @@ export function hasPageReadAnswerIntent(
     /\b(?:on|in|according to) (?:this|the) (?:page|article|document|post|readme)\b.{0,140}\b(?:what(?:'s| is)|who(?:'s| is)|when|where|which|how many|how much)\b/,
     /\bread (?:this|the) page\b/,
     /\bfrom (?:this|the) page\b/,
-    /\b(?:compare|review|evaluate|assess)\b.{0,120}\b(?:options?|alternatives?|results?|items?|records?|plans?|choices?)\b/,
+    /\b(?:compare|review|evaluate|assess)\b.{0,120}\b(?:options?|alternatives?|results?|items?|records?|plans?|choices?|listings?|candidates?|profiles?)\b/,
     /\b(article|post|document|readme|page content)\b.+\b(summarize|summary|describe|report|extract)\b/,
   ];
 

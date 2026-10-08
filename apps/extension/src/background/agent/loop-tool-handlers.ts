@@ -18,10 +18,7 @@ import {
   extractKnowledgeBaseAnswerFromText,
 } from "./knowledge-search-routing";
 import { assessMissingToolEscalation } from "./tool-capabilities";
-import { requestedRecoveryTools } from "./capability-recovery";
-import { toolRegistry } from "../tools/registry";
 import { applyFieldReReadTracking } from "./fill-checklist-policy";
-import { checkNavigateGuard, type NavigateGuardHost } from "./navigate-guard";
 import { runWriterHandoff } from "./writer-handoff";
 import {
   buildTrustedReadAnswerCompletionCandidate,
@@ -79,11 +76,8 @@ export function toolProvidesPageGrounding(toolName: ToolName): boolean {
 }
 
 export interface AgentLoopToolHandlerHost {
-  checkNavigateGuard(url: string): string | null;
   consecutiveAutoAdvances: number;
   context: any;
-  disabledTools: Set<ToolName>;
-  toolAvailability: { active: ToolName[]; requested: Set<ToolName> };
   elementResolver: any;
   escalateModel(): void;
   executeToolCall(toolCall: ToolCall, tabId: number): Promise<string>;
@@ -112,11 +106,6 @@ export interface AgentLoopToolHandlerHost {
     finalSummary: string;
     completionCandidate?: TrustedCompletionCandidate;
   } | null;
-  maybeCompleteTrustedCatalogOrderSubmit(params: any): Promise<{
-    finalSummary: string;
-    completionCandidate?: TrustedCompletionCandidate;
-  } | null>;
-  maybeAutoSubmitConfiguredCatalogItem(params: any): Promise<void>;
   middleware: any;
   originalQuery: string;
   pendingInlineEditVerification: {
@@ -152,32 +141,21 @@ export interface AgentLoopToolHandlerHost {
     toolName: ToolName,
     args: Record<string, unknown>,
   ): boolean;
-  shouldBlockTabManagementTools(): boolean;
+  shouldBlockTabClosing(): boolean;
   statusHandler(status: AgentStatus, message: string): void;
   stepHandler(step: AgentStep, persist: boolean): void;
   toolCache: any;
   traceRecorder?: any;
-  trackListDetailToolSuccess(
-    toolName: ToolName,
-    args: Record<string, unknown>,
-    snapshot: unknown,
-  ): void;
   turnCount: number;
   updateMoneyTableAggregate(result: string): string | null;
   workspaceId: string | null;
 }
 
-/**
- * The tab-management gate ("stay on the current tab unless the user asked for
- * tabs") assumes the task is single-tab. Once a PAGE action has spawned a tab
- * into the workspace (target=_blank / window.open — see
- * spawned-tab-surfacing.ts), that premise is gone: the environment made the
- * task multi-tab, and blocking switch_tab would strand the agent's own work in
- * unreachable tabs. The context latch flips permanently for the session.
- */
-export function tabManagementBlocked(loop: AgentLoopToolHandlerHost): boolean {
+/** Preserve the existing close-tab authorization gate; reading and opening tabs
+ * do not require a planner or user-wording heuristic. */
+export function tabClosingBlocked(loop: AgentLoopToolHandlerHost): boolean {
   if (loop.context?.hasSpawnedTabs?.()) return false;
-  return loop.shouldBlockTabManagementTools();
+  return loop.shouldBlockTabClosing();
 }
 
 export type GenericSequentialToolState = {
@@ -388,23 +366,6 @@ export async function handleEscalateToolCall(
   prevElementCount: number;
 }> {
   const reason = (args.reason as string) || "";
-  const restored = requestedRecoveryTools(
-    args,
-    loop.getActiveToolNamesForTurn?.() ?? [],
-    toolRegistry.getDefinitions(loop.disabledTools).map((tool) => tool.function.name as ToolName),
-  );
-  if (restored.length > 0) {
-    for (const name of restored) loop.toolAvailability.requested.add(name);
-    loop.context.addMessage({
-      role: "tool",
-      tool_call_id: toolCallId,
-      content: `Restored tools hidden by the step profile or skill: ${restored.join(", ")}. They will be available next turn. Continue with the requested action using current page evidence.`,
-    });
-    loop.traceRecorder?.recordEvent("tool_capability_restored", {
-      turn: loop.turnCount, reason, restoredTools: restored,
-    });
-    return { escalationTier, plannerModelStartTurn, orientationPhase, prevElementCount };
-  }
   const capabilityAssessment = assessMissingToolEscalation({
     args,
     availableToolNames: loop.getActiveToolNamesForTurn?.() ?? [],
@@ -552,7 +513,6 @@ export function handleUpdateNotesToolCall(
 ): void {
   const note = (args.note as string) || "";
   loop.context.appendWorkingNote(note);
-  loop.trackListDetailToolSuccess(toolName, args, loop.context.getSnapshot());
   loop.context.addMessage({
     role: "tool",
     tool_call_id: toolCallId,
@@ -646,44 +606,6 @@ export async function handleWaitToolCall(
   return prevElementCount;
 }
 
-export function handleNavigateGuardToolCall(
-  loop: AgentLoopToolHandlerHost,
-  toolCallId: string,
-  args: Record<string, unknown>,
-): boolean {
-  if (!args.url) return false;
-
-  const blockMessage = checkNavigateGuard(
-    loop as unknown as NavigateGuardHost,
-    args.url as string,
-  );
-  if (!blockMessage) return false;
-
-  loop.log.warn("agent", "Navigate blocked by guard", {
-    turn: loop.turnCount,
-    targetUrl: (args.url as string).slice(0, 120),
-  });
-  loop.traceRecorder?.recordEvent("navigate_blocked", {
-    targetUrl: args.url,
-  });
-  loop.context.addMessage({
-    role: "tool",
-    tool_call_id: toolCallId,
-    content: blockMessage,
-  });
-  loop.stepHandler(
-    {
-      id: crypto.randomUUID(),
-      type: "info",
-      label: "Navigate blocked — would undo progress",
-      status: "done",
-      timestamp: Date.now(),
-    },
-    false,
-  );
-  return true;
-}
-
 export async function handleListTabsToolCall(
   loop: AgentLoopToolHandlerHost,
   toolCallId: string,
@@ -738,25 +660,6 @@ export async function handleSwitchTabToolCall(
   tabId: number,
   prevElementCount: number,
 ): Promise<{ tabId: number; prevElementCount: number }> {
-  if (tabManagementBlocked(loop)) {
-    const blockedMessage =
-      "Blocked: switch_tab requires explicit user instruction to manage tabs. " +
-      "Stay on the current tab unless the user asks for tab switching.";
-    loop.context.addMessage({
-      role: "tool",
-      tool_call_id: toolCallId,
-      content: blockedMessage,
-    });
-    // Block only this call. The tab-management gate is re-evaluated every turn,
-    // so a plan that later legitimately requires tabs can still recover — we do
-    // not latch the tools off for the rest of the session.
-    loop.log.warn("agent", "switch_tab blocked - not explicitly requested", {
-      turn: loop.turnCount,
-      originalQuery: loop.originalQuery,
-    });
-    return { tabId, prevElementCount };
-  }
-
   // Normalize: LLMs sometimes send "id" instead of "tabId", or strings instead of ints
   const rawId = args.tabId ?? args.id;
   const targetTabId =
@@ -852,7 +755,7 @@ export async function handleCloseTabToolCall(
   if (loop.replayMutationSensitiveAction(toolCallId, toolName, args)) {
     return;
   }
-  if (tabManagementBlocked(loop)) {
+  if (tabClosingBlocked(loop)) {
     const blockedMessage =
       "Blocked: close_tab requires explicit user instruction to manage tabs.";
     loop.context.addMessage({
@@ -860,7 +763,7 @@ export async function handleCloseTabToolCall(
       tool_call_id: toolCallId,
       content: blockedMessage,
     });
-    // Block only this call; the gate re-evaluates each turn (see switch_tab).
+    // Block only this call; the close-tab gate re-evaluates each turn.
     loop.log.warn("agent", "close_tab blocked - not explicitly requested", {
       turn: loop.turnCount,
       originalQuery: loop.originalQuery,
@@ -936,22 +839,6 @@ export async function handleCreateTabToolCall(
   if (loop.replayMutationSensitiveAction(toolCallId, toolName, args)) {
     return;
   }
-  if (tabManagementBlocked(loop)) {
-    const blockedMessage =
-      "Blocked: create_tab requires explicit user instruction to open additional tabs.";
-    loop.context.addMessage({
-      role: "tool",
-      tool_call_id: toolCallId,
-      content: blockedMessage,
-    });
-    // Block only this call; the gate re-evaluates each turn (see switch_tab).
-    loop.log.warn("agent", "create_tab blocked - not explicitly requested", {
-      turn: loop.turnCount,
-      originalQuery: loop.originalQuery,
-    });
-    return;
-  }
-
   const url = args.url as string;
   const urlResult = sanitizeUrl(url);
   if (!urlResult.ok) {
@@ -1001,7 +888,6 @@ export interface GenericSequentialToolCallParams {
   args: Record<string, unknown>;
   tabId: number;
   prevElementCount: number;
-  autocompleteRewriteReason: string | null;
   discoveredTagIds: Set<number>;
   preDecision: PreToolDecision;
   llmIntention?: string | null;
@@ -1024,7 +910,6 @@ export async function handleGenericSequentialToolCall(
     toolName,
     args,
     tabId,
-    autocompleteRewriteReason,
     discoveredTagIds,
     preDecision,
     llmIntention,
@@ -1071,9 +956,6 @@ export async function handleGenericSequentialToolCall(
   try {
     const preActionSnapshot = loop.context.getSnapshot();
     result = await loop.executeToolCall(toolCall, tabId);
-    if (autocompleteRewriteReason) {
-      result = `${result}\n${autocompleteRewriteReason}`;
-    }
     // LP-17 fill checklist: ledger the read + append a truthful re-read note.
     result = applyFieldReReadTracking({
       toolName,
@@ -1083,7 +965,6 @@ export async function handleGenericSequentialToolCall(
       ledger: loop.context.getFieldReadLedger(),
       turn: loop.turnCount,
     });
-    loop.trackListDetailToolSuccess(toolName, args, preActionSnapshot);
     loop.recordCompletionToolEvidence?.(
       toolName,
       args,
@@ -1353,34 +1234,6 @@ export async function handleGenericSequentialToolCall(
       completionCandidate: trustedListFilterCompletion.completionCandidate,
     };
   }
-
-  const trustedCatalogOrderCompletion =
-    await loop.maybeCompleteTrustedCatalogOrderSubmit({
-      toolName,
-      toolArgs: args,
-      toolResult: result,
-      tabId,
-      mode: "sequential",
-    });
-  if (trustedCatalogOrderCompletion) {
-    return {
-      prevElementCount,
-      domModified,
-      visuallyModified,
-      lastDomAffectingToolName,
-      breakLoop: true,
-      completedSummary: trustedCatalogOrderCompletion.finalSummary,
-      completionCandidate: trustedCatalogOrderCompletion.completionCandidate,
-    };
-  }
-
-  await loop.maybeAutoSubmitConfiguredCatalogItem({
-    toolName,
-    toolArgs: args,
-    toolResult: result,
-    tabId,
-    mode: "sequential",
-  });
 
   const trustedAutoSubmitCompletion =
     await loop.maybeAutoSubmitTrustedServiceNowForm({

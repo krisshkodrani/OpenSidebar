@@ -1,13 +1,12 @@
 /**
  * Completion pipeline runner (RFC LP-15, Phase 7a).
  *
- * Assembles the pure completion guards + the frozen kernel + the injected
- * planner stage into a single ordered decision, preserving the EXACT order of
- * `AgentLoop.handleDoneToolCallInner` (loop.ts:2833):
+ * Assembles the pure completion guards, deterministic kernel, and injected
+ * planner stage into a single ordered decision:
  *
- *   idempotency → summary → grounding → kernel (accept / same-kind bypass /
- *   reject) → legacy bundle (max_rejections → grounding → money_table →
- *   early_multistep → task_contract → workflow_contract → list_detail) →
+ *   idempotency → summary → grounding → kernel (accept / reject) →
+ *   legacy bundle (max_rejections → money_table →
+ *   early_multistep → task_contract → workflow_contract) →
  *   planner validation → pending_autocomplete → missing_evidence → fallthrough.
  *
  * The kernel decision is precomputed by the caller (frozen kernel via
@@ -35,7 +34,6 @@ import { assessGroundingGuard } from "./guards/grounding-guards";
 import { assessMaxRejectionsGuard } from "./guards/budget-guards";
 import {
   assessEarlyMultiStepGuard,
-  assessListDetailGuard,
   assessMoneyTableGuard,
   assessPendingAutocompleteGuard,
 } from "./guards/domain-guards";
@@ -80,7 +78,7 @@ export interface CompletionPipelineDeps {
    * last-rejection record, escalation check, the completion_decision +
    * conditional pending-autocomplete traces, and the diagnostic message) and the
    * pipeline appends them to the decision so applyCompletionEffects performs the
-   * mutations in order. Called only on a non-bypassed kernel rejection; returns
+   * mutations in order. Called on a kernel rejection; returns
    * [] in replay (only the verdict is compared there).
    */
   buildKernelRejectionEffects: (
@@ -177,45 +175,22 @@ export async function runCompletionPipeline(
   // status (e.g. "inconclusive") falls through to the legacy bundle exactly
   // as legacy does.
   if (kernel.status === "rejected" || kernel.status === "needs_verification") {
-    const kind = kernel.contract?.kind ?? null;
-    const bypass =
-      ctx.lastContractRejectionKind === kind &&
-      ctx.consecutiveSameKindRejections >= 2;
-    if (bypass) {
-      effects.push({
-        type: "emit_trace",
-        event: "completion_contract_bypassed",
-        data: {
-          kind: ctx.lastContractRejectionKind,
-          consecutiveRejections: ctx.consecutiveSameKindRejections,
-        },
-      });
-      // fall through to the legacy bundle
-    } else {
-      // Single-authority (RFC LP-16 Phase 2): the loop-coupled kernel-reject
-      // mutations + observability are now returned as effects and appended
-      // here, so applyCompletionEffects performs them in order (rather than a
-      // side-effecting callback). The decision carries the pass-time effects
-      // plus this rejection's effects.
-      return {
-        verdict: "reject",
-        basis: "kernel_reject",
-        contractKind: kind ?? "unknown",
-        rejectedBy: "kernel",
-        reason: kernel.reason ?? "",
-        recoveryHint: null,
-        // Reject effects first, then the pass-time effects: this preserves the
-        // pre-refactor applied order, where the (then side-effecting) callback
-        // ran before applyCompletionEffects consumed the pass-time effects.
-        effects: [...deps.buildKernelRejectionEffects(kernel), ...effects],
-      };
-    }
+    // Repeating a claim does not add evidence. Keep the kernel's rejection
+    // authoritative; its effects still track attempts and trigger recovery.
+    return {
+      verdict: "reject",
+      basis: "kernel_reject",
+      contractKind: kernel.contract?.kind ?? "unknown",
+      rejectedBy: "kernel",
+      reason: kernel.reason ?? "",
+      recoveryHint: null,
+      // Preserve effect order: recovery/counters precede pass-time effects.
+      effects: [...deps.buildKernelRejectionEffects(kernel), ...effects],
+    };
   }
 
   // 5. Legacy bundle, in the exact rejectDoneBeforePlanValidation order.
   decided = runGuard(assessMaxRejectionsGuard(ctx));
-  if (decided) return decided;
-  decided = runGuard(assessGroundingGuard(ctx)); // re-checked inside the bundle
   if (decided) return decided;
   decided = runGuard(assessMoneyTableGuard(ctx));
   if (decided) return decided;
@@ -224,8 +199,6 @@ export async function runCompletionPipeline(
   decided = runGuard(assessTaskContractGuard(ctx));
   if (decided) return decided;
   decided = runGuard(assessWorkflowContractGuard(ctx));
-  if (decided) return decided;
-  decided = runGuard(assessListDetailGuard(ctx));
   if (decided) return decided;
 
   // 6. Planner validation (injected). Only when a plan applies.

@@ -3,7 +3,7 @@
  *
  * Owns the run-scoped accumulator collections that the tool dispatchers and the
  * stagnation-adjacent policies read/mutate: same-tool failure counts, the
- * recent-success and recent-tool-call windows, the result-page progress state,
+ * recent-success and recent-tool-call windows,
  * and the find_element-discovered tag IDs. The agent loop creates one per run
  * and hands the collections (by reference) to the dispatchers.
  *
@@ -13,10 +13,6 @@
 
 import type { ToolName } from "../../types";
 import type { RecentAction } from "./loop-helpers";
-import {
-  createResultPageProgressState,
-  type ResultPageProgressState,
-} from "./result-page-progress-policy";
 
 export class TurnState {
   /** Circuit breaker: same-tool repeat failure counts. */
@@ -25,9 +21,6 @@ export class TurnState {
   readonly recentSuccesses: RecentAction[] = [];
   /** All recent tool calls, so exact loops can be blocked even when they "succeed". */
   readonly recentToolCalls: Array<{ tool: ToolName; argsKey: string }> = [];
-  /** Result-page navigation/read progress (owned by the result-page policy). */
-  readonly resultPageProgress: ResultPageProgressState =
-    createResultPageProgressState();
   /** Tag IDs discovered by find_element (valid for the next tool call). */
   readonly discoveredTagIds = new Set<number>();
 

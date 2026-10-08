@@ -145,6 +145,29 @@ describe("completion golden replay", () => {
     }
   });
 
+  test.each([
+    "form-fill-partial",
+    "quiz-nothing-selected",
+    "generic-no-contract",
+    "read-answer-summarize",
+  ])("repeated attempts cannot satisfy unchanged missing evidence: %s", async (name) => {
+    const record = JSON.parse(readFileSync(fixturePath(name), "utf8")) as CompletionDecisionRecord;
+    for (const count of [0, 1, 2, 3]) {
+      record.input.guardContext.doneRejections = count;
+      record.input.guardContext.consecutiveSameKindRejections = count;
+      record.input.guardContext.lastContractRejectionKind = record.outcome.kernelContractKind;
+      expect(await replayPipelineVerdict(record), `attempt after ${count} rejections`).toBe("rejected");
+    }
+  });
+
+  test("corrected quiz selection succeeds despite previous rejected attempts", async () => {
+    const record = JSON.parse(readFileSync(fixturePath("quiz-selected-two-no-submit"), "utf8")) as CompletionDecisionRecord;
+    record.input.guardContext.doneRejections = 3;
+    record.input.guardContext.consecutiveSameKindRejections = 3;
+    record.input.guardContext.lastContractRejectionKind = "quiz_selection";
+    expect(await replayPipelineVerdict(record)).toBe("accepted");
+  });
+
   test("corpus covers a spread of contract kinds and both verdicts", () => {
     const corpus = loadCorpus();
     const kinds = new Set(corpus.map((c) => c.record.outcome.kernelContractKind));

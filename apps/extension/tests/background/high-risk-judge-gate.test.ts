@@ -14,6 +14,27 @@ vi.mock("../../src/background/memory/corpus-runtime", () => ({
   getTrustedCorpusStore: () => ({ load: async () => [] }),
 }));
 
+test.each([
+  "Save a draft to alex@example.test with subject Project update and message The review is complete. Leave it unsent.",
+  "Set the request amount to 740 EUR and leave its cost center unchanged.",
+])("judge can resolve criteria referring to the original request: %s", async (query) => {
+  const judgeGate = vi.fn().mockResolvedValue({ decision: "reroute", judged: true });
+  const observation = "Saved amount: 741 EUR. Cost center: Research.";
+  const node = makeNode("Save the supplied values", "The saved fields match the values in the request");
+  await runHighRiskJudgeGate(
+    { id: "task", query } as OrchestratorTask,
+    node,
+    { verifyNode: vi.fn(), judgeGate },
+    [{ basis: "observation", claim: observation }],
+    "Saved the requested values.",
+  );
+  const input = judgeGate.mock.calls[0][0];
+  expect(input.claim).toContain(query);
+  expect(input.claim).toContain(node.description);
+  expect(input.evidence[0]).toContain(observation);
+  expect(input.evidence.join("\n")).not.toContain(query);
+});
+
 test("judge sees fresh scoped tab state even in a separate final-answer node", async () => {
   const judgeGate = vi.fn().mockResolvedValue({ decision: "accept", judged: true });
   const root = { id: 51, groupId: 9, title: "Request", url: "https://app.test/request", active: true };

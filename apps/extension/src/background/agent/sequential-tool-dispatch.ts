@@ -4,11 +4,6 @@ import {
   isFinalCommunicationClick,
 } from "./action-exemption-policy";
 import { assessAmbiguousChoiceClickGuard } from "./ambiguous-choice-policy";
-import {
-  assessCatalogOrderConfigurationClick,
-  assessCatalogOrderItemSelectionClick,
-  assessCatalogOrderPostConfirmationClick,
-} from "./servicenow/catalog-order-policy";
 import { assessConsequentialFinalActionBlock } from "./consequential-action-policy";
 import {
   toForwardedApprovalDryRun,
@@ -25,15 +20,8 @@ import {
   GroundingRejectionAbortTracker,
 } from "./tool-batch-policy";
 import {
-  assessListDetailWorkflow,
   isListDetailReturnControlRepeatExempt,
 } from "./list-detail-policy";
-import {
-  buildKnowledgeBaseSearchArgs,
-  shouldRouteKnowledgeBaseSearchToTopArticle,
-  shouldRouteKnowledgeBaseSearchFirst,
-  shouldRouteKnowledgeBaseSearchToRenderedResults,
-} from "./knowledge-search-routing";
 import {
   assessElementIdPreDispatch,
   assessFailedActionRepeat,
@@ -53,24 +41,13 @@ import {
   handleEscalateToolCall,
   handleGenericSequentialToolCall,
   handleListTabsToolCall,
-  handleNavigateGuardToolCall,
   handleSwitchTabToolCall,
   handleUpdateNotesToolCall,
   handleWaitToolCall,
   type AgentLoopToolHandlerHost,
   type GenericSequentialToolCallParams,
 } from "./loop-tool-handlers";
-import { resolveProfileFields } from "../../utils/personal-profile";
 import { isAuthoredProse, isFreeTextField } from "./writer-handoff";
-import {
-  assessProfileLiteralTextRewrite,
-  collectProfileRecordSetsFromValues,
-  getProfileLiteralFallbackFields,
-} from "./profile-literal-guards";
-import {
-  assessResultPageProgress,
-  type ResultPageProgressState,
-} from "./result-page-progress-policy";
 import {
   advanceCompletedSubtasks,
   type AgentLoopPlanProgressHost,
@@ -92,13 +69,11 @@ import {
 import { mergeGenericSequentialToolState } from "./sequential-tool-state";
 import { formatStepLabel } from "../../utils/step-labels";
 import {
-  assessAutocompleteTextRewrite,
   assessInlineEditNavigationGuard,
   assessInlineEditTextEntryRetarget,
   assessTextEntryClickGuard,
   validateTextEntryTarget,
 } from "./text-entry-guards";
-import { shouldCheckWorkflowTabRedirect } from "./workflow-tab-controller";
 import type { TrustedCompletionCandidate } from "./completion-kernel";
 
 export interface SequentialToolDispatchHost extends AgentLoopToolHandlerHost {
@@ -117,11 +92,6 @@ export interface SequentialToolDispatchHost extends AgentLoopToolHandlerHost {
     currentStepIndex: number,
   ): string | null;
   getUncommittedInlineEditDoneRejection(stepIndex: number): string | null;
-  getWorkflowTabToolRedirect(params: {
-    toolName: ToolName;
-    args: Record<string, unknown>;
-    currentTabId: number;
-  }): Promise<string | null>;
   handleClarifyToolCall(
     toolCallId: string,
     args: Record<string, unknown>,
@@ -132,9 +102,6 @@ export interface SequentialToolDispatchHost extends AgentLoopToolHandlerHost {
     tabId: number,
   ): Promise<boolean>;
   isRunning: boolean;
-  listDetailOpenedTargets: Set<string>;
-  listDetailReviewedTargets: Set<string>;
-  listDetailVisibleActionCount: number;
   recordSkillToolSelection(
     toolName: ToolName,
     mode: "parallel" | "sequential",
@@ -176,7 +143,6 @@ export interface SequentialToolDispatchState {
   lastDomAffectingToolName: string | null;
   doneSignaled: boolean;
   doneSummary: string;
-  resultPageProgress: ResultPageProgressState;
 }
 
 export type SequentialToolDispatchOutput = SequentialToolDispatchState;
@@ -218,7 +184,6 @@ export async function executeSequentialToolCalls(
     recentSuccesses,
     discoveredTagIds,
     orientationToolsUsed,
-    resultPageProgress,
   } = params.state;
 
   const signalCompletedResult = (
@@ -246,185 +211,19 @@ export async function executeSequentialToolCalls(
   const groundingAbort = new GroundingRejectionAbortTracker(
     TOOL_BATCH_LIMITS.GROUNDING_ABORT_CONSECUTIVE,
   );
-  for (const [batchIndex, toolCall] of params.toolCalls.entries()) {
+  for (const [batchIndex, requestedToolCall] of params.toolCalls.entries()) {
+    // Adapt dispatch inputs without rewriting the model request in history.
+    const toolCall = structuredClone(requestedToolCall);
     if (!this.isRunning) break;
     this.throwIfGracefulStopRequested();
 
     // Parse args for risk classification and done detection
-    let toolName = toolCall.function.name as ToolName;
+    const toolName = toolCall.function.name as ToolName;
     let args: Record<string, unknown> = {};
     try {
       args = JSON.parse(toolCall.function.arguments);
     } catch {
       // Registry will handle parse error on execute
-    }
-    if (
-      shouldRouteKnowledgeBaseSearchFirst({
-        selectedSkillId: this.selectedSkillId,
-        toolName,
-        originalQuery: this.originalQuery,
-        messages: this.context.getMessages(),
-        recentToolCalls,
-      })
-    ) {
-      const routedArgs = buildKnowledgeBaseSearchArgs(this.originalQuery);
-      this.log.info("agent", "Routed knowledge workflow to extractor tool", {
-        turn: this.turnCount,
-        fromTool: toolName,
-        toTool: ToolName.SEARCH_KNOWLEDGE_BASE,
-        selectedSkillId: this.selectedSkillId,
-      });
-      this.traceRecorder?.recordEvent("knowledge_search_tool_rerouted", {
-        turn: this.turnCount,
-        fromTool: toolName,
-        toTool: ToolName.SEARCH_KNOWLEDGE_BASE,
-        selectedSkillId: this.selectedSkillId,
-      });
-      toolName = ToolName.SEARCH_KNOWLEDGE_BASE;
-      args = routedArgs;
-      toolCall.function.name = ToolName.SEARCH_KNOWLEDGE_BASE;
-      toolCall.function.arguments = JSON.stringify(routedArgs);
-    }
-    const currentUrl =
-      this.context.getSnapshot()?.url ?? this.context.getCurrentUrl();
-    const renderedKnowledgeSearchUrl =
-      shouldRouteKnowledgeBaseSearchToRenderedResults({
-        selectedSkillId: this.selectedSkillId,
-        toolName,
-        originalQuery: this.originalQuery,
-        messages: this.context.getMessages(),
-        recentToolCalls,
-        currentUrl,
-        requestedUrl: typeof args.url === "string" ? args.url : null,
-      });
-    if (renderedKnowledgeSearchUrl) {
-      this.log.info("agent", "Routed knowledge workflow to rendered results", {
-        turn: this.turnCount,
-        fromTool: toolName,
-        toTool: ToolName.NAVIGATE,
-        url: renderedKnowledgeSearchUrl.slice(0, 160),
-        selectedSkillId: this.selectedSkillId,
-      });
-      this.traceRecorder?.recordEvent(
-        "knowledge_search_rendered_results_rerouted",
-        {
-          turn: this.turnCount,
-          fromTool: toolName,
-          toTool: ToolName.NAVIGATE,
-          url: renderedKnowledgeSearchUrl.slice(0, 240),
-          selectedSkillId: this.selectedSkillId,
-        },
-      );
-      toolName = ToolName.NAVIGATE;
-      args = { url: renderedKnowledgeSearchUrl };
-      toolCall.function.name = ToolName.NAVIGATE;
-      toolCall.function.arguments = JSON.stringify(args);
-    }
-    const renderedKnowledgeArticleUrl =
-      shouldRouteKnowledgeBaseSearchToTopArticle({
-        selectedSkillId: this.selectedSkillId,
-        toolName,
-        originalQuery: this.originalQuery,
-        messages: this.context.getMessages(),
-        currentUrl,
-        requestedUrl: typeof args.url === "string" ? args.url : null,
-      });
-    if (renderedKnowledgeArticleUrl) {
-      this.log.info("agent", "Routed knowledge workflow to top article", {
-        turn: this.turnCount,
-        fromTool: toolName,
-        toTool: ToolName.NAVIGATE,
-        url: renderedKnowledgeArticleUrl.slice(0, 160),
-        selectedSkillId: this.selectedSkillId,
-      });
-      this.traceRecorder?.recordEvent("knowledge_search_article_rerouted", {
-        turn: this.turnCount,
-        fromTool: toolName,
-        toTool: ToolName.NAVIGATE,
-        url: renderedKnowledgeArticleUrl.slice(0, 240),
-        selectedSkillId: this.selectedSkillId,
-      });
-      toolName = ToolName.NAVIGATE;
-      args = { url: renderedKnowledgeArticleUrl };
-      toolCall.function.name = ToolName.NAVIGATE;
-      toolCall.function.arguments = JSON.stringify(args);
-    }
-    const resultPageProgressDecision = assessResultPageProgress({
-      state: resultPageProgress,
-      selectedSkillId: this.selectedSkillId,
-      toolName,
-      originalQuery: this.originalQuery,
-      messages: this.context.getMessages(),
-      currentUrl,
-      requestedUrl: typeof args.url === "string" ? args.url : null,
-    });
-    if (resultPageProgressDecision.action === "navigate") {
-      this.log.info(
-        "agent",
-        "Routed result page workflow to ranked candidate",
-        {
-          turn: this.turnCount,
-          fromTool: toolName,
-          toTool: ToolName.NAVIGATE,
-          url: resultPageProgressDecision.url.slice(0, 160),
-          reason: resultPageProgressDecision.reason,
-          selectedSkillId: this.selectedSkillId,
-        },
-      );
-      this.traceRecorder?.recordEvent("result_page_candidate_rerouted", {
-        turn: this.turnCount,
-        fromTool: toolName,
-        toTool: ToolName.NAVIGATE,
-        url: resultPageProgressDecision.url.slice(0, 240),
-        reason: resultPageProgressDecision.reason,
-        selectedSkillId: this.selectedSkillId,
-      });
-      toolName = ToolName.NAVIGATE;
-      args = { url: resultPageProgressDecision.url };
-      toolCall.function.name = ToolName.NAVIGATE;
-      toolCall.function.arguments = JSON.stringify(args);
-    } else if (resultPageProgressDecision.action === "read_page") {
-      this.log.info("agent", "Routed result page workflow to read_page", {
-        turn: this.turnCount,
-        fromTool: toolName,
-        toTool: ToolName.READ_PAGE,
-        reason: resultPageProgressDecision.reason,
-        selectedSkillId: this.selectedSkillId,
-      });
-      this.traceRecorder?.recordEvent("result_page_read_page_rerouted", {
-        turn: this.turnCount,
-        fromTool: toolName,
-        toTool: ToolName.READ_PAGE,
-        reason: resultPageProgressDecision.reason,
-        selectedSkillId: this.selectedSkillId,
-      });
-      toolName = ToolName.READ_PAGE;
-      args = {};
-      toolCall.function.name = ToolName.READ_PAGE;
-      toolCall.function.arguments = JSON.stringify(args);
-    } else if (resultPageProgressDecision.action === "exhausted") {
-      this.log.info("agent", "Result page workflow exhausted", {
-        turn: this.turnCount,
-        reason: resultPageProgressDecision.reason,
-        selectedSkillId: this.selectedSkillId,
-      });
-      this.traceRecorder?.recordEvent("result_page_progress_exhausted", {
-        turn: this.turnCount,
-        reason: resultPageProgressDecision.reason,
-        selectedSkillId: this.selectedSkillId,
-      });
-      this.context.addMessage({
-        role: "user",
-        content:
-          "RESULT PAGE SEARCH EXHAUSTED: You have already grounded this result page and have no unvisited relevant candidates left. If the requested answer is not visible in current evidence, call done with a concise not-found answer instead of repeating the same search or read.",
-      });
-      toolName = ToolName.DONE;
-      args = {
-        summary:
-          "I could not find the requested answer after reading the available result page evidence.",
-      };
-      toolCall.function.name = ToolName.DONE;
-      toolCall.function.arguments = JSON.stringify(args);
     }
     const rawArgsKey = toolCall.function.arguments.slice(0, 100);
     const argsKey = actionMemoryKey(
@@ -753,41 +552,6 @@ export async function executeSequentialToolCalls(
       });
     }
 
-    const currentSnapshot = this.context.getSnapshot();
-    const listDetailWorkflow = assessListDetailWorkflow({
-      selectedSkillId: this.selectedSkillId,
-      query: this.originalQuery,
-      toolName,
-      args,
-      snapshot: currentSnapshot,
-      reviewedTargets: this.listDetailReviewedTargets,
-      openedTargets: this.listDetailOpenedTargets,
-      previousVisibleDetailActionCount: this.listDetailVisibleActionCount,
-    });
-    this.listDetailVisibleActionCount =
-      listDetailWorkflow.visibleDetailActionCount;
-    if (listDetailWorkflow.block) {
-      this.context.addMessage({
-        role: "tool",
-        tool_call_id: toolCall.id,
-        content: listDetailWorkflow.block,
-      });
-      this.log.warn("agent", "List-detail workflow tool blocked", {
-        turn: this.turnCount,
-        tool: toolName,
-        mode: "sequential",
-      });
-      this.traceRecorder?.recordEvent("list_detail_workflow_tool_blocked", {
-        turn: this.turnCount,
-        tool: toolName,
-        mode: "sequential",
-        openedDetailCount: this.listDetailOpenedTargets.size,
-        reviewedDetailCount: this.listDetailReviewedTargets.size,
-        visibleDetailActionCount: this.listDetailVisibleActionCount,
-      });
-      continue;
-    }
-
     const planStatus = this.context.getPlanStatusRaw();
     const currentStepIndex = planStatus?.currentIndex ?? -1;
     if (toolName === ToolName.PRESS_KEY && typeof args.key === "string") {
@@ -880,126 +644,11 @@ export async function executeSequentialToolCalls(
         });
         continue;
       }
-      let profileLiteralRewrite = assessProfileLiteralTextRewrite({
-        selectedSkillId: this.selectedSkillId,
-        messages: this.context.getMessages(),
-        element: target,
-        text: args.text,
-      });
-      if (!profileLiteralRewrite) {
-        const fallbackFields = getProfileLiteralFallbackFields(target);
-        if (fallbackFields.length > 0) {
-          const resolvedProfile = await resolveProfileFields(fallbackFields);
-          if (resolvedProfile) {
-            profileLiteralRewrite = assessProfileLiteralTextRewrite({
-              selectedSkillId: this.selectedSkillId,
-              messages: [],
-              recordSets: collectProfileRecordSetsFromValues(
-                resolvedProfile.values,
-              ),
-              element: target,
-              text: args.text,
-            });
-          }
-        }
-      }
-      if (profileLiteralRewrite) {
-        args.text = profileLiteralRewrite.rewrittenText;
-        toolCall.function.arguments = JSON.stringify(args);
-        this.context.addMessage({
-          role: "user",
-          content: profileLiteralRewrite.reason,
-        });
-        this.log.info("agent", "Profile literal text rewrite applied", {
-          turn: this.turnCount,
-          tool: toolName,
-          id: args.id,
-          skillId: this.selectedSkillId,
-          mode: "sequential",
-        });
-        this.traceRecorder?.recordEvent("profile_literal_text_rewrite", {
-          turn: this.turnCount,
-          tool: toolName,
-          id: args.id,
-          skillId: this.selectedSkillId ?? "unknown",
-          mode: "sequential",
-        });
-      }
-    }
-
-    const snapshot = this.context.getSnapshot();
-    const catalogPostConfirmationBlock =
-      assessCatalogOrderPostConfirmationClick({
-        selectedSkillId: this.selectedSkillId,
-        toolName,
-        args,
-        snapshot,
-      });
-    if (catalogPostConfirmationBlock) {
-      this.context.addMessage({
-        role: "tool",
-        tool_call_id: toolCall.id,
-        content: catalogPostConfirmationBlock,
-      });
-      this.log.warn("agent", "Catalog post-confirmation action blocked", {
-        turn: this.turnCount,
-        tool: toolName,
-        id: args.id,
-        mode: "sequential",
-      });
-      this.traceRecorder?.recordEvent(
-        "catalog_post_confirmation_action_blocked",
-        {
-          turn: this.turnCount,
-          tool: toolName,
-          id: args.id,
-          mode: "sequential",
-        },
-      );
-      continue;
     }
 
     if (toolName === ToolName.CLICK_ELEMENT && typeof args.id === "number") {
       const snapshot = this.context.getSnapshot();
       const target = snapshot?.elements.find((el: any) => el.tag === args.id);
-      const catalogConfirmationClickBlock =
-        assessCatalogOrderItemSelectionClick({
-          selectedSkillId: this.selectedSkillId,
-          toolName,
-          args,
-          snapshot,
-          originalQuery: this.originalQuery,
-        }) ||
-        assessCatalogOrderConfigurationClick({
-          selectedSkillId: this.selectedSkillId,
-          toolName,
-          args,
-          snapshot,
-          originalQuery: this.originalQuery,
-        });
-      if (catalogConfirmationClickBlock) {
-        this.context.addMessage({
-          role: "tool",
-          tool_call_id: toolCall.id,
-          content: catalogConfirmationClickBlock,
-        });
-        this.log.warn("agent", "Catalog confirmation drill-in click blocked", {
-          turn: this.turnCount,
-          tool: toolName,
-          id: args.id,
-          mode: "sequential",
-        });
-        this.traceRecorder?.recordEvent(
-          "catalog_confirmation_drill_in_blocked",
-          {
-            turn: this.turnCount,
-            tool: toolName,
-            id: args.id,
-            mode: "sequential",
-          },
-        );
-        continue;
-      }
       const planStatus = this.context.getPlanStatusRaw();
       const activeObjective =
         planStatus?.subtasks[planStatus.currentIndex]?.description ??
@@ -1047,7 +696,6 @@ export async function executeSequentialToolCalls(
           turn: this.turnCount,
           tool: toolName,
           id: args.id,
-          explicitValue: textEntryClickGuard.explicitValue,
           mode: "sequential",
         });
         continue;
@@ -1075,52 +723,6 @@ export async function executeSequentialToolCalls(
           mode: "sequential",
         });
         continue;
-      }
-    }
-
-    if (shouldCheckWorkflowTabRedirect(toolName)) {
-      const workflowRedirect = await this.getWorkflowTabToolRedirect({
-        toolName,
-        args,
-        currentTabId: tabId,
-      });
-      if (workflowRedirect) {
-        this.context.addMessage({
-          role: "tool",
-          tool_call_id: toolCall.id,
-          content: workflowRedirect,
-        });
-        this.log.info("agent", "Workflow tab controller redirected tool call", {
-          turn: this.turnCount,
-          tool: toolName,
-          mode: "sequential",
-          skillId: this.selectedSkillId,
-        });
-        continue;
-      }
-    }
-
-    let autocompleteRewriteReason: string | null = null;
-    if (toolName === ToolName.TYPE_TEXT && args.id != null) {
-      const snapshot = this.context.getSnapshot();
-      const targetId = Number(args.id);
-      const target = Number.isFinite(targetId)
-        ? snapshot?.elements.find((el: any) => el.tag === targetId)
-        : null;
-      const planStatus = this.context.getPlanStatusRaw();
-      const activeObjective =
-        planStatus?.subtasks[planStatus.currentIndex]?.description ??
-        this.originalQuery;
-      const rewrite = assessAutocompleteTextRewrite({
-        objectiveText: activeObjective,
-        originalQuery: this.originalQuery,
-        element: target,
-        args,
-      });
-      if (rewrite) {
-        args.text = rewrite.rewrittenText;
-        toolCall.function.arguments = JSON.stringify(args);
-        autocompleteRewriteReason = rewrite.reason;
       }
     }
 
@@ -1340,18 +942,6 @@ export async function executeSequentialToolCalls(
       continue;
     }
 
-    // NAVIGATE guard — block navigation to completed step URLs
-    if (
-      toolName === ToolName.NAVIGATE &&
-      handleNavigateGuardToolCall(
-        this as unknown as AgentLoopToolHandlerHost,
-        toolCall.id,
-        args,
-      )
-    ) {
-      continue;
-    }
-
     // LIST_TABS — workspace-scoped
     if (toolName === ToolName.LIST_TABS) {
       await handleListTabsToolCall(
@@ -1405,7 +995,6 @@ export async function executeSequentialToolCalls(
       args,
       tabId,
       prevElementCount,
-      autocompleteRewriteReason,
       discoveredTagIds,
       preDecision,
       llmIntention: params.llmIntention,
@@ -1494,6 +1083,5 @@ export async function executeSequentialToolCalls(
     lastDomAffectingToolName,
     doneSignaled,
     doneSummary,
-    resultPageProgress,
   };
 }

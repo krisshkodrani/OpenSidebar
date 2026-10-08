@@ -74,7 +74,6 @@ import {
     getSkillDescriptor,
     getSkillPack,
     getSkillToolPolicy,
-    getSkillToolSuppressionPolicy,
     KeywordSkillMatcher,
     listDefaultEnabledSkillPackIds,
     listSkillDescriptors,
@@ -1819,9 +1818,8 @@ describe("OrchestratorPlanner.buildNodes returns BuildNodesResult", () => {
         // LP-17 P7 merges the same-page enter+submit chain into one node —
         // the full-default-tools invariant must survive the merge.
         expect(result.nodes).toHaveLength(1);
-        // All nodes get the full default tool set — per-step profile filtering
-        // is handled by applyToolProfile() inside the agent loop, not at the
-        // orchestrator node level (prevents permanent tool blocking on replan).
+        // All nodes get the full default tool set. Step profiles are workflow
+        // hints; enforced role permissions and user flags constrain access.
         expect(result.nodes[0].allowedTools).toContain(ToolName.TYPE_TEXT);
         expect(result.nodes[0].allowedTools).toContain(ToolName.CLICK_ELEMENT);
         expect(result.nodes[0].allowedTools).toContain(ToolName.GET_PROFILE_FIELDS);
@@ -3244,9 +3242,6 @@ describe("selectPrimarySkill", () => {
             ToolName.CLICK_ELEMENT,
         );
         expect(
-            getSkillToolSuppressionPolicy("servicenow-record-form")?.temporarilySuppressedTools,
-        ).toContain(ToolName.CLICK_ELEMENT);
-        expect(
             resolveSkillToolProfile(
                 "servicenow-record-form",
                 "Fill the ServiceNow record fields",
@@ -3325,7 +3320,7 @@ describe("selectPrimarySkill", () => {
         expect(
             repeatableFormSkill?.executionContract?.toolDiscipline,
         ).toContain(
-            "Treat profile values as literals: copy exact strings for text fields and do not summarize, embellish, or replace them with plausible alternatives.",
+            "Copy profile values exactly unless the user requests a transformation. Preserve factual content and apply only the requested changes.",
         );
         expect(
             selectPrimarySkill({
@@ -3459,7 +3454,6 @@ describe("selectPrimarySkill", () => {
 
     test("keeps paginated aggregate scans on read and forward-click tools", () => {
         const policy = getSkillToolPolicy("paginated-table-scan");
-        const suppression = getSkillToolSuppressionPolicy("paginated-table-scan");
 
         expect(policy?.preferredTools).toContain(ToolName.READ_PAGE);
         expect(policy?.preferredTools).toContain(ToolName.CLICK_ELEMENT);
@@ -3467,16 +3461,10 @@ describe("selectPrimarySkill", () => {
         expect(policy?.discouragedTools).toContain(ToolName.TYPE_TEXT);
         expect(policy?.discouragedTools).toContain(ToolName.PRESS_KEY);
         expect(policy?.discouragedTools).toContain(ToolName.SCROLL_PAGE);
-        expect(suppression?.temporarilySuppressedTools).toContain(ToolName.READ_ELEMENT);
-        expect(suppression?.temporarilySuppressedTools).toContain(ToolName.TYPE_TEXT);
-        expect(suppression?.temporarilySuppressedTools).toContain(ToolName.PRESS_KEY);
-        expect(suppression?.temporarilySuppressedTools).toContain(ToolName.SCROLL_PAGE);
-        expect(suppression?.temporarilySuppressedTools).toContain(ToolName.CREATE_TAB);
     });
 
     test("keeps paginated record lookup distinct from aggregate scan policy", () => {
         const policy = getSkillToolPolicy("paginated-record-lookup");
-        const suppression = getSkillToolSuppressionPolicy("paginated-record-lookup");
 
         expect(policy?.preferredTools).toContain(ToolName.FIND_ELEMENT);
         expect(policy?.preferredTools).toContain(ToolName.TYPE_TEXT);
@@ -3484,10 +3472,6 @@ describe("selectPrimarySkill", () => {
         expect(policy?.preferredTools).toContain(ToolName.SCROLL_PAGE);
         expect(policy?.discouragedTools).toContain(ToolName.READ_ELEMENT);
         expect(policy?.discouragedTools).toContain(ToolName.PRESS_KEY);
-        expect(suppression?.temporarilySuppressedTools).toContain(ToolName.READ_ELEMENT);
-        expect(suppression?.temporarilySuppressedTools).toContain(ToolName.PRESS_KEY);
-        expect(suppression?.temporarilySuppressedTools).not.toContain(ToolName.SCROLL_PAGE);
-        expect(suppression?.temporarilySuppressedTools).toContain(ToolName.CREATE_TAB);
     });
 
     test("matches cross-tab compare workflows", () => {
@@ -3548,21 +3532,10 @@ describe("selectPrimarySkill", () => {
 
     test("does not discourage completion for hover reveal workflows", () => {
         const policy = getSkillToolPolicy("hover-reveal-navigation");
-        const suppression = getSkillToolSuppressionPolicy("hover-reveal-navigation");
 
         expect(policy?.preferredTools).toContain(ToolName.HOVER_ELEMENT);
         expect(policy?.preferredTools).toContain(ToolName.CLICK_ELEMENT);
         expect(policy?.discouragedTools).not.toContain(ToolName.DONE);
-        expect(suppression?.temporarilySuppressedTools).toContain(
-            ToolName.INSPECT_HIDDEN,
-        );
-        expect(suppression?.temporarilySuppressedTools).toContain(
-            ToolName.XRAY_PAGE,
-        );
-        expect(suppression?.temporarilySuppressedTools).toContain(
-            ToolName.HIDE_ELEMENT,
-        );
-        expect(suppression?.exemptTools).toContain(ToolName.DONE);
     });
 
     test("matches explicit turn-budget conservation workflows", () => {
@@ -4048,7 +4021,7 @@ describe("decompose request shape (LP-17 P4)", () => {
 });
 
 describe("direct-execution skill threading (LP-17 P6)", () => {
-    test("buildDirectExecutionNodes selects a skill when the catalog matches", async () => {
+    test("buildDirectExecutionNodes honors communication pack selection", async () => {
         const { buildDirectExecutionNodes } = await import(
             "../../src/background/orchestrator/planner"
         );
@@ -4060,10 +4033,14 @@ describe("direct-execution skill threading (LP-17 P6)", () => {
             { enabledSkillPackIds: [] },
         );
         expect(nodes).toHaveLength(1);
-        // Which skill wins is the catalog's call — what LP-17 P6 fixed is that
-        // the direct path threads skillCatalogOptions at all (it used to drop
-        // them, leaving direct nodes skill-less).
-        expect(nodes[0].selectedSkillId).toBeTruthy();
+        expect(nodes[0].selectedSkillId).toBeUndefined();
+        const enabled = buildDirectExecutionNodes(
+            "Reply to the latest email from the recruiter",
+            "planned",
+            "Inbox",
+            "https://mail.example/inbox",
+        );
+        expect(enabled[0].selectedSkillId).toBe("email-reply-careful");
     });
 });
 

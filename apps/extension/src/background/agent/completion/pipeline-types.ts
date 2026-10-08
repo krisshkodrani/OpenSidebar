@@ -63,7 +63,8 @@ export type CompletionEffect =
   | { type: "increment_done_rejections" }
   /**
    * Update `lastContractRejectionKind` + `consecutiveSameKindRejections`: the
-   * same-kind bounce counter (++ when kind matches the last, else reset to 1).
+   * diagnostic counter (++ when kind matches the last, else reset to 1).
+   * Counts describe repeated rejection; they never grant completion.
    */
   | { type: "record_contract_rejection"; kind: string }
   /** Set `lastCompletionRejection` to the kernel evaluation. */

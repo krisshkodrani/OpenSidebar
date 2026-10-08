@@ -1760,7 +1760,7 @@ export function updateExplorationBudget(params: {
     consecutiveTurns,
     message:
       `You've spent ${consecutiveTurns} consecutive turns only reading/inspecting without acting. ` +
-      "Use what you've gathered - click, type, scroll, navigate - or escalate if stuck.",
+      "Continue reading if you still need evidence for the user’s request. If the request is satisfied, report the result; if these reads are not helping, change approach or escalate.",
   };
 }
 

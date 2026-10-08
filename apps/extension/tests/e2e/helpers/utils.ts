@@ -160,19 +160,31 @@ function withE2ETimeout<T>(
   operation: Promise<T>,
   timeoutMs: number,
   label: string,
+  signal?: AbortSignal,
 ): Promise<T> {
   return new Promise<T>((resolve, reject) => {
+    const cleanup = () => {
+      clearTimeout(timer);
+      signal?.removeEventListener("abort", abort);
+    };
+    const abort = () => {
+      cleanup();
+      reject(signal?.reason ?? new Error(`${label} aborted`));
+    };
     const timer = setTimeout(() => {
+      cleanup();
       reject(new Error(`${label} timed out after ${timeoutMs}ms`));
     }, timeoutMs);
+    signal?.addEventListener("abort", abort, { once: true });
+    if (signal?.aborted) abort();
 
     operation.then(
       (value) => {
-        clearTimeout(timer);
+        cleanup();
         resolve(value);
       },
       (error) => {
-        clearTimeout(timer);
+        cleanup();
         reject(error);
       },
     );
@@ -659,6 +671,7 @@ export async function getMemoryEvents(
 export async function getMonitoredEventsWithControlLane(
   worker: WebWorker,
   last: number,
+  signal?: AbortSignal,
 ): Promise<any[]> {
   return withE2ETimeout(
     worker.evaluate((n: number) => {
@@ -679,6 +692,7 @@ export async function getMonitoredEventsWithControlLane(
     }, last),
     SERVICE_WORKER_EVALUATE_TIMEOUT_MS,
     "Monitored event read",
+    signal,
   );
 }
 
@@ -1135,12 +1149,14 @@ export function startApprovalAutoResponder(
   const pollMs = options?.pollMs ?? 250;
   const answered = new Set<string>();
   let running = true;
+  const reads = new AbortController();
 
   const loop = (async () => {
     while (running) {
       try {
-        const events = await getMonitoredEventsWithControlLane(worker, 120);
+        const events = await getMonitoredEventsWithControlLane(worker, 120, reads.signal);
         for (const event of events) {
+          if (!running) break;
           if (event?.type !== "APPROVAL_REQUEST") continue;
           if (
             workspaceId != null &&
@@ -1166,13 +1182,14 @@ export function startApprovalAutoResponder(
       } catch {
         // Transient service-worker read failure; retry on the next tick.
       }
-      await new Promise((resolve) => setTimeout(resolve, pollMs));
+      if (running) await new Promise((resolve) => setTimeout(resolve, pollMs));
     }
   })();
 
   return {
     stop: async () => {
       running = false;
+      reads.abort();
       await loop.catch(() => {});
     },
   };

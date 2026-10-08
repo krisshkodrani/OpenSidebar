@@ -5,10 +5,16 @@ import {
   assessDraftOnlyCompletionViolation,
   classifyConsequentialActionConsentMode,
   isDraftOnlyCommunicationTask,
+  hasStrongCommunicationSentEvidence,
 } from "../../src/background/agent/consequential-action-policy";
 import { ToolName } from "../../src/types";
 
 describe("consequential action policy", () => {
+  test("negated sent status does not hide a separate affirmative send confirmation", () => {
+    expect(hasStrongCommunicationSentEvidence("Draft not sent. Another message was successfully sent.")).toBe(true);
+    expect(hasStrongCommunicationSentEvidence("Email sent. The follow-up reply has not been sent.")).toBe(true);
+  });
+
   test("requires approval for job application final submit clicks", () => {
     expect(
       assessConsequentialActionApproval({

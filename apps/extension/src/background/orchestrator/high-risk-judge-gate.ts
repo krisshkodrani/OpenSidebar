@@ -145,7 +145,11 @@ export async function runHighRiskJudgeGate(
     const tabObservation = await observeTaskTabs(task, browserPort);
     if (tabObservation) acceptedEvidence.push(tabObservation);
     return await verifier.judgeGate({
-      claim: node.description,
+      // Planner criteria may refer to "the requested values" without repeating
+      // them. Preserve that reference as task context, not observed page state.
+      claim: task.query?.trim()
+        ? `${node.description}\n\nOriginal user request (defines the objective, not evidence that it is complete):\n${task.query}`
+        : node.description,
       successCriteria: node.successCriteria,
       // Direct observations take precedence over executor success claims.
       evidence: acceptedEvidence,

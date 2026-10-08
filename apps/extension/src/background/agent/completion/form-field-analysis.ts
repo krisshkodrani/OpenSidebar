@@ -21,7 +21,14 @@ export function extractFormFieldObservations(
   for (const element of snapshot.elements) {
     const control = element.attributes.control;
     if (!control) continue;
-    const text = cleanLabel(element.text || element.attributes.label || "");
+    // Editable control text is its current value, not an associated label.
+    // Otherwise filling a field changes the inferred completion contract.
+    const kind = getFormFieldKind(element);
+    const text = cleanLabel(
+      element.attributes.label ||
+        (kind === "text" || kind === "select" ? "" : element.text) ||
+        "",
+    );
     if (!text) continue;
     const existing = labelByControl.get(control);
     if (!existing || text.length > existing.length) {

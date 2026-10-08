@@ -298,7 +298,7 @@ export const SKILL_CATALOG: SkillDescriptor[] = [
     notes: [
       "Opening a result is intermediate.",
       "Prefer exact-question terms over broad paraphrases when searching.",
-      "For knowledge-base answer questions, call search_knowledge_base first so search, result ranking, article reading, and answer extraction happen as one grounded read-only workflow.",
+      "For knowledge-base answer questions, search_knowledge_base can combine search and evidence extraction; use it when helpful, or use current evidence and visible search or article controls.",
       "Compare result snippets or titles before opening; do not assume the first result is the answer.",
       "Completion requires a final answer that contains the requested fact.",
     ],
@@ -994,7 +994,7 @@ export const SKILL_CATALOG: SkillDescriptor[] = [
     id: "list-detail-review-loop",
     name: "List Detail Review Loop",
     description:
-      "Review a series of visible list items by opening each detail view, capturing the requested facts, and returning to the list before continuing.",
+      "Review the requested list items and gather the facts needed for a comparison or recommendation.",
     tags: ["workflow", "list", "detail", "review", "round-trip"],
     triggers: [
       "review all listings",
@@ -1011,16 +1011,16 @@ export const SKILL_CATALOG: SkillDescriptor[] = [
       "scroll_page",
       "find_element",
     ],
-    discouragedTools: ["read_element", "navigate", "go_back", "done"],
+    discouragedTools: [],
     contextScope: "turn",
     verifierMode: "hybrid",
     notes: [
       "Enumerate the requested visible review set once before opening detail pages.",
-      "Track reviewed item names in notes so an item is not reopened or skipped.",
+      "Use notes to track requested items and preserve useful findings during a long review.",
       "When a tagged list action is already visible, click it directly instead of inspecting its attributes.",
-      "Use one detail-page read to extract the facts, then return to the list immediately.",
+      "Read details when needed for missing facts or explicitly requested; revisit evidence when it is stale or incomplete.",
       "Prefer the page's own back or return control over browser history when the detail view appears in-place.",
-      "For recommendation or best-match tasks, treat the visible listings as the review set unless the user narrows the scope.",
+      "Review the user-requested scope; visible listings alone do not establish a requirement to inspect every detail page.",
     ],
   },
 ];

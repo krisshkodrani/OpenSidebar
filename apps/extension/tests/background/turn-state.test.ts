@@ -4,13 +4,12 @@ import { TurnState } from "../../src/background/agent/turn-state";
 import { ToolName } from "../../src/types";
 
 describe("TurnState", () => {
-  test("initializes the five run-scoped collections empty", () => {
+  test("initializes the four run-scoped collections empty", () => {
     const s = new TurnState();
     expect(s.toolFailCounts.size).toBe(0);
     expect(s.recentSuccesses).toEqual([]);
     expect(s.recentToolCalls).toEqual([]);
     expect(s.discoveredTagIds.size).toBe(0);
-    expect(s.resultPageProgress).toBeTruthy();
   });
 
   test("resetRecentSuccesses clears in place (reference stays valid)", () => {

@@ -5,7 +5,7 @@ describe("executor requested-fact preservation policy", () => {
   test("preserves transient requested facts before advancing the page", () => {
     const prompt = getPromptDefinition("agent.system");
 
-    expect(prompt.version).toBe("v10");
+    expect(prompt.version).toBe("v11");
     expect(prompt.template).toContain(
       "If the current view contains facts the original user asked you to return and the next action can replace that view",
     );

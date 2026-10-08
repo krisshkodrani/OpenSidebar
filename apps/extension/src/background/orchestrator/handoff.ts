@@ -627,13 +627,8 @@ export function buildExecutorInstruction(
     "- Treat later planner steps as sequencing context; do not call done() while an explicit requested step remains unfinished.",
     "- Validate planner assumptions against the current page before acting.",
     "- Use prior context only to avoid duplicate work or preserve requested literals.",
-    "- If verifier requested reroute or retry, adapt strategy before acting.",
-    ...(node.reflexionLog.length > 0
-      ? [
-          "- CRITICAL: Prior attempts failed. Study the failure analysis above and use a fundamentally different strategy.",
-          "- Call done() only when success criteria are satisfied.",
-        ]
-      : ["- Call done() only when success criteria are satisfied."]),
+    "- Use verifier feedback and the current page to determine what remains; preserve successful prior effects.",
+    "- Call done() only when success criteria are satisfied.",
   );
 
   if (originalQuery) {
@@ -923,6 +918,11 @@ export function createRerouteNode(
     dependencies: [sourceNode.id],
     assumptions: [...sourceNode.assumptions],
     handoffArtifacts: [
+      // Carry the latest observed attempt forward rather than replacing it
+      // with only the verifier's instruction to try again.
+      ...structuredClone(sourceNode.handoffArtifacts.filter(
+        (artifact) => artifact.phase === "executor_finished",
+      ).slice(-1)),
       {
         role: "verifier",
         phase: "verifier_reroute",

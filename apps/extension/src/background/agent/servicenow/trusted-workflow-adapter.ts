@@ -6,26 +6,19 @@
  * labelled domain boundary. Like the tool-side `tools/servicenow/` adapter, this
  * module obeys a one-way rule — it never imports the generic runtime it serves
  * (`loop.ts`, the tools barrel, `tools/index.ts`); the loop imports from the
- * adapter, not the reverse. Deleting this directory removes ServiceNow from the
- * agent runtime without touching generic completion/turn logic.
+ * adapter, not the reverse. Smaller ServiceNow checks remain in generic runtime
+ * files; this is a partial boundary, as documented in CLAUDE.md.
  *
- * This first pass relocates the pure module-level helpers (request parsing,
- * missing-field summaries, URL inference) and the module-navigation evidence
- * inference (behind a narrow host); the stateful record-form / catalog
- * controllers follow in later passes.
+ * This module contains pure helpers (request parsing, missing-field summaries,
+ * URL inference) and module-navigation evidence inference behind a narrow host.
+ * Stateful record-form behavior lives in record-form-controller.ts. Catalog
+ * submission and completion are executor choices, using the normal tool and
+ * DONE paths.
  */
 
 import { ToolName } from "../../../types";
 import type { DomSnapshot } from "../../../types";
 import type { EvidenceAccumulator } from "../evidence";
-
-/** A trusted catalog-order submission the agent has already committed this run. */
-export type TrustedCatalogOrderSubmission = {
-  itemName: string | null;
-  quantity: string | null;
-  configuredResult: string;
-  submittedAtTurn: number;
-};
 
 /** A parsed "navigate to X module of Y application" request. */
 export type ParsedServiceNowModuleRequest = {

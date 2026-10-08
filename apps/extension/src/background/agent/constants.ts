@@ -99,8 +99,6 @@ export const TOOL_BATCH_LIMITS = {
 export const EXPLORATION_BUDGET = {
   /** Soft nudge injected after this many consecutive exploration-only turns */
   MAX_CONSECUTIVE: 3,
-  /** Hard block: exploration-only tool calls are rejected after this many turns (nudge + 2 grace) */
-  HARD_BLOCK: 5,
 } as const;
 
 /** Tools classified as exploration-only (read/inspect, no side-effects on the page) */

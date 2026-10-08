@@ -71,7 +71,7 @@ Run `easy` before `medium` before `hard` unless scoped to one failing test.
   points and `tool-hooks.ts` façades — and adapter modules must never import
   `tools/index.ts` or the tools barrel (one-way rule). The agent-side SN
   behavior lives in `background/agent/servicenow/` (record-form-controller /
-  catalog-controller / trusted-workflow-adapter / catalog-order-policy /
+  trusted-workflow-adapter /
   submit-diagnostics-policy); `agent/loop.ts` keeps only thin dispatch-host
   delegates into it. What is NOT yet extracted and still lives in generic
   files: the serialized main-world SN/Glide page scripts in
@@ -81,11 +81,14 @@ Run `easy` before `medium` before `hard` unless scoped to one failing test.
   `content/actions/interaction.ts`. Deleting the adapter dirs would NOT remove
   ServiceNow from the runtime — full detachment is deferred to the LP-15
   runtime-as-library work.
-- Completion/"is the task done?" has ONE authority: the pure pipeline in
-  `agent/completion/pipeline.ts` (kernel decides accept/reject first; the
-  absorbed pre-pipeline guard chain runs as ordered stages after it — their
-  `legacy_done_guards` basis strings are historical vocabulary, not a parallel
-  implementation). The golden corpus in `tests/fixtures/completion-corpus/`
+- Model-requested DONE uses the pipeline in
+  `agent/completion/pipeline.ts`. Summary and grounding checks precede the
+  kernel; its inconclusive result can enter the remaining fallback checks.
+  Their `legacy_done_guards` basis strings are historical vocabulary, not a
+  parallel implementation. Some trusted form/list controllers still finalize
+  through `completeTaskResult`; treat consolidation of those paths as separate
+  work, not as already accomplished. Catalog completion uses normal DONE.
+  The golden corpus in `tests/fixtures/completion-corpus/`
   must replay byte-identical — regenerate with `UPDATE_COMPLETION_CORPUS=1`
   only when you intend a semantic change.
 - Prefer the existing small `background/agent/*-policy.ts` modules over adding more

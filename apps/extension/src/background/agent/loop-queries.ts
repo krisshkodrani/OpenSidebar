@@ -48,7 +48,6 @@ export interface LoopQueriesHost {
       documentInstanceId?: string,
     ): { result: string; source: "ledger" | "ephemeral" } | null;
   };
-  getWorkspaceTabIds(): Promise<number[] | null | undefined>;
 }
 
 /** Whether a done() rejection at the mid-point threshold should escalate tier. */
@@ -148,25 +147,6 @@ export function getMutationDocumentId(host: LoopQueriesHost, snapshot?: DomSnaps
 
 export function formatMutationReplayMessage(result: string): string {
   return result + "\n[This is a previous execution result, not a fresh action or observation. Repeat execution was suppressed; inspect current state before choosing another action.]";
-}
-
-/** The workspace's tabs (or all tabs when no workspace scoping is active). */
-export async function getWorkspaceTabs(
-  host: LoopQueriesHost,
-): Promise<chrome.tabs.Tab[]> {
-  const wsTabIds = await host.getWorkspaceTabIds();
-  if (!wsTabIds) {
-    return await chrome.tabs.query({});
-  }
-  const tabs: chrome.tabs.Tab[] = [];
-  for (const id of wsTabIds) {
-    try {
-      tabs.push(await chrome.tabs.get(id));
-    } catch {
-      // Ignore tabs closed outside the agent loop.
-    }
-  }
-  return tabs;
 }
 
 export function captureRecentSubtaskResult(

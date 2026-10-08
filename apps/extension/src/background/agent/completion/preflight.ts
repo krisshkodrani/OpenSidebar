@@ -1,6 +1,5 @@
 import type { DomSnapshot } from "../../../types";
 import { countExplicitSteps } from "../explicit-steps";
-import { getListDetailDoneRejection } from "../list-detail-policy";
 import {
   isDoneSummaryGroundedInSnapshot,
   requiresGroundingReadBeforeDone,
@@ -15,7 +14,6 @@ import { assessWorkflowDoneGuard } from "../verification";
 import type {
   CompletionEarlyMultiStepPreflight,
   CompletionGroundingReadPreflight,
-  CompletionListDetailReviewPreflight,
   CompletionMoneyTableAggregatePreflight,
   CompletionPendingAutocompletePreflight,
   CompletionRequiredEvidencePreflight,
@@ -313,27 +311,6 @@ export function evaluateCompletionRequiredEvidencePreflight(params: {
     status: "rejected",
     kind: "missing_required_evidence",
     missingRequiredEvidence: [...params.missingRequiredEvidence],
-  };
-}
-
-export function evaluateCompletionListDetailReviewPreflight(params: {
-  selectedSkillId?: string | null;
-  userRequest: string;
-  reviewedDetailCount: number;
-  visibleDetailActionCount: number;
-}): CompletionListDetailReviewPreflight {
-  const rejection = getListDetailDoneRejection({
-    selectedSkillId: params.selectedSkillId,
-    query: params.userRequest,
-    reviewedDetailCount: params.reviewedDetailCount,
-    visibleDetailActionCount: params.visibleDetailActionCount,
-  });
-  if (!rejection) return { status: "valid" };
-
-  return {
-    status: "rejected",
-    kind: "incomplete_list_detail_review",
-    reason: rejection,
   };
 }
 

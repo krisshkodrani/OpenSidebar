@@ -172,7 +172,6 @@ export {
 export {
   evaluateCompletionEarlyMultiStepPreflight,
   evaluateCompletionGroundingReadPreflight,
-  evaluateCompletionListDetailReviewPreflight,
   evaluateCompletionMoneyTableAggregatePreflight,
   evaluateCompletionPendingAutocompletePreflight,
   evaluateCompletionRequiredEvidencePreflight,
@@ -190,7 +189,6 @@ export type {
   CompletionEvidence,
   CompletionEarlyMultiStepPreflight,
   CompletionGroundingReadPreflight,
-  CompletionListDetailReviewPreflight,
   CompletionMoneyTableAggregatePreflight,
   CompletionPendingAutocompletePreflight,
   CompletionRequiredEvidencePreflight,

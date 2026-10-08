@@ -765,6 +765,22 @@ describe("Orchestrator handoff briefing", () => {
     expect(rerouted.handoffArtifacts[0].phase).toBe("verifier_reroute");
   });
 
+  test("reroute preserves only the latest executor result without sharing mutable artifacts", () => {
+    const source = makeNode([
+      { role: "executor", phase: "executor_finished", note: "Old page state", timestamp: 1 },
+      { role: "executor", phase: "executor_finished", note: "Record 741 saved", timestamp: 2,
+        evidence: [{ basis: "observation", claim: "Saved value: 741" }] },
+      { role: "verifier", phase: "verifier_reroute", note: "Read back the saved value", timestamp: 3 },
+    ]);
+    const rerouted = createRerouteNode(source, "Check the existing record", "Need readback");
+    expect(rerouted.handoffArtifacts.map((artifact) => artifact.phase)).toEqual([
+      "executor_finished", "verifier_reroute",
+    ]);
+    expect(rerouted.handoffArtifacts[0].note).toBe("Record 741 saved");
+    rerouted.handoffArtifacts[0].evidence![0].claim = "Changed child evidence";
+    expect(source.handoffArtifacts[1].evidence![0].claim).toBe("Saved value: 741");
+  });
+
   test("reroute preserves the ServiceNow record-form skill when page context is threaded", () => {
     const source = makeNode([]);
     // A merged ServiceNow record-form request (field/value pairs, "incident"),

@@ -507,13 +507,11 @@ function extractMultiReturnMarkers(text: string): {
     /\bcompare\s+(?:the\s+)?([a-z][a-z0-9-]{1,30})\s+and\s+([a-z][a-z0-9-]{1,30})\s+([a-z][a-z0-9-]{2,30})\b/,
   );
   if (comparison) {
-    const sharedNoun = singularizePhrase(comparison[3] || "");
     return {
       count: 2,
-      entities: unique([
-        `${comparison[1]} ${sharedNoun}`,
-        `${comparison[2]} ${sharedNoun}`,
-      ]),
+      // The shared category describes the subjects; repeating it in an answer
+      // is not a separate user requirement ("Alpha" can refer to "Alpha plan").
+      entities: unique([comparison[1], comparison[2]]),
     };
   }
 

@@ -9,7 +9,7 @@
  *   1. WorkspaceManager adopts page-created navigation targets whose source
  *      tab belongs to a workspace.
  *   2. surfaceSpawnedTabs drains the queue into a model-visible note.
- *   3. The spawned-tab latch unlocks the tab-management tool gate, and the
+ *   3. The spawned-tab latch preserves the existing close-tab gate behavior, and the
  *      context renders a standing "## Open Tabs" section when multi-tab.
  */
 import { describe, test, expect, beforeEach, afterEach, vi } from "vitest";
@@ -17,7 +17,7 @@ import "../setup";
 
 import { WorkspaceManager } from "../../src/background/workspaces/manager";
 import { ContextManager } from "../../src/background/agent/context";
-import { tabManagementBlocked } from "../../src/background/agent/loop-tool-handlers";
+import { tabClosingBlocked } from "../../src/background/agent/loop-tool-handlers";
 import type { AgentLoopToolHandlerHost } from "../../src/background/agent/loop-tool-handlers";
 
 // LP-21: page state moved out of the system message into a trailing user
@@ -261,77 +261,19 @@ describe("surfaceSpawnedTabs", () => {
   });
 });
 
-describe("tab-management gate spawned-tab unlock", () => {
+describe("close-tab gate spawned-tab unlock", () => {
   const gatedLoop = (hasSpawned: boolean) =>
     ({
       context: { hasSpawnedTabs: () => hasSpawned },
-      shouldBlockTabManagementTools: () => true,
+      shouldBlockTabClosing: () => true,
     }) as unknown as AgentLoopToolHandlerHost;
 
   test("stays blocked without spawned tabs", () => {
-    expect(tabManagementBlocked(gatedLoop(false))).toBe(true);
+    expect(tabClosingBlocked(gatedLoop(false))).toBe(true);
   });
 
   test("unlocks once a page action spawned a workspace tab", () => {
-    expect(tabManagementBlocked(gatedLoop(true))).toBe(false);
-  });
-});
-
-describe("tool-profile spawned-tab unlock", () => {
-  test("switch_tab/list_tabs survive step-profile filtering once a tab was spawned", async () => {
-    const { applyToolProfile } =
-      await import("../../src/background/agent/loop-skill-tools");
-    const def = (name: string) =>
-      ({ type: "function", function: { name, parameters: {} } }) as any;
-    const tools = [
-      def("click_element"),
-      def("type_text"),
-      def("switch_tab"),
-      def("list_tabs"),
-      def("done"),
-    ];
-    const buildLoop = (hasSpawned: boolean) =>
-      ({
-        context: {
-          getPlanStatusRaw: () => ({
-            subtasks: [
-              {
-                status: "running",
-                description: "Fill the application form",
-                toolProfile: "form_fill",
-              },
-            ],
-          }),
-          getSnapshot: () => null,
-          hasSpawnedTabs: () => hasSpawned,
-        },
-        limits: { stepWarnTurns: 99 },
-        log: { info: () => {} },
-        originalQuery: "fill the form",
-        planSteps: [{}],
-        planSubtasks: [
-          {
-            description: "Fill the application form",
-            toolProfile: "form_fill",
-          },
-        ],
-        selectedSkillId: null,
-        turnCount: 3,
-        turnsOnCurrentStep: 0,
-      }) as any;
-
-    const withoutSpawn = applyToolProfile(buildLoop(false), tools).map(
-      (t: any) => t.function.name,
-    );
-    expect(withoutSpawn).not.toContain("switch_tab");
-    expect(withoutSpawn).not.toContain("list_tabs");
-
-    const withSpawn = applyToolProfile(buildLoop(true), tools).map(
-      (t: any) => t.function.name,
-    );
-    expect(withSpawn).toContain("switch_tab");
-    expect(withSpawn).toContain("list_tabs");
-    expect(withSpawn).toContain("click_element");
+    expect(tabClosingBlocked(gatedLoop(true))).toBe(false);
   });
 });
 

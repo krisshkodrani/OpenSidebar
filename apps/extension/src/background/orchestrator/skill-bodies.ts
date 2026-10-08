@@ -72,8 +72,8 @@ export const SKILL_BODIES: Record<
   },
   "search-answer-extraction": {
     procedureMarkdown: [
-      "1. Clarify the exact fact requested by the user before searching.",
-      "2. For knowledge-base answer tasks, call search_knowledge_base first with the exact question and distinctive search terms.",
+      "1. Identify the exact fact requested and check whether current evidence already answers it.",
+      "2. When additional knowledge-base evidence is needed, consider search_knowledge_base with the exact question and distinctive terms, or use the visible search and article controls.",
       "3. For ServiceNow knowledge tasks, prefer the Knowledge Portal search/results surface over filtered classic admin lists unless the user explicitly asks to edit records.",
       "4. Read the search result snippets or titles and choose the result whose content is most likely to contain the requested fact, not simply the first result.",
       "5. For numeric-answer questions, prefer candidates whose snippets contain the requested entity plus a number or a strong count cue; if the opened result has no answer, return to grounded results and try the next candidate.",
@@ -95,11 +95,11 @@ export const SKILL_BODIES: Record<
     ],
     executionContract: {
       sequencing: [
-        "Search, read ranked results, extract the fact, then answer.",
+        "Use current evidence when sufficient; otherwise search or navigate to relevant sources, read them, and answer.",
       ],
       toolDiscipline: [
-        "Use search_knowledge_base before manual search field clicks for explicit knowledge-base answer questions.",
-        "When search_knowledge_base returns an answer candidate with evidence, call done with only the requested answer unless the user asked for explanation.",
+        "Choose search_knowledge_base, visible search controls, or direct article navigation according to the current page and requested fact.",
+        "Check that any answer candidate addresses the requested fact and is supported by the source evidence before calling done.",
       ],
       completionChecks: [
         "The final answer contains the requested fact or states that it was not found after grounded search.",
@@ -218,27 +218,25 @@ export const SKILL_BODIES: Record<
   },
   "catalog-order-workflow": {
     procedureMarkdown: [
-      "1. For ServiceNow module paths such as Reports > View/Run or Self-Service > Service Catalog, call open_servicenow_module before manual All-menu navigation.",
-      "2. If the target item name and requested quantity/options are already known and the item detail page is open, call configure_catalog_item immediately; pass expectedItem and submit=true when the order/request control is expected on the page.",
-      "3. Use inspect_catalog_item only when the item identity, quantity controls, options, price/summary, or order controls are still unknown.",
-      "4. On a catalog item detail page, prefer configure_catalog_item to set requested quantity, dropdown/radio-like options, checkbox states, and text requirements in one verified action. When the requested item name is known, pass it as expectedItem so lookalike catalog items are refused before submit.",
-      "5. If configure_catalog_item reports missing controls, fall back to manual controls for only the missing fields.",
-      "6. Re-inspect catalog state to verify the configuration before submitting when the helper did not submit.",
-      "7. After Add to Cart, inspect the cart/order state before checkout; if checkout controls are visible, do not configure or add the same item again.",
-      "8. Click the appropriate order, cart, checkout, or request control, or set submit=true in configure_catalog_item when the order/request button is visible.",
-      "9. Continue until a request/order/cart confirmation is visible, then verify the confirmed line count and quantity match the request before calling done.",
-      "10. Treat an Order Status page with a REQ request number as the final confirmation page; do not click request, item, or RITM links from it just to inspect.",
-      "11. Do not open requested-item/detail links just to inspect after a request is submitted; if you do, return to the request/order confirmation page before calling done.",
+      "1. Identify the requested catalog item, quantity, options, and whether the user wants preparation or an actual order.",
+      "2. Inspect the current page or use inspect_catalog_item when needed. Prefer open_servicenow_module for named module paths, with visible navigation as a fallback.",
+      "3. Configure the requested values using configure_catalog_item or visible controls. Pass expectedItem to the helper when the item name is known.",
+      "4. Verify the configured quantity and options. For preparation-only requests, stop before submission and report the prepared state.",
+      "5. When order execution is requested and permitted, use the appropriate order/checkout control or configure_catalog_item with submit=true.",
+      "6. After Add to Cart, inspect current cart state before checkout; avoid adding an already-present item again.",
+      "7. Verify the submitted order's confirmation, line count, and quantity. Preserve that evidence before following detail links needed for the user's remaining questions.",
+      "8. Call done when the requested configuration, submission, and follow-up information are supported by evidence.",
     ].join("\n"),
     requiredEvidence: [
       "Requested item and configuration",
       "Configured quantity/options before submission",
-      "Request/order confirmation after submission",
+      "Request/order confirmation when submission was requested",
+      "Any requested follow-up information",
     ],
     commonFailures: [
       {
-        signal: "ending on the product detail page",
-        recovery: "configure the requested options and submit/order the item",
+        signal: "a requested order lacks confirmation",
+        recovery: "inspect current order/cart state to establish whether submission succeeded before retrying",
       },
       {
         signal:
@@ -249,22 +247,18 @@ export const SKILL_BODIES: Record<
     ],
     executionContract: {
       sequencing: [
-        "Inspect item, configure requested options, verify configuration, submit, verify confirmation.",
+        "Identify and configure the requested item, verify values, submit only when requested, then gather confirmation and requested follow-up evidence.",
       ],
       toolDiscipline: [
-        "For named ServiceNow module navigation inside a catalog-order task, prefer open_servicenow_module before clicking All, typing into navigator search, or using global search.",
-        "When ordering an item chosen from prior evidence such as a chart, carry forward the exact item name and pass it to configure_catalog_item as expectedItem.",
+        "Prefer catalog helpers for supported controls; manual selection and page reads remain available when useful.",
+        "Carry forward the exact requested item name and pass it to configure_catalog_item as expectedItem.",
         "When the request says to order extra items so an existing quantity reaches a target, configure the extra difference quantity, not the final target quantity.",
-        "Do not call read_page or inspect_catalog_item on a catalog detail page when the target item and quantity/options are already known; call configure_catalog_item instead.",
-        "Use inspect_catalog_item after a page transition only when visible quantity/options/order controls are unknown or configure_catalog_item reports missing controls.",
-        "Prefer configure_catalog_item over separate select_option, radio-option clicks, set_checkbox, type_text, and submit clicks when the requested configuration is explicit, including dropdown/select/radio-like values.",
-        "Once the cart contains the requested item and Proceed to Checkout is visible, avoid Add to Cart and repeated configure_catalog_item calls for that same item.",
-        "Once an Order Status page with a REQ number is visible, avoid clicking request/item links and call done from that confirmation page.",
+        "Once the cart contains the requested item, inspect its state before repeating any add or submit action.",
       ],
       completionChecks: [
-        "A request/order/cart confirmation exists after submission.",
-        "The confirmed item line count and quantity match the user's request.",
-        "The current page remains the request/order confirmation page, not a requested-item detail page.",
+        "The configured or confirmed item and quantity match the user's request.",
+        "Requested submissions have actual order confirmation; preparation-only tasks remain unsubmitted.",
+        "Requested follow-up details are grounded in observed evidence; completion does not depend on remaining on one page.",
       ],
     },
   },
@@ -751,11 +745,11 @@ export const SKILL_BODIES: Record<
     procedureMarkdown: [
       "1. Identify the repeatable group name, the required item count, and the current visible item count.",
       "2. If the task references Profile Digest data for repeated rows, call get_profile_fields once for the exact labels before filling.",
-      "3. Stay on the current form page; do not navigate to profile, workspace, account, or site-navigation pages to look for saved values.",
+      "3. Prefer the profile tool for saved values; navigate when another page is needed to fulfill the requested task.",
       "4. Add only the missing number of groups; after each Add another/Add item action, use fresh page state before reusing element ids.",
       "5. Bind each data item to its matching visible group by label or index, such as Experience 2 company, rather than by raw field order.",
       "6. Fill all visible fields for each group from the mapped data, preserving row order and copying profile strings exactly unless the user specifies another ordering or transformation.",
-      "7. Verify the final group count, each group label/index, and each filled value by readback or visible page state. Long text fields must match the source profile text, not a paraphrase.",
+      "7. Verify the final group count, each group label/index, and each filled value by readback or visible page state. Match source profile text unless the user requested a transformation; verify transformed values against that request.",
       "8. Do not click final Submit/Send/Apply controls unless the current step explicitly asks for that final action and consent policy allows it.",
     ].join("\n"),
     requiredEvidence: [
@@ -788,8 +782,8 @@ export const SKILL_BODIES: Record<
       ],
       toolDiscipline: [
         "Use get_profile_fields once for exact repeated profile facts when needed.",
-        "Treat profile values as literals: copy exact strings for text fields and do not summarize, embellish, or replace them with plausible alternatives.",
-        "Do not navigate away from the form to find profile data; the profile tool and current Profile Digest context are the source of truth.",
+        "Copy profile values exactly unless the user requests a transformation. Preserve factual content and apply only the requested changes.",
+        "Prefer the profile tool and current Profile Digest context for saved data; use other pages when the requested task requires them.",
         "Use read_page after Add another/Add item clicks before reusing the add control or filling newly inserted fields.",
         "Prefer labeled field ids or aria labels over positional guesses.",
         "Avoid press_key and click_coordinates for form progression or final submit.",
@@ -797,7 +791,7 @@ export const SKILL_BODIES: Record<
       completionChecks: [
         "The requested number of groups is visible.",
         "Each group label or index matches the intended data row.",
-        "Each requested field value is present in the intended group and text values match the source profile strings exactly.",
+        "Each requested field value is present in the intended group, preserving source profile strings or applying the user's requested transformation.",
         "No final submit action has been taken unless explicitly requested and approved.",
       ],
       failureRecovery: [
@@ -1488,68 +1482,43 @@ export const SKILL_BODIES: Record<
   },
   "list-detail-review-loop": {
     procedureMarkdown: [
-      "1. Start on the visible list page and enumerate the requested review set once: item names, order, and the action that opens each detail view.",
-      "2. Store the compact review checklist in notes before opening details, including which items are pending and which are reviewed.",
-      "3. Open the next pending item directly. If the list already shows a tagged action such as View Details or Open, click it instead of reading button attributes or re-finding it.",
-      "4. Once the detail view is open, use one read_page call to capture the requested facts from the detail page.",
-      "5. Store only the essential facts in notes before returning. For fit or recommendation tasks, include the item name plus the facts that affect the ranking.",
-      "6. Return to the list with the page's own back, return, or listings control, then verify the list is visible again.",
-      "7. Continue with the next pending item from the checklist; do not reopen items already marked reviewed.",
-      "8. Call done only after every requested item in the loop has been reviewed, the list has been restored for the final time, and any requested recommendation is grounded in the captured notes.",
+      "1. Identify the requested review scope and decision criteria. Do not expand a named subset to every visible candidate.",
+      "2. Use list information when it contains the requested facts; open details when evidence is missing or the user explicitly requests detail review.",
+      "3. Choose the next relevant item and collect the facts needed to answer the request. Re-read when evidence is missing, stale, or contradictory.",
+      "4. Keep compact notes when they help preserve evidence across pages or a long review.",
+      "5. Return to the list when needed for another item or when the user requests a round trip; otherwise take the route that advances the objective.",
+      "6. Answer with the requested comparison or recommendation supported by the reviewed facts, and disclose material gaps or incomplete coverage.",
     ].join("\n"),
     requiredEvidence: [
-      "The requested list items were opened from the list view",
-      "Facts extracted from each detail page",
-      "Evidence that notes were updated before leaving a detail view",
-      "The list view restored after each return",
-      "For recommendation tasks, a final ranking or shortlist tied to the captured item facts",
+      "Facts supporting the requested comparison or recommendation",
+      "Coverage of the user's requested scope, with any remaining gaps stated",
+      "The requested final location when the user requires a return",
     ],
     commonFailures: [
       {
-        signal:
-          "reading or inspecting list buttons instead of clicking visible tagged actions",
-        recovery:
-          "use the tagged View Details or Open button directly when it is already visible",
+        signal: "claiming the review is complete without providing the requested answer",
+        recovery: "provide the supported item-level findings or explain which evidence is still missing",
       },
       {
-        signal: "remaining on the detail page after capturing the needed facts",
-        recovery:
-          "use the page's own back or return control immediately once the required facts are stored",
-      },
-      {
-        signal:
-          "re-reading the full list page between every item without using the visible next action",
-        recovery:
-          "continue directly to the next tagged list action when the list is already visible",
-      },
-      {
-        signal:
-          "the same list item is opened more than once without new user intent",
-        recovery:
-          "restore the checklist from notes and move to the next pending item",
+        signal: "losing track of coverage during a long review",
+        recovery: "record a compact checklist of requested items and the evidence already collected",
       },
     ],
     executionContract: {
       sequencing: [
-        "Open the next list item, read the detail page once, store the required fact, return to the list, then continue to the next item.",
-        "For recommendation tasks, repeat the loop across the visible candidate set before synthesizing the final answer.",
-        "Maintain reviewed and pending item names in notes so coverage is explicit.",
+        "Let the requested scope and missing evidence determine which pages to visit and when to answer.",
       ],
       toolDiscipline: [
-        "Prefer click_element over read_element for visible list-entry actions.",
-        "Prefer the list's own back or return control over browser-history go_back when returning from a detail view.",
-        "Use update_notes only for compact extracted facts, not for rephrasing the whole page.",
-        "Avoid re-reading already reviewed details unless the prior evidence is missing or contradictory.",
+        "Use visible tagged actions when they identify the intended target; inspect or re-ground when uncertain.",
+        "Use the page's return control or browser navigation as appropriate to the current state.",
+        "Use notes for facts that need to survive navigation or context compaction.",
       ],
       completionChecks: [
-        "Each requested item in the current loop segment has been opened and reviewed.",
-        "The list page is visible again before the step is considered complete.",
-        "The notes identify which items were reviewed and which item-level facts support the answer.",
-        "Recommendations are based on reviewed item facts rather than list-page guesses.",
+        "The final answer addresses the requested scope and is supported by observed item facts.",
+        "Any explicitly requested return or stopping boundary is respected.",
       ],
       failureRecovery: [
-        "If the list is not visible after returning, re-ground and restore the list before continuing.",
-        "If the next requested list item is off-screen, scroll to reveal it instead of re-reading unrelated content.",
+        "If the current location or evidence is uncertain, re-ground before choosing the next action.",
       ],
     },
   },

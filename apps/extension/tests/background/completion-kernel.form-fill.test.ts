@@ -121,6 +121,32 @@ function formSnapshot(overrides: Partial<DomSnapshot> = {}): DomSnapshot {
 
 
 describe("completion kernel form-fill", () => {
+  test.each(["Denver", ""])("uses form labels instead of entered values when a control key is present: city=%s", (city) => {
+    const fields = [textField(21, "Full name", "Alex Kim"), textField(22, "City", city)];
+    for (const field of fields) field.attributes.control = field.attributes.id;
+    const snapshot = formSnapshot({ elements: fields });
+    const generated = generateCompletionContract({
+      userRequest: "Fill in the shipping form with name Alex Kim and city Denver",
+      snapshot,
+    });
+    expect(generated?.contract).toMatchObject({
+      kind: "form_fill",
+      requiredFields: [
+        expect.objectContaining({ label: "Full name", value: "Alex Kim" }),
+        expect.objectContaining({ label: "City", value: "Denver" }),
+      ],
+    });
+    const evidence = deriveCompletionEvidenceFromSnapshot(snapshot, 7);
+    const decision = evaluateCompletionContract({
+      contract: generated!.contract,
+      candidateSource: "model_done",
+      evidence,
+      snapshot,
+      summary: "Entered the requested shipping details.",
+    });
+    expect(decision.status).toBe(city ? "accepted" : "rejected");
+  });
+
   test("generates a form-fill contract from explicit field values", () => {
     const generated = generateCompletionContract({
       userRequest:

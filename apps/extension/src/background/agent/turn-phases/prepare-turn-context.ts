@@ -4,16 +4,13 @@
  *
  * The pre-inference turn bookkeeping that runs after the feedback phase and
  * before escalation: throttled turn-progress broadcast, the turn-budget time
- * context, budget-urgency trace transitions, the money-table aggregate refresh,
- * and the catalog-order snapshot completion check (which can complete the run).
+ * context, budget-urgency trace transitions, and the money-table aggregate refresh.
  * Extracted verbatim from loop() via the dispatch-host idiom.
  *
- *   - `end_task`  → the catalog-order confirmation page completed the run;
  *   - `continue`  → proceed to the escalation phase.
  */
 
 import type { TraceRecorder } from "../trace";
-import type { LoopResult } from "../loop-types";
 import type { LoopSession } from "../loop-scope";
 import { BROADCAST_INTERVALS } from "../constants";
 
@@ -29,12 +26,9 @@ export interface PrepareTurnContextHost {
   readonly telemetry: { readonly sessionStartTime: number };
   broadcast(message: unknown): void;
   updateMoneyTableAggregateFromSnapshot(): void;
-  maybeCompleteCatalogOrderFromSnapshot(): LoopResult | null;
 }
 
-export type PrepareTurnContextResult =
-  | { kind: "continue" }
-  | { kind: "end_task"; result: LoopResult };
+export type PrepareTurnContextResult = { kind: "continue" };
 
 export function runPrepareTurnContextPhase(
   host: PrepareTurnContextHost,
@@ -82,10 +76,5 @@ export function runPrepareTurnContextPhase(
     }
   }
   host.updateMoneyTableAggregateFromSnapshot();
-  const catalogSnapshotCompletion =
-    host.maybeCompleteCatalogOrderFromSnapshot();
-  if (catalogSnapshotCompletion) {
-    return { kind: "end_task", result: catalogSnapshotCompletion };
-  }
   return { kind: "continue" };
 }
