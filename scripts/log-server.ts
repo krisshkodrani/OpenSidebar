@@ -70,12 +70,6 @@ import { createTraceRepository } from "./obs/repository";
 import { orderTraceEntries, preferSpineSessions } from "./obs/session-read-policy";
 import { readLegacyJsonlSessions } from "./obs/legacy-sessions";
 import {
-  emitObsSpans,
-  emitSessionRoots,
-  flushSpineOtelExport,
-  initSpineOtelExport,
-} from "./obs/otel-emit";
-import {
   hasSpineRunRecord,
   hasSpineSessionRecord,
   readSessionEntries,
@@ -707,10 +701,8 @@ const server = createServer(
         }
         insertTraceTurnToSqlite(PROJECT_ROOT, entry as TraceEntryLike);
         // RFC LP-7 Stage B1: additive span-spine dual-write (fully guarded —
-        // can never break trace recording). When Bluebox export is configured,
-        // the same derived spans also stream out as OTLP (emit never throws).
-        const spineRecord = recordEntrySpansSafe(entry);
-        if (spineRecord) emitObsSpans(spineRecord.spans);
+        // can never break trace recording).
+        recordEntrySpansSafe(entry);
         invalidateInsightsCache();
         sendEmpty(res, 204);
       } catch (err) {
@@ -730,9 +722,6 @@ const server = createServer(
           traceFile: sessionId ? join(TRACE_DIR, `${sessionId}.jsonl`) : undefined,
         });
         recordSessionSafe(session); // RFC LP-7 B1: guarded spine dual-write
-        // Root spans (orchestrator.run / agent.session) exist only as session
-        // records — synthesize them for the OTLP stream (no-op when off).
-        emitSessionRoots(session);
         invalidateTraceViewerCaches();
         sendEmpty(res, 204);
       } catch (err) {
@@ -1585,12 +1574,6 @@ server.listen(PORT, HOST, () => {
   console.log(`Traces to ${TRACE_DIR}`);
   console.log(`Trace viewer: http://${HOST}:${PORT}/viewer`);
   console.log(`Press Ctrl+C to stop\n`);
-  // Bluebox OTLP export of the span spine — default-off, never load-bearing.
-  initSpineOtelExport()
-    .then((on) => {
-      if (on) console.log("[obs] Spine OTLP export to Bluebox enabled");
-    })
-    .catch(() => {});
   if (process.env.LOG_SERVER_SKIP_TRACE_WARMUP !== "1") {
     readAllTraceSessions().catch((err) => {
       console.warn("Trace viewer session cache warmup failed:", err);
@@ -1633,8 +1616,6 @@ function hasTraceTurn(
 
 const shutdown = (signal: string) => {
   console.log(`\n[local-server] Received ${signal}. Shutting down...`);
-  // Best-effort flush of queued OTLP spans within the 2s grace window.
-  void flushSpineOtelExport().catch(() => {});
   server.close(() => {
     releaseTraceWriter();
     process.exit(0);

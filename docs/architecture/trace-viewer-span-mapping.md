@@ -1,14 +1,10 @@
-# Trace Viewer → OpenTelemetry / GenAI Mapping
+# Trace Viewer → GenAI Span Mapping
 
 Date: 2026-07-24
 
-Status: **Shipped.** The OTLP exporter exists and is wired into the log
-server: `scripts/obs/otel-emit.ts` maps span-spine records (`ObsSpan[]`) to
-OTLP and exports them (Dynatrace/Bluebox today; any OTLP backend in
-principle), and `scripts/obs/export-otel.ts` is the backfill CLI
-(`pnpm run obs:export-otel`). The log server calls `initSpineOtelExport()` on
-boot and emits spans on every `/traces` / `/run-traces` write. Configuration
-lives in `.env.otel`.
+Status: **Shipped.** The log server maps trace entries to GenAI-shaped spans
+(`ObsSpan[]`) and stores them in the local span spine. This doc describes that
+mapping. Nothing exports the spans off the machine.
 
 Related: [Trace Viewer](./trace-viewer.md) (the span spine),
 [Trace Viewer Observability](./trace-viewer-observability.md),
@@ -20,8 +16,7 @@ over the tables here).
 ## Span hierarchy
 
 The record kinds form a parent/child span tree; IDs we already emit become the
-OTel identifiers. W3C trace ids are derived deterministically
-(`sha256(spineTraceId)`, `otel-emit.ts`).
+span identifiers.
 
 ```
 trace_id  = derived from correlationId   (end-to-end across orchestrator + agent)
@@ -41,7 +36,7 @@ trace_id  = derived from correlationId   (end-to-end across orchestrator + agent
 
 Standard GenAI attributes:
 
-| OTel GenAI attribute | OpenSidebar field |
+| GenAI attribute | OpenSidebar field |
 | --- | --- |
 | `gen_ai.system` | `llmResponse.actualProviderId` |
 | `gen_ai.request.model` | `llmRequest.model` |
@@ -67,22 +62,15 @@ Turn events attach to the `agent.turn` span using the **raw `TraceEvent.type`
 string** as the event name (no per-event attribute mapping is currently
 implemented).
 
-## Export behavior worth knowing
+## Spine behavior worth knowing
 
-- **PII redaction at the export boundary is implemented** —
-  `redactPiiInText` (`scripts/obs/redact.ts`) runs before emit.
-- Resource `service.name` is **`opensidebar-agent-runtime`**.
-- Attribute values are clipped to 4,000 chars (Dynatrace limit).
 - Synthetic no-op perception spans are dropped (GitHub #99).
-- Backends may reject spans older than their ingest window — the backfill CLI
-  documents this caveat (`export-otel.ts`).
 
 ## Not implemented (aspirational)
 
-- **OTel metrics instruments** (`gen_ai.client.token.usage`,
-  `gen_ai.client.operation.duration`, cost counters): only trace **spans**
-  are exported today; the Metrics-page aggregates are not emitted as metric
+- **Metric instruments** (`gen_ai.client.token.usage`,
+  `gen_ai.client.operation.duration`, cost counters): only **spans** are
+  produced today; the Metrics-page aggregates are not emitted as metric
   instruments.
 - **Sampling / cardinality control**: full-fidelity capture is fine locally;
   fleet-scale volume would need head/tail sampling.
-- **Live anomaly detection / baselining**: the backend's job once data flows.

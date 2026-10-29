@@ -24,14 +24,6 @@
         "command": "tsx scripts/log-server.ts"
       }
     },
-    "jobagent-daemon": {
-      "executor": "nx:run-commands",
-      "cache": false,
-      "options": {
-        "cwd": "{workspaceRoot}",
-        "command": "tsx scripts/jobagent-console/server.ts"
-      }
-    },
     "logs-tail": {
       "executor": "nx:run-commands",
       "cache": false,
@@ -96,14 +88,6 @@
       "options": {
         "cwd": "{workspaceRoot}",
         "command": "tsx scripts/run-e2e-arena.ts"
-      }
-    },
-    "run-e2e-visible-demo": {
-      "executor": "nx:run-commands",
-      "cache": false,
-      "options": {
-        "cwd": "{workspaceRoot}",
-        "command": "tsx scripts/run-e2e-visible-demo.ts"
       }
     },
     "e2e-arena-list": {

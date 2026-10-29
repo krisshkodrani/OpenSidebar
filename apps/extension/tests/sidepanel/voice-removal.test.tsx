@@ -8,7 +8,7 @@ import { ComposerBox } from "../../src/sidepanel/components/input/ComposerBox";
 import { useStore } from "../../src/sidepanel/store";
 import { DEFAULT_SETTINGS } from "../../src/sidepanel/store/settings-slice";
 
-describe("removed voice and JobAgent MCP surfaces", () => {
+describe("removed voice surfaces", () => {
   let container: HTMLDivElement;
   let root: Root;
 
@@ -26,7 +26,7 @@ describe("removed voice and JobAgent MCP surfaces", () => {
     container.remove();
   });
 
-  test("settings drawer has no Voice tab or JobAgent MCP controls", async () => {
+  test("settings drawer has no Voice tab", async () => {
     await act(async () => {
       root.render(
         <SettingsDrawer
@@ -43,8 +43,6 @@ describe("removed voice and JobAgent MCP surfaces", () => {
     expect(container.textContent).toContain("browser");
     expect(container.textContent).toContain("advanced");
     expect(container.textContent).not.toContain("voice");
-    expect(container.textContent).not.toContain("JobAgent MCP");
-    expect(container.textContent).not.toContain("MCP URL");
     expect(container.textContent).not.toContain("Clear Chat History");
     expect(container.textContent).not.toContain("Clear Local Logs");
     expect(container.textContent).not.toContain("Clear All Local Data");

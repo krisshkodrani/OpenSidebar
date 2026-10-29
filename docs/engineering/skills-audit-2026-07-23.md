@@ -26,8 +26,7 @@ The repo also carries `skills/workflow/<id>/{descriptor.json,SKILL.md}` — 9
 directories mirroring 9 of those 30. **Nothing reads them.** A repo-wide search
 for `skills/workflow`, `descriptor.json`, or `SKILL.md` in `apps/extension/src`
 and `scripts/` finds only `scripts/validate-skills.ts` (schema lint on the dead
-tree) and two references to `skills/jobagent/SKILL.md` (a different, live
-system). MV3 has no filesystem access and no build step inlines the markdown.
+tree). MV3 has no filesystem access and no build step inlines the markdown.
 
 Yet `skills/README.md:47` states:
 
@@ -295,44 +294,6 @@ always-candidate skills nobody can justify or delete.
 
 ---
 
-## Finding 6 — `.claude/skills/` (coding-agent side): one weak description
-
-### How it is
-
-These five ARE description-selected, so criterion 1 applies literally. Four are
-exemplary — hard directives, explicit negatives, literal trigger strings
-(`production-query`: *"Use BEFORE designing, planning, or implementing any
-change to a live, Bluebox-visible service"* + ~20 triggers;
-`bluebox-otel-instrumentation`: *"Do NOT use for OpenTelemetry setups that
-target a non-Bluebox backend"*). `jobagent/SKILL.md` is a 12-line adapter
-deferring to the shared spec, mechanically enforced by `skill-lint.mjs`.
-
-The outlier — `bluebox-overview`:
-
-> Teaches a coding agent what Bluebox is, when to invoke it, and how to phrase
-> requests so the agent picks the right Bluebox skill…
-
-Passive, no trigger conditions, no negatives — it pays description rent in
-every session while telling the model nothing about *when*.
-
-### Why it should be different
-
-A description that doesn't state when-to-fire either never triggers (wasted
-rent) or triggers on vibes (wrong-skill selection) — precisely the criterion-1
-failure. Note: these four Bluebox skills are installed by `bluebox setup` (per
-their `compatibility` frontmatter), so the fix may belong upstream.
-
-### Change plan
-
-Rewrite as a directive router — *"Use when the user mentions Bluebox but no
-more specific Bluebox skill matches; route investigation-marker tickets to
-bluebox-investigation-context, OTel setup to bluebox-otel-instrumentation,
-production questions to production-query. Do not use when a specific marker or
-trigger already matches."* If upstream-owned, file it against `bluebox setup`
-instead of hand-editing.
-
----
-
 ## Summary scorecard and sequencing
 
 | Criterion | Grade | Key evidence |
@@ -350,4 +311,3 @@ Execution order (each PR-sized):
 3. **`dismiss_overlays` truth-telling + skill rewrite** (F3).
 4. **Negative-case port + non-selection tests** (F2).
 5. **Paired on/off baseline** (F4) — needs 1; live runs need Kris's approval.
-6. **`bluebox-overview` rewrite or upstream issue** (F6) — independent, anytime.

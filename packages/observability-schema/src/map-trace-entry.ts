@@ -70,7 +70,7 @@ export function traceEntryToSpans(entry: TraceEntry): ObsSpan[] {
     chatAttrs[GenAiAttr.usageTotalTokens] = usage.total_tokens;
     if (typeof usage.cost === "number") chatAttrs["os.cost_usd"] = usage.cost;
     // Prompt-cache efficiency (LP-21) — export the raw cached-prompt-token
-    // count as the aggregation primitive (Bluebox/Dynatrace derives cache-hit
+    // count as the aggregation primitive (a consumer can derive cache-hit
     // rate = sum(cached_tokens) / sum(input_tokens)) plus the provider's
     // per-turn hit % for convenient charting/alerting. No gen_ai.* semconv key
     // is settled for cache yet, so these use os.* domain keys like os.cost_usd.

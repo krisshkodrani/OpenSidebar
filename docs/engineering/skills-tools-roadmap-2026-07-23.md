@@ -118,10 +118,6 @@ rule in `skills/README.md`. Meaningless until item 5 produces data.
 prose. Encode as `oneOf`/`enum` only after verifying the Fireworks
 OpenAI-compat subset. Zero observed misuse in the baseline → low priority.
 
-### 13. Bluebox-owned skill description (`bluebox-overview`)
-Passive description, no triggers (audit F6). Upstream-owned by `bluebox
-setup` — file it upstream rather than hand-editing local copies.
-
 ---
 
 ## Dead — killed by baseline data (do not resurrect without new evidence)

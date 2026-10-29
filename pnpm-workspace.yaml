@@ -16,7 +16,6 @@ resolutionMode: highest
 blockExoticSubdeps: true
 
 overrides:
-  "@grpc/grpc-js": 1.14.5
   "@modelcontextprotocol/sdk": 1.31.0
   dompurify: 3.4.17
   proxy-addr: 2.0.8
@@ -37,11 +36,4 @@ allowBuilds:
   better-sqlite3: true
   esbuild: true
   nx: true
-  # false: protobufjs' postinstall only prints version-scheme warnings about
-  # dependents' package.json (it builds and generates nothing), and protobufjs
-  # reaches us only via @grpc/grpc-js under the OTel exporters — devDependencies
-  # for scripts/otel, never the shipped extension. Skipping it loses a warning.
-  # NOTE: pnpm 11 FAILS `install --frozen-lockfile` on an unanswered entry, so
-  # this must stay a real boolean — a placeholder here turns CI red on install.
-  protobufjs: false
   puppeteer: true
