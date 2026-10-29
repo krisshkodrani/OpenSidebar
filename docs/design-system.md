@@ -44,8 +44,6 @@ means success by itself. Do not use color alone to communicate a state.
   settings. It retains system, light, and dark appearance modes.
 - The extension side panel and trace viewer share the same palette. The live
   marker is a short chartreuse line, not a moving progress estimate.
-- Internal ModelBench and training-data review screens use the product palette.
-  Fictional benchmark target websites keep their independent visual styles.
 
 ## Implementation
 

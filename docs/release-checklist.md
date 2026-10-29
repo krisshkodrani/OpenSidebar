@@ -30,9 +30,6 @@ This runs:
 - extension artifact verification for the generated `dist/` manifest, side panel, trace viewer, service worker import, icons, content scripts, web-accessible resources, and Vite manifest
 - production dependency audit for known advisories
 
-For cloud-service changes, also run `corepack pnpm run cloud:test`; it is not
-part of `release:verify`.
-
 ## 3. Run Final E2E Validation
 
 Run at least one real-browser E2E validation against the release candidate after the build is green.

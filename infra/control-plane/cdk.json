@@ -1,3 +1,0 @@
-{
-  "app": "node --import tsx bin/control-plane.ts"
-}
