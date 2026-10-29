@@ -1,5 +1,3 @@
-import type { ProviderConfig } from "./types";
-
 const API_ORIGIN = "https://opensidebar.com";
 const SESSION_KEY = "cloudExtensionSessionV1";
 type StoredSession = {
@@ -47,21 +45,16 @@ async function refreshed(current: StoredSession) {
 
 export async function cloudRelayFetch(
   payload: Record<string, unknown>,
-  providerId: ProviderConfig["providerId"],
   seat: "executor" | "planner" | "writer" | "judge",
   signal?: AbortSignal,
 ) {
-  if (providerId !== "openrouter" && providerId !== "fireworks")
-    throw new Error(
-      `Provider ${providerId} is not available through OpenSidebar Cloud.`,
-    );
   let auth = await session();
   if (auth.accessExpiresAt < Date.now() + 30_000) auth = await refreshed(auth);
   const request = {
     schemaVersion: 1,
     requestId: crypto.randomUUID(),
     abortScopeId: crypto.randomUUID(),
-    provider: providerId,
+    provider: "openrouter",
     modelId: payload.model,
     seat,
     messages: payload.messages,

@@ -102,7 +102,7 @@ describe("bench aggregate — formatBenchReport", () => {
     const report = formatBenchReport(agg, {
       source: "osunlp/Online-Mind2Web",
       revision: "abc",
-      modelConfigLabel: "fireworks / kimi",
+      modelConfigLabel: "openrouter / kimi",
       judgeModel: "openai/gpt-5.4-mini",
       date: "2026-06-10",
     });
@@ -115,7 +115,7 @@ describe("bench aggregate — formatBenchReport", () => {
     const report = formatBenchReport(agg, {
       source: "osunlp/Online-Mind2Web",
       revision: "abc",
-      modelConfigLabel: "fireworks / kimi",
+      modelConfigLabel: "openrouter / kimi",
       judgeModel: "openai/gpt-5.4-mini",
       date: "2026-06-10",
       manualDisagreementRate: 0.1,

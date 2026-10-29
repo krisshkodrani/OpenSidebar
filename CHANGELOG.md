@@ -1,5 +1,11 @@
 # Changelog
 
+## [Unreleased]
+
+### Changed
+
+- OpenRouter is now the only LLM provider. Fireworks support and its stored key are removed.
+
 ## [0.7.8] - 2026-10-29
 
 ### Added

@@ -36,7 +36,7 @@ OpenSidebar can:
 - read information on one page and use it on another;
 - watch a page and report when something changes;
 - pause before consequential actions so you can review them;
-- use OpenRouter by default, or the supported Fireworks stack.
+- run on any model OpenRouter serves, with one OpenRouter key.
 
 It is bring-your-own-key software: there is no OpenSidebar subscription,
 hosted model relay, analytics client, or first-party telemetry upload endpoint
@@ -64,8 +64,8 @@ corepack pnpm run dist
 
 Then open `chrome://extensions`, enable **Developer mode**, choose **Load
 unpacked**, and select `dist/`. Open the side panel and add an OpenRouter key
-in Settings (recommended), or use the supported Fireworks stack. The current
-provider matrix is maintained in [docs/providers.md](docs/providers.md).
+in Settings. OpenRouter is the only LLM provider; see
+[docs/providers.md](docs/providers.md).
 
 ## For developers
 
@@ -86,8 +86,7 @@ remain attached to the task. Watch the
 [architecture overview](docs/architecture/overview.md) and
 [runtime boundaries](docs/architecture/runtime-boundaries.md).
 
-The release-verified BYOK modes are OpenRouter (recommended and default) and
-Fireworks.
+OpenRouter is the only supported LLM provider.
 
 ### Development
 

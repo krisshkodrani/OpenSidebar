@@ -79,7 +79,7 @@ function multiNodeEvents(): RunTraceEvent[] {
       judged: true,
       verdictSource: "judge",
       model: "gpt-oss-120b",
-      providerId: "fireworks",
+      providerId: "openrouter",
       confidence: 0.95,
       criteria: [{ id: "c1", description: "Catalog opened", required: true }],
       perCriterion: [{ id: "c1", pass: true, rationale: "evidence shows catalog" }],

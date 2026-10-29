@@ -9,7 +9,7 @@
  *   3. judge each task with WebJudge (separate judge model),
  *   4. aggregate into a headline score + Markdown report + machine summary.
  *
- * The model config under test is whatever E2E_PROVIDER / E2E_MODEL select, so a
+ * The model config under test is whatever E2E_MODEL selects, so a
  * sweep is reproducible and you can publish 2–3 configs by re-running with
  * different pairings. Judge and score passes can run standalone (--judge-only)
  * to re-score an existing run without paying for browser runs again.
@@ -21,7 +21,7 @@
  *     --levels <list>    comma list: easy,medium,hard (default: all)
  *     --seed <n>         subset seed (default: 0)
  *     --max-turns <n>    per-task max turns (default: 25)
- *     --config-label <s> label for the report (default: provider/model)
+ *     --config-label <s> label for the report (default: openrouter / model)
  *     --run-dir <dir>    output dir (default: .artifacts/bench/<timestamp>)
  *     --no-build         skip the extension build
  *     --no-judge         run tasks only; skip judging/scoring
@@ -39,10 +39,7 @@ import {
 } from "fs";
 import { join, resolve } from "path";
 import { fileURLToPath } from "url";
-import {
-  loadApiKey,
-  loadOpenAiApiKey,
-} from "../apps/extension/tests/e2e/helpers/e2e-provider-config";
+import { loadApiKey } from "../apps/extension/tests/e2e/helpers/e2e-provider-config";
 import { judgeTask, type JudgeClientConfig } from "./bench/webjudge";
 import { aggregateResults, formatBenchReport } from "./bench/aggregate";
 import type {
@@ -83,7 +80,6 @@ function defaultTasksFile(): string {
 
 function parseArgs(): CliOptions {
   const args = process.argv.slice(2);
-  const provider = process.env.E2E_PROVIDER ?? "fireworks";
   const model = process.env.E2E_MODEL ?? "(default)";
   const stamp = new Date().toISOString().replace(/[:.]/g, "-");
   const tasksArg = flagValue(args, "--tasks");
@@ -93,7 +89,7 @@ function parseArgs(): CliOptions {
     levels: flagValue(args, "--levels"),
     seed: Number(flagValue(args, "--seed") ?? "0"),
     maxTurns: Number(flagValue(args, "--max-turns") ?? "25"),
-    configLabel: flagValue(args, "--config-label") ?? `${provider} / ${model}`,
+    configLabel: flagValue(args, "--config-label") ?? `openrouter / ${model}`,
     // Resolve like tasksFile above: the vitest child runs with cwd=apps/extension
     // while this scoring pass runs from the repo root, so a RELATIVE --run-dir
     // makes the two halves write and read different directories — the run
@@ -151,22 +147,13 @@ function readEvidence(runDir: string): BenchRunEvidence[] {
 }
 
 function resolveJudgeConfig(): JudgeClientConfig | null {
-  const explicitKey = process.env.BENCH_JUDGE_API_KEY;
-  const openRouterKey = loadApiKey() ?? process.env.OPENROUTER_API_KEY;
-  const openAiKey = loadOpenAiApiKey();
-  const apiKey = explicitKey ?? openRouterKey ?? openAiKey;
+  const apiKey = process.env.BENCH_JUDGE_API_KEY ?? loadApiKey();
   if (!apiKey) return null;
-  // Without an explicit judge key or an OpenRouter key, judge via OpenAI
-  // direct (different base URL and un-prefixed model id).
-  const viaOpenAi = !explicitKey && !openRouterKey;
   return {
     baseUrl:
-      process.env.BENCH_JUDGE_BASE_URL ??
-      (viaOpenAi ? "https://api.openai.com/v1" : "https://openrouter.ai/api/v1"),
+      process.env.BENCH_JUDGE_BASE_URL ?? "https://openrouter.ai/api/v1",
     apiKey,
-    model:
-      process.env.BENCH_JUDGE_MODEL ??
-      (viaOpenAi ? "gpt-5.4-mini" : "openai/gpt-5.4-mini"),
+    model: process.env.BENCH_JUDGE_MODEL ?? "openai/gpt-5.4-mini",
     headers: {
       "HTTP-Referer": "https://github.com/krisshkodrani/OpenSidebar",
       "X-Title": "OpenSidebar Bench WebJudge",
@@ -203,7 +190,7 @@ async function judgeAndScore(options: CliOptions): Promise<void> {
   const judgeConfig = options.judge ? resolveJudgeConfig() : null;
   if (options.judge && !judgeConfig) {
     console.warn(
-      "[bench] No judge key (BENCH_JUDGE_API_KEY / OPENROUTER_API_KEY / OPENAI_API_KEY). Recording evidence without verdicts.",
+      "[bench] No judge key (BENCH_JUDGE_API_KEY / OPENROUTER_API_KEY). Recording evidence without verdicts.",
     );
   }
 

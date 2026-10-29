@@ -6,7 +6,7 @@ import {
 } from "./helpers/overlay-harness";
 
 const LOCAL_API_KEY_SEED = {
-  fireworksApiKey_local: "fake-fireworks-key",
+  openRouterApiKey_local: "fake-openrouter-key",
 };
 
 describe("Overlay panel product surfaces", () => {

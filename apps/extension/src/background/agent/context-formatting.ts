@@ -360,10 +360,10 @@ export function buildOpenTabsBlock(
  *
  * The previous sanitizer validated by SET MEMBERSHIP — "does this id appear
  * anywhere?" — so `[assistant(tc1), user(..), tool(tc1)]` passed as valid.
- * Lenient backends (Fireworks, OpenRouter) accept it; Cerebras walks forward
- * from the assistant, stops at the first non-tool message, and rejects the
- * request with `wrong_api_format`. That produced 189 HTTP 400s in one medium
- * e2e run and is why this is positional, not set-based.
+ * Lenient backends (OpenRouter routes) accept it; strict upstream hosts walk
+ * forward from the assistant, stop at the first non-tool message, and reject
+ * the request with `wrong_api_format`. That produced 189 HTTP 400s in one
+ * medium e2e run and is why this is positional, not set-based.
  *
  * Three guarantees, in order:
  *  1. A tool result with no matching assistant `tool_calls` is dropped.

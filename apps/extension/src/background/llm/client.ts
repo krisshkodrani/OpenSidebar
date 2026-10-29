@@ -5,7 +5,6 @@ import {
   isVLCapable as isExecutorVLCapable,
   normalizeExecutorFallbackModel,
   normalizeExecutorModel,
-  type ProviderMode,
 } from "../../utils/executor-model-policy";
 import { parseSSEStream } from "../streaming";
 import {
@@ -21,22 +20,8 @@ import {
   ProviderConfig,
   TokenUsage,
 } from "./types";
-import {
-  mergeCacheTelemetry,
-  readProviderCacheTelemetry,
-  withUsageCacheTelemetry,
-} from "./cache-telemetry";
-import {
-  DEEPSEEK_MODEL_PLANNER,
-  FIREWORKS_MODEL_PLANNER,
-  GROQ_MODEL_PLANNER,
-  MODEL_JUDGE,
-  MOONSHOT_MODEL_PLANNER,
-  OPENAI_MODEL_PLANNER,
-  OPENROUTER_MODEL_JUDGE,
-  OPENROUTER_MODEL_PLANNER,
-  XIAOMI_MODEL_PLANNER,
-} from "./seat-models";
+import { withUsageCacheTelemetry } from "./cache-telemetry";
+import { MODEL_JUDGE, MODEL_PLANNER } from "./seat-models";
 import { toJudgeUsage } from "./judge-usage";
 import { cloudRelayFetch } from "./cloud-relay";
 import {
@@ -50,30 +35,12 @@ import type { JudgeRubric, JudgeVerdict } from "../agent/completion/judge";
 import { requestJevVerdict } from "../agent/completion/jev-judge";
 import { withLlmRequestObservation } from "./transport-observation";
 
-// Seat model ids live in ./seat-models (extracted 2026-07-26 for the
-// decomposition budget); re-exported so `from "./client"` imports still work.
-import {
-  cerebrasProvider,
-  deepseekProvider,
-  fireworksProvider,
-  groqProvider,
-  moonshotProvider,
-  openAIProvider,
-  xiaomiProvider,
-} from "./provider-factories";
-
 export * from "./seat-models";
 
 /** Check if a model supports unified VL executor mode (vision + tool calling). */
 export const isVLCapable = isExecutorVLCapable;
 
 const OPENROUTER_BASE_URL = "https://openrouter.ai/api/v1/chat/completions";
-
-
-
-
-
-
 
 
 /** Options for overriding default models in LLMClient */
@@ -83,42 +50,16 @@ export interface LLMClientOptions extends ProviderRoutingOptions {
   plannerModel?: string;
   /**
    * Optional specialist Writer model for one-shot prose composition. When unset,
-   * the writer pool transparently reuses the executor pool.
+   * the writer seat transparently reuses the executor seat.
    */
   writerModel?: string;
   /**
    * Optional verification judge model (RFC LP-15 Phase 10). When unset, the
-   * judge pool transparently reuses the planner pool.
+   * judge seat uses the default judge model.
    */
   judgeModel?: string;
   /** Append :nitro routing suffix to all model IDs (OpenRouter only) */
   useNitro?: boolean;
-  /** Provider mode: how executor and planner providers are combined */
-  providerMode?:
-    | "openrouter"
-    | "openrouter-groq"
-    | "openai-groq"
-    | "fireworks"
-    | "fireworks-deepseek"
-    | "cerebras-fireworks"
-    | "moonshot"
-    | "xiaomi";
-  /** @deprecated Use providerMode instead */
-  provider?: "openrouter" | "openai" | "groq";
-  /** OpenAI API key (required for openai-groq mode) */
-  openaiApiKey?: string;
-  /** Groq API key (required for hybrid modes) */
-  groqApiKey?: string;
-  /** Fireworks AI API key (required for fireworks mode) */
-  fireworksApiKey?: string;
-  /** DeepSeek API key (required for fireworks-deepseek planner/verifier mode) */
-  deepseekApiKey?: string;
-  /** Moonshot AI API key (required for moonshot mode) */
-  kimiApiKey?: string;
-  /** Xiaomi MiMo API key (required for xiaomi mode) */
-  xiaomiApiKey?: string;
-  /** Cerebras API key (required for cerebras-fireworks executor mode) */
-  cerebrasApiKey?: string;
   /** Override default temperature (default: 0.0) */
   temperature?: number;
 }
@@ -132,7 +73,7 @@ export function applyNitro(model: string, useNitro?: boolean): string {
 function openRouterProvider(apiKey: string): ProviderConfig {
   return {
     baseUrl: OPENROUTER_BASE_URL,
-    apiKey: sanitizeApiKeyForHeader(apiKey, "openrouter"),
+    apiKey: sanitizeApiKeyForHeader(apiKey),
     headers: {
       "HTTP-Referer": "https://github.com/OpenSidebar/OpenSidebar",
       "X-Title": "OpenSidebar",
@@ -140,22 +81,6 @@ function openRouterProvider(apiKey: string): ProviderConfig {
     providerId: "openrouter",
   };
 }
-function shapePayloadForProvider(
-  providerId: ProviderConfig["providerId"],
-  payload: Record<string, unknown>,
-): Record<string, unknown> {
-  if (providerId !== "moonshot") return payload;
-
-  const shaped = { ...payload };
-  if (shaped.max_tokens !== undefined) {
-    shaped.max_completion_tokens = shaped.max_tokens;
-    delete shaped.max_tokens;
-  }
-  delete shaped.temperature;
-  shaped.thinking = { type: "disabled" };
-  return shaped;
-}
-
 /** Extract reasoning content from model output: XML think tags and markdown Think/Observe/Verify sections */
 export function extractThinkContent(text: string): string | null {
   const blocks: string[] = [];
@@ -241,116 +166,27 @@ function createThinkFilter(emit: (text: string) => void) {
   };
 }
 
-// --- Provider Pool (configured-slot failover) ---
+// --- Provider slots ---
 
-const COOLDOWN_MS = 60_000;
-
+/** One seat's route: the provider to call and the model to request. */
 export interface ProviderSlot {
   provider: ProviderConfig;
-  cooldownUntil: number;
   model: string;
 }
 
-export interface ProviderPoolSlotInput {
-  provider: ProviderConfig;
-  model: string;
-  cooldownUntil?: number;
-}
-
-export interface ProviderPoolConfig {
-  slots: ProviderPoolSlotInput[];
-}
-
-export function singleProviderPool(
-  provider: ProviderConfig,
-  model: string,
-): ProviderPool {
-  return new ProviderPool({ slots: [{ provider, model }] });
-}
-
-export function openRouterProviderPool(
+export function openRouterSlot(
   openRouterKey: string,
   model: string,
-): ProviderPool {
-  return singleProviderPool(openRouterProvider(openRouterKey), model);
-}
-
-export class ProviderPool {
-  private slots: ProviderSlot[];
-
-  constructor(config: ProviderPoolConfig) {
-    if (config.slots.length === 0) {
-      throw new Error("ProviderPool requires at least one provider slot");
-    }
-    this.slots = config.slots.map((slot) => ({
-      provider: slot.provider,
-      cooldownUntil: slot.cooldownUntil ?? 0,
-      model: slot.model,
-    }));
-  }
-
-  /** Returns highest-priority provider not on cooldown */
-  getActive(): ProviderSlot {
-    const now = Date.now();
-    return (
-      this.slots.find((s) => now >= s.cooldownUntil) ??
-      this.slots[this.slots.length - 1]
-    );
-  }
-
-  /** Mark a provider as rate-limited */
-  cooldown(providerId: string): void {
-    const slot = this.slots.find((s) => s.provider.providerId === providerId);
-    if (slot) slot.cooldownUntil = Date.now() + COOLDOWN_MS;
-  }
-
-  /** Get next provider in chain for immediate failover */
-  getNextFallback(afterProviderId: string): ProviderSlot | null {
-    const idx = this.slots.findIndex(
-      (s) => s.provider.providerId === afterProviderId,
-    );
-    if (idx === -1 || idx >= this.slots.length - 1) return null;
-    const now = Date.now();
-    for (let i = idx + 1; i < this.slots.length; i++) {
-      if (now >= this.slots[i].cooldownUntil) return this.slots[i];
-    }
-    return this.slots[this.slots.length - 1];
-  }
-
-  /** Permanently disable a provider for the rest of this session (e.g. 402 credit exhaustion) */
-  disableForSession(providerId: string): void {
-    const slot = this.slots.find((s) => s.provider.providerId === providerId);
-    if (slot) slot.cooldownUntil = Number.MAX_SAFE_INTEGER;
-  }
-
-  /** Check if a provider has been permanently disabled this session */
-  isDisabled(providerId: string): boolean {
-    const slot = this.slots.find((s) => s.provider.providerId === providerId);
-    return slot ? slot.cooldownUntil === Number.MAX_SAFE_INTEGER : false;
-  }
-
-  /** True when every provider slot is on cooldown or permanently disabled */
-  allDisabled(): boolean {
-    return this.slots.every((s) => Date.now() < s.cooldownUntil);
-  }
-
-  /** Get all slots (for testing) */
-  getSlots(): ProviderSlot[] {
-    return this.slots;
-  }
+): ProviderSlot {
+  return { provider: openRouterProvider(openRouterKey), model };
 }
 
 /**
  * Annotate system message with cache_control for OpenRouter prefix caching.
  * The static prefix (rules, persona, demo catalog) is stable across turns,
  * so marking the system message as ephemeral enables provider-side caching.
- * Skipped for non-OpenRouter providers (Groq/OpenAI reject unknown fields).
  */
-function annotateCacheControl(
-  messages: LLMMessage[],
-  providerId: string,
-): LLMMessage[] {
-  if (providerId !== "openrouter") return messages;
+function annotateCacheControl(messages: LLMMessage[]): LLMMessage[] {
   if (messages.length === 0 || messages[0].role !== "system") return messages;
   const systemMsg: LLMMessage = {
     ...messages[0],
@@ -359,25 +195,20 @@ function annotateCacheControl(
   return [systemMsg, ...messages.slice(1)];
 }
 
-/**
- * Sanitize messages for strict providers (Groq requires type:"function" on tool_calls).
- * OpenRouter and OpenAI are lenient about missing `type` fields, but Groq rejects them.
- */
-function sanitizeToolCallMessages(
-  messages: LLMMessage[],
-  providerId: string,
-): LLMMessage[] {
-  if (providerId !== "groq") return messages;
-  return messages.map((msg) => {
-    if (msg.role !== "assistant" || !msg.tool_calls) return msg;
-    return {
-      ...msg,
-      tool_calls: msg.tool_calls.map((tc) => ({
-        ...tc,
-        type: "function" as const,
-      })),
-    };
-  });
+/** Build the typed error for an HTTP 402 (out of OpenRouter credits). */
+function creditsExhaustedError(errorText: string): Error {
+  const providerName = getProviderDisplayName();
+  const creditsUrl = getProviderCreditsUrl();
+  const affordMatch = errorText.match(/can only afford (\d+)/);
+  const affordable = affordMatch ? parseInt(affordMatch[1]) : 0;
+  const err = new Error(
+    affordable > 0
+      ? `Insufficient credits (can afford ~${affordable} tokens). Add credits at ${creditsUrl}.`
+      : `Insufficient ${providerName} credits. Add credits at ${creditsUrl}.`,
+  );
+  (err as any).status = 402;
+  (err as any).affordable = affordable;
+  return err;
 }
 
 /**
@@ -388,21 +219,15 @@ export class LLMClient {
   private provider: ProviderConfig;
   private model: string;
   private openRouterApiKey: string;
-  /** Configured provider pool for executor model failover */
-  private executorPool: ProviderPool;
-  /** Configured provider pool for planner model failover */
-  private plannerPool: ProviderPool;
+  private executorSlot: ProviderSlot;
+  private plannerSlot: ProviderSlot;
   /**
-   * Configured provider pool for the optional Writer specialist. Defaults to the
-   * executor pool when no writer model is configured (transparent fallback).
+   * Slot for the optional Writer specialist. Defaults to the executor slot when
+   * no writer model is configured (transparent fallback).
    */
-  private writerPool: ProviderPool;
-  /**
-   * Configured provider pool for the verification judge (RFC LP-15 Phase 10).
-   * Defaults to the planner pool when no judge model is configured — the judge
-   * has historically run on the planner seat (OrchestratorVerifier).
-   */
-  private judgePool: ProviderPool;
+  private writerSlot: ProviderSlot;
+  /** Slot for the verification judge (RFC LP-15 Phase 10). */
+  private judgeSlot: ProviderSlot;
   /** Which model role is currently active for completion routing */
   private _activeTier: "executor" | "planner" | "writer" | "judge" = "executor";
   private readonly providerPins: Partial<
@@ -424,238 +249,60 @@ export class LLMClient {
     this.defaultTemperature = options?.temperature ?? 0.0;
     this.providerPins = providerPinsForOptions(options);
 
-    // Resolve providerMode (supports legacy `provider` field for backward compat)
-    let mode: ProviderMode = options?.providerMode ?? "openrouter";
-    if (!options?.providerMode && options?.provider) {
-      // Migrate legacy provider field
-      if (options.provider === "groq" && options.groqApiKey)
-        mode = "openrouter-groq";
-      else if (options.provider === "openai" && options.openaiApiKey)
-        mode = "openai-groq";
-    }
-
     const nitro = options?.useNitro;
-    const hasGroq = !!options?.groqApiKey;
-    const hasOpenAI = !!options?.openaiApiKey;
-    const hasFireworks =
-      openRouterApiKey === "__opensidebar_cloud__" ||
-      !!options?.fireworksApiKey;
-    const hasMoonshot = !!options?.kimiApiKey;
-    const hasXiaomi = !!options?.xiaomiApiKey;
 
-    // --- Build executor pool ---
-    if (mode === "fireworks-deepseek") {
-      const fwKey = options?.fireworksApiKey ?? "";
-      const fwProv = fireworksProvider(fwKey);
-      const executorModel = normalizeExecutorModel({
-        providerMode: "fireworks-deepseek",
-        executorModel: options?.executorModel,
-      });
-      this.executorPool = singleProviderPool(fwProv, executorModel);
-      this.executorFallbackModel = normalizeExecutorFallbackModel({
-        providerMode: "fireworks-deepseek",
-        executorModel,
-        executorFallbackModel: options?.executorFallbackModel,
-      });
-    } else if (mode === "moonshot" && hasMoonshot) {
-      const kimiKey = options!.kimiApiKey!;
-      const kimiProv = moonshotProvider(kimiKey);
-      const executorModel = normalizeExecutorModel({
-        providerMode: "moonshot",
-        executorModel: options?.executorModel,
-      });
-      this.executorPool = singleProviderPool(kimiProv, executorModel);
-      this.executorFallbackModel = normalizeExecutorFallbackModel({
-        providerMode: "moonshot",
-        executorModel,
-        executorFallbackModel: options?.executorFallbackModel,
-      });
-    } else if (mode === "xiaomi" && hasXiaomi) {
-      const xiaomiKey = options!.xiaomiApiKey!;
-      const xiaomiProv = xiaomiProvider(xiaomiKey);
-      const executorModel = normalizeExecutorModel({
-        providerMode: "xiaomi",
-        executorModel: options?.executorModel,
-      });
-      this.executorPool = singleProviderPool(xiaomiProv, executorModel);
-      this.executorFallbackModel = normalizeExecutorFallbackModel({
-        providerMode: "xiaomi",
-        executorModel,
-        executorFallbackModel: options?.executorFallbackModel,
-      });
-    } else if (mode === "cerebras-fireworks") {
-      const cerebrasKey = options?.cerebrasApiKey ?? "";
-      const cerebrasProv = cerebrasProvider(cerebrasKey);
-      const executorModel = normalizeExecutorModel({
-        providerMode: "cerebras-fireworks",
-        executorModel: options?.executorModel,
-      });
-      this.executorPool = singleProviderPool(cerebrasProv, executorModel);
-      this.executorFallbackModel = normalizeExecutorFallbackModel({
-        providerMode: "cerebras-fireworks",
-        executorModel,
-        executorFallbackModel: options?.executorFallbackModel,
-      });
-    } else if (mode === "fireworks" && hasFireworks) {
-      const fwKey =
-        openRouterApiKey === "__opensidebar_cloud__"
-          ? openRouterApiKey
-          : options!.fireworksApiKey!;
-      const fwProv = fireworksProvider(fwKey);
-      const executorModel = normalizeExecutorModel({
-        providerMode: "fireworks",
-        executorModel: options?.executorModel,
-      });
-      this.executorPool = singleProviderPool(fwProv, executorModel);
-      this.executorFallbackModel = normalizeExecutorFallbackModel({
-        providerMode: "fireworks",
-        executorModel,
-        executorFallbackModel: options?.executorFallbackModel,
-      });
-    } else if (mode === "openai-groq" && hasOpenAI) {
-      const oaiKey = options!.openaiApiKey!;
-      const oaiProv = openAIProvider(oaiKey);
-      const executorModel = normalizeExecutorModel({
-        providerMode: "openai-groq",
-        executorModel: options?.executorModel,
-      });
-      this.executorPool = singleProviderPool(oaiProv, executorModel);
-      this.executorFallbackModel = normalizeExecutorFallbackModel({
-        providerMode: "openai-groq",
-        executorModel,
-        executorFallbackModel: options?.executorFallbackModel,
-      });
-    } else {
-      // OpenRouter for executor (both "openrouter" and "openrouter-groq" modes)
-      const executorProviderMode: ProviderMode =
-        mode === "openrouter-groq" ? "openrouter-groq" : "openrouter";
-      const executorModel = normalizeExecutorModel({
-        providerMode: executorProviderMode,
-        executorModel: options?.executorModel,
-      });
-      const executorFallbackModel = normalizeExecutorFallbackModel({
-        providerMode: executorProviderMode,
-        executorModel,
-        executorFallbackModel: options?.executorFallbackModel,
-      });
-      this.executorPool = openRouterProviderPool(
-        openRouterApiKey,
-        applyNitro(executorModel, nitro),
-      );
-      this.executorFallbackModel = applyNitro(executorFallbackModel, nitro);
-    }
+    // --- Build executor slot ---
+    const executorModel = normalizeExecutorModel(options?.executorModel);
+    const executorFallbackModel = normalizeExecutorFallbackModel({
+      executorModel,
+      executorFallbackModel: options?.executorFallbackModel,
+    });
+    this.executorSlot = openRouterSlot(
+      openRouterApiKey,
+      applyNitro(executorModel, nitro),
+    );
+    this.executorFallbackModel = applyNitro(executorFallbackModel, nitro);
 
-    // --- Build planner pool ---
-    if (mode === "fireworks-deepseek") {
-      const deepseekKey = options?.deepseekApiKey ?? "";
-      const deepseekProv = deepseekProvider(deepseekKey);
-      const plannerModel = options?.plannerModel || DEEPSEEK_MODEL_PLANNER;
-      this.plannerPool = singleProviderPool(deepseekProv, plannerModel);
-    } else if (mode === "moonshot" && hasMoonshot) {
-      const kimiKey = options!.kimiApiKey!;
-      const kimiProv = moonshotProvider(kimiKey);
-      const plannerModel = options?.plannerModel || MOONSHOT_MODEL_PLANNER;
-      this.plannerPool = singleProviderPool(kimiProv, plannerModel);
-    } else if (mode === "xiaomi" && hasXiaomi) {
-      const xiaomiKey = options!.xiaomiApiKey!;
-      const xiaomiProv = xiaomiProvider(xiaomiKey);
-      const plannerModel = options?.plannerModel || XIAOMI_MODEL_PLANNER;
-      this.plannerPool = singleProviderPool(xiaomiProv, plannerModel);
-    } else if (
-      (mode === "fireworks" || mode === "cerebras-fireworks") &&
-      hasFireworks
-    ) {
-      const fwKey = options!.fireworksApiKey!;
-      const fwProv = fireworksProvider(fwKey);
-      const plannerModel = options?.plannerModel || FIREWORKS_MODEL_PLANNER;
-      this.plannerPool = singleProviderPool(fwProv, plannerModel);
-    } else if (
-      (mode === "openrouter-groq" || mode === "openai-groq") &&
-      hasGroq
-    ) {
-      const groqKey = options!.groqApiKey!;
-      const groqProv = groqProvider(groqKey);
-      const plannerModel = options?.plannerModel || GROQ_MODEL_PLANNER;
-      this.plannerPool = singleProviderPool(groqProv, plannerModel);
-    } else if (mode === "openai-groq" && hasOpenAI) {
-      // No Groq key but OpenAI mode — planner uses OpenAI too
-      const oaiKey = options!.openaiApiKey!;
-      const oaiProv = openAIProvider(oaiKey);
-      const plannerModel = options?.plannerModel || OPENAI_MODEL_PLANNER;
-      this.plannerPool = singleProviderPool(oaiProv, plannerModel);
-    } else {
-      // OpenRouter for planner. Uses the OpenRouter-form planner id — MODEL_PLANNER
-      // is a Fireworks accounts/... id and 404s here.
-      this.plannerPool = openRouterProviderPool(
-        openRouterApiKey,
-        applyNitro(options?.plannerModel || OPENROUTER_MODEL_PLANNER, nitro),
-      );
-    }
+    // --- Build planner slot ---
+    this.plannerSlot = openRouterSlot(
+      openRouterApiKey,
+      applyNitro(options?.plannerModel || MODEL_PLANNER, nitro),
+    );
 
-    // --- Build writer pool ---
-    // The optional Writer specialist runs on the executor's provider with its
-    // own model. When unconfigured it transparently reuses the executor pool so
-    // compose_text still works (just without a dedicated prose model).
-    if (!options?.writerModel) {
-      this.writerPool = this.executorPool;
-    } else {
-      const execSlot = this.executorPool.getActive();
-      const writerModel =
-        execSlot.provider.providerId === "openrouter"
-          ? applyNitro(options.writerModel, nitro)
-          : options.writerModel;
-      this.writerPool = singleProviderPool(execSlot.provider, writerModel);
-    }
+    // --- Build writer slot ---
+    // The optional Writer specialist runs with its own model. When
+    // unconfigured it transparently reuses the executor slot so compose_text
+    // still works (just without a dedicated prose model).
+    this.writerSlot = options?.writerModel
+      ? openRouterSlot(openRouterApiKey, applyNitro(options.writerModel, nitro))
+      : this.executorSlot;
 
-    // --- Build judge pool ---
-    // The verification judge runs on the planner's provider with its own model
-    // (the verifier historically ran on the planner seat). When unconfigured,
-    // Fireworks- and OpenRouter-served planner modes get a DEDICATED judge model
-    // — the judge is a text-only rubric task that must not queue behind GLM
-    // planner traffic (sharing the seat made ~75% of judge calls hit the hard
-    // timeout and fail open). Each provider needs its own id form: MODEL_JUDGE
-    // is a Fireworks accounts/... id, OPENROUTER_MODEL_JUDGE the catalog form.
-    // Any other planner provider keeps the transparent planner-pool reuse,
-    // since neither id is guaranteed to exist there.
-    const plannerSlotForJudge = this.plannerPool.getActive();
-    const defaultJudgeForPlannerProvider =
-      plannerSlotForJudge.provider.providerId === "fireworks"
-        ? MODEL_JUDGE
-        : plannerSlotForJudge.provider.providerId === "openrouter"
-          ? OPENROUTER_MODEL_JUDGE
-          : undefined;
-    const judgeModelOption =
-      options?.judgeModel ?? defaultJudgeForPlannerProvider;
-    if (!judgeModelOption) {
-      this.judgePool = this.plannerPool;
-    } else {
-      const judgeModel =
-        plannerSlotForJudge.provider.providerId === "openrouter"
-          ? applyNitro(judgeModelOption, nitro)
-          : judgeModelOption;
-      this.judgePool = singleProviderPool(
-        plannerSlotForJudge.provider,
-        judgeModel,
-      );
-    }
+    // --- Build judge slot ---
+    // The judge is a text-only rubric task. It has a dedicated model so it
+    // does not queue behind planner traffic (sharing the seat made most judge
+    // calls hit the hard timeout and fail open).
+    this.judgeSlot = openRouterSlot(
+      openRouterApiKey,
+      applyNitro(options?.judgeModel ?? MODEL_JUDGE, nitro),
+    );
 
-    // Initialize from executor pool's top priority
-    const initialSlot = this.executorPool.getActive();
+    // Initialize from the executor slot
+    const initialSlot = this.executorSlot;
     this.model = initialSlot.model;
     this.provider = initialSlot.provider;
   }
 
-  /** Select the provider pool for the currently active model role. */
-  private activePool(): ProviderPool {
+  /** Select the slot for the currently active model role. */
+  private activeSlot(): ProviderSlot {
     switch (this._activeTier) {
       case "planner":
-        return this.plannerPool;
+        return this.plannerSlot;
       case "writer":
-        return this.writerPool;
+        return this.writerSlot;
       case "judge":
-        return this.judgePool;
+        return this.judgeSlot;
       default:
-        return this.executorPool;
+        return this.executorSlot;
     }
   }
 
@@ -679,8 +326,7 @@ export class LLMClient {
     providerId: ProviderConfig["providerId"];
     model: string;
   } {
-    const pool = this.activePool();
-    const slot = pool.getActive();
+    const slot = this.activeSlot();
     return {
       providerId: slot.provider.providerId,
       model:
@@ -716,7 +362,7 @@ export class LLMClient {
    */
   public resetExecutorFallback(): void {
     if (!this.executorModelOverride) return;
-    const slot = this.executorPool.getActive();
+    const slot = this.executorSlot;
     logger.info("agent", "Resetting executor fallback to primary model", {
       fromModel: this.executorModelOverride,
       toModel: slot.model,
@@ -725,18 +371,12 @@ export class LLMClient {
     this.model = slot.model;
   }
 
-  private onProviderFailover?: (from: string, to: string) => void;
-
-  public setFailoverCallback(cb: (from: string, to: string) => void): void {
-    this.onProviderFailover = cb;
-  }
-
   /**
    * Switch to planner model tier. Used during escalation.
-   * Reads from planner pool for best available provider.
+   * Uses the planner slot.
    */
   public switchToPlanner(): void {
-    const slot = this.plannerPool.getActive();
+    const slot = this.plannerSlot;
     logger.info("agent", "Switching to planner model", {
       fromModel: this.model,
       fromProvider: this.provider.providerId,
@@ -750,10 +390,10 @@ export class LLMClient {
 
   /**
    * Switch back to executor model. Used during de-escalation when progress resumes.
-   * Reads from executor pool to get the fastest available provider (respects cooldowns).
+   * Uses the executor slot.
    */
   public switchToExecutor(): void {
-    const slot = this.executorPool.getActive();
+    const slot = this.executorSlot;
     this.executorModelOverride = null;
     logger.info("agent", "Switching back to executor model", {
       fromModel: this.model,
@@ -767,10 +407,10 @@ export class LLMClient {
   }
 
   /**
-   * One-shot prose composition against the Writer pool. Temporarily routes
+   * One-shot prose composition against the Writer slot. Temporarily routes
    * completion through the writer model (falling back to the executor model when
    * none is configured), then restores the prior tier. Does not mutate the
-   * active model/provider — `complete()` selects the pool per call via the tier
+   * active model/provider — `complete()` selects the slot per call via the tier
    * flag — so this is safe to call mid-loop without disturbing escalation state.
    */
   public async composeText(args: {
@@ -804,7 +444,7 @@ export class LLMClient {
   }
 
   /**
-   * One-shot verification judging against the Judge pool (RFC LP-15 Phase 10).
+   * One-shot verification judging against the Judge slot (RFC LP-15 Phase 10).
    * Temporarily routes completion through the judge model (falling back to the
    * planner model when none is configured), then restores the prior tier.
    * Mirrors `composeText`: it does not mutate the active model/provider, so it
@@ -850,62 +490,36 @@ export class LLMClient {
   }
 
   public async runRubricDecision(rubric: JudgeRubric, signal?: AbortSignal): Promise<JudgeVerdict> {
-    const slot = this.judgePool.getActive();
+    const slot = this.judgeSlot;
     if (!this.supportsRubricDecision()) throw new Error(`Typed decisions unavailable for ${slot.model}`);
     return requestJevVerdict(rubric, slot.provider.apiKey, slot.model.replace(/:nitro$/, ""), signal);
   }
 
   public supportsRubricDecision(): boolean {
-    const slot = this.judgePool.getActive();
+    const slot = this.judgeSlot;
     return slot.provider.providerId === "openrouter" && slot.model.replace(/:nitro$/, "") === "typesafe/jev-1.13";
   }
 
-  /** Whether a dedicated Writer model is configured (distinct from the executor pool). */
+  /** Whether a dedicated Writer model is configured (distinct from the executor slot). */
   public hasWriterModel(): boolean {
-    return this.writerPool !== this.executorPool;
-  }
-
-  /** Rebuild request for a different provider (swaps URL, headers, AND model in body) */
-  private rebuildForProvider(
-    init: RequestInit,
-    slot: ProviderSlot,
-  ): { url: string; init: RequestInit } {
-    const body = JSON.parse(init.body as string);
-    body.model = slot.model;
-    delete body.provider;
-    const shapedBody = this.shapePayloadForActiveTier(
-      slot.provider.providerId,
-      body,
-    );
-    return {
-      url: slot.provider.baseUrl,
-      init: {
-        ...init,
-        headers: buildJsonHeaders(slot.provider),
-        body: JSON.stringify(shapedBody),
-      },
-    };
+    return this.writerSlot !== this.executorSlot;
   }
 
   private shapePayloadForActiveTier(
-    providerId: ProviderConfig["providerId"],
     payload: Record<string, unknown>,
   ): Record<string, unknown> {
-    const shaped = shapePayloadForProvider(providerId, payload);
-    if (providerId === "openrouter") {
-      if (!shaped.stream) shaped.usage = { include: true };
-      if (String(shaped.model).replace(/:nitro$/, "") === "openai/gpt-6-luna") {
-        // Chat Completions function calling requires reasoning_effort=none.
-        shaped.reasoning_effort = Array.isArray(shaped.tools) && shaped.tools.length ? "none" : "medium";
-        if (shaped.reasoning_effort !== "none") delete shaped.temperature;
-      }
+    const shaped = { ...payload };
+    if (!shaped.stream) shaped.usage = { include: true };
+    if (String(shaped.model).replace(/:nitro$/, "") === "openai/gpt-6-luna") {
+      // Chat Completions function calling requires reasoning_effort=none.
+      shaped.reasoning_effort = Array.isArray(shaped.tools) && shaped.tools.length ? "none" : "medium";
+      if (shaped.reasoning_effort !== "none") delete shaped.temperature;
     }
     if (this.strictModelRouting && shaped.model !== this.getActiveProviderInfo().model) {
       throw new Error("Strict model routing forbids a request model override.");
     }
     const pin = this.providerPins[this._activeTier]?.trim();
-    if (providerId === "openrouter") return applyOpenRouterRouting(shaped, pin, this.strictModelRouting);
-    return shaped;
+    return applyOpenRouterRouting(shaped, pin, this.strictModelRouting);
   }
 
   private async fetchWithRetry(
@@ -924,7 +538,6 @@ export class LLMClient {
       return {
         response: await cloudRelayFetch(
           JSON.parse(String(init.body ?? "{}")) as Record<string, unknown>,
-          providerId,
           this._activeTier,
           signal,
         ),
@@ -946,69 +559,6 @@ export class LLMClient {
         // Retryable error
         const body = await response.text();
         lastError = new Error(`LLM API Error (${response.status}): ${body}`);
-
-        // Immediate provider failover on 429 (rate limit)
-        if (response.status === 429 && providerId) {
-          const pool = this.activePool();
-          pool.cooldown(providerId);
-          const fallback = !this.strictModelRouting && pool.getNextFallback(providerId);
-          if (fallback) {
-            logger.warn("agent", "Provider rate-limited, failing over", {
-              from: providerId,
-              to: fallback.provider.providerId,
-              model: fallback.model,
-            });
-            this.onProviderFailover?.(providerId, fallback.provider.providerId);
-            const fb = this.rebuildForProvider(init, fallback);
-            try {
-              const fbResp = await fetch(fb.url, { ...fb.init, signal });
-              if (fbResp.ok || !RETRYABLE.has(fbResp.status))
-                return {
-                  response: fbResp,
-                  actualProviderId: fallback.provider.providerId,
-                  actualModel: fallback.model,
-                };
-              const fbBody = await fbResp.text();
-              lastError = new Error(
-                `LLM API Error (${fbResp.status}): ${fbBody}`,
-              );
-            } catch (e: any) {
-              if (e.name === "AbortError") throw e;
-              lastError = e;
-            }
-            // Fallback also failed — continue normal retry loop
-          }
-        }
-
-        // Permanent provider disable on 402 (credit exhaustion)
-        if (response.status === 402 && providerId) {
-          const pool = this.activePool();
-          pool.disableForSession(providerId);
-          logger.warn(
-            "agent",
-            "Provider permanently disabled for session (credit exhaustion)",
-            { providerId },
-          );
-          const fallback = !this.strictModelRouting && pool.getNextFallback(providerId);
-          if (fallback && !pool.isDisabled(fallback.provider.providerId)) {
-            this.onProviderFailover?.(providerId, fallback.provider.providerId);
-            const fb = this.rebuildForProvider(init, fallback);
-            try {
-              const fbResp = await fetch(fb.url, { ...fb.init, signal });
-              if (fbResp.ok || !RETRYABLE.has(fbResp.status))
-                return {
-                  response: fbResp,
-                  actualProviderId: fallback.provider.providerId,
-                  actualModel: fallback.model,
-                };
-            } catch (e: any) {
-              if (e.name === "AbortError") throw e;
-              // Fallback failed — fall through to throw
-            }
-          }
-          // No viable fallback — throw immediately (don't retry)
-          throw lastError!;
-        }
       } catch (e: any) {
         if (e.name === "AbortError") throw e; // Never retry aborts
         lastError = e; // Network error — retryable
@@ -1028,11 +578,10 @@ export class LLMClient {
   }
 
   async complete(request: CompletionRequest): Promise<CompletionResponse> {
-    // Use the appropriate pool based on current tier
-    const pool = this.activePool();
-    const activeSlot = pool.getActive();
-    let provider = activeSlot.provider;
-    let activeModel =
+    // Use the appropriate slot based on current tier
+    const activeSlot = this.activeSlot();
+    const provider = activeSlot.provider;
+    const activeModel =
       this._activeTier === "executor" && this.executorModelOverride
         ? this.executorModelOverride
         : activeSlot.model;
@@ -1043,15 +592,9 @@ export class LLMClient {
       );
     }
 
-    // Fireworks routers require streaming — force it and collect the response
-    const forceStream = provider.providerId === "fireworks";
-
-    const payload = this.shapePayloadForActiveTier(provider.providerId, {
+    const payload = this.shapePayloadForActiveTier({
       model: request.model || activeModel,
-      messages: sanitizeToolCallMessages(
-        annotateCacheControl(request.messages, provider.providerId),
-        provider.providerId,
-      ),
+      messages: annotateCacheControl(request.messages),
       tools: request.tools,
       tool_choice: request.tools?.length
         ? (request.tool_choice ?? "auto")
@@ -1060,9 +603,6 @@ export class LLMClient {
       max_tokens: request.max_tokens,
       stop: request.stop,
       response_format: request.response_format,
-      ...(forceStream
-        ? { stream: true, stream_options: { include_usage: true } }
-        : {}),
     });
 
     logger.debug("agent", "LLM Request", {
@@ -1073,9 +613,9 @@ export class LLMClient {
     });
 
     try {
-      let requestInitBase: RequestInit = withLlmRequestObservation({
+      const requestInitBase: RequestInit = withLlmRequestObservation({
         method: "POST",
-        headers: buildJsonHeaders(provider, request),
+        headers: buildJsonHeaders(provider),
       }, this._activeTier);
 
       let response: Response;
@@ -1108,7 +648,7 @@ export class LLMClient {
           isImageUrlUnsupported(response.status, errorText)
         ) {
           imageFallbackRetried = true;
-          activePayload = this.shapePayloadForActiveTier(provider.providerId, {
+          activePayload = this.shapePayloadForActiveTier({
             ...activePayload,
             messages: toTextOnlyMessages(request.messages),
           });
@@ -1124,86 +664,12 @@ export class LLMClient {
         }
 
         if (response.status === 402) {
-          // Disable this provider permanently for the session
-          pool.disableForSession(provider.providerId);
-          logger.warn(
-            "agent",
-            "Provider permanently disabled for session (credit exhaustion)",
-            { providerId: provider.providerId },
-          );
-
-          // Try failover to next provider
-          const fallback = !this.strictModelRouting && pool.getNextFallback(provider.providerId);
-          if (fallback && !pool.isDisabled(fallback.provider.providerId)) {
-            this.onProviderFailover?.(
-              provider.providerId,
-              fallback.provider.providerId,
-            );
-            provider = fallback.provider;
-            activeModel = fallback.model;
-            activePayload = this.shapePayloadForActiveTier(
-              provider.providerId,
-              {
-                ...activePayload,
-                model: activeModel,
-              },
-            );
-            requestInitBase = {
-              method: "POST",
-              headers: buildJsonHeaders(provider, request),
-            };
-            continue; // Re-enter the while(true) loop with new provider
-          }
-
-          // No viable fallback — throw the credit error
-          const providerName = getProviderDisplayName(provider.providerId);
-          const creditsUrl = getProviderCreditsUrl(provider.providerId);
-          const affordMatch = errorText.match(/can only afford (\d+)/);
-          const affordable = affordMatch ? parseInt(affordMatch[1]) : 0;
-          const err = new Error(
-            pool.allDisabled()
-              ? `All providers exhausted (credit limits). Add credits to continue.`
-              : affordable > 0
-                ? `Insufficient credits (can afford ~${affordable} tokens).${creditsUrl ? ` Add credits at ${creditsUrl}.` : ""}`
-                : `Insufficient ${providerName} credits.${creditsUrl ? ` Add credits at ${creditsUrl}.` : ""}`,
-          );
-          (err as any).status = 402;
-          (err as any).affordable = affordable;
-          throw err;
+          logger.warn("agent", "Provider out of credits", {
+            providerId: provider.providerId,
+          });
+          throw creditsExhaustedError(errorText);
         }
         throw new Error(`LLM API Error (${response.status}): ${errorText}`);
-      }
-
-      // Fireworks streaming: collect SSE stream and return as CompletionResponse
-      if (forceStream) {
-        if (!response.body) {
-          throw new Error("Fireworks streaming response has no body");
-        }
-        const result = await parseSSEStream(
-          response.body,
-          () => {}, // no-op: complete() doesn't stream to UI
-          request.signal,
-        );
-        const cacheTelemetry = readProviderCacheTelemetry(
-          actualProviderId,
-          response.headers,
-        );
-        const rawContent = result.content;
-        const cleanContent = rawContent
-          ? stripThinkTags(rawContent) || null
-          : null;
-        return {
-          role: "assistant",
-          content: cleanContent,
-          tool_calls: result.tool_calls,
-          finish_reason: result.tool_calls ? "tool_calls" : "stop",
-          usage: mergeCacheTelemetry(
-            withUsageCacheTelemetry(result.usage, actualProviderId),
-            cacheTelemetry,
-          ),
-          actualProviderId,
-          actualModel,
-        };
       }
 
       const data = await response.json();
@@ -1261,20 +727,12 @@ export class LLMClient {
               data.usage.prompt_tokens_details?.cached_tokens ?? undefined,
           }
         : undefined;
-      const cacheTelemetry = readProviderCacheTelemetry(
-        actualProviderId,
-        response.headers,
-      );
-
       return {
         role: "assistant",
         content: cleanContent,
         tool_calls: parsedToolCalls.length > 0 ? parsedToolCalls : undefined,
         finish_reason: choice.finish_reason as any,
-        usage: mergeCacheTelemetry(
-          withUsageCacheTelemetry(usage, actualProviderId),
-          cacheTelemetry,
-        ),
+        usage: withUsageCacheTelemetry(usage, actualProviderId),
         actualProviderId,
         actualModel,
       };
@@ -1296,11 +754,10 @@ export class LLMClient {
     request: CompletionRequest,
     onTextDelta: (delta: string) => void,
   ): Promise<CompletionResponse> {
-    // Use the appropriate pool based on current tier
-    const pool = this.activePool();
-    const activeSlot = pool.getActive();
-    let provider = activeSlot.provider;
-    let activeModel =
+    // Use the appropriate slot based on current tier
+    const activeSlot = this.activeSlot();
+    const provider = activeSlot.provider;
+    const activeModel =
       this._activeTier === "executor" && this.executorModelOverride
         ? this.executorModelOverride
         : activeSlot.model;
@@ -1311,12 +768,9 @@ export class LLMClient {
       );
     }
 
-    const payload = this.shapePayloadForActiveTier(provider.providerId, {
+    const payload = this.shapePayloadForActiveTier({
       model: request.model || activeModel,
-      messages: sanitizeToolCallMessages(
-        annotateCacheControl(request.messages, provider.providerId),
-        provider.providerId,
-      ),
+      messages: annotateCacheControl(request.messages),
       tools: request.tools,
       tool_choice: request.tools?.length
         ? (request.tool_choice ?? "auto")
@@ -1337,9 +791,9 @@ export class LLMClient {
     });
 
     try {
-      let requestInitBase: RequestInit = withLlmRequestObservation({
+      const requestInitBase: RequestInit = withLlmRequestObservation({
         method: "POST",
-        headers: buildJsonHeaders(provider, request),
+        headers: buildJsonHeaders(provider),
       }, this._activeTier);
 
       let response: Response;
@@ -1372,7 +826,7 @@ export class LLMClient {
           isImageUrlUnsupported(response.status, errorText)
         ) {
           imageFallbackRetried = true;
-          activePayload = this.shapePayloadForActiveTier(provider.providerId, {
+          activePayload = this.shapePayloadForActiveTier({
             ...activePayload,
             messages: toTextOnlyMessages(request.messages),
           });
@@ -1388,52 +842,10 @@ export class LLMClient {
         }
 
         if (response.status === 402) {
-          // Disable this provider permanently for the session
-          pool.disableForSession(provider.providerId);
-          logger.warn(
-            "agent",
-            "Provider permanently disabled for session (credit exhaustion)",
-            { providerId: provider.providerId },
-          );
-
-          // Try failover to next provider
-          const fallback = !this.strictModelRouting && pool.getNextFallback(provider.providerId);
-          if (fallback && !pool.isDisabled(fallback.provider.providerId)) {
-            this.onProviderFailover?.(
-              provider.providerId,
-              fallback.provider.providerId,
-            );
-            provider = fallback.provider;
-            activeModel = fallback.model;
-            activePayload = this.shapePayloadForActiveTier(
-              provider.providerId,
-              {
-                ...activePayload,
-                model: activeModel,
-              },
-            );
-            requestInitBase = {
-              method: "POST",
-              headers: buildJsonHeaders(provider, request),
-            };
-            continue; // Re-enter the while(true) loop with new provider
-          }
-
-          // No viable fallback — throw the credit error
-          const providerName = getProviderDisplayName(provider.providerId);
-          const creditsUrl = getProviderCreditsUrl(provider.providerId);
-          const affordMatch = errorText.match(/can only afford (\d+)/);
-          const affordable = affordMatch ? parseInt(affordMatch[1]) : 0;
-          const err = new Error(
-            pool.allDisabled()
-              ? `All providers exhausted (credit limits). Add credits to continue.`
-              : affordable > 0
-                ? `Insufficient credits (can afford ~${affordable} tokens).${creditsUrl ? ` Add credits at ${creditsUrl}.` : ""}`
-                : `Insufficient ${providerName} credits.${creditsUrl ? ` Add credits at ${creditsUrl}.` : ""}`,
-          );
-          (err as any).status = 402;
-          (err as any).affordable = affordable;
-          throw err;
+          logger.warn("agent", "Provider out of credits", {
+            providerId: provider.providerId,
+          });
+          throw creditsExhaustedError(errorText);
         }
         throw new Error(`LLM API Error (${response.status}): ${errorText}`);
       }
@@ -1450,11 +862,6 @@ export class LLMClient {
         request.signal,
       );
       thinkFilter.flush();
-      const cacheTelemetry = readProviderCacheTelemetry(
-        actualProviderId,
-        response.headers,
-      );
-
       // Preserve raw content (with <think> blocks) for conversation history —
       // M2.5 reasoning chain continuity improves performance significantly.
       // The streaming thinkFilter already suppressed <think> from the UI deltas.
@@ -1469,10 +876,7 @@ export class LLMClient {
         content: result.content || null,
         tool_calls: result.tool_calls,
         finish_reason: result.tool_calls ? "tool_calls" : "stop",
-        usage: mergeCacheTelemetry(
-          withUsageCacheTelemetry(result.usage, actualProviderId),
-          cacheTelemetry,
-        ),
+        usage: withUsageCacheTelemetry(result.usage, actualProviderId),
         actualProviderId,
         actualModel,
       };

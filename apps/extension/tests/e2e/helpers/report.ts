@@ -47,8 +47,6 @@ interface TestRecord {
 }
 
 interface RunMetadata {
-  provider: string;
-  lane: string;
   configuredExecutorModel?: string | null;
   diagnosticMode?: boolean;
 }
@@ -589,8 +587,6 @@ function buildMarkdownReport(
     createEmptyDiagnostics(),
   );
 
-  const provider = runMetadata?.provider ?? "unknown";
-  const lane = runMetadata?.lane ?? "unknown";
   const executorModel = runMetadata?.configuredExecutorModel ?? "default";
   const diagnosticMode = runMetadata?.diagnosticMode === true ? "on" : "off";
 
@@ -599,7 +595,7 @@ function buildMarkdownReport(
   lines.push("");
   lines.push(`Date: ${dateStr} ${timeStr}`);
   lines.push(
-    `Scope: ${analyses.length} case(s); lane=${lane}; provider=${provider}; executor=${executorModel}; diagnostic=${diagnosticMode}`,
+    `Scope: ${analyses.length} case(s); executor=${executorModel}; diagnostic=${diagnosticMode}`,
   );
   lines.push(
     `Overall result: ${passedCount}/${analyses.length} passed${failedCount > 0 ? `, ${failedCount} failed` : ""}`,

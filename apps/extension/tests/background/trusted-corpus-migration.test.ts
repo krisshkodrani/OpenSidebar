@@ -25,7 +25,7 @@ describe("trusted-corpus migration transforms", () => {
     };
     const entry = personalProfileFactToCorpusEntry(
       item,
-      { source: "analyzer", capturedAt: 5, provider: "fireworks", model: "glm-5p2" },
+      { source: "analyzer", capturedAt: 5, provider: "openrouter", model: "glm-5p2" },
       false,
     );
     expect(entry).toMatchObject({
@@ -35,7 +35,7 @@ describe("trusted-corpus migration transforms", () => {
       value: item, // whole digest item, lossless round-trip
       encrypted: false,
       confidence: "high",
-      provenance: { source: "analyzer", provider: "fireworks", model: "glm-5p2" },
+      provenance: { source: "analyzer", provider: "openrouter", model: "glm-5p2" },
     });
     // reverse transform recovers the item
     const recovered = corpusEntryToProfileDigestItem({
@@ -190,7 +190,7 @@ describe("migrateLegacyStoresIntoCorpus", () => {
     const corpus = makeCorpus();
     const counts = await migrateLegacyStoresIntoCorpus(corpus, {
       profileFacts: items,
-      analyzer: { provider: "fireworks", model: "glm-5p2", analyzerVersion: "1", analyzedAt: 9 },
+      analyzer: { provider: "openrouter", model: "glm-5p2", analyzerVersion: "1", analyzedAt: 9 },
       skills,
       now: () => 1,
     });
@@ -200,7 +200,7 @@ describe("migrateLegacyStoresIntoCorpus", () => {
     expect(all).toHaveLength(3);
     const ssn = all.find((e) => e.claimKey === "sensitive:ssn:2")!;
     expect(ssn.encrypted).toBe(true); // ciphertext detected
-    expect(ssn.provenance).toMatchObject({ source: "analyzer", provider: "fireworks", model: "glm-5p2" });
+    expect(ssn.provenance).toMatchObject({ source: "analyzer", provider: "openrouter", model: "glm-5p2" });
     const name = all.find((e) => e.claimKey === "fact:name:1")!;
     expect(name.encrypted).toBe(false);
     expect(all.find((e) => e.kind === "website_skill")!.scope.origin).toBe("https://x.test");

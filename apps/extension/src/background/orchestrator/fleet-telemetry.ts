@@ -10,7 +10,6 @@ import type { FleetTelemetryProjectionInput } from "../telemetry/projector";
 import type { OrchestratorTask } from "./types";
 
 export interface TaskFleetTelemetryState {
-  providerId?: string;
   executorModel?: string;
   plannerModel?: string;
   judgeModel?: string;
@@ -25,13 +24,9 @@ export interface TaskFleetTelemetryState {
 }
 
 export function createTaskFleetTelemetryState(
-  settings?: Pick<
-    UserSettings,
-    "providerMode" | "provider" | "executorModel" | "plannerModel"
-  >,
+  settings?: Pick<UserSettings, "executorModel" | "plannerModel">,
 ): TaskFleetTelemetryState {
   return {
-    providerId: normalizeProviderMode(settings?.providerMode ?? settings?.provider),
     executorModel: settings?.executorModel,
     plannerModel: settings?.plannerModel,
     turnCount: 0,
@@ -90,7 +85,7 @@ export function buildTaskFleetTelemetryProjectionInput(input: {
   const startedAt = input.task.startedAt ?? input.task.createdAt;
   return {
     ...input.runtime,
-    providerId: input.state.providerId,
+    providerId: "openrouter",
     executorModel: input.state.executorModel,
     plannerModel: input.state.plannerModel,
     judgeModel: input.state.judgeModel,
@@ -110,15 +105,4 @@ export function buildTaskFleetTelemetryProjectionInput(input: {
         ? ["user_abort"]
         : input.state.errorCodes,
   };
-}
-
-function normalizeProviderMode(value: string | undefined): string | undefined {
-  switch (value) {
-    case "fireworks-deepseek":
-      return "fireworks";
-    case "cerebras-fireworks":
-      return "cerebras";
-    default:
-      return value;
-  }
 }

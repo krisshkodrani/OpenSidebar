@@ -50,7 +50,7 @@ describe("PlanTab", () => {
           role: "planner",
           data: {
             phase: "plan_decomposition",
-            model: "accounts/fireworks/routers/kimi-k2p5-turbo",
+            model: "moonshotai/kimi-k2.6",
             durationMs: 1200,
             usage: {
               prompt_tokens: 100,
@@ -178,7 +178,7 @@ describe("PlanTab", () => {
     expect(container.textContent).toContain("4");
     expect(container.textContent).toContain("Planner LLM Calls");
     expect(container.textContent).toContain("plan_decomposition");
-    expect(container.textContent).toContain("kimi-k2p5-turbo");
+    expect(container.textContent).toContain("kimi-k2.6");
     expect(container.textContent).toContain("Raw Planner Response");
     expect(container.textContent).toContain("Inspect all records");
     expect(container.textContent).toContain("paginated-record-lookup");

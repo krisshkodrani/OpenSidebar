@@ -12,7 +12,7 @@ runtime can use conservatively.
 
 1. Profile Notes are stored locally in the browser runtime storage adapter.
 2. Digest analysis is explicit; it is not run on every edit.
-3. Fireworks Kimi K2.6 is the initial analyzer when a Fireworks key is
+3. Kimi K2.6 through OpenRouter is the analyzer when an OpenRouter key is
    configured.
 4. The digest is stale when the notes hash, digest schema version, or analyzer
    version changes.

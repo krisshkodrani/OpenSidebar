@@ -16,7 +16,7 @@ export HF_TOKEN=hf_xxx
 pnpm run bench:fetch
 
 # A stratified 100-task sweep on a chosen model config:
-E2E_PROVIDER=openrouter E2E_MODEL=openai/gpt-5.4-mini pnpm run bench -- --size 100 --config-label "openrouter / gpt-5.4-mini"
+E2E_MODEL=openai/gpt-5.4-mini pnpm run bench -- --size 100 --config-label "openrouter / gpt-5.4-mini"
 ```
 
 Artifacts land in `.artifacts/bench/<timestamp>/`: `report.md` (the score),
@@ -45,7 +45,7 @@ only via `pnpm run bench`.
 ## Model configs
 
 A "config" is just the executor pairing the runner injects:
-`E2E_PROVIDER` + `E2E_MODEL`. Run the sweep once per config you want to publish
+`E2E_MODEL`. Run the sweep once per config you want to publish
 (this is a BYOK scaffold — the scaffold is the product, so publish 2–3 configs
 rather than one cherry-picked pairing).
 
@@ -56,11 +56,9 @@ executor:
 
 - `BENCH_JUDGE_BASE_URL` (default `https://openrouter.ai/api/v1`)
 - `BENCH_JUDGE_MODEL` (default `openai/gpt-5.4-mini`)
-- `BENCH_JUDGE_API_KEY` (falls back to `OPENROUTER_API_KEY`, then `OPENAI_API_KEY`)
+- `BENCH_JUDGE_API_KEY` (falls back to `OPENROUTER_API_KEY`)
 
-Key lookup checks the environment first, then the repo `.env`. When only an
-OpenAI key is found, the judge defaults switch to OpenAI direct
-(`https://api.openai.com/v1`, model `gpt-5.4-mini`) automatically.
+Key lookup checks the environment first, then the repo `.env`.
 
 Unparseable or uncertain verdicts count as **non-successes** — a judge that
 can't be read never inflates the score. `--judge-only --run-dir <dir>` re-scores

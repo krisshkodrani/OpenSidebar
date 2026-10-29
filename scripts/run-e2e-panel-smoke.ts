@@ -29,14 +29,13 @@ function readEnvValue(name: string): string | undefined {
 async function main() {
   process.env.E2E_PROFILE = process.env.E2E_PROFILE || "headed";
   process.env.E2E_ARTIFACTS = process.env.E2E_ARTIFACTS || "panel,screenshots";
-  process.env.E2E_PROVIDER = "fireworks";
 
   const route = parseArg("route") ?? "login";
   const holdMs = Number(parseArg("holdMs") ?? "120000");
   const workspaceId = `e2e-panel-smoke-${crypto.randomUUID()}`;
-  const fireworksKey = readEnvValue("FIREWORKS_API_KEY");
-  if (!fireworksKey) {
-    throw new Error("FIREWORKS_API_KEY is required for the panel smoke.");
+  const openRouterKey = readEnvValue("OPENROUTER_API_KEY");
+  if (!openRouterKey) {
+    throw new Error("OPENROUTER_API_KEY is required for the panel smoke.");
   }
 
   await startFixtureServer();
@@ -63,26 +62,16 @@ async function main() {
     if (tabId <= 0) throw new Error("Could not resolve active fixture tab.");
 
     await helper.evaluate(async (key: string) => {
-      await chrome.storage.local.set({
-        fireworksApiKey_local: key,
-        openRouterApiKey_local: "",
-        openaiApiKey_local: "",
-        groqApiKey_local: "",
-        geminiApiKey_local: "",
-        deepseekApiKey_local: "",
-        kimiApiKey_local: "",
-        xiaomiApiKey_local: "",
-      });
+      await chrome.storage.local.set({ openRouterApiKey_local: key });
       await chrome.storage.sync.set({
         userSettings: {
-          providerMode: "fireworks",
           requireApprovals: false,
           allowNavigation: false,
           requirePlanConfirmation: false,
           showElementTags: false,
         },
       });
-    }, fireworksKey);
+    }, openRouterKey);
 
     await ensureE2EPanel(ctx, tabId, workspaceId);
 
@@ -223,7 +212,7 @@ async function main() {
       throw new Error("Real sidepanel did not mount visibly.");
     }
     if (probe.showsOpenSettings || !probe.showsReadyPrompt) {
-      throw new Error("Real sidepanel did not load Fireworks settings.");
+      throw new Error("Real sidepanel did not load OpenRouter settings.");
     }
     if (!probe.logoLoaded) {
       throw new Error("OpenSidebar logo did not load in the overlay.");

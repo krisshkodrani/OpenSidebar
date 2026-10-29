@@ -2,28 +2,12 @@ import { mkdtempSync, rmSync, writeFileSync } from "fs";
 import { tmpdir } from "os";
 import { join } from "path";
 import { describe, expect, test } from "vitest";
-import { readE2EConfig } from "../e2e/helpers/e2e-config";
 import {
-  detectProviderMode,
   loadApiKey,
   resolveE2EProviderConfig,
 } from "../e2e/helpers/e2e-provider-config";
 
 describe("E2E provider config", () => {
-  test("normalizes provider aliases and derives lane", () => {
-    const config = resolveE2EProviderConfig({
-      env: {
-        E2E_PROVIDER: "kimi",
-        KIMI_API_KEY: "kimi-secret",
-      },
-    });
-
-    expect(config.providerMode).toBe("moonshot");
-    expect(config.lane).toBe("dev");
-    expect(config.apiKey).toBe("kimi-secret");
-    expect(config.keys.kimiKey).toBe("kimi-secret");
-  });
-
   test("loads API keys from env before .env without exposing secrets in diagnostics", () => {
     const dir = mkdtempSync(join(tmpdir(), "opensidebar-provider-config-"));
     const envFilePath = join(dir, ".env");
@@ -38,20 +22,36 @@ describe("E2E provider config", () => {
       ).toBe("env-secret");
 
       const config = resolveE2EProviderConfig({
-        config: readE2EConfig({ env: { E2E_PROVIDER: "fireworks" } }),
-        env: { FIREWORKS_API_KEY: "fw-secret" },
+        env: { OPENROUTER_API_KEY: "env-secret" },
         envFilePath,
       });
-      expect(JSON.stringify(config.diagnostics)).not.toContain("fw-secret");
+      expect(config.apiKey).toBe("env-secret");
+      expect(JSON.stringify(config.diagnostics)).not.toContain("env-secret");
+      expect(config.diagnostics).toEqual([]);
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }
   });
 
-  test("reports missing active provider key with sanitized context", () => {
+  test("falls back to the .env file when the environment has no key", () => {
+    const dir = mkdtempSync(join(tmpdir(), "opensidebar-provider-config-"));
+    const envFilePath = join(dir, ".env");
+    try {
+      writeFileSync(envFilePath, "OPENROUTER_API_KEY=file-secret\n", "utf-8");
+      expect(
+        resolveE2EProviderConfig({
+          env: { OPENROUTER_API_KEY: "" },
+          envFilePath,
+        }).apiKey,
+      ).toBe("file-secret");
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  test("reports a missing key without leaking context", () => {
     const config = resolveE2EProviderConfig({
-      config: readE2EConfig({ env: { E2E_PROVIDER: "fireworks" } }),
-      env: { FIREWORKS_API_KEY: "" },
+      env: { OPENROUTER_API_KEY: "" },
       envFilePath: join(tmpdir(), "opensidebar-missing-provider-env"),
     });
 
@@ -59,16 +59,8 @@ describe("E2E provider config", () => {
     expect(config.diagnostics).toEqual([
       expect.objectContaining({
         severity: "warning",
-        message: "Active E2E provider API key is not configured.",
-        context: {
-          providerMode: "fireworks",
-          lane: "dev",
-        },
+        message: "OPENROUTER_API_KEY is not configured.",
       }),
     ]);
-  });
-
-  test("keeps unknown providers on the default fireworks path", () => {
-    expect(detectProviderMode("unknown")).toBe("fireworks");
   });
 });

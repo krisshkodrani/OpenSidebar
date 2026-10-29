@@ -10,9 +10,7 @@ OpenSidebar combines a fast executor with a planner, verifier, and visual percep
 | Executor fallback | `openai/gpt-6-luna` | OpenRouter | Empty-response retry seat |
 | Planner | `openai/gpt-6-luna` | OpenRouter | Planning, rerouting, verification |
 | Judge | `typesafe/jev-1.13` | OpenRouter Decisions API | Typed completion rubric decisions |
-| Perception | `unified_vl` by default; structured fallback is provider-specific | Configured provider | Visual grounding |
-
-Xiaomi MiMo can be selected as an agent provider with `XIAOMI_API_KEY`. In that mode, the executor uses `mimo-v2-omni` and planner choices are limited to curated MiMo V2 models.
+| Perception | `unified_vl` by default; structured fallback is provider-specific | OpenRouter | Visual grounding |
 
 The OpenRouter chat requests ask for response usage. Session cost accounting uses
 provider-reported USD cost when present and labels table-based fallback as an

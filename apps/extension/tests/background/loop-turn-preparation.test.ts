@@ -69,8 +69,8 @@ function makePerception(overrides = {}) {
       screenshotStatus: "captured",
     })),
     getLastTraceStats: vi.fn(() => ({
-      model: "accounts/fireworks/routers/kimi-k2p6-turbo",
-      providerId: "fireworks",
+      model: "moonshotai/kimi-k2.6",
+      providerId: "openrouter",
       durationMs: 1234,
       cached: false,
     })),
@@ -226,8 +226,8 @@ describe("prepareLlmTurnRequest", () => {
     expect(traceRecorder.recordPerception).toHaveBeenCalledWith(
       expect.objectContaining({
         interpretation: "The page is ready.",
-        model: "accounts/fireworks/routers/kimi-k2p6-turbo",
-        providerId: "fireworks",
+        model: "moonshotai/kimi-k2.6",
+        providerId: "openrouter",
         durationMs: 1234,
         cached: false,
         mode: "structured",

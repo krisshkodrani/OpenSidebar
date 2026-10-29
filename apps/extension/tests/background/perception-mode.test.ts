@@ -10,7 +10,6 @@ describe("perception mode resolution", () => {
     expect(
       resolvePerceptionRuntimeModeDecision({
         perceptionMode: "auto",
-        providerMode: "fireworks",
         elementCount: 20,
         pageTextLength: 1000,
       }),
@@ -25,7 +24,6 @@ describe("perception mode resolution", () => {
     expect(
       resolvePerceptionRuntimeModeDecision({
         perceptionMode: "auto",
-        providerMode: "fireworks",
         elementCount: 60,
         pageTextLength: 5000,
       }),
@@ -40,7 +38,6 @@ describe("perception mode resolution", () => {
     expect(
       resolvePerceptionRuntimeModeDecision({
         perceptionMode: "auto",
-        providerMode: "moonshot",
         taskText: "Read the chart and tell me the highest value",
         elementCount: 20,
         pageTextLength: 2000,
@@ -235,7 +232,6 @@ describe("perception mode resolution", () => {
     expect(
       resolvePerceptionRuntimeModeDecision({
         perceptionMode: "auto",
-        providerMode: "fireworks-deepseek",
         elementCount: 1,
         pageTextLength: 100,
       }),
@@ -298,7 +294,6 @@ describe("perception mode resolution", () => {
     expect(
       resolvePerceptionRuntimeMode({
         perceptionMode: "structured",
-        providerMode: "fireworks",
       }),
     ).toBe("structured");
   });
@@ -316,7 +311,6 @@ describe("perception mode resolution", () => {
   test("dense text-heavy page falls through auto to structured (text-only)", () => {
     expect(
       resolvePerceptionRuntimeMode({
-        providerMode: "fireworks",
         // Dense text-heavy page: the auto path picks structured (post LP-11
         // flip, that is the only signal-less structured outcome).
         elementCount: 60,

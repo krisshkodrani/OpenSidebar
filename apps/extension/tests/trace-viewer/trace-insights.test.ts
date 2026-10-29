@@ -210,10 +210,10 @@ describe("trace insights", () => {
         [
           {
             llmRequest: {
-              model: "accounts/fireworks/routers/kimi-k2p6-turbo",
+              model: "openai/gpt-6-luna",
             },
             llmResponse: {
-              actualProviderId: "fireworks",
+              actualProviderId: "openrouter",
               durationMs: 100,
               usage: {
                 prompt_tokens: 1000,
@@ -238,19 +238,19 @@ describe("trace insights", () => {
       outputTokenShare: 100 / 1100,
       unpricedRequests: 0,
     });
-    expect(result.summary.estimatedInputCost).toBeCloseTo(0.0012, 8);
-    expect(result.summary.estimatedCachedInputCost).toBeCloseTo(0.00012, 8);
-    expect(result.summary.estimatedOutputCost).toBeCloseTo(0.0008, 8);
-    expect(result.summary.estimatedRequestCost).toBeCloseTo(0.00212, 8);
-    expect(result.summary.outputCostShare).toBeCloseTo(0.0008 / 0.00212, 8);
+    expect(result.summary.estimatedInputCost).toBeCloseTo(0.00006, 8);
+    expect(result.summary.estimatedCachedInputCost).toBeCloseTo(0.000004, 8);
+    expect(result.summary.estimatedOutputCost).toBeCloseTo(0.00005, 8);
+    expect(result.summary.estimatedRequestCost).toBeCloseTo(0.000114, 8);
+    expect(result.summary.outputCostShare).toBeCloseTo(0.00005 / 0.000114, 8);
     expect(result.models[0]).toMatchObject({
-      id: "kimi-k2p6-turbo",
+      id: "openai/gpt-6-luna",
       requests: 1,
       promptTokens: 1000,
       cachedTokens: 400,
       completionTokens: 100,
     });
-    expect(result.models[0].estimatedRequestCost).toBeCloseTo(0.00212, 8);
+    expect(result.models[0].estimatedRequestCost).toBeCloseTo(0.000114, 8);
   });
 
   test("normalizes served model ids before aggregating model rows", () => {
@@ -265,7 +265,7 @@ describe("trace insights", () => {
         turnCount: 1,
         metrics: {
           modelBreakdown: {
-            "accounts/fireworks/routers/kimi-k2p6-turbo:nitro": { calls: 1 },
+            "moonshotai/kimi-k2.6:nitro": { calls: 1 },
           },
         },
       },
@@ -277,7 +277,7 @@ describe("trace insights", () => {
           {
             llmRequest: { model: "router-placeholder" },
             llmResponse: {
-              actualModel: "accounts/fireworks/routers/kimi-k2p6-turbo:nitro",
+              actualModel: "moonshotai/kimi-k2.6:nitro",
               durationMs: 1,
               usage: null,
             },
@@ -289,7 +289,7 @@ describe("trace insights", () => {
 
     const result = buildTraceInsights({ sessions, entriesBySession });
 
-    expect(result.models.map((row) => row.id)).toEqual(["kimi-k2p6-turbo"]);
+    expect(result.models.map((row) => row.id)).toEqual(["moonshotai/kimi-k2.6"]);
   });
 
   test("filters by failed tool", () => {

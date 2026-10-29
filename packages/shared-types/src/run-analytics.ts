@@ -8,8 +8,8 @@ export interface RunAnalyticsSnapshotV1 {
   finishedAt?: string;
   state: "running" | "succeeded" | "failed" | "stopped" | "unknown";
   source: "local" | "remote";
-  /** Configured provider; a routed call may use another backend. */
-  provider?: "openrouter" | "fireworks";
+  /** Provider name stored by the account service; older runs may name other providers. */
+  provider?: string;
   /** Present only when a run used one known model. */
   model?: string;
   promptTokens: number;

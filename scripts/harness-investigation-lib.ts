@@ -98,7 +98,6 @@ export function fingerprintConfig(config: InvestigationConfig): string {
 
 export function requestedModels(env: Record<string, string | undefined>): Record<string, string | null> {
   return {
-    provider: env.E2E_PROVIDER ?? null,
     executorModel: env.E2E_MODEL ?? env.E2E_EXECUTOR_MODEL ?? null,
     executorProviderPin: env.E2E_EXECUTOR_PROVIDER_PIN ?? null,
     plannerModel: env.E2E_PLANNER_MODEL ?? null,
@@ -137,7 +136,6 @@ export function modelIdentityMismatch(
 export function validateConfig(config: InvestigationConfig): string[] {
   const errors: string[] = [];
   if (!config.label.trim()) errors.push("configuration label is required");
-  if (!config.env.E2E_PROVIDER) errors.push(`${config.label}: E2E_PROVIDER is required`);
   if (!config.env.E2E_MODEL) errors.push(`${config.label}: E2E_MODEL is required`);
   if (!config.env.E2E_PLANNER_MODEL) errors.push(`${config.label}: E2E_PLANNER_MODEL is required`);
   if (!config.env.E2E_JUDGE_MODEL) errors.push(`${config.label}: E2E_JUDGE_MODEL is required`);

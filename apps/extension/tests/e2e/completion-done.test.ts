@@ -29,8 +29,7 @@ import { join } from "path";
 const enabled = process.env.E2E_LOCAL_MOCK_PROVIDER === "1";
 
 if (enabled) {
-  process.env.E2E_PROVIDER = "fireworks";
-  process.env.FIREWORKS_API_KEY = process.env.FIREWORKS_API_KEY || "local-mock";
+  process.env.OPENROUTER_API_KEY = process.env.OPENROUTER_API_KEY || "local-mock";
 }
 
 type TraceEvent = {

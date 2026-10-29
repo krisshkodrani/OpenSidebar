@@ -266,17 +266,6 @@ export async function disableRemoteWork(expectedRevision: number) {
   if (!response.ok) throw await responseError(response);
   return response.json() as Promise<CloudRemoteWorkSettingsV1>;
 }
-export async function uploadCredential(
-  provider: "openrouter" | "fireworks",
-  credential: string,
-) {
-  const response = await cloudFetch(`/credentials/${provider}`, {
-    method: "PUT",
-    body: JSON.stringify({ credential }),
-  });
-  if (!response.ok) throw await responseError(response);
-  return response.json() as Promise<CredentialStatusV1>;
-}
 export async function cloudPreferences() {
   const response = await cloudFetch("/preferences");
   if (response.status === 204) return null;
@@ -315,8 +304,7 @@ export async function syncCloudPreferences(settings: UserSettings) {
     schemaVersion: 1,
     revision,
     inferenceMode: settings.inferenceMode ?? "local",
-    providerMode:
-      settings.providerMode === "fireworks" ? "fireworks" : "openrouter",
+    providerMode: "openrouter",
     executorModel: settings.executorModel,
     plannerModel: settings.plannerModel,
     writerModel: settings.writerModel,

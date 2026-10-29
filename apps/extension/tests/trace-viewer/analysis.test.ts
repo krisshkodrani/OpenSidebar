@@ -835,19 +835,13 @@ describe("trace redaction", () => {
     const stored = Object.fromEntries(
       Object.entries({
         openRouter: "sk-openrouter-secret-1234567890",
-        openai: "sk-openai-secret-1234567890",
         groq: "gsk-provider-secret",
-        gemini: "AIza-provider-secret",
-        fireworks: "fw-provider-secret",
-        deepseek: "deepseek-provider-secret",
-        kimi: "kimi-provider-secret",
-        xiaomi: "xiaomi-provider-secret",
-        cerebras: "cerebras-provider-secret",
+        legacy: "legacy-provider-secret",
       }).map(([provider, value]) => [`${provider}ApiKey_local`, value]),
     );
     const redacted = redactTracePayload(stored, { mode: "export" });
     expect(Object.values(redacted)).toEqual(
-      Array(9).fill("[REDACTED]"),
+      Array(3).fill("[REDACTED]"),
     );
   });
 

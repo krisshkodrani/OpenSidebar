@@ -144,9 +144,6 @@ export async function runPrepareModelTurnPhase(
     invalidatePerceptionCache: () => host.perception.invalidateCache(),
     recordPromptImageUsage: (promptMessages) =>
       host.telemetry.recordPromptImageUsage(promptMessages),
-    sessionAffinityId:
-      host.taskId ?? host.runId ?? host.traceRecorder?.sessionId ?? undefined,
-    multiTurnSessionId: host.traceRecorder?.sessionId ?? undefined,
   });
   if (turnCompletion.kind === "early_result") {
     return { kind: "end_task", result: turnCompletion.result };

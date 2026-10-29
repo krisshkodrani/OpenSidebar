@@ -30,8 +30,7 @@ import {
 
 const enabled = process.env.E2E_LOCAL_MOCK_PROVIDER === "1";
 if (enabled) {
-  process.env.E2E_PROVIDER = "fireworks";
-  process.env.FIREWORKS_API_KEY ||= "local-mock";
+  process.env.OPENROUTER_API_KEY ||= "local-mock";
 }
 
 const h = createE2EHarness({ maxTurns: 12, testLabel: "terminal-lifecycle", videoStart: "manual" });

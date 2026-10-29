@@ -201,17 +201,15 @@ describe("fleet telemetry closed contract", () => {
     ).toThrow("violated its closed schema");
   });
 
-  it("normalizes current provider-specific aliases into stable model families", () => {
+  it("normalizes OpenRouter model ids into stable model families", () => {
     expect(normalizeFleetModelId("minimax/minimax-m3:nitro")).toBe(
       "minimax_m3",
     );
-    expect(
-      normalizeFleetModelId("accounts/fireworks/models/kimi-k2p7-code"),
-    ).toBe("kimi_k2_7_code");
-    expect(normalizeFleetModelId("moonshotai/kimi-k2.6")).toBe("kimi_k2_6");
-    expect(normalizeFleetModelId("accounts/fireworks/models/glm-5p2")).toBe(
-      "glm_5_2",
+    expect(normalizeFleetModelId("moonshotai/kimi-k2.7-code")).toBe(
+      "kimi_k2_7_code",
     );
+    expect(normalizeFleetModelId("moonshotai/kimi-k2.6")).toBe("kimi_k2_6");
+    expect(normalizeFleetModelId("z-ai/glm-5.2")).toBe("glm_5_2");
     expect(normalizeFleetModelId("openai/gpt-oss-120b")).toBe("gpt_oss_120b");
     expect(normalizeFleetModelId("https://custom.invalid/model/alice")).toBe(
       "other",

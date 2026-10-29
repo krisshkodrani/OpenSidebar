@@ -491,20 +491,18 @@ describe("Orchestrator integration join tests", () => {
     );
   });
 
-  test("passes Fireworks provider settings to verifier and replanner", async () => {
+  test("passes model settings to verifier and replanner", async () => {
     plannerBuildNodesImpl = async () => [makeNode("n1", "collect data")];
 
     const orchestrator = new Orchestrator(orchestratorDeps);
     activeOrchestrator = orchestrator;
     await orchestrator.startTask({
       ...makeInput("collect data"),
-      openRouterApiKey: "fw-test-key",
+      openRouterApiKey: "or-test-key",
       settings: {
         ...baseSettings,
-        providerMode: "fireworks",
-        fireworksApiKey: "fw-test-key",
-        executorModel: "accounts/fireworks/routers/kimi-k2p5-turbo",
-        plannerModel: "accounts/fireworks/routers/kimi-k2p5-turbo",
+        executorModel: "moonshotai/kimi-k2.6",
+        plannerModel: "moonshotai/kimi-k2.6",
       },
     });
 
@@ -512,11 +510,10 @@ describe("Orchestrator integration join tests", () => {
     expect(verifierOverrideCalls).toHaveLength(1);
     for (const overrides of [...plannerOverrideCalls, ...verifierOverrideCalls]) {
       expect(overrides).toMatchObject({
-        providerMode: "fireworks",
-        fireworksApiKey: "fw-test-key",
-        executorModel: "accounts/fireworks/routers/kimi-k2p5-turbo",
-        plannerModel: "accounts/fireworks/routers/kimi-k2p5-turbo",
+        executorModel: "moonshotai/kimi-k2.6",
+        plannerModel: "moonshotai/kimi-k2.6",
       });
+      expect(overrides).not.toHaveProperty("providerMode");
     }
   });
 

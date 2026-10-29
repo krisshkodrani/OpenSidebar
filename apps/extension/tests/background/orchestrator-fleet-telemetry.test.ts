@@ -10,7 +10,6 @@ describe("orchestrator fleet telemetry terminal adapter", () => {
   test("keeps only closed terminal facts and does not retain task text", () => {
     const secret = "Click Jane Doe's private YouTube video at https://example.test";
     const state = createTaskFleetTelemetryState({
-      providerMode: "fireworks-deepseek",
       executorModel: "z-ai/glm-5.2",
       plannerModel: "qwen/qwen3.7-plus",
     });
@@ -55,7 +54,7 @@ describe("orchestrator fleet telemetry terminal adapter", () => {
 
     expect(envelope).toMatchObject({
       runtime: {
-        provider: "fireworks",
+        provider: "openrouter",
         executorModel: "glm_5_2",
         plannerModel: "qwen_3_7",
       },

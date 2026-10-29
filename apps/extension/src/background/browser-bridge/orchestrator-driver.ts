@@ -92,7 +92,7 @@ export function resolveBrowserAgentCredential(
   const provider = getProviderKeyStatus(settings);
   if (!provider.hasRequiredKeys || !provider.activeKey)
     throw new Error(
-      `API key is missing for ${provider.mode}. Please configure it in settings.`,
+      "API key is missing for OpenRouter. Please configure it in settings.",
     );
   return provider.activeKey || locallyLoadedKey || settings.openRouterApiKey || "";
 }

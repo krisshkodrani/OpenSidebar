@@ -14,7 +14,6 @@ const config: InvestigationConfig = {
   label: "baseline",
   role: "baseline",
   env: {
-    E2E_PROVIDER: "openrouter-groq",
     E2E_MODEL: "executor",
     E2E_EXECUTOR_PROVIDER_PIN: "groq",
     E2E_PLANNER_MODEL: "planner",

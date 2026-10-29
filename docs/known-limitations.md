@@ -38,10 +38,10 @@ browser agent rather than guaranteed production automation.
 
 ## BYOK Providers
 
-- Provider pricing, quotas, logging, retention, model availability, and rate
-  limits are governed by the configured provider, not by OpenSidebar.
-- Some provider modes require multiple keys. If one lane is misconfigured, the
-  agent may fail during planning, execution, perception, or verification.
+- OpenRouter pricing, quotas, logging, retention, model availability, and rate
+  limits are governed by OpenRouter and its upstream hosts, not by OpenSidebar.
+- If the OpenRouter key is missing or revoked, the agent fails during
+  planning, execution, or verification.
 - Model behavior can change without an OpenSidebar release.
 
 ## Local Data And Traces
@@ -61,4 +61,4 @@ browser agent rather than guaranteed production automation.
   a different extension identity unless the developer-dashboard public key is
   supplied.
 - Source-build users need Node.js 22+, pnpm via Corepack, Chrome, and at least
-  one supported provider key. Cloud accounts remain an allowlisted test feature.
+  an OpenRouter key. Cloud accounts remain an allowlisted test feature.

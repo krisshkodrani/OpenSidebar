@@ -31,10 +31,7 @@ import { suiteReport } from "./report";
 import { collectTraceArtifacts } from "./trace-artifacts";
 import { collectE2EVideoTraceMetrics } from "./video-metrics";
 import { readE2EConfig } from "./e2e-config";
-import {
-  resolveE2EProviderConfig,
-  type ProviderMode,
-} from "./e2e-provider-config";
+import { resolveE2EProviderConfig } from "./e2e-provider-config";
 export { loadApiKey } from "./e2e-provider-config";
 import { copyFile, mkdir, readdir, stat, writeFile } from "fs/promises";
 import { relative, resolve } from "path";
@@ -89,7 +86,6 @@ function logHarnessLifecycle(stage: string): void {
 
 export interface E2EHarness {
   apiKey: string | undefined;
-  providerMode: ProviderMode;
   readonly ctx: ExtensionContext;
   readonly page: Page;
   tracesBefore: Set<string>;
@@ -772,7 +768,6 @@ async function writeVideoArtifactManifest(
     durationMs?: number;
     screenshotPaths?: string[];
     traceFiles?: string[];
-    providerMode?: ProviderMode;
   },
 ): Promise<void> {
   const primaryVideoPath = await getPrimaryVideoPath(recording);
@@ -796,7 +791,6 @@ async function writeVideoArtifactManifest(
     schemaVersion: "2026-05-14",
     createdAt: new Date().toISOString(),
     testLabel: input.testName ?? recording.fileStem,
-    providerMode: input.providerMode ?? null,
     result: videoRunResult(input.passed),
     passed: input.passed ?? null,
     durationMs: input.durationMs ?? null,
@@ -851,7 +845,6 @@ async function stopE2EVideoRecording(
     durationMs?: number;
     screenshotPaths?: string[];
     traceFiles?: string[];
-    providerMode?: ProviderMode;
   } = {},
 ): Promise<void> {
   if (!recording) return;
@@ -878,7 +871,6 @@ export function createE2EHarness(options: HarnessOptions = {}): E2EHarness {
   const videoStart = options.videoStart ?? "auto";
 
   const providerConfig = resolveE2EProviderConfig();
-  const providerMode = providerConfig.providerMode;
   const apiKey = providerConfig.apiKey;
 
   let ctx: ExtensionContext;
@@ -890,7 +882,6 @@ export function createE2EHarness(options: HarnessOptions = {}): E2EHarness {
 
   const harness: E2EHarness = {
     apiKey,
-    providerMode,
 
     get ctx() {
       return ctx;
@@ -921,17 +912,6 @@ export function createE2EHarness(options: HarnessOptions = {}): E2EHarness {
         ) || (await ctx.browser.newPage());
 
       const helper = await openHelperPage(ctx);
-      const lane = providerConfig.lane;
-      const {
-        openRouterKey,
-        groqKey,
-        openAiKey,
-        fireworksKey,
-        deepseekKey,
-        kimiKey,
-        xiaomiKey,
-        cerebrasKey,
-      } = providerConfig.keys;
       const e2eConfig = readE2EConfig();
       const executorModel = e2eConfig.model;
       const plannerModel = e2eConfig.plannerModel;
@@ -943,8 +923,6 @@ export function createE2EHarness(options: HarnessOptions = {}): E2EHarness {
       const perceptionMode = e2eConfig.perceptionMode;
       const presenceMode = e2eConfig.presenceMode;
       suiteReport.setRunMetadata({
-        provider: providerMode,
-        lane,
         configuredExecutorModel: executorModel ?? null,
         diagnosticMode,
       });
@@ -952,14 +930,6 @@ export function createE2EHarness(options: HarnessOptions = {}): E2EHarness {
         async (
           openRouterKey: string | null,
           turns: number,
-          mode: string,
-          gKey: string | null,
-          openAiKey: string | null,
-          fwKey: string | null,
-          deepseekKey: string | null,
-          kimiKey: string | null,
-          xiaomiKey: string | null,
-          cerebrasKey: string | null,
           execModel: string | null,
           plannerModelOverride: string | null,
           judgeModelOverride: string | null,
@@ -972,13 +942,6 @@ export function createE2EHarness(options: HarnessOptions = {}): E2EHarness {
         ) => {
           const localData: Record<string, string> = {};
           if (openRouterKey) localData.openRouterApiKey_local = openRouterKey;
-          if (gKey) localData.groqApiKey_local = gKey;
-          if (openAiKey) localData.openaiApiKey_local = openAiKey;
-          if (fwKey) localData.fireworksApiKey_local = fwKey;
-          if (deepseekKey) localData.deepseekApiKey_local = deepseekKey;
-          if (kimiKey) localData.kimiApiKey_local = kimiKey;
-          if (xiaomiKey) localData.xiaomiApiKey_local = xiaomiKey;
-          if (cerebrasKey) localData.cerebrasApiKey_local = cerebrasKey;
           await chrome.storage.local.set(localData);
           const settings: Record<string, unknown> = {
             requireApprovals: false,
@@ -986,7 +949,6 @@ export function createE2EHarness(options: HarnessOptions = {}): E2EHarness {
             requirePlanConfirmation: false,
             showElementTags: false,
             maxTurns: turns,
-            providerMode: mode,
           };
           if (execModel) settings.executorModel = execModel;
           if (plannerModelOverride) settings.plannerModel = plannerModelOverride;
@@ -1004,16 +966,8 @@ export function createE2EHarness(options: HarnessOptions = {}): E2EHarness {
           }
           await chrome.storage.sync.set({ userSettings: settings });
         },
-        openRouterKey ?? null,
+        apiKey ?? null,
         maxTurns,
-        providerMode,
-        groqKey ?? null,
-        openAiKey ?? null,
-        fireworksKey ?? null,
-        deepseekKey ?? null,
-        kimiKey ?? null,
-        xiaomiKey ?? null,
-        cerebrasKey ?? null,
         executorModel ?? null,
         plannerModel ?? null,
         judgeModel ?? null,
@@ -1070,7 +1024,6 @@ export function createE2EHarness(options: HarnessOptions = {}): E2EHarness {
         durationMs,
         screenshotPaths,
         traceFiles,
-        providerMode,
       });
       activeVideoRecording = null;
       if (testName) {

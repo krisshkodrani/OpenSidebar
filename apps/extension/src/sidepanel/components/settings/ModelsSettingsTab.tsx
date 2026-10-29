@@ -1,6 +1,5 @@
 import React from "react";
 import {
-  CheckCircle2,
   ChevronDown,
   KeyRound,
   ShieldCheck,
@@ -9,11 +8,7 @@ import {
 import type { PerceptionRuntimeMode, UserSettings } from "../../../types";
 import { DEFAULT_MAX_IMAGE_PROMPT_TOKEN_ESTIMATE } from "../../../types";
 import { LLM_MODEL_CONFIG } from "../../../config/model-config";
-import { getDefaultExecutorModel } from "../../../utils/executor-model-policy";
-import {
-  getAvailableProviderStacks,
-  resolveAvailableProviderMode,
-} from "../../../utils/provider-keys";
+import { hasProviderCredentials } from "../../../utils/provider-keys";
 import type { ProviderModelOption } from "../../hooks/useOpenRouterModels";
 import {
   getProviderModelCatalogNote,
@@ -27,31 +22,11 @@ const inputClassName =
   "w-full px-3 py-2 text-sm border border-warm-300 dark:border-warm-700 rounded-md bg-warm-50 dark:bg-warm-900 focus:ring-2 focus:ring-primary-500 outline-none dark:text-warm-100";
 const hintClassName = "mt-0.5 text-[11px] text-warm-400 dark:text-warm-500";
 
-const API_KEY_FIELDS = [
-  {
-    key: "openRouterApiKey",
-    label: "OpenRouter",
-    placeholder: "sk-or-...",
-    description: "Full agent stack and live model catalog.",
-  },
-  {
-    key: "fireworksApiKey",
-    label: "Fireworks AI",
-    placeholder: "fw_...",
-    description: "Full agent stack with curated models.",
-  },
-] as const;
-
-type ActiveProviderMode = NonNullable<UserSettings["providerMode"]>;
-
-function defaultPlannerModel(providerMode: ActiveProviderMode) {
-  if (providerMode === "openrouter") return LLM_MODEL_CONFIG.openrouter.planner;
-  return LLM_MODEL_CONFIG.fireworks.planner;
-}
-
-function defaultWriterModel(providerMode: ActiveProviderMode) {
-  return getDefaultExecutorModel(providerMode);
-}
+const OPENROUTER_KEY_FIELD = {
+  label: "OpenRouter",
+  placeholder: "sk-or-...",
+  description: "Full agent stack and live model catalog.",
+} as const;
 
 export function ModelsSettingsTab({
   formState,
@@ -70,36 +45,20 @@ export function ModelsSettingsTab({
   connectionsOnly?: boolean;
   showConnections?: boolean;
 }) {
-  const availableStacks = getAvailableProviderStacks(formState);
-  const providerMode = resolveAvailableProviderMode(formState);
+  const connected = hasProviderCredentials(formState);
   const hasOpenRouterKey = Boolean(formState.openRouterApiKey);
-  const connectionFields = [...API_KEY_FIELDS].sort(
-    (a, b) =>
-      Number(Boolean(formState[b.key]?.trim())) -
-      Number(Boolean(formState[a.key]?.trim())),
-  );
-  const executorModels = providerMode
-    ? getProviderModelOptions({
-        providerMode,
-        role: "executor",
-        openRouterModels: models,
-      })
-    : [];
-  const plannerModels = providerMode
-    ? getProviderModelOptions({
-        providerMode,
-        role: "planner",
-        openRouterModels: models,
-      })
-    : [];
-  const writerModels = providerMode
-    ? getProviderModelOptions({
-        providerMode,
-        role: "writer",
-        openRouterModels: models,
-      })
-    : [];
-  const openRouterCatalogActive = providerMode === "openrouter";
+  const executorModels = getProviderModelOptions({
+    role: "executor",
+    openRouterModels: models,
+  });
+  const plannerModels = getProviderModelOptions({
+    role: "planner",
+    openRouterModels: models,
+  });
+  const writerModels = getProviderModelOptions({
+    role: "writer",
+    openRouterModels: models,
+  });
 
   return (
     <>
@@ -116,99 +75,38 @@ export function ModelsSettingsTab({
             </p>
           </div>
           <div className="overflow-hidden rounded-lg border border-warm-200 bg-white dark:border-warm-700 dark:bg-warm-900">
-            {connectionFields.map((field) => (
-              <ApiKeyField
-                key={field.key}
-                id={`provider-key-${field.key}`}
-                label={field.label}
-                value={formState[field.key] || ""}
-                onChange={(value) => onChange(field.key, value)}
-                placeholder={field.placeholder}
-                description={field.description}
-              />
-            ))}
+            <ApiKeyField
+              id="provider-key-openRouterApiKey"
+              label={OPENROUTER_KEY_FIELD.label}
+              value={formState.openRouterApiKey || ""}
+              onChange={(value) => onChange("openRouterApiKey", value)}
+              placeholder={OPENROUTER_KEY_FIELD.placeholder}
+              description={OPENROUTER_KEY_FIELD.description}
+            />
           </div>
         </section>
       ) : null}
 
       {connectionsOnly ? null : (
         <>
-          <section className="space-y-3">
-            <div>
-              <h3 className="text-xs font-semibold uppercase tracking-wider text-warm-400">
-                AI provider
-              </h3>
+          {connected ? null : (
+            <div className="rounded-lg border border-dashed border-warm-300 bg-warm-100/60 p-4 text-center dark:border-warm-700 dark:bg-warm-800/40">
+              <KeyRound
+                size={20}
+                className="mx-auto mb-2 text-warm-400"
+                aria-hidden="true"
+              />
+              <p className="text-sm font-medium text-warm-700 dark:text-warm-200">
+                Connect OpenRouter
+              </p>
               <p className="mt-1 text-xs text-warm-500 dark:text-warm-400">
-                Choose which provider runs the agent.
+                Sign in and connect OpenRouter, or add your OpenRouter key from
+                this browser under Advanced.
               </p>
             </div>
-            {availableStacks.length === 0 ? (
-              <div className="rounded-lg border border-dashed border-warm-300 bg-warm-100/60 p-4 text-center dark:border-warm-700 dark:bg-warm-800/40">
-                <KeyRound
-                  size={20}
-                  className="mx-auto mb-2 text-warm-400"
-                  aria-hidden="true"
-                />
-                <p className="text-sm font-medium text-warm-700 dark:text-warm-200">
-                  Connect an AI provider
-                </p>
-                <p className="mt-1 text-xs text-warm-500 dark:text-warm-400">
-                  Sign in and connect OpenRouter or Fireworks, or configure
-                  Direct from this browser under Advanced.
-                </p>
-              </div>
-            ) : (
-              <div className="space-y-2">
-                {availableStacks.map((stack) => {
-                  const selected = stack.mode === providerMode;
-                  return (
-                    <button
-                      key={stack.mode}
-                      type="button"
-                      aria-pressed={selected}
-                      onClick={() => onChange("providerMode", stack.mode)}
-                      className={`w-full rounded-lg border p-3 text-left transition-colors ${
-                        selected
-                          ? "border-primary-500 bg-primary-50 ring-1 ring-primary-500/20 dark:bg-primary-900/20"
-                          : "border-warm-200 bg-white hover:border-warm-300 hover:bg-warm-100 dark:border-warm-700 dark:bg-warm-900 dark:hover:border-warm-600 dark:hover:bg-warm-800"
-                      }`}
-                    >
-                      <div className="flex items-start justify-between gap-3">
-                        <div className="min-w-0">
-                          <div className="flex flex-wrap items-center gap-1.5">
-                            <span className="text-sm font-semibold text-warm-900 dark:text-warm-100">
-                              {stack.label}
-                            </span>
-                            {stack.recommended ? (
-                              <span className="rounded-full bg-primary-100 px-2 py-0.5 text-[10px] font-medium uppercase tracking-wide text-primary-700 dark:bg-primary-900/40 dark:text-primary-300">
-                                Recommended
-                              </span>
-                            ) : null}
-                          </div>
-                          <p className="mt-1 text-xs text-warm-500 dark:text-warm-400">
-                            {stack.description}
-                          </p>
-                        </div>
-                        <span
-                          className={`mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded-full border ${
-                            selected
-                              ? "border-primary-500 bg-primary-500 text-white"
-                              : "border-warm-300 dark:border-warm-600"
-                          }`}
-                        >
-                          {selected ? (
-                            <CheckCircle2 size={14} aria-hidden="true" />
-                          ) : null}
-                        </span>
-                      </div>
-                    </button>
-                  );
-                })}
-              </div>
-            )}
-          </section>
+          )}
 
-          {providerMode ? (
+          {connected ? (
             <section className="space-y-3">
               <div className="rounded-lg border border-emerald-200 bg-emerald-50/70 p-3 dark:border-emerald-900/60 dark:bg-emerald-950/20">
                 <div className="flex items-start gap-2.5">
@@ -229,14 +127,14 @@ export function ModelsSettingsTab({
                       </dt>
                       <dd className="truncate font-mono text-emerald-900 dark:text-emerald-100">
                         {formState.executorModel ||
-                          getDefaultExecutorModel(providerMode)}
+                          LLM_MODEL_CONFIG.executor}
                       </dd>
                       <dt className="text-emerald-700/80 dark:text-emerald-300/80">
                         Planner
                       </dt>
                       <dd className="truncate font-mono text-emerald-900 dark:text-emerald-100">
                         {formState.plannerModel ||
-                          defaultPlannerModel(providerMode)}
+                          LLM_MODEL_CONFIG.planner}
                       </dd>
                     </dl>
                   </div>
@@ -266,7 +164,7 @@ export function ModelsSettingsTab({
                 </summary>
 
                 <div className="space-y-5 border-t border-warm-200 p-3 dark:border-warm-700">
-                  {openRouterCatalogActive && modelsError ? (
+                  {modelsError ? (
                     <p className="rounded-md border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-700 dark:border-red-900/60 dark:bg-red-950/30 dark:text-red-300">
                       OpenRouter model catalog unavailable: {modelsError}.
                       Tested defaults remain usable.
@@ -283,7 +181,6 @@ export function ModelsSettingsTab({
                     </p>
                     <p className="text-xs text-warm-500 dark:text-warm-400">
                       {getProviderModelCatalogNote({
-                        providerMode,
                         role: "executor",
                         hasOpenRouterKey,
                       })}
@@ -293,9 +190,9 @@ export function ModelsSettingsTab({
                       onChange={(value) =>
                         onChange("executorModel", value || undefined)
                       }
-                      defaultModel={getDefaultExecutorModel(providerMode)}
+                      defaultModel={LLM_MODEL_CONFIG.executor}
                       models={executorModels}
-                      loading={openRouterCatalogActive ? modelsLoading : false}
+                      loading={modelsLoading}
                       filterVisionOnly
                     />
                   </div>
@@ -309,7 +206,6 @@ export function ModelsSettingsTab({
                     </p>
                     <p className="text-xs text-warm-500 dark:text-warm-400">
                       {getProviderModelCatalogNote({
-                        providerMode,
                         role: "planner",
                         hasOpenRouterKey,
                       })}
@@ -319,11 +215,9 @@ export function ModelsSettingsTab({
                       onChange={(value) =>
                         onChange("plannerModel", value || undefined)
                       }
-                      defaultModel={defaultPlannerModel(providerMode)}
+                      defaultModel={LLM_MODEL_CONFIG.planner}
                       models={plannerModels}
-                      loading={
-                        providerMode === "openrouter" ? modelsLoading : false
-                      }
+                      loading={modelsLoading}
                     />
                   </div>
 
@@ -342,9 +236,9 @@ export function ModelsSettingsTab({
                       onChange={(value) =>
                         onChange("writerModel", value || undefined)
                       }
-                      defaultModel={defaultWriterModel(providerMode)}
+                      defaultModel={LLM_MODEL_CONFIG.executor}
                       models={writerModels}
-                      loading={openRouterCatalogActive ? modelsLoading : false}
+                      loading={modelsLoading}
                     />
                   </div>
 
@@ -413,8 +307,7 @@ export function ModelsSettingsTab({
                     </div>
                   </div>
 
-                  {openRouterCatalogActive ? (
-                    <div className="flex items-center justify-between py-1">
+                  <div className="flex items-center justify-between py-1">
                       <div>
                         <span className="text-sm font-medium dark:text-warm-300">
                           Nitro routing
@@ -446,7 +339,6 @@ export function ModelsSettingsTab({
                         />
                       </button>
                     </div>
-                  ) : null}
                 </div>
               </details>
             </section>

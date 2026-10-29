@@ -58,7 +58,7 @@ describe("CloudAccountSettings session projection", () => {
     await act(async () => {
       root.render(
         <CloudAccountSettings
-          formState={{ providerMode: "openrouter" } as never}
+          formState={{} as never}
           onChange={vi.fn()}
         />,
       );

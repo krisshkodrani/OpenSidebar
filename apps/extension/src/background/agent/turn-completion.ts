@@ -22,7 +22,10 @@ import {
   TURN_RETRY_BACKOFF_MS,
 } from "./loop-helpers";
 import { isEmptyCompletionResponse } from "./response-normalization";
-import { formatProviderName, getProviderCreditsUrl } from "./provider-display";
+import {
+  getProviderCreditsUrl,
+  getProviderDisplayName,
+} from "../llm/provider-headers";
 import type { LoopResult } from "./loop-types";
 import type { TraceRecorder } from "./trace";
 
@@ -58,8 +61,6 @@ export type TurnCompletionDeps = {
   getMetrics: () => SessionMetrics;
   invalidatePerceptionCache: () => void;
   recordPromptImageUsage?: (messages: LLMMessage[]) => void;
-  sessionAffinityId?: string;
-  multiTurnSessionId?: string;
   sleep?: (ms: number) => Promise<void>;
   /** Maximum wall time for one provider request, including streaming. */
   requestTimeoutMs?: number;
@@ -166,8 +167,6 @@ export async function completeTurnWithRetries(
             max_tokens: deps.maxTokens,
             stop: ["Observation:"],
             signal: turnAbortController.signal,
-            sessionAffinityId: deps.sessionAffinityId,
-            multiTurnSessionId: deps.multiTurnSessionId,
           },
           onTextDelta,
         ),
@@ -285,14 +284,11 @@ export async function completeTurnWithRetries(
       }
 
       if (errorClass === "credits_exhausted") {
-        const providerId = deps.llm.getActiveProviderInfo().providerId;
-        const providerName = formatProviderName(providerId);
-        const creditsUrl = getProviderCreditsUrl(providerId);
+        const providerName = getProviderDisplayName();
+        const creditsUrl = getProviderCreditsUrl();
         const msg =
           `Your ${providerName} account has insufficient credits.` +
-          (creditsUrl
-            ? ` Please add credits at ${creditsUrl} and try again.`
-            : "");
+          ` Please add credits at ${creditsUrl} and try again.`;
         deps.broadcast({
           type: "STREAM_CHUNK",
           payload: { delta: msg, done: false },

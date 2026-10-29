@@ -1,7 +1,7 @@
 /**
  * Prompt-prefix telemetry (RFC LP-21 §9).
  *
- * Fireworks/OpenRouter prefix caching keeps only the bytes BEFORE the first
+ * OpenRouter prefix caching keeps only the bytes BEFORE the first
  * changed byte of a request. So the single most predictive number we can record
  * is *where the current turn's prompt first diverges from the previous turn's*
  * — everything after that offset is billed at full price no matter how long the

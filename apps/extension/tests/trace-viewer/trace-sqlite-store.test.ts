@@ -382,7 +382,7 @@ describe("trace sqlite store", () => {
     const db = new Database(dbPath);
     try {
       db.prepare("UPDATE trace_turns SET model = ? WHERE session_id = ?")
-        .run("accounts/fireworks/routers/model-a:nitro", "session-1");
+        .run("model-a:nitro", "session-1");
     } finally {
       db.close();
     }

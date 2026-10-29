@@ -48,19 +48,11 @@ function memoryBackend(
 
 const credentials = {
   openRouterApiKey: "sk-openrouter-test",
-  openaiApiKey: "sk-openai-test",
   groqApiKey: "gsk-test",
-  geminiApiKey: "gemini-test",
-  fireworksApiKey: "fw-test",
-  deepseekApiKey: "sk-deepseek-test",
-  kimiApiKey: "sk-kimi-test",
-  xiaomiApiKey: "sk-xiaomi-test",
-  cerebrasApiKey: "cerebras-test",
 };
 
 const settings: UserSettings = {
   ...credentials,
-  providerMode: "openrouter",
   maxTurns: 30,
   theme: "system",
   showSessionMetrics: true,
@@ -107,7 +99,7 @@ describe("provider credential storage", () => {
     expect(storage.local.values.openRouterApiKey_local).toMatch(/^enc:v1:/);
   });
 
-  test("encrypts every provider key locally and returns plaintext only to callers", async () => {
+  test("encrypts every credential locally and returns plaintext only to callers", async () => {
     const storage = memoryBackend();
     await saveSettings(settings, storage);
 
@@ -123,15 +115,15 @@ describe("provider credential storage", () => {
 
   test("migrates plaintext local and legacy session keys on read", async () => {
     const storage = memoryBackend({
-      fireworksApiKey_local: credentials.fireworksApiKey,
+      groqApiKey_local: credentials.groqApiKey,
     });
     storage.session.values.openRouterApiKey = credentials.openRouterApiKey;
 
     const loaded = await loadSettings(storage);
     expect(loaded?.openRouterApiKey).toBe(credentials.openRouterApiKey);
-    expect(loaded?.fireworksApiKey).toBe(credentials.fireworksApiKey);
+    expect(loaded?.groqApiKey).toBe(credentials.groqApiKey);
     expect(storage.local.values.openRouterApiKey_local).toMatch(/^enc:v1:/);
-    expect(storage.local.values.fireworksApiKey_local).toMatch(/^enc:v1:/);
+    expect(storage.local.values.groqApiKey_local).toMatch(/^enc:v1:/);
     expect(storage.session.values.openRouterApiKey).toBeUndefined();
     expect(await loadApiKey(storage)).toBe(credentials.openRouterApiKey);
   });
@@ -147,17 +139,16 @@ describe("provider credential storage", () => {
   test("removes previously synced provider keys instead of restoring them", async () => {
     const storage = memoryBackend();
     storage.sync.values.userSettings = {
-      providerMode: "openrouter",
       openRouterApiKey: "old-synced-secret",
-      geminiApiKey: "old-gemini-secret",
+      groqApiKey: "old-groq-secret",
     };
     const loaded = await loadSettings(storage);
     expect(loaded?.openRouterApiKey).toBe("");
-    expect(loaded?.geminiApiKey).toBe("");
+    expect(loaded?.groqApiKey).toBe("");
     expect(storage.sync.values.userSettings).not.toHaveProperty(
       "openRouterApiKey",
     );
-    expect(storage.sync.values.userSettings).not.toHaveProperty("geminiApiKey");
+    expect(storage.sync.values.userSettings).not.toHaveProperty("groqApiKey");
   });
 
   test("does not return ciphertext when decryption fails", async () => {

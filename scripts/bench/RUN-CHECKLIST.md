@@ -6,11 +6,10 @@ failure costs the cheapest possible amount of money and time.
 
 ## Phase 0 — Prerequisites (one-time)
 
-- [ ] **Executor key live.** Default provider is Fireworks; `FIREWORKS_API_KEY`
-      in `.env` must pass a real completion (it was dead on 2026-06-11 — replace
-      at app.fireworks.ai and confirm credits).
-- [x] **Judge key.** Falls back to `OPENAI_API_KEY` in `.env` automatically
-      (OpenAI direct, `gpt-5.4-mini`). Override via `BENCH_JUDGE_*` if needed.
+- [ ] **OpenRouter key live.** `OPENROUTER_API_KEY` in `.env` must pass a real
+      completion (`pnpm providers:smoke`) and the account needs credits.
+- [x] **Judge key.** Uses `OPENROUTER_API_KEY` in `.env` automatically
+      (`openai/gpt-5.4-mini`). Override via `BENCH_JUDGE_*` if needed.
 - [x] **Task set vendored.** `tasks/online-mind2web.json` (300 tasks: 80 easy /
       141 medium / 79 hard). Re-fetch: `pnpm run bench:fetch` (HF token read
       from `.env`).
@@ -53,22 +52,17 @@ failure costs the cheapest possible amount of money and time.
 
 ## Phase 4 — Repeat per config (publish 2–3, never 1)
 
-Provider modes the harness supports: `fireworks` (default), `deepseek`,
-`moonshot`/`kimi`, `xiaomi`, `openrouter`, `groq`/`openrouter-groq`,
-`openai-groq`. Key availability today:
+OpenRouter is the only provider; configs differ by `E2E_MODEL` (and the
+planner/judge overrides). Key: `OPENROUTER_API_KEY` in `.env`.
 
-Key availability re-verified 2026-07-26 with live completions (the previous
-table dated from 2026-06-11 and marked Fireworks dead — it is not).
+| Config (E2E_MODEL) | Notes |
+| --- | --- |
+| `minimax/minimax-m3` | Executor pairing from the 2026-07-26 smoke (6/6) |
+| `moonshotai/kimi-k2.7-code` | Alternative eligible executor |
+| `openai/gpt-5.4-mini` | Independent third executor for credibility |
 
-| Config (E2E_PROVIDER / E2E_MODEL) | Key in `.env`? | Notes |
-| --- | --- | --- |
-| `openrouter` / minimax-m3 + glm-5.2 + gpt-oss-120b | ✅ `OPENROUTER_API_KEY` | **The shipped default (preset A).** Paid tier, no free-variant daily cap. Smoke-validated 6/6 on 2026-07-26 |
-| `fireworks` / minimax-m3 | ✅ `FIREWORKS_API_KEY` | Live — the 2026-06-11 "dead key" note was stale. Same executor model and rate as preset A |
-| `deepseek` / DeepSeek V3.2 | ✅ `DEEPSEEK_API_KEY` | 84% on internal E2E; honest second config |
-| `groq` variants | ❌ no Groq key | Optional speed-focused config |
-
-Judge key: `OPENAI_API_KEY` is present, so WebJudge falls back to OpenAI direct
-(`gpt-5.4-mini`) with no extra setup.
+The WebJudge uses the same OpenRouter key (`openai/gpt-5.4-mini`) with no
+extra setup.
 
 - [ ] Same `--size`, `--seed`, levels, and task revision for every config.
 - [ ] Distinct `--config-label` per sweep (it's the report headline).

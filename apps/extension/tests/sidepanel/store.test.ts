@@ -47,7 +47,6 @@ describe("SidePanel Store", () => {
             laneTelemetry: null,
             settings: {
                 openRouterApiKey: "",
-                providerMode: "fireworks",
                 maxImagePromptTokenEstimate:
                     DEFAULT_MAX_IMAGE_PROMPT_TOKEN_ESTIMATE,
                 enabledSkillPackIds: [...DEFAULT_ENABLED_SKILL_PACK_IDS],
@@ -439,10 +438,6 @@ describe("SidePanel Store", () => {
     test("DEFAULT_SETTINGS includes requireApprovals", () => {
         const settings = useStore.getState().settings;
         expect(settings.requireApprovals).toBe(true);
-    });
-
-    test("DEFAULT_SETTINGS includes explicit providerMode", () => {
-        expect(DEFAULT_SETTINGS.providerMode).toBe("openrouter");
     });
 
     test("addStep pushes step to last assistant message", () => {

@@ -41,16 +41,15 @@ export function toTextOnlyMessages(messages: LLMMessage[]): LLMMessage[] {
 
 /**
  * Does this error mean "the model cannot accept images", as opposed to any
- * other bad request? Providers disagree on both the status and the wording:
+ * other bad request? OpenRouter upstream hosts disagree on both the status and
+ * the wording:
  *
- *   OpenRouter/Groq  422 + "image_url ... not supported"
- *   Fireworks        400 + "This model does not support image inputs"
+ *   422 + "image_url ... not supported"
+ *   400 + "This model does not support image inputs"
  *
- * The original 422-and-"image_url"-only form matched the first and silently
- * missed the second, so the text-only retry was dead code on Fireworks --
- * verified against the live API on 2026-07-21 with glm-5p2. Both the status set
- * and the phrase set are widened; the "not/does not support" conjunct keeps an
- * unrelated 400 from being misread as an image problem.
+ * Both the status set and the phrase set are matched; the "not/does not
+ * support" conjunct keeps an unrelated 400 from being misread as an image
+ * problem.
  */
 export function isImageUrlUnsupported(
   status: number,

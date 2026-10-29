@@ -1510,7 +1510,7 @@ export class Orchestrator {
     this.recentCompletionTracker.clear(input.workspaceId);
     this.tasksByWorkspace.set(input.workspaceId, task);
     this.initializeWorkspaceRuntime(input.workspaceId, task.maxWorkers, task);
-    runAnalyticsReporter.start({ runId: task.runId ?? task.id, startedAt: task.createdAt, metrics: task.sessionMetrics }, input.interactionDelivery === "handoff" ? "remote" : "local", input.settings.providerMode === "openrouter" || input.settings.providerMode === "fireworks" ? input.settings.providerMode : undefined);
+    runAnalyticsReporter.start({ runId: task.runId ?? task.id, startedAt: task.createdAt, metrics: task.sessionMetrics }, input.interactionDelivery === "handoff" ? "remote" : "local");
     await this.persistTaskCheckpoint(task);
     await this.trace.emitManifest(buildTaskManifest(task, input));
     this.emitTraceEvent(
@@ -1568,17 +1568,8 @@ export class Orchestrator {
           ...providerRoutingOptions(input.settings),
           writerModel: input.settings.writerModel,
           useNitro: input.settings.useNitro,
-          providerMode: input.settings.providerMode,
-          provider: input.settings.provider,
-          openaiApiKey: input.settings.openaiApiKey,
-          groqApiKey: input.settings.groqApiKey,
           temperature: input.settings.temperature,
           perceptionMode: input.settings.perceptionMode,
-          fireworksApiKey: input.settings.fireworksApiKey,
-          deepseekApiKey: input.settings.deepseekApiKey,
-          kimiApiKey: input.settings.kimiApiKey,
-          xiaomiApiKey: input.settings.xiaomiApiKey,
-          cerebrasApiKey: input.settings.cerebrasApiKey,
         };
         const planner = this.deps.createPlanner(
           input.openRouterApiKey,
@@ -1712,16 +1703,7 @@ export class Orchestrator {
               judgeModel: input.settings.judgeModel,
               ...providerRoutingOptions(input.settings),
               useNitro: input.settings.useNitro,
-              providerMode: input.settings.providerMode,
-              provider: input.settings.provider,
-              openaiApiKey: input.settings.openaiApiKey,
-              groqApiKey: input.settings.groqApiKey,
               temperature: input.settings.temperature,
-              fireworksApiKey: input.settings.fireworksApiKey,
-              deepseekApiKey: input.settings.deepseekApiKey,
-              kimiApiKey: input.settings.kimiApiKey,
-              xiaomiApiKey: input.settings.xiaomiApiKey,
-              cerebrasApiKey: input.settings.cerebrasApiKey,
             },
           );
           this.attachPlannerUsageTrace(
@@ -1811,16 +1793,7 @@ export class Orchestrator {
       ...providerRoutingOptions(input.settings),
       writerModel: input.settings.writerModel,
       useNitro: input.settings.useNitro,
-      providerMode: input.settings.providerMode,
-      provider: input.settings.provider,
-      openaiApiKey: input.settings.openaiApiKey,
-      groqApiKey: input.settings.groqApiKey,
       temperature: input.settings.temperature,
-      fireworksApiKey: input.settings.fireworksApiKey,
-      deepseekApiKey: input.settings.deepseekApiKey,
-      kimiApiKey: input.settings.kimiApiKey,
-      xiaomiApiKey: input.settings.xiaomiApiKey,
-      cerebrasApiKey: input.settings.cerebrasApiKey,
     };
     const verifier = this.deps.createVerifier(
       input.openRouterApiKey,

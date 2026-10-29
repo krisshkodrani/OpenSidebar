@@ -32,7 +32,7 @@ describe("TaskActivityHud", () => {
       pendingPlanConfirmation: null,
       durableRunStatus: null,
       stagnationState: null,
-      turnProgress: { turn: 2, maxTurns: 8, provider: "fireworks" },
+      turnProgress: { turn: 2, maxTurns: 8, provider: "openrouter" },
       sessionMetrics: null,
     });
 

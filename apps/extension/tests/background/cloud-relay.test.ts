@@ -65,7 +65,6 @@ describe("cloud relay transport", () => {
         messages: [{ role: "user", content: "hello" }],
         temperature: 0,
       },
-      "openrouter",
       "planner",
     );
     expect(response.status).toBe(200);
@@ -95,19 +94,10 @@ describe("cloud relay transport", () => {
         model: "allowed/model",
         messages: [{ role: "user", content: "hello" }],
       },
-      "fireworks",
       "executor",
     );
     expect(response.status).toBe(200);
     expect(chrome.storage.local.set).toHaveBeenCalledOnce();
-  });
-
-  test("rejects providers outside the server allowlist before network access", async () => {
-    globalThis.fetch = vi.fn() as typeof fetch;
-    await expect(
-      cloudRelayFetch({ model: "x", messages: [] }, "groq", "executor"),
-    ).rejects.toThrow(/not available/);
-    expect(globalThis.fetch).not.toHaveBeenCalled();
   });
 
   test("sends an authenticated relay cancellation without provider fallback", async () => {
@@ -130,7 +120,6 @@ describe("cloud relay transport", () => {
         model: "allowed/model",
         messages: [{ role: "user", content: "hello" }],
       },
-      "openrouter",
       "executor",
       controller.signal,
     );
