@@ -1,6 +1,6 @@
 # Changelog
 
-## [0.7.8] - Unreleased
+## [0.7.8] - 2026-10-29
 
 ### Added
 
@@ -12,7 +12,6 @@
   trace recording instead of reporting them as successful calls.
 - Made browser tests wait for event-monitor readiness and retain terminal
   events across stream output; reject missing fixture builds immediately.
-
 - Invalidated cached judge verdicts when requirement wording changes.
 - Kept all completion requirements in judge evaluation, including constraints
   beyond the eighth criterion.
@@ -24,11 +23,17 @@
 ### Security
 
 - Updated production dependencies to patched versions for the release audit.
+- Updated DOMPurify to 3.4.17 to fix three published advisories.
+
+### Internal
+
+- Moved the hosted platform (cloud service, web app, infrastructure, marketing
+  site, training-data review tool and ModelBench) to a private repository. The
+  extension keeps its cloud client code.
 
 ### Known Limitations
 
 - Broad browser-task completion and model-cost baselines remain unverified.
-  Partial ModelBench runs do not establish a full benchmark score.
 - Remote work remains limited to authorized named testers. See
   [known limitations](docs/known-limitations.md) for release scope.
 
