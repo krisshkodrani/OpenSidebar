@@ -1,5 +1,5 @@
 /**
- * Canonical OpenTelemetry-GenAI-aligned span shape for OpenSidebar traces
+ * Canonical GenAI-semantic-convention-aligned span shape for OpenSidebar traces
  * (RFC LP-7, Stage B0). Pure types — no runtime, no platform deps — so the
  * server (scripts), the MCP layer, and the browser viewer can all share them.
  *
@@ -58,7 +58,7 @@ export interface ObsSpan {
   status?: ObsSpanStatus;
 }
 
-/** OpenTelemetry GenAI semantic-convention attribute keys. */
+/** GenAI semantic-convention attribute keys. */
 export const GenAiAttr = {
   operationName: "gen_ai.operation.name",
   system: "gen_ai.system",

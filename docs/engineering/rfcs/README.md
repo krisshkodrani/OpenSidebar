@@ -83,34 +83,6 @@ Phase A anytime, Phase B behind a flag until CWS clears; LP-14 parked.
 | LP-13 | [Region zoom tool](lp-0013-region-zoom-tool.md)                               | Small text/canvas targets unreadable; no zoom action                             | LP-9 (scale factor)       |
 | LP-14 | [In-browser PDF handling](lp-0014-pdf-handling.md)                            | PDF tabs are opaque; no text extraction                                          | None (recommend parked)   |
 
-## JobAgent autonomy series (2026-07-20)
-
-Draft RFCs from the [JobAgent automation gap analysis](../jobagent-automation-gap-analysis.md)
-(2026-07-20), written after the full fill + approval loop was live-proven on
-2026-07-19. The LP-17 label belongs to the efficiency-fixes implementation
-workstream (no RFC file), so this series starts at LP-18. Same status rules:
-**not stamped**, each ends with a "Recommended Decision". No implementation
-until the owner records a Decision Stamp.
-
-| #     | RFC                                                                                            | Gap it closes                                                                                                    | Depends on                                |
-| ----- | ---------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------- | ----------------------------------------- |
-| LP-18 | [JobAgent queue scheduler & notification channel](lp-0018-jobagent-scheduler-notifications.md) | Every pipeline stage is hand-cranked; approvals invisible without the console open; no submission pacing         | None                                      |
-| LP-19 | [JobAgent graduated autonomy (auto-approve policy)](lp-0019-jobagent-graduated-autonomy.md)    | Both human gates unconditionally manual; no path to earned selective autonomy; no post-submission error response | LP-18 §4 (approval-decision log)          |
-| LP-20 | [JobAgent free-text answer drafting](lp-0020-jobagent-freetext-drafting.md)                    | Bespoke questions/cover letters dead-end as hand-written TODOs                                                   | None (owns vocabulary LP-18/LP-19 import) |
-
-Suggested sequencing: LP-18 first (compounds everything and generates the
-approval-decision log), LP-20 in parallel (independent surface), LP-19 last —
-activate only after that log calibrates its thresholds.
-
-All three are at **revision 2**: a glm-5p2 second-opinion design review
-([assessed report](../rfc-review-jobagent-autonomy-glm-2026-07-20.md),
-2026-07-20) found one spec bug, three cross-RFC drift errors, and several
-policy hardenings, all of which are now folded in. The revised drafts were
-re-reviewed by the same model, which confirmed every finding closed. They
-remain **unstamped** — awaiting owner Decision Stamps, with two questions
-called out for the stamp (LP-19's threshold numbers and its §7
-extension-side-vs-console-side freshness check).
-
 ## Prompt-cache series (2026-07-21)
 
 Draft RFC from the 2026-07-21 caching review. Direct probes against the
@@ -163,53 +135,6 @@ RFCs LP-25, LP-26, LP-28, LP-29, LP-32 to LP-36 cover the hosted platform and ar
 | ----- | ----------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------- |
 | LP-30 | [Portable checkpoint and restore contract](lp-0030-portable-checkpoint-restore.md)              | Current runtime state contains environment-specific and stale browser references that cannot safely resume on another process or device                                       | LP-29 — **Draft; recommends Approved**                                                                                     |
 | LP-31 | [Device reconnect and browser-command protocol](lp-0031-device-command-protocol.md)             | MV3 suspension, reconnect, duplicate delivery, and cross-device takeover need exactly-once authorized browser effects                                                         | LP-30 — **Draft; recommends SSE/HTTPS on Lightsail with measured fallback**                                                |
-
-## JobAgent agent-platform series (2026-07-23)
-
-Draft RFC from the 2026-07-23 pivot that deleted the JobAgent web console UI in
-favour of a headless daemon plus an 18-verb CLI. It closes the three gaps
-between "the CLI works" and "an agent applies to a job": nothing ingests a
-posting from outside the configured boards, nothing extracts a form's questions
-(so the drafting stage has no automatic input), and no platform knows the verbs.
-**Both human gates are unchanged** — `approve-kit` before any fill, `decide`
-before any submit — and the answer library stays hand-authored; the RFC
-automates only the three mechanical steps. At **revision 3**: the three
-questions it opened (ingest naming, Codex skill location, whether `assess`
-caches) were decided by the owner on 2026-07-23 and folded in, with the
-rejected alternatives recorded. **Decision stamped 2026-07-23** — and unlike
-LP-18/19/20 it was implemented _ahead of_ that stamp, on owner instruction:
-phases 0–1 shipped as PR #106 and the full loop was live-proven the same day,
-both gates exercised. The RFC records the inverted sequence plainly so it is not
-read as precedent for the stamp-then-build rule. Two defects surfaced that its risk table did not
-predict — both in the seams _between_ stages — and the RFC now carries that
-lesson for the remaining phases.
-
-LP-23 is the follow-on, drafted the same day from the first real-employer run
-(Ashby, Engineering Manager - EU). That run surfaced four gaps: browser-driven
-discovery is slow and model-dependent (the extractor returned prose on its
-first real page), select options are lost between extraction and drafting (so
-library-answerable fields became TODOs), the application form hides behind a
-click at a URL the extractor never surfaced, and "drafting never invents an
-answer" makes the owner's target loop — link → complete tentative table →
-iterate → agree → fill — structurally impossible. LP-23 proposes parse-first
-discovery (ATS JSON APIs → static HTML → OpenSidebar as fallback; filling
-always stays OpenSidebar) and a `proposed` field provenance with per-field
-review, which un-parks LP-20's substance under containment LP-20 lacked.
-Demographic/EEO questions are never proposed (they resolve from explicit
-library entries only — owner decision at the stamp). **Decision stamped
-2026-07-23** via the approved implementation plan, stamp-then-build order
-restored; phases 0–4 implemented the same day with phase-0 findings recorded
-in the RFC.
-
-| #     | RFC                                                                                        | Problem                                                                                                                                                                         | Depends on                                                                  |
-| ----- | ------------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------- |
-| LP-22 | [JobAgent as an agent-platform skill](lp-0022-jobagent-agent-platform-skills.md)           | The CLI has no driver: no single-URL ingest, no host-side form-question extraction, and no skill on Claude Code / pi / Codex                                                    | None (LP-19 and LP-20 stay parked; §6 explains why this does not need them) |
-| LP-23 | [Parse-first discovery and tentative kits](lp-0023-jobagent-parse-first-tentative-kits.md) | Discovery is minutes of model-dependent browser work per posting; select options drop between stages; a complete tentative table is impossible while drafting may never propose | LP-22 (amends its §6 boundary); supersedes LP-20's scope with containment   |
-
-Suggested sequencing: LP-22 phases 0–1 shipped in PR #106. For LP-23, phases
-0–2 (ATS spike, adapters, schema+verbs) are policy-free engineering; phases
-3–5 enact the proposed-answers policy change and want the demographic
-carve-out confirmed at stamp time.
 
 ## Post-launch consolidation series
 

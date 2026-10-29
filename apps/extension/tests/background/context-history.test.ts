@@ -75,8 +75,7 @@ describe("HistoryLog", () => {
     expect(log.project()[0]).toEqual(user("turn 0"));
   });
 
-  // Rule 3, and the reason Bluebox's follow-up says a single mutable rolling
-  // summary is insufficient: re-folding one summary changes early bytes every
+  // Rule 3, and the reason a single mutable rolling summary is insufficient: re-folding one summary changes early bytes every
   // pass, so the cache breaks every pass.
   test("a later compaction appends a NEW summary and never rewrites the old one", () => {
     const log = logWith(10);

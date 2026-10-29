@@ -8,7 +8,7 @@ export interface PageContentRedTeamCase {
 
 /**
  * Reviewed, synthetic attacks that arrive through visible webpage content.
- * Promptfoo-generated candidates are promoted here manually after review.
+ * Add new candidates here manually after review.
  */
 export const pageContentRedTeamCases: readonly PageContentRedTeamCase[] = [
   {

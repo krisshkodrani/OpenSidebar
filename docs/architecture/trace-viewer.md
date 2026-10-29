@@ -106,17 +106,14 @@ Every trace write is **dual-written to the span spine** under `traces/spans/`
 (`scripts/obs/span-store.ts`, schema in `packages/observability-schema/`). The
 spine is now the **authoritative read source** for turn entries and run events
 — SQLite/JSONL are derived fallbacks (`OBS_DISABLE_SPINE_READS=1` reverts).
-The spine also feeds the OTLP export path (see
-[OTel Mapping](trace-viewer-otel-mapping.md)): the log server initializes
-spine OTel export on boot and emits spans on every trace write.
+See [Span Mapping](trace-viewer-span-mapping.md) for the span shape.
 
 ## Storage Tiers
 
-The trace-viewer stack uses both SQLite and OpenTelemetry, for different jobs:
+The trace-viewer stack uses both SQLite and the span spine, for different jobs:
 
-- **OpenTelemetry** is the instrumentation/export contract. Runtime events are
-  mapped to spans, written to the local span spine, and can be exported over
-  OTLP.
+- **The span spine** is the instrumentation contract. Runtime events are
+  mapped to GenAI-shaped spans and written to the local span spine.
 - **SQLite** is the rebuildable local query projection. The Viewer and Codex
   use it for indexed session search, filters, aggregates, and daily trends.
 - **JSONL** remains the compatibility and recovery fallback for existing trace

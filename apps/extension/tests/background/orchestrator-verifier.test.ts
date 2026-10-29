@@ -570,12 +570,10 @@ describe("programmaticVerify — restraint (draft-only) tasks", () => {
     expect(result?.failureType).not.toBe("state_mismatch");
   });
 
-  test("the JobAgent console's own fill instruction is covered", () => {
-    // The console assembles this prompt for every fill mission (see
-    // scripts/jobagent/manifest.ts promptLines). A live fixture run on
-    // 2026-07-19 filled all four fields byte-exact, did not submit — and was
-    // still marked `failed`, so the package never left `ready`. "Fill but do
-    // not submit" is the pipeline's ONLY shape, so this must never regress.
+  test("an explicit fill-but-do-not-submit instruction is covered", () => {
+    // A live fixture run on 2026-07-19 filled all four fields byte-exact, did
+    // not submit — and was still marked `failed`. "Fill but do not submit" is
+    // a common supervised shape, so this must never regress.
     const result = programmaticVerify({
       taskQuery:
         "Fill out this job application form. Use EXACTLY the values below — " +

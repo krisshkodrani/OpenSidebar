@@ -100,7 +100,7 @@ describe("traceEntryToSpans", () => {
     expect(chat.attributes["os.cost_usd"]).toBe(0.002);
   });
 
-  it("exports prompt-cache usage onto the chat span for Bluebox to watch", () => {
+  it("exports prompt-cache usage onto the chat span for cache-hit analysis", () => {
     const chat = byKind("gen_ai.chat")[0];
     expect(chat.attributes["os.usage.cached_tokens"]).toBe(64);
     expect(chat.attributes["os.cache.hit_pct"]).toBe(64);

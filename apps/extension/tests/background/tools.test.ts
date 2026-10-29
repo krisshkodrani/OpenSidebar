@@ -104,29 +104,6 @@ describe("Tool Registration", () => {
     }
   });
 
-  test("does not register removed JobAgent MCP tools", () => {
-    const registeredNames = new Set(
-      toolRegistry.getDefinitions().map((d) => d.function.name),
-    );
-    expect(registeredNames.has("list_application_packages" as ToolName)).toBe(
-      false,
-    );
-    expect(registeredNames.has("get_application_package" as ToolName)).toBe(
-      false,
-    );
-    expect(registeredNames.has("suggest_form_answers" as ToolName)).toBe(false);
-    expect(registeredNames.has("get_candidate_profile" as ToolName)).toBe(
-      false,
-    );
-    expect(registeredNames.has("answer_candidate_question" as ToolName)).toBe(
-      false,
-    );
-    expect(registeredNames.has("record_application_status" as ToolName)).toBe(
-      false,
-    );
-    expect(registeredNames.has("submit_application" as ToolName)).toBe(false);
-  });
-
   test("all definitions have type=function", () => {
     const defs = toolRegistry.getDefinitions();
     for (const def of defs) {

@@ -17,8 +17,8 @@ The Trace Viewer should help engineers move from a failing browser-agent run to 
   turn entries and run events (`scripts/obs/span-store.ts`, schema in
   `packages/observability-schema/`); the log server dual-writes it on every
   trace write and reads it first (`OBS_DISABLE_SPINE_READS=1` reverts to the
-  derived stores). The spine also feeds the OTLP export path — see
-  [OTel Mapping](trace-viewer-otel-mapping.md).
+  derived stores). See
+  [Span Mapping](trace-viewer-span-mapping.md) for the span shape.
 - SQLite stores normalized trace rows plus raw JSON copies for viewer queries and copy/paste evidence.
 - Raw JSONL traces stay in `traces/` only for the hot debug window.
 - The viewer reads spine/SQLite first and tolerates missing raw files after pruning.

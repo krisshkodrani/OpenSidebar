@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="OpenSidebar.png" alt="OpenSidebar" width="128" />
+  <img src="docs/assets/opensidebar-logo.png" alt="OpenSidebar" width="128" />
 </p>
 
 <h1 align="center">OpenSidebar</h1>

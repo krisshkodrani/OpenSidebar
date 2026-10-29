@@ -20,8 +20,7 @@
  *
  * ## The contract
  *
- * Bluebox's follow-up on #103 is precise about why a naive rolling summary is
- * not enough: if one summary object is re-folded on each pass, its bytes change
+ * The analysis on #103 shows why a naive rolling summary is not enough: if one summary object is re-folded on each pass, its bytes change
  * every time, and it sits EARLIER in the prompt than the fresh turns — so the
  * cache still breaks, just less often. What is required instead:
  *
