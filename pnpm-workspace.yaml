@@ -1,16 +1,7 @@
 packages:
-  - apps/cloud-service
-  - apps/sandbox
-  - apps/temporal-spike
   - apps/extension
   - apps/extension/tests/e2e/fixtures/online-shop-pro
-  - infra/telemetry
-  - infra/control-plane
-  - infra/sandbox
   - packages/prompts
-  - packages/scenario-contracts
-  - packages/scenario-engine
-  - packages/sandbox-contracts
   - packages/shared-types
   - packages/trace-sync
 
@@ -42,7 +33,6 @@ overrides:
   qs: 6.16.0
 
 allowBuilds:
-  "@temporalio/core-bridge": true
   "@swc/core": true
   better-sqlite3: true
   esbuild: true

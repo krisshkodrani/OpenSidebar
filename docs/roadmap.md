@@ -25,7 +25,7 @@ to pick one of these up, open an issue first — see
   on local fixtures before any paid or production rollout. Do not treat
   historical benchmark traces as ground truth without human review.
 
-- **PostgreSQL cloud sessions** ([LP-29 through LP-31](./engineering/cloud-platform-roadmap.md))
+- **PostgreSQL cloud sessions** (LP-29 through LP-31)
   — retention/export/deletion, portable restore, and device coordination pass
   published-client reconnect/takeover UX, local and real two-profile Chrome,
   and exact-host PostgreSQL acceptance behind disabled flags. Bounded text and
@@ -36,7 +36,7 @@ to pick one of these up, open an issue first — see
   Temporal is parked research.
 
 - **Authenticated cloud UX normalization**
-  ([cloud platform Phase 10](./engineering/cloud-platform-roadmap.md#phase-10--authenticated-cloud-ux-normalization))
+  (cloud platform Phase 10)
   — unify the signed-in Account, Dashboard, Sessions, Settings, and Playground
   experience after named-tester acceptance. Normalize navigation and capability
   language, remove contradictory cached-auth states, and make Local key, cloud

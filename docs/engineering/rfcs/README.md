@@ -59,17 +59,6 @@ Suggested sequencing: ship Stage A (the MCP server over the existing store)
 independently for immediate agent-search value; the storage-rearchitecture
 B-stages land additively underneath the stable MCP/HTTP contract.
 
-## Model evaluation platform (2026-08-13)
-
-| # | RFC | Problem | Depends on |
-| --- | --- | --- | --- |
-| LP-36 | [ModelBench-100 scenario platform](lp-0036-modelbench-100.md) | Fixture E2E, Arena, and Playground scenario implementations overlap and cannot produce one reproducible role-attributed model benchmark | LP-26 privacy and deployment boundaries |
-
-LP-36 is approved and its shared contracts, 100-case catalog, deterministic
-engine, runner, local target, and internal cloud service are implemented. The
-legacy cutover remains gated on realistic-target review, PostgreSQL parity,
-three full reference runs, deployment smoke, and rollback rehearsal.
-
 ## Personal-data sync (2026-08-13)
 
 | # | RFC | Problem | Depends on |
@@ -165,56 +154,15 @@ stamped 2026-07-24** — all three §10 questions resolved in session (default
 | ----- | -------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------- |
 | LP-24 | [The Presence Layer: a visible, natural agent cursor](lp-0024-presence-layer.md) | Pages change with no visible cause during runs and demos; a naive synthetic cursor (teleport + pulse) misleads more than it explains; per-control-type motion grammar, perception cleanliness, and determinism have to be designed, not bolted on | None (builds beside the existing in-page HUD; shares the LP-12 Phase B iframe constraint) |
 
-## Fleet telemetry series (2026-07-27)
+## Cloud session portability series (2026-08-07)
 
-RFC prompted by issue #120: trivial published-extension-shaped tasks can
-run until guardrails because no `done()` call occurs, while the current local
-observability stack cannot measure how often that happens across installed
-extensions. The proposal is explicit-opt-in and content-free by construction:
-AWS S3/Athena remains authoritative, and a backend-only Bluebox OTLP projection
-adds natural-language incident queries. **Decision stamped 2026-07-27; Phase 1
-may implement the closed contract and pure projector, but no external collection
-may begin before the RFC's consent and disclosure gates are satisfied.**
-
-| #     | RFC                                                                                | Problem                                                                                                                                                                             | Depends on                                                                   |
-| ----- | ---------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------- |
-| LP-25 | [Optional privacy-preserving fleet telemetry](lp-0025-optional-fleet-telemetry.md) | Published instances have no safe reliability signal; issue #120's missing-`done()` loop cannot be measured by version/model at fleet scale without risking browsing-data collection | LP-7 vocabulary and backend-only OTLP precedent; does not upload LP-7 traces |
-
-## Cloud platform and durable-session series (2026-08-07)
-
-The [cloud platform roadmap](../cloud-platform-roadmap.md) sequences account-backed
-BYOK, the public Playground, and restorable sessions on one $12 Lightsail host
-with local PostgreSQL. LP-28 is the approved foundation and LP-26 is
-the approved-with-edits Playground contract. LP-29 through LP-32 remain drafts
-and must be decision-stamped independently. Open-source Temporal is intentionally
-the final decision after storage, restore, and device protocols are proven.
+LP-30 and LP-31 define the portable checkpoint and device command contracts used by the extension.
+RFCs LP-25, LP-26, LP-28, LP-29, LP-32 to LP-36 cover the hosted platform and are kept in a private repository.
 
 | #     | RFC                                                                                             | Problem                                                                                                                                                                       | Depends on                                                                                                                 |
 | ----- | ----------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------- |
-| LP-28 | [Lightsail cloud control plane, BYOK vault, and LLM relay](lp-0028-cloud-byok-control-plane.md) | Extension-held provider credentials cannot be protected as cloud-only secrets; account identity, vaulting, safe settings, quotas, and a non-retaining relay need one boundary | LP-26 integration — **Approved; account/auth stage live for one tester, 0.7.2 Web Store update and write/relay acceptance pending** |
-| LP-29 | [Cloud session privacy and storage](lp-0029-cloud-session-privacy-storage.md)                   | Restorable sessions require explicit retention, encryption, deletion, export, and consent semantics separate from relay and telemetry                                         | LP-28 — **Draft; recommends Approved with edits**                                                                          |
 | LP-30 | [Portable checkpoint and restore contract](lp-0030-portable-checkpoint-restore.md)              | Current runtime state contains environment-specific and stale browser references that cannot safely resume on another process or device                                       | LP-29 — **Draft; recommends Approved**                                                                                     |
 | LP-31 | [Device reconnect and browser-command protocol](lp-0031-device-command-protocol.md)             | MV3 suspension, reconnect, duplicate delivery, and cross-device takeover need exactly-once authorized browser effects                                                         | LP-30 — **Draft; recommends SSE/HTTPS on Lightsail with measured fallback**                                                |
-| LP-32 | [Open-source Temporal on Lightsail spike](lp-0032-temporal-orchestration-spike.md)              | Durable timers, approvals, retries, and recovery may justify Temporal only if it fits the same 2-GB host and remains removable                                                | LP-29–31 — **Draft; recommends Needs more research / exact-host spike only**                                               |
-| LP-33 | [Isolated Temporal OSS evaluation](lp-0033-isolated-temporal-evaluation.md)                     | The isolated 1-GB host passed correctness but failed latency and available-memory gates; retain evidence without operating Temporal                                          | LP-32 — **Parked; host deleted, PostgreSQL remains authoritative**                                                              |
-| LP-35 | [Hosted browser MCP and remote missions](lp-0035-hosted-browser-mcp.md)                         | The localhost MCP/WebSocket bridge duplicates hosted coordination and is awkward for Codex; replace it with durable intent-level missions without moving execution into cloud | LP-28 and LP-31 — **Approved 2026-08-11; implementation in progress**                                                           |
-
-## Public Playground series (2026-08-03; amended 2026-08-07)
-
-Approved-with-edits RFC for promoting the curated E2E fixture experience into a
-public Playground on opensidebar.com. The design separates one authenticated
-human Control Center from agent-visible target pages, uses passwordless email OTP
-with a revocable 90-day session and per-email quotas, and treats honest handling
-of impossible tasks as a valid outcome rather than forcing every run to complete.
-Its Decision Stamp now selects `opensidebar.com/playground` plus the shared
-Lightsail/PostgreSQL backend; the earlier serverless infrastructure is retained
-only until parity is proven. Every Playground-owned surface follows the existing opensidebar.com warm-light visual
-system through shared brand tokens; fictional target sites retain independent,
-realistic identities.
-
-| #     | RFC                                                        | Problem                                                                                                                                                                                                                    | Depends on                                                              |
-| ----- | ---------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------- |
-| LP-26 | [Public OpenSidebar Playground](lp-0026-public-sandbox.md) | Strong internal fixtures and a Restock Watch demo exist, but there is no curated public product, hidden human control plane, authentication/quota boundary, mutable scenario service, or fair infeasible-task result model | LP-28 shared host; **Decision amended 2026-08-07, Approved with edits** |
 
 ## JobAgent agent-platform series (2026-07-23)
 
