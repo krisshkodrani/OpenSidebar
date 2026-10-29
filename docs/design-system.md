@@ -1,29 +1,61 @@
-# Design system: Calm autonomy
+# Design system: Clean neutral
 
-OpenSidebar uses quiet surfaces, pine for action, and a small chartreuse signal
-for current activity. The product shows observed work and its evidence without
+OpenSidebar uses white or near-black surfaces, neutral grays, and one blue
+accent. Contrast is high and the panel is calm: color marks action and state,
+not decoration. The product shows observed work and its evidence without
 pretending that a task has a predictable completion percentage.
 
-## Shared palette
+## Tokens
 
 `packages/ui-tokens/tokens.json` is the source of truth. Run
-`node scripts/build-ui-tokens.mjs` after changing it. `pnpm ui-tokens:check`
-verifies the generated CSS; the repository verification command checks it too.
+`node scripts/build-ui-tokens.mjs` after you change it; `verify` checks that
+`theme.css` is current. Each role is a CSS variable with an RGB triplet, and
+`.dark` on `<html>` switches every role. Components use the Tailwind names in
+the first column and need no `dark:` color variants.
 
-| Token | Light | Dark | Use |
+| Tailwind color | Light | Dark | Use |
 | --- | --- | --- | --- |
-| Canvas | `#F5F8F4` | `#101B18` | Page background |
-| Surface | `#FFFFFF` | `#172621` | Cards and controls |
-| Muted surface | `#E4F1EC` | `#21362E` | Quiet grouping |
-| Ink | `#182925` | `#EAF4EC` | Primary text |
-| Muted ink | `#586A62` | `#B5C9BD` | Secondary text |
-| Line | `#D9E4DE` | `#344D40` | Separation |
-| Pine | `#126B64` | `#72C6B6` | Primary action, active navigation, links |
-| Pressed pine | `#0D554F` | `#A2E4D4` | Hover and focus emphasis |
-| Chartreuse | `#A5C842` | `#C1DC70` | Small live marker and editorial highlight |
+| `canvas` | `#FFFFFF` | `#0F1113` | Page and panel background |
+| `surface` | `#FFFFFF` | `#16191D` | Cards, menus, dialogs, inputs |
+| `surface-subtle` | `#F6F7F9` | `#1D2025` | Code blocks, chips, collapsed details |
+| `surface-hover` | `#EDEFF2` | `#262A30` | Hover rows and buttons |
+| `line` / `line-strong` | `#E2E5EA` / `#C9CED6` | `#2B3037` / `#3D434C` | Dividers / input borders |
+| `fg` | `#111317` | `#F1F3F5` | Primary text, headings, answers |
+| `fg-secondary` | `#454C57` | `#BAC0C8` | Step labels, metadata people read |
+| `fg-tertiary` | `#5F6772` | `#949BA5` | Hints, timestamps, placeholders |
+| `accent` / `accent-hover` | `#2563EB` / `#1D4ED8` | same | Primary button, user message, selection |
+| `accent-fg` | `#FFFFFF` | `#FFFFFF` | Text on `accent` |
+| `accent-subtle` / `accent-text` | `#EEF3FE` / `#1D4ED8` | `#17233B` / `#8DB4FB` | Selected rows / links, active tab |
+| `success`, `warning`, `danger` | `#15803D`, `#B45309`, `#C42121` | `#4ADE80`, `#F5B14C`, `#F87171` | State text and icons |
+| `*-subtle` | light tints | dark tints | State banners and badges |
 
-Success, warning, and danger retain distinct semantic colors. Chartreuse never
-means success by itself. Do not use color alone to communicate a state.
+Do not use color alone to communicate a state; pair it with a label or icon.
+
+## Rules
+
+| Element | Classes |
+| --- | --- |
+| Header, message area, composer | `bg-canvas` or `bg-surface`, separated by `border-line` |
+| Primary button | `bg-accent text-accent-fg hover:bg-accent-hover` |
+| Secondary button | `bg-surface border border-line text-fg hover:bg-surface-hover` |
+| Ghost or icon button | `text-fg-secondary hover:bg-surface-hover hover:text-fg` |
+| Input | `bg-surface border border-line-strong text-fg placeholder:text-fg-tertiary` with an `accent` focus ring |
+| State banner or badge | `bg-{state}-subtle text-{state} border border-{state}/30` |
+| Disabled control | `disabled:opacity-50` on the control, never as a text color |
+
+Type: body and answers 14px (`text-ui-body`), labels and controls 13px
+(`text-ui-control`), captions 12px (`text-ui-caption`). Nothing is smaller
+than 12px.
+
+## Checks
+
+- `apps/extension/tests/sidepanel/token-contrast.test.ts` checks every text
+  pair in `tokens.json` (`contrast.text`) at WCAG AA 4.5:1 and UI pairs
+  (`contrast.ui`) at 3:1, in light and dark. Add a pair there when you add a
+  new combination.
+- `scripts/check-ui-palette.mjs` runs in `lint` and `verify`. It fails on raw
+  or legacy palette colors, `dark:` color variants, hex colors, text below
+  12px, and faded text in `src/sidepanel` and `src/ui`.
 
 ## Task progression
 
@@ -36,18 +68,8 @@ means success by itself. Do not use color alone to communicate a state.
   a measured zero is distinct.
 - Keep stop and approval controls near the active task, with clear consequences.
 
-## Surfaces
+## Trace viewer
 
-- The public site leads with a result receipt and the trust story. The receipt
-  is explicitly illustrative; demos and Playground links remain accessible.
-- The SaaS workspace groups current work, recent activity, analytics, and
-  settings. It retains system, light, and dark appearance modes.
-- The extension side panel and trace viewer share the same palette. The live
-  marker is a short chartreuse line, not a moving progress estimate.
-
-## Implementation
-
-The site, SaaS, extension, and trace viewer consume the shared token values
-through generated CSS, Chakra semantic tokens, or Tailwind. Prefer those tokens
-over new hardcoded brand colors. Local product screenshots and traces belong in
-`.artifacts/`, not the tracked docs tree.
+The trace viewer keeps its own `trace-*`, `state-*` and `brand-live` colors for
+now. Local product screenshots and traces belong in `.artifacts/`, not the
+tracked docs tree.

@@ -36,7 +36,7 @@ export function ComposerBox({
   const speechBusy = speechState === "transcribing";
   const SpeechIcon = speechBusy ? Loader2 : speechActive ? Square : Mic;
   return (
-    <div className="input-glow relative grid grid-cols-[minmax(0,1fr)_auto] items-end gap-1.5 rounded-2xl bg-warm-100 p-1.5 ring-1 ring-warm-200/60 transition-colors dark:bg-warm-800 dark:ring-warm-700/60">
+    <div className="input-glow relative grid grid-cols-[minmax(0,1fr)_auto] items-end gap-1.5 rounded-2xl bg-surface-subtle p-1.5 ring-1 ring-line transition-colors">
       <ComposerTextarea
         inputRef={inputRef}
         value={value}
@@ -55,8 +55,8 @@ export function ComposerBox({
             className={clsx(
               "mb-0.5 flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-full transition-colors disabled:opacity-60",
               speechActive
-                ? "bg-red-100 text-red-700 hover:bg-red-200 dark:bg-red-900/30 dark:text-red-200 dark:hover:bg-red-900/50"
-                : "text-warm-500 hover:bg-white/80 dark:text-warm-300 dark:hover:bg-warm-700",
+                ? "bg-danger-subtle text-danger hover:bg-danger/90"
+                : "text-fg-tertiary hover:bg-surface",
             )}
             aria-label={speechActive ? "Stop dictation" : "Start dictation"}
             title={speechActive ? "Stop dictation" : "Start dictation"}
@@ -71,14 +71,14 @@ export function ComposerBox({
           onClick={onSubmit}
           disabled={!hasText}
           className={clsx(
-            "mb-0.5 flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-full text-white transition-colors",
+            "mb-0.5 flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-full text-accent-fg transition-colors",
             isGuidance
-              ? "bg-primary-600"
-              : "bg-warm-700 dark:bg-warm-300 dark:text-warm-900",
+              ? "bg-accent"
+              : "bg-fg",
             hasText
               ? isGuidance
-                ? "hover:bg-primary-700"
-                : "hover:bg-warm-800 dark:hover:bg-warm-200"
+                ? "hover:bg-accent-hover"
+                : "hover:bg-fg"
               : "pointer-events-none opacity-0",
           )}
           aria-label={isGuidance ? "Send guidance" : "Send message"}

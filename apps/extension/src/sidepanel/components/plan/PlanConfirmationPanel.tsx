@@ -29,11 +29,11 @@ export function PlanConfirmationPanel({
         {pendingPlan.nodes.map((node, index) => (
           <div key={index} className="flex items-start gap-2">
             <div className="flex flex-col items-center">
-              <span className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-primary-100 text-[10px] font-medium text-primary-700 dark:bg-primary-900/40 dark:text-primary-300">
+              <span className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-accent-subtle text-ui-caption font-medium text-accent-text">
                 {index + 1}
               </span>
               {index < pendingPlan.nodes.length - 1 ? (
-                <div className="min-h-[12px] w-px flex-1 bg-primary-200/60 dark:bg-primary-700/40" />
+                <div className="min-h-[12px] w-px flex-1 bg-accent/60" />
               ) : null}
             </div>
             <div className="min-w-0 flex-1 pb-2">
@@ -42,11 +42,11 @@ export function PlanConfirmationPanel({
                   event.stopPropagation();
                   onToggleStep(index);
                 }}
-                className="w-full text-left text-xs leading-relaxed text-primary-800 transition-colors hover:text-primary-700 dark:text-primary-200 dark:hover:text-primary-100"
+                className="w-full text-left text-ui-control leading-relaxed text-accent-text transition-colors"
               >
                 {node.description}
                 {node.selectedSkillId ? (
-                  <span className="ml-1.5 inline-flex rounded bg-primary-100 px-1 py-0.5 align-middle text-[9px] font-normal text-primary-700 dark:bg-primary-900/40 dark:text-primary-300">
+                  <span className="ml-1.5 inline-flex rounded bg-accent-subtle px-1 py-0.5 align-middle text-ui-caption font-normal text-accent-text">
                     {node.selectedSkillId}
                   </span>
                 ) : null}
@@ -60,7 +60,7 @@ export function PlanConfirmationPanel({
                 ) : null}
               </button>
               {expandedStep === index && node.successCriteria ? (
-                <div className="mt-1 text-[10px] italic leading-relaxed text-primary-600 dark:text-primary-400">
+                <div className="mt-1 text-ui-caption italic leading-relaxed text-accent-text">
                   {node.successCriteria}
                 </div>
               ) : null}
@@ -70,7 +70,7 @@ export function PlanConfirmationPanel({
       </div>
 
       {confirmed ? (
-        <div className="py-1 text-[11px] text-primary-600 animate-pulse dark:text-primary-400">
+        <div className="py-1 text-ui-caption text-accent-text animate-pulse">
           Starting...
         </div>
       ) : (
@@ -81,7 +81,7 @@ export function PlanConfirmationPanel({
                 event.stopPropagation();
                 onShowFeedback();
               }}
-              className="mb-2 text-[10px] text-primary-600 transition-colors hover:text-primary-800 dark:text-primary-400 dark:hover:text-primary-200"
+              className="mb-2 text-ui-caption text-accent-text transition-colors"
             >
               + Add guidance
             </button>
@@ -92,7 +92,7 @@ export function PlanConfirmationPanel({
               onClick={(event) => event.stopPropagation()}
               placeholder="Add guidance or corrections..."
               rows={2}
-              className="mb-2 w-full resize-none rounded-md border border-primary-200 bg-white px-2 py-1.5 text-xs text-primary-800 outline-none placeholder:text-primary-400 focus:ring-1 focus:ring-primary-400 dark:border-primary-700 dark:bg-primary-950/20 dark:text-primary-200 dark:placeholder:text-primary-500"
+              className="mb-2 w-full resize-none rounded-md border border-accent/30 bg-surface px-2 py-1.5 text-ui-control text-accent-text outline-none placeholder:text-fg-tertiary focus:ring-1 focus:ring-accent"
               autoFocus
             />
           )}
@@ -103,7 +103,7 @@ export function PlanConfirmationPanel({
                 event.stopPropagation();
                 onDecision("cancel");
               }}
-              className="flex-1 rounded border border-primary-300 px-2 py-1.5 text-xs font-medium text-primary-700 transition-colors hover:bg-primary-100 dark:border-primary-700 dark:text-primary-300 dark:hover:bg-primary-900/30"
+              className="flex-1 rounded border border-accent/30 px-2 py-1.5 text-ui-control font-medium text-accent-text transition-colors hover:bg-accent-subtle"
             >
               Cancel
             </button>
@@ -112,7 +112,7 @@ export function PlanConfirmationPanel({
                 event.stopPropagation();
                 onDecision("approve");
               }}
-              className="flex-1 rounded bg-primary-600 px-2 py-1.5 text-xs font-medium text-white transition-colors hover:bg-primary-700"
+              className="flex-1 rounded bg-accent px-2 py-1.5 text-ui-control font-medium text-accent-fg transition-colors hover:bg-accent-hover"
             >
               {feedback.trim() ? "Start with guidance" : "Start"}
             </button>

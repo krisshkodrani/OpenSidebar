@@ -60,7 +60,7 @@ export function derivePlanStripViewModel({
     ).length,
     barClassName:
       mode === "confirmation"
-        ? "bg-primary-50/40 dark:bg-primary-900/10 border-primary-200 dark:border-primary-800"
-        : "bg-warm-50/60 dark:bg-warm-900/15 border-warm-200 dark:border-warm-700",
+        ? "bg-accent-subtle border-accent/30"
+        : "bg-canvas border-line",
   };
 }

@@ -47,9 +47,6 @@ module.exports = {
           DEFAULT: role("surface"),
           subtle: role("surface-subtle"),
           hover: role("surface-hover"),
-          // LEGACY (migration only): remove with the palettes below.
-          light: "#F5F8F4",
-          dark: "#101B18",
         },
         line: {
           DEFAULT: role("line"),
@@ -70,56 +67,15 @@ module.exports = {
         success: { DEFAULT: role("success"), subtle: role("success-subtle") },
         warning: { DEFAULT: role("warning"), subtle: role("warning-subtle") },
         danger: { DEFAULT: role("danger"), subtle: role("danger-subtle") },
-        // LEGACY palettes (migration only). The side panel and src/ui must
-        // not use them; scripts/check-ui-palette.mjs enforces this.
-        warm: {
-          50: "#F5F8F4",
-          100: "#EAF0EB",
-          200: "#D9E4DE",
-          300: "#BDD0C3",
-          400: "#95AA9D",
-          500: "#6D8376",
-          600: "#586A62",
-          700: "#40534A",
-          800: "#182925",
-          900: "#14221E",
-          950: "#101B18",
-        },
-        primary: {
-          50: "#EAF4EF",
-          100: "#D4E9DD",
-          200: "#AED9C7",
-          300: "#81C3AA",
-          400: "#4DA88E",
-          500: "#238577",
-          600: "#126B64",
-          700: "#0D554F",
-          800: "#103F3C",
-          900: "#102F2D",
-        },
-        brand: {
-          surface: "#F5F8F4",
-          panel: "#FFFFFF",
-          text: "#182925",
-          muted: "#586A62",
-          subtle: "#40534A",
-          accent: "#126B64",
-          "accent-strong": "#0D554F",
-          highlight: "#A5C842",
-          live: "rgb(var(--brand-live, 18 107 100) / <alpha-value>)",
-          "live-soft": "#D4E9DD",
-        },
-        // `success`/`warning`/`error` resolve to CSS variables so the
-        // trace viewer can flip them per theme; the fallback triplet is
-        // the light value, so surfaces that don't define the vars
-        // (sidepanel/overlay) render exactly as before. `info`/`live`
-        // have no themed variant and stay fixed.
+        // Trace viewer only (scripts/check-ui-palette.mjs keeps them out of
+        // the side panel). `state-*` flips per theme through `--state-*`.
         state: {
           success: "rgb(var(--state-success, 40 117 69) / <alpha-value>)",
           warning: "rgb(var(--state-warning, 217 119 6) / <alpha-value>)",
           error: "rgb(var(--state-error, 220 38 38) / <alpha-value>)",
-          info: "#126B64",
-          live: "#126B64",
+        },
+        brand: {
+          live: "rgb(var(--brand-live, 18 107 100) / <alpha-value>)",
         },
         // Trace-viewer semantic tokens: back the Tailwind color by the
         // `--trace-*` CSS variable (RGB triplet) so `.dark` on <html>

@@ -82,38 +82,38 @@ export function WebsiteSkillsDrawer({
       aria-label="Website Skills"
     >
       <div
-        className="absolute inset-0 bg-black/20 backdrop-blur-sm backdrop-enter"
+        className="absolute inset-0 bg-fg/20 backdrop-blur-sm backdrop-enter"
         onClick={onClose}
       />
 
       <div
         ref={drawerRef}
-        className="relative w-full max-w-[340px] h-full bg-warm-50 dark:bg-warm-900 shadow-2xl flex flex-col border-l border-warm-200 dark:border-warm-800 drawer-enter"
+        className="relative w-full max-w-[340px] h-full bg-canvas shadow-sm flex flex-col border-l border-line drawer-enter"
       >
-        <header className="flex items-center justify-between p-4 border-b border-warm-200 dark:border-warm-800">
+        <header className="flex items-center justify-between p-4 border-b border-line">
           <div>
-            <h2 className="font-semibold text-lg dark:text-warm-100">
+            <h2 className="font-semibold text-ui-title">
               Website Skills
             </h2>
             <PersonalDataSyncBadge category="website_skills" />
-            <p className="text-xs text-warm-500 dark:text-warm-400">
+            <p className="text-ui-control text-fg-tertiary">
               Recorded workflows grouped by site
             </p>
           </div>
           <button
             ref={closeButtonRef}
             onClick={onClose}
-            className="p-2 hover:bg-warm-100 dark:hover:bg-warm-800 rounded-full"
+            className="p-2 hover:bg-surface-subtle rounded-full"
             aria-label="Close"
           >
-            <X size={20} className="text-warm-500" />
+            <X size={20} className="text-fg-tertiary" />
           </button>
         </header>
 
-        <div className="p-4 border-b border-warm-200 dark:border-warm-800">
+        <div className="p-4 border-b border-line">
           <button
             onClick={onStartRecording}
-            className="w-full inline-flex items-center justify-center gap-2 rounded-lg bg-red-600 px-3 py-2 text-sm font-semibold text-white hover:bg-red-700"
+            className="w-full inline-flex items-center justify-center gap-2 rounded-lg bg-danger px-3 py-2 text-ui-body font-semibold text-canvas hover:bg-danger/90"
           >
             <Play size={15} />
             Record Skill
@@ -141,12 +141,12 @@ export function WebsiteSkillsDrawer({
             />
           ) : skills.length === 0 ? (
             <div className="text-center py-10">
-              <p className="text-sm text-warm-500 dark:text-warm-400 mb-3">
+              <p className="text-ui-body text-fg-tertiary mb-3">
                 No website skills yet
               </p>
               <button
                 onClick={onStartRecording}
-                className="text-sm text-primary-600 dark:text-primary-400 hover:underline"
+                className="text-ui-body text-accent-text hover:underline"
               >
                 Teach your first workflow
               </button>
@@ -154,28 +154,28 @@ export function WebsiteSkillsDrawer({
           ) : (
             grouped.map(([origin, items]) => (
               <section key={origin}>
-                <h3 className="text-xs font-semibold uppercase text-warm-400 tracking-wider mb-2 truncate">
+                <h3 className="text-ui-control font-semibold uppercase text-fg-tertiary tracking-wider mb-2 truncate">
                   {origin}
                 </h3>
                 <div className="space-y-2">
                   {items.map((skill) => (
                     <div
                       key={skill.id}
-                      className="rounded-lg border border-warm-200 dark:border-warm-700 bg-warm-50/70 dark:bg-warm-900/70 p-3"
+                      className="rounded-lg border border-line bg-canvas p-3"
                     >
                       <div className="flex items-start gap-2">
                         <div className="min-w-0 flex-1">
-                          <p className="text-sm font-medium text-warm-800 dark:text-warm-100 truncate">
+                          <p className="text-ui-body font-medium text-fg truncate">
                             {skill.name}
                           </p>
-                          <p className="text-xs text-warm-500 dark:text-warm-400 truncate">
+                          <p className="text-ui-control text-fg-tertiary truncate">
                             {skill.pathPattern}
                           </p>
-                          <p className="text-[11px] text-warm-400 mt-1">
+                          <p className="text-ui-caption text-fg-tertiary mt-1">
                             Updated {new Date(skill.updatedAt).toLocaleDateString()}
                           </p>
                         </div>
-                        <label className="inline-flex items-center gap-1 text-xs text-warm-500">
+                        <label className="inline-flex items-center gap-1 text-ui-control text-fg-tertiary">
                           <input
                             type="checkbox"
                             checked={skill.enabled}
@@ -184,7 +184,7 @@ export function WebsiteSkillsDrawer({
                                 enabled: event.target.checked,
                               })
                             }
-                            className="h-3.5 w-3.5 rounded border-warm-300"
+                            className="h-3.5 w-3.5 rounded border-line-strong"
                           />
                           On
                         </label>
@@ -192,14 +192,14 @@ export function WebsiteSkillsDrawer({
                       <div className="mt-2 flex items-center gap-1">
                         <button
                           onClick={() => setEditing(skill)}
-                          className="p-1.5 rounded hover:bg-warm-100 dark:hover:bg-warm-800 text-warm-500"
+                          className="p-1.5 rounded hover:bg-surface-subtle text-fg-tertiary"
                           aria-label={`Edit ${skill.name}`}
                         >
                           <Pencil size={14} />
                         </button>
                         <button
                           onClick={() => deleteSkill(skill.id)}
-                          className="p-1.5 rounded hover:bg-red-100 dark:hover:bg-red-900/30 text-warm-500 hover:text-red-600"
+                          className="p-1.5 rounded hover:bg-danger-subtle text-fg-tertiary hover:text-danger"
                           aria-label={`Delete ${skill.name}`}
                         >
                           <Trash2 size={14} />
@@ -240,20 +240,20 @@ export function SkillRecordingPanel({ onHelp }: ReviewProps) {
   if (status === "idle" && !draft) return null;
 
   return (
-    <div className="mx-4 mt-2 rounded-lg border border-red-200 dark:border-red-900/60 bg-red-50/85 dark:bg-red-950/20 p-3 text-sm">
+    <div className="mx-4 mt-2 rounded-lg border border-danger/30 bg-danger-subtle p-3 text-ui-body">
       <div className="flex items-start justify-between gap-3">
         <div className="min-w-0">
-          <div className="flex items-center gap-2 font-semibold text-red-800 dark:text-red-200">
-            <span className="h-2 w-2 rounded-full bg-red-600 animate-pulse" />
+          <div className="flex items-center gap-2 font-semibold text-danger">
+            <span className="h-2 w-2 rounded-full bg-danger animate-pulse" />
             {status === "review" ? "Review recorded skill" : "Recording site skill"}
           </div>
-          <p className="mt-1 text-xs text-red-700/80 dark:text-red-200/75">
+          <p className="mt-1 text-ui-control text-danger">
             {privacyNotice}
           </p>
         </div>
         <button
           onClick={onHelp}
-          className="p-1.5 rounded-full text-red-700 hover:bg-red-100 dark:text-red-200 dark:hover:bg-red-900/30"
+          className="p-1.5 rounded-full text-danger hover:bg-danger-subtle"
           aria-label="Recording help"
         >
           <HelpCircle size={15} />
@@ -262,7 +262,7 @@ export function SkillRecordingPanel({ onHelp }: ReviewProps) {
 
       {status === "recording" || status === "paused" ? (
         <>
-          <ol className="mt-3 max-h-28 overflow-y-auto space-y-1 text-xs text-warm-700 dark:text-warm-200">
+          <ol className="mt-3 max-h-28 overflow-y-auto space-y-1 text-ui-control text-fg-secondary">
             {(timeline.length > 0
               ? timeline.slice(-5)
               : [
@@ -279,13 +279,13 @@ export function SkillRecordingPanel({ onHelp }: ReviewProps) {
           <div className="mt-3 flex gap-2">
             <button
               onClick={() => stop()}
-              className="flex-1 rounded-md bg-red-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-red-700"
+              className="flex-1 rounded-md bg-danger px-3 py-1.5 text-ui-control font-semibold text-canvas hover:bg-danger/90"
             >
               Stop
             </button>
             <button
               onClick={() => cancel()}
-              className="rounded-md border border-red-200 dark:border-red-900 px-3 py-1.5 text-xs font-semibold text-red-700 dark:text-red-200 hover:bg-red-100 dark:hover:bg-red-900/30"
+              className="rounded-md border border-danger/30 px-3 py-1.5 text-ui-control font-semibold text-danger hover:bg-danger-subtle"
             >
               Cancel
             </button>
@@ -342,23 +342,23 @@ function SkillDraftReview({
 
   return (
     <div className="mt-3 space-y-3">
-      <div className="rounded-md border border-red-100 dark:border-red-900/50 bg-white/70 dark:bg-warm-950/30 p-2">
-        <p className="text-sm font-semibold text-warm-800 dark:text-warm-100">
+      <div className="rounded-md border border-danger/30 bg-surface p-2">
+        <p className="text-ui-body font-semibold text-fg">
           {workingDraft.name}
         </p>
-        <p className="text-xs text-warm-500 dark:text-warm-400">
+        <p className="text-ui-control text-fg-tertiary">
           {workingDraft.origin}
           {workingDraft.pathPattern}
         </p>
-        <p className="mt-1 text-xs text-warm-600 dark:text-warm-300">
+        <p className="mt-1 text-ui-control text-fg-secondary">
           Trigger: {workingDraft.triggerPhrase}
         </p>
       </div>
       <div>
-        <p className="text-xs font-semibold uppercase text-warm-400 mb-1">
+        <p className="text-ui-control font-semibold uppercase text-fg-tertiary mb-1">
           Workflow
         </p>
-        <ol className="space-y-1 text-xs text-warm-700 dark:text-warm-200">
+        <ol className="space-y-1 text-ui-control text-fg-secondary">
           {workingDraft.workflowSteps.map((step, index) => (
             <li key={`${step}-${index}`}>{step}</li>
           ))}
@@ -366,10 +366,10 @@ function SkillDraftReview({
       </div>
       {(workingDraft.guardrails ?? []).length > 0 && (
         <div>
-          <p className="text-xs font-semibold uppercase text-warm-400 mb-1">
+          <p className="text-ui-control font-semibold uppercase text-fg-tertiary mb-1">
             Guardrails
           </p>
-          <ul className="space-y-1 text-xs text-warm-700 dark:text-warm-200">
+          <ul className="space-y-1 text-ui-control text-fg-secondary">
             {(workingDraft.guardrails ?? []).map((item, index) => (
               <li key={`${item}-${index}`}>{item}</li>
             ))}
@@ -377,20 +377,20 @@ function SkillDraftReview({
         </div>
       )}
       <div>
-        <p className="text-xs font-semibold uppercase text-warm-400 mb-1">
+        <p className="text-ui-control font-semibold uppercase text-fg-tertiary mb-1">
           Evidence
         </p>
-        <ul className="space-y-1 text-xs text-warm-700 dark:text-warm-200">
+        <ul className="space-y-1 text-ui-control text-fg-secondary">
           {workingDraft.requiredEvidence.map((item, index) => (
             <li key={`${item}-${index}`}>{item}</li>
           ))}
         </ul>
       </div>
-      <p className="text-xs text-warm-500 dark:text-warm-400">
+      <p className="text-ui-control text-fg-tertiary">
         {workingDraft.privacySummary}
       </p>
       {showDetails && (
-        <div className="max-h-24 overflow-y-auto rounded-md bg-warm-100 dark:bg-warm-800 p-2 text-xs text-warm-600 dark:text-warm-300">
+        <div className="max-h-24 overflow-y-auto rounded-md bg-surface-subtle p-2 text-ui-control text-fg-secondary">
           {timeline.map((item, index) => (
             <div key={`${item}-${index}`}>{item}</div>
           ))}
@@ -399,27 +399,27 @@ function SkillDraftReview({
       <div className="grid grid-cols-2 gap-2">
         <button
           onClick={() => onSave(workingDraft)}
-          className="inline-flex items-center justify-center gap-1 rounded-md bg-red-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-red-700"
+          className="inline-flex items-center justify-center gap-1 rounded-md bg-danger px-3 py-1.5 text-ui-control font-semibold text-canvas hover:bg-danger/90"
         >
           <Save size={13} />
           Save Skill
         </button>
         <button
           onClick={() => setEditing(true)}
-          className="inline-flex items-center justify-center gap-1 rounded-md border border-warm-300 dark:border-warm-700 px-3 py-1.5 text-xs font-semibold text-warm-700 dark:text-warm-200 hover:bg-warm-100 dark:hover:bg-warm-800"
+          className="inline-flex items-center justify-center gap-1 rounded-md border border-line-strong px-3 py-1.5 text-ui-control font-semibold text-fg-secondary hover:bg-surface-subtle"
         >
           <Pencil size={13} />
           Edit
         </button>
         <button
           onClick={onDiscard}
-          className="rounded-md border border-warm-300 dark:border-warm-700 px-3 py-1.5 text-xs font-semibold text-warm-700 dark:text-warm-200 hover:bg-warm-100 dark:hover:bg-warm-800"
+          className="rounded-md border border-line-strong px-3 py-1.5 text-ui-control font-semibold text-fg-secondary hover:bg-surface-subtle"
         >
           Discard
         </button>
         <button
           onClick={onToggleDetails}
-          className="inline-flex items-center justify-center gap-1 rounded-md border border-warm-300 dark:border-warm-700 px-3 py-1.5 text-xs font-semibold text-warm-700 dark:text-warm-200 hover:bg-warm-100 dark:hover:bg-warm-800"
+          className="inline-flex items-center justify-center gap-1 rounded-md border border-line-strong px-3 py-1.5 text-ui-control font-semibold text-fg-secondary hover:bg-surface-subtle"
         >
           <Eye size={13} />
           {showDetails ? "Hide details" : "Show captured details"}
@@ -474,13 +474,13 @@ function SkillEditForm({
   });
 
   return (
-    <div className="space-y-2 rounded-lg border border-primary-300 dark:border-primary-700 bg-primary-50/50 dark:bg-primary-900/20 p-3">
+    <div className="space-y-2 rounded-lg border border-accent/30 bg-accent-subtle p-3">
       <LabeledSkillField label="Skill name">
         <input
           value={name}
           onChange={(event) => setName(event.target.value)}
           placeholder="Skill name"
-          className="w-full px-2.5 py-1.5 text-sm border border-warm-300 dark:border-warm-700 rounded-md bg-warm-50 dark:bg-warm-900 focus:ring-2 focus:ring-primary-500 outline-none dark:text-warm-100"
+          className="w-full px-2.5 py-1.5 text-ui-body border border-line-strong rounded-md bg-canvas focus:ring-2 focus:ring-accent outline-none"
         />
       </LabeledSkillField>
       <LabeledSkillField label="Website origin">
@@ -488,7 +488,7 @@ function SkillEditForm({
           value={origin}
           onChange={(event) => setOrigin(event.target.value)}
           placeholder="https://example.com"
-          className="w-full px-2.5 py-1.5 text-sm border border-warm-300 dark:border-warm-700 rounded-md bg-warm-50 dark:bg-warm-900 focus:ring-2 focus:ring-primary-500 outline-none dark:text-warm-100"
+          className="w-full px-2.5 py-1.5 text-ui-body border border-line-strong rounded-md bg-canvas focus:ring-2 focus:ring-accent outline-none"
         />
       </LabeledSkillField>
       <LabeledSkillField label="Path pattern">
@@ -496,7 +496,7 @@ function SkillEditForm({
           value={pathPattern}
           onChange={(event) => setPathPattern(event.target.value)}
           placeholder="/course/*/learn/quiz/*"
-          className="w-full overflow-x-auto px-2.5 py-1.5 text-sm border border-warm-300 dark:border-warm-700 rounded-md bg-warm-50 dark:bg-warm-900 focus:ring-2 focus:ring-primary-500 outline-none dark:text-warm-100"
+          className="w-full overflow-x-auto px-2.5 py-1.5 text-ui-body border border-line-strong rounded-md bg-canvas focus:ring-2 focus:ring-accent outline-none"
         />
       </LabeledSkillField>
       <LabeledSkillField label="Trigger phrase">
@@ -504,7 +504,7 @@ function SkillEditForm({
           value={triggerPhrase}
           onChange={(event) => setTriggerPhrase(event.target.value)}
           placeholder="choose answers"
-          className="w-full px-2.5 py-1.5 text-sm border border-warm-300 dark:border-warm-700 rounded-md bg-warm-50 dark:bg-warm-900 focus:ring-2 focus:ring-primary-500 outline-none dark:text-warm-100"
+          className="w-full px-2.5 py-1.5 text-ui-body border border-line-strong rounded-md bg-canvas focus:ring-2 focus:ring-accent outline-none"
         />
       </LabeledSkillField>
       <LabeledSkillField label="Workflow steps">
@@ -513,7 +513,7 @@ function SkillEditForm({
           onChange={(event) => setWorkflow(event.target.value)}
           rows={5}
           placeholder="One workflow step per line"
-          className="w-full px-2.5 py-1.5 text-sm border border-warm-300 dark:border-warm-700 rounded-md bg-warm-50 dark:bg-warm-900 focus:ring-2 focus:ring-primary-500 outline-none dark:text-warm-100 resize-none"
+          className="w-full px-2.5 py-1.5 text-ui-body border border-line-strong rounded-md bg-canvas focus:ring-2 focus:ring-accent outline-none resize-none"
         />
       </LabeledSkillField>
       <LabeledSkillField label="Guardrails">
@@ -522,7 +522,7 @@ function SkillEditForm({
           onChange={(event) => setGuardrails(event.target.value)}
           rows={4}
           placeholder="One guardrail per line"
-          className="w-full px-2.5 py-1.5 text-sm border border-warm-300 dark:border-warm-700 rounded-md bg-warm-50 dark:bg-warm-900 focus:ring-2 focus:ring-primary-500 outline-none dark:text-warm-100 resize-none"
+          className="w-full px-2.5 py-1.5 text-ui-body border border-line-strong rounded-md bg-canvas focus:ring-2 focus:ring-accent outline-none resize-none"
         />
       </LabeledSkillField>
       <LabeledSkillField label="Required evidence">
@@ -531,21 +531,21 @@ function SkillEditForm({
           onChange={(event) => setEvidence(event.target.value)}
           rows={3}
           placeholder="One evidence item per line"
-          className="w-full px-2.5 py-1.5 text-sm border border-warm-300 dark:border-warm-700 rounded-md bg-warm-50 dark:bg-warm-900 focus:ring-2 focus:ring-primary-500 outline-none dark:text-warm-100 resize-none"
+          className="w-full px-2.5 py-1.5 text-ui-body border border-line-strong rounded-md bg-canvas focus:ring-2 focus:ring-accent outline-none resize-none"
         />
       </LabeledSkillField>
       <div className="flex gap-2">
         <button
           onClick={() => onSave(toDraft())}
           disabled={!name.trim() || !origin.trim() || !triggerPhrase.trim()}
-          className="flex-1 inline-flex items-center justify-center gap-1.5 rounded-md bg-primary-600 py-1.5 text-sm font-medium text-white hover:bg-primary-700 disabled:cursor-not-allowed disabled:opacity-50"
+          className="flex-1 inline-flex items-center justify-center gap-1.5 rounded-md bg-accent py-1.5 text-ui-body font-medium text-accent-fg hover:bg-accent-hover disabled:cursor-not-allowed disabled:opacity-50"
         >
           <Check size={14} />
           Save
         </button>
         <button
           onClick={onCancel}
-          className="rounded-md border border-warm-300 dark:border-warm-700 px-3 py-1.5 text-sm text-warm-600 dark:text-warm-300 hover:bg-warm-100 dark:hover:bg-warm-800"
+          className="rounded-md border border-line-strong px-3 py-1.5 text-ui-body text-fg-secondary hover:bg-surface-subtle"
         >
           Cancel
         </button>
@@ -562,7 +562,7 @@ function LabeledSkillField({
   children: React.ReactNode;
 }) {
   return (
-    <label className="block space-y-1 text-xs font-semibold text-warm-500 dark:text-warm-400">
+    <label className="block space-y-1 text-ui-control font-semibold text-fg-tertiary">
       <span>{label}</span>
       {children}
     </label>

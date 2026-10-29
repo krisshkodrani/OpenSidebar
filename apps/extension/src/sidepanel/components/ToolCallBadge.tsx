@@ -21,8 +21,8 @@ export function ToolCallBadge({ tool, defaultOpen = false }: Props) {
 
   const StatusIcon = () => {
     if (!tool.result)
-      return <Clock size={12} className="text-primary-500 animate-pulse" />;
-    return <CheckCircle size={12} className="text-green-500" />;
+      return <Clock size={12} className="text-accent-text animate-pulse" />;
+    return <CheckCircle size={12} className="text-success" />;
   };
 
   const argsDisplay =
@@ -31,20 +31,20 @@ export function ToolCallBadge({ tool, defaultOpen = false }: Props) {
       : JSON.stringify(tool.args, null, 2);
 
   return (
-    <div className="border border-warm-200 dark:border-warm-700 rounded-lg bg-warm-50 dark:bg-warm-900 overflow-hidden text-xs">
+    <div className="border border-line rounded-lg bg-canvas overflow-hidden text-ui-control">
       <button
         onClick={() => setIsOpen(!isOpen)}
         aria-expanded={isOpen}
         aria-controls={panelId}
-        className="flex items-center gap-2 w-full p-2 hover:bg-warm-100 dark:hover:bg-warm-800 text-left transition-colors"
+        className="flex items-center gap-2 w-full p-2 hover:bg-surface-subtle text-left transition-colors"
       >
         {isOpen ? (
-          <ChevronDown size={12} className="text-warm-400 shrink-0" />
+          <ChevronDown size={12} className="text-fg-tertiary shrink-0" />
         ) : (
-          <ChevronRight size={12} className="text-warm-400 shrink-0" />
+          <ChevronRight size={12} className="text-fg-tertiary shrink-0" />
         )}
 
-        <span className="font-mono font-medium text-warm-700 dark:text-warm-200">
+        <span className="font-mono font-medium text-fg-secondary">
           {tool.toolName}
         </span>
 
@@ -64,20 +64,20 @@ export function ToolCallBadge({ tool, defaultOpen = false }: Props) {
           opacity: isOpen ? 1 : 0,
         }}
       >
-        <div className="p-2.5 border-t border-warm-200 dark:border-warm-700 font-mono text-[11px] bg-warm-100/50 dark:bg-warm-950/50">
-          <div className="mb-1 text-warm-500 font-semibold uppercase tracking-wider text-[10px]">
+        <div className="p-2.5 border-t border-line font-mono text-ui-caption bg-surface-subtle">
+          <div className="mb-1 text-fg-tertiary font-semibold uppercase tracking-wider text-ui-caption">
             Input
           </div>
-          <pre className="overflow-x-auto p-2 rounded bg-warm-100 dark:bg-warm-900 text-warm-800 dark:text-warm-300 border border-warm-200 dark:border-warm-800 mb-2">
+          <pre className="overflow-x-auto p-2 rounded bg-surface-subtle text-fg border border-line mb-2">
             {argsDisplay}
           </pre>
 
           {tool.result && (
             <>
-              <div className="mb-1 text-warm-500 font-semibold uppercase tracking-wider text-[10px]">
+              <div className="mb-1 text-fg-tertiary font-semibold uppercase tracking-wider text-ui-caption">
                 Output
               </div>
-              <pre className="overflow-x-auto p-2 rounded bg-warm-50 dark:bg-warm-900 text-warm-600 dark:text-warm-400 border border-warm-200 dark:border-warm-800 max-h-40">
+              <pre className="overflow-x-auto p-2 rounded bg-canvas text-fg-secondary border border-line max-h-40">
                 {tool.result}
               </pre>
             </>

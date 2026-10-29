@@ -160,17 +160,17 @@ export function WatchModeControl({ disabled }: { disabled?: boolean }) {
   return (
     <div
       className={clsx(
-        "mb-2 rounded-lg border px-2 py-1.5 text-xs transition",
+        "mb-2 rounded-lg border px-2 py-1.5 text-ui-control transition",
         active
-          ? "border-sky-200 bg-sky-50/80 text-sky-900 shadow-[0_0_18px_rgba(125,211,252,0.18)] dark:border-sky-800/60 dark:bg-sky-950/20 dark:text-sky-100"
-          : "border-warm-200 bg-warm-100/60 text-warm-600 dark:border-warm-800 dark:bg-warm-800/45 dark:text-warm-300",
+          ? "border-accent/30 bg-accent-subtle text-accent-text "
+          : "border-line bg-surface-subtle text-fg-secondary",
       )}
     >
       <div className="flex items-center gap-2">
         <button
           type="button"
           onClick={() => setExpanded((value) => !value)}
-          className="inline-flex h-7 items-center gap-1.5 rounded-md px-1.5 font-medium hover:bg-white/60 dark:hover:bg-warm-700/60"
+          className="inline-flex h-7 items-center gap-1.5 rounded-md px-1.5 font-medium hover:bg-surface"
           aria-expanded={expanded}
         >
           <Eye size={14} />
@@ -184,21 +184,21 @@ export function WatchModeControl({ disabled }: { disabled?: boolean }) {
           className={clsx(
             "h-1.5 w-1.5 rounded-full",
             passiveStatus === "watching"
-              ? "bg-sky-500"
+              ? "bg-accent"
               : passiveStatus === "paused"
-                ? "bg-amber-500"
+                ? "bg-warning"
                 : passiveStatus === "blocked" || passiveStatus === "error"
-                  ? "bg-red-500"
-                  : "bg-warm-400",
+                  ? "bg-danger"
+                  : "bg-line-strong",
           )}
         />
-        <span className="min-w-0 flex-1 truncate text-[11px]">
+        <span className="min-w-0 flex-1 truncate text-ui-caption">
           {passiveStatusDetail ||
             (active ? "Watching page changes." : "Monitor page changes")}
         </span>
         {active && passiveLastObservationAt ? (
           <span
-            className="shrink-0 text-[10px] tabular-nums opacity-70"
+            className="shrink-0 text-ui-caption tabular-nums opacity-70"
             title={new Date(passiveLastObservationAt).toLocaleString()}
           >
             Last checked {new Date(passiveLastObservationAt).toLocaleTimeString([], {
@@ -214,7 +214,7 @@ export function WatchModeControl({ disabled }: { disabled?: boolean }) {
             onClick={stop}
             disabled={pending}
             title="Stop Watch Mode"
-            className="inline-flex h-7 w-7 items-center justify-center rounded-md text-sky-700 hover:bg-white/70 disabled:opacity-50 dark:text-sky-200 dark:hover:bg-sky-900/30"
+            className="inline-flex h-7 w-7 items-center justify-center rounded-md text-accent-text hover:bg-surface disabled:opacity-50"
             aria-label="Stop Watch Mode"
           >
             <Square size={13} />
@@ -228,11 +228,11 @@ export function WatchModeControl({ disabled }: { disabled?: boolean }) {
             value={draft}
             onChange={(event) => setDraft(event.target.value)}
             rows={2}
-            className="min-h-[52px] resize-none rounded-md border border-warm-200 bg-white px-2 py-1.5 text-xs text-warm-800 outline-none focus:border-sky-400 focus:ring-1 focus:ring-sky-300 dark:border-warm-700 dark:bg-warm-900 dark:text-warm-100"
+            className="min-h-[52px] resize-none rounded-md border border-line bg-surface px-2 py-1.5 text-ui-control text-fg outline-none focus:border-accent focus:ring-1 focus:ring-accent"
             placeholder="When something changes, write the useful answer or note here."
           />
           <div className="flex items-center gap-2">
-            <label className="inline-flex h-7 items-center gap-1.5 rounded-md border border-warm-200 bg-white px-2 text-[11px] text-warm-600 dark:border-warm-700 dark:bg-warm-900 dark:text-warm-300">
+            <label className="inline-flex h-7 items-center gap-1.5 rounded-md border border-line bg-surface px-2 text-ui-caption text-fg-secondary">
               <input
                 type="checkbox"
                 checked={screenEnabled}
@@ -244,7 +244,7 @@ export function WatchModeControl({ disabled }: { disabled?: boolean }) {
             </label>
             {speechAvailable ? (
               <label
-                className="inline-flex h-7 items-center gap-1.5 rounded-md border border-warm-200 bg-white px-2 text-[11px] text-warm-600 dark:border-warm-700 dark:bg-warm-900 dark:text-warm-300"
+                className="inline-flex h-7 items-center gap-1.5 rounded-md border border-line bg-surface px-2 text-ui-caption text-fg-secondary"
                 title="Transcribe audio playing in this tab for Watch Mode"
               >
                 <input
@@ -262,10 +262,10 @@ export function WatchModeControl({ disabled }: { disabled?: boolean }) {
               onClick={active ? stop : start}
               disabled={pending || (!active && disabled)}
               className={clsx(
-                "ml-auto inline-flex h-7 items-center justify-center rounded-md px-2 text-[11px] font-medium disabled:opacity-50",
+                "ml-auto inline-flex h-7 items-center justify-center rounded-md px-2 text-ui-caption font-medium disabled:opacity-50",
                 active
-                  ? "bg-warm-200 text-warm-700 hover:bg-warm-300 dark:bg-warm-700 dark:text-warm-100"
-                  : "bg-sky-600 text-white hover:bg-sky-700",
+                  ? "bg-surface-hover text-fg-secondary hover:bg-line-strong"
+                  : "bg-accent text-accent-fg hover:bg-accent-hover",
               )}
             >
               {active ? "Stop" : pending ? "Starting" : "Start"}

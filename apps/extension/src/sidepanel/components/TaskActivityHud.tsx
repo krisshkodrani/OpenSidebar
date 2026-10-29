@@ -5,10 +5,10 @@ import { useStore } from "../store";
 import { useTaskUiState, type TaskRailTone } from "../task-ui-state";
 
 function dotClass(tone: TaskRailTone) {
-  if (tone === "failed") return "bg-red-500";
-  if (tone === "paused") return "bg-yellow-500";
-  if (tone === "stalled") return "bg-amber-500";
-  return "bg-primary-500";
+  if (tone === "failed") return "bg-danger";
+  if (tone === "paused") return "bg-warning";
+  if (tone === "stalled") return "bg-warning";
+  return "bg-accent";
 }
 
 export function TaskActivityHud() {
@@ -23,37 +23,37 @@ export function TaskActivityHud() {
     <div
       aria-live="polite"
       aria-atomic="true"
-      className="pointer-events-none inline-flex max-w-[min(560px,calc(100vw-32px))] items-center gap-2 rounded-lg border border-slate-200/80 bg-white/88 px-3 py-2 text-slate-800 shadow-lg shadow-slate-950/15 backdrop-blur-md dark:border-slate-700/75 dark:bg-slate-950/82 dark:text-slate-100"
+      className="pointer-events-none inline-flex max-w-[min(560px,calc(100vw-32px))] items-center gap-2 rounded-lg border border-line bg-surface px-3 py-2 text-fg shadow-sm backdrop-blur-md"
       data-opensidebar-activity-hud
     >
       {actionPresentation?.phase === "applied" ? (
         <Check
           size={15}
-          className="shrink-0 text-emerald-500"
+          className="shrink-0 text-success"
           aria-label="Action applied"
         />
       ) : actionPresentation?.phase === "failed" ? (
         <AlertTriangle
           size={15}
-          className="shrink-0 text-red-500"
+          className="shrink-0 text-danger"
           aria-label="Action failed"
         />
       ) : actionPresentation ? (
         <MousePointer2
           size={15}
-          className="shrink-0 text-primary-500"
+          className="shrink-0 text-accent-text"
           aria-label="Agent acting on page"
         />
       ) : rail.tone === "stalled" ? (
         <AlertTriangle
           size={15}
-          className="shrink-0 text-amber-500"
+          className="shrink-0 text-warning"
           aria-label="Agent stalled"
         />
       ) : rail.showSpinner ? (
         <Loader2
           size={15}
-          className="shrink-0 animate-spin text-primary-500"
+          className="shrink-0 animate-spin text-accent-text"
           aria-label="Agent running"
         />
       ) : (
@@ -62,23 +62,23 @@ export function TaskActivityHud() {
           aria-hidden="true"
         />
       )}
-      <span className="min-w-0 truncate text-sm font-medium leading-5">
+      <span className="min-w-0 truncate text-ui-body font-medium leading-5">
         {rail.primaryLabel}
       </span>
       {rail.turnProgress?.provider ? (
-        <span className="hidden shrink-0 rounded-md border border-slate-200/80 bg-white/70 px-1.5 py-0.5 text-[10px] font-medium text-slate-500 dark:border-slate-700 dark:bg-slate-900/70 dark:text-slate-400 sm:inline">
+        <span className="hidden shrink-0 rounded-md border border-line bg-surface px-1.5 py-0.5 text-ui-caption font-medium text-fg-tertiary sm:inline">
           {rail.turnProgress.provider}
         </span>
       ) : null}
       {rail.turnProgress ? (
-        <span className="shrink-0 rounded-md border border-slate-200/80 bg-white/70 px-1.5 py-0.5 text-[10px] tabular-nums text-slate-500 dark:border-slate-700 dark:bg-slate-900/70 dark:text-slate-400">
+        <span className="shrink-0 rounded-md border border-line bg-surface px-1.5 py-0.5 text-ui-caption tabular-nums text-fg-tertiary">
           {rail.turnProgress.turn}/{rail.turnProgress.maxTurns}
         </span>
       ) : null}
       {showSessionMetrics &&
       rail.sessionMetrics &&
       rail.sessionMetrics.totalTokens > 0 ? (
-        <span className="hidden shrink-0 rounded-md border border-slate-200/80 bg-white/70 px-1.5 py-0.5 text-[10px] tabular-nums text-slate-500 dark:border-slate-700 dark:bg-slate-900/70 dark:text-slate-400 sm:inline">
+        <span className="hidden shrink-0 rounded-md border border-line bg-surface px-1.5 py-0.5 text-ui-caption tabular-nums text-fg-tertiary sm:inline">
           {formatTokens(rail.sessionMetrics.totalTokens)}
           {` / ${costLabel(rail.sessionMetrics)}`}
         </span>

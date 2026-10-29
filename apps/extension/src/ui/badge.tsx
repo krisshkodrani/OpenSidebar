@@ -8,13 +8,13 @@ export const badgeVariants = cva(
     {
         variants: {
             variant: {
-                default: "border-transparent bg-primary-600 text-white",
-                secondary: "border-transparent bg-slate-100 text-slate-700 dark:bg-slate-800 dark:text-slate-200",
-                outline: "border-slate-300 text-slate-700 dark:border-slate-700 dark:text-slate-200",
-                success: "border-green-200 bg-green-50 text-green-700 dark:border-green-900 dark:bg-green-950 dark:text-green-300",
-                warning: "border-amber-200 bg-amber-50 text-amber-700 dark:border-amber-900 dark:bg-amber-950 dark:text-amber-300",
-                error: "border-red-200 bg-red-50 text-red-700 dark:border-red-900 dark:bg-red-950 dark:text-red-300",
-                live: "border-teal-200 bg-teal-50 text-teal-700 dark:border-teal-900 dark:bg-teal-950 dark:text-teal-300",
+                default: "border-transparent bg-accent text-accent-fg",
+                secondary: "border-transparent bg-surface-subtle text-fg-secondary",
+                outline: "border-line-strong text-fg-secondary",
+                success: "border-success/30 bg-success-subtle text-success",
+                warning: "border-warning/30 bg-warning-subtle text-warning",
+                error: "border-danger/30 bg-danger-subtle text-danger",
+                live: "border-accent/30 bg-accent-subtle text-accent-text",
             },
         },
         defaultVariants: {

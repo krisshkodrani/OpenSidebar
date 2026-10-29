@@ -27,7 +27,7 @@ export function CitationList({ citations }: { citations: Citation[] }) {
           href={citation.url}
           target="_blank"
           rel="noopener noreferrer"
-          className="inline-flex items-center gap-1 rounded-full border border-warm-200 bg-warm-100 px-2 py-0.5 text-[11px] text-warm-600 transition-colors hover:border-primary-300 hover:bg-primary-50 hover:text-primary-700 dark:border-warm-700 dark:bg-warm-800 dark:text-warm-300 dark:hover:border-primary-600 dark:hover:bg-primary-900/30 dark:hover:text-primary-300"
+          className="inline-flex items-center gap-1 rounded-full border border-line bg-surface-subtle px-2 py-0.5 text-ui-caption text-fg-secondary transition-colors hover:border-accent/30 hover:bg-accent-subtle hover:text-accent-text"
           title={citation.url}
         >
           <ExternalLink size={9} className="shrink-0" />

@@ -12,7 +12,7 @@ export const SheetTrigger = DialogPrimitive.Trigger;
 export const SheetClose = DialogPrimitive.Close;
 
 const sheetVariants = cva(
-    "fixed z-50 gap-4 bg-white p-5 text-slate-950 shadow-soft-md transition ease-in-out data-[state=closed]:duration-200 data-[state=open]:duration-200 data-[state=open]:animate-in data-[state=closed]:animate-out dark:bg-slate-950 dark:text-slate-50",
+    "fixed z-50 gap-4 bg-surface p-5 text-fg shadow-sm transition ease-in-out data-[state=closed]:duration-200 data-[state=open]:duration-200 data-[state=open]:animate-in data-[state=closed]:animate-out",
     {
         variants: {
             side: {
@@ -43,7 +43,7 @@ export const SheetContent = React.forwardRef<
             <DialogOverlay />
             <DialogPrimitive.Content ref={ref} className={cn(sheetVariants({ side }), className)} {...props}>
                 {children}
-                <DialogPrimitive.Close className="absolute right-3 top-3 rounded-md p-1 text-slate-500 opacity-80 transition-opacity hover:opacity-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary-500 disabled:pointer-events-none">
+                <DialogPrimitive.Close className="absolute right-3 top-3 rounded-md p-1 text-fg-tertiary opacity-80 transition-opacity hover:opacity-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent disabled:pointer-events-none">
                     <X className="size-4" aria-hidden="true" />
                     <span className="sr-only">Close</span>
                 </DialogPrimitive.Close>

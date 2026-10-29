@@ -21,7 +21,7 @@ export function PlanStepIcon({
 
   if (status === "completed") {
     return (
-      <span style={box} className={`${base} bg-teal-500 text-white`}>
+      <span style={box} className={`${base} bg-accent text-accent-fg`}>
         <Check size={glyph} strokeWidth={3} />
       </span>
     );
@@ -30,15 +30,15 @@ export function PlanStepIcon({
     return (
       <span
         style={box}
-        className={`${base} border-2 border-primary-500 bg-white shadow-[0_0_0_4px_rgba(59,130,246,0.15)] dark:bg-warm-900`}
+        className={`${base} border-2 border-accent bg-surface `}
       >
-        <span className="h-1.5 w-1.5 rounded-full bg-primary-500 animate-pulse" />
+        <span className="h-1.5 w-1.5 rounded-full bg-accent animate-pulse" />
       </span>
     );
   }
   if (status === "failed") {
     return (
-      <span style={box} className={`${base} bg-red-500 text-white`}>
+      <span style={box} className={`${base} bg-danger text-accent-fg`}>
         <X size={glyph} strokeWidth={3} />
       </span>
     );
@@ -47,7 +47,7 @@ export function PlanStepIcon({
     return (
       <span
         style={box}
-        className={`${base} border-2 border-warm-300 text-warm-400 dark:border-warm-600`}
+        className={`${base} border-2 border-line-strong text-fg-tertiary`}
       >
         <SkipForward size={Math.round(size * 0.6)} />
       </span>
@@ -55,7 +55,7 @@ export function PlanStepIcon({
   }
   if (status === "stopped") {
     return (
-      <span style={box} className={`${base} bg-amber-500 text-white`}>
+      <span style={box} className={`${base} bg-warning text-accent-fg`}>
         <Square size={Math.round(size * 0.5)} fill="currentColor" />
       </span>
     );
@@ -63,7 +63,7 @@ export function PlanStepIcon({
   return (
     <span
       style={box}
-      className={`${base} border-2 border-warm-300 dark:border-warm-600`}
+      className={`${base} border-2 border-line-strong`}
     />
   );
 }

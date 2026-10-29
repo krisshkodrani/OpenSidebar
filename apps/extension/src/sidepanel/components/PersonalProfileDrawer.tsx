@@ -384,26 +384,26 @@ export function PersonalProfileDrawer({ isOpen, onClose }: Props) {
       aria-label="Personalize"
     >
       <div
-        className="absolute inset-0 bg-black/20 backdrop-blur-sm backdrop-enter"
+        className="absolute inset-0 bg-fg/20 backdrop-blur-sm backdrop-enter"
         onClick={drawerLocked ? undefined : onClose}
       />
       <div
         ref={drawerRef}
-        className="relative flex h-full w-full max-w-[430px] flex-col border-l border-warm-200 bg-warm-50 shadow-2xl drawer-enter dark:border-warm-800 dark:bg-warm-900"
+        className="relative flex h-full w-full max-w-[430px] flex-col border-l border-line bg-canvas shadow-sm drawer-enter"
         aria-busy={analyzing}
       >
-        <header className="border-b border-warm-200 p-4 dark:border-warm-800">
+        <header className="border-b border-line p-4">
           <div className="flex items-start justify-between gap-3">
             <div className="flex min-w-0 items-start gap-3">
-              <div className="rounded-lg bg-primary-50 p-2 text-primary-600 dark:bg-primary-950/40 dark:text-primary-300">
+              <div className="rounded-lg bg-accent-subtle p-2 text-accent-text">
                 <UserRound size={18} />
               </div>
               <div className="min-w-0">
-                <h2 className="text-lg font-semibold text-warm-900 dark:text-warm-100">
+                <h2 className="text-ui-title font-semibold text-fg">
                   Personalize
                 </h2>
                 <PersonalDataSyncBadge category="profile" />
-                <p className="mt-0.5 text-xs text-warm-500 dark:text-warm-400">
+                <p className="mt-0.5 text-ui-control text-fg-tertiary">
                   Keep user-owned notes and review the extracted digest.
                 </p>
               </div>
@@ -412,19 +412,19 @@ export function PersonalProfileDrawer({ isOpen, onClose }: Props) {
               ref={closeButtonRef}
               onClick={onClose}
               disabled={drawerLocked}
-              className="rounded-full p-2 text-warm-500 hover:bg-warm-100 disabled:cursor-not-allowed disabled:opacity-50 dark:hover:bg-warm-800"
+              className="rounded-full p-2 text-fg-tertiary hover:bg-surface-subtle disabled:cursor-not-allowed disabled:opacity-50"
               aria-label="Close"
             >
               <X size={20} />
             </button>
           </div>
 
-          <div className="mt-4 flex items-center justify-between gap-3 rounded-lg border border-warm-200 bg-white px-3 py-2 dark:border-warm-800 dark:bg-warm-950">
+          <div className="mt-4 flex items-center justify-between gap-3 rounded-lg border border-line bg-surface px-3 py-2">
             <div className="min-w-0">
-              <p className="text-sm font-medium text-warm-800 dark:text-warm-100">
+              <p className="text-ui-body font-medium text-fg">
                 Use Profile Notes
               </p>
-              <p className="text-[11px] text-warm-500 dark:text-warm-400">
+              <p className="text-ui-caption text-fg-tertiary">
                 {active ? "Enabled for this browser" : digestStatus}
               </p>
             </div>
@@ -433,13 +433,13 @@ export function PersonalProfileDrawer({ isOpen, onClose }: Props) {
               onClick={() => void handleEnabledChange(!enabled)}
               disabled={drawerLocked}
               className={`relative h-6 w-11 rounded-full transition ${
-                enabled ? "bg-primary-600" : "bg-warm-300 dark:bg-warm-700"
+                enabled ? "bg-accent" : "bg-line-strong"
               } disabled:cursor-not-allowed disabled:opacity-60`}
               aria-pressed={enabled}
               aria-label="Use Profile Notes"
             >
               <span
-                className={`absolute top-0.5 h-5 w-5 rounded-full bg-white shadow transition ${
+                className={`absolute top-0.5 h-5 w-5 rounded-full bg-surface shadow transition ${
                   enabled ? "left-5" : "left-0.5"
                 }`}
               />
@@ -452,16 +452,16 @@ export function PersonalProfileDrawer({ isOpen, onClose }: Props) {
             <section className="space-y-2">
               <div className="flex items-center justify-between gap-3">
                 <div className="flex items-center gap-2">
-                  <FileText size={15} className="text-warm-400" />
-                  <h3 className="text-xs font-semibold uppercase tracking-wide text-warm-400">
+                  <FileText size={15} className="text-fg-tertiary" />
+                  <h3 className="text-ui-control font-semibold uppercase tracking-wide text-fg-tertiary">
                     Profile Notes
                   </h3>
                 </div>
                 <span
-                  className={`text-[11px] ${
+                  className={`text-ui-caption ${
                     overLimit
-                      ? "text-red-500"
-                      : "text-warm-400 dark:text-warm-500"
+                      ? "text-danger"
+                      : "text-fg-tertiary"
                   }`}
                 >
                   {draftNotes.length.toLocaleString()} /{" "}
@@ -484,24 +484,24 @@ export function PersonalProfileDrawer({ isOpen, onClose }: Props) {
                   }}
                   placeholder={DEFAULT_PROFILE_NOTES_MARKDOWN}
                   rows={16}
-                  className="w-full resize-none rounded-md border border-warm-200 bg-white px-3 py-2 font-mono text-xs leading-relaxed text-warm-800 outline-none transition focus:border-primary-400 focus:ring-2 focus:ring-primary-500/20 disabled:cursor-not-allowed disabled:opacity-70 dark:border-warm-700 dark:bg-warm-950 dark:text-warm-100"
+                  className="w-full resize-none rounded-md border border-line bg-surface px-3 py-2 font-mono text-ui-control leading-relaxed text-fg outline-none transition focus:border-accent focus:ring-2 focus:ring-accent/20 disabled:cursor-not-allowed disabled:opacity-70"
                 />
               </label>
             </section>
 
-            <section className="space-y-3 border-t border-warm-200 pt-4 dark:border-warm-800">
+            <section className="space-y-3 border-t border-line pt-4">
               <div className="flex items-center justify-between gap-3">
                 <div className="flex items-center gap-2">
-                  <Sparkles size={15} className="text-warm-400" />
-                  <h3 className="text-xs font-semibold uppercase tracking-wide text-warm-400">
+                  <Sparkles size={15} className="text-fg-tertiary" />
+                  <h3 className="text-ui-control font-semibold uppercase tracking-wide text-fg-tertiary">
                     Profile Digest
                   </h3>
                 </div>
                 <span
-                  className={`rounded-full px-2 py-0.5 text-[10px] font-medium ${
+                  className={`rounded-full px-2 py-0.5 text-ui-caption font-medium ${
                     !hasNotes || stale
-                      ? "bg-amber-50 text-amber-700 dark:bg-amber-900/20 dark:text-amber-300"
-                      : "bg-primary-50 text-primary-700 dark:bg-primary-900/20 dark:text-primary-200"
+                      ? "bg-warning-subtle text-warning"
+                      : "bg-accent-subtle text-accent-text"
                   }`}
                 >
                   {digestStatus}
@@ -509,7 +509,7 @@ export function PersonalProfileDrawer({ isOpen, onClose }: Props) {
               </div>
 
               {personalProfileState.analyzer ? (
-                <p className="text-[11px] text-warm-500 dark:text-warm-400">
+                <p className="text-ui-caption text-fg-tertiary">
                   Last analyzed with {personalProfileState.analyzer.model} at{" "}
                   {new Date(
                     personalProfileState.analyzer.analyzedAt,
@@ -518,7 +518,7 @@ export function PersonalProfileDrawer({ isOpen, onClose }: Props) {
               ) : null}
 
               {digestItems.length === 0 ? (
-                <div className="rounded-md border border-dashed border-warm-300 px-3 py-4 text-center text-xs text-warm-500 dark:border-warm-700 dark:text-warm-400">
+                <div className="rounded-md border border-dashed border-line-strong px-3 py-4 text-center text-ui-control text-fg-tertiary">
                   Analyze notes to extract facts, preferences, constraints,
                   themes, sensitive items, and open questions.
                 </div>
@@ -529,7 +529,7 @@ export function PersonalProfileDrawer({ isOpen, onClose }: Props) {
                     if (!items || items.length === 0) return null;
                     return (
                       <div key={kind} className="space-y-1.5">
-                        <h4 className="text-[11px] font-semibold text-warm-500 dark:text-warm-400">
+                        <h4 className="text-ui-caption font-semibold text-fg-tertiary">
                           {DIGEST_KIND_LABELS[kind]}
                         </h4>
                         <div className="space-y-1.5">
@@ -543,7 +543,7 @@ export function PersonalProfileDrawer({ isOpen, onClose }: Props) {
                             return (
                               <div
                                 key={item.id}
-                                className="rounded-md border border-warm-200 bg-white px-2.5 py-2 text-xs dark:border-warm-800 dark:bg-warm-950"
+                                className="rounded-md border border-line bg-surface px-2.5 py-2 text-ui-control"
                               >
                                 {isEditing && digestEditDraft ? (
                                   <div className="space-y-2">
@@ -556,7 +556,7 @@ export function PersonalProfileDrawer({ isOpen, onClose }: Props) {
                                           label: event.target.value,
                                         })
                                       }
-                                      className="w-full rounded-md border border-warm-200 bg-white px-2 py-1.5 text-xs text-warm-800 outline-none focus:border-primary-400 focus:ring-2 focus:ring-primary-500/20 dark:border-warm-700 dark:bg-warm-900 dark:text-warm-100"
+                                      className="w-full rounded-md border border-line bg-surface px-2 py-1.5 text-ui-control text-fg outline-none focus:border-accent focus:ring-2 focus:ring-accent/20"
                                       aria-label="Digest item label"
                                     />
                                     <textarea
@@ -569,7 +569,7 @@ export function PersonalProfileDrawer({ isOpen, onClose }: Props) {
                                           value: event.target.value,
                                         })
                                       }
-                                      className="w-full resize-none rounded-md border border-warm-200 bg-white px-2 py-1.5 text-xs leading-relaxed text-warm-800 outline-none focus:border-primary-400 focus:ring-2 focus:ring-primary-500/20 dark:border-warm-700 dark:bg-warm-900 dark:text-warm-100"
+                                      className="w-full resize-none rounded-md border border-line bg-surface px-2 py-1.5 text-ui-control leading-relaxed text-fg outline-none focus:border-accent focus:ring-2 focus:ring-accent/20"
                                       aria-label="Digest item value"
                                     />
                                     <select
@@ -580,7 +580,7 @@ export function PersonalProfileDrawer({ isOpen, onClose }: Props) {
                                           kind: event.target.value as DigestKind,
                                         })
                                       }
-                                      className="w-full rounded-md border border-warm-200 bg-white px-2 py-1.5 text-xs text-warm-800 outline-none focus:border-primary-400 focus:ring-2 focus:ring-primary-500/20 dark:border-warm-700 dark:bg-warm-900 dark:text-warm-100"
+                                      className="w-full rounded-md border border-line bg-surface px-2 py-1.5 text-ui-control text-fg outline-none focus:border-accent focus:ring-2 focus:ring-accent/20"
                                       aria-label="Digest item kind"
                                     >
                                       {DIGEST_KIND_ORDER.map((digestKind) => (
@@ -596,7 +596,7 @@ export function PersonalProfileDrawer({ isOpen, onClose }: Props) {
                                       <button
                                         type="button"
                                         onClick={handleCancelDigestEdit}
-                                        className="inline-flex h-7 w-7 items-center justify-center rounded-md border border-warm-200 text-warm-500 hover:bg-warm-100 dark:border-warm-700 dark:hover:bg-warm-800"
+                                        className="inline-flex h-7 w-7 items-center justify-center rounded-md border border-line text-fg-tertiary hover:bg-surface-subtle"
                                         aria-label="Cancel digest item edit"
                                         title="Cancel"
                                       >
@@ -611,7 +611,7 @@ export function PersonalProfileDrawer({ isOpen, onClose }: Props) {
                                           digestItemControlsDisabled ||
                                           editInvalid
                                         }
-                                        className="inline-flex h-7 w-7 items-center justify-center rounded-md bg-primary-600 text-white hover:bg-primary-700 disabled:cursor-not-allowed disabled:opacity-50"
+                                        className="inline-flex h-7 w-7 items-center justify-center rounded-md bg-accent text-accent-fg hover:bg-accent-hover disabled:cursor-not-allowed disabled:opacity-50"
                                         aria-label="Save digest item edit"
                                         title="Save"
                                       >
@@ -622,11 +622,11 @@ export function PersonalProfileDrawer({ isOpen, onClose }: Props) {
                                 ) : (
                                   <>
                                     <div className="flex items-start justify-between gap-2">
-                                      <span className="font-medium text-warm-800 dark:text-warm-100">
+                                      <span className="font-medium text-fg">
                                         {item.label}
                                       </span>
                                       <div className="flex shrink-0 items-center gap-1">
-                                        <span className="text-[10px] uppercase text-warm-400">
+                                        <span className="text-ui-caption uppercase text-fg-tertiary">
                                           {item.confidence}
                                         </span>
                                         <button
@@ -635,7 +635,7 @@ export function PersonalProfileDrawer({ isOpen, onClose }: Props) {
                                             handleStartDigestEdit(item)
                                           }
                                           disabled={digestItemControlsDisabled}
-                                          className="inline-flex h-6 w-6 items-center justify-center rounded-md text-warm-400 hover:bg-warm-100 hover:text-warm-700 disabled:cursor-not-allowed disabled:opacity-50 dark:hover:bg-warm-800 dark:hover:text-warm-100"
+                                          className="inline-flex h-6 w-6 items-center justify-center rounded-md text-fg-tertiary hover:bg-surface-subtle hover:text-fg-secondary disabled:cursor-not-allowed disabled:opacity-50"
                                           aria-label={`Edit ${item.label}`}
                                           title={
                                             stale
@@ -651,7 +651,7 @@ export function PersonalProfileDrawer({ isOpen, onClose }: Props) {
                                             void handleDeleteDigestItem(item.id)
                                           }
                                           disabled={digestItemControlsDisabled}
-                                          className="inline-flex h-6 w-6 items-center justify-center rounded-md text-warm-400 hover:bg-red-50 hover:text-red-700 disabled:cursor-not-allowed disabled:opacity-50 dark:hover:bg-red-950/30 dark:hover:text-red-300"
+                                          className="inline-flex h-6 w-6 items-center justify-center rounded-md text-fg-tertiary hover:bg-danger-subtle hover:text-danger disabled:cursor-not-allowed disabled:opacity-50"
                                           aria-label={`Delete ${item.label}`}
                                           title={
                                             stale
@@ -663,16 +663,16 @@ export function PersonalProfileDrawer({ isOpen, onClose }: Props) {
                                         </button>
                                       </div>
                                     </div>
-                                    <p className="mt-1 text-warm-600 dark:text-warm-300">
+                                    <p className="mt-1 text-fg-secondary">
                                       {item.value}
                                     </p>
                                     {item.sourceQuote ? (
-                                      <p className="mt-1 line-clamp-2 text-[11px] text-warm-400 dark:text-warm-500">
+                                      <p className="mt-1 line-clamp-2 text-ui-caption text-fg-tertiary">
                                         Source: {item.sourceQuote}
                                       </p>
                                     ) : null}
                                     {isDeleteConfirming ? (
-                                      <div className="mt-2 flex items-center justify-between gap-2 rounded-md border border-red-200 bg-red-50 px-2 py-1.5 text-[11px] text-red-700 dark:border-red-900 dark:bg-red-950/30 dark:text-red-300">
+                                      <div className="mt-2 flex items-center justify-between gap-2 rounded-md border border-danger/30 bg-danger-subtle px-2 py-1.5 text-ui-caption text-danger">
                                         <span>Delete this digest item?</span>
                                         <div className="flex gap-1">
                                           <button
@@ -680,7 +680,7 @@ export function PersonalProfileDrawer({ isOpen, onClose }: Props) {
                                             onClick={() =>
                                               setDeleteDigestItemId(null)
                                             }
-                                            className="inline-flex h-6 w-6 items-center justify-center rounded-md hover:bg-red-100 dark:hover:bg-red-900/40"
+                                            className="inline-flex h-6 w-6 items-center justify-center rounded-md hover:bg-danger-subtle"
                                             aria-label="Cancel digest item delete"
                                             title="Cancel"
                                           >
@@ -694,7 +694,7 @@ export function PersonalProfileDrawer({ isOpen, onClose }: Props) {
                                               )
                                             }
                                             disabled={digestItemControlsDisabled}
-                                            className="inline-flex h-6 w-6 items-center justify-center rounded-md bg-red-600 text-white hover:bg-red-700 disabled:cursor-not-allowed disabled:opacity-50"
+                                            className="inline-flex h-6 w-6 items-center justify-center rounded-md bg-danger text-canvas hover:bg-danger/90 disabled:cursor-not-allowed disabled:opacity-50"
                                             aria-label="Confirm digest item delete"
                                             title="Confirm delete"
                                           >
@@ -718,9 +718,9 @@ export function PersonalProfileDrawer({ isOpen, onClose }: Props) {
           </div>
         </div>
 
-        <footer className="border-t border-warm-200 bg-warm-50 p-3 dark:border-warm-800 dark:bg-warm-900">
+        <footer className="border-t border-line bg-canvas p-3">
           {error ? (
-            <div className="mb-2 rounded-md border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-700 dark:border-red-900 dark:bg-red-950/30 dark:text-red-300">
+            <div className="mb-2 rounded-md border border-danger/30 bg-danger-subtle px-3 py-2 text-ui-control text-danger">
               {error}
             </div>
           ) : null}
@@ -728,7 +728,7 @@ export function PersonalProfileDrawer({ isOpen, onClose }: Props) {
             <button
               onClick={() => void handleSave()}
               disabled={drawerLocked || overLimit}
-              className="inline-flex items-center justify-center gap-2 rounded-md bg-primary-600 px-3 py-2 text-sm font-semibold text-white hover:bg-primary-700 disabled:cursor-not-allowed disabled:opacity-50"
+              className="inline-flex items-center justify-center gap-2 rounded-md bg-accent px-3 py-2 text-ui-body font-semibold text-accent-fg hover:bg-accent-hover disabled:cursor-not-allowed disabled:opacity-50"
             >
               <Save size={15} />
               Save Notes
@@ -736,7 +736,7 @@ export function PersonalProfileDrawer({ isOpen, onClose }: Props) {
             <button
               onClick={() => void handleAnalyze()}
               disabled={drawerLocked || !hasNotes || overLimit}
-              className="inline-flex items-center justify-center gap-2 rounded-md border border-primary-200 bg-white px-3 py-2 text-sm font-semibold text-primary-700 hover:bg-primary-50 disabled:cursor-not-allowed disabled:opacity-50 dark:border-primary-800 dark:bg-warm-950 dark:text-primary-200 dark:hover:bg-primary-900/20"
+              className="inline-flex items-center justify-center gap-2 rounded-md border border-accent/30 bg-surface px-3 py-2 text-ui-body font-semibold text-accent-text hover:bg-accent-subtle disabled:cursor-not-allowed disabled:opacity-50"
             >
               {analyzing ? (
                 <RefreshCw size={15} className="animate-spin" />
@@ -748,7 +748,7 @@ export function PersonalProfileDrawer({ isOpen, onClose }: Props) {
             <button
               onClick={() => void handleClearDigest()}
               disabled={drawerLocked || !hasDigest}
-              className="inline-flex items-center justify-center gap-2 rounded-md border border-warm-300 px-3 py-2 text-sm font-semibold text-warm-600 hover:bg-warm-100 disabled:cursor-not-allowed disabled:opacity-50 dark:border-warm-700 dark:text-warm-300 dark:hover:bg-warm-800"
+              className="inline-flex items-center justify-center gap-2 rounded-md border border-line-strong px-3 py-2 text-ui-body font-semibold text-fg-secondary hover:bg-surface-subtle disabled:cursor-not-allowed disabled:opacity-50"
             >
               <X size={15} />
               Clear Digest
@@ -756,10 +756,10 @@ export function PersonalProfileDrawer({ isOpen, onClose }: Props) {
             <button
               onClick={() => void handleDelete()}
               disabled={drawerLocked}
-              className={`inline-flex items-center justify-center gap-2 rounded-md border px-3 py-2 text-sm font-semibold ${
+              className={`inline-flex items-center justify-center gap-2 rounded-md border px-3 py-2 text-ui-body font-semibold ${
                 deleteArmed
-                  ? "border-red-300 bg-red-50 text-red-700 hover:bg-red-100 dark:border-red-900 dark:bg-red-950/30 dark:text-red-300"
-                  : "border-warm-300 text-warm-600 hover:bg-warm-100 dark:border-warm-700 dark:text-warm-300 dark:hover:bg-warm-800"
+                  ? "border-danger/30 bg-danger-subtle text-danger hover:bg-danger/10"
+                  : "border-line-strong text-fg-secondary hover:bg-surface-subtle"
               } disabled:cursor-not-allowed disabled:opacity-50`}
             >
               {deleteArmed ? <Check size={15} /> : <Trash2 size={15} />}
@@ -767,31 +767,31 @@ export function PersonalProfileDrawer({ isOpen, onClose }: Props) {
             </button>
           </div>
           {status ? (
-            <p className="mt-2 text-center text-xs text-warm-500 dark:text-warm-400">
+            <p className="mt-2 text-center text-ui-control text-fg-tertiary">
               {status}
             </p>
           ) : null}
         </footer>
         {analyzing ? (
-          <div className="absolute inset-0 z-20 flex items-center justify-center bg-warm-50/85 px-4 backdrop-blur-sm dark:bg-warm-900/85">
+          <div className="absolute inset-0 z-20 flex items-center justify-center bg-canvas px-4 backdrop-blur-sm">
             <div
-              className="w-full max-w-[330px] rounded-lg border border-warm-200 bg-white px-4 py-5 text-center shadow-xl dark:border-warm-800 dark:bg-warm-950"
+              className="w-full max-w-[330px] rounded-lg border border-line bg-surface px-4 py-5 text-center shadow-sm"
               role="status"
               aria-live="polite"
             >
               <RefreshCw
                 size={22}
-                className="mx-auto animate-spin text-primary-600 dark:text-primary-300"
+                className="mx-auto animate-spin text-accent-text"
               />
-              <h3 className="mt-3 text-sm font-semibold text-warm-900 dark:text-warm-100">
+              <h3 className="mt-3 text-ui-body font-semibold text-fg">
                 Analyzing Profile Notes
               </h3>
-              <p className="mt-2 text-xs leading-relaxed text-warm-600 dark:text-warm-300">
+              <p className="mt-2 text-ui-control leading-relaxed text-fg-secondary">
                 Extracting facts, preferences, constraints, themes, sensitive
                 items, and open questions.
               </p>
               <p
-                className="mt-3 text-[11px] text-warm-500 dark:text-warm-400"
+                className="mt-3 text-ui-caption text-fg-tertiary"
                 aria-hidden="true"
               >
                 {draftNotes.length.toLocaleString()} chars -{" "}

@@ -35,7 +35,7 @@ interface InputAreaProps {
 
 function PendingInteractionShell({ children }: { children: React.ReactNode }) {
   return (
-    <div className="border-t border-warm-200 bg-warm-50 p-2 dark:border-warm-800 dark:bg-warm-900">
+    <div className="border-t border-line bg-canvas p-2">
       {children}
     </div>
   );
@@ -210,13 +210,13 @@ export function InputArea({
 
   if (!composerPolicy.enabled) {
     return (
-      <div className="shrink-0 border-t border-warm-200 bg-warm-50 px-3 py-3 dark:border-warm-800 dark:bg-warm-900">
-        <div className="rounded-xl border border-warm-200 bg-warm-100/70 px-3 py-2.5 dark:border-warm-700 dark:bg-warm-800/60">
-          <div className="text-xs font-semibold text-warm-700 dark:text-warm-200">
+      <div className="shrink-0 border-t border-line bg-canvas px-3 py-3">
+        <div className="rounded-xl border border-line bg-surface-subtle px-3 py-2.5">
+          <div className="text-ui-control font-semibold text-fg-secondary">
             {composerPolicy.label}
           </div>
           {composerPolicy.disabledReason ? (
-            <p className="mt-0.5 text-[11px] leading-relaxed text-warm-500 dark:text-warm-400">
+            <p className="mt-0.5 text-ui-caption leading-relaxed text-fg-tertiary">
               {composerPolicy.disabledReason}
             </p>
           ) : null}
@@ -228,9 +228,9 @@ export function InputArea({
   const isGuidanceComposer = composerPolicy.mode !== "new_task";
 
   return (
-    <div className="relative shrink-0 border-t border-warm-200 bg-warm-50 dark:border-warm-800 dark:bg-warm-900">
+    <div className="relative shrink-0 border-t border-line bg-canvas">
       {autonomousMode && composerPolicy.mode === "new_task" ? (
-        <div className="mx-2 mt-1 flex items-center gap-1.5 rounded-md border border-amber-200 bg-amber-50 px-2 py-1 text-[11px] text-amber-700 dark:border-amber-800 dark:bg-amber-900/20 dark:text-amber-300">
+        <div className="mx-2 mt-1 flex items-center gap-1.5 rounded-md border border-warning/30 bg-warning-subtle px-2 py-1 text-ui-caption text-warning">
           <ShieldAlert size={12} className="shrink-0" />
           <span>Autonomous mode - agent acts without asking</span>
         </div>
@@ -242,10 +242,10 @@ export function InputArea({
         <div className={isGuidanceComposer ? "space-y-1.5" : undefined}>
           {isGuidanceComposer ? (
             <div className="px-1">
-              <div className="text-[11px] font-medium text-warm-600 dark:text-warm-300">
+              <div className="text-ui-caption font-medium text-fg-secondary">
                 {composerPolicy.label}
               </div>
-              <div className="mt-0.5 text-[11px] leading-relaxed text-warm-500 dark:text-warm-400">
+              <div className="mt-0.5 text-ui-caption leading-relaxed text-fg-tertiary">
                 Your message is routed to the current task.
               </div>
             </div>
@@ -273,9 +273,9 @@ export function InputArea({
             value={inputText}
           />
           {isGuidanceComposer ? (
-            <p className="select-none px-1 text-[10px] text-warm-400 dark:text-warm-500">
+            <p className="select-none px-1 text-ui-caption text-fg-tertiary">
               Guidance is sent into the current run. Press{" "}
-              <kbd className="rounded bg-warm-200/60 px-1 py-0.5 font-mono text-[9px] text-warm-500 dark:bg-warm-700/60 dark:text-warm-400">
+              <kbd className="rounded bg-surface-hover px-1 py-0.5 font-mono text-ui-caption text-fg-tertiary">
                 Esc
               </kbd>{" "}
               to stop immediately.
@@ -283,11 +283,11 @@ export function InputArea({
           ) : (
             <>
               {hasText ? (
-                <div className="mt-1 flex items-center justify-end gap-2 px-1 text-[10px] text-warm-400 dark:text-warm-500">
+                <div className="mt-1 flex items-center justify-end gap-2 px-1 text-ui-caption text-fg-tertiary">
                   <span>{draft.saved ? "Saved on this device" : "Saving locally…"}</span>
                   <button
                     type="button"
-                    className="underline underline-offset-2 hover:text-warm-600 dark:hover:text-warm-300"
+                    className="underline underline-offset-2 hover:text-fg-secondary"
                     onClick={() => void draft.discard()}
                   >
                     Discard draft
@@ -303,7 +303,7 @@ export function InputArea({
                   type="button"
                   onClick={onOpenSavedPrompts}
                   aria-label="Saved Prompts"
-                  className="ml-1 inline-flex h-6 items-center gap-1.5 rounded-md border border-warm-200 px-2 text-[11px] font-medium text-warm-500 transition hover:bg-warm-100 dark:border-warm-700 dark:text-warm-300 dark:hover:bg-warm-800"
+                  className="ml-1 inline-flex h-6 items-center gap-1.5 rounded-md border border-line px-2 text-ui-caption font-medium text-fg-tertiary transition hover:bg-surface-subtle"
                   title="Use a saved prompt"
                 >
                   <Bookmark size={12} />
@@ -314,10 +314,10 @@ export function InputArea({
                   onClick={handleProfileToggle}
                   aria-label="Personalize"
                   aria-pressed={profileActive}
-                  className={`ml-auto inline-flex h-6 items-center gap-1.5 rounded-md border px-2 text-[11px] font-medium transition ${
+                  className={`ml-auto inline-flex h-6 items-center gap-1.5 rounded-md border px-2 text-ui-caption font-medium transition ${
                     profileActive
-                      ? "border-primary-200 bg-primary-50 text-primary-700 dark:border-primary-800 dark:bg-primary-900/20 dark:text-primary-200"
-                      : "border-warm-200 text-warm-500 hover:bg-warm-100 dark:border-warm-700 dark:text-warm-300 dark:hover:bg-warm-800"
+                      ? "border-accent/30 bg-accent-subtle text-accent-text"
+                      : "border-line text-fg-tertiary hover:bg-surface-subtle"
                   }`}
                   title={
                     profileAvailable
@@ -333,7 +333,7 @@ export function InputArea({
                   {profileActive ? "Profile on" : "Profile off"}
                 </button>
               </div>
-              <p className="mt-1 select-none text-center text-[10px] text-warm-400 dark:text-warm-500">
+              <p className="mt-1 select-none text-center text-ui-caption text-fg-tertiary">
                 AI can make mistakes. Please double-check responses.
               </p>
             </>

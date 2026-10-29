@@ -40,7 +40,7 @@ export function GeneralSettingsTab({
       {surface !== "browser" ? (
         <>
           <section className="space-y-3">
-            <h3 className="text-xs font-semibold uppercase tracking-wider text-warm-400">
+            <h3 className="text-ui-control font-semibold uppercase tracking-wider text-fg-tertiary">
               Appearance
             </h3>
             <div
@@ -54,10 +54,10 @@ export function GeneralSettingsTab({
                   type="button"
                   aria-pressed={formState.theme === theme}
                   onClick={() => onChange("theme", theme)}
-                  className={`flex flex-col items-center gap-2 rounded-lg border p-3 text-xs font-medium transition-all ${
+                  className={`flex flex-col items-center gap-2 rounded-lg border p-3 text-ui-control font-medium transition-all ${
                     formState.theme === theme
-                      ? "border-primary-500 bg-primary-50 text-primary-700 ring-1 ring-primary-500 dark:bg-primary-900/20 dark:text-primary-300"
-                      : "border-warm-200 text-warm-600 hover:bg-warm-100 dark:border-warm-700 dark:text-warm-400 dark:hover:bg-warm-800"
+                      ? "border-accent bg-accent-subtle text-accent-text ring-1 ring-accent"
+                      : "border-line text-fg-secondary hover:bg-surface-subtle"
                   }`}
                 >
                   {theme === "light" ? <Sun size={18} /> : null}
@@ -71,15 +71,15 @@ export function GeneralSettingsTab({
 
           <section className="space-y-3">
             <div>
-              <h3 className="text-xs font-semibold uppercase tracking-wider text-warm-400">
+              <h3 className="text-ui-control font-semibold uppercase tracking-wider text-fg-tertiary">
                 Agent
               </h3>
-              <p className="mt-1 text-xs text-warm-500 dark:text-warm-400">
+              <p className="mt-1 text-ui-control text-fg-tertiary">
                 Choose how much planning and verification the agent uses.
               </p>
             </div>
             <div
-              className="grid grid-cols-3 gap-1 rounded-lg bg-warm-100 p-1 dark:bg-warm-800"
+              className="grid grid-cols-3 gap-1 rounded-lg bg-surface-subtle p-1"
               role="group"
               aria-label="Execution mode"
             >
@@ -93,10 +93,10 @@ export function GeneralSettingsTab({
                     aria-pressed={selected}
                     onClick={() => onChange("laneTopologyMode", option.value)}
                     title={option.description}
-                    className={`min-h-8 rounded-md px-2 py-1.5 text-xs font-medium transition-colors ${
+                    className={`min-h-8 rounded-md px-2 py-1.5 text-ui-control font-medium transition-colors ${
                       selected
-                        ? "bg-warm-50 text-primary-700 shadow-sm dark:bg-warm-900 dark:text-primary-300"
-                        : "text-warm-500 hover:text-warm-700 dark:text-warm-400 dark:hover:text-warm-200"
+                        ? "bg-canvas text-accent-text shadow-sm"
+                        : "text-fg-tertiary hover:text-fg-secondary"
                     }`}
                   >
                     {option.label}
@@ -104,7 +104,7 @@ export function GeneralSettingsTab({
                 );
               })}
             </div>
-            <p className="text-xs text-warm-400 dark:text-warm-500">
+            <p className="text-ui-control text-fg-tertiary">
               {
                 LANE_TOPOLOGY_OPTIONS.find(
                   (option) =>
@@ -114,7 +114,7 @@ export function GeneralSettingsTab({
             </p>
           </section>
           <section className="space-y-3">
-            <h3 className="text-xs font-semibold uppercase tracking-wider text-warm-400">
+            <h3 className="text-ui-control font-semibold uppercase tracking-wider text-fg-tertiary">
               Embedded pages
             </h3>
             <ToggleRow
@@ -129,14 +129,14 @@ export function GeneralSettingsTab({
 
       {surface !== "agent" ? (
         <>
-          <section className="space-y-3 rounded-lg border border-amber-200 bg-amber-50/40 p-3 dark:border-amber-800 dark:bg-amber-900/10">
-            <h3 className="text-xs font-semibold uppercase tracking-wider text-amber-700 dark:text-amber-300">
+          <section className="space-y-3 rounded-lg border border-warning/30 bg-warning-subtle p-3">
+            <h3 className="text-ui-control font-semibold uppercase tracking-wider text-warning">
               Safety
             </h3>
             <div className="space-y-1">
               <label
                 htmlFor={siteAccessId}
-                className="text-sm font-medium dark:text-warm-300"
+                className="text-ui-body font-medium"
               >
                 Site access rules
               </label>
@@ -149,14 +149,14 @@ export function GeneralSettingsTab({
                     event.target.value as UserSettings["siteAccessMode"],
                   )
                 }
-                className="w-full rounded border border-warm-300 bg-warm-50 px-2 py-1.5 text-sm outline-none dark:border-warm-700 dark:bg-warm-900 dark:text-warm-100"
+                className="w-full rounded border border-line-strong bg-canvas px-2 py-1.5 text-ui-body outline-none"
               >
                 <option value="allow_all">Allow all sites</option>
                 <option value="blocklist">Block listed domains</option>
               </select>
               {formState.siteAccessMode === "blocklist" ? (
                 <>
-                  <p className="text-xs text-warm-500 dark:text-warm-500">
+                  <p className="text-ui-control text-fg-tertiary">
                     One domain per line. Example: bank.com
                   </p>
                   <textarea
@@ -166,7 +166,7 @@ export function GeneralSettingsTab({
                     }
                     rows={4}
                     aria-label="Blocked domains"
-                    className="w-full rounded-md border border-warm-300 bg-warm-50 px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-primary-500 dark:border-warm-700 dark:bg-warm-900 dark:text-warm-100"
+                    className="w-full rounded-md border border-line-strong bg-canvas px-3 py-2 text-ui-body outline-none focus:ring-2 focus:ring-accent"
                     placeholder={"bank.com\npayments.example.com"}
                   />
                 </>
@@ -175,7 +175,7 @@ export function GeneralSettingsTab({
           </section>
 
           <section className="space-y-3">
-            <h3 className="text-xs font-semibold uppercase tracking-wider text-warm-400">
+            <h3 className="text-ui-control font-semibold uppercase tracking-wider text-fg-tertiary">
               Notifications
             </h3>
             <ToggleRow
@@ -185,7 +185,7 @@ export function GeneralSettingsTab({
               onChange={onBrowserNotificationToggle}
             >
               {notificationPermissionError ? (
-                <p className="mt-1 text-xs text-red-600 dark:text-red-400">
+                <p className="mt-1 text-ui-control text-danger">
                   {notificationPermissionError}
                 </p>
               ) : null}
@@ -195,27 +195,27 @@ export function GeneralSettingsTab({
       ) : null}
 
       {surface !== "browser" ? (
-        <details className="group overflow-hidden rounded-lg border border-warm-200 bg-warm-50/50 dark:border-warm-800 dark:bg-warm-900/30">
-          <summary className="flex cursor-pointer list-none items-center gap-2 px-3 py-2.5 text-sm font-medium text-warm-700 hover:bg-warm-100 dark:text-warm-200 dark:hover:bg-warm-800/60 [&::-webkit-details-marker]:hidden">
+        <details className="group overflow-hidden rounded-lg border border-line bg-canvas">
+          <summary className="flex cursor-pointer list-none items-center gap-2 px-3 py-2.5 text-ui-body font-medium text-fg-secondary hover:bg-surface-subtle [&::-webkit-details-marker]:hidden">
             <ChevronDown
               size={14}
               className="transition-transform group-open:rotate-180"
             />
             Advanced settings
-            <span className="ml-auto text-[11px] font-normal text-warm-400">
+            <span className="ml-auto text-ui-caption font-normal text-fg-tertiary">
               Tuning and diagnostics
             </span>
           </summary>
 
-          <div className="space-y-5 border-t border-warm-200 p-3 dark:border-warm-800">
+          <div className="space-y-5 border-t border-line p-3">
             <section className="space-y-3">
-              <h4 className="text-xs font-semibold uppercase tracking-wider text-warm-400">
+              <h4 className="text-ui-control font-semibold uppercase tracking-wider text-fg-tertiary">
                 Runtime
               </h4>
               <div className="flex items-center justify-between gap-3">
                 <label
                   htmlFor={maxTurnsId}
-                  className="text-sm font-medium dark:text-warm-300"
+                  className="text-ui-body font-medium"
                 >
                   Max turns
                 </label>
@@ -225,7 +225,7 @@ export function GeneralSettingsTab({
                   onChange={(event) =>
                     onChange("maxTurns", parseInt(event.target.value, 10))
                   }
-                  className="rounded border border-warm-300 bg-warm-50 px-2 py-1 text-sm outline-none dark:border-warm-700 dark:bg-warm-900 dark:text-warm-100"
+                  className="rounded border border-line-strong bg-canvas px-2 py-1 text-ui-body outline-none"
                 >
                   {MAX_TURNS_PRESETS.map((value) => (
                     <option key={value} value={value}>
@@ -246,10 +246,10 @@ export function GeneralSettingsTab({
 
             <section className="space-y-2">
               <div>
-                <h4 className="text-xs font-semibold uppercase tracking-wider text-warm-400">
+                <h4 className="text-ui-control font-semibold uppercase tracking-wider text-fg-tertiary">
                   Skill packs
                 </h4>
-                <p className="mt-1 text-xs text-warm-400 dark:text-warm-500">
+                <p className="mt-1 text-ui-control text-fg-tertiary">
                   Optional workflow guidance used by the planner.
                 </p>
               </div>
@@ -262,7 +262,7 @@ export function GeneralSettingsTab({
                   return (
                     <label
                       key={pack.id}
-                      className="flex items-start gap-3 rounded-md border border-warm-200 px-3 py-2 dark:border-warm-800"
+                      className="flex items-start gap-3 rounded-md border border-line px-3 py-2"
                     >
                       <input
                         type="checkbox"
@@ -270,13 +270,13 @@ export function GeneralSettingsTab({
                         onChange={(event) =>
                           onSkillPackToggle(pack.id, event.target.checked)
                         }
-                        className="mt-0.5 h-4 w-4 rounded text-primary-600"
+                        className="mt-0.5 h-4 w-4 rounded text-accent-text"
                       />
                       <span>
-                        <span className="block text-sm font-medium dark:text-warm-300">
+                        <span className="block text-ui-body font-medium">
                           {pack.label}
                         </span>
-                        <span className="block text-xs text-warm-400 dark:text-warm-500">
+                        <span className="block text-ui-control text-fg-tertiary">
                           {pack.description}
                         </span>
                       </span>
@@ -287,7 +287,7 @@ export function GeneralSettingsTab({
             </section>
 
             <section className="space-y-3">
-              <h4 className="text-xs font-semibold uppercase tracking-wider text-warm-400">
+              <h4 className="text-ui-control font-semibold uppercase tracking-wider text-fg-tertiary">
                 Diagnostics
               </h4>
               <ToggleRow
@@ -323,15 +323,15 @@ function PresenceSettings({
   return (
     <section className="space-y-2">
       <div>
-        <h4 className="text-xs font-semibold uppercase tracking-wider text-warm-400">
+        <h4 className="text-ui-control font-semibold uppercase tracking-wider text-fg-tertiary">
           Presence cursor
         </h4>
-        <p className="mt-1 text-xs text-warm-400 dark:text-warm-500">
+        <p className="mt-1 text-ui-control text-fg-tertiary">
           Show a cursor on the page while the agent clicks and types.
         </p>
       </div>
       <div
-        className="grid grid-cols-3 gap-1 rounded-lg bg-warm-100 p-1 dark:bg-warm-800"
+        className="grid grid-cols-3 gap-1 rounded-lg bg-surface-subtle p-1"
         role="group"
         aria-label="Presence cursor"
       >
@@ -345,10 +345,10 @@ function PresenceSettings({
               aria-pressed={selected}
               onClick={() => onChange("presenceMode", option.value)}
               title={option.description}
-              className={`min-h-8 rounded-md px-2 py-1.5 text-xs font-medium transition-colors ${
+              className={`min-h-8 rounded-md px-2 py-1.5 text-ui-control font-medium transition-colors ${
                 selected
-                  ? "bg-warm-50 text-primary-700 shadow-sm dark:bg-warm-900 dark:text-primary-300"
-                  : "text-warm-500 hover:text-warm-700 dark:text-warm-400 dark:hover:text-warm-200"
+                  ? "bg-canvas text-accent-text shadow-sm"
+                  : "text-fg-tertiary hover:text-fg-secondary"
               }`}
             >
               {option.label}
@@ -386,10 +386,10 @@ function ToggleRow({
   return (
     <div className="flex items-center justify-between gap-3">
       <div className="min-w-0">
-        <label htmlFor={id} className="text-sm font-medium dark:text-warm-300">
+        <label htmlFor={id} className="text-ui-body font-medium">
           {label}
         </label>
-        <p className="text-xs text-warm-400 dark:text-warm-500">
+        <p className="text-ui-control text-fg-tertiary">
           {description}
         </p>
         {children}
@@ -399,7 +399,7 @@ function ToggleRow({
         type="checkbox"
         checked={checked}
         onChange={(event) => onChange(event.target.checked)}
-        className="h-4 w-4 shrink-0 rounded text-primary-600"
+        className="h-4 w-4 shrink-0 rounded text-accent-text"
       />
     </div>
   );

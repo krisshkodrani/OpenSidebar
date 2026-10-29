@@ -81,23 +81,23 @@ export function ClarificationOverlay() {
       aria-modal="false"
       aria-labelledby={titleId}
       aria-describedby={descriptionId}
-      className="rounded-lg border border-primary-200 dark:border-primary-800 bg-primary-50/80 dark:bg-primary-900/20 p-2.5"
+      className="rounded-lg border border-accent/30 bg-accent-subtle p-2.5"
     >
       <div className="flex items-start gap-2 mb-2">
         <HelpCircle
           size={14}
-          className="mt-0.5 shrink-0 text-primary-600 dark:text-primary-400"
+          className="mt-0.5 shrink-0 text-accent-text"
         />
         <div className="min-w-0 flex-1">
           <div
             id={titleId}
-            className="text-xs font-medium uppercase tracking-[0.08em] text-primary-800 dark:text-primary-200"
+            className="text-ui-control font-medium uppercase tracking-[0.08em] text-accent-text"
           >
             Agent needs clarification
           </div>
           <div
             id={descriptionId}
-            className="text-xs text-primary-700 dark:text-primary-300 mt-0.5"
+            className="text-ui-control text-accent-text mt-0.5"
           >
             {pending.question}
           </div>
@@ -106,13 +106,13 @@ export function ClarificationOverlay() {
 
       {/* Progress bar + countdown */}
       <div className="flex items-center gap-2 mb-2">
-        <div className="flex-1 h-1 rounded-full bg-primary-100 dark:bg-primary-950/30 overflow-hidden">
+        <div className="flex-1 h-1 rounded-full bg-accent-subtle overflow-hidden">
           <div
-            className="h-full bg-primary-500 transition-[width] duration-200"
+            className="h-full bg-accent transition-[width] duration-200"
             style={{ width: `${progressPct}%` }}
           />
         </div>
-        <span className="text-[10px] tabular-nums text-primary-600 dark:text-primary-400 shrink-0">
+        <span className="text-ui-caption tabular-nums text-accent-text shrink-0">
           {Math.ceil(remainingMs / 1000)}s
         </span>
       </div>
@@ -127,7 +127,7 @@ export function ClarificationOverlay() {
               size="sm"
               key={i}
               onClick={() => void sendAnswer(suggestion)}
-              className="h-auto rounded-full border-primary-300 px-2.5 py-1 text-xs text-primary-700 hover:bg-primary-100 dark:border-primary-700 dark:text-primary-300 dark:hover:bg-primary-900/30"
+              className="h-auto rounded-full border-accent/30 px-2.5 py-1 text-ui-control text-accent-text hover:bg-accent-subtle"
             >
               {suggestion}
             </Button>
@@ -143,7 +143,7 @@ export function ClarificationOverlay() {
           onChange={(e) => setAnswer(e.target.value)}
           onKeyDown={handleKeyDown}
           placeholder="Type your answer..."
-          className="flex-1 px-2 py-1.5 text-xs border border-primary-200 dark:border-primary-700 rounded-md bg-white dark:bg-primary-950/20 text-primary-800 dark:text-primary-200 placeholder:text-primary-400 dark:placeholder:text-primary-500 outline-none focus:ring-1 focus:ring-primary-400"
+          className="flex-1 px-2 py-1.5 text-ui-control border border-accent/30 rounded-md bg-surface text-accent-text placeholder:text-fg-tertiary outline-none focus:ring-1 focus:ring-accent"
           autoFocus
         />
         <Button
@@ -151,7 +151,7 @@ export function ClarificationOverlay() {
           size="sm"
           onClick={() => void sendAnswer(answer)}
           disabled={!answer.trim()}
-          className="text-xs"
+          className="text-ui-control"
         >
           Submit
         </Button>

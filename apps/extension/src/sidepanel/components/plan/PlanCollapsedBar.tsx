@@ -39,12 +39,12 @@ export function PlanCollapsedBar({
         <>
           <ClipboardList
             size={11}
-            className="shrink-0 animate-pulse text-warm-400 dark:text-warm-500"
+            className="shrink-0 animate-pulse text-fg-tertiary"
           />
-          <span className="animate-pulse text-[10px] font-medium uppercase tracking-[0.08em] text-warm-500 dark:text-warm-400">
+          <span className="animate-pulse text-ui-caption font-medium uppercase tracking-[0.08em] text-fg-tertiary">
             Plan
           </span>
-          <span className="text-[11px] text-warm-500 dark:text-warm-400">
+          <span className="text-ui-caption text-fg-tertiary">
             Planning...
           </span>
         </>
@@ -52,54 +52,54 @@ export function PlanCollapsedBar({
         <>
           <ClipboardList
             size={11}
-            className="shrink-0 text-primary-600 dark:text-primary-400"
+            className="shrink-0 text-accent-text"
           />
-          <span className="text-[10px] font-medium uppercase tracking-[0.08em] text-primary-600 dark:text-primary-400">
+          <span className="text-ui-caption font-medium uppercase tracking-[0.08em] text-accent-text">
             Plan
           </span>
           <span
-            className={`text-[11px] text-primary-800 dark:text-primary-200 ${
+            className={`text-ui-caption text-accent-text ${
               confirmed ? "animate-pulse" : ""
             }`}
           >
             {confirmed ? "Starting..." : "Plan ready"}
           </span>
           {pendingPlan.difficulty ? (
-            <span className="rounded-full bg-primary-100 px-1 py-0.5 text-[9px] text-primary-700 dark:bg-primary-900/40 dark:text-primary-300">
+            <span className="rounded-full bg-accent-subtle px-1 py-0.5 text-ui-caption text-accent-text">
               {pendingPlan.difficulty}
             </span>
           ) : null}
-          <span className="ml-auto text-[10px] tabular-nums text-primary-600 dark:text-primary-400">
+          <span className="ml-auto text-ui-caption tabular-nums text-accent-text">
             {pendingPlan.nodes.length} steps
           </span>
         </>
       ) : (
         <>
-          <span className="text-[10px] font-medium uppercase tracking-[0.08em] text-warm-500 dark:text-warm-400">
+          <span className="text-ui-caption font-medium uppercase tracking-[0.08em] text-fg-tertiary">
             Plan
           </span>
           <PlanProgressBar rows={rows} />
-          <span className="ml-1 max-w-[12rem] truncate text-[11px] text-warm-700 dark:text-warm-200" title={currentLabel}>
+          <span className="ml-1 max-w-[12rem] truncate text-ui-caption text-fg-secondary" title={currentLabel}>
             {currentLabel ? `Working: ${currentLabel}` : rows.every((row) => row.status === "completed") ? "Plan completed" : "Plan ready"}
           </span>
           {activeCount > 1 ? (
-            <span className="rounded-full bg-primary-100 px-1 py-0.5 text-[9px] text-primary-700 dark:bg-primary-900/40 dark:text-primary-300">
+            <span className="rounded-full bg-accent-subtle px-1 py-0.5 text-ui-caption text-accent-text">
               {activeCount} active
             </span>
           ) : null}
           {blockedCount > 0 ? (
-            <span className="rounded-full bg-amber-100 px-1 py-0.5 text-[9px] text-amber-700 dark:bg-amber-900/30 dark:text-amber-300">
+            <span className="rounded-full bg-warning-subtle px-1 py-0.5 text-ui-caption text-warning">
               {blockedCount} blocked
             </span>
           ) : null}
-          <span className="ml-auto text-[10px] tabular-nums text-warm-500 dark:text-warm-400">
+          <span className="ml-auto text-ui-caption tabular-nums text-fg-tertiary">
             {formatPlanElapsed(elapsed)}
           </span>
         </>
       )}
       <Chevron
         size={12}
-        className="ml-1 shrink-0 text-warm-500 dark:text-warm-400"
+        className="ml-1 shrink-0 text-fg-tertiary"
       />
     </button>
   );

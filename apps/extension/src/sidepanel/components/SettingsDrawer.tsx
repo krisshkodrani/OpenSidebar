@@ -207,7 +207,7 @@ export function SettingsDrawer({
       aria-label="Settings"
     >
       <div
-        className="absolute inset-0 bg-black/20 backdrop-enter backdrop-blur-sm"
+        className="absolute inset-0 bg-fg/20 backdrop-enter backdrop-blur-sm"
         onClick={() => {
           if (!isSaving) onClose();
         }}
@@ -215,18 +215,18 @@ export function SettingsDrawer({
 
       <div
         ref={drawerRef}
-        className="relative flex h-full w-full max-w-[360px] flex-col border-l border-warm-200 bg-warm-50 shadow-2xl drawer-enter dark:border-warm-800 dark:bg-warm-900"
+        className="relative flex h-full w-full max-w-[360px] flex-col border-l border-line bg-canvas shadow-sm drawer-enter"
       >
-        <header className="flex items-center justify-between border-b border-warm-200 p-4 dark:border-warm-800">
-          <h2 className="text-lg font-semibold dark:text-warm-100">Settings</h2>
+        <header className="flex items-center justify-between border-b border-line p-4">
+          <h2 className="text-ui-title font-semibold">Settings</h2>
           <button
             ref={closeButtonRef}
             onClick={onClose}
             disabled={isSaving}
             aria-label="Close settings"
-            className="rounded-full p-2 hover:bg-warm-100 disabled:cursor-not-allowed disabled:opacity-50 dark:hover:bg-warm-800"
+            className="rounded-full p-2 hover:bg-surface-subtle disabled:cursor-not-allowed disabled:opacity-50"
           >
-            <X size={20} className="text-warm-500" />
+            <X size={20} className="text-fg-tertiary" />
           </button>
         </header>
 
@@ -289,7 +289,7 @@ export function SettingsDrawer({
 
           {activeTab === "advanced" ? (
             <>
-              <section className="rounded-lg border border-warm-200 p-3 text-xs text-warm-500 dark:border-warm-700 dark:text-warm-400">
+              <section className="rounded-lg border border-line p-3 text-ui-control text-fg-tertiary">
                 Direct provider keys stay only in this browser. Use this when
                 you do not want requests routed through your OpenSidebar
                 account.
@@ -306,16 +306,16 @@ export function SettingsDrawer({
           ) : null}
         </div>
 
-        {activeTab !== "sync" ? <div className="border-t border-warm-200 bg-warm-100/50 p-4 dark:border-warm-800 dark:bg-warm-900/50">
+        {activeTab !== "sync" ? <div className="border-t border-line bg-surface-subtle p-4">
           {saveStatus ? (
-            <p className="mb-2 text-xs text-red-600 dark:text-red-400">
+            <p className="mb-2 text-ui-control text-danger">
               {saveStatus}
             </p>
           ) : null}
           <button
             onClick={() => void handleSave()}
             disabled={(!isDirty && !syncNeedsRetry) || isSaving}
-            className="flex w-full items-center justify-center gap-2 rounded-lg bg-primary-600 px-4 py-2.5 font-medium text-white shadow-sm transition-colors hover:bg-primary-700 disabled:cursor-not-allowed disabled:opacity-50"
+            className="flex w-full items-center justify-center gap-2 rounded-lg bg-accent px-4 py-2.5 font-medium text-accent-fg shadow-sm transition-colors hover:bg-accent-hover disabled:cursor-not-allowed disabled:opacity-50"
           >
             <Save size={18} />
             {isSaving
@@ -341,7 +341,7 @@ function SettingsTabBar({
     <div
       role="tablist"
       aria-label="Settings sections"
-      className="flex border-b border-warm-200 px-4 dark:border-warm-800"
+      className="flex border-b border-line px-4"
     >
       {(["account", "sync", "agent", "browser", "advanced"] as const).map((tab) => (
         <button
@@ -349,10 +349,10 @@ function SettingsTabBar({
           type="button"
           role="tab"
           aria-selected={activeTab === tab}
-          className={`border-b-2 px-2 py-2 text-xs font-medium capitalize transition-colors ${
+          className={`border-b-2 px-2 py-2 text-ui-control font-medium capitalize transition-colors ${
             activeTab === tab
-              ? "border-primary-500 text-primary-600 dark:text-primary-400"
-              : "border-transparent text-warm-500 hover:text-warm-700 dark:text-warm-400 dark:hover:text-warm-300"
+              ? "border-accent text-accent-text"
+              : "border-transparent text-fg-tertiary hover:text-fg-secondary"
           }`}
           onClick={() => onChange(tab)}
         >

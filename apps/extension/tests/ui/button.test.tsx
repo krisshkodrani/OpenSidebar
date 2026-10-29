@@ -24,7 +24,7 @@ describe("Button", () => {
 
   test("exposes typed variant classes", () => {
     expect(buttonVariants({ variant: "secondary", size: "sm" })).toContain("h-8");
-    expect(buttonVariants({ variant: "secondary", size: "sm" })).toContain("bg-slate-100");
+    expect(buttonVariants({ variant: "secondary", size: "sm" })).toContain("bg-surface-subtle");
   });
 
   test("renders an accessible native button by default", async () => {

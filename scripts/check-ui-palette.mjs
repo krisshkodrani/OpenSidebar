@@ -26,6 +26,10 @@ const RULES = [
     pattern: new RegExp(`(?<![\\w-])(?:[\\w-]+:)*(?:${UTILS})-(?:(?:${PALETTES})-\\d{2,3}|white|black)(?:/\\d+)?(?![\\w-])`, "g"),
   },
   {
+    reason: "legacy named color (brand-*, state-*); these are for the trace viewer only",
+    pattern: new RegExp(`(?<![\\w-])(?:[\\w-]+:)*(?:${UTILS})-(?:brand|state)-[a-z][\\w-]*(?:/\\d+)?`, "g"),
+  },
+  {
     reason: "`dark:` color variant; the tokens already switch with the theme",
     pattern: new RegExp(`(?<![\\w-])dark:(?:[\\w-]+:)*(?:${UTILS})-[\\w/-]+`, "g"),
   },
