@@ -19,8 +19,8 @@ import { PERCEPTION_MODE_OPTIONS } from "./settings-options";
 import type { SettingsChangeHandler } from "./types";
 
 const inputClassName =
-  "w-full px-3 py-2 text-sm border border-warm-300 dark:border-warm-700 rounded-md bg-warm-50 dark:bg-warm-900 focus:ring-2 focus:ring-primary-500 outline-none dark:text-warm-100";
-const hintClassName = "mt-0.5 text-[11px] text-warm-400 dark:text-warm-500";
+  "w-full px-3 py-2 text-ui-body border border-line-strong rounded-md bg-canvas focus:ring-2 focus:ring-accent outline-none";
+const hintClassName = "mt-0.5 text-ui-caption text-fg-tertiary";
 
 const OPENROUTER_KEY_FIELD = {
   label: "OpenRouter",
@@ -65,16 +65,16 @@ export function ModelsSettingsTab({
       {showConnections ? (
         <section className="space-y-3">
           <div>
-            <h3 className="text-xs font-semibold uppercase tracking-wider text-warm-400">
+            <h3 className="text-ui-control font-semibold uppercase tracking-wider text-fg-tertiary">
               Connections
             </h3>
-            <p className="mt-1 text-xs text-warm-500 dark:text-warm-400">
+            <p className="mt-1 text-ui-control text-fg-tertiary">
               {formState.inferenceMode === "cloud"
                 ? "Account connections are managed securely on opensidebar.com. These fields are only for switching to Direct from this browser."
                 : "Direct provider keys stay in this browser."}
             </p>
           </div>
-          <div className="overflow-hidden rounded-lg border border-warm-200 bg-white dark:border-warm-700 dark:bg-warm-900">
+          <div className="overflow-hidden rounded-lg border border-line bg-surface">
             <ApiKeyField
               id="provider-key-openRouterApiKey"
               label={OPENROUTER_KEY_FIELD.label}
@@ -90,16 +90,16 @@ export function ModelsSettingsTab({
       {connectionsOnly ? null : (
         <>
           {connected ? null : (
-            <div className="rounded-lg border border-dashed border-warm-300 bg-warm-100/60 p-4 text-center dark:border-warm-700 dark:bg-warm-800/40">
+            <div className="rounded-lg border border-dashed border-line-strong bg-surface-subtle p-4 text-center">
               <KeyRound
                 size={20}
-                className="mx-auto mb-2 text-warm-400"
+                className="mx-auto mb-2 text-fg-tertiary"
                 aria-hidden="true"
               />
-              <p className="text-sm font-medium text-warm-700 dark:text-warm-200">
+              <p className="text-ui-body font-medium text-fg-secondary">
                 Connect OpenRouter
               </p>
-              <p className="mt-1 text-xs text-warm-500 dark:text-warm-400">
+              <p className="mt-1 text-ui-control text-fg-tertiary">
                 Sign in and connect OpenRouter, or add your OpenRouter key from
                 this browser under Advanced.
               </p>
@@ -108,31 +108,31 @@ export function ModelsSettingsTab({
 
           {connected ? (
             <section className="space-y-3">
-              <div className="rounded-lg border border-emerald-200 bg-emerald-50/70 p-3 dark:border-emerald-900/60 dark:bg-emerald-950/20">
+              <div className="rounded-lg border border-success/30 bg-success-subtle p-3">
                 <div className="flex items-start gap-2.5">
                   <ShieldCheck
                     size={18}
-                    className="mt-0.5 shrink-0 text-emerald-600 dark:text-emerald-400"
+                    className="mt-0.5 shrink-0 text-success"
                     aria-hidden="true"
                   />
                   <div className="min-w-0">
-                    <p className="text-sm font-semibold text-emerald-900 dark:text-emerald-100">
+                    <p className="text-ui-body font-semibold text-success">
                       {formState.executorModel || formState.plannerModel
                         ? "Custom model setup active"
                         : "Tested defaults active"}
                     </p>
-                    <dl className="mt-2 grid grid-cols-[auto,minmax(0,1fr)] gap-x-3 gap-y-1 text-xs">
-                      <dt className="text-emerald-700/80 dark:text-emerald-300/80">
+                    <dl className="mt-2 grid grid-cols-[auto,minmax(0,1fr)] gap-x-3 gap-y-1 text-ui-control">
+                      <dt className="text-success">
                         Executor
                       </dt>
-                      <dd className="truncate font-mono text-emerald-900 dark:text-emerald-100">
+                      <dd className="truncate font-mono text-success">
                         {formState.executorModel ||
                           LLM_MODEL_CONFIG.executor}
                       </dd>
-                      <dt className="text-emerald-700/80 dark:text-emerald-300/80">
+                      <dt className="text-success">
                         Planner
                       </dt>
-                      <dd className="truncate font-mono text-emerald-900 dark:text-emerald-100">
+                      <dd className="truncate font-mono text-success">
                         {formState.plannerModel ||
                           LLM_MODEL_CONFIG.planner}
                       </dd>
@@ -141,45 +141,45 @@ export function ModelsSettingsTab({
                 </div>
               </div>
 
-              <details className="group overflow-hidden rounded-lg border border-warm-200 bg-white dark:border-warm-700 dark:bg-warm-900">
-                <summary className="flex cursor-pointer list-none items-center gap-3 px-3 py-3 hover:bg-warm-100 dark:hover:bg-warm-800">
+              <details className="group overflow-hidden rounded-lg border border-line bg-surface">
+                <summary className="flex cursor-pointer list-none items-center gap-3 px-3 py-3 hover:bg-surface-subtle">
                   <SlidersHorizontal
                     size={17}
-                    className="shrink-0 text-warm-500"
+                    className="shrink-0 text-fg-tertiary"
                     aria-hidden="true"
                   />
                   <div className="min-w-0 flex-1">
-                    <p className="text-sm font-medium text-warm-900 dark:text-warm-100">
+                    <p className="text-ui-body font-medium text-fg">
                       Advanced model settings
                     </p>
-                    <p className="mt-0.5 text-[11px] text-warm-500 dark:text-warm-400">
+                    <p className="mt-0.5 text-ui-caption text-fg-tertiary">
                       Override models, observation, or routing.
                     </p>
                   </div>
                   <ChevronDown
                     size={15}
                     aria-hidden="true"
-                    className="shrink-0 text-warm-400 transition-transform group-open:rotate-180"
+                    className="shrink-0 text-fg-tertiary transition-transform group-open:rotate-180"
                   />
                 </summary>
 
-                <div className="space-y-5 border-t border-warm-200 p-3 dark:border-warm-700">
+                <div className="space-y-5 border-t border-line p-3">
                   {modelsError ? (
-                    <p className="rounded-md border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-700 dark:border-red-900/60 dark:bg-red-950/30 dark:text-red-300">
+                    <p className="rounded-md border border-danger/30 bg-danger-subtle px-3 py-2 text-ui-control text-danger">
                       OpenRouter model catalog unavailable: {modelsError}.
                       Tested defaults remain usable.
                     </p>
                   ) : null}
 
                   <div className="space-y-1">
-                    <label className="text-sm font-medium dark:text-warm-300">
+                    <label className="text-ui-body font-medium">
                       Executor
                     </label>
-                    <p className="text-xs text-warm-400 dark:text-warm-500">
+                    <p className="text-ui-control text-fg-tertiary">
                       Screenshot understanding, tool execution, and page
                       interaction
                     </p>
-                    <p className="text-xs text-warm-500 dark:text-warm-400">
+                    <p className="text-ui-control text-fg-tertiary">
                       {getProviderModelCatalogNote({
                         role: "executor",
                         hasOpenRouterKey,
@@ -198,13 +198,13 @@ export function ModelsSettingsTab({
                   </div>
 
                   <div className="space-y-1">
-                    <label className="text-sm font-medium dark:text-warm-300">
+                    <label className="text-ui-body font-medium">
                       Planner
                     </label>
-                    <p className="text-xs text-warm-400 dark:text-warm-500">
+                    <p className="text-ui-control text-fg-tertiary">
                       Task decomposition and escalation
                     </p>
-                    <p className="text-xs text-warm-500 dark:text-warm-400">
+                    <p className="text-ui-control text-fg-tertiary">
                       {getProviderModelCatalogNote({
                         role: "planner",
                         hasOpenRouterKey,
@@ -222,13 +222,13 @@ export function ModelsSettingsTab({
                   </div>
 
                   <div className="space-y-1">
-                    <label className="text-sm font-medium dark:text-warm-300">
+                    <label className="text-ui-body font-medium">
                       Writer{" "}
-                      <span className="font-normal text-warm-400 dark:text-warm-500">
+                      <span className="font-normal text-fg-tertiary">
                         (optional)
                       </span>
                     </label>
-                    <p className="text-xs text-warm-400 dark:text-warm-500">
+                    <p className="text-ui-control text-fg-tertiary">
                       Dedicated prose model; leave empty to reuse the executor.
                     </p>
                     <ModelSelector
@@ -243,7 +243,7 @@ export function ModelsSettingsTab({
                   </div>
 
                   <div className="space-y-1">
-                    <label className="text-sm font-medium dark:text-warm-300">
+                    <label className="text-ui-body font-medium">
                       Observation
                     </label>
                     <select
@@ -262,7 +262,7 @@ export function ModelsSettingsTab({
                         </option>
                       ))}
                     </select>
-                    <p className="text-xs text-warm-400 dark:text-warm-500">
+                    <p className="text-ui-control text-fg-tertiary">
                       {
                         PERCEPTION_MODE_OPTIONS.find(
                           (option) =>
@@ -275,11 +275,11 @@ export function ModelsSettingsTab({
                       <div>
                         <label
                           htmlFor="model-image-budget"
-                          className="text-sm font-medium dark:text-warm-300"
+                          className="text-ui-body font-medium"
                         >
                           Image budget
                         </label>
-                        <p className="text-xs text-warm-400 dark:text-warm-500">
+                        <p className="text-ui-control text-fg-tertiary">
                           Estimated image tokens per session
                         </p>
                       </div>
@@ -309,10 +309,10 @@ export function ModelsSettingsTab({
 
                   <div className="flex items-center justify-between py-1">
                       <div>
-                        <span className="text-sm font-medium dark:text-warm-300">
+                        <span className="text-ui-body font-medium">
                           Nitro routing
                         </span>
-                        <p className="mt-0.5 text-xs text-warm-400 dark:text-warm-500">
+                        <p className="mt-0.5 text-ui-control text-fg-tertiary">
                           Prefer faster :nitro endpoints
                         </p>
                       </div>
@@ -326,12 +326,12 @@ export function ModelsSettingsTab({
                         }
                         className={`relative inline-flex h-5 w-9 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors ${
                           formState.useNitro
-                            ? "bg-primary-600"
-                            : "bg-warm-300 dark:bg-warm-600"
+                            ? "bg-accent"
+                            : "bg-line-strong"
                         }`}
                       >
                         <span
-                          className={`pointer-events-none inline-block h-4 w-4 rounded-full bg-white shadow-sm transition-transform ${
+                          className={`pointer-events-none inline-block h-4 w-4 rounded-full bg-surface shadow-sm transition-transform ${
                             formState.useNitro
                               ? "translate-x-4"
                               : "translate-x-0"
@@ -366,18 +366,18 @@ function ApiKeyField({
 }) {
   const connected = Boolean(value.trim());
   return (
-    <details className="group border-b border-warm-200 last:border-b-0 dark:border-warm-700">
-      <summary className="flex cursor-pointer list-none items-center gap-3 px-3 py-2.5 hover:bg-warm-100 dark:hover:bg-warm-800">
+    <details className="group border-b border-line last:border-b-0">
+      <summary className="flex cursor-pointer list-none items-center gap-3 px-3 py-2.5 hover:bg-surface-subtle">
         <div className="min-w-0 flex-1">
           <div className="flex items-center gap-2">
-            <span className="text-sm font-medium text-warm-900 dark:text-warm-200">
+            <span className="text-ui-body font-medium text-fg">
               {label}
             </span>
             <span
-              className={`rounded-full px-2 py-0.5 text-[10px] font-medium uppercase tracking-wide ${
+              className={`rounded-full px-2 py-0.5 text-ui-caption font-medium uppercase tracking-wide ${
                 connected
-                  ? "bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-300"
-                  : "bg-warm-100 text-warm-500 dark:bg-warm-800 dark:text-warm-400"
+                  ? "bg-success-subtle text-success"
+                  : "bg-surface-subtle text-fg-tertiary"
               }`}
             >
               {connected ? "Connected" : "Add key"}
@@ -388,13 +388,13 @@ function ApiKeyField({
         <ChevronDown
           size={15}
           aria-hidden="true"
-          className="shrink-0 text-warm-400 transition-transform group-open:rotate-180"
+          className="shrink-0 text-fg-tertiary transition-transform group-open:rotate-180"
         />
       </summary>
-      <div className="border-t border-warm-100 bg-warm-50 px-3 py-3 dark:border-warm-800 dark:bg-warm-950/40">
+      <div className="border-t border-line bg-canvas px-3 py-3">
         <label
           htmlFor={id}
-          className="mb-1.5 block text-xs font-medium text-warm-600 dark:text-warm-300"
+          className="mb-1.5 block text-ui-control font-medium text-fg-secondary"
         >
           {label} API key
         </label>
@@ -406,7 +406,7 @@ function ApiKeyField({
           className={inputClassName}
           placeholder={placeholder}
         />
-        <p className="mt-1.5 text-[11px] text-warm-400 dark:text-warm-500">
+        <p className="mt-1.5 text-ui-caption text-fg-tertiary">
           Stored locally in this browser. Clear the field to disconnect.
         </p>
       </div>

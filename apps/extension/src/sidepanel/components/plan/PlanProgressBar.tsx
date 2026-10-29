@@ -14,16 +14,16 @@ export function PlanProgressBar({ rows }: { rows: PlanRow[] }) {
           key={row.id}
           className={`h-2 w-2 shrink-0 rounded-full border ${
             row.status === "completed"
-              ? "border-green-600 bg-green-500"
+              ? "border-success bg-success"
               : row.status === "running"
-                ? "border-primary-600 bg-brand-highlight"
+                ? "border-accent bg-accent"
                 : row.status === "failed"
-                  ? "border-red-600 bg-red-500"
+                  ? "border-danger bg-danger"
                   : row.status === "stopped"
-                    ? "border-amber-600 bg-amber-500"
+                    ? "border-warning bg-warning"
                     : row.status === "skipped"
-                      ? "border-warm-400 bg-warm-400"
-                      : "border-warm-300 bg-transparent dark:border-warm-600"
+                      ? "border-line-strong bg-line-strong"
+                      : "border-line-strong bg-transparent"
           }`}
           role="img"
           aria-label={`Step ${row.status}`}

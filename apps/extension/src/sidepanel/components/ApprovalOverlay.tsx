@@ -102,30 +102,30 @@ export function ApprovalOverlay() {
       aria-modal="false"
       aria-labelledby={titleId}
       aria-describedby={descriptionId}
-      className="rounded-lg border border-red-200 dark:border-red-800 bg-red-50/80 dark:bg-red-900/20 p-2.5"
+      className="rounded-lg border border-danger/30 bg-danger-subtle p-2.5"
     >
       <div className="flex items-start gap-2 mb-2">
         <AlertTriangle
           size={14}
-          className="mt-0.5 shrink-0 text-red-600 dark:text-red-400"
+          className="mt-0.5 shrink-0 text-danger"
         />
         <div className="min-w-0 flex-1">
           <div
             id={titleId}
-            className="text-xs font-medium uppercase tracking-[0.08em] text-red-800 dark:text-red-200"
+            className="text-ui-control font-medium uppercase tracking-[0.08em] text-danger"
           >
             Approval required
           </div>
-          <div className="mt-1 text-sm font-medium leading-snug text-red-900 dark:text-red-100">
+          <div className="mt-1 text-ui-body font-medium leading-snug text-danger">
             {proposedAction}
           </div>
           <div
             id={descriptionId}
-            className="mt-1 text-xs leading-relaxed text-red-700 dark:text-red-300"
+            className="mt-1 text-ui-control leading-relaxed text-danger"
           >
             {pendingApproval.context}
           </div>
-          <div className="mt-1 text-[11px] leading-relaxed text-red-700/90 dark:text-red-300/90">
+          <div className="mt-1 text-ui-caption leading-relaxed text-danger">
             {riskDescription}
           </div>
         </div>
@@ -133,13 +133,13 @@ export function ApprovalOverlay() {
 
       {/* Progress bar */}
       <div className="flex items-center gap-2 mb-2">
-        <div className="flex-1 h-1 rounded-full bg-red-100 dark:bg-red-950/40 overflow-hidden">
+        <div className="flex-1 h-1 rounded-full bg-danger-subtle overflow-hidden">
           <div
-            className="h-full bg-red-500 transition-[width] duration-200"
+            className="h-full bg-danger transition-[width] duration-200"
             style={{ width: `${progressPct}%` }}
           />
         </div>
-        <span className="text-[10px] tabular-nums text-red-600 dark:text-red-400 shrink-0">
+        <span className="text-ui-caption tabular-nums text-danger shrink-0">
           Auto-rejects in {Math.ceil(remainingMs / 1000)}s
         </span>
       </div>
@@ -151,7 +151,7 @@ export function ApprovalOverlay() {
           variant="outline"
           size="sm"
           onClick={() => void sendDecision(false)}
-          className="flex-1 border-red-300 text-xs text-red-700 hover:bg-red-100 dark:border-red-700 dark:text-red-300 dark:hover:bg-red-900/40"
+          className="flex-1 border-danger/30 text-ui-control text-danger hover:bg-danger-subtle"
         >
           Reject
         </Button>
@@ -161,7 +161,7 @@ export function ApprovalOverlay() {
           size="sm"
           onClick={() => void sendDecision(true)}
           ref={approveButtonRef}
-          className="flex-1 text-xs"
+          className="flex-1 text-ui-control"
         >
           Approve action
         </Button>

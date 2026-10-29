@@ -214,18 +214,18 @@ body {
   width: 2rem;
   height: 2rem;
   border-radius: 0.5rem;
-  background: var(--os-surface-muted);
-  border: 1px solid var(--os-line);
-  color: var(--os-accent);
+  background: rgb(var(--os-surface-subtle));
+  border: 1px solid rgb(var(--os-line));
+  color: rgb(var(--os-accent-text));
   font-size: 0.75rem;
   font-weight: 700;
   letter-spacing: 0.18em;
 }
 
 .dark .viewer-brand-mark {
-  background: var(--os-surface-muted);
-  border-color: var(--os-line);
-  color: var(--os-accent);
+  background: rgb(var(--os-surface-subtle));
+  border-color: rgb(var(--os-line));
+  color: rgb(var(--os-accent-text));
 }
 
 .viewer-metric-card {

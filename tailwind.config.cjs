@@ -1,5 +1,10 @@
 /** @type {import('tailwindcss').Config} */
-const productTokens = require("./packages/ui-tokens/tokens.json");
+
+// Semantic colors come from packages/ui-tokens (CSS variables with RGB
+// triplets). `.dark` on <html> switches every role, so components need no
+// `dark:` color variants.
+const role = (name) => `rgb(var(--os-${name}) / <alpha-value>)`;
+
 module.exports = {
   content: [
     "./apps/extension/src/sidepanel/**/*.{js,ts,jsx,tsx,html}",
@@ -20,74 +25,57 @@ module.exports = {
           "sans-serif",
         ],
       },
+      // Smallest text is 12px. Body text is 14px.
       fontSize: {
-        "ui-caption": ["11px", { lineHeight: "16px" }],
-        "ui-control": ["12px", { lineHeight: "18px" }],
-        "ui-body": ["13px", { lineHeight: "20px" }],
-        "ui-body-strong": ["13px", { lineHeight: "20px" }],
-        "ui-section": ["14px", { lineHeight: "22px" }],
+        "ui-caption": ["12px", { lineHeight: "16px" }],
+        "ui-control": ["13px", { lineHeight: "18px" }],
+        "ui-body": ["14px", { lineHeight: "20px" }],
+        "ui-body-strong": ["14px", { lineHeight: "20px" }],
+        "ui-section": ["15px", { lineHeight: "22px" }],
         "ui-title": ["16px", { lineHeight: "24px" }],
         "ui-display": ["20px", { lineHeight: "28px" }],
-        "ui-xs": ["11px", { lineHeight: "16px" }],
-        "ui-sm": ["12px", { lineHeight: "18px" }],
-        "ui-base": ["13px", { lineHeight: "20px" }],
-        "ui-md": ["14px", { lineHeight: "22px" }],
+        "ui-xs": ["12px", { lineHeight: "16px" }],
+        "ui-sm": ["13px", { lineHeight: "18px" }],
+        "ui-base": ["14px", { lineHeight: "20px" }],
+        "ui-md": ["15px", { lineHeight: "22px" }],
         "ui-lg": ["16px", { lineHeight: "24px" }],
         "ui-metric": ["20px", { lineHeight: "28px" }],
       },
       colors: {
-        warm: {
-          50: "#F5F8F4",
-          100: "#EAF0EB",
-          200: "#D9E4DE",
-          300: "#BDD0C3",
-          400: "#95AA9D",
-          500: "#6D8376",
-          600: "#586A62",
-          700: "#40534A",
-          800: "#182925",
-          900: "#14221E",
-          950: "#101B18",
-        },
-        primary: {
-          50: "#EAF4EF",
-          100: "#D4E9DD",
-          200: "#AED9C7",
-          300: "#81C3AA",
-          400: "#4DA88E",
-          500: "#238577",
-          600: productTokens.colors.accent,
-          700: productTokens.colors.accentStrong,
-          800: "#103F3C",
-          900: "#102F2D",
-        },
+        canvas: role("canvas"),
         surface: {
-          light: productTokens.colors.canvas,
-          dark: productTokens.darkColors.canvas,
+          DEFAULT: role("surface"),
+          subtle: role("surface-subtle"),
+          hover: role("surface-hover"),
         },
-        brand: {
-          surface: productTokens.colors.canvas,
-          panel: productTokens.colors.surface,
-          text: productTokens.colors.text,
-          muted: productTokens.colors.textMuted,
-          subtle: "#40534A",
-          accent: productTokens.colors.accent,
-          "accent-strong": productTokens.colors.accentStrong,
-          highlight: productTokens.colors.highlight,
-          live: "rgb(var(--brand-live, 18 107 100) / <alpha-value>)",
-          "live-soft": "#D4E9DD",
+        line: {
+          DEFAULT: role("line"),
+          strong: role("line-strong"),
         },
-        // `success`/`warning`/`error` resolve to CSS variables so the
-        // trace viewer can flip them per theme; the fallback triplet is
-        // the light value, so surfaces that don't define the vars
-        // (sidepanel/overlay) render exactly as before. `info`/`live`
-        // have no themed variant and stay fixed.
+        fg: {
+          DEFAULT: role("fg"),
+          secondary: role("fg-secondary"),
+          tertiary: role("fg-tertiary"),
+        },
+        accent: {
+          DEFAULT: role("accent"),
+          hover: role("accent-hover"),
+          fg: role("accent-fg"),
+          subtle: role("accent-subtle"),
+          text: role("accent-text"),
+        },
+        success: { DEFAULT: role("success"), subtle: role("success-subtle") },
+        warning: { DEFAULT: role("warning"), subtle: role("warning-subtle") },
+        danger: { DEFAULT: role("danger"), subtle: role("danger-subtle") },
+        // Trace viewer only (scripts/check-ui-palette.mjs keeps them out of
+        // the side panel). `state-*` flips per theme through `--state-*`.
         state: {
           success: "rgb(var(--state-success, 40 117 69) / <alpha-value>)",
           warning: "rgb(var(--state-warning, 217 119 6) / <alpha-value>)",
           error: "rgb(var(--state-error, 220 38 38) / <alpha-value>)",
-          info: productTokens.colors.accent,
-          live: productTokens.colors.accent,
+        },
+        brand: {
+          live: "rgb(var(--brand-live, 18 107 100) / <alpha-value>)",
         },
         // Trace-viewer semantic tokens: back the Tailwind color by the
         // `--trace-*` CSS variable (RGB triplet) so `.dark` on <html>

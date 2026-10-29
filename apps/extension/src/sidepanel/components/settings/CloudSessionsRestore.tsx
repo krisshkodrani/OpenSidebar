@@ -184,34 +184,34 @@ export function CloudSessionsRestore() {
   };
 
   return (
-    <section className="space-y-3 rounded-xl border border-warm-200 bg-white p-3 dark:border-warm-700 dark:bg-warm-850">
+    <section className="space-y-3 rounded-xl border border-line bg-surface p-3">
       <div className="flex items-start justify-between gap-3">
         <div>
-          <h3 className="text-sm font-semibold text-warm-900 dark:text-warm-100">Cloud sessions</h3>
-          <p className="mt-1 text-xs text-warm-500">Restore onto the current page. OpenSidebar will inspect it and pause before doing anything.</p>
+          <h3 className="text-ui-body font-semibold text-fg">Cloud sessions</h3>
+          <p className="mt-1 text-ui-control text-fg-tertiary">Restore onto the current page. OpenSidebar will inspect it and pause before doing anything.</p>
         </div>
-        <button type="button" disabled={busy} onClick={() => void load()} className="text-xs font-medium text-primary-600 underline disabled:opacity-50">Refresh</button>
+        <button type="button" disabled={busy} onClick={() => void load()} className="text-ui-control font-medium text-accent-text underline disabled:opacity-50">Refresh</button>
       </div>
       {!preview ? (
         <div className="space-y-2">
           {sessions.map((item) => (
-            <div key={item.session.sessionId} className="rounded-lg border border-warm-200 p-2 dark:border-warm-700">
-              <span className="block text-xs font-medium text-warm-900 dark:text-warm-100">{item.session.title}</span>
-              <span className="mt-1 block text-[11px] text-warm-500">Saved {new Date(item.session.lastActivityAt).toLocaleString()}</span>
+            <div key={item.session.sessionId} className="rounded-lg border border-line p-2">
+              <span className="block text-ui-control font-medium text-fg">{item.session.title}</span>
+              <span className="mt-1 block text-ui-caption text-fg-tertiary">Saved {new Date(item.session.lastActivityAt).toLocaleString()}</span>
               <div className="mt-2 flex gap-2">
-                <button type="button" disabled={busy} onClick={() => void prepare(item)} className="rounded-md border border-warm-300 px-2 py-1 text-[11px] font-medium disabled:opacity-50 dark:border-warm-700">Restore here</button>
-                {deviceEnabled ? <button type="button" disabled={busy} onClick={() => void reconnect(item)} className="rounded-md bg-primary-600 px-2 py-1 text-[11px] font-medium text-white disabled:opacity-50">Reconnect</button> : null}
+                <button type="button" disabled={busy} onClick={() => void prepare(item)} className="rounded-md border border-line-strong px-2 py-1 text-ui-caption font-medium disabled:opacity-50">Restore here</button>
+                {deviceEnabled ? <button type="button" disabled={busy} onClick={() => void reconnect(item)} className="rounded-md bg-accent px-2 py-1 text-ui-caption font-medium text-accent-fg disabled:opacity-50">Reconnect</button> : null}
               </div>
             </div>
           ))}
         </div>
       ) : (
-        <div className="space-y-2 rounded-lg bg-warm-50 p-2 text-xs dark:bg-warm-900">
+        <div className="space-y-2 rounded-lg bg-canvas p-2 text-ui-control">
           <p className="font-semibold">Ready, but paused</p>
           <p>{preview.preview.objective}</p>
-          <p className="text-warm-500">Current page: {preview.preview.pageTitle || preview.preview.pageUrl || "unavailable"}</p>
+          <p className="text-fg-tertiary">Current page: {preview.preview.pageTitle || preview.preview.pageUrl || "unavailable"}</p>
           {preview.preview.grounding !== "matched" ? (
-            <p className="rounded-md bg-amber-100 p-2 text-amber-900">The current page is {preview.preview.grounding}. OpenSidebar will re-plan from what is visible now.</p>
+            <p className="rounded-md bg-warning-subtle p-2 text-warning">The current page is {preview.preview.grounding}. OpenSidebar will re-plan from what is visible now.</p>
           ) : null}
           {preview.preview.requiresFreshApproval ? <p>A sensitive pending action will require new approval.</p> : null}
           {preview.preview.requiresOutcomeClarification ? <p>The outcome of a previous action is uncertain. OpenSidebar will verify or ask before retrying it.</p> : null}
@@ -221,40 +221,40 @@ export function CloudSessionsRestore() {
               value={outcomeResolution}
               onChange={(event) => setOutcomeResolution(event.target.value)}
               placeholder="Tell OpenSidebar whether the action appeared to succeed, fail, or is still unclear."
-              className="min-h-20 w-full rounded-md border border-warm-300 bg-white p-2 dark:border-warm-700 dark:bg-warm-850"
+              className="min-h-20 w-full rounded-md border border-line-strong bg-surface p-2"
             />
           ) : null}
           <div className="flex gap-2">
-            <button type="button" disabled={busy || preview.preview.grounding === "unavailable" || preview.preview.grounding === "unauthorized" || (preview.preview.requiresOutcomeClarification && !outcomeResolution.trim())} onClick={() => void continueRestore()} className="rounded-md bg-primary-600 px-3 py-1.5 font-medium text-white disabled:opacity-50">Continue</button>
-            <button type="button" disabled={busy} onClick={() => { setPreview(null); setTakeoverRestore(false); }} className="rounded-md border border-warm-300 px-3 py-1.5 font-medium">{takeoverRestore ? "Close" : "Cancel"}</button>
+            <button type="button" disabled={busy || preview.preview.grounding === "unavailable" || preview.preview.grounding === "unauthorized" || (preview.preview.requiresOutcomeClarification && !outcomeResolution.trim())} onClick={() => void continueRestore()} className="rounded-md bg-accent px-3 py-1.5 font-medium text-accent-fg disabled:opacity-50">Continue</button>
+            <button type="button" disabled={busy} onClick={() => { setPreview(null); setTakeoverRestore(false); }} className="rounded-md border border-line-strong px-3 py-1.5 font-medium">{takeoverRestore ? "Close" : "Cancel"}</button>
           </div>
         </div>
       )}
       {takeoverPrompt ? (
-        <div role="alertdialog" aria-label="Confirm device takeover" className="space-y-2 rounded-lg border border-amber-300 bg-amber-50 p-3 text-xs text-amber-950 dark:border-amber-700 dark:bg-amber-950 dark:text-amber-100">
+        <div role="alertdialog" aria-label="Confirm device takeover" className="space-y-2 rounded-lg border border-warning/30 bg-warning-subtle p-3 text-ui-control text-warning">
           <p className="font-semibold">Continue on this device?</p>
           <p>{takeoverPrompt.previousDeviceName} currently controls this session. Taking over will stop that device. Website login state and open tabs will not transfer.</p>
           <p>OpenSidebar will restore the latest checkpoint, inspect this page, stay paused, and require fresh approval for sensitive actions.</p>
           <div className="flex gap-2">
-            <button type="button" disabled={busy} onClick={() => void confirmTakeover()} className="rounded-md bg-amber-700 px-3 py-1.5 font-medium text-white disabled:opacity-50">Take over and inspect</button>
-            <button type="button" disabled={busy} onClick={() => setTakeoverPrompt(null)} className="rounded-md border border-amber-400 px-3 py-1.5 font-medium">Keep other device</button>
+            <button type="button" disabled={busy} onClick={() => void confirmTakeover()} className="rounded-md bg-warning px-3 py-1.5 font-medium text-canvas disabled:opacity-50">Take over and inspect</button>
+            <button type="button" disabled={busy} onClick={() => setTakeoverPrompt(null)} className="rounded-md border border-warning px-3 py-1.5 font-medium">Keep other device</button>
           </div>
         </div>
       ) : null}
       {commandApproval ? (
-        <div role="alertdialog" aria-label="Approve cloud browser command" className="space-y-2 rounded-lg border border-amber-300 bg-amber-50 p-3 text-xs text-amber-950 dark:border-amber-700 dark:bg-amber-950 dark:text-amber-100">
+        <div role="alertdialog" aria-label="Approve cloud browser command" className="space-y-2 rounded-lg border border-warning/30 bg-warning-subtle p-3 text-ui-control text-warning">
           <p className="font-semibold">Allow this click on this device?</p>
           <p>Click “{commandApproval.action.target}” on {commandApproval.action.origin}.</p>
           <p>Expected result: {commandApproval.action.expectedResult}</p>
           <p>OpenSidebar freshly matched one visible element and will verify the declared page change afterward. Approval applies only to this exact command and expires shortly.</p>
           {commandApproval.action.risk === "sensitive_write" ? <p className="font-semibold">This action is marked sensitive. Review the page before allowing it.</p> : null}
           <div className="flex gap-2">
-            <button type="button" disabled={busy} onClick={() => void decideCommandApproval(true)} className="rounded-md bg-amber-700 px-3 py-1.5 font-medium text-white disabled:opacity-50">Allow once</button>
-            <button type="button" disabled={busy} onClick={() => void decideCommandApproval(false)} className="rounded-md border border-amber-400 px-3 py-1.5 font-medium">Deny</button>
+            <button type="button" disabled={busy} onClick={() => void decideCommandApproval(true)} className="rounded-md bg-warning px-3 py-1.5 font-medium text-canvas disabled:opacity-50">Allow once</button>
+            <button type="button" disabled={busy} onClick={() => void decideCommandApproval(false)} className="rounded-md border border-warning px-3 py-1.5 font-medium">Deny</button>
           </div>
         </div>
       ) : null}
-      <p aria-live="polite" className="text-xs text-warm-500">{status}</p>
+      <p aria-live="polite" className="text-ui-control text-fg-tertiary">{status}</p>
     </section>
   );
 }

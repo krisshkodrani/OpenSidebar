@@ -27,12 +27,12 @@ function workerStatusLabel(row: PlanRow): string | null {
 
 function workerStatusClass(row: PlanRow): string {
   if (row.workerStatus === "blocked") {
-    return "border-amber-200 bg-amber-50 text-amber-700 dark:border-amber-800 dark:bg-amber-900/20 dark:text-amber-300";
+    return "border-warning/30 bg-warning-subtle text-warning";
   }
   if (row.workerStatus === "running") {
-    return "border-primary-200 bg-primary-50 text-primary-700 dark:border-primary-800 dark:bg-primary-900/30 dark:text-primary-300";
+    return "border-accent/30 bg-accent-subtle text-accent-text";
   }
-  return "border-warm-200 bg-warm-50 text-warm-600 dark:border-warm-700 dark:bg-warm-900/20 dark:text-warm-300";
+  return "border-line bg-canvas text-fg-secondary";
 }
 
 export function PlanProgressPanel({
@@ -92,8 +92,8 @@ export function PlanProgressPanel({
                   <div
                     className={`min-h-[10px] w-0.5 flex-1 ${
                       row.status === "completed"
-                        ? "bg-teal-400/60 dark:bg-teal-600/50"
-                        : "bg-warm-200/70 dark:bg-warm-700/50"
+                        ? "bg-accent/60"
+                        : "bg-surface-hover"
                     }`}
                   />
                 ) : null}
@@ -101,7 +101,7 @@ export function PlanProgressPanel({
               <div
                 className={`min-w-0 flex-1 pb-2 ${
                   row.status === "running"
-                    ? "-ml-0.5 border-l-[3px] border-primary-400 pl-2 dark:border-primary-600"
+                    ? "-ml-0.5 border-l-[3px] border-accent pl-2"
                     : ""
                 }`}
               >
@@ -111,12 +111,12 @@ export function PlanProgressPanel({
                       ? undefined
                       : row.description
                   }
-                  className={`text-xs leading-relaxed ${
+                  className={`text-ui-control leading-relaxed ${
                     row.status === "running"
-                      ? "font-medium text-warm-800 dark:text-warm-100"
+                      ? "font-medium text-fg"
                       : row.status === "pending"
-                        ? "text-warm-500 dark:text-warm-400"
-                        : "text-warm-600 dark:text-warm-300"
+                        ? "text-fg-tertiary"
+                        : "text-fg-secondary"
                   }`}
                 >
                   {expandable && !isExpanded ? (
@@ -130,19 +130,19 @@ export function PlanProgressPanel({
                     <button
                       type="button"
                       onClick={() => toggleExpanded(row.id)}
-                      className="ml-1 align-middle text-[10px] font-medium text-primary-600 hover:underline dark:text-primary-400"
+                      className="ml-1 align-middle text-ui-caption font-medium text-accent-text hover:underline"
                     >
                       {isExpanded ? "less" : "more"}
                     </button>
                   ) : null}
                   {row.selectedSkillId ? (
-                    <span className="ml-1.5 inline-flex rounded bg-primary-100 px-1 py-0.5 align-middle text-[9px] font-normal text-primary-700 dark:bg-primary-900/40 dark:text-primary-300">
+                    <span className="ml-1.5 inline-flex rounded bg-accent-subtle px-1 py-0.5 align-middle text-ui-caption font-normal text-accent-text">
                       {row.selectedSkillId}
                     </span>
                   ) : null}
                   {workerStatusLabel(row) ? (
                     <span
-                      className={`ml-1.5 inline-flex rounded border px-1 py-0.5 align-middle text-[9px] font-normal ${workerStatusClass(
+                      className={`ml-1.5 inline-flex rounded border px-1 py-0.5 align-middle text-ui-caption font-normal ${workerStatusClass(
                         row,
                       )}`}
                     >
@@ -155,14 +155,14 @@ export function PlanProgressPanel({
                   row.workerStatus === "blocked" ||
                   row.workerStatus === "queued" ||
                   row.workerStatus === "retrying") ? (
-                  <div className="mt-0.5 line-clamp-2 text-[10px] leading-relaxed text-warm-500 dark:text-warm-400">
+                  <div className="mt-0.5 line-clamp-2 text-ui-caption leading-relaxed text-fg-tertiary">
                     {row.workerStatusDetail}
                   </div>
                 ) : null}
                 {row.evidenceSnippet &&
                 row.status !== "pending" &&
                 row.status !== "running" ? (
-                  <div className="mt-0.5 line-clamp-2 text-[10px] leading-relaxed text-warm-500 dark:text-warm-400">
+                  <div className="mt-0.5 line-clamp-2 text-ui-caption leading-relaxed text-fg-tertiary">
                     {row.evidenceSnippet}
                   </div>
                 ) : null}
@@ -179,7 +179,7 @@ export function PlanProgressPanel({
               event.stopPropagation();
               onSkipCurrentStep();
             }}
-            className="inline-flex items-center gap-1 rounded border border-amber-200 bg-amber-50 px-2 py-1 text-[10px] font-medium text-amber-700 transition-colors hover:bg-amber-100 dark:border-amber-800 dark:bg-amber-900/20 dark:text-amber-300 dark:hover:bg-amber-900/30"
+            className="inline-flex items-center gap-1 rounded border border-warning/30 bg-warning-subtle px-2 py-1 text-ui-caption font-medium text-warning transition-colors hover:bg-warning/10"
           >
             <SkipForward size={10} />
             Skip step

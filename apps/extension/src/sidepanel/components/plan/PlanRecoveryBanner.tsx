@@ -10,7 +10,7 @@ export function PlanRecoveryBanner({
   recovery: TaskRecoveryState;
 }) {
   return (
-    <div className="mb-2 flex items-center gap-1.5 rounded border border-primary-200 bg-primary-50/70 px-2 py-1.5 text-[11px] text-primary-700 dark:border-primary-800 dark:bg-primary-900/20 dark:text-primary-300">
+    <div className="mb-2 flex items-center gap-1.5 rounded border border-accent/30 bg-accent-subtle px-2 py-1.5 text-ui-caption text-accent-text">
       <span>
         Recovered: {recovery.completedSubtasks}/{recovery.totalSubtasks} done,{" "}
         {recovery.pendingSubtasks} pending
@@ -20,7 +20,7 @@ export function PlanRecoveryBanner({
           event.stopPropagation();
           onResume();
         }}
-        className="ml-auto inline-flex items-center gap-0.5 text-[10px] font-medium text-primary-600 transition-colors hover:text-primary-800 dark:text-primary-300 dark:hover:text-primary-100"
+        className="ml-auto inline-flex items-center gap-0.5 text-ui-caption font-medium text-accent-text transition-colors"
       >
         <RotateCcw size={9} />
         Resume

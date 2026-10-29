@@ -108,12 +108,12 @@ export const MessageBubble = React.memo(function MessageBubble({
           className={clsx(
             "prose-chat",
             message.completionData &&
-              "completion-summary text-warm-800 dark:text-warm-100",
+              "completion-summary text-fg",
           )}
           dangerouslySetInnerHTML={{ __html: renderedHtml }}
         />
       ) : toolOnlyLabel ? (
-        <span className="text-xs italic text-warm-400 dark:text-warm-500">
+        <span className="text-ui-control italic text-fg-tertiary">
           {toolOnlyLabel}
         </span>
       ) : null}
@@ -149,36 +149,36 @@ export const MessageBubble = React.memo(function MessageBubble({
       message.steps.length > 0 &&
       showBubble &&
       !message.isStreaming ? (
-        <div className="my-0.5 h-px w-[60%] bg-warm-200/50 dark:bg-warm-700/30" />
+        <div className="my-0.5 h-px w-[60%] bg-surface-hover" />
       ) : null}
 
       {showBubble ? (
         <div
           className={clsx(
-            "max-w-[92%] text-sm",
+            "max-w-[92%] text-ui-body",
             isUser
               ? clsx(
                   "rounded-2xl px-3 py-2 whitespace-pre-wrap break-words",
                   isGuidance
-                    ? "border border-primary-200 bg-primary-50/90 text-primary-900 dark:border-primary-800 dark:bg-primary-950/20 dark:text-primary-100"
-                    : "bg-warm-200 text-warm-800 dark:bg-warm-700 dark:text-warm-100",
+                    ? "border border-accent/30 bg-accent-subtle text-accent-text"
+                    : "bg-accent text-accent-fg",
                 )
               : clsx(
-                  "text-warm-800 dark:text-warm-100",
+                  "text-fg",
                   isPassive &&
-                    "rounded-lg border border-sky-200/60 bg-sky-50/55 px-3 py-2 dark:border-sky-800/50 dark:bg-sky-950/20",
+                    "rounded-lg border border-accent/30 bg-accent-subtle px-3 py-2",
                 ),
             !isUser && message.isStreaming && "streaming-cursor",
           )}
         >
           {isGuidance ? (
-            <div className="mb-1 flex items-center gap-1 text-[11px] font-medium text-primary-600 dark:text-primary-300">
+            <div className="mb-1 flex items-center gap-1 text-ui-caption font-medium text-accent-text">
               <MessageCircle size={11} />
               <span>Guidance</span>
             </div>
           ) : null}
           {isPassive ? (
-            <div className="mb-1 flex items-center gap-1 text-[11px] font-medium text-sky-700 dark:text-sky-300">
+            <div className="mb-1 flex items-center gap-1 text-ui-caption font-medium text-accent-text">
               <Eye size={11} />
               <span>Watching</span>
             </div>
@@ -216,7 +216,7 @@ export const MessageBubble = React.memo(function MessageBubble({
 
       <span
         className={clsx(
-          "message-ts px-1 text-[10px] text-warm-400",
+          "message-ts px-1 text-ui-caption text-fg-tertiary",
           isUser ? "text-right" : "text-left",
         )}
       >

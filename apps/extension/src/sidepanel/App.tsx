@@ -249,16 +249,16 @@ export default function App({ themeRoot, activityHudRoot }: AppProps = {}) {
 
   if (!ready) {
     return (
-      <div className="flex flex-col items-center justify-center h-full bg-warm-gradient">
+      <div className="flex flex-col items-center justify-center h-full bg-canvas">
         <div className="animate-pulse flex flex-col items-center gap-3">
-          <div className="w-16 h-16 rounded-2xl overflow-hidden flex items-center justify-center shadow-lg shadow-primary-600/20">
+          <div className="w-16 h-16 rounded-2xl overflow-hidden flex items-center justify-center shadow-sm">
             <img
               src={splashLogoUrl}
               alt="OpenSidebar logo"
               className="w-16 h-16 object-contain"
             />
           </div>
-          <span className="text-xs text-warm-500 dark:text-warm-400">
+          <span className="text-ui-control text-fg-tertiary">
             Loading...
           </span>
         </div>
@@ -268,14 +268,14 @@ export default function App({ themeRoot, activityHudRoot }: AppProps = {}) {
 
   return (
     <ErrorBoundary>
-      <div className="flex flex-col h-full bg-warm-gradient text-warm-800 dark:text-warm-100 font-sans transition-colors duration-200">
+      <div className="flex flex-col h-full bg-canvas text-fg font-sans transition-colors duration-200">
         {/* Thin ambient activity bar while the agent is running. */}
         {taskUi.showAmbientActivity && (
           <div
             className="h-0.5 shrink-0 animate-shimmer"
             style={{
               background:
-                "linear-gradient(90deg, transparent, var(--tw-gradient-via, #0d9488), transparent)",
+                "linear-gradient(90deg, transparent, rgb(var(--os-accent)), transparent)",
               backgroundSize: "200% 100%",
             }}
           />
@@ -346,7 +346,7 @@ export default function App({ themeRoot, activityHudRoot }: AppProps = {}) {
             }}
           />
           {activeUserWebsiteSkill && (
-            <div className="mx-4 mt-2 rounded-lg border border-primary-200 dark:border-primary-800 bg-primary-50/80 dark:bg-primary-900/20 text-xs text-primary-800 dark:text-primary-200">
+            <div className="mx-4 mt-2 rounded-lg border border-accent/30 bg-accent-subtle text-ui-control text-accent-text">
               <button
                 onClick={() => setIsSkillChipOpen((value) => !value)}
                 className="w-full flex items-center justify-between gap-2 px-3 py-2 text-left"
@@ -354,14 +354,14 @@ export default function App({ themeRoot, activityHudRoot }: AppProps = {}) {
                 <span className="truncate">
                   Using site skill: {activeUserWebsiteSkill.name}
                 </span>
-                <span className="text-[10px] uppercase text-primary-500">
+                <span className="text-ui-caption uppercase text-accent-text">
                   {isSkillChipOpen ? "Hide" : "View"}
                 </span>
               </button>
               {isSkillChipOpen && (
-                <div className="border-t border-primary-200 dark:border-primary-800 px-3 py-2 text-warm-700 dark:text-warm-200">
+                <div className="border-t border-accent/30 px-3 py-2 text-fg-secondary">
                   <p className="font-semibold">{activeUserWebsiteSkill.name}</p>
-                  <p className="mt-0.5 text-warm-500 dark:text-warm-400">
+                  <p className="mt-0.5 text-fg-tertiary">
                     {activeUserWebsiteSkill.origin}
                     {activeUserWebsiteSkill.pathPattern}
                   </p>
@@ -375,19 +375,19 @@ export default function App({ themeRoot, activityHudRoot }: AppProps = {}) {
             </div>
           )}
           {blockedSiteWarning && (
-            <div className="mx-4 mt-2 rounded-lg border border-amber-300 dark:border-amber-800 bg-amber-50/80 dark:bg-amber-900/20 px-3 py-2 text-xs text-amber-800 dark:text-amber-300">
+            <div className="mx-4 mt-2 rounded-lg border border-warning/30 bg-warning-subtle px-3 py-2 text-ui-control text-warning">
               {blockedSiteWarning}
             </div>
           )}
           {error && (
             <div
               role="alert"
-              className="mx-4 mt-2 flex items-center justify-between gap-2 rounded-lg bg-red-50 dark:bg-red-900/20 px-3 py-2 text-sm text-red-700 dark:text-red-300 border border-red-200 dark:border-red-800"
+              className="mx-4 mt-2 flex items-center justify-between gap-2 rounded-lg bg-danger-subtle px-3 py-2 text-ui-body text-danger border border-danger/30"
             >
               <span>{error}</span>
               <button
                 onClick={() => setError(null)}
-                className="p-0.5 hover:bg-red-100 dark:hover:bg-red-900/40 rounded"
+                className="p-0.5 hover:bg-danger-subtle rounded"
               >
                 <X size={14} />
               </button>
@@ -397,7 +397,7 @@ export default function App({ themeRoot, activityHudRoot }: AppProps = {}) {
             {messages.length === 0 ? (
               <div className="h-full flex flex-col items-center justify-center text-center p-8">
                 <div className="max-w-[260px]">
-                  <div className="w-14 h-14 rounded-2xl overflow-hidden mb-5 flex items-center justify-center mx-auto shadow-sm shadow-primary-600/15">
+                  <div className="w-14 h-14 rounded-2xl overflow-hidden mb-5 flex items-center justify-center mx-auto shadow-sm">
                     <img
                       src={splashLogoUrl}
                       alt="OpenSidebar logo"
@@ -406,15 +406,15 @@ export default function App({ themeRoot, activityHudRoot }: AppProps = {}) {
                   </div>
                   {!hasReleaseProvider ? (
                     <>
-                      <p className="text-[10px] font-semibold uppercase tracking-[0.14em] text-primary-600 dark:text-primary-300">
+                      <p className="text-ui-caption font-semibold uppercase tracking-[0.14em] text-accent-text">
                         Get started
                       </p>
-                      <h2 className="mt-1 font-semibold text-warm-800 dark:text-warm-100">
+                      <h2 className="mt-1 font-semibold text-fg">
                         Welcome to OpenSidebar
                       </h2>
-                      <ol className="my-4 space-y-2 text-left text-xs text-warm-600 dark:text-warm-300">
+                      <ol className="my-4 space-y-2 text-left text-ui-control text-fg-secondary">
                         <li className="flex gap-2">
-                          <span className="font-semibold text-primary-600">
+                          <span className="font-semibold text-accent-text">
                             1
                           </span>
                           <span>
@@ -424,7 +424,7 @@ export default function App({ themeRoot, activityHudRoot }: AppProps = {}) {
                           </span>
                         </li>
                         <li className="flex gap-2">
-                          <span className="font-semibold text-primary-600">
+                          <span className="font-semibold text-accent-text">
                             2
                           </span>
                           <span>
@@ -434,13 +434,13 @@ export default function App({ themeRoot, activityHudRoot }: AppProps = {}) {
                           </span>
                         </li>
                         <li className="flex gap-2">
-                          <span className="font-semibold text-warm-400">3</span>
+                          <span className="font-semibold text-fg-tertiary">3</span>
                           <span>Run a safe first task</span>
                         </li>
                       </ol>
                       <button
                         onClick={() => updateSettingsView({ open: true })}
-                        className="px-4 py-2 rounded-lg bg-primary-600 text-white text-sm font-medium hover:bg-primary-700 transition-colors shadow-sm shadow-primary-600/20"
+                        className="px-4 py-2 rounded-lg bg-accent text-accent-fg text-ui-body font-medium hover:bg-accent-hover transition-colors shadow-sm"
                       >
                         {!accountEmail
                           ? "Sign in and set up"
@@ -455,14 +455,14 @@ export default function App({ themeRoot, activityHudRoot }: AppProps = {}) {
                             "noopener",
                           )
                         }
-                        className="mt-3 block w-full text-xs font-medium text-primary-600 hover:underline"
+                        className="mt-3 block w-full text-ui-control font-medium text-accent-text hover:underline"
                       >
                         Try the safe Playground
                       </button>
                     </>
                   ) : (
                     <>
-                      <h2 className="font-semibold mb-1 text-warm-800 dark:text-warm-100">
+                      <h2 className="font-semibold mb-1 text-fg">
                         Hi! What can I help with?
                       </h2>
                       <div className="flex flex-wrap gap-2 justify-center mt-4">
@@ -470,7 +470,7 @@ export default function App({ themeRoot, activityHudRoot }: AppProps = {}) {
                           <button
                             key={action}
                             onClick={() => setInputText(action)}
-                            className="text-xs px-3 py-1.5 rounded-full border border-warm-200 dark:border-warm-700 text-warm-600 dark:text-warm-300 hover:bg-primary-50 hover:text-primary-600 hover:border-primary-200 dark:hover:bg-primary-900/20 dark:hover:text-primary-300 dark:hover:border-primary-800 transition-all hover:-translate-y-0.5 hover:shadow-sm"
+                            className="text-ui-control px-3 py-1.5 rounded-full border border-line text-fg-secondary hover:bg-accent-subtle hover:text-accent-text hover:border-accent/30 transition-all hover:-translate-y-0.5 hover:shadow-sm"
                           >
                             {action}
                           </button>
@@ -500,35 +500,35 @@ export default function App({ themeRoot, activityHudRoot }: AppProps = {}) {
 
         {isRecordIntroOpen && (
           <div
-            className="absolute inset-0 z-50 flex items-center justify-center bg-black/25 px-4 backdrop-enter"
+            className="absolute inset-0 z-50 flex items-center justify-center bg-fg/25 px-4 backdrop-enter"
             role="dialog"
             aria-modal="true"
             aria-label="Record Skill"
           >
-            <div className="w-full max-w-[330px] rounded-lg border border-warm-200 dark:border-warm-700 bg-warm-50 dark:bg-warm-900 p-4 shadow-2xl">
+            <div className="w-full max-w-[330px] rounded-lg border border-line bg-canvas p-4 shadow-sm">
               <div className="flex items-start justify-between gap-3">
                 <div>
-                  <h2 className="text-base font-semibold text-warm-900 dark:text-warm-100">
+                  <h2 className="text-ui-title font-semibold text-fg">
                     Teach a website workflow
                   </h2>
-                  <p className="mt-1 text-xs text-warm-500 dark:text-warm-400">
+                  <p className="mt-1 text-ui-control text-fg-tertiary">
                     Recording captures clicks, field choices, and page changes.
                   </p>
                 </div>
                 <button
                   onClick={() => setIsRecordIntroOpen(false)}
-                  className="p-1 rounded-full text-warm-500 hover:bg-warm-100 dark:hover:bg-warm-800"
+                  className="p-1 rounded-full text-fg-tertiary hover:bg-surface-subtle"
                   aria-label="Cancel"
                 >
                   <X size={16} />
                 </button>
               </div>
-              <ul className="mt-3 space-y-2 text-xs text-warm-700 dark:text-warm-200">
+              <ul className="mt-3 space-y-2 text-ui-control text-fg-secondary">
                 <li>Typed values are redacted by default.</li>
                 <li>The saved result is generalized agent guidance.</li>
                 <li>It is not blind macro replay.</li>
               </ul>
-              <label className="mt-3 flex items-center gap-2 text-xs text-warm-600 dark:text-warm-300">
+              <label className="mt-3 flex items-center gap-2 text-ui-control text-fg-secondary">
                 <input
                   type="checkbox"
                   checked={recordIntroDontShowAgain}
@@ -537,20 +537,20 @@ export default function App({ themeRoot, activityHudRoot }: AppProps = {}) {
                     setRecordIntroDontShowAgain(checked);
                     void setRecordSkillIntroDismissed(checked);
                   }}
-                  className="h-3.5 w-3.5 rounded border-warm-300"
+                  className="h-3.5 w-3.5 rounded border-line-strong"
                 />
                 Don&apos;t show this again
               </label>
               <div className="mt-4 flex gap-2">
                 <button
                   onClick={handleConfirmRecordIntro}
-                  className="flex-1 rounded-md bg-red-600 px-3 py-2 text-sm font-semibold text-white hover:bg-red-700"
+                  className="flex-1 rounded-md bg-danger px-3 py-2 text-ui-body font-semibold text-canvas hover:bg-danger/90"
                 >
                   Start recording
                 </button>
                 <button
                   onClick={() => setIsRecordIntroOpen(false)}
-                  className="rounded-md border border-warm-300 dark:border-warm-700 px-3 py-2 text-sm font-semibold text-warm-700 dark:text-warm-200 hover:bg-warm-100 dark:hover:bg-warm-800"
+                  className="rounded-md border border-line-strong px-3 py-2 text-ui-body font-semibold text-fg-secondary hover:bg-surface-subtle"
                 >
                   Cancel
                 </button>
@@ -563,14 +563,14 @@ export default function App({ themeRoot, activityHudRoot }: AppProps = {}) {
 
         {screenshot && settings.showDebugScreenshots && (
           <div className="fixed bottom-4 right-4 z-50 max-w-md">
-            <div className="bg-warm-50 dark:bg-warm-800 rounded-lg shadow-xl border border-warm-200 dark:border-warm-700 overflow-hidden">
-              <div className="p-2 bg-warm-100 dark:bg-warm-900 border-b border-warm-200 dark:border-warm-700 flex justify-between items-center">
-                <span className="text-xs font-medium text-warm-600 dark:text-warm-400">
+            <div className="bg-canvas rounded-lg shadow-sm border border-line overflow-hidden">
+              <div className="p-2 bg-surface-subtle border-b border-line flex justify-between items-center">
+                <span className="text-ui-control font-medium text-fg-secondary">
                   Debug Screenshot
                 </span>
                 <button
                   onClick={clearScreenshot}
-                  className="p-0.5 hover:bg-warm-200 dark:hover:bg-warm-700 rounded text-warm-400 hover:text-warm-600 dark:hover:text-warm-300"
+                  className="p-0.5 hover:bg-surface-hover rounded text-fg-tertiary hover:text-fg-secondary"
                 >
                   <X size={14} />
                 </button>
@@ -580,7 +580,7 @@ export default function App({ themeRoot, activityHudRoot }: AppProps = {}) {
                 alt="Debug screenshot with element tags"
                 className="max-h-48 w-full object-contain"
               />
-              <div className="p-2 text-xs text-warm-500 dark:text-warm-400">
+              <div className="p-2 text-ui-control text-fg-tertiary">
                 {screenshot.context}
               </div>
             </div>

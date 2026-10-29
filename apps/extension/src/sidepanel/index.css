@@ -12,44 +12,13 @@
 @tailwind components;
 @tailwind utilities;
 
-@layer components {
-  .os-type-label {
-    @apply text-ui-caption font-medium text-slate-500;
-  }
-
-  .os-type-meta {
-    @apply text-ui-control text-slate-500;
-  }
-
-  .os-type-body {
-    @apply text-ui-body text-slate-800;
-  }
-
-  .os-type-control {
-    @apply text-ui-body-strong font-medium;
-  }
-
-  .os-type-heading {
-    @apply text-ui-title font-semibold tracking-normal text-slate-950;
-  }
-
-  .os-type-metric {
-    @apply text-ui-display font-semibold tabular-nums tracking-normal;
-  }
-}
-
 html,
 body,
 #root {
   height: 100%;
   margin: 0;
-  background-color: var(--os-canvas);
+  background-color: rgb(var(--os-canvas));
 }
-
-.dark body {
-  background-color: var(--os-canvas);
-}
-
 /* --- Prose styles for assistant markdown messages --- */
 .prose-chat {
   line-height: 1.5;
@@ -98,7 +67,7 @@ body,
 .prose-chat.completion-summary h1,
 .prose-chat.completion-summary h2,
 .prose-chat.completion-summary h3 {
-  color: #111827;
+  color: rgb(var(--os-fg));
   letter-spacing: 0;
 }
 
@@ -120,7 +89,7 @@ body,
   line-height: 1.35;
   margin: 0.95rem 0 0.35rem;
   text-transform: uppercase;
-  color: #475569;
+  color: rgb(var(--os-fg-secondary));
 }
 
 .prose-chat.completion-summary hr {
@@ -152,14 +121,14 @@ body,
 }
 
 .completion-kv dt {
-  color: #64748b;
-  font-size: 0.72rem;
+  color: rgb(var(--os-fg-secondary));
+  font-size: 0.75rem;
   font-weight: 650;
   line-height: 1.35;
 }
 
 .completion-kv dd {
-  color: #1f2937;
+  color: rgb(var(--os-fg));
   margin: 0;
   min-width: 0;
   line-height: 1.42;
@@ -174,7 +143,7 @@ body,
 
 .prose-chat code {
   font-size: 0.85em;
-  background: rgba(0, 0, 0, 0.06);
+  background: rgb(var(--os-surface-subtle));
   padding: 0.15em 0.35em;
   border-radius: 4px;
   font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, monospace;
@@ -184,7 +153,7 @@ body,
   margin: 0.5em 0;
   padding: 0.6em 0.8em;
   border-radius: 6px;
-  background: rgba(0, 0, 0, 0.06);
+  background: rgb(var(--os-surface-subtle));
   overflow-x: auto;
   font-size: 0.85em;
 }
@@ -201,25 +170,37 @@ body,
   padding-left: 1.4em;
 }
 
+.prose-chat ul {
+  list-style-type: disc;
+}
+
+.prose-chat ol {
+  list-style-type: decimal;
+}
+
+.prose-chat li::marker {
+  color: rgb(var(--os-fg-tertiary));
+}
+
 .prose-chat li {
   margin: 0.15em 0;
 }
 
 .prose-chat a {
-  color: var(--os-accent);
+  color: rgb(var(--os-accent-text));
   text-decoration: underline;
   text-underline-offset: 2px;
 }
 
 .prose-chat a:hover {
-  color: var(--os-accent-strong);
+  color: rgb(var(--os-accent-text));
 }
 
 .prose-chat blockquote {
   margin: 0.5em 0;
   padding-left: 0.8em;
-  border-left: 3px solid rgba(0, 0, 0, 0.15);
-  color: rgba(0, 0, 0, 0.6);
+  border-left: 3px solid rgb(var(--os-line-strong));
+  color: rgb(var(--os-fg-secondary));
 }
 
 .prose-chat h1,
@@ -244,7 +225,7 @@ body,
 .prose-chat hr {
   margin: 0.5em 0;
   border: none;
-  border-top: 1px solid rgba(0, 0, 0, 0.1);
+  border-top: 1px solid rgb(var(--os-line));
 }
 
 .prose-chat table {
@@ -256,66 +237,14 @@ body,
 
 .prose-chat th,
 .prose-chat td {
-  border: 1px solid rgba(0, 0, 0, 0.1);
+  border: 1px solid rgb(var(--os-line));
   padding: 0.3em 0.6em;
   text-align: left;
 }
 
 .prose-chat th {
   font-weight: 600;
-  background: rgba(0, 0, 0, 0.03);
-}
-
-/* Dark mode prose overrides */
-.dark .prose-chat code {
-  background: rgba(255, 255, 255, 0.1);
-}
-
-.dark .prose-chat pre {
-  background: rgba(255, 255, 255, 0.08);
-}
-
-.dark .prose-chat a {
-  color: #60a5fa;
-}
-
-.dark .prose-chat a:hover {
-  color: #93c5fd;
-}
-
-.dark .prose-chat blockquote {
-  border-left-color: rgba(255, 255, 255, 0.2);
-  color: rgba(255, 255, 255, 0.6);
-}
-
-.dark .prose-chat.completion-summary h1,
-.dark .prose-chat.completion-summary h2 {
-  color: #f8fafc;
-}
-
-.dark .prose-chat.completion-summary h3 {
-  color: #cbd5e1;
-}
-
-.dark .completion-kv dt {
-  color: #94a3b8;
-}
-
-.dark .completion-kv dd {
-  color: #e5e7eb;
-}
-
-.dark .prose-chat hr {
-  border-top-color: rgba(255, 255, 255, 0.1);
-}
-
-.dark .prose-chat th,
-.dark .prose-chat td {
-  border-color: rgba(255, 255, 255, 0.1);
-}
-
-.dark .prose-chat th {
-  background: rgba(255, 255, 255, 0.05);
+  background: rgb(var(--os-surface-subtle));
 }
 
 /* --- Streaming cursor (smooth pulse) --- */
@@ -423,36 +352,10 @@ body,
 /* --- Input focus glow --- */
 .input-glow:focus-within {
   box-shadow:
-    0 0 0 2px #ffffff,
-    0 0 0 5px rgba(18, 107, 100, 0.24);
+    0 0 0 2px rgb(var(--os-canvas)),
+    0 0 0 5px rgb(var(--os-accent) / 0.3);
 }
 
-.dark .input-glow:focus-within {
-  box-shadow:
-    0 0 0 2px var(--os-canvas),
-    0 0 0 5px rgba(114, 198, 182, 0.3);
-}
-
-/* --- Quiet canvas gradient --- */
-.bg-warm-gradient {
-  background: linear-gradient(to bottom, var(--os-canvas), var(--os-surface-muted));
-}
-.dark .bg-warm-gradient {
-  background: linear-gradient(to bottom, var(--os-canvas), var(--os-surface-muted));
-}
-
-/* --- Glass surface --- */
-.glass-surface {
-  backdrop-filter: blur(12px);
-  -webkit-backdrop-filter: blur(12px);
-  background-color: rgba(245, 248, 244, 0.85);
-}
-
-.dark .glass-surface {
-  background-color: rgba(23, 38, 33, 0.85);
-}
-
-/* --- Button tactile feedback --- */
 button {
   transition:
     transform 0.1s ease,
@@ -467,12 +370,8 @@ button:active:not(:disabled) {
 
 /* --- Focus-visible ring for keyboard accessibility --- */
 :focus-visible {
-  outline: 2px solid #3b82f6;
+  outline: 2px solid rgb(var(--os-accent));
   outline-offset: 1px;
-}
-
-.dark :focus-visible {
-  outline-color: #60a5fa;
 }
 
 /* --- Plan sheet slide-up --- */
@@ -510,7 +409,7 @@ button:active:not(:disabled) {
   transition: opacity 0.15s;
 }
 .group:hover .message-ts {
-  opacity: 0.7;
+  opacity: 1;
 }
 
 /* --- Reduced motion --- */
@@ -553,7 +452,7 @@ button:active:not(:disabled) {
   }
 
   .message-ts {
-    opacity: 0.7;
+    opacity: 1;
     transition: none;
   }
 
@@ -568,89 +467,45 @@ button:active:not(:disabled) {
 .prose-chat pre code .hljs-keyword,
 .prose-chat pre code .hljs-selector-tag,
 .prose-chat pre code .hljs-subst {
-  color: #d73a49;
+  color: rgb(var(--os-danger));
 }
 
 .prose-chat pre code .hljs-string,
 .prose-chat pre code .hljs-regexp,
 .prose-chat pre code .hljs-symbol,
 .prose-chat pre code .hljs-template-variable {
-  color: #032f62;
+  color: rgb(var(--os-accent-text));
 }
 
 .prose-chat pre code .hljs-comment,
 .prose-chat pre code .hljs-quote,
 .prose-chat pre code .hljs-meta {
-  color: #6a737d;
+  color: rgb(var(--os-fg-tertiary));
 }
 
 .prose-chat pre code .hljs-number,
 .prose-chat pre code .hljs-literal,
 .prose-chat pre code .hljs-built_in,
 .prose-chat pre code .hljs-bullet {
-  color: #005cc5;
+  color: rgb(var(--os-accent-text));
 }
 
 .prose-chat pre code .hljs-title,
 .prose-chat pre code .hljs-section,
 .prose-chat pre code .hljs-name {
-  color: #6f42c1;
+  color: rgb(var(--os-warning));
 }
 
 .prose-chat pre code .hljs-type,
 .prose-chat pre code .hljs-class .hljs-title,
 .prose-chat pre code .hljs-tag {
-  color: #22863a;
+  color: rgb(var(--os-success));
 }
 
 .prose-chat pre code .hljs-attr,
 .prose-chat pre code .hljs-attribute,
 .prose-chat pre code .hljs-variable,
 .prose-chat pre code .hljs-params {
-  color: #24292e;
+  color: rgb(var(--os-fg));
 }
 
-.dark .prose-chat pre code .hljs-keyword,
-.dark .prose-chat pre code .hljs-selector-tag,
-.dark .prose-chat pre code .hljs-subst {
-  color: #ff7b72;
-}
-
-.dark .prose-chat pre code .hljs-string,
-.dark .prose-chat pre code .hljs-regexp,
-.dark .prose-chat pre code .hljs-symbol,
-.dark .prose-chat pre code .hljs-template-variable {
-  color: #a5d6ff;
-}
-
-.dark .prose-chat pre code .hljs-comment,
-.dark .prose-chat pre code .hljs-quote,
-.dark .prose-chat pre code .hljs-meta {
-  color: #8b949e;
-}
-
-.dark .prose-chat pre code .hljs-number,
-.dark .prose-chat pre code .hljs-literal,
-.dark .prose-chat pre code .hljs-built_in,
-.dark .prose-chat pre code .hljs-bullet {
-  color: #79c0ff;
-}
-
-.dark .prose-chat pre code .hljs-title,
-.dark .prose-chat pre code .hljs-section,
-.dark .prose-chat pre code .hljs-name {
-  color: #d2a8ff;
-}
-
-.dark .prose-chat pre code .hljs-type,
-.dark .prose-chat pre code .hljs-class .hljs-title,
-.dark .prose-chat pre code .hljs-tag {
-  color: #7ee787;
-}
-
-.dark .prose-chat pre code .hljs-attr,
-.dark .prose-chat pre code .hljs-attribute,
-.dark .prose-chat pre code .hljs-variable,
-.dark .prose-chat pre code .hljs-params {
-  color: #e6edf3;
-}

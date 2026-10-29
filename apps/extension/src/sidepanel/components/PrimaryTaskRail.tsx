@@ -93,11 +93,11 @@ export function resolvePrimaryTaskLabel({
 }
 
 function statusDotClass(tone: TaskRailTone) {
-  if (tone === "completed") return "bg-green-500";
-  if (tone === "failed") return "bg-red-500";
-  if (tone === "paused") return "bg-yellow-500";
-  if (tone === "stopped") return "bg-amber-500";
-  return "bg-primary-500";
+  if (tone === "completed") return "bg-success";
+  if (tone === "failed") return "bg-danger";
+  if (tone === "paused") return "bg-warning";
+  if (tone === "stopped") return "bg-warning";
+  return "bg-accent";
 }
 
 function statusDotLabel(tone: TaskRailTone) {
@@ -179,7 +179,7 @@ export function PrimaryTaskRail({ embedded = false }: { embedded?: boolean } = {
       className={
         embedded
           ? "overflow-hidden bg-transparent px-3 py-2"
-          : "mx-3 mt-2 overflow-hidden rounded-lg border border-warm-200/80 bg-white/72 px-2.5 py-1.5 shadow-sm dark:border-warm-700/60 dark:bg-warm-900/58"
+          : "mx-3 mt-2 overflow-hidden rounded-lg border border-line bg-surface px-2.5 py-1.5 shadow-sm"
       }
     >
       <div className="flex min-h-8 items-center gap-2">
@@ -187,7 +187,7 @@ export function PrimaryTaskRail({ embedded = false }: { embedded?: boolean } = {
           {rail.tone === "stalled" ? (
             <AlertTriangle
               size={14}
-              className="text-amber-500"
+              className="text-warning"
               aria-label="Agent stalled"
             />
           ) : rail.showSpinner ? (
@@ -196,8 +196,8 @@ export function PrimaryTaskRail({ embedded = false }: { embedded?: boolean } = {
               role="status"
               aria-label="Agent running"
             >
-              <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-teal-400 opacity-60" />
-              <span className="relative inline-flex h-2 w-2 rounded-full bg-teal-500" />
+              <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-accent opacity-60" />
+              <span className="relative inline-flex h-2 w-2 rounded-full bg-accent" />
             </span>
           ) : (
             <span
@@ -212,43 +212,43 @@ export function PrimaryTaskRail({ embedded = false }: { embedded?: boolean } = {
 
         <div className="min-w-0 flex-1">
           <div className="flex min-w-0 items-center gap-1.5">
-            <span className="shrink-0 text-[10px] font-semibold uppercase text-warm-400 dark:text-warm-500">
+            <span className="shrink-0 text-ui-caption font-semibold uppercase text-fg-tertiary">
               {rail.eyebrow === "Now doing" ? "Doing" : "Latest"}
             </span>
-            <span className="min-w-0 truncate text-xs font-medium leading-5 text-warm-800 dark:text-warm-100">
+            <span className="min-w-0 truncate text-ui-control font-medium leading-5 text-fg">
               {rail.primaryLabel}
             </span>
           </div>
           <div className="mt-0.5 flex min-w-0 flex-wrap items-center gap-1">
             {rail.stopRequested ? (
-              <span className="rounded-md border border-red-300/70 bg-red-50/80 px-1.5 py-0.5 text-[10px] font-medium text-red-600 dark:border-red-900 dark:bg-red-950/30 dark:text-red-300">
+              <span className="rounded-md border border-danger/30 bg-danger-subtle px-1.5 py-0.5 text-ui-caption font-medium text-danger">
                 Stop requested
               </span>
             ) : null}
             {pauseRequested ? (
-              <span className="rounded-md border border-yellow-300/70 bg-yellow-50/80 px-1.5 py-0.5 text-[10px] font-medium text-yellow-700 dark:border-yellow-900 dark:bg-yellow-950/30 dark:text-yellow-300">
+              <span className="rounded-md border border-warning/30 bg-warning-subtle px-1.5 py-0.5 text-ui-caption font-medium text-warning">
                 Pause requested
               </span>
             ) : null}
             {secondaryLabel && !(embedded && hasTaskProgress) ? (
-              <span className="max-w-full truncate text-[10px] text-warm-500 dark:text-warm-400">
+              <span className="max-w-full truncate text-ui-caption text-fg-tertiary">
                 {secondaryLabel}
               </span>
             ) : null}
             {rail.turnProgress?.provider ? (
-              <span className="rounded-md border border-warm-200/90 bg-white/70 px-1.5 py-0.5 text-[10px] font-medium text-warm-500 dark:border-warm-700 dark:bg-warm-900/50 dark:text-warm-400">
+              <span className="rounded-md border border-line bg-surface px-1.5 py-0.5 text-ui-caption font-medium text-fg-tertiary">
                 {rail.turnProgress.provider}
               </span>
             ) : null}
             {rail.turnProgress ? (
-              <span className="rounded-md border border-warm-200/90 bg-white/70 px-1.5 py-0.5 text-[10px] tabular-nums text-warm-500 dark:border-warm-700 dark:bg-warm-900/50 dark:text-warm-400">
+              <span className="rounded-md border border-line bg-surface px-1.5 py-0.5 text-ui-caption tabular-nums text-fg-tertiary">
                 {rail.turnProgress.turn}/{rail.turnProgress.maxTurns}
               </span>
             ) : null}
             {showSessionMetrics &&
             rail.sessionMetrics &&
             rail.sessionMetrics.totalTokens > 0 ? (
-              <span className="rounded-md border border-warm-200/90 bg-white/70 px-1.5 py-0.5 text-[10px] tabular-nums text-warm-500 dark:border-warm-700 dark:bg-warm-900/50 dark:text-warm-400">
+              <span className="rounded-md border border-line bg-surface px-1.5 py-0.5 text-ui-caption tabular-nums text-fg-tertiary">
                 {formatTokens(rail.sessionMetrics.totalTokens)}
                 {` / ${costLabel(rail.sessionMetrics)}`}
               </span>
@@ -261,7 +261,7 @@ export function PrimaryTaskRail({ embedded = false }: { embedded?: boolean } = {
             <button
               onClick={() => void handlePause()}
               disabled={pauseRequested}
-              className="inline-flex h-7 w-7 items-center justify-center rounded-md border border-warm-200 bg-white/80 text-warm-600 transition-colors hover:bg-warm-100 disabled:cursor-wait disabled:opacity-70 dark:border-warm-700 dark:bg-warm-900/60 dark:text-warm-300 dark:hover:bg-warm-800"
+              className="inline-flex h-7 w-7 items-center justify-center rounded-md border border-line bg-surface text-fg-secondary transition-colors hover:bg-surface-subtle disabled:cursor-wait disabled:opacity-70"
               aria-label="Pause agent"
               title="Pause agent"
             >
@@ -271,7 +271,7 @@ export function PrimaryTaskRail({ embedded = false }: { embedded?: boolean } = {
           {rail.showResume ? (
             <button
               onClick={() => void handleResume()}
-              className="inline-flex h-7 w-7 items-center justify-center rounded-md border border-warm-200 bg-white/80 text-warm-600 transition-colors hover:bg-warm-100 dark:border-warm-700 dark:bg-warm-900/60 dark:text-warm-300 dark:hover:bg-warm-800"
+              className="inline-flex h-7 w-7 items-center justify-center rounded-md border border-line bg-surface text-fg-secondary transition-colors hover:bg-surface-subtle"
               aria-label="Resume agent"
               title="Resume agent"
             >
@@ -281,7 +281,7 @@ export function PrimaryTaskRail({ embedded = false }: { embedded?: boolean } = {
           {rail.showStop ? (
             <button
               onClick={() => void handleStop()}
-              className="inline-flex h-7 w-7 items-center justify-center rounded-md bg-red-500 text-white transition-colors hover:bg-red-600"
+              className="inline-flex h-7 w-7 items-center justify-center rounded-md bg-danger text-canvas transition-colors hover:bg-danger/90"
               aria-label="Stop agent and take control"
               title="Take control"
             >

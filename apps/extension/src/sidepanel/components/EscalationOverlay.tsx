@@ -36,17 +36,17 @@ export function EscalationOverlay() {
   if (!pendingEscalation) return null;
 
   return (
-    <div className="rounded-lg border border-amber-200 dark:border-amber-800 bg-amber-50/80 dark:bg-amber-900/20 p-2.5">
+    <div className="rounded-lg border border-warning/30 bg-warning-subtle p-2.5">
       <div className="flex items-start gap-2 mb-2">
         <AlertOctagon
           size={14}
-          className="mt-0.5 shrink-0 text-amber-600 dark:text-amber-400"
+          className="mt-0.5 shrink-0 text-warning"
         />
         <div className="min-w-0 flex-1">
-          <div className="text-xs font-medium text-amber-800 dark:text-amber-200">
+          <div className="text-ui-control font-medium text-warning">
             Decision required
           </div>
-          <div className="text-xs text-amber-700 dark:text-amber-300 mt-0.5">
+          <div className="text-ui-control text-warning mt-0.5">
             {pendingEscalation.reason}
           </div>
         </div>
@@ -61,8 +61,8 @@ export function EscalationOverlay() {
             }
             className={
               option.id === pendingEscalation.recommendedOption
-                ? "rounded bg-amber-600 px-2.5 py-1.5 text-xs font-medium text-white hover:bg-amber-700 transition-colors"
-                : "rounded border border-amber-300 dark:border-amber-700 px-2.5 py-1.5 text-xs font-medium text-amber-700 dark:text-amber-300 hover:bg-amber-100 dark:hover:bg-amber-900/40 transition-colors"
+                ? "rounded bg-warning px-2.5 py-1.5 text-ui-control font-medium text-canvas hover:bg-warning/90 transition-colors"
+                : "rounded border border-warning/30 px-2.5 py-1.5 text-ui-control font-medium text-warning hover:bg-warning-subtle transition-colors"
             }
             title={option.impact}
           >

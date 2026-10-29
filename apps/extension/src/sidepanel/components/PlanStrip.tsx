@@ -109,7 +109,7 @@ export function PlanStrip({
   const outerClassName = embedded
     ? `shrink-0 ${
         viewModel.mode === "confirmation"
-          ? "bg-primary-50/30 dark:bg-primary-900/10"
+          ? "bg-accent-subtle"
           : ""
       }`
     : `shrink-0 border-b ${viewModel.barClassName}`;
@@ -157,7 +157,7 @@ export function PlanStrip({
           isExpanded ? "max-h-[30vh]" : "max-h-0"
         }`}
       >
-        <div className="max-h-[30vh] overflow-y-auto border-t border-warm-200/60 px-3 pb-2 pt-1 dark:border-warm-700/40">
+        <div className="max-h-[30vh] overflow-y-auto border-t border-line px-3 pb-2 pt-1">
           {viewModel.mode === "confirmation" && pendingPlan ? (
             <PlanConfirmationPanel
               confirmed={confirmed}

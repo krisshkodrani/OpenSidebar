@@ -75,27 +75,27 @@ export function StalledRecoveryCard() {
       role="alert"
       aria-labelledby={titleId}
       aria-describedby={descriptionId}
-      className="mx-4 mt-2 rounded-xl border border-amber-300/90 bg-amber-50/90 px-3 py-3 shadow-sm dark:border-amber-800 dark:bg-amber-900/20"
+      className="mx-4 mt-2 rounded-xl border border-warning/30 bg-warning-subtle px-3 py-3 shadow-sm"
     >
       <div className="flex items-start gap-2.5">
         <AlertTriangle
           size={15}
-          className="mt-0.5 shrink-0 text-amber-600 dark:text-amber-400"
+          className="mt-0.5 shrink-0 text-warning"
         />
         <div className="min-w-0 flex-1">
           <div
             id={titleId}
-            className="text-xs font-semibold uppercase tracking-[0.08em] text-amber-700 dark:text-amber-300"
+            className="text-ui-control font-semibold uppercase tracking-[0.08em] text-warning"
           >
             Agent may be stuck
           </div>
           <div
             id={descriptionId}
-            className="mt-1 text-sm font-medium leading-snug text-amber-900 dark:text-amber-100"
+            className="mt-1 text-ui-body font-medium leading-snug text-warning"
           >
             The current run repeated similar turns on {location || "this page"}.
           </div>
-          <p className="mt-1 text-xs leading-relaxed text-amber-800 dark:text-amber-200">
+          <p className="mt-1 text-ui-control leading-relaxed text-warning">
             You can let it continue, steer it with new guidance, skip the current
             step, or stop the run.
           </p>
@@ -103,13 +103,13 @@ export function StalledRecoveryCard() {
           <div className="mt-3 flex flex-wrap items-center gap-2">
             <button
               onClick={dismissWarning}
-              className="rounded-lg border border-amber-300 px-2.5 py-1.5 text-xs font-medium text-amber-800 transition-colors hover:bg-amber-100 dark:border-amber-700 dark:text-amber-200 dark:hover:bg-amber-900/30"
+              className="rounded-lg border border-warning/30 px-2.5 py-1.5 text-ui-control font-medium text-warning transition-colors hover:bg-warning-subtle"
             >
               Keep going
             </button>
             <button
               onClick={guideAgent}
-              className="inline-flex items-center gap-1 rounded-lg bg-amber-500 px-2.5 py-1.5 text-xs font-medium text-white transition-colors hover:bg-amber-600"
+              className="inline-flex items-center gap-1 rounded-lg bg-warning px-2.5 py-1.5 text-ui-control font-medium text-canvas transition-colors hover:bg-warning/90"
             >
               <ArrowRight size={11} />
               Guide agent
@@ -117,7 +117,7 @@ export function StalledRecoveryCard() {
             {taskProgress ? (
               <button
                 onClick={() => void skipStep()}
-                className="inline-flex items-center gap-1 rounded-lg border border-amber-300 px-2.5 py-1.5 text-xs font-medium text-amber-800 transition-colors hover:bg-amber-100 dark:border-amber-700 dark:text-amber-200 dark:hover:bg-amber-900/30"
+                className="inline-flex items-center gap-1 rounded-lg border border-warning/30 px-2.5 py-1.5 text-ui-control font-medium text-warning transition-colors hover:bg-warning-subtle"
               >
                 <SkipForward size={11} />
                 Skip step
@@ -125,7 +125,7 @@ export function StalledRecoveryCard() {
             ) : null}
             <button
               onClick={() => void stopAgent()}
-              className="inline-flex items-center gap-1 rounded-lg border border-red-300 px-2.5 py-1.5 text-xs font-medium text-red-700 transition-colors hover:bg-red-50 dark:border-red-800 dark:text-red-300 dark:hover:bg-red-900/20"
+              className="inline-flex items-center gap-1 rounded-lg border border-danger/30 px-2.5 py-1.5 text-ui-control font-medium text-danger transition-colors hover:bg-danger-subtle"
             >
               <Square size={10} fill="currentColor" />
               Stop

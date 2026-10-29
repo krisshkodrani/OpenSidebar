@@ -26,7 +26,7 @@ export function ComposerTextarea({
       onFocus={onFocus}
       onBlur={onBlur}
       placeholder={placeholder}
-      className="block max-h-[120px] min-h-[36px] w-full resize-none border-none bg-transparent py-1.5 text-sm leading-5 text-warm-800 outline-none placeholder:text-warm-400 dark:text-warm-100 dark:placeholder:text-warm-500"
+      className="block max-h-[120px] min-h-[36px] w-full resize-none border-none bg-transparent py-1.5 text-ui-body leading-5 text-fg outline-none placeholder:text-fg-tertiary"
       rows={1}
     />
   );

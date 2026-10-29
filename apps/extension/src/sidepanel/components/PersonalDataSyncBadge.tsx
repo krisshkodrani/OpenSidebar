@@ -23,5 +23,5 @@ export function PersonalDataSyncBadge({ category }: { category: PersonalDataCate
     }).catch(() => undefined);
     return () => { active = false; };
   }, [category]);
-  return <span title="Manage in Settings → Sync" className="rounded bg-warm-100 px-1.5 py-0.5 text-[9px] font-medium text-warm-500 dark:bg-warm-800 dark:text-warm-400">{label}</span>;
+  return <span title="Manage in Settings → Sync" className="rounded bg-surface-subtle px-1.5 py-0.5 text-ui-caption font-medium text-fg-tertiary">{label}</span>;
 }

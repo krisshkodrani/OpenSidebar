@@ -25,14 +25,14 @@ export function RunCard({
     <section
       aria-label="Agent run"
       data-run-tone={tone}
-      className="mx-3 mt-2 overflow-hidden rounded-xl border border-warm-200/80 bg-white/75 shadow-glass dark:border-warm-700/60 dark:bg-warm-900/55"
+      className="mx-3 mt-2 overflow-hidden rounded-xl border border-line bg-surface shadow-sm"
     >
       {running ? (
-        <div className="h-[3px] w-full bg-warm-100 dark:bg-warm-800" role="presentation">
-          <span className="block h-full w-12 rounded-r-full bg-brand-highlight dark:bg-brand-highlight" />
+        <div className="h-[3px] w-full bg-surface-subtle" role="presentation">
+          <span className="block h-full w-12 rounded-r-full bg-accent" />
         </div>
       ) : null}
-      <div className="divide-y divide-warm-200/60 dark:divide-warm-700/40">
+      <div className="divide-y divide-line">
         {children}
       </div>
     </section>

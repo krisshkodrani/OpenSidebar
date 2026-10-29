@@ -17,16 +17,16 @@ export function Header({
   connectionLabel,
 }: Props) {
   return (
-    <header className="sticky top-0 z-10 grid grid-cols-[1fr_auto_1fr] items-center border-b border-warm-100 bg-warm-50 px-3 py-1.5 dark:border-warm-800 dark:bg-warm-900">
+    <header className="sticky top-0 z-10 grid grid-cols-[1fr_auto_1fr] items-center border-b border-line bg-canvas px-3 py-1.5">
       <div className="min-w-0 justify-self-start">
         {modeBadgeLabel ? (
-          <span className="inline-flex max-w-full truncate rounded-full bg-warm-100 px-2 py-0.5 text-[10px] font-medium text-warm-600 dark:bg-warm-800 dark:text-warm-300">
+          <span className="inline-flex max-w-full truncate rounded-full bg-surface-subtle px-2 py-0.5 text-ui-caption font-medium text-fg-secondary">
             {modeBadgeLabel}
           </span>
         ) : null}
       </div>
 
-      <span className="select-none text-[11px] font-semibold tracking-[0.08em] text-warm-600 dark:text-warm-300">
+      <span className="select-none text-ui-caption font-semibold tracking-[0.08em] text-fg-secondary">
         OpenSidebar
       </span>
 
@@ -35,7 +35,7 @@ export function Header({
           <button
             type="button"
             onClick={onOpenSettings}
-            className="mr-1 inline-flex max-w-24 items-center gap-1 truncate rounded-full bg-warm-100 px-2 py-1 text-[10px] font-medium text-warm-600 dark:bg-warm-800 dark:text-warm-300"
+            className="mr-1 inline-flex max-w-40 items-center gap-1.5 truncate rounded-full bg-surface-subtle px-2.5 py-1 text-ui-caption font-medium text-fg-secondary hover:bg-surface-hover hover:text-fg"
             title={connectionLabel}
             aria-label={`Account status: ${connectionLabel}`}
           >
@@ -46,10 +46,10 @@ export function Header({
         <button
           type="button"
           onClick={onOpenWebsiteSkills}
-          className={`rounded-full p-1.5 transition-colors hover:bg-warm-100 dark:hover:bg-warm-800 ${
+          className={`rounded-full p-1.5 transition-colors hover:bg-surface-subtle ${
             recordingActive
-              ? "text-red-600 dark:text-red-400"
-              : "text-warm-500 hover:text-warm-700 dark:hover:text-warm-300"
+              ? "text-danger"
+              : "text-fg-tertiary hover:text-fg-secondary"
           }`}
           aria-label="Website Skills"
           title={recordingActive ? "Recording website skill" : "Website skills"}
@@ -59,7 +59,7 @@ export function Header({
         <button
           type="button"
           onClick={onOpenSettings}
-          className="rounded-full p-1.5 text-warm-500 transition-colors hover:bg-warm-100 hover:text-warm-700 dark:hover:bg-warm-800 dark:hover:text-warm-300"
+          className="rounded-full p-1.5 text-fg-tertiary transition-colors hover:bg-surface-subtle hover:text-fg-secondary"
           aria-label="Settings"
           title="Settings"
         >

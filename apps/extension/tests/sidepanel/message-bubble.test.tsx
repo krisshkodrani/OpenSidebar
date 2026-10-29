@@ -248,7 +248,7 @@ describe("MessageBubble final answer rendering", () => {
     const passiveBubble = Array.from(container.querySelectorAll("div")).find(
       (node) =>
         node.textContent?.includes("shared responsibility") &&
-        node.className.includes("border-sky"),
+        node.className.includes("bg-accent-subtle"),
     ) as HTMLDivElement | undefined;
     expect(passiveBubble).toBeTruthy();
     expect(passiveBubble!.className).not.toContain("shadow-[");

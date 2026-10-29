@@ -46,16 +46,16 @@ function toolIcon(step: AgentStep): React.ReactNode {
   if (step.status === "running") {
     return (
       <span className="relative flex h-3.5 w-3.5 shrink-0 items-center justify-center">
-        <span className="absolute inline-flex h-full w-full rounded-full bg-primary-400 opacity-40 animate-ping" />
-        <span className="relative inline-flex h-1.5 w-1.5 rounded-full bg-primary-500" />
+        <span className="absolute inline-flex h-full w-full rounded-full bg-accent opacity-40 animate-ping" />
+        <span className="relative inline-flex h-1.5 w-1.5 rounded-full bg-accent" />
       </span>
     );
   }
   if (step.status === "error") {
-    return <XCircle size={sz} className={`text-red-500 ${cls}`} />;
+    return <XCircle size={sz} className={`text-danger ${cls}`} />;
   }
 
-  const iconCls = `text-warm-400 dark:text-warm-500 ${cls}`;
+  const iconCls = `text-fg-tertiary ${cls}`;
   const tool = step.toolName;
 
   switch (tool) {
@@ -143,14 +143,13 @@ function StepRow({
     <div
       className={clsx("transition-all duration-200", isRunning && "step-enter")}
     >
-      <div className="flex items-center gap-2 w-full text-left py-0.5 px-1 rounded text-xs">
+      <div className="flex items-center gap-2 w-full text-left py-1 px-1 rounded text-ui-control">
         {toolIcon(step)}
         <span
           className={clsx(
             "truncate flex-1 transition-colors duration-200",
-            isRunning && "text-warm-700 dark:text-warm-200 font-medium",
-            step.status === "done" && "text-warm-500 dark:text-warm-400",
-            step.status === "error" && "text-red-600 dark:text-red-400",
+            step.status === "error" ? "text-danger" : "text-fg-secondary",
+            isRunning && "font-medium",
           )}
         >
           {label}
@@ -161,13 +160,13 @@ function StepRow({
           <img
             src={step.screenshotUrl}
             alt="Page screenshot"
-            className="max-h-28 rounded border border-warm-200/60 dark:border-warm-700/40 cursor-pointer opacity-90 hover:opacity-100 transition-opacity"
+            className="max-h-28 rounded border border-line cursor-pointer"
             onClick={() => window.open(step.screenshotUrl, "_blank")}
           />
         </div>
       )}
       {step.errorMessage && (
-        <div className="ml-6 text-[10px] text-red-500 mt-0.5">
+        <div className="ml-6 text-ui-caption text-danger mt-0.5">
           {step.errorMessage}
         </div>
       )}
@@ -241,11 +240,11 @@ export const StepTimeline = React.memo(function StepTimeline({
 
   return (
     <div className="max-w-[92%] mb-1">
-      <div className="ml-1 border-l border-warm-200/60 dark:border-warm-700/40 pl-2 space-y-px">
+      <div className="ml-1 border-l border-line pl-2">
         {shouldShowExpand && (
           <button
             onClick={() => setExpanded(true)}
-            className="flex items-center gap-1 text-[11px] text-warm-400 dark:text-warm-500 hover:text-warm-600 dark:hover:text-warm-300 py-0.5 px-1 transition-colors"
+            className="flex items-center gap-1 text-ui-caption text-fg-tertiary hover:text-fg-secondary py-0.5 px-1 transition-colors"
           >
             <ChevronRight size={11} />
             <span>{helperLabel}</span>
@@ -256,7 +255,7 @@ export const StepTimeline = React.memo(function StepTimeline({
         displaySteps.length > collapseThreshold ? (
           <button
             onClick={() => setExpanded(false)}
-            className="flex items-center gap-1 text-[11px] text-warm-400 dark:text-warm-500 hover:text-warm-600 dark:hover:text-warm-300 py-0.5 px-1 transition-colors"
+            className="flex items-center gap-1 text-ui-caption text-fg-tertiary hover:text-fg-secondary py-0.5 px-1 transition-colors"
           >
             <ChevronDown size={11} />
             <span>Collapse</span>

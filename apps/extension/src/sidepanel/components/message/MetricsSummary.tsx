@@ -13,19 +13,19 @@ export function MetricsSummary({ metrics }: { metrics: SessionMetrics }) {
   const perceptionDecision = metrics.perceptionModeDecision;
 
   return (
-    <div className="space-y-0.5 text-xs tabular-nums text-warm-500 dark:text-warm-400">
+    <div className="space-y-0.5 text-ui-control tabular-nums text-fg-tertiary">
       <div className="flex flex-wrap items-center gap-1.5">
         <span>{formatTokensCompact(metrics.totalTokens)} tokens</span>
-        <span className="text-warm-300 dark:text-warm-600">/</span>
+        <span className="text-fg-tertiary">/</span>
         <span title="Tracked agent, planner, and judge cost">
           {costLabel(metrics)}
         </span>
-        <span className="text-warm-300 dark:text-warm-600">/</span>
+        <span className="text-fg-tertiary">/</span>
         <span>LLM {formatTimeCompact(metrics.totalLlmTimeMs)}</span>
         {(metrics.visionCallCount ?? 0) + (metrics.cachedVisionCallCount ?? 0) >
           0 && (
           <>
-            <span className="text-warm-300 dark:text-warm-600">/</span>
+            <span className="text-fg-tertiary">/</span>
             <span>
               Vision {metrics.visionCallCount ?? 0}
               {(metrics.cachedVisionCallCount ?? 0) > 0
@@ -34,7 +34,7 @@ export function MetricsSummary({ metrics }: { metrics: SessionMetrics }) {
             </span>
           </>
         )}
-        <span className="text-warm-300 dark:text-warm-600">/</span>
+        <span className="text-fg-tertiary">/</span>
         <span>
           Total {formatTimeCompact(metrics.totalSessionTimeMs)}
           {(metrics.imagePromptCount ?? 0) > 0
@@ -57,7 +57,7 @@ export function MetricsSummary({ metrics }: { metrics: SessionMetrics }) {
         <div className="space-y-0.5 pl-2">
           {models.map(([model, data]) => (
             <div key={model} className="flex items-center gap-1.5">
-              <span className="text-warm-400 dark:text-warm-500">
+              <span className="text-fg-tertiary">
                 {model.split("/").pop()}:
               </span>
               <span>
@@ -66,7 +66,7 @@ export function MetricsSummary({ metrics }: { metrics: SessionMetrics }) {
               </span>
               {data.cost > 0 ? (
                 <>
-                  <span className="text-warm-300 dark:text-warm-600">/</span>
+                  <span className="text-fg-tertiary">/</span>
                   <span>{formatCostCompact(data.cost)}</span>
                 </>
               ) : null}

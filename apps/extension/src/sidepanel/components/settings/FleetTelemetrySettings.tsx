@@ -110,16 +110,16 @@ export function FleetTelemetrySettings() {
         : null;
 
   return (
-    <section className="space-y-3 rounded-md border border-warm-200 p-3 dark:border-warm-800">
+    <section className="space-y-3 rounded-md border border-line p-3">
       <div className="flex items-start justify-between gap-3">
         <div className="min-w-0">
           <label
             htmlFor={telemetryId}
-            className="text-sm font-medium dark:text-warm-300"
+            className="text-ui-body font-medium"
           >
             Optional reliability telemetry
           </label>
-          <p className="mt-1 text-xs text-warm-500 dark:text-warm-400">
+          <p className="mt-1 text-ui-control text-fg-tertiary">
             Share a 5% sample of coarse agent reliability summaries to help
             diagnose completion loops and failures.
           </p>
@@ -130,11 +130,11 @@ export function FleetTelemetrySettings() {
           checked={enabled}
           disabled={loading}
           onChange={(event) => void updateConsent(event.target.checked)}
-          className="mt-0.5 h-4 w-4 shrink-0 rounded text-primary-600"
+          className="mt-0.5 h-4 w-4 shrink-0 rounded text-accent-text"
         />
       </div>
 
-      <div className="rounded bg-warm-100 p-2 text-[11px] leading-relaxed text-warm-600 dark:bg-warm-800 dark:text-warm-300">
+      <div className="rounded bg-surface-subtle p-2 text-ui-caption leading-relaxed text-fg-secondary">
         Includes extension and coarse environment versions, model families,
         action counts, timing buckets, completion decisions, evidence
         categories, and outcomes. Never includes task text, websites, page
@@ -142,7 +142,7 @@ export function FleetTelemetrySettings() {
         persistent identifier.
       </div>
 
-      <p className="text-[11px] text-warm-400 dark:text-warm-500">
+      <p className="text-ui-caption text-fg-tertiary">
         {enabled
           ? `On | ${queuedCount} queued locally`
           : requiresRenewal
@@ -160,7 +160,7 @@ export function FleetTelemetrySettings() {
               current === "example" ? null : "example",
             )
           }
-          className="rounded border border-warm-300 px-2 py-1 text-xs text-warm-600 hover:bg-warm-100 dark:border-warm-700 dark:text-warm-300 dark:hover:bg-warm-800"
+          className="rounded border border-line-strong px-2 py-1 text-ui-control text-fg-secondary hover:bg-surface-subtle"
         >
           View example payload
         </button>
@@ -172,7 +172,7 @@ export function FleetTelemetrySettings() {
               current === "last" ? null : "last",
             )
           }
-          className="rounded border border-warm-300 px-2 py-1 text-xs text-warm-600 hover:bg-warm-100 disabled:cursor-not-allowed disabled:opacity-40 dark:border-warm-700 dark:text-warm-300 dark:hover:bg-warm-800"
+          className="rounded border border-line-strong px-2 py-1 text-ui-control text-fg-secondary hover:bg-surface-subtle disabled:cursor-not-allowed disabled:opacity-40"
         >
           View last payload
         </button>
@@ -180,19 +180,19 @@ export function FleetTelemetrySettings() {
           type="button"
           disabled={queuedCount === 0 && !lastPayload}
           onClick={() => void clearLocalData()}
-          className="rounded border border-warm-300 px-2 py-1 text-xs text-warm-600 hover:bg-warm-100 disabled:cursor-not-allowed disabled:opacity-40 dark:border-warm-700 dark:text-warm-300 dark:hover:bg-warm-800"
+          className="rounded border border-line-strong px-2 py-1 text-ui-control text-fg-secondary hover:bg-surface-subtle disabled:cursor-not-allowed disabled:opacity-40"
         >
           Clear local data
         </button>
       </div>
 
       {displayedPayload ? (
-        <pre className="max-h-64 overflow-auto whitespace-pre-wrap break-all rounded bg-warm-950 p-2 text-[10px] text-warm-100">
+        <pre className="max-h-64 overflow-auto whitespace-pre-wrap break-all rounded bg-fg p-2 text-ui-caption text-fg-tertiary">
           {JSON.stringify(displayedPayload, null, 2)}
         </pre>
       ) : null}
       {error ? (
-        <p role="alert" className="text-xs text-red-600 dark:text-red-400">
+        <p role="alert" className="text-ui-control text-danger">
           {error}
         </p>
       ) : null}
