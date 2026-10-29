@@ -1,6 +1,5 @@
 export const PUBLIC_E2E_ENV_VARS = [
   "E2E_PROFILE",
-  "E2E_PROVIDER",
   "E2E_MODEL",
   "E2E_PLANNER_MODEL",
   "E2E_JUDGE_MODEL",
@@ -19,7 +18,6 @@ export type E2EPanelMode = "overlay" | "detached" | "off";
 
 export interface E2EConfig {
   profile: E2EProfileName;
-  provider: string;
   model: string | undefined;
   /** Planner-seat model override (planner sweeps, e.g. GLM-5.2 eval). */
   plannerModel: string | undefined;
@@ -55,7 +53,6 @@ export interface E2EConfig {
 type E2EEnv = Record<string, string | undefined>;
 
 interface ProfileDefaults {
-  provider: string;
   headless: boolean;
   singleProcess: boolean;
   panelMode: E2EPanelMode;
@@ -75,7 +72,6 @@ export interface ReadE2EConfigOptions {
 
 const PROFILE_DEFAULTS: Record<E2EProfileName, ProfileDefaults> = {
   local: {
-    provider: "openrouter",
     headless: false,
     singleProcess: false,
     panelMode: "overlay",
@@ -88,7 +84,6 @@ const PROFILE_DEFAULTS: Record<E2EProfileName, ProfileDefaults> = {
     diagnostic: false,
   },
   ci: {
-    provider: "openrouter",
     headless: true,
     singleProcess: false,
     panelMode: "off",
@@ -101,7 +96,6 @@ const PROFILE_DEFAULTS: Record<E2EProfileName, ProfileDefaults> = {
     diagnostic: false,
   },
   debug: {
-    provider: "openrouter",
     headless: false,
     singleProcess: false,
     panelMode: "overlay",
@@ -114,7 +108,6 @@ const PROFILE_DEFAULTS: Record<E2EProfileName, ProfileDefaults> = {
     diagnostic: true,
   },
   video: {
-    provider: "openrouter",
     headless: false,
     singleProcess: false,
     panelMode: "overlay",
@@ -127,7 +120,6 @@ const PROFILE_DEFAULTS: Record<E2EProfileName, ProfileDefaults> = {
     diagnostic: false,
   },
   headed: {
-    provider: "openrouter",
     headless: false,
     singleProcess: false,
     panelMode: "overlay",
@@ -294,7 +286,6 @@ function buildConfigFromDefaults(profile: E2EProfileName): E2EConfig {
   const defaults = PROFILE_DEFAULTS[profile];
   return {
     profile,
-    provider: defaults.provider,
     model: undefined,
     plannerModel: undefined,
     judgeModel: undefined,
@@ -336,7 +327,6 @@ export function readE2EConfig(
   );
   const config = buildConfigFromDefaults(profile);
 
-  config.provider = envValue(env, "E2E_PROVIDER")?.toLowerCase() ?? config.provider;
   config.model =
     envValue(env, "E2E_MODEL") ??
     warnDeprecated(warnings, env, "E2E_EXECUTOR_MODEL");
@@ -491,7 +481,6 @@ export function withE2EConfigEnv(
   return {
     ...env,
     E2E_PROFILE: config.profile,
-    E2E_PROVIDER: config.provider,
     ...(config.model ? { E2E_MODEL: config.model } : {}),
     ...(config.plannerModel
       ? { E2E_PLANNER_MODEL: config.plannerModel }

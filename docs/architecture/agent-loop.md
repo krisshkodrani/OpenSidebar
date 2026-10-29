@@ -197,14 +197,13 @@ finalized at stream end.
 
 ## Model seats
 
-Model configuration is per-provider-mode in
+Model configuration is in
 `apps/extension/src/config/model-config.ts` with executor eligibility in
 `apps/extension/src/utils/executor-model-policy.ts` — trust those files over
-any list here. Current default seats (OpenRouter provider mode): executor and
+any list here. Current default seats (OpenRouter is the only provider): executor and
 planner `openai/gpt-6-luna`, judge `typesafe/jev-1.13` through the Decisions
-API (a dormant writer seat also exists). The release UI
-offers OpenRouter and Fireworks; experimental adapters remain available to
-internal evaluation. All modes draw from `ProviderPool` slots.
+API (a dormant writer seat also exists). Each seat is one OpenRouter
+`ProviderSlot` in `LLMClient`.
 
 ## Perception
 

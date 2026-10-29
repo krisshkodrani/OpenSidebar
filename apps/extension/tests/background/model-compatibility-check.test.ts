@@ -1,6 +1,5 @@
 import { describe, expect, test } from "vitest";
 import {
-  buildFireworksReport,
   buildOpenRouterReport,
   parseModelCheckArgs,
   probeModel,
@@ -44,64 +43,18 @@ describe("model compatibility checker", () => {
     expect(report.allowlist.some((model) => !model.catalogListed)).toBe(true);
   });
 
-  test("keeps Fireworks inference-list presence diagnostic rather than treating it as capability truth", () => {
-    const report = buildFireworksReport(
-      [
-        {
-          name: "accounts/fireworks/models/kimi-k2p6",
-          displayName: "Kimi K2.6",
-          state: "READY",
-          supportsImageInput: true,
-          supportsTools: true,
-          supportsServerless: true,
-        },
-        {
-          name: "accounts/fireworks/models/text-only",
-          state: "READY",
-          supportsImageInput: false,
-          supportsTools: true,
-          supportsServerless: true,
-        },
-      ],
-      ["accounts/fireworks/models/kimi-k2p6"],
-      new Date("2026-07-27T00:00:00Z"),
-    );
-
-    expect(report.executorCandidateCount).toBe(1);
+  test("parses probe arguments", () => {
     expect(
-      report.allowlist.find(
-        (model) => model.id === "accounts/fireworks/models/kimi-k2p6",
-      ),
-    ).toMatchObject({
-      candidate: true,
-      inferenceListed: true,
-    });
-    expect(
-      report.allowlist.find(
-        (model) => model.id === "accounts/fireworks/models/kimi-k2p7-code",
-      ),
-    ).toMatchObject({
-      catalogListed: false,
-      candidate: false,
-    });
-  });
-
-  test("parses safe provider-scoped probe arguments", () => {
-    expect(
-      parseModelCheckArgs([
-        "--provider=openrouter",
-        "--probe",
-        "--model=minimax/minimax-m3",
-      ]),
+      parseModelCheckArgs(["--probe", "--model=minimax/minimax-m3"]),
     ).toEqual({
-      providers: ["openrouter"],
       probe: true,
       model: "minimax/minimax-m3",
       outputPath: undefined,
     });
-    expect(() => parseModelCheckArgs(["--model=minimax/minimax-m3"])).toThrow(
-      "--model requires",
-    );
+    expect(parseModelCheckArgs([])).toEqual({
+      probe: false,
+      outputPath: undefined,
+    });
   });
 
   test("gives reasoning models enough completion budget to reach a forced tool call", async () => {
@@ -114,12 +67,12 @@ describe("model compatibility checker", () => {
       expect(body.tool_choice?.function?.name).toBe("report_compatibility");
       return new Response(
         JSON.stringify({
-          model: "accounts/fireworks/models/kimi-k2p7-code",
+          model: "moonshotai/kimi-k2.7-code",
           choices: [
             {
               finish_reason: "tool_calls",
               message: {
-                reasoning_content: "Inspected the image.",
+                reasoning: "Inspected the image.",
                 tool_calls: [
                   {
                     type: "function",
@@ -138,12 +91,7 @@ describe("model compatibility checker", () => {
     };
 
     await expect(
-      probeModel(
-        "fireworks",
-        "accounts/fireworks/models/kimi-k2p7-code",
-        "test-key",
-        fetchImpl,
-      ),
+      probeModel("moonshotai/kimi-k2.7-code", "test-key", fetchImpl),
     ).resolves.toMatchObject({
       ok: true,
       finishReason: "tool_calls",

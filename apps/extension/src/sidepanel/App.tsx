@@ -37,7 +37,7 @@ import { useComposerActions } from "./hooks/useComposerActions";
 import { useSkillRecordingActions } from "./hooks/useSkillRecordingActions";
 import { useSettingsViewSession } from "./hooks/useSettingsViewSession";
 import { useTaskUiState } from "./task-ui-state";
-import { getAvailableProviderStacks } from "../utils/provider-keys";
+import { hasProviderCredentials } from "../utils/provider-keys";
 import {
   cloudSession,
   credentialStatuses,
@@ -159,14 +159,12 @@ export default function App({ themeRoot, activityHudRoot }: AppProps = {}) {
         if (!active) return;
         setAccountEmail(session?.account.email ?? null);
         if (!session) return setAccountProviderReady(false);
-        const provider =
-          settings.providerMode === "fireworks" ? "fireworks" : "openrouter";
         const statuses = await credentialStatuses().catch(() => []);
         if (active)
           setAccountProviderReady(
             statuses.some(
               (item) =>
-                item.provider === provider &&
+                item.provider === "openrouter" &&
                 item.configured &&
                 item.verification === "valid",
             ),
@@ -181,12 +179,12 @@ export default function App({ themeRoot, activityHudRoot }: AppProps = {}) {
     return () => {
       active = false;
     };
-  }, [settings.inferenceMode, settings.providerMode, isSettingsOpen]);
+  }, [settings.inferenceMode, isSettingsOpen]);
   const hasReleaseProvider = useMemo(
     () =>
       settings.inferenceMode === "cloud"
         ? Boolean(accountEmail && accountProviderReady)
-        : getAvailableProviderStacks(settings).length > 0,
+        : hasProviderCredentials(settings),
     [accountEmail, accountProviderReady, settings],
   );
 
@@ -432,7 +430,7 @@ export default function App({ themeRoot, activityHudRoot }: AppProps = {}) {
                           <span>
                             {accountProviderReady
                               ? "AI provider connected securely"
-                              : "Connect OpenRouter or Fireworks"}
+                              : "Connect OpenRouter"}
                           </span>
                         </li>
                         <li className="flex gap-2">

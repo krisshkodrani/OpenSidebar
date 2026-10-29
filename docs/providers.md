@@ -1,49 +1,48 @@
 # Providers
 
-OpenSidebar is bring-your-own-key. In local mode, the configured key stays in
-Chrome and model traffic goes directly from the browser to the provider. In
-optional cloud mode, the user explicitly verifies and KMS-encrypts an OpenRouter
-or Fireworks key on their OpenSidebar account; model traffic streams through a
-non-retaining OpenSidebar relay to that provider. Provider behavior, pricing,
-quotas, and downstream retention remain governed by the selected provider.
+OpenRouter is the only LLM provider. OpenSidebar is bring-your-own-key. In local
+mode, the OpenRouter key stays in Chrome and model traffic goes directly from
+the browser to OpenRouter. In optional cloud mode, the user explicitly verifies
+and KMS-encrypts an OpenRouter key on their OpenSidebar account; model traffic
+streams through a non-retaining OpenSidebar relay to OpenRouter. OpenRouter
+behavior, pricing, quotas, and downstream retention remain governed by
+OpenRouter and the upstream host that serves each model.
 
-## Provider matrix
+Groq is not an LLM provider here. An optional Groq key in Settings is used only
+for speech-to-text.
 
-In local mode, Settings derives this list from keys stored locally. In cloud
-mode, only the account's verified OpenRouter or Fireworks credential is usable,
-and the relay enforces a reviewed model allowlist. Legacy hybrid stacks remain
-local-only.
+## Models
 
-| Provider mode | Environment key      | Executor default                              | Planner default                    | Status              |
-| ------------- | -------------------- | --------------------------------------------- | ---------------------------------- | ------------------- |
-| `openrouter`  | `OPENROUTER_API_KEY` | `openai/gpt-6-luna`                           | `openai/gpt-6-luna`               | Recommended default |
-| `fireworks`   | `FIREWORKS_API_KEY`  | `accounts/fireworks/models/kimi-k2p7-code`   | `accounts/fireworks/models/glm-5p2` | Supported           |
+Model ids use the OpenRouter catalog form (`vendor/model`). Settings shows the
+live OpenRouter catalog. In cloud mode, the relay enforces a reviewed model
+allowlist.
 
-The default OpenRouter seats in `apps/extension/src/config/model-config.ts` are
-`openai/gpt-6-luna` for executor and planner, and `typesafe/jev-1.13` for
-typed judge decisions. Fireworks uses `accounts/fireworks/models/gpt-oss-120b`
-for its judge. There is no separate perception model seat: the executor receives
-screenshots when the task needs vision. Settings may override the models. The internal E2E
-harness has its own provider default (`fireworks`), so a test run's model
+| Seat     | Environment key      | Default                | Notes                                  |
+| -------- | -------------------- | ---------------------- | -------------------------------------- |
+| Executor | `OPENROUTER_API_KEY` | `openai/gpt-6-luna`    | Must be image-capable; see below       |
+| Planner  | `OPENROUTER_API_KEY` | `openai/gpt-6-luna`    | Any catalog model                      |
+| Judge    | `OPENROUTER_API_KEY` | `typesafe/jev-1.13`    | Typed judge decisions                  |
+
+The seat defaults live in `apps/extension/src/config/model-config.ts`. The
+executor must be image-capable and reliable enough for action-taking; the
+eligible ids live in `apps/extension/src/utils/executor-model-policy.ts`. There
+is no separate perception model seat: the executor receives screenshots when
+the task needs vision. Settings may override the models. A test run's model
 attribution must come from its recorded configuration and provider responses.
 
-To make one small completion request per configured provider, run
-`pnpm providers:smoke` or select one with
-`pnpm providers:smoke -- --provider=openrouter`. Missing environment keys are
-skipped. The command prints provider-reported token counts and cost when supplied;
-it creates no report file. It makes a paid API call for each provider with a key.
+To make one small completion request, run `pnpm providers:smoke`. A missing
+`OPENROUTER_API_KEY` is skipped. The command prints the token counts and cost
+that OpenRouter reports; it creates no report file. It makes a paid API call.
 
-Experimental and legacy provider modes remain understood by the runtime for
-migrations and internal evaluation, but are not offered in Settings. A provider
-or model is promoted only after `pnpm models:check` and the release smoke pass.
+A model is promoted only after `pnpm models:check` and the release smoke pass.
 
-## What gets sent to the provider
+## What gets sent to OpenRouter
 
 When a task needs it, page context (element lists, extracted text) and
-screenshots may be sent to the selected model provider. Local mode connects
-directly. Cloud mode processes the request transiently through OpenSidebar's
-streaming relay; request/response content is not retained, while aggregate
-request and token counts are retained for quota enforcement. The optional
+screenshots may be sent to the selected model. Local mode connects directly.
+Cloud mode processes the request transiently through OpenSidebar's streaming
+relay; request/response content is not retained, while aggregate request and
+token counts are retained for quota enforcement. The optional
 reliability-summary preview in Settings remains local-only and is not linked to
 the cloud account.
 
@@ -51,9 +50,10 @@ the cloud account.
 
 - **Invalid key** — requests fail immediately; the side panel surfaces the
   provider error.
-- **Quota exhausted / rate limit** — the client retries with backoff and fails
-  over between configured pools where possible; persistent 429s surface as a
-  task error.
+- **Out of credits (HTTP 402)** — the task ends with an error that links to
+  <https://openrouter.ai/credits>.
+- **Rate limit or transient error** — the client retries with backoff;
+  persistent 429s surface as a task error.
 - **Model unavailable / provider outage** — the executor falls back to its
-  configured fallback model; if the provider is fully down the task fails with
-  the provider's error message.
+  configured fallback model; if OpenRouter is fully down the task fails with
+  the error message.

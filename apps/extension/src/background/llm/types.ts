@@ -9,15 +9,7 @@ export interface ProviderConfig {
   /** Extra headers (e.g. OpenRouter's HTTP-Referer, X-Title) */
   headers: Record<string, string>;
   /** Provider identifier for logging and metrics */
-  providerId:
-    | "openrouter"
-    | "openai"
-    | "groq"
-    | "fireworks"
-    | "moonshot"
-    | "deepseek"
-    | "xiaomi"
-    | "cerebras";
+  providerId: "openrouter";
 }
 
 export type ContentPart =
@@ -57,10 +49,6 @@ export interface CompletionRequest {
   response_format?: { type: "json_object" };
   /** Override tool_choice (default: "auto" when tools present) */
   tool_choice?: "auto" | "required" | "none";
-  /** Provider routing hint for prompt-cache affinity within one top-level task */
-  sessionAffinityId?: string;
-  /** Provider routing hint for a single multi-turn agent session */
-  multiTurnSessionId?: string;
 }
 
 export interface PromptCacheTelemetry {
@@ -68,7 +56,7 @@ export interface PromptCacheTelemetry {
   promptTokens?: number;
   cachedPromptTokens?: number;
   cacheHitPct?: number;
-  source: "usage" | "response_headers";
+  source: "usage";
 }
 
 /** Token usage data returned by OpenRouter in every response */

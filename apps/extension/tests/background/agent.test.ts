@@ -32,7 +32,7 @@ const { mockCompleteStream } = vi.hoisted(() => {
 
 vi.mock("../../src/background/llm", () => ({
   LLMClient: class {
-    private model = "accounts/fireworks/routers/kimi-k2p5-turbo";
+    private model = "moonshotai/kimi-k2.6";
     complete = vi.fn(() =>
       Promise.resolve({
         role: "assistant",
@@ -44,29 +44,28 @@ vi.mock("../../src/background/llm", () => ({
     completeStream = mockCompleteStream;
     _isPlannerTier = false;
     switchToPlanner = vi.fn(() => {
-      this.model = "accounts/fireworks/routers/kimi-k2p5-turbo";
+      this.model = "moonshotai/kimi-k2.6";
       this._isPlannerTier = true;
     });
     switchToExecutor = vi.fn(() => {
-      this.model = "accounts/fireworks/routers/kimi-k2p5-turbo";
+      this.model = "moonshotai/kimi-k2.6";
       this._isPlannerTier = false;
     });
     activateExecutorFallback = vi.fn(() => {
-      this.model = "accounts/fireworks/routers/kimi-k2p5-turbo";
+      this.model = "moonshotai/kimi-k2.6";
       return true;
     });
     resetExecutorFallback = vi.fn();
     isPlannerTier = () => this._isPlannerTier;
     getCurrentModel = () => this.model;
-    getCurrentProvider = () => "fireworks";
+    getCurrentProvider = () => "openrouter";
     getActiveProviderInfo = () => ({
-      providerId: "fireworks",
+      providerId: "openrouter",
       model: this.model,
     });
-    setFailoverCallback = vi.fn(() => {});
   },
-  MODEL_EXECUTOR: "accounts/fireworks/routers/kimi-k2p5-turbo",
-  MODEL_PLANNER: "accounts/fireworks/routers/kimi-k2p5-turbo",
+  MODEL_EXECUTOR: "moonshotai/kimi-k2.6",
+  MODEL_PLANNER: "moonshotai/kimi-k2.6",
   stripThinkTags: (text: string) =>
     text.replace(/<think>[\s\S]*?<\/think>/g, "").trim(),
   extractThinkContent: (text: string) => {

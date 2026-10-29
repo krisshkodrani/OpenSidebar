@@ -93,8 +93,7 @@ Validate real browser behavior with the built extension and live agent loop.
 
 Prerequisites:
 
-- `FIREWORKS_API_KEY` by default, unless `E2E_PROVIDER` points at another configured provider
-- `XIAOMI_API_KEY` when `E2E_PROVIDER=xiaomi`
+- `OPENROUTER_API_KEY`
 - successful build assets
 
 ```bash
@@ -113,7 +112,6 @@ The supported public E2E environment surface is intentionally small:
 | Env var               | Purpose                                                                                                                                |
 | --------------------- | -------------------------------------------------------------------------------------------------------------------------------------- |
 | `E2E_PROFILE`         | Selects defaults: `local`, `ci`, `debug`, `video`, or `headed`.                                                                        |
-| `E2E_PROVIDER`        | Selects the agent provider. Default is `fireworks`.                                                                                    |
 | `E2E_MODEL`           | Overrides the executor model for focused runs.                                                                                         |
 | `E2E_PERCEPTION_MODE` | Selects perception mode, for example `unified_vl`.                                                                                     |
 | `E2E_SUITE_FLAGS`     | Comma-separated optional gates such as `memory-long`, `diagnostic`, or `single-process`.                                               |
@@ -170,17 +168,16 @@ pnpm run traces:compact              # index, then delete old raw files
 
 | Role           | Default                                                           |
 | -------------- | ----------------------------------------------------------------- |
-| Provider stack | `openrouter`                                                      |
-| Executor       | `minimax/minimax-m3`                                              |
-| Planner        | `z-ai/glm-5.2`                                                    |
-| Judge          | `openai/gpt-oss-120b`                                             |
+| Provider       | OpenRouter (the only LLM provider)                                |
+| Executor       | `openai/gpt-6-luna`                                               |
+| Planner        | `openai/gpt-6-luna`                                               |
+| Judge          | `typesafe/jev-1.13`                                               |
 | Perception     | `unified_vl` by default; structured fallback is provider-specific |
 
 Authoritative defaults live in `apps/extension/src/config/model-config.ts` and
 `apps/extension/src/utils/executor-model-policy.ts`. Settings overrides live in
 `apps/extension/src/types/settings.ts` and are exposed in the settings drawer.
-The release UI offers OpenRouter and Fireworks; other adapters remain available
-for internal evaluation.
+OpenRouter is the only LLM provider.
 
 ## Observation Path
 
@@ -306,7 +303,7 @@ The pnpm package scripts are the stable day-to-day entry points. Use direct Nx c
 | ------------------------------------------------------ | --------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `pnpm test`                                            | you want the normal fast test suite                                   | extension tests; excludes browser E2E                                                                                                                         |
 | `pnpm run test:e2e`                                    | you need the normal budgeted E2E sequence                             | alias for staged E2E                                                                                                                                          |
-| `pnpm run test:e2e:smoke`                              | you need cheap real-browser confidence                                | uses Fireworks by default                                                                                                                                     |
+| `pnpm run test:e2e:smoke`                              | you need cheap real-browser confidence                                | uses OpenRouter                                                                                                                                                      |
 | `pnpm run test:e2e:staged`                             | you need the normal budgeted E2E sequence                             | smoke + interactions + runtime                                                                                                                                |
 | `pnpm run verify`                                      | you want the local confidence gate                                    | lint + typecheck + tests + build + dist check                                                                                                                 |
 | `pnpm run ci:local`                                    | you want the CI-equivalent local gate                                 | lint + typecheck + tests + build + dist check                                                                                                                 |

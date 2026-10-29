@@ -15,7 +15,7 @@ test("provider smoke sends one bounded completion and records reported usage", a
     });
   }) as typeof fetch;
 
-  const result = await smokeProvider("openrouter", "test-key", fetchMock);
+  const result = await smokeProvider("test-key", fetchMock);
   assert.match(requestedUrl, /openrouter\.ai/);
   assert.equal(requestBody.max_tokens, 64);
   assert.equal(requestBody.stream, false);
@@ -30,5 +30,5 @@ test("provider smoke sends one bounded completion and records reported usage", a
 
 test("provider smoke rejects an empty completion", async () => {
   const fetchMock = (async () => Response.json({ choices: [{ message: { content: " " } }] })) as typeof fetch;
-  await assert.rejects(smokeProvider("fireworks", "test-key", fetchMock), /empty completion/);
+  await assert.rejects(smokeProvider("test-key", fetchMock), /empty completion/);
 });

@@ -1,6 +1,4 @@
-import type { DomSnapshot, PerceptionRuntimeMode, UserSettings } from "../types";
-
-type ProviderMode = UserSettings["providerMode"];
+import type { DomSnapshot, PerceptionRuntimeMode } from "../types";
 
 export interface PerceptionModePageSignals {
   elementCount?: number;
@@ -22,7 +20,6 @@ export interface PerceptionRuntimeModeDecision {
 export interface PerceptionRuntimeModeDecisionArgs
   extends PerceptionModePageSignals {
   perceptionMode?: PerceptionRuntimeMode;
-  providerMode?: ProviderMode;
   /**
    * Whether the resolved executor model can accept image input. `false`
    * forces structured mode over every other signal and override — images

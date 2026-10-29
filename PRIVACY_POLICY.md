@@ -66,7 +66,7 @@ Stored extension data is removed by Chrome when you uninstall the extension, sub
 
 ### Model Provider APIs
 
-When performing a task, the extension sends requests to the configured model provider API. Depending on your settings, this may include providers such as Fireworks, OpenRouter, Moonshot/Kimi, Xiaomi MiMo, or advanced mixed-provider modes.
+When performing a task, the extension sends requests to OpenRouter, the only model provider. OpenRouter routes each request to an upstream model host under its own terms.
 
 Requests may contain:
 
@@ -81,7 +81,7 @@ Requests may contain:
 
 In Local mode, requests are sent over HTTPS directly to the selected provider. In Cloud mode, they are sent over HTTPS to `opensidebar.com`, decrypted only as needed to authenticate the provider call, and streamed to the same selected provider. The relay does not persist prompts, messages, screenshots, tool schemas/results, responses, or reasoning. It retains only coarse operational metadata such as provider/model identifier, status class, token counts, latency bucket, and monthly quota totals. The selected provider's privacy policy governs how that provider handles API traffic in both modes.
 
-Cloud mode supports OpenRouter and Fireworks during limited testing. It does not silently fall back to a local key when the Cloud service is unavailable.
+Cloud mode supports OpenRouter during limited testing. It does not silently fall back to a local key when the Cloud service is unavailable.
 
 ### Optional Local Log Server
 

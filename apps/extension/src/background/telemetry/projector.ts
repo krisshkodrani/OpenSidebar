@@ -165,20 +165,9 @@ export function projectFleetTelemetryEnvelope(
 export function normalizeFleetProviderId(
   providerId: string | null | undefined,
 ): FleetProviderId {
-  const normalized = providerId?.trim().toLowerCase();
-  switch (normalized) {
-    case "openrouter":
-    case "openai":
-    case "groq":
-    case "fireworks":
-    case "moonshot":
-    case "deepseek":
-    case "xiaomi":
-    case "cerebras":
-      return normalized;
-    default:
-      return "other";
-  }
+  return providerId?.trim().toLowerCase() === "openrouter"
+    ? "openrouter"
+    : "other";
 }
 
 export function normalizeFleetModelId(
@@ -190,25 +179,15 @@ export function normalizeFleetModelId(
       .toLowerCase()
       .replace(/:nitro$/, "") ?? "";
   if (normalized.includes("minimax-m3")) return "minimax_m3";
-  if (normalized.includes("kimi-k2.7") || normalized.includes("kimi-k2p7")) {
-    return "kimi_k2_7_code";
-  }
-  if (normalized.includes("kimi-k2.6") || normalized.includes("kimi-k2p6")) {
-    return "kimi_k2_6";
-  }
-  if (normalized.includes("kimi-k2.5") || normalized.includes("kimi-k2p5")) {
-    return "kimi_k2_5";
-  }
-  if (normalized.includes("glm-5.2") || normalized.includes("glm-5p2")) {
-    return "glm_5_2";
-  }
+  if (normalized.includes("kimi-k2.7")) return "kimi_k2_7_code";
+  if (normalized.includes("kimi-k2.6")) return "kimi_k2_6";
+  if (normalized.includes("kimi-k2.5")) return "kimi_k2_5";
+  if (normalized.includes("glm-5.2")) return "glm_5_2";
   if (normalized.includes("gpt-oss-120b")) return "gpt_oss_120b";
   if (normalized.includes("mimo-v2")) return "mimo_v2";
   if (normalized.includes("deepseek-v4")) return "deepseek_v4";
   if (normalized.includes("qwen3-vl")) return "qwen_3_vl";
-  if (normalized.includes("qwen3.7") || normalized.includes("qwen3p7")) {
-    return "qwen_3_7";
-  }
+  if (normalized.includes("qwen3.7")) return "qwen_3_7";
   if (normalized.includes("grok-4.5")) return "grok_4_5";
   if (normalized.includes("gemma-4-31b")) return "gemma_4_31b";
   return "other";

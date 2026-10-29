@@ -64,7 +64,7 @@ describe("high-risk judge gate against a seeded corpus fact", () => {
         text:
           '{"pass": false, "confidence": 0.9, "perCriterion": [{"id":"c1","pass":false}], "entailment": [{"claimKey":"task-1:node-1","label":"contradicted"}]}',
         model: "glm-5p2",
-        providerId: "fireworks",
+        providerId: "openrouter",
       })),
     };
     const outcome = await runHighRiskJudgeGate(
@@ -87,7 +87,7 @@ describe("high-risk judge gate against a seeded corpus fact", () => {
       runJudge: vi.fn(async () => ({
         text: '{"pass": true, "confidence": 0.9, "perCriterion": [{"id":"c1","pass":true}]}',
         model: "glm-5p2",
-        providerId: "fireworks",
+        providerId: "openrouter",
       })),
     };
     const outcome = await runHighRiskJudgeGate(
@@ -106,7 +106,7 @@ describe("high-risk judge gate against a seeded corpus fact", () => {
       runJudge: vi.fn(async () => ({
         text: '{"pass": true, "confidence": 0.9, "perCriterion": [{"id":"c1","pass":true}]}',
         model: "glm-5p2",
-        providerId: "fireworks",
+        providerId: "openrouter",
       })),
     };
 

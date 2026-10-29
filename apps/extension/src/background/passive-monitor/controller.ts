@@ -248,15 +248,6 @@ function llmOptionsFromSettings(settings: UserSettings): LLMClientOptions {
     executorModel: settings.executorModel,
     plannerModel: settings.plannerModel,
     useNitro: settings.useNitro,
-    providerMode: settings.providerMode,
-    provider: settings.provider,
-    openaiApiKey: settings.openaiApiKey,
-    groqApiKey: settings.groqApiKey,
-    fireworksApiKey: settings.fireworksApiKey,
-    deepseekApiKey: settings.deepseekApiKey,
-    kimiApiKey: settings.kimiApiKey,
-    xiaomiApiKey: settings.xiaomiApiKey,
-    cerebrasApiKey: settings.cerebrasApiKey,
     temperature: settings.temperature,
   };
 }

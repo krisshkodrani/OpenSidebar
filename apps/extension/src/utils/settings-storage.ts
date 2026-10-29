@@ -12,12 +12,7 @@ import {
   DEFAULT_MAX_IMAGE_PROMPT_TOKEN_ESTIMATE,
   type UserSettings,
 } from "../types";
-import {
-  DEFAULT_PROVIDER_MODE,
-  isExecutorEligible,
-  type ProviderMode,
-} from "./executor-model-policy";
-import { resolveAvailableProviderMode } from "./provider-keys";
+import { isExecutorEligible } from "./executor-model-policy";
 import { chromePersistencePort } from "../background/environment/chrome";
 import {
   decryptField,
@@ -29,37 +24,45 @@ import {
 const SYNC_KEY = "userSettings";
 const SESSION_KEY = "openRouterApiKey"; // legacy session key (migration)
 const LOCAL_KEY = "openRouterApiKey_local";
-const LOCAL_OPENAI_KEY = "openaiApiKey_local";
-const LOCAL_GROQ_KEY = "groqApiKey_local";
-const LOCAL_GEMINI_KEY = "geminiApiKey_local";
-const LOCAL_FIREWORKS_KEY = "fireworksApiKey_local";
-const LOCAL_DEEPSEEK_KEY = "deepseekApiKey_local";
-const LOCAL_KIMI_KEY = "kimiApiKey_local";
-const LOCAL_XIAOMI_KEY = "xiaomiApiKey_local";
-const LOCAL_CEREBRAS_KEY = "cerebrasApiKey_local";
-const LEGACY_LOCAL_JOBAGENT_MCP_TOKEN_KEY = "jobAgentMcpToken_local";
-const LOCAL_CREDENTIAL_KEYS = [
-  LOCAL_KEY,
-  LOCAL_OPENAI_KEY,
-  LOCAL_GROQ_KEY,
-  LOCAL_GEMINI_KEY,
-  LOCAL_FIREWORKS_KEY,
-  LOCAL_DEEPSEEK_KEY,
-  LOCAL_KIMI_KEY,
-  LOCAL_XIAOMI_KEY,
-  LOCAL_CEREBRAS_KEY,
+const LOCAL_GROQ_KEY = "groqApiKey_local"; // speech-to-text only
+const LOCAL_CREDENTIAL_KEYS = [LOCAL_KEY, LOCAL_GROQ_KEY] as const;
+const SYNC_CREDENTIAL_FIELDS = ["openRouterApiKey", "groqApiKey"] as const;
+
+/**
+ * Local keys of removed providers and features. The stored value is the
+ * (encrypted) secret itself, so deleting the key deletes the secret. OpenRouter
+ * is the only LLM provider; Fireworks and the other direct-provider keys have
+ * no reader any more. Removed on every load and save.
+ */
+const RETIRED_LOCAL_KEYS = [
+  "fireworksApiKey_local",
+  "openaiApiKey_local",
+  "geminiApiKey_local",
+  "deepseekApiKey_local",
+  "kimiApiKey_local",
+  "xiaomiApiKey_local",
+  "cerebrasApiKey_local",
+  "jobAgentMcpToken_local",
 ] as const;
-const SYNC_CREDENTIAL_FIELDS = [
-  "openRouterApiKey",
-  "openaiApiKey",
-  "groqApiKey",
-  "geminiApiKey",
+
+/** Credential fields that older versions may have leaked into synced settings. */
+const RETIRED_SYNC_CREDENTIAL_FIELDS = [
   "fireworksApiKey",
+  "openaiApiKey",
+  "geminiApiKey",
   "deepseekApiKey",
   "kimiApiKey",
   "xiaomiApiKey",
   "cerebrasApiKey",
   "jobAgentMcpToken",
+] as const;
+
+/** Model seats hold provider-native ids; they do not survive a provider switch. */
+const MODEL_SEAT_FIELDS = [
+  "executorModel",
+  "plannerModel",
+  "writerModel",
+  "judgeModel",
 ] as const;
 
 export type SettingsStorageKeys =
@@ -173,51 +176,26 @@ async function readCredentials(
 }
 
 /**
- * Provider modes whose planner/writer seats are served by Fireworks
- * (llm/client.ts builds the Fireworks planner pool for exactly these). Other
- * modes route those seats to Groq/OpenRouter, where the catalog-style ids are
- * the correct ones — so the rewrite below must not touch them.
+ * Drop the retired provider settings from a stored settings object. A user who
+ * ran any provider other than OpenRouter also loses the model seats, because
+ * those ids (`accounts/fireworks/...`, bare `kimi-k2.6`) 404 on OpenRouter.
+ * Returns true when something changed (the caller writes the settings back).
  */
-const FIREWORKS_SEAT_PROVIDER_MODES = new Set([
-  "fireworks",
-  "cerebras-fireworks",
-]);
-
-/**
- * Fireworks addresses models as `accounts/fireworks/models/...`; the
- * catalog-style `openai/...` id 404s on that endpoint (proven live — the
- * judge-seat incident). The curated Fireworks catalog offered the catalog-form
- * GPT-OSS id until it was corrected, so a seat chosen before then is persisted
- * broken. Unlike `executorModel` — which self-heals because an ineligible id is
- * dropped below — `plannerModel`/`writerModel` have no normalizer, so without
- * this rewrite the stored id keeps 404ing after the fix ships.
- */
-const FIREWORKS_SEAT_MODEL_ID_REWRITES: Readonly<Record<string, string>> = {
-  "openai/gpt-oss-120b": "accounts/fireworks/models/gpt-oss-120b",
-};
-
-const FIREWORKS_MIGRATED_SEATS = ["plannerModel", "writerModel"] as const;
-
-/**
- * Repair persisted Fireworks seat ids in place. Returns true when something
- * changed (the caller writes the settings back).
- */
-export function migrateFireworksSeatModelIds(
+export function migrateRetiredProviderSettings(
   raw: Record<string, unknown>,
 ): boolean {
-  if (!FIREWORKS_SEAT_PROVIDER_MODES.has(String(raw.providerMode))) {
-    return false;
+  const hadProviderMode = "providerMode" in raw;
+  const hadLegacyProvider = "provider" in raw;
+  if (!hadProviderMode && !hadLegacyProvider) return false;
+  const usedOtherProvider =
+    (hadProviderMode && raw.providerMode !== "openrouter") ||
+    (hadLegacyProvider && !hadProviderMode && raw.provider !== "openrouter");
+  delete raw.providerMode;
+  delete raw.provider;
+  if (usedOtherProvider) {
+    for (const seat of MODEL_SEAT_FIELDS) delete raw[seat];
   }
-  let changed = false;
-  for (const seat of FIREWORKS_MIGRATED_SEATS) {
-    const current = raw[seat];
-    if (typeof current !== "string") continue;
-    const replacement = FIREWORKS_SEAT_MODEL_ID_REWRITES[current];
-    if (!replacement) continue;
-    raw[seat] = replacement;
-    changed = true;
-  }
-  return changed;
+  return true;
 }
 
 export function normalizeEnabledSkillPackIds(value: unknown): string[] {
@@ -257,12 +235,6 @@ export async function saveSettings(
 ): Promise<void> {
   const normalized: UserSettings & Record<string, unknown> = {
     ...settings,
-    providerMode:
-      resolveAvailableProviderMode(settings) ??
-      (settings.providerMode === "openai-groq"
-        ? DEFAULT_PROVIDER_MODE
-        : settings.providerMode) ??
-      DEFAULT_PROVIDER_MODE,
     perceptionMode: settings.perceptionMode ?? "auto",
     maxImagePromptTokenEstimate: normalizeMaxImagePromptTokenEstimate(
       settings.maxImagePromptTokenEstimate,
@@ -274,13 +246,12 @@ export async function saveSettings(
   };
   if (
     normalized.executorModel &&
-    !isExecutorEligible(
-      normalized.executorModel,
-      normalized.providerMode as ProviderMode,
-    )
+    !isExecutorEligible(normalized.executorModel)
   ) {
     delete normalized.executorModel;
   }
+  delete normalized.providerMode;
+  delete normalized.provider;
   // Retired LP-11 A/B arm selector — strip if present.
   delete normalized.perceptionAutoDefault;
   delete normalized.useVLExecutor;
@@ -288,32 +259,15 @@ export async function saveSettings(
   delete normalized.jobAgentMcpEnabled;
   delete normalized.jobAgentMcpUrl;
   delete normalized.jobAgentMcpToken;
-  const {
-    openRouterApiKey,
-    openaiApiKey,
-    groqApiKey,
-    geminiApiKey,
-    fireworksApiKey,
-    deepseekApiKey,
-    kimiApiKey,
-    xiaomiApiKey,
-    cerebrasApiKey,
-    ...rest
-  } = normalized;
+  for (const field of RETIRED_SYNC_CREDENTIAL_FIELDS) delete normalized[field];
+  const { openRouterApiKey, groqApiKey, ...rest } = normalized;
   await Promise.all([
     withCredentialStorageLock(async () =>
       storage.local.set(
         await encryptCredentials(
           {
             [LOCAL_KEY]: normalizeCredential(openRouterApiKey),
-            [LOCAL_OPENAI_KEY]: normalizeCredential(openaiApiKey),
             [LOCAL_GROQ_KEY]: normalizeCredential(groqApiKey),
-            [LOCAL_GEMINI_KEY]: normalizeCredential(geminiApiKey),
-            [LOCAL_FIREWORKS_KEY]: normalizeCredential(fireworksApiKey),
-            [LOCAL_DEEPSEEK_KEY]: normalizeCredential(deepseekApiKey),
-            [LOCAL_KIMI_KEY]: normalizeCredential(kimiApiKey),
-            [LOCAL_XIAOMI_KEY]: normalizeCredential(xiaomiApiKey),
-            [LOCAL_CEREBRAS_KEY]: normalizeCredential(cerebrasApiKey),
           },
           storage,
         ),
@@ -324,7 +278,7 @@ export async function saveSettings(
   await Promise.all([
     // Retire the legacy key only after the encrypted local write succeeds.
     storage.session.remove(SESSION_KEY).catch(() => {}),
-    storage.local.remove(LEGACY_LOCAL_JOBAGENT_MCP_TOKEN_KEY).catch(() => {}),
+    storage.local.remove([...RETIRED_LOCAL_KEYS]).catch(() => {}),
   ]);
 }
 
@@ -341,40 +295,19 @@ export async function loadSettings(
   ]);
   const syncSettings = syncResult[SYNC_KEY];
   const apiKey = credentials[LOCAL_KEY];
-  const openaiApiKey = credentials[LOCAL_OPENAI_KEY];
   const groqApiKey = credentials[LOCAL_GROQ_KEY];
-  const geminiApiKey = credentials[LOCAL_GEMINI_KEY];
-  const fireworksApiKey = credentials[LOCAL_FIREWORKS_KEY];
-  const deepseekApiKey = credentials[LOCAL_DEEPSEEK_KEY];
-  const kimiApiKey = credentials[LOCAL_KIMI_KEY];
-  const xiaomiApiKey = credentials[LOCAL_XIAOMI_KEY];
-  const cerebrasApiKey = credentials[LOCAL_CEREBRAS_KEY];
 
-  void storage.local
-    .remove(LEGACY_LOCAL_JOBAGENT_MCP_TOKEN_KEY)
-    .catch(() => {});
+  void storage.local.remove([...RETIRED_LOCAL_KEYS]).catch(() => {});
 
-  if (
-    !syncSettings &&
-    !apiKey &&
-    !openaiApiKey &&
-    !groqApiKey &&
-    !geminiApiKey &&
-    !fireworksApiKey &&
-    !deepseekApiKey &&
-    !kimiApiKey &&
-    !xiaomiApiKey &&
-    !cerebrasApiKey
-  ) {
-    return null;
-  }
+  if (!syncSettings && !apiKey && !groqApiKey) return null;
 
   const raw: Record<string, unknown> = { ...(syncSettings ?? {}) };
   let shouldCleanRemovedSettings =
     "voiceMode" in raw ||
     "jobAgentMcpEnabled" in raw ||
     "jobAgentMcpUrl" in raw ||
-    SYNC_CREDENTIAL_FIELDS.some((field) => field in raw);
+    SYNC_CREDENTIAL_FIELDS.some((field) => field in raw) ||
+    RETIRED_SYNC_CREDENTIAL_FIELDS.some((field) => field in raw);
 
   // Migrate renamed fields (polarity flip)
   if ("bypassApprovals" in raw) {
@@ -401,15 +334,7 @@ export async function loadSettings(
   delete raw.jobAgentMcpEnabled;
   delete raw.jobAgentMcpUrl;
 
-  // Migrate legacy `provider` to `providerMode`
-  if ("provider" in raw && !("providerMode" in raw)) {
-    const p = raw.provider as string;
-    if (p === "groq") raw.providerMode = "openrouter-groq";
-    else if (p === "openai") raw.providerMode = "openai-groq";
-    else raw.providerMode = "openrouter";
-    delete raw.provider;
-  }
-  if (!raw.providerMode) raw.providerMode = DEFAULT_PROVIDER_MODE;
+  if (migrateRetiredProviderSettings(raw)) shouldCleanRemovedSettings = true;
 
   // Migrate legacy unified-vision toggle to auto mode. The runtime chooses
   // unified VL only when page or task signals indicate vision is useful.
@@ -425,38 +350,9 @@ export async function loadSettings(
 
   if (
     typeof raw.executorModel === "string" &&
-    !isExecutorEligible(raw.executorModel, raw.providerMode as ProviderMode)
+    !isExecutorEligible(raw.executorModel)
   ) {
     delete raw.executorModel;
-    shouldCleanRemovedSettings = true;
-  }
-
-  if (migrateFireworksSeatModelIds(raw)) {
-    shouldCleanRemovedSettings = true;
-  }
-
-  const availableProviderMode = resolveAvailableProviderMode({
-    providerMode: raw.providerMode as UserSettings["providerMode"],
-    openRouterApiKey: apiKey ?? "",
-    openaiApiKey,
-    groqApiKey,
-    fireworksApiKey,
-    deepseekApiKey,
-    kimiApiKey,
-    xiaomiApiKey,
-    cerebrasApiKey,
-  });
-  if (availableProviderMode && availableProviderMode !== raw.providerMode) {
-    raw.providerMode = availableProviderMode;
-    delete raw.executorModel;
-    delete raw.plannerModel;
-    delete raw.writerModel;
-    shouldCleanRemovedSettings = true;
-  } else if (raw.providerMode === "openai-groq" && !availableProviderMode) {
-    raw.providerMode = DEFAULT_PROVIDER_MODE;
-    delete raw.executorModel;
-    delete raw.plannerModel;
-    delete raw.writerModel;
     shouldCleanRemovedSettings = true;
   }
 
@@ -465,6 +361,7 @@ export async function loadSettings(
 
   // Strip API keys from sync data in case they leaked from an older version
   for (const field of SYNC_CREDENTIAL_FIELDS) delete raw[field];
+  for (const field of RETIRED_SYNC_CREDENTIAL_FIELDS) delete raw[field];
 
   if (shouldCleanRemovedSettings) {
     await storage.sync.set({ [SYNC_KEY]: raw }).catch(() => {});
@@ -473,14 +370,7 @@ export async function loadSettings(
   return {
     ...raw,
     openRouterApiKey: apiKey ?? "",
-    openaiApiKey: openaiApiKey,
-    groqApiKey: groqApiKey,
-    geminiApiKey: geminiApiKey,
-    fireworksApiKey: fireworksApiKey,
-    deepseekApiKey: deepseekApiKey,
-    kimiApiKey: kimiApiKey,
-    xiaomiApiKey: xiaomiApiKey,
-    cerebrasApiKey: cerebrasApiKey,
+    groqApiKey,
   } as UserSettings;
 }
 

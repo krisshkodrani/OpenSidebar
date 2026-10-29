@@ -8,39 +8,23 @@ import {
 describe("LLM model config", () => {
   test("uses checked-in defaults", () => {
     expect(LLM_MODEL_CONFIG).toEqual(DEFAULT_LLM_MODEL_CONFIG);
-    // The top-level executor default tracks the RECOMMENDED provider mode,
-    // which became OpenRouter on 2026-07-26 — hence the catalog-form id. The
-    // Fireworks form still backs the Fireworks-family seats below.
     expect(LLM_MODEL_CONFIG.executor).toBe("openai/gpt-6-luna");
-    expect(LLM_MODEL_CONFIG.fireworks.executor).toBe(
-      "accounts/fireworks/models/kimi-k2p7-code",
-    );
-    expect(LLM_MODEL_CONFIG.deepseek.planner).toBe("deepseek-v4-flash");
   });
 
-  test("OpenRouter seats use catalog-form ids and a decoupled judge", () => {
-    // OpenRouter 404s on Fireworks `accounts/...` ids, so this group must never
-    // borrow the top-level Fireworks-form planner/judge defaults.
-    for (const [seat, model] of Object.entries(LLM_MODEL_CONFIG.openrouter)) {
+  test("every seat uses an OpenRouter catalog-form id", () => {
+    for (const [seat, model] of Object.entries(LLM_MODEL_CONFIG)) {
       expect(
         model.startsWith("accounts/"),
-        `openrouter.${seat} (${model}) is a Fireworks id; OpenRouter needs the catalog form`,
+        `${seat} (${model}) is not an OpenRouter catalog id`,
       ).toBe(false);
       expect(model).toContain("/");
     }
-    expect(LLM_MODEL_CONFIG.openrouter.judge).not.toBe(
-      LLM_MODEL_CONFIG.openrouter.planner,
-    );
   });
 
-  test("judge seat defaults to a dedicated fast model, decoupled from the planner", () => {
-    // RFC LP-15 Phase 10 seat, retuned 2026-07-09: sharing the GLM planner
-    // seat made ~75% of judge calls time out behind planner traffic and fail
-    // open. The judge is a text-only strict-JSON rubric task — GPT-OSS-120B
-    // (Fireworks-served) answers fast enough to actually rule.
-    expect(LLM_MODEL_CONFIG.judge).toBe(
-      "accounts/fireworks/models/gpt-oss-120b",
-    );
+  test("judge seat is decoupled from the planner", () => {
+    // RFC LP-15 Phase 10 seat: sharing the planner seat made most judge calls
+    // time out behind planner traffic and fail open.
+    expect(LLM_MODEL_CONFIG.judge).toBe("typesafe/jev-1.13");
     expect(LLM_MODEL_CONFIG.judge).not.toBe(LLM_MODEL_CONFIG.planner);
   });
 
@@ -64,18 +48,12 @@ describe("LLM model config", () => {
       resolveLLMModelConfig({
         executor: "",
         planner: "custom/planner",
-        deepseek: {
-          planner: "deepseek-custom",
-          plannerPro: "",
-        },
+        writer: 42,
       }),
     ).toMatchObject({
       executor: DEFAULT_LLM_MODEL_CONFIG.executor,
       planner: "custom/planner",
-      deepseek: {
-        planner: "deepseek-custom",
-        plannerPro: DEFAULT_LLM_MODEL_CONFIG.deepseek.plannerPro,
-      },
+      writer: DEFAULT_LLM_MODEL_CONFIG.writer,
     });
   });
 });

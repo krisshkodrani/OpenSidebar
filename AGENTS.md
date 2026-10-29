@@ -195,8 +195,8 @@ multi-tab checklist work, and infeasible-task clarification.
 
 ### Runtime defaults
 
-- Provider mode: `openrouter`; lane: `validation`; executor/planner: `openai/gpt-6-luna`; judge: `typesafe/jev-1.13`, unless overridden.
-- Override env vars: `E2E_PROVIDER`, `E2E_MODEL`, `E2E_PLANNER_MODEL`, `E2E_JUDGE_MODEL`, `E2E_PERCEPTION_MODE`, `E2E_DIAGNOSTIC`.
+- Provider: OpenRouter; executor/planner: `openai/gpt-6-luna`; judge: `typesafe/jev-1.13`, unless overridden.
+- Override env vars: `E2E_MODEL`, `E2E_PLANNER_MODEL`, `E2E_JUDGE_MODEL`, `E2E_PERCEPTION_MODE`, `E2E_DIAGNOSTIC`.
 - Keep harness config minimal; prefer runtime fixes over provider-specific test branching.
 
 ## Failure Triage Order

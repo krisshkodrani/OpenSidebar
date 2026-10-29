@@ -275,7 +275,7 @@ Options:
   --shortcut=<combo>          Keyboard shortcut to trigger the extension action. Default: Control+Shift+Y
   --manual-only               Do not press the action shortcut automatically
   --no-helper-open            Do not use the extension helper-page open fallback
-  --no-provider-seed          Do not seed Fireworks settings even if FIREWORKS_API_KEY exists
+  --no-provider-seed          Do not seed OpenRouter settings even if OPENROUTER_API_KEY exists
   --help                      Show this help
 `);
 }
@@ -296,8 +296,8 @@ async function main(): Promise<void> {
   const manualOnly = hasFlag("manual-only");
   const helperOpen = !hasFlag("no-helper-open");
   const shouldSeedProvider = !hasFlag("no-provider-seed");
-  const fireworksKey = shouldSeedProvider
-    ? readEnvValue("FIREWORKS_API_KEY")
+  const openRouterKey = shouldSeedProvider
+    ? readEnvValue("OPENROUTER_API_KEY")
     : undefined;
   const startedAt = new Date().toISOString();
   const outputPath = artifactPath();
@@ -328,28 +328,18 @@ async function main(): Promise<void> {
     }, fixtureUrl);
     if (tabId <= 0) throw new Error("Could not resolve fixture tab.");
 
-    if (fireworksKey) {
+    if (openRouterKey) {
       await helper.evaluate(async (key: string) => {
-        await chrome.storage.local.set({
-          fireworksApiKey_local: key,
-          openRouterApiKey_local: "",
-          openaiApiKey_local: "",
-          groqApiKey_local: "",
-          geminiApiKey_local: "",
-          deepseekApiKey_local: "",
-          kimiApiKey_local: "",
-          xiaomiApiKey_local: "",
-        });
+        await chrome.storage.local.set({ openRouterApiKey_local: key });
         await chrome.storage.sync.set({
           userSettings: {
-            providerMode: "fireworks",
             requireApprovals: false,
             allowNavigation: false,
             requirePlanConfirmation: false,
             showElementTags: false,
           },
         });
-      }, fireworksKey);
+      }, openRouterKey);
     }
 
     await helper.evaluate(async () => {
@@ -459,7 +449,7 @@ async function main(): Promise<void> {
           fixtureUrl,
           extensionId: ctx.extensionId,
           tabId,
-          providerSeeded: Boolean(fireworksKey),
+          providerSeeded: Boolean(openRouterKey),
           trigger,
           helperOpenResult,
           state: lastState,
@@ -487,7 +477,7 @@ async function main(): Promise<void> {
       fixtureUrl,
       extensionId: ctx.extensionId,
       tabId,
-      providerSeeded: Boolean(fireworksKey),
+      providerSeeded: Boolean(openRouterKey),
       trigger,
       helperOpenResult,
       lastState,

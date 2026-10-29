@@ -37,29 +37,13 @@ outside a sanctioned sandbox; publishing a single cherry-picked config.
 | --- | --- |
 | Build / `dist/` | ✅ green (built 2026-06-14) |
 | Task set (300) | ✅ `tasks/online-mind2web.json` (80 easy / 141 medium / 79 hard) |
-| Judge key | ✅ `OPENAI_API_KEY` → auto-fallback to OpenAI direct, `gpt-5.4-mini` |
+| Judge key | ✅ `OPENROUTER_API_KEY` → `openai/gpt-5.4-mini` |
 | HF token | ✅ present (only needed to re-fetch tasks) |
-| **Executor key** | ❌ **none live — this is the only blocker** |
+| **Executor key** | ❌ **`OPENROUTER_API_KEY` must be live — this is the only blocker** |
 
-**Why there is no live executor today.** `.env` holds `DEEPSEEK_API_KEY`,
-`FIREWORKS_API_KEY`, `OPENAI_API_KEY`. But:
-
-- `FIREWORKS_API_KEY` is **dead** (401 on a real completion, verified 2026-06-11).
-- `E2E_PROVIDER=deepseek` is **not** a standalone DeepSeek executor. It resolves
-  to the `fireworks-deepseek` **hybrid** (`detectProviderMode`), and the hybrid's
-  active completion key is the **Fireworks** key
-  (`loadActiveProviderApiKey`: `fireworksKey && deepseekKey ? fireworksKey : undefined`).
-  Dead Fireworks key ⇒ hybrid is dead too.
-- No `OPENROUTER_API_KEY` / Groq / Moonshot / Xiaomi key is present, so every
-  other provider mode is also unkeyed.
-
-**Decision — pick ONE to unblock (cheapest first):**
-
-| Option | Effort | Unlocks | Recommendation |
-| --- | --- | --- | --- |
-| **A. Replace `FIREWORKS_API_KEY`** | new key at app.fireworks.ai | `fireworks` flagship **and** the `deepseek` hybrid (1 key → 2 configs) | **Primary** — best config coverage for one action |
-| B. Add `OPENROUTER_API_KEY` | new key at openrouter.ai | `openrouter / openai/gpt-5.4-mini` (pure single-provider) | Good standalone/extra config |
-| C. Add a Groq/Moonshot key | new key | speed-focused single config | Optional |
+**What unblocks the campaign.** OpenRouter is the only LLM provider, so the one
+requirement is a live `OPENROUTER_API_KEY` with credits in `.env`. Check it with
+`pnpm providers:smoke`.
 
 The 6-task smoke (§5 Phase 1) is the **go/no-go** that confirms whichever key is
 provisioned actually completes.
@@ -71,7 +55,7 @@ provisioned actually completes.
 - **Dataset:** `scripts/bench/tasks/online-mind2web.json`, the vendored revision. Do not re-fetch mid-campaign.
 - **Subset:** `--size 100 --seed 0` (stratified across easy/medium/hard). Seed and size are **frozen** so all configs run the *same* tasks.
 - **Per-task caps:** default `--max-turns 25`, 300 s timeout (don't change between configs being compared).
-- **Judge:** OpenAI direct, `gpt-5.4-mini` (via `OPENAI_API_KEY` fallback). Same judge for every config.
+- **Judge:** OpenRouter `openai/gpt-5.4-mini`. Same judge for every config.
 - **Safety:** write-mutating tasks **skipped** (no `--allow-writes`); skips reported, never in the denominator.
 
 Any change to these = a new campaign, not a comparable config.
@@ -80,16 +64,14 @@ Any change to these = a new campaign, not a comparable config.
 
 ## 4. Config matrix (what we publish)
 
-| Slot | `E2E_PROVIDER` | `E2E_MODEL` | `--config-label` | Key needed | Status |
-| --- | --- | --- | --- | --- | --- |
-| **A — flagship** | `fireworks` | `accounts/fireworks/models/kimi-k2p7-code` | `fireworks / kimi-k2p7-code` | replaced Fireworks key | gated on §2-A |
-| **B — second** | `deepseek` | `deepseek-v3.2` | `deepseek / v3.2` | Fireworks **and** DeepSeek keys (hybrid) | gated on §2-A |
-| **C — optional third** | `openrouter` | `openai/gpt-5.4-mini` | `openrouter / gpt-5.4-mini` | `OPENROUTER_API_KEY` | gated on §2-B |
+| Slot | `E2E_MODEL` | `--config-label` | Key needed | Status |
+| --- | --- | --- | --- | --- |
+| **A — flagship** | `minimax/minimax-m3` | `openrouter / minimax-m3` | `OPENROUTER_API_KEY` | gated on §2 |
+| **B — second** | `moonshotai/kimi-k2.7-code` | `openrouter / kimi-k2.7-code` | `OPENROUTER_API_KEY` | gated on §2 |
+| **C — optional third** | `openai/gpt-5.4-mini` | `openrouter / gpt-5.4-mini` | `OPENROUTER_API_KEY` | gated on §2 |
 
-Publish **2 minimum** (A + B once the Fireworks key is replaced). Add C if a
-third, independent executor is wanted for credibility. (Model id `deepseek-v3.2`
-is the working label; confirm it resolves in the Phase-1 smoke and correct here
-if the provider expects a different string.)
+Publish **2 minimum** (A + B). Add C if a third, independent executor is wanted
+for credibility.
 
 ---
 
@@ -99,14 +81,14 @@ Operator detail for each phase is in [RUN-CHECKLIST.md](./RUN-CHECKLIST.md); the
 exact commands for *this* campaign are below. Run from repo root.
 
 ### Phase 0 — Unblock + freeze (minutes)
-- Provision one executor key per §2. `git status` clean; `dist/` current (it is).
+- Provision the OpenRouter key per §2. `git status` clean; `dist/` current (it is).
 - Confirm `.env` judge key present. Do **not** start with uncommitted runtime changes.
 
 ### Phase 1 — Pipeline smoke, ~pennies — **GO/NO-GO on the key**
 ```bash
-E2E_PROVIDER=fireworks E2E_MODEL=accounts/fireworks/models/kimi-k2p7-code \
+E2E_MODEL=minimax/minimax-m3 \
   pnpm run bench -- --tasks scripts/bench/tasks/sample.json \
-  --config-label "fireworks / kimi-k2p7-code (smoke)"
+  --config-label "openrouter / minimax-m3 (smoke)"
 ```
 GO if: artifacts written (`report.md`, `summary.json`, `results.json`,
 `receipts/<task>/*.jsonl`), **every** task got a judge verdict (no "evidence
@@ -115,9 +97,9 @@ NO-GO ⇒ the key is dead/misrouted; fix before spending on browser time.
 
 ### Phase 2 — Calibration, ~30–60 min, small spend
 ```bash
-E2E_PROVIDER=fireworks E2E_MODEL=accounts/fireworks/models/kimi-k2p7-code \
+E2E_MODEL=minimax/minimax-m3 \
   pnpm run bench -- --size 20 --levels easy,medium --seed 0 \
-  --config-label "fireworks / kimi-k2p7-code (calib)"
+  --config-label "openrouter / minimax-m3 (calib)"
 ```
 - Record per-task wall-clock + token cost → extrapolate the n=100 budget (§6).
 - Hand-check ~5 judge verdicts vs traces. If the judge looks miscalibrated, fix
@@ -127,11 +109,11 @@ E2E_PROVIDER=fireworks E2E_MODEL=accounts/fireworks/models/kimi-k2p7-code \
 ### Phase 3 — Headline sweep per config, hours each
 ```bash
 # Config A
-E2E_PROVIDER=fireworks E2E_MODEL=accounts/fireworks/models/kimi-k2p7-code \
-  pnpm run bench -- --size 100 --seed 0 --config-label "fireworks / kimi-k2p7-code"
+E2E_MODEL=minimax/minimax-m3 \
+  pnpm run bench -- --size 100 --seed 0 --config-label "openrouter / minimax-m3"
 # Config B (after A; same subset because seed/size are frozen)
-E2E_PROVIDER=deepseek E2E_MODEL=deepseek-v3.2 \
-  pnpm run bench -- --size 100 --seed 0 --no-build --config-label "deepseek / v3.2"
+E2E_MODEL=moonshotai/kimi-k2.7-code \
+  pnpm run bench -- --size 100 --seed 0 --no-build --config-label "openrouter / kimi-k2.7-code"
 ```
 - One config at a time; don't touch the machine (headed Chrome is driving).
 - `--no-build` after the first sweep (dist is current).
@@ -142,8 +124,8 @@ E2E_PROVIDER=deepseek E2E_MODEL=deepseek-v3.2 \
 Run a bare 300-task sweep **only** on the single config you headline, once n=100
 is stable:
 ```bash
-E2E_PROVIDER=fireworks E2E_MODEL=accounts/fireworks/models/kimi-k2p7-code \
-  pnpm run bench -- --seed 0 --no-build --config-label "fireworks / kimi-k2p7-code (full 300)"
+E2E_MODEL=minimax/minimax-m3 \
+  pnpm run bench -- --seed 0 --no-build --config-label "openrouter / minimax-m3 (full 300)"
 ```
 
 ### Phase 5 — Verify & publish (honesty gates, see README §"Honesty discipline")
@@ -172,8 +154,7 @@ Browser time is the expensive axis; judging is decoupled and cheap. When unsure,
 
 | Risk | Mitigation |
 | --- | --- |
-| Executor key dead/misrouted | Phase-1 smoke is the gate; never sweep before it passes |
-| `deepseek` hybrid silently uses dead Fireworks key | §2 documents the dependency; replacing the Fireworks key fixes both A and B |
+| OpenRouter key dead or out of credits | Phase-1 smoke is the gate; never sweep before it passes |
 | Headed Chrome instability / machine sleep | Disable sleep; one config at a time; partial runs recoverable via `--judge-only` |
 | Judge miscalibration | Hand-check in Phase 2; re-score free with `--judge-only`; swap `BENCH_JUDGE_MODEL` if needed |
 | High write-skip rate shrinks denominator | Report skips separately; carry the scored-n and a small-n caveat |
@@ -183,7 +164,7 @@ Browser time is the expensive axis; judging is decoupled and cheap. When unsure,
 
 ## 8. Order of operations (today)
 
-1. Provision one executor key (§2-A preferred).
+1. Provision the OpenRouter key (§2).
 2. Phase 1 smoke → GO/NO-GO.
 3. Phase 2 calibration → fill §6 budget; sanity-check the judge.
 4. Phase 3 sweep Config A, then Config B (n=100, seed 0).
@@ -196,6 +177,6 @@ Browser time is the expensive axis; judging is decoupled and cheap. When unsure,
 
 | Config | Run dir | Scored n | Skipped | Pass rate | Judge disagreement (20%) | Date |
 | --- | --- | --- | --- | --- | --- | --- |
-| fireworks / kimi-k2p7-code | | | | | | |
-| deepseek / v3.2 | | | | | | |
+| openrouter / minimax-m3 | | | | | | |
+| openrouter / kimi-k2.7-code | | | | | | |
 | openrouter / gpt-5.4-mini | | | | | | |

@@ -789,8 +789,8 @@ describe("Tool Registration", () => {
         notesHash: hashProfileNotes(notesMarkdown),
         updatedAt: 1,
         analyzer: {
-          provider: "fireworks",
-          model: "accounts/fireworks/routers/kimi-k2p6-turbo",
+          provider: "openrouter",
+          model: "moonshotai/kimi-k2.6",
           analyzerVersion: PROFILE_ANALYZER_VERSION,
           analyzedAt: 1,
         },

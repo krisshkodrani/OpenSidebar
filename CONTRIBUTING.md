@@ -96,11 +96,11 @@ the most common avoidable tool bug. Label `tooling`.
 runs. New panels, diagnostics, and aggregate analyses are well-isolated from the
 agent runtime — a good surface if you prefer frontend work. Label `trace-viewer`.
 
-### 5. Provider adapters
+### 5. Model defaults and routing
 
-OpenSidebar is BYOK across multiple providers. Extending the provider matrix
-(new OpenAI-compatible endpoints, model defaults, failover behavior) lives in
-the LLM client layer and is bounded by clear types. Label `provider`.
+OpenSidebar is BYOK on OpenRouter, the only LLM provider. Model defaults,
+executor eligibility, and routing live in the LLM client layer and are bounded
+by clear types. Label `provider`.
 
 ## The Do-Not-Enter Map
 
@@ -185,7 +185,7 @@ pnpm run logs:errors   # error-level logs only
 pnpm run traces -- list
 ```
 
-When reporting a browser-agent bug, include the provider mode, model overrides,
+When reporting a browser-agent bug, include the model overrides,
 task prompt, URL *shape* (not private URLs), and whether a local trace or E2E
 report is available. **Redact page data, credentials, cookies, and API keys**
 before attaching any diagnostics.

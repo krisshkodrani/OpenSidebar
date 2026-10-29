@@ -38,13 +38,13 @@ describe("run analytics reporter", () => {
     metrics.llmCallCount = 1;
     metrics.costMode = "actual";
     const run = { runId: crypto.randomUUID(), startedAt: Date.now(), metrics };
-    reporter.start(run, "local", "openrouter");
+    reporter.start(run, "local");
     await reporter.publish(run, "succeeded");
     expect(payloads).toHaveLength(1);
     expect(payloads[0]?.spendUsd).toBe(0);
     expect(payloads[0]?.spendProvenance).toBe("provider_reported");
     expect(Object.keys(payloads[0]!).sort()).toEqual([
-      "completionTokens", "finishedAt", "observedAt", "promptTokens", "provider",
+      "completionTokens", "finishedAt", "observedAt", "promptTokens",
       "runId", "schemaVersion", "sequence", "source", "spendProvenance",
       "spendUsd", "startedAt", "state",
     ].sort());

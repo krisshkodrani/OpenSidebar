@@ -91,7 +91,7 @@ Phase B) now has a dev-on, shipped-off implementation and a passing two-origin
 tag-based checkout E2E. Missing-frame, child-keyboard, and find-then-click
 browser cases also pass. The local verification equivalents pass with a
 four-worker test run. Live-provider staged E2E remains unrun after a prior
-Fireworks account HTTP 412; shipped activation waits for CWS review. In-browser PDF
+provider account HTTP 412; shipped activation waits for CWS review. In-browser PDF
 handling (LP-14) is parked and requires a new owner decision before
 implementation.
 An isolated local-mock checkout run later exposed a partial child-frame read

@@ -55,8 +55,8 @@ describe("agent telemetry", () => {
         total_tokens: 120,
       },
       llmMs: 250,
-      model: "accounts/fireworks/routers/kimi-k2p5-turbo",
-      providerId: "fireworks",
+      model: "moonshotai/kimi-k2.6",
+      providerId: "openrouter",
       imagePrompt: imagePromptUsageForCount(1),
     });
     recordCachedVisionTelemetryUse(metrics);

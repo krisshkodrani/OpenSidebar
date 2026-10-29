@@ -113,7 +113,6 @@ function buildShowcaseEnv(): NodeJS.ProcessEnv {
   const env = {
     ...process.env,
     E2E_PROFILE: "video",
-    E2E_PROVIDER: "fireworks",
     E2E_ARTIFACTS: "video,panel,screenshots",
   };
   return withE2EConfigEnv(
@@ -190,7 +189,7 @@ async function main(): Promise<void> {
     exitCode,
     startedAt,
     finishedAt,
-    provider: "fireworks",
+    provider: "openrouter",
     profile: "video",
     testFile: args.test,
     reviewSummary: latestReviewSummaryPath

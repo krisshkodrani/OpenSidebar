@@ -6,7 +6,7 @@ Get OpenSidebar running in a few minutes.
 
 - Node.js 22+
 - Google Chrome
-- A supported provider API key
+- An OpenRouter API key
 
 ## Install
 
@@ -29,23 +29,17 @@ corepack pnpm run dist
 
 1. Open the side panel
 2. Open **Settings**
-3. Add the provider key or key combination you want to use
-4. Choose one of the provider stacks unlocked by those keys
-5. Save changes
+3. Add your OpenRouter API key
+4. Save changes
 
 Where your provider allows it, create a key limited to the models you need and
 set a spending limit. You can revoke or rotate that key in the provider account.
 
-Settings exposes the two release-verified provider modes: OpenRouter and
-Fireworks AI. Experimental adapters may still be used by internal evaluation
-commands, but are not part of the supported setup surface.
+OpenRouter is the only LLM provider. Use `OPENROUTER_API_KEY` for developer
+tooling, or the key in Settings for the extension. Settings shows the live
+OpenRouter model list.
 
-| Provider mode | Required key(s)                         | Notes                                    |
-| ------------- | --------------------------------------- | ---------------------------------------- |
-| OpenRouter    | `OPENROUTER_API_KEY` or key in Settings | Recommended; live verified model list    |
-| Fireworks     | `FIREWORKS_API_KEY` or key in Settings  | Curated compatibility-checked model list |
-
-Provider pricing, quotas, data handling, and rate limits are governed by the provider you configure.
+OpenRouter pricing, quotas, data handling, and rate limits govern your usage.
 
 ## First Safe Task
 

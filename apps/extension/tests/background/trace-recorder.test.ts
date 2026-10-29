@@ -230,7 +230,7 @@ describe("TraceRecorder persistence", () => {
       [],
       2,
       1,
-      "accounts/fireworks/routers/kimi-k2p6-turbo",
+      "moonshotai/kimi-k2.6",
       "none",
       [{ role: "system", content: "System\n## Page Context\nTitle: Start" }],
       {
@@ -275,16 +275,16 @@ describe("TraceRecorder persistence", () => {
         total_tokens: 85,
         cached_tokens: 40,
         cacheTelemetry: {
-          provider: "fireworks",
+          provider: "openrouter",
           promptTokens: 80,
           cachedPromptTokens: 40,
           cacheHitPct: 50,
-          source: "response_headers",
+          source: "usage",
         },
       },
       25,
-      "fireworks",
-      "accounts/fireworks/routers/kimi-k2p6-turbo",
+      "openrouter",
+      "moonshotai/kimi-k2.6",
     );
     await recorder.endTurn();
 
@@ -297,7 +297,7 @@ describe("TraceRecorder persistence", () => {
     const payload = JSON.parse(turnCall[1].body);
     expect(payload.llmResponse.usage.cached_tokens).toBe(40);
     expect(payload.llmResponse.usage.cacheTelemetry).toMatchObject({
-      provider: "fireworks",
+      provider: "openrouter",
       cacheHitPct: 50,
     });
     expect(
@@ -425,7 +425,7 @@ describe("TraceRecorder persistence", () => {
       [],
       2,
       1,
-      "accounts/fireworks/routers/kimi-k2p6-turbo",
+      "moonshotai/kimi-k2.6",
       "none",
     );
     recorder.recordLLMResponse(

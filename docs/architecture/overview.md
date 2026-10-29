@@ -18,7 +18,7 @@ The same side panel React app also runs inside the overlay harness for browser-d
 
 | Role          | Current Default                                                                        |
 | ------------- | -------------------------------------------------------------------------------------- |
-| Provider mode | `openrouter`                                                                           |
+| Provider      | OpenRouter (the only LLM provider)                                                     |
 | Executor      | `openai/gpt-6-luna`                                                                    |
 | Planner       | `openai/gpt-6-luna`                                                                    |
 | Judge         | `typesafe/jev-1.13` (OpenRouter Decisions API)                                       |
@@ -26,9 +26,7 @@ The same side panel React app also runs inside the overlay harness for browser-d
 
 Defaults live in `apps/extension/src/config/model-config.ts` and
 `apps/extension/src/utils/executor-model-policy.ts`; trust those over this
-table when they disagree. Settings offers the release-verified OpenRouter and
-Fireworks modes. Experimental adapters remain available to internal evaluation
-commands but are not part of the supported setup surface.
+table when they disagree. OpenRouter is the only supported LLM provider.
 
 ## Core Subsystems
 

@@ -23,34 +23,8 @@ export interface UserSettings {
   /** Provider calls use a local key or the account-scoped encrypted cloud relay. */
   inferenceMode?: "local" | "cloud";
   openRouterApiKey: string;
-  /** Provider mode: how LLM providers are combined across roles */
-  providerMode?:
-    | "openrouter"
-    | "openrouter-groq"
-    | "openai-groq"
-    | "fireworks"
-    | "fireworks-deepseek"
-    | "cerebras-fireworks"
-    | "moonshot"
-    | "xiaomi";
-  /** @deprecated Use providerMode instead. Kept for migration. */
-  provider?: "openrouter" | "openai" | "groq";
-  /** @deprecated Retained for migration; no product-ready OpenAI stack is exposed. */
-  openaiApiKey?: string;
-  /** Groq API key (required for hybrid modes) */
+  /** Groq API key. Used only for speech-to-text, not for LLM calls. */
   groqApiKey?: string;
-  /** @deprecated Retained for migration; the runtime has no Gemini model seat. */
-  geminiApiKey?: string;
-  /** Fireworks AI API key (required for fireworks mode) */
-  fireworksApiKey?: string;
-  /** DeepSeek API key (required for fireworks-deepseek planner/verifier mode) */
-  deepseekApiKey?: string;
-  /** Moonshot AI API key (required for moonshot mode) */
-  kimiApiKey?: string;
-  /** Xiaomi MiMo API key (required for xiaomi mode) */
-  xiaomiApiKey?: string;
-  /** Cerebras API key (required for cerebras-fireworks executor mode) */
-  cerebrasApiKey?: string;
   maxTurns: number;
   theme: "light" | "dark" | "system";
   /** Show token usage and cost metrics during and after agent sessions */

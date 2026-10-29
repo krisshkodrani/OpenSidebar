@@ -210,7 +210,6 @@ describe("cloud account client", () => {
     await syncCloudPreferences({
       openRouterApiKey: "must-not-be-uploaded",
       inferenceMode: "cloud",
-      providerMode: "openrouter",
       allowDestructiveActions: true,
     } as never);
 

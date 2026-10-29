@@ -5,7 +5,6 @@ import {
 } from "../../types";
 import { logger } from "../../utils";
 import { loadSettings } from "../../utils/settings-storage";
-import { DEFAULT_PROVIDER_MODE } from "../../utils/executor-model-policy";
 import { uiRuntime } from "../runtime";
 import {
   cloudPreferences,
@@ -18,7 +17,6 @@ export const DEFAULT_SETTINGS: UserSettings = {
   inferenceMode: "local",
   traceSyncEnabled: false,
   openRouterApiKey: "",
-  providerMode: DEFAULT_PROVIDER_MODE,
   perceptionMode: "auto",
   crossOriginFramesEnabled: __DEV__,
   maxImagePromptTokenEstimate: DEFAULT_MAX_IMAGE_PROMPT_TOKEN_ESTIMATE,

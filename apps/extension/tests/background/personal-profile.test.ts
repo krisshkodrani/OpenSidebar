@@ -154,8 +154,8 @@ describe("profile notes storage", () => {
         notesMarkdown: notes,
         digest: digestFor(notes),
         analyzer: {
-          provider: "fireworks",
-          model: "accounts/fireworks/routers/kimi-k2p6-turbo",
+          provider: "openrouter",
+          model: "moonshotai/kimi-k2.6",
           analyzerVersion: PROFILE_ANALYZER_VERSION,
           analyzedAt: 1,
         },

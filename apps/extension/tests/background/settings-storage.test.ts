@@ -6,10 +6,29 @@ import {
 } from "../../src/types";
 import {
   loadSettings,
+  migrateRetiredProviderSettings,
   normalizeEnabledSkillPackIds,
   normalizeMaxImagePromptTokenEstimate,
   saveSettings,
 } from "../../src/utils/settings-storage";
+
+const BASE_SETTINGS = {
+  maxTurns: 30,
+  theme: "system",
+  showSessionMetrics: true,
+  requireApprovals: true,
+  allowNavigation: true,
+};
+
+const RETIRED_LOCAL_KEYS = [
+  "fireworksApiKey_local",
+  "openaiApiKey_local",
+  "geminiApiKey_local",
+  "deepseekApiKey_local",
+  "kimiApiKey_local",
+  "xiaomiApiKey_local",
+  "cerebrasApiKey_local",
+];
 
 describe("settings storage", () => {
   const originalSyncGet = chrome.storage.sync.get;
@@ -33,7 +52,6 @@ describe("settings storage", () => {
   test("migrates legacy useVLExecutor to auto perception", async () => {
     chrome.storage.sync.get = vi.fn(async () => ({
       userSettings: {
-        providerMode: "fireworks",
         useVLExecutor: false,
         maxTurns: 30,
         theme: "system",
@@ -44,13 +62,7 @@ describe("settings storage", () => {
     })) as any;
     chrome.storage.local.get = vi.fn(async () => ({
       openRouterApiKey_local: "sk-test",
-      openaiApiKey_local: "",
       groqApiKey_local: "",
-      geminiApiKey_local: "",
-      fireworksApiKey_local: "fw-test",
-      deepseekApiKey_local: "",
-      kimiApiKey_local: "sk-kimi-test",
-      xiaomiApiKey_local: "sk-xiaomi-test",
     })) as any;
     chrome.storage.session.get = vi.fn(async () => ({})) as any;
 
@@ -58,8 +70,6 @@ describe("settings storage", () => {
 
     expect(settings?.perceptionMode).toBe("auto");
     expect("useVLExecutor" in (settings ?? {})).toBe(false);
-    expect(settings?.kimiApiKey).toBe("sk-kimi-test");
-    expect(settings?.xiaomiApiKey).toBe("sk-xiaomi-test");
   });
 
   test("persists writerModel to sync storage", async () => {
@@ -70,7 +80,6 @@ describe("settings storage", () => {
 
     await saveSettings({
       openRouterApiKey: "sk-or-test",
-      providerMode: "openrouter",
       writerModel: "openai/gpt-5.5",
       maxTurns: 30,
       theme: "system",
@@ -84,69 +93,9 @@ describe("settings storage", () => {
     });
   });
 
-  test("chooses a provider backed by the available key on load", async () => {
-    chrome.storage.sync.get = vi.fn(async () => ({
-      userSettings: {
-        maxTurns: 30,
-        theme: "system",
-        showSessionMetrics: true,
-        requireApprovals: true,
-        allowNavigation: true,
-      },
-    })) as any;
-    chrome.storage.local.get = vi.fn(async () => ({
-      openRouterApiKey_local: "",
-      openaiApiKey_local: "",
-      groqApiKey_local: "",
-      geminiApiKey_local: "",
-      fireworksApiKey_local: "fw-test",
-      deepseekApiKey_local: "",
-      kimiApiKey_local: "",
-    })) as any;
-    chrome.storage.session.get = vi.fn(async () => ({})) as any;
-
-    const settings = await loadSettings();
-
-    expect(settings?.providerMode).toBe("fireworks");
-  });
-
-  test("retires a persisted OpenAI-Groq UI stack without a supported fallback", async () => {
-    chrome.storage.sync.get = vi.fn(async () => ({
-      userSettings: {
-        providerMode: "openai-groq",
-        executorModel: "accounts/fireworks/models/minimax-m3",
-        plannerModel: "openai/gpt-oss-120b",
-        maxTurns: 30,
-        theme: "system",
-        showSessionMetrics: true,
-        requireApprovals: true,
-        allowNavigation: true,
-      },
-    })) as any;
-    chrome.storage.local.get = vi.fn(async () => ({
-      openRouterApiKey_local: "",
-      openaiApiKey_local: "sk-openai-test",
-      groqApiKey_local: "gsk-test",
-      geminiApiKey_local: "",
-      fireworksApiKey_local: "",
-      deepseekApiKey_local: "",
-      kimiApiKey_local: "",
-      xiaomiApiKey_local: "",
-      cerebrasApiKey_local: "",
-    })) as any;
-    chrome.storage.session.get = vi.fn(async () => ({})) as any;
-
-    const settings = await loadSettings();
-
-    expect(settings?.providerMode).toBe("openrouter");
-    expect(settings?.executorModel).toBeUndefined();
-    expect(settings?.plannerModel).toBeUndefined();
-  });
-
   test("drops text-only executor overrides on load", async () => {
     chrome.storage.sync.get = vi.fn(async () => ({
       userSettings: {
-        providerMode: "fireworks",
         executorModel: "openai/gpt-oss-120b",
         maxTurns: 30,
         theme: "system",
@@ -157,12 +106,7 @@ describe("settings storage", () => {
     })) as any;
     chrome.storage.local.get = vi.fn(async () => ({
       openRouterApiKey_local: "",
-      openaiApiKey_local: "",
       groqApiKey_local: "",
-      geminiApiKey_local: "",
-      fireworksApiKey_local: "fw-test",
-      deepseekApiKey_local: "",
-      kimiApiKey_local: "",
     })) as any;
     chrome.storage.session.get = vi.fn(async () => ({})) as any;
 
@@ -176,7 +120,6 @@ describe("settings storage", () => {
     const syncSet = vi.fn(async () => {});
     chrome.storage.sync.get = vi.fn(async () => ({
       userSettings: {
-        providerMode: "fireworks",
         executorModel: "openai/gpt-oss-120b",
         maxTurns: 30,
         theme: "system",
@@ -187,7 +130,6 @@ describe("settings storage", () => {
     })) as any;
     chrome.storage.sync.set = syncSet as any;
     chrome.storage.local.get = vi.fn(async () => ({
-      fireworksApiKey_local: "fw-test",
     })) as any;
     chrome.storage.session.get = vi.fn(async () => ({})) as any;
 
@@ -196,115 +138,6 @@ describe("settings storage", () => {
     const payload = syncSet.mock.calls[0]?.[0]?.userSettings;
     expect(payload).toBeDefined();
     expect(payload.executorModel).toBeUndefined();
-  });
-
-  test("repairs a Fireworks planner/writer id persisted in the catalog form", async () => {
-    // The curated Fireworks catalog offered "openai/gpt-oss-120b" until it was
-    // corrected to the accounts/... API form; that id 404s on Fireworks, and
-    // unlike executorModel these seats have no eligibility normalizer to heal
-    // them. Without the migration the stored id keeps 404ing after the fix.
-    const syncSet = vi.fn(async () => {});
-    chrome.storage.sync.get = vi.fn(async () => ({
-      userSettings: {
-        providerMode: "fireworks",
-        plannerModel: "openai/gpt-oss-120b",
-        writerModel: "openai/gpt-oss-120b",
-        maxTurns: 30,
-        theme: "system",
-        showSessionMetrics: true,
-        requireApprovals: true,
-        allowNavigation: true,
-      },
-    })) as any;
-    chrome.storage.sync.set = syncSet as any;
-    chrome.storage.local.get = vi.fn(async () => ({
-      fireworksApiKey_local: "fw-test",
-    })) as any;
-    chrome.storage.session.get = vi.fn(async () => ({})) as any;
-
-    const settings = await loadSettings();
-
-    expect(settings?.plannerModel).toBe(
-      "accounts/fireworks/models/gpt-oss-120b",
-    );
-    expect(settings?.writerModel).toBe(
-      "accounts/fireworks/models/gpt-oss-120b",
-    );
-    // and the repair is written back, so it happens once rather than every load
-    const payload = syncSet.mock.calls[0]?.[0]?.userSettings;
-    expect(payload.plannerModel).toBe("accounts/fireworks/models/gpt-oss-120b");
-  });
-
-  test("leaves the same id alone on Groq, where it is the correct one", async () => {
-    const syncSet = vi.fn(async () => {});
-    chrome.storage.sync.get = vi.fn(async () => ({
-      userSettings: {
-        providerMode: "openrouter-groq",
-        plannerModel: "openai/gpt-oss-120b",
-        maxTurns: 30,
-        theme: "system",
-        showSessionMetrics: true,
-        requireApprovals: true,
-        allowNavigation: true,
-      },
-    })) as any;
-    chrome.storage.sync.set = syncSet as any;
-    chrome.storage.local.get = vi.fn(async () => ({
-      groqApiKey_local: "gsk-test",
-    })) as any;
-    chrome.storage.session.get = vi.fn(async () => ({})) as any;
-
-    const settings = await loadSettings();
-
-    expect(settings?.plannerModel).toBe("openai/gpt-oss-120b");
-  });
-
-  test("keeps an eligible non-default executor override on load", async () => {
-    chrome.storage.sync.get = vi.fn(async () => ({
-      userSettings: {
-        providerMode: "fireworks",
-        executorModel: "accounts/fireworks/models/kimi-k2p6",
-        maxTurns: 30,
-        theme: "system",
-        showSessionMetrics: true,
-        requireApprovals: true,
-        allowNavigation: true,
-      },
-    })) as any;
-    chrome.storage.local.get = vi.fn(async () => ({
-      fireworksApiKey_local: "fw-test",
-    })) as any;
-    chrome.storage.session.get = vi.fn(async () => ({})) as any;
-
-    const settings = await loadSettings();
-
-    expect(settings?.executorModel).toBe("accounts/fireworks/models/kimi-k2p6");
-  });
-
-  test("persists providerMode when saving settings without an explicit mode", async () => {
-    const syncSet = vi.fn(async () => {});
-    chrome.storage.sync.set = syncSet as any;
-    chrome.storage.local.set = vi.fn(async () => {}) as any;
-    chrome.storage.session.remove = vi.fn(async () => {}) as any;
-
-    await saveSettings({
-      openRouterApiKey: "",
-      fireworksApiKey: "fw-test",
-      maxTurns: 100,
-      theme: "system",
-      showSessionMetrics: true,
-      requireApprovals: true,
-      allowNavigation: true,
-    });
-
-    expect(syncSet).toHaveBeenCalledWith({
-      userSettings: expect.objectContaining({
-        providerMode: "fireworks",
-        perceptionMode: "auto",
-        maxImagePromptTokenEstimate: DEFAULT_MAX_IMAGE_PROMPT_TOKEN_ESTIMATE,
-        enabledSkillPackIds: DEFAULT_ENABLED_SKILL_PACK_IDS,
-      }),
-    });
   });
 
   test("normalizes enabled skill pack ids on save and load", async () => {
@@ -330,7 +163,6 @@ describe("settings storage", () => {
 
     await saveSettings({
       openRouterApiKey: "",
-      fireworksApiKey: "fw-test",
       maxTurns: 100,
       theme: "system",
       showSessionMetrics: true,
@@ -349,7 +181,6 @@ describe("settings storage", () => {
 
     chrome.storage.sync.get = vi.fn(async () => ({
       userSettings: {
-        providerMode: "fireworks",
         maxTurns: 30,
         theme: "system",
         showSessionMetrics: true,
@@ -360,13 +191,7 @@ describe("settings storage", () => {
     })) as any;
     chrome.storage.local.get = vi.fn(async () => ({
       openRouterApiKey_local: "",
-      openaiApiKey_local: "",
       groqApiKey_local: "",
-      geminiApiKey_local: "",
-      fireworksApiKey_local: "fw-test",
-      deepseekApiKey_local: "",
-      kimiApiKey_local: "",
-      xiaomiApiKey_local: "",
     })) as any;
     chrome.storage.session.get = vi.fn(async () => ({})) as any;
 
@@ -388,7 +213,6 @@ describe("settings storage", () => {
 
     await saveSettings({
       openRouterApiKey: "",
-      fireworksApiKey: "fw-test",
       maxTurns: 100,
       theme: "system",
       showSessionMetrics: true,
@@ -403,7 +227,6 @@ describe("settings storage", () => {
 
     chrome.storage.sync.get = vi.fn(async () => ({
       userSettings: {
-        providerMode: "fireworks",
         maxTurns: 30,
         theme: "system",
         showSessionMetrics: true,
@@ -414,13 +237,7 @@ describe("settings storage", () => {
     })) as any;
     chrome.storage.local.get = vi.fn(async () => ({
       openRouterApiKey_local: "",
-      openaiApiKey_local: "",
       groqApiKey_local: "",
-      geminiApiKey_local: "",
-      fireworksApiKey_local: "fw-test",
-      deepseekApiKey_local: "",
-      kimiApiKey_local: "",
-      xiaomiApiKey_local: "",
     })) as any;
     chrome.storage.session.get = vi.fn(async () => ({})) as any;
 
@@ -431,138 +248,6 @@ describe("settings storage", () => {
     );
   });
 
-  test("saves and loads DeepSeek key from local storage", async () => {
-    const localSet = vi.fn(async () => {});
-    chrome.storage.sync.set = vi.fn(async () => {}) as any;
-    chrome.storage.local.set = localSet as any;
-    chrome.storage.session.remove = vi.fn(async () => {}) as any;
-
-    await saveSettings({
-      openRouterApiKey: "",
-      fireworksApiKey: "fw-test",
-      deepseekApiKey: "sk-deepseek-test",
-      providerMode: "fireworks-deepseek",
-      maxTurns: 100,
-      theme: "system",
-      showSessionMetrics: true,
-      requireApprovals: true,
-      allowNavigation: true,
-    });
-
-    expect(localSet).toHaveBeenCalledWith(
-      expect.objectContaining({
-        deepseekApiKey_local: expect.stringMatching(/^enc:v1:/),
-      }),
-    );
-
-    chrome.storage.sync.get = vi.fn(async () => ({
-      userSettings: {
-        providerMode: "fireworks-deepseek",
-        maxTurns: 30,
-        theme: "system",
-        showSessionMetrics: true,
-        requireApprovals: true,
-        allowNavigation: true,
-      },
-    })) as any;
-    chrome.storage.local.get = vi.fn(async () => ({
-      openRouterApiKey_local: "",
-      openaiApiKey_local: "",
-      groqApiKey_local: "",
-      geminiApiKey_local: "",
-      fireworksApiKey_local: "fw-test",
-      deepseekApiKey_local: "sk-deepseek-test",
-      kimiApiKey_local: "",
-    })) as any;
-    chrome.storage.session.get = vi.fn(async () => ({})) as any;
-
-    const settings = await loadSettings();
-
-    expect(settings?.providerMode).toBe("fireworks");
-    expect(settings?.deepseekApiKey).toBe("sk-deepseek-test");
-  });
-
-  test("strips leaked DeepSeek key from sync storage", async () => {
-    chrome.storage.sync.get = vi.fn(async () => ({
-      userSettings: {
-        providerMode: "fireworks-deepseek",
-        deepseekApiKey: "leaked-sync-key",
-        maxTurns: 30,
-        theme: "system",
-        showSessionMetrics: true,
-        requireApprovals: true,
-        allowNavigation: true,
-      },
-    })) as any;
-    chrome.storage.local.get = vi.fn(async () => ({
-      openRouterApiKey_local: "",
-      openaiApiKey_local: "",
-      groqApiKey_local: "",
-      geminiApiKey_local: "",
-      fireworksApiKey_local: "fw-test",
-      deepseekApiKey_local: "local-deepseek-key",
-      kimiApiKey_local: "",
-    })) as any;
-    chrome.storage.session.get = vi.fn(async () => ({})) as any;
-
-    const settings = await loadSettings();
-
-    expect(settings?.providerMode).toBe("fireworks");
-    expect(settings?.deepseekApiKey).toBe("local-deepseek-key");
-  });
-
-  test("saves and loads Xiaomi key from local storage", async () => {
-    const localSet = vi.fn(async () => {});
-    chrome.storage.sync.set = vi.fn(async () => {}) as any;
-    chrome.storage.local.set = localSet as any;
-    chrome.storage.session.remove = vi.fn(async () => {}) as any;
-
-    await saveSettings({
-      openRouterApiKey: "",
-      xiaomiApiKey: "sk-xiaomi-test",
-      providerMode: "xiaomi",
-      maxTurns: 100,
-      theme: "system",
-      showSessionMetrics: true,
-      requireApprovals: true,
-      allowNavigation: true,
-    });
-
-    expect(localSet).toHaveBeenCalledWith(
-      expect.objectContaining({
-        xiaomiApiKey_local: expect.stringMatching(/^enc:v1:/),
-      }),
-    );
-
-    chrome.storage.sync.get = vi.fn(async () => ({
-      userSettings: {
-        providerMode: "xiaomi",
-        xiaomiApiKey: "leaked-sync-key",
-        maxTurns: 30,
-        theme: "system",
-        showSessionMetrics: true,
-        requireApprovals: true,
-        allowNavigation: true,
-      },
-    })) as any;
-    chrome.storage.local.get = vi.fn(async () => ({
-      openRouterApiKey_local: "",
-      openaiApiKey_local: "",
-      groqApiKey_local: "",
-      geminiApiKey_local: "",
-      fireworksApiKey_local: "",
-      deepseekApiKey_local: "",
-      kimiApiKey_local: "",
-      xiaomiApiKey_local: "local-xiaomi-key",
-    })) as any;
-    chrome.storage.session.get = vi.fn(async () => ({})) as any;
-
-    const settings = await loadSettings();
-
-    expect(settings?.providerMode).toBe("xiaomi");
-    expect(settings?.xiaomiApiKey).toBe("local-xiaomi-key");
-  });
-
   test("does not persist text-only executor overrides", async () => {
     const syncSet = vi.fn(async () => {});
     chrome.storage.sync.set = syncSet as any;
@@ -571,7 +256,6 @@ describe("settings storage", () => {
 
     await saveSettings({
       openRouterApiKey: "",
-      fireworksApiKey: "fw-test",
       executorModel: "openai/gpt-oss-120b",
       maxTurns: 100,
       theme: "system",
@@ -596,7 +280,6 @@ describe("settings storage", () => {
 
     await saveSettings({
       openRouterApiKey: "",
-      fireworksApiKey: "fw-test",
       maxTurns: 100,
       theme: "system",
       showSessionMetrics: true,
@@ -611,7 +294,9 @@ describe("settings storage", () => {
     expect(localSet.mock.calls[0]?.[0]).not.toHaveProperty(
       "jobAgentMcpToken_local",
     );
-    expect(localRemove).toHaveBeenCalledWith("jobAgentMcpToken_local");
+    expect(localRemove).toHaveBeenCalledWith(
+      expect.arrayContaining(["jobAgentMcpToken_local"]),
+    );
     const saved = syncSet.mock.calls[0]?.[0]?.userSettings;
     expect(saved.voiceMode).toBeUndefined();
     expect(saved.jobAgentMcpEnabled).toBeUndefined();
@@ -620,7 +305,6 @@ describe("settings storage", () => {
 
     chrome.storage.sync.get = vi.fn(async () => ({
       userSettings: {
-        providerMode: "fireworks",
         maxTurns: 30,
         theme: "system",
         showSessionMetrics: true,
@@ -634,13 +318,7 @@ describe("settings storage", () => {
     })) as any;
     chrome.storage.local.get = vi.fn(async () => ({
       openRouterApiKey_local: "",
-      openaiApiKey_local: "",
       groqApiKey_local: "",
-      geminiApiKey_local: "",
-      fireworksApiKey_local: "fw-test",
-      deepseekApiKey_local: "",
-      kimiApiKey_local: "",
-      xiaomiApiKey_local: "",
       jobAgentMcpToken_local: "local-token",
     })) as any;
     chrome.storage.session.get = vi.fn(async () => ({})) as any;
@@ -651,12 +329,187 @@ describe("settings storage", () => {
     expect((settings as any)?.jobAgentMcpToken).toBeUndefined();
     expect((settings as any)?.jobAgentMcpEnabled).toBeUndefined();
     expect((settings as any)?.jobAgentMcpUrl).toBeUndefined();
-    expect(localRemove).toHaveBeenCalledWith("jobAgentMcpToken_local");
+    expect(localRemove).toHaveBeenCalledWith(
+      expect.arrayContaining(["jobAgentMcpToken_local"]),
+    );
     const cleaned =
       syncSet.mock.calls[syncSet.mock.calls.length - 1]?.[0]?.userSettings;
     expect(cleaned.voiceMode).toBeUndefined();
     expect(cleaned.jobAgentMcpEnabled).toBeUndefined();
     expect(cleaned.jobAgentMcpUrl).toBeUndefined();
     expect(cleaned.jobAgentMcpToken).toBeUndefined();
+  });
+  describe("retired provider migration", () => {
+    function stubStorage(userSettings: Record<string, unknown>) {
+      const syncSet = vi.fn(async () => {});
+      const localRemove = vi.fn(async () => {});
+      chrome.storage.sync.get = vi.fn(async () => ({ userSettings })) as any;
+      chrome.storage.sync.set = syncSet as any;
+      chrome.storage.local.get = vi.fn(async () => ({
+        openRouterApiKey_local: "sk-test",
+      })) as any;
+      chrome.storage.local.remove = localRemove as any;
+      chrome.storage.session.get = vi.fn(async () => ({})) as any;
+      return { syncSet, localRemove };
+    }
+
+    test("drops stored providerMode and legacy provider on load, and writes back", async () => {
+      const { syncSet } = stubStorage({
+        ...BASE_SETTINGS,
+        providerMode: "openrouter",
+        provider: "openrouter",
+        executorModel: "openai/gpt-6-luna",
+      });
+
+      const settings = await loadSettings();
+
+      expect(settings).not.toHaveProperty("providerMode");
+      expect(settings).not.toHaveProperty("provider");
+      expect(settings?.executorModel).toBe("openai/gpt-6-luna");
+      const written = syncSet.mock.calls[0]?.[0]?.userSettings;
+      expect(written).not.toHaveProperty("providerMode");
+      expect(written).not.toHaveProperty("provider");
+    });
+
+    test("keeps model seats of a user who already ran OpenRouter", () => {
+      const raw: Record<string, unknown> = {
+        providerMode: "openrouter",
+        plannerModel: "z-ai/glm-5.2",
+        writerModel: "openai/gpt-6-luna",
+      };
+      expect(migrateRetiredProviderSettings(raw)).toBe(true);
+      expect(raw).toEqual({
+        plannerModel: "z-ai/glm-5.2",
+        writerModel: "openai/gpt-6-luna",
+      });
+    });
+
+    test.each([
+      "fireworks",
+      "fireworks-deepseek",
+      "cerebras-fireworks",
+      "openrouter-groq",
+      "openai-groq",
+      "moonshot",
+      "xiaomi",
+    ])("drops provider-native model seats of a %s user", async (mode) => {
+      const { syncSet } = stubStorage({
+        ...BASE_SETTINGS,
+        providerMode: mode,
+        executorModel: "accounts/fireworks/models/kimi-k2p7-code",
+        plannerModel: "accounts/fireworks/models/glm-5p2",
+        writerModel: "accounts/fireworks/models/glm-5p2",
+        judgeModel: "accounts/fireworks/models/gpt-oss-120b",
+      });
+
+      const settings = await loadSettings();
+
+      expect(settings).not.toHaveProperty("providerMode");
+      for (const seat of [
+        "executorModel",
+        "plannerModel",
+        "writerModel",
+        "judgeModel",
+      ]) {
+        expect(settings).not.toHaveProperty(seat);
+      }
+      const written = syncSet.mock.calls[0]?.[0]?.userSettings;
+      expect(written).not.toHaveProperty("providerMode");
+      expect(written).not.toHaveProperty("plannerModel");
+    });
+
+    test("treats a legacy provider field without providerMode as that provider", () => {
+      const groq: Record<string, unknown> = {
+        provider: "groq",
+        plannerModel: "openai/gpt-oss-120b",
+      };
+      expect(migrateRetiredProviderSettings(groq)).toBe(true);
+      expect(groq).toEqual({});
+    });
+
+    test("does nothing when neither field is stored", () => {
+      const raw: Record<string, unknown> = { plannerModel: "z-ai/glm-5.2" };
+      expect(migrateRetiredProviderSettings(raw)).toBe(false);
+      expect(raw).toEqual({ plannerModel: "z-ai/glm-5.2" });
+    });
+
+    test("deletes stored Fireworks and other retired keys from local storage on load", async () => {
+      const { localRemove } = stubStorage({ ...BASE_SETTINGS });
+
+      await loadSettings();
+
+      expect(localRemove).toHaveBeenCalledWith(
+        expect.arrayContaining(RETIRED_LOCAL_KEYS),
+      );
+    });
+
+    test("deletes retired local keys again on save", async () => {
+      const localRemove = vi.fn(async () => {});
+      chrome.storage.sync.set = vi.fn(async () => {}) as any;
+      chrome.storage.local.set = vi.fn(async () => {}) as any;
+      chrome.storage.local.remove = localRemove as any;
+      chrome.storage.session.remove = vi.fn(async () => {}) as any;
+
+      await saveSettings({
+        ...BASE_SETTINGS,
+        openRouterApiKey: "sk-or-test",
+      } as any);
+
+      expect(localRemove).toHaveBeenCalledWith(
+        expect.arrayContaining(RETIRED_LOCAL_KEYS),
+      );
+    });
+
+    test("never writes providerMode or a retired key when saving old-shaped settings", async () => {
+      const syncSet = vi.fn(async () => {});
+      const localSet = vi.fn(async () => {});
+      chrome.storage.sync.set = syncSet as any;
+      chrome.storage.local.set = localSet as any;
+      chrome.storage.local.remove = vi.fn(async () => {}) as any;
+      chrome.storage.session.remove = vi.fn(async () => {}) as any;
+
+      await saveSettings({
+        ...BASE_SETTINGS,
+        openRouterApiKey: "sk-or-test",
+        providerMode: "fireworks",
+        fireworksApiKey: "fw-secret",
+        deepseekApiKey: "ds-secret",
+      } as any);
+
+      const synced = syncSet.mock.calls[0]?.[0]?.userSettings;
+      expect(synced).not.toHaveProperty("providerMode");
+      expect(synced).not.toHaveProperty("fireworksApiKey");
+      expect(synced).not.toHaveProperty("deepseekApiKey");
+      const local = localSet.mock.calls[0]?.[0] ?? {};
+      for (const key of RETIRED_LOCAL_KEYS) expect(local).not.toHaveProperty(key);
+    });
+
+    test("strips Fireworks and other provider keys that leaked into sync storage", async () => {
+      const { syncSet } = stubStorage({
+        ...BASE_SETTINGS,
+        fireworksApiKey: "leaked-sync-key",
+        deepseekApiKey: "leaked-sync-key",
+        kimiApiKey: "leaked-sync-key",
+      });
+
+      const settings = await loadSettings();
+
+      expect(settings).not.toHaveProperty("fireworksApiKey");
+      expect(settings).not.toHaveProperty("deepseekApiKey");
+      const written = syncSet.mock.calls[0]?.[0]?.userSettings;
+      expect(written).not.toHaveProperty("fireworksApiKey");
+      expect(written).not.toHaveProperty("kimiApiKey");
+    });
+
+    test("still returns null when only a retired local key exists", async () => {
+      chrome.storage.sync.get = vi.fn(async () => ({})) as any;
+      chrome.storage.local.get = vi.fn(async () => ({
+        fireworksApiKey_local: "fw-secret",
+      })) as any;
+      chrome.storage.local.remove = vi.fn(async () => {}) as any;
+      chrome.storage.session.get = vi.fn(async () => ({})) as any;
+
+      expect(await loadSettings()).toBeNull();
+    });
   });
 });

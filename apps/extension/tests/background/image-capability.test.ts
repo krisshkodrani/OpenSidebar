@@ -7,9 +7,9 @@ import {
 import type { LLMMessage } from "../../src/background/llm/types";
 
 describe("isImageUrlUnsupported", () => {
-  test("matches Fireworks' actual rejection: 400 + 'image inputs'", () => {
-    // Verified against the live API 2026-07-21 (glm-5p2) — the original
-    // 422-and-"image_url"-only form made the text-only retry dead code here.
+  test("matches an upstream host's rejection: 400 + 'image inputs'", () => {
+    // The original 422-and-"image_url"-only form made the text-only retry dead
+    // code for hosts that answer 400.
     expect(
       isImageUrlUnsupported(
         400,

@@ -415,15 +415,6 @@ export class AgentLoop {
   /** Unified VL executor mode: screenshot sent directly to executor, skip separate perception */
   private useVLExecutor = false;
   private perceptionModeOption?: PerceptionRuntimeMode;
-  private providerModeOption?:
-    | "openrouter"
-    | "openrouter-groq"
-    | "openai-groq"
-    | "fireworks"
-    | "fireworks-deepseek"
-    | "cerebras-fireworks"
-    | "moonshot"
-    | "xiaomi";
   /** When true, mutation replay guard persists across turns (set after done() rejection) */
   private guardAfterDoneRejection = false;
   private pendingFeedback: string | null = null;
@@ -924,23 +915,6 @@ export class AgentLoop {
       judgeProviderPin?: string;
       writerModel?: string;
       useNitro?: boolean;
-      providerMode?:
-        | "openrouter"
-        | "openrouter-groq"
-        | "openai-groq"
-        | "fireworks"
-        | "fireworks-deepseek"
-        | "cerebras-fireworks"
-        | "moonshot"
-        | "xiaomi";
-      provider?: "openrouter" | "openai" | "groq"; // legacy compat
-      openaiApiKey?: string;
-      groqApiKey?: string;
-      fireworksApiKey?: string;
-      deepseekApiKey?: string;
-      kimiApiKey?: string;
-      xiaomiApiKey?: string;
-      cerebrasApiKey?: string;
       temperature?: number;
       perceptionMode?: PerceptionRuntimeMode;
       maxImagePromptTokenEstimate?: number;
@@ -952,7 +926,6 @@ export class AgentLoop {
   ) {
     this.perception.setReceiptSink((receipt) => this.checkpoints.ledger.recordReceipt(receipt));
     this.perceptionModeOption = options?.perceptionMode;
-    this.providerModeOption = options?.providerMode;
     this.telemetry = new AgentTelemetryController({
       getTurnCount: () => this.turnCount,
       getTraceRecorder: () => this.traceRecorder,
@@ -967,18 +940,14 @@ export class AgentLoop {
     // Capability gate input: resolve the executor the same way LLMClient
     // does, so the mode decision and the wire agree on what model acts.
     this.executorVLCapable = isVLCapable(
-      normalizeExecutorModel({
-        providerMode: this.providerModeOption,
-        executorModel: options?.executorModel,
-      }),
+      normalizeExecutorModel(options?.executorModel),
     );
     // Initial observation path. start() refines auto mode once task/page
     // signals are available from the initial snapshot.
     this.useVLExecutor =
       resolvePerceptionRuntimeMode({
         perceptionMode: this.perceptionModeOption,
-        providerMode: this.providerModeOption,
-        executorVLCapable: this.executorVLCapable,
+          executorVLCapable: this.executorVLCapable,
       }) === "unified_vl";
     this.preferredModelTier = options?.preferredModelTier ?? "default";
     this.executionContract = options?.executionContract ?? null;
@@ -1014,15 +983,6 @@ export class AgentLoop {
       ...providerRoutingOptions(options),
       writerModel: options?.writerModel,
       useNitro: options?.useNitro,
-      providerMode: options?.providerMode,
-      provider: options?.provider,
-      openaiApiKey: options?.openaiApiKey,
-      groqApiKey: options?.groqApiKey,
-      fireworksApiKey: options?.fireworksApiKey,
-      deepseekApiKey: options?.deepseekApiKey,
-      kimiApiKey: options?.kimiApiKey,
-      xiaomiApiKey: options?.xiaomiApiKey,
-      cerebrasApiKey: options?.cerebrasApiKey,
       temperature: options?.temperature,
     };
     this.llm = new LLMClient(openRouterApiKey, modelOverrides);
@@ -1037,18 +997,6 @@ export class AgentLoop {
       provider: this.llm.getCurrentProvider(),
       workspaceId: this.workspaceId,
       workerId: this.workerId,
-    });
-    this.llm.setFailoverCallback((from, to) => {
-      this.stepHandler(
-        {
-          id: crypto.randomUUID(),
-          type: "info",
-          label: `Rate limited on ${from} — switched to ${to}`,
-          status: "done",
-          timestamp: Date.now(),
-        },
-        false,
-      );
     });
     this.planner = new TaskPlanner(openRouterApiKey, modelOverrides);
     this.baseContextTokens = options?.maxContextTokens ?? 32000;
@@ -1718,7 +1666,6 @@ export class AgentLoop {
 
     const perceptionDecision = resolvePerceptionRuntimeModeDecision({
       perceptionMode: this.perceptionModeOption,
-      providerMode: this.providerModeOption,
       executorVLCapable: this.executorVLCapable,
       taskText: initialUserText ?? "",
       imagePromptTokensUsed: this.telemetry.imagePromptTokensUsed,
@@ -2248,7 +2195,6 @@ export class AgentLoop {
 
     const decision = resolvePerceptionRuntimeModeDecision({
       perceptionMode: this.perceptionModeOption,
-      providerMode: this.providerModeOption,
       executorVLCapable: this.executorVLCapable,
       taskText: this.originalQuery ?? "",
       imagePromptTokensUsed: this.telemetry.imagePromptTokensUsed,

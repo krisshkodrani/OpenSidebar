@@ -107,7 +107,7 @@ describe("applyJudgeGateOutcome", () => {
         confidence: 0.82,
         source: "judge",
         model: "gpt-oss-120b",
-        providerId: "fireworks",
+        providerId: "openrouter",
         usage: { promptTokens: 500, completionTokens: 90, totalTokens: 590, costUsd: 0.0005 },
       },
     };
@@ -127,7 +127,7 @@ describe("applyJudgeGateOutcome", () => {
     expect(perCriterion[0]).toMatchObject({ id: "c1", pass: false });
     expect(perCriterion[0].rationale?.length).toBe(240); // truncated
     expect(payload.entailment).toEqual([{ claimKey: "fact:x", label: "contradicted" }]);
-    expect(payload.providerId).toBe("fireworks");
+    expect(payload.providerId).toBe("openrouter");
     expect(payload.usage).toMatchObject({ totalTokens: 590, costUsd: 0.0005 });
   });
 

@@ -12,7 +12,6 @@ describe("E2E config", () => {
   test("keeps the supported public env surface explicit", () => {
     expect(PUBLIC_E2E_ENV_VARS).toEqual([
       "E2E_PROFILE",
-      "E2E_PROVIDER",
       "E2E_MODEL",
       "E2E_PLANNER_MODEL",
       "E2E_JUDGE_MODEL",
@@ -40,7 +39,6 @@ describe("E2E config", () => {
     const config = readE2EConfig({ env: {} });
 
     expect(config.profile).toBe("local");
-    expect(config.provider).toBe("openrouter");
     expect(config.browser.headless).toBe(false);
     expect(config.browser.panelMode).toBe("overlay");
     expect(config.artifacts.finalScreenshot).toBe(true);
@@ -84,7 +82,7 @@ describe("E2E config", () => {
         E2E_HEADLESS: "true",
         E2E_SHOW_PANEL: "false",
         E2E_RECORD_VIDEO: "true",
-        E2E_EXECUTOR_MODEL: "accounts/fireworks/models/custom",
+        E2E_EXECUTOR_MODEL: "vendor/custom-model",
         E2E_USE_VL_EXECUTOR: "true",
       },
     });
@@ -92,7 +90,7 @@ describe("E2E config", () => {
     expect(config.browser.headless).toBe(true);
     expect(config.browser.panelMode).toBe("off");
     expect(config.artifacts.recordVideo).toBe(true);
-    expect(config.model).toBe("accounts/fireworks/models/custom");
+    expect(config.model).toBe("vendor/custom-model");
     expect(config.perceptionMode).toBe("unified_vl");
     expect(config.deprecatedEnvWarnings.length).toBeGreaterThanOrEqual(5);
   });
@@ -101,7 +99,6 @@ describe("E2E config", () => {
     const config = readE2EConfig({
       env: {
         E2E_PROFILE: "video",
-        E2E_PROVIDER: "fireworks",
         E2E_MODEL: "test-model",
         E2E_PLANNER_MODEL: "test-planner",
         E2E_JUDGE_MODEL: "test-judge",
@@ -115,7 +112,7 @@ describe("E2E config", () => {
     const childEnv = withE2EConfigEnv({}, config);
 
     expect(childEnv.E2E_PROFILE).toBe("video");
-    expect(childEnv.E2E_PROVIDER).toBe("fireworks");
+    expect(childEnv).not.toHaveProperty("E2E_PROVIDER");
     expect(childEnv.E2E_MODEL).toBe("test-model");
     expect(childEnv.E2E_PLANNER_MODEL).toBe("test-planner");
     expect(childEnv.E2E_JUDGE_MODEL).toBe("test-judge");

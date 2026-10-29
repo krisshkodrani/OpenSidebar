@@ -419,7 +419,7 @@ async function runTask(
     await harness.beforeEachHook();
 
     if (!harness.apiKey) {
-      throw new Error(`API key for E2E provider '${harness.providerMode}' is missing`);
+      throw new Error("OPENROUTER_API_KEY is missing");
     }
 
     if (task.allowNavigation) {

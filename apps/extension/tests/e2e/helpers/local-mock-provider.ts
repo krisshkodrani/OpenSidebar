@@ -1099,7 +1099,6 @@ export async function installLocalMockProviderInterceptor(
 
   await session.send("Fetch.enable", {
     patterns: [
-      { urlPattern: "https://api.fireworks.ai/*", requestStage: "Request" },
       { urlPattern: "https://api.openrouter.ai/*", requestStage: "Request" },
       { urlPattern: "https://openrouter.ai/*", requestStage: "Request" },
     ],

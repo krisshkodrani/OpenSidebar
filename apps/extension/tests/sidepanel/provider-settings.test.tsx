@@ -22,7 +22,7 @@ describe("key-driven provider settings", () => {
     container.remove();
   });
 
-  test("shows setup guidance instead of unavailable provider choices", async () => {
+  test("shows setup guidance when no OpenRouter key is configured", async () => {
     await act(async () => {
       root.render(
         <ModelsSettingsTab
@@ -34,15 +34,12 @@ describe("key-driven provider settings", () => {
       );
     });
 
-    expect(container.textContent).toContain("Connect an AI provider");
-    expect(
-      container.querySelectorAll('button[aria-pressed="false"]'),
-    ).toHaveLength(0);
-    expect(container.textContent).not.toContain("OpenAI-Compatible");
-    expect(container.textContent).not.toContain("Gemini");
+    expect(container.textContent).toContain("Connect OpenRouter");
+    expect(container.textContent).not.toContain("Advanced model settings");
+    expect(container.querySelectorAll("button[aria-pressed]")).toHaveLength(0);
   });
 
-  test("shows only release-verified providers and keeps advanced controls collapsed", async () => {
+  test("offers only OpenRouter and keeps advanced controls collapsed", async () => {
     const onChange = vi.fn();
     await act(async () => {
       root.render(
@@ -50,8 +47,6 @@ describe("key-driven provider settings", () => {
           formState={{
             ...DEFAULT_SETTINGS,
             openRouterApiKey: "sk-or-test",
-            groqApiKey: "gsk-test",
-            providerMode: "openrouter",
           }}
           models={[]}
           modelsLoading={false}
@@ -60,21 +55,43 @@ describe("key-driven provider settings", () => {
       );
     });
 
-    const stackButtons = container.querySelectorAll("button[aria-pressed]");
-    const connectionRows = container.querySelectorAll("details > summary");
-    expect(connectionRows).toHaveLength(3);
-    expect(connectionRows[0]?.textContent).toContain("OpenRouter");
-    expect(connectionRows[1]?.textContent).toContain("Fireworks");
-    expect(connectionRows[2]?.textContent).toContain("Advanced model settings");
-    expect(container.querySelectorAll("details")[2]?.hasAttribute("open")).toBe(
+    const rows = container.querySelectorAll("details > summary");
+    expect(rows).toHaveLength(2);
+    expect(rows[0]?.textContent).toContain("OpenRouter");
+    expect(rows[1]?.textContent).toContain("Advanced model settings");
+    expect(container.querySelectorAll("details")[1]?.hasAttribute("open")).toBe(
       false,
     );
-    expect(stackButtons).toHaveLength(1);
-    expect(stackButtons[0]?.textContent).toContain("OpenRouter");
-    expect(container.textContent).not.toContain("OpenRouter + Groq");
-    expect(container.textContent).not.toContain("Fireworks + DeepSeek");
-    expect(container.textContent).not.toContain("Moonshot AI");
-    expect(container.textContent).not.toContain("Xiaomi MiMo");
+    expect(container.querySelectorAll("button[aria-pressed]")).toHaveLength(0);
+    expect(container.textContent).not.toContain("Choose which provider");
     expect(onChange).not.toHaveBeenCalled();
+  });
+
+  test("editing the key reports the openRouterApiKey field", async () => {
+    const onChange = vi.fn();
+    await act(async () => {
+      root.render(
+        <ModelsSettingsTab
+          formState={{ ...DEFAULT_SETTINGS, openRouterApiKey: "" }}
+          models={[]}
+          modelsLoading={false}
+          onChange={onChange}
+        />,
+      );
+    });
+
+    const input = container.querySelector<HTMLInputElement>(
+      "#provider-key-openRouterApiKey",
+    );
+    expect(input).not.toBeNull();
+    const setValue = Object.getOwnPropertyDescriptor(
+      HTMLInputElement.prototype,
+      "value",
+    )!.set!;
+    await act(async () => {
+      setValue.call(input, "sk-or-new");
+      input!.dispatchEvent(new Event("input", { bubbles: true }));
+    });
+    expect(onChange).toHaveBeenCalledWith("openRouterApiKey", "sk-or-new");
   });
 });

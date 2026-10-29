@@ -257,9 +257,7 @@ export function CloudAccountSettings({
       </section>
     );
 
-  const provider =
-    formState.providerMode === "fireworks" ? "fireworks" : "openrouter";
-  const ready = account.providers.has(provider);
+  const ready = account.providers.has("openrouter");
   return (
     <section className="space-y-4">
       <div className="rounded-xl border border-warm-200 bg-white p-4 dark:border-warm-700 dark:bg-warm-850">
@@ -278,9 +276,7 @@ export function CloudAccountSettings({
         </div>
         <div className="mt-4 rounded-lg bg-warm-50 p-3 dark:bg-warm-900">
           <p className="text-xs text-warm-500">Active provider</p>
-          <p className="mt-1 text-sm font-semibold capitalize">
-            {provider === "openrouter" ? "OpenRouter" : "Fireworks AI"}
-          </p>
+          <p className="mt-1 text-sm font-semibold">OpenRouter</p>
           <p
             className={`mt-1 text-xs ${ready ? "text-green-700 dark:text-green-300" : "text-amber-700 dark:text-amber-300"}`}
           >

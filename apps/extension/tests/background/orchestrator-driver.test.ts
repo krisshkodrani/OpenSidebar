@@ -75,7 +75,6 @@ describe("resolveBrowserAgentCredential", () => {
     expect(
       resolveBrowserAgentCredential(
         {
-          providerMode: "openrouter",
           inferenceMode: "cloud",
           openRouterApiKey: "",
         } as never,
@@ -88,7 +87,6 @@ describe("resolveBrowserAgentCredential", () => {
     expect(
       resolveBrowserAgentCredential(
         {
-          providerMode: "openrouter",
           inferenceMode: "local",
           openRouterApiKey: "local-key",
         } as never,

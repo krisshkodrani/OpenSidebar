@@ -5,7 +5,7 @@ import { AgentStatus } from "../../src/types";
 // Mock modules before importing AgentLoop
 vi.mock("../../src/background/llm", () => ({
   LLMClient: class {
-    private model = "accounts/fireworks/routers/kimi-k2p5-turbo";
+    private model = "moonshotai/kimi-k2.6";
     _isPlannerTier = false;
     complete = vi.fn(() =>
       Promise.resolve({
@@ -25,23 +25,22 @@ vi.mock("../../src/background/llm", () => ({
       });
     });
     switchToPlanner = vi.fn(() => {
-      this.model = "accounts/fireworks/routers/kimi-k2p5-turbo"; this._isPlannerTier = true;
+      this.model = "moonshotai/kimi-k2.6"; this._isPlannerTier = true;
     });
     switchToExecutor = vi.fn(() => {
-      this.model = "accounts/fireworks/routers/kimi-k2p5-turbo"; this._isPlannerTier = false;
+      this.model = "moonshotai/kimi-k2.6"; this._isPlannerTier = false;
     });
     isPlannerTier = () => this._isPlannerTier;
     getCurrentModel = () => this.model;
-    getCurrentProvider = () => "fireworks";
-    setFailoverCallback = vi.fn(() => {});
+    getCurrentProvider = () => "openrouter";
     resetExecutorFallback = vi.fn();
     getActiveProviderInfo = () => ({
-      providerId: "fireworks",
+      providerId: "openrouter",
       model: this.model,
     });
   },
-  MODEL_EXECUTOR: "accounts/fireworks/routers/kimi-k2p5-turbo",
-  MODEL_PLANNER: "accounts/fireworks/routers/kimi-k2p5-turbo",
+  MODEL_EXECUTOR: "moonshotai/kimi-k2.6",
+  MODEL_PLANNER: "moonshotai/kimi-k2.6",
   stripThinkTags: (text: string) =>
     text.replace(/<think>[\s\S]*?<\/think>/g, "").trim(),
   extractThinkContent: (text: string) => {
@@ -274,7 +273,7 @@ describe("AgentLoop Public API", () => {
         .map((m: any) => m.payload?.delta)
         .filter(Boolean);
       const combined = textChunks.join("");
-      expect(combined).toContain("fireworks.ai");
+      expect(combined).toContain("openrouter.ai/credits");
     });
   });
 });

@@ -7,17 +7,17 @@ type Run = {
   startedAt: number;
   metrics: SessionMetrics;
 };
-type Active = { allowed: Promise<boolean>; timer?: ReturnType<typeof setInterval>; sequence: number; source: RunAnalyticsSnapshotV1["source"]; provider?: RunAnalyticsSnapshotV1["provider"] };
+type Active = { allowed: Promise<boolean>; timer?: ReturnType<typeof setInterval>; sequence: number; source: RunAnalyticsSnapshotV1["source"] };
 
 /** Sends only an explicit metadata allowlist. Server consent is authoritative. */
 export class RunAnalyticsReporter {
   private readonly active = new Map<string, Active>();
   constructor(private readonly request: (path: string, init?: RequestInit) => Promise<Response>) {}
 
-  start(run: Run, source: Active["source"], provider?: Active["provider"]) {
+  start(run: Run, source: Active["source"]) {
     if (this.active.has(run.runId)) return;
     const entry: Active = {
-      source, provider, sequence: 0,
+      source, sequence: 0,
       allowed: this.request("/analytics/consent")
         .then(async (response) => response.ok && ((await response.json()) as { enabled?: boolean; enabledAt?: string }).enabled === true)
         .catch(() => false),
@@ -46,7 +46,6 @@ export class RunAnalyticsReporter {
       ...(state === "running" ? {} : { finishedAt: observedAt }),
       state,
       source: entry.source,
-      ...(entry.provider ? { provider: entry.provider } : {}),
       ...(model ? { model } : {}),
       promptTokens: metrics.totalPromptTokens,
       completionTokens: metrics.totalCompletionTokens,

@@ -3,13 +3,7 @@ import { Save, X } from "lucide-react";
 import { useStore } from "../store";
 import type { UserSettings } from "../../types";
 import { DEFAULT_ENABLED_SKILL_PACK_IDS } from "../../types";
-import {
-  clearProviderModelOverrides,
-  getProviderKeyStatus,
-  reconcileProviderSelection,
-  resolveAvailableProviderMode,
-} from "../../utils/provider-keys";
-import { DEFAULT_PROVIDER_MODE } from "../../utils/executor-model-policy";
+import { getProviderKeyStatus } from "../../utils/provider-keys";
 import {
   loadSettings,
   normalizeMaxImagePromptTokenEstimate,
@@ -34,10 +28,6 @@ interface Props {
 
 const FOCUSABLE_SELECTOR =
   'button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])';
-const PROVIDER_CREDENTIAL_KEYS: readonly (keyof UserSettings)[] = [
-  "openRouterApiKey",
-  "fireworksApiKey",
-];
 
 export function SettingsDrawer({
   isOpen,
@@ -58,23 +48,18 @@ export function SettingsDrawer({
     useState<string | null>(null);
   const drawerRef = useRef<HTMLDivElement>(null);
   const closeButtonRef = useRef<HTMLButtonElement>(null);
-  const activeProviderMode = resolveAvailableProviderMode(formState);
-  const openRouterCatalogActive = activeProviderMode === "openrouter";
 
   const {
     error: modelsError,
     models,
     loading: modelsLoading,
   } = useOpenRouterModels(
-    activeTab === "agent" && openRouterCatalogActive
-      ? formState.openRouterApiKey
-      : "",
+    activeTab === "agent" ? formState.openRouterApiKey : "",
   );
 
   useEffect(() => {
-    const nextSettings = reconcileProviderSelection(settings);
-    setFormState(nextSettings);
-    setIsDirty(JSON.stringify(nextSettings) !== JSON.stringify(settings));
+    setFormState(settings);
+    setIsDirty(false);
     setSiteBlocklistText((settings.siteAccessBlocklist ?? []).join("\n"));
     setSaveStatus(null);
     setSyncNeedsRetry(false);
@@ -117,17 +102,7 @@ export function SettingsDrawer({
 
   const handleChange: SettingsChangeHandler = (key, value) => {
     setFormState((previous) => {
-      let next = { ...previous, [key]: value };
-      const providerChanged =
-        key === "providerMode" && value !== previous.providerMode;
-      const credentialChanged = PROVIDER_CREDENTIAL_KEYS.includes(key);
-
-      if (credentialChanged) {
-        next = reconcileProviderSelection(next);
-      } else if (providerChanged) {
-        next = clearProviderModelOverrides(next);
-      }
-
+      const next = { ...previous, [key]: value };
       setIsDirty(JSON.stringify(next) !== JSON.stringify(settings));
       return next;
     });
@@ -177,10 +152,6 @@ export function SettingsDrawer({
       .filter(Boolean);
     const nextState: UserSettings = {
       ...formState,
-      providerMode:
-        resolveAvailableProviderMode(formState) ??
-        formState.providerMode ??
-        DEFAULT_PROVIDER_MODE,
       maxImagePromptTokenEstimate: normalizeMaxImagePromptTokenEstimate(
         formState.maxImagePromptTokenEstimate,
       ),

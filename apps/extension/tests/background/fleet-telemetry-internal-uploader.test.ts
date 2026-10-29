@@ -17,7 +17,7 @@ const BASE_ENVELOPE: FleetTelemetryEnvelopeV1 = {
   extension: { version: "0.6.0", channel: "dev" },
   environment: { browserMajor: 140, osFamily: "windows" },
   runtime: {
-    provider: "fireworks",
+    provider: "openrouter",
     executorModel: "other",
     plannerModel: "other",
     judgeModel: "other",

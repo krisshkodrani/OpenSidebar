@@ -21,130 +21,60 @@ describe("LLM pricing table", () => {
     ).toBe(true);
   });
 
-  test("uses refreshed Fireworks Kimi K2.6 Turbo pricing", () => {
-    const pricing = findModelPricing(
-      "fireworks",
-      "accounts/fireworks/routers/kimi-k2p6-turbo",
-    );
-    expect(pricing).toMatchObject({
-      inputUsdPerMillion: 2.0,
-      outputUsdPerMillion: 8.0,
-      cachedInputUsdPerMillion: 0.3,
-      effectiveDate: "2026-05-29",
-      sourceUrl: "https://docs.fireworks.ai/serverless/pricing",
+  test("prices only OpenRouter models", () => {
+    expect(
+      DEFAULT_MODEL_PRICING.every((entry) => entry.providerId === "openrouter"),
+    ).toBe(true);
+    expect(findModelPricing("openrouter", "z-ai/glm-5.2")).toMatchObject({
+      sourceUrl: "https://openrouter.ai/z-ai/glm-5.2",
       confidence: "official",
     });
   });
 
-  test("includes official Fireworks Kimi K2.7 Code pricing", () => {
-    const pricing = findModelPricing(
-      "fireworks",
-      "accounts/fireworks/models/kimi-k2p7-code",
-    );
-    expect(pricing).toMatchObject({
-      inputUsdPerMillion: 0.95,
-      outputUsdPerMillion: 4.0,
-      cachedInputUsdPerMillion: 0.19,
-      effectiveDate: "2026-06-12",
-      sourceUrl: "https://fireworks.ai/models/fireworks/kimi-k2p7-code",
-      confidence: "official",
+  test("includes the default executor and judge seats", () => {
+    expect(findModelPricing("openrouter", "openai/gpt-6-luna")).toMatchObject({
+      inputUsdPerMillion: 0.1,
+      outputUsdPerMillion: 0.5,
+      cachedInputUsdPerMillion: 0.01,
+    });
+    expect(findModelPricing("openrouter", "typesafe/jev-1.13")).toMatchObject({
+      inputUsdPerMillion: 0.042,
+      outputUsdPerMillion: 0,
     });
   });
 
-  test("includes official Fireworks GLM 5.2 pricing for the planner seat", () => {
-    const pricing = findModelPricing(
-      "fireworks",
-      "accounts/fireworks/models/glm-5p2",
-    );
-    expect(pricing).toMatchObject({
-      inputUsdPerMillion: 1.4,
-      outputUsdPerMillion: 4.4,
-      cachedInputUsdPerMillion: 0.14,
-      confidence: "official",
-    });
-  });
-
-  test("prices Fireworks cached input below the full input rate for every seat", () => {
+  test("prices cached input below the full input rate for the seat defaults", () => {
     // Regression guard: an omitted cachedInputUsdPerMillion silently falls back
     // to the full input rate (see estimateCostUsd), and a wrong one skews spend
-    // reporting. Both happened before 2026-07-21 on the glm/gpt-oss/minimax rows.
-    const seats = [
-      { model: "accounts/fireworks/models/minimax-m3", cached: 0.06 },
-      { model: "accounts/fireworks/models/qwen3p7-plus", cached: 0.08 },
-      { model: "accounts/fireworks/models/kimi-k2p7-code", cached: 0.19 },
-      { model: "accounts/fireworks/models/glm-5p2", cached: 0.14 },
-      { model: "accounts/fireworks/models/gpt-oss-120b", cached: 0.015 },
-    ];
-    for (const seat of seats) {
-      const pricing = findModelPricing("fireworks", seat.model);
-      expect(pricing?.cachedInputUsdPerMillion).toBe(seat.cached);
+    // reporting.
+    for (const model of ["openai/gpt-6-luna", "minimax/minimax-m3"]) {
+      const pricing = findModelPricing("openrouter", model);
       expect(pricing?.cachedInputUsdPerMillion).toBeLessThan(
         pricing!.inputUsdPerMillion,
       );
     }
   });
 
-  test("includes official Cerebras pricing for Gemma 4 31B", () => {
-    const pricing = findModelPricing("cerebras", "gemma-4-31b");
-    expect(pricing).toMatchObject({
-      inputUsdPerMillion: 0.99,
-      outputUsdPerMillion: 1.49,
-      effectiveDate: "2026-07-09",
-      sourceUrl: "https://cloud.cerebras.ai",
-      confidence: "official",
-    });
-  });
-
-  test("includes Groq pricing for GPT-OSS 120B", () => {
-    const pricing = findModelPricing("groq", "openai/gpt-oss-120b");
-    expect(pricing).toMatchObject({
-      inputUsdPerMillion: 0.15,
-      outputUsdPerMillion: 0.6,
-      cachedInputUsdPerMillion: 0.075,
-    });
-  });
-
-  test("includes Moonshot pricing for Kimi K2.6", () => {
-    const pricing = findModelPricing("moonshot", "kimi-k2.6");
-    expect(pricing).toMatchObject({
-      inputUsdPerMillion: 0.95,
-      outputUsdPerMillion: 4.0,
-      cachedInputUsdPerMillion: 0.16,
-    });
-  });
-
-  test("includes DeepSeek V4 Flash pricing", () => {
-    const pricing = findModelPricing("deepseek", "deepseek-v4-flash");
-    expect(pricing).toMatchObject({
-      inputUsdPerMillion: 0.14,
-      outputUsdPerMillion: 0.28,
-      cachedInputUsdPerMillion: 0.0028,
-    });
-  });
-
-  test("includes Xiaomi MiMo placeholder pricing as best effort", () => {
-    const pricing = findModelPricing("xiaomi", "mimo-v2-omni");
-    expect(pricing).toMatchObject({
-      inputUsdPerMillion: 0,
-      outputUsdPerMillion: 0,
-      confidence: "best_effort",
-    });
+  test("ignores the :nitro routing suffix", () => {
+    expect(findModelPricing("openrouter", "openai/gpt-6-luna:nitro")).toEqual(
+      findModelPricing("openrouter", "openai/gpt-6-luna"),
+    );
   });
 
   test("estimates cached prompt tokens at the cached rate", () => {
-    const cost = estimateCostUsd("groq", "openai/gpt-oss-120b", {
+    const cost = estimateCostUsd("openrouter", "openai/gpt-6-luna", {
       prompt_tokens: 1_000_000,
       completion_tokens: 1_000_000,
       total_tokens: 2_000_000,
       cached_tokens: 500_000,
     });
-    expect(cost).toBeCloseTo(0.15 * 0.5 + 0.075 * 0.5 + 0.6, 6);
+    expect(cost).toBeCloseTo(0.1 * 0.5 + 0.01 * 0.5 + 0.5, 6);
   });
 
   test("returns input, cached input, and output cost components", () => {
     const breakdown = estimateCostBreakdownUsd(
-      "fireworks",
-      "accounts/fireworks/routers/kimi-k2p6-turbo",
+      "openrouter",
+      "openai/gpt-6-luna",
       {
         prompt_tokens: 1_000,
         cached_tokens: 400,
@@ -159,16 +89,16 @@ describe("LLM pricing table", () => {
       cachedTokens: 400,
       completionTokens: 100,
     });
-    expect(breakdown?.inputCostUsd).toBeCloseTo(0.0012, 8);
-    expect(breakdown?.cachedInputCostUsd).toBeCloseTo(0.00012, 8);
-    expect(breakdown?.outputCostUsd).toBeCloseTo(0.0008, 8);
-    expect(breakdown?.totalCostUsd).toBeCloseTo(0.00212, 8);
+    expect(breakdown?.inputCostUsd).toBeCloseTo(0.00006, 8);
+    expect(breakdown?.cachedInputCostUsd).toBeCloseTo(0.000004, 8);
+    expect(breakdown?.outputCostUsd).toBeCloseTo(0.00005, 8);
+    expect(breakdown?.totalCostUsd).toBeCloseTo(0.000114, 8);
   });
 
   test("returns null for unknown model pricing", () => {
-    expect(findModelPricing("fireworks", "unknown/model")).toBeNull();
+    expect(findModelPricing("openrouter", "unknown/model")).toBeNull();
     expect(
-      estimateCostUsd("fireworks", "unknown/model", {
+      estimateCostUsd("openrouter", "unknown/model", {
         prompt_tokens: 100,
         completion_tokens: 100,
         total_tokens: 200,

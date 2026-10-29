@@ -39,12 +39,11 @@ Avoid claiming:
 
 ## Provider Matrix
 
-Keep this table aligned with `UserSettings["providerMode"]` and the Settings UI.
+Keep this table aligned with the Settings UI. OpenRouter is the only LLM provider.
 
-| Provider mode | Required key(s) | Role | Launch status | Notes |
+| Provider | Required key(s) | Role | Launch status | Notes |
 | --- | --- | --- | --- | --- |
-| `fireworks` | `FIREWORKS_API_KEY` / Fireworks key in Settings | Executor and planner | Supported | Release-verified alternative; internal E2E still defaults to Fireworks. |
-| `openrouter` | `OPENROUTER_API_KEY` / OpenRouter key in Settings | Executor and planner | Recommended default | Public BYOK default with a live, verified model list. |
+| `openrouter` | `OPENROUTER_API_KEY` / OpenRouter key in Settings | Executor, planner, and judge | Supported (only provider) | Public BYOK with a live, verified model list. |
 
 Experimental and legacy adapters remain available to migrations and internal
 evaluation, but are not offered in the release Settings UI. Launch docs should
@@ -58,7 +57,7 @@ Exit criteria:
 - README and Getting Started both require Node.js `>=22`.
 - README, Privacy Policy, Security Policy, and Store Listing do not contradict the safety posture.
 - Manifest, package version, changelog, and release notes have a single intended launch version before tagging.
-- Manifest description says multi-provider BYOK rather than OpenRouter-only BYOK.
+- Manifest description says OpenRouter BYOK.
 - Privacy Policy links point to the active repository.
 - Permission explanations cover broad host access, tabs, cookies, history, downloads, and screenshots/tab capture.
 - First-run setup explains how to add a provider key and run a safe first task.
@@ -67,14 +66,14 @@ Current alignment controls:
 
 - `package.json` and `apps/extension/manifest.json` must advertise the same version before tagging.
 - `pnpm run ci:dist` checks that the built `dist/manifest.json` version matches `package.json`.
-- `apps/extension/manifest.json` should describe multi-provider BYOK rather than a single provider-specific setup path.
+- `apps/extension/manifest.json` should describe OpenRouter BYOK.
 
 ## Phase P1: BYOK Clarity
 
 Exit criteria:
 
 - Provider matrix is visible from README or Getting Started.
-- Settings docs explain provider modes, required keys, and which modes need multiple keys.
+- Settings docs explain the OpenRouter key and the model seats.
 - Docs clearly say page context and screenshots may be sent to the selected model provider when a task needs them.
 - Docs clearly say the local log server and trace viewer are development/local-only tools.
 - Provider failure expectations are documented: invalid key, quota exhausted, rate limit, model unavailable, and provider outage.
@@ -84,7 +83,7 @@ Exit criteria:
 Exit criteria:
 
 - `CONTRIBUTING.md` names the current command set and expected validation loop.
-- Bug report template asks for provider mode, model, Chrome version, task prompt, trace/report availability, and whether sensitive data has been redacted.
+- Bug report template asks for model, Chrome version, task prompt, trace/report availability, and whether sensitive data has been redacted.
 - Security Policy names supported branches/releases and where to report security issues.
 - Documentation index links to the launch roadmap, provider setup, privacy policy, security policy, and release checklist.
 
@@ -105,7 +104,7 @@ Exit criteria:
 The launch candidate is ready when:
 
 - public docs are internally consistent;
-- supported provider modes are documented with required keys;
+- the OpenRouter key requirement is documented;
 - safety posture is configurable confirmation behavior;
 - privacy and permission claims match the extension manifest and runtime behavior;
 - install and first-task instructions work from a fresh clone;

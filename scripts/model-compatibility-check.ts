@@ -2,11 +2,9 @@ import { existsSync, mkdirSync, readFileSync, writeFileSync } from "fs";
 import { dirname, relative, resolve } from "path";
 import { fileURLToPath, pathToFileURL } from "url";
 import {
-  DEFAULT_MULTIMODAL_EXECUTOR_BY_PROVIDER,
+  DEFAULT_EXECUTOR_MODEL,
   getExecutorEligibleModelIds,
 } from "../apps/extension/src/utils/executor-model-policy";
-
-export type StableProvider = "openrouter" | "fireworks";
 
 interface OpenRouterCatalogModel {
   id?: string;
@@ -24,34 +22,15 @@ interface OpenRouterCatalogModel {
   };
 }
 
-interface FireworksDeprecationDate {
-  year?: number;
-  month?: number;
-  day?: number;
-}
-
-interface FireworksCatalogModel {
-  name?: string;
-  displayName?: string;
-  state?: string;
-  contextLength?: number;
-  supportsImageInput?: boolean;
-  supportsTools?: boolean;
-  supportsServerless?: boolean;
-  deprecationDate?: FireworksDeprecationDate | null;
-}
-
 export interface ModelCompatibilityRow {
   id: string;
   name: string;
   allowlisted: boolean;
   catalogListed: boolean;
-  inferenceListed?: boolean;
   supportsImage: boolean;
   supportsTools: boolean;
   supportsToolChoice?: boolean;
   supportsStructuredOutputs?: boolean;
-  supportsServerless?: boolean;
   contextLength?: number;
   expirationDate?: string | null;
   inputUsdPerMillion?: number;
@@ -60,7 +39,6 @@ export interface ModelCompatibilityRow {
 }
 
 export interface ProviderCompatibilityReport {
-  provider: StableProvider;
   catalogModelCount: number;
   executorCandidateCount: number;
   allowlist: ModelCompatibilityRow[];
@@ -68,7 +46,6 @@ export interface ProviderCompatibilityReport {
 }
 
 export interface ProbeResult {
-  provider: StableProvider;
   model: string;
   ok: boolean;
   status: number;
@@ -81,12 +58,11 @@ export interface ProbeResult {
 
 export interface ModelCompatibilityReport {
   generatedAt: string;
-  providers: ProviderCompatibilityReport[];
-  probes: ProbeResult[];
+  catalog: ProviderCompatibilityReport;
+  probe: ProbeResult | null;
 }
 
 export interface ModelCheckOptions {
-  providers: StableProvider[];
   probe: boolean;
   model?: string;
   outputPath?: string;
@@ -96,10 +72,6 @@ type FetchLike = (input: string | URL, init?: RequestInit) => Promise<Response>;
 
 const OPENROUTER_MODELS_URL =
   "https://openrouter.ai/api/v1/models?input_modalities=image&output_modalities=text&supported_parameters=tools";
-const FIREWORKS_MODELS_URL =
-  "https://api.fireworks.ai/v1/accounts/fireworks/models?filter=supports_serverless%3Dtrue&pageSize=200";
-const FIREWORKS_INFERENCE_MODELS_URL =
-  "https://api.fireworks.ai/inference/v1/models";
 const PROBE_IMAGE_PNG =
   "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAACAAAAAgCAYAAABzenr0AAAAKUlEQVR4nO3OIQEAAAACIP+f1hkWWEB6FgEBAQEBAQEBAQEBAQEBgXdgl/rw4unIZ5cAAAAASUVORK5CYII=";
 
@@ -117,22 +89,11 @@ function hasFutureExpiration(
   return Number.isFinite(expiration.getTime()) && expiration >= now;
 }
 
-function fireworksExpiration(
-  value: FireworksDeprecationDate | null | undefined,
-): string | null {
-  if (!value?.year || !value.month || !value.day) return null;
-  return [
-    String(value.year).padStart(4, "0"),
-    String(value.month).padStart(2, "0"),
-    String(value.day).padStart(2, "0"),
-  ].join("-");
-}
-
 export function buildOpenRouterReport(
   models: OpenRouterCatalogModel[],
   now = new Date(),
 ): ProviderCompatibilityReport {
-  const allowlisted = new Set(getExecutorEligibleModelIds("openrouter"));
+  const allowlisted = new Set(getExecutorEligibleModelIds());
   const rows = models
     .filter(
       (model): model is OpenRouterCatalogModel & { id: string } =>
@@ -186,73 +147,6 @@ export function buildOpenRouterReport(
   const allRows = [...rows, ...missingRows];
 
   return {
-    provider: "openrouter",
-    catalogModelCount: rows.length,
-    executorCandidateCount: rows.filter((row) => row.candidate).length,
-    allowlist: allRows
-      .filter((row) => row.allowlisted)
-      .sort((a, b) => a.id.localeCompare(b.id)),
-    additionalCandidates: rows
-      .filter((row) => row.candidate && !row.allowlisted)
-      .sort((a, b) => a.id.localeCompare(b.id)),
-  };
-}
-
-export function buildFireworksReport(
-  models: FireworksCatalogModel[],
-  inferenceModelIds: string[],
-  now = new Date(),
-): ProviderCompatibilityReport {
-  const allowlisted = new Set(getExecutorEligibleModelIds("fireworks"));
-  const inferenceIds = new Set(inferenceModelIds);
-  const rows = models
-    .filter(
-      (model): model is FireworksCatalogModel & { name: string } =>
-        typeof model.name === "string" && model.name.trim().length > 0,
-    )
-    .map<ModelCompatibilityRow>((model) => {
-      const expirationDate = fireworksExpiration(model.deprecationDate);
-      const supportsImage = model.supportsImageInput === true;
-      const supportsTools = model.supportsTools === true;
-      const supportsServerless = model.supportsServerless === true;
-      return {
-        id: model.name,
-        name: model.displayName?.trim() || model.name,
-        allowlisted: allowlisted.has(model.name),
-        catalogListed: true,
-        inferenceListed: inferenceIds.has(model.name),
-        supportsImage,
-        supportsTools,
-        supportsServerless,
-        contextLength: model.contextLength,
-        expirationDate,
-        candidate:
-          model.state === "READY" &&
-          supportsImage &&
-          supportsTools &&
-          supportsServerless &&
-          hasFutureExpiration(expirationDate, now),
-      };
-    });
-
-  const byId = new Map(rows.map((row) => [row.id, row]));
-  const missingRows = [...allowlisted]
-    .filter((id) => !byId.has(id))
-    .map<ModelCompatibilityRow>((id) => ({
-      id,
-      name: id,
-      allowlisted: true,
-      catalogListed: false,
-      inferenceListed: inferenceIds.has(id),
-      supportsImage: false,
-      supportsTools: false,
-      supportsServerless: false,
-      candidate: false,
-    }));
-  const allRows = [...rows, ...missingRows];
-
-  return {
-    provider: "fireworks",
     catalogModelCount: rows.length,
     executorCandidateCount: rows.filter((row) => row.candidate).length,
     allowlist: allRows
@@ -285,41 +179,14 @@ export async function fetchOpenRouterReport(
   return buildOpenRouterReport(Array.isArray(json.data) ? json.data : []);
 }
 
-export async function fetchFireworksReport(
-  apiKey: string,
-  fetchImpl: FetchLike = fetch,
-): Promise<ProviderCompatibilityReport> {
-  const headers = { Authorization: `Bearer ${apiKey}` };
-  const [catalogResponse, inferenceResponse] = await Promise.all([
-    fetchImpl(FIREWORKS_MODELS_URL, { headers }),
-    fetchImpl(FIREWORKS_INFERENCE_MODELS_URL, { headers }),
-  ]);
-  const catalog = (await readJson(catalogResponse)) as {
-    models?: FireworksCatalogModel[];
-  };
-  const inference = (await readJson(inferenceResponse)) as {
-    data?: Array<{ id?: string }>;
-  };
-  const inferenceIds = (inference.data ?? [])
-    .map((model) => model.id)
-    .filter((id): id is string => typeof id === "string");
-  return buildFireworksReport(
-    Array.isArray(catalog.models) ? catalog.models : [],
-    inferenceIds,
-  );
-}
-
 export async function probeModel(
-  provider: StableProvider,
   model: string,
   apiKey: string,
   fetchImpl: FetchLike = fetch,
 ): Promise<ProbeResult> {
   const toolName = "report_compatibility";
   const response = await fetchImpl(
-    provider === "openrouter"
-      ? "https://openrouter.ai/api/v1/chat/completions"
-      : "https://api.fireworks.ai/inference/v1/chat/completions",
+    "https://openrouter.ai/api/v1/chat/completions",
     {
       method: "POST",
       headers: {
@@ -364,7 +231,6 @@ export async function probeModel(
   const raw = await response.text();
   if (!response.ok) {
     return {
-      provider,
       model,
       ok: false,
       status: response.status,
@@ -381,7 +247,7 @@ export async function probeModel(
           finish_reason?: unknown;
           message?: {
             content?: unknown;
-            reasoning_content?: unknown;
+            reasoning?: unknown;
             tool_calls?: unknown[];
           };
         })
@@ -396,7 +262,6 @@ export async function probeModel(
     : false;
 
   return {
-    provider,
     model,
     ok: toolCallObserved,
     status: response.status,
@@ -420,7 +285,7 @@ function summarizeProbeMessage(
   message:
     | {
         content?: unknown;
-        reasoning_content?: unknown;
+        reasoning?: unknown;
         tool_calls?: unknown[];
       }
     | undefined,
@@ -431,11 +296,11 @@ function summarizeProbeMessage(
     parts.push(`content=${JSON.stringify(message.content.slice(0, 160))}`);
   }
   if (
-    typeof message.reasoning_content === "string" &&
-    message.reasoning_content.trim()
+    typeof message.reasoning === "string" &&
+    message.reasoning.trim()
   ) {
     parts.push(
-      `reasoning=${JSON.stringify(message.reasoning_content.slice(0, 160))}`,
+      `reasoning=${JSON.stringify(message.reasoning.slice(0, 160))}`,
     );
   }
   if (Array.isArray(message.tool_calls)) {
@@ -445,23 +310,11 @@ function summarizeProbeMessage(
 }
 
 export function parseModelCheckArgs(argv: string[]): ModelCheckOptions {
-  const providerArg = argv.find((arg) => arg.startsWith("--provider="));
-  const providerValue = providerArg?.slice("--provider=".length) ?? "all";
-  if (!["all", "openrouter", "fireworks"].includes(providerValue)) {
-    throw new Error(`Unsupported provider "${providerValue}".`);
-  }
   const model = argv
     .find((arg) => arg.startsWith("--model="))
     ?.slice("--model=".length)
     .trim();
-  if (model && providerValue === "all") {
-    throw new Error("--model requires --provider=openrouter or fireworks.");
-  }
   return {
-    providers:
-      providerValue === "all"
-        ? ["openrouter", "fireworks"]
-        : [providerValue as StableProvider],
     probe: argv.includes("--probe"),
     ...(model ? { model } : {}),
     outputPath: argv
@@ -481,18 +334,16 @@ function readEnvFile(path: string): Record<string, string> {
   );
 }
 
-function providerKey(
-  provider: StableProvider,
+function openRouterKey(
   fileValues: Record<string, string>,
 ): string | undefined {
-  const name =
-    provider === "openrouter" ? "OPENROUTER_API_KEY" : "FIREWORKS_API_KEY";
+  const name = "OPENROUTER_API_KEY";
   return process.env[name]?.trim() || fileValues[name]?.trim() || undefined;
 }
 
 function printProviderReport(report: ProviderCompatibilityReport): void {
   console.log(
-    `\n${report.provider}: ${report.catalogModelCount} catalog models, ${report.executorCandidateCount} executor-compatible candidates`,
+    `\nopenrouter: ${report.catalogModelCount} catalog models, ${report.executorCandidateCount} executor-compatible candidates`,
   );
   console.table(
     report.allowlist.map((row) => ({
@@ -501,9 +352,6 @@ function printProviderReport(report: ProviderCompatibilityReport): void {
       image: row.supportsImage,
       tools: row.supportsTools,
       candidate: row.candidate,
-      ...(row.inferenceListed === undefined
-        ? {}
-        : { inferenceList: row.inferenceListed }),
     })),
   );
   console.log(
@@ -515,38 +363,25 @@ async function main(): Promise<void> {
   const options = parseModelCheckArgs(process.argv.slice(2));
   const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..");
   const fileValues = readEnvFile(resolve(repoRoot, ".env"));
-  const providers: ProviderCompatibilityReport[] = [];
-  const probes: ProbeResult[] = [];
+  const apiKey = openRouterKey(fileValues);
+  if (!apiKey) throw new Error("OPENROUTER_API_KEY is not configured.");
 
-  for (const provider of options.providers) {
-    const apiKey = providerKey(provider, fileValues);
-    if (!apiKey) {
-      throw new Error(
-        `${provider === "openrouter" ? "OPENROUTER_API_KEY" : "FIREWORKS_API_KEY"} is not configured.`,
-      );
-    }
-    const report =
-      provider === "openrouter"
-        ? await fetchOpenRouterReport(apiKey)
-        : await fetchFireworksReport(apiKey);
-    providers.push(report);
-    printProviderReport(report);
+  const catalog = await fetchOpenRouterReport(apiKey);
+  printProviderReport(catalog);
 
-    if (options.probe) {
-      const model =
-        options.model ?? DEFAULT_MULTIMODAL_EXECUTOR_BY_PROVIDER[provider];
-      const result = await probeModel(provider, model, apiKey);
-      probes.push(result);
-      console.log(
-        `Probe ${provider}/${model}: ${result.ok ? "PASS" : "FAIL"} (HTTP ${result.status})`,
-      );
-    }
+  let probe: ProbeResult | null = null;
+  if (options.probe) {
+    const model = options.model ?? DEFAULT_EXECUTOR_MODEL;
+    probe = await probeModel(model, apiKey);
+    console.log(
+      `Probe openrouter/${model}: ${probe.ok ? "PASS" : "FAIL"} (HTTP ${probe.status})`,
+    );
   }
 
   const report: ModelCompatibilityReport = {
     generatedAt: new Date().toISOString(),
-    providers,
-    probes,
+    catalog,
+    probe,
   };
   const stamp = report.generatedAt.replace(/[:.]/g, "-");
   const outputPath = resolve(
@@ -557,11 +392,10 @@ async function main(): Promise<void> {
   writeFileSync(outputPath, `${JSON.stringify(report, null, 2)}\n`, "utf-8");
   console.log(`\nReport: ${relative(repoRoot, outputPath)}`);
 
-  const incompatibleAllowlist = providers.flatMap((provider) =>
-    provider.allowlist.filter((model) => !model.candidate),
+  const incompatibleAllowlist = catalog.allowlist.filter(
+    (model) => !model.candidate,
   );
-  const failedProbes = probes.filter((probe) => !probe.ok);
-  if (incompatibleAllowlist.length > 0 || failedProbes.length > 0) {
+  if (incompatibleAllowlist.length > 0 || (probe && !probe.ok)) {
     process.exitCode = 1;
   }
 }

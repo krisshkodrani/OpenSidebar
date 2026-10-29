@@ -1029,17 +1029,14 @@
             <table class="matrix">
               <thead>
                 <tr>
-                  <th>Provider mode</th>
-                  <th>Typical role split</th>
+                  <th>Seat</th>
+                  <th>Role</th>
                 </tr>
               </thead>
               <tbody>
-                <tr><td><code>fireworks</code></td><td>Fireworks executor and planner. Supported release-verified alternative.</td></tr>
-                <tr><td><code>fireworks-deepseek</code></td><td>Fireworks executor, DeepSeek planner/verifier.</td></tr>
-                <tr><td><code>openrouter</code></td><td>OpenRouter-backed executor and planner. Recommended product default.</td></tr>
-                <tr><td><code>openrouter-groq</code></td><td>OpenRouter executor, Groq planner.</td></tr>
-                <tr><td><code>moonshot</code></td><td>Moonshot/Kimi executor and planner.</td></tr>
-                <tr><td><code>xiaomi</code></td><td>Xiaomi MiMo executor and planner.</td></tr>
+                <tr><td>Executor</td><td>OpenRouter-backed action loop with screenshot input. OpenRouter is the only LLM provider.</td></tr>
+                <tr><td>Planner</td><td>OpenRouter-backed planning, rerouting, and verification support.</td></tr>
+                <tr><td>Judge</td><td>OpenRouter Decisions API for typed completion rubric decisions.</td></tr>
               </tbody>
             </table>
           </div>

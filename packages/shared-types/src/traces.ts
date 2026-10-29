@@ -334,7 +334,7 @@ export interface TraceEntry {
         promptTokens?: number;
         cachedPromptTokens?: number;
         cacheHitPct?: number;
-        source: "usage" | "response_headers";
+        source: "usage";
       };
     } | null;
     durationMs: number;

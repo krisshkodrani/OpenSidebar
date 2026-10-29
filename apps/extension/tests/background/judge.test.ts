@@ -19,7 +19,7 @@ const rubric: JudgeRubric = {
 
 function seatReturning(text: string): JudgeSeat {
   return {
-    runJudge: vi.fn(async () => ({ text, model: "glm-5p2", providerId: "fireworks" })),
+    runJudge: vi.fn(async () => ({ text, model: "glm-5p2", providerId: "openrouter" })),
   };
 }
 
@@ -28,7 +28,7 @@ function seatReturningWithUsage(
   usage: { promptTokens: number; completionTokens: number; totalTokens: number; costUsd?: number },
 ): JudgeSeat {
   return {
-    runJudge: vi.fn(async () => ({ text, model: "gpt-oss-120b", providerId: "fireworks", usage })),
+    runJudge: vi.fn(async () => ({ text, model: "gpt-oss-120b", providerId: "openrouter", usage })),
   };
 }
 
@@ -129,7 +129,7 @@ describe("runRubricJudge", () => {
       { promptTokens: 420, completionTokens: 80, totalTokens: 500, costUsd: 0.0004 },
     );
     const v = await runRubricJudge(rubric, { seat });
-    expect(v.providerId).toBe("fireworks");
+    expect(v.providerId).toBe("openrouter");
     expect(v.usage).toEqual({ promptTokens: 420, completionTokens: 80, totalTokens: 500, costUsd: 0.0004 });
   });
 
@@ -143,7 +143,7 @@ describe("runRubricJudge", () => {
     expect(v.source).toBe("fail_open");
     expect(v.failureCause).toBe("parse_error");
     expect(v.usage?.totalTokens).toBe(405);
-    expect(v.providerId).toBe("fireworks");
+    expect(v.providerId).toBe("openrouter");
   });
 
   test("caches a real verdict but not a fail-open", async () => {
