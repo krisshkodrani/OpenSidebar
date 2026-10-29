@@ -14,15 +14,15 @@
 
 @layer components {
   .os-type-label {
-    @apply text-ui-caption font-medium text-slate-500;
+    @apply text-ui-caption font-medium text-fg-tertiary;
   }
 
   .os-type-meta {
-    @apply text-ui-control text-slate-500;
+    @apply text-ui-control text-fg-tertiary;
   }
 
   .os-type-body {
-    @apply text-ui-body text-slate-800;
+    @apply text-ui-body text-fg;
   }
 
   .os-type-control {
@@ -30,7 +30,7 @@
   }
 
   .os-type-heading {
-    @apply text-ui-title font-semibold tracking-normal text-slate-950;
+    @apply text-ui-title font-semibold tracking-normal text-fg;
   }
 
   .os-type-metric {
@@ -43,11 +43,11 @@ body,
 #root {
   height: 100%;
   margin: 0;
-  background-color: var(--os-canvas);
+  background-color: rgb(var(--os-canvas));
 }
 
 .dark body {
-  background-color: var(--os-canvas);
+  background-color: rgb(var(--os-canvas));
 }
 
 /* --- Prose styles for assistant markdown messages --- */
@@ -206,13 +206,13 @@ body,
 }
 
 .prose-chat a {
-  color: var(--os-accent);
+  color: rgb(var(--os-accent-text));
   text-decoration: underline;
   text-underline-offset: 2px;
 }
 
 .prose-chat a:hover {
-  color: var(--os-accent-strong);
+  color: rgb(var(--os-accent-text));
 }
 
 .prose-chat blockquote {
@@ -429,16 +429,16 @@ body,
 
 .dark .input-glow:focus-within {
   box-shadow:
-    0 0 0 2px var(--os-canvas),
+    0 0 0 2px rgb(var(--os-canvas)),
     0 0 0 5px rgba(114, 198, 182, 0.3);
 }
 
 /* --- Quiet canvas gradient --- */
 .bg-warm-gradient {
-  background: linear-gradient(to bottom, var(--os-canvas), var(--os-surface-muted));
+  background: linear-gradient(to bottom, rgb(var(--os-canvas)), rgb(var(--os-surface-subtle)));
 }
 .dark .bg-warm-gradient {
-  background: linear-gradient(to bottom, var(--os-canvas), var(--os-surface-muted));
+  background: linear-gradient(to bottom, rgb(var(--os-canvas)), rgb(var(--os-surface-subtle)));
 }
 
 /* --- Glass surface --- */

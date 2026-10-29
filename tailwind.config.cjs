@@ -1,5 +1,10 @@
 /** @type {import('tailwindcss').Config} */
-const productTokens = require("./packages/ui-tokens/tokens.json");
+
+// Semantic colors come from packages/ui-tokens (CSS variables with RGB
+// triplets). `.dark` on <html> switches every role, so components need no
+// `dark:` color variants.
+const role = (name) => `rgb(var(--os-${name}) / <alpha-value>)`;
+
 module.exports = {
   content: [
     "./apps/extension/src/sidepanel/**/*.{js,ts,jsx,tsx,html}",
@@ -20,22 +25,53 @@ module.exports = {
           "sans-serif",
         ],
       },
+      // Smallest text is 12px. Body text is 14px.
       fontSize: {
-        "ui-caption": ["11px", { lineHeight: "16px" }],
-        "ui-control": ["12px", { lineHeight: "18px" }],
-        "ui-body": ["13px", { lineHeight: "20px" }],
-        "ui-body-strong": ["13px", { lineHeight: "20px" }],
-        "ui-section": ["14px", { lineHeight: "22px" }],
+        "ui-caption": ["12px", { lineHeight: "16px" }],
+        "ui-control": ["13px", { lineHeight: "18px" }],
+        "ui-body": ["14px", { lineHeight: "20px" }],
+        "ui-body-strong": ["14px", { lineHeight: "20px" }],
+        "ui-section": ["15px", { lineHeight: "22px" }],
         "ui-title": ["16px", { lineHeight: "24px" }],
         "ui-display": ["20px", { lineHeight: "28px" }],
-        "ui-xs": ["11px", { lineHeight: "16px" }],
-        "ui-sm": ["12px", { lineHeight: "18px" }],
-        "ui-base": ["13px", { lineHeight: "20px" }],
-        "ui-md": ["14px", { lineHeight: "22px" }],
+        "ui-xs": ["12px", { lineHeight: "16px" }],
+        "ui-sm": ["13px", { lineHeight: "18px" }],
+        "ui-base": ["14px", { lineHeight: "20px" }],
+        "ui-md": ["15px", { lineHeight: "22px" }],
         "ui-lg": ["16px", { lineHeight: "24px" }],
         "ui-metric": ["20px", { lineHeight: "28px" }],
       },
       colors: {
+        canvas: role("canvas"),
+        surface: {
+          DEFAULT: role("surface"),
+          subtle: role("surface-subtle"),
+          hover: role("surface-hover"),
+          // LEGACY (migration only): remove with the palettes below.
+          light: "#F5F8F4",
+          dark: "#101B18",
+        },
+        line: {
+          DEFAULT: role("line"),
+          strong: role("line-strong"),
+        },
+        fg: {
+          DEFAULT: role("fg"),
+          secondary: role("fg-secondary"),
+          tertiary: role("fg-tertiary"),
+        },
+        accent: {
+          DEFAULT: role("accent"),
+          hover: role("accent-hover"),
+          fg: role("accent-fg"),
+          subtle: role("accent-subtle"),
+          text: role("accent-text"),
+        },
+        success: { DEFAULT: role("success"), subtle: role("success-subtle") },
+        warning: { DEFAULT: role("warning"), subtle: role("warning-subtle") },
+        danger: { DEFAULT: role("danger"), subtle: role("danger-subtle") },
+        // LEGACY palettes (migration only). The side panel and src/ui must
+        // not use them; scripts/check-ui-palette.mjs enforces this.
         warm: {
           50: "#F5F8F4",
           100: "#EAF0EB",
@@ -56,24 +92,20 @@ module.exports = {
           300: "#81C3AA",
           400: "#4DA88E",
           500: "#238577",
-          600: productTokens.colors.accent,
-          700: productTokens.colors.accentStrong,
+          600: "#126B64",
+          700: "#0D554F",
           800: "#103F3C",
           900: "#102F2D",
         },
-        surface: {
-          light: productTokens.colors.canvas,
-          dark: productTokens.darkColors.canvas,
-        },
         brand: {
-          surface: productTokens.colors.canvas,
-          panel: productTokens.colors.surface,
-          text: productTokens.colors.text,
-          muted: productTokens.colors.textMuted,
+          surface: "#F5F8F4",
+          panel: "#FFFFFF",
+          text: "#182925",
+          muted: "#586A62",
           subtle: "#40534A",
-          accent: productTokens.colors.accent,
-          "accent-strong": productTokens.colors.accentStrong,
-          highlight: productTokens.colors.highlight,
+          accent: "#126B64",
+          "accent-strong": "#0D554F",
+          highlight: "#A5C842",
           live: "rgb(var(--brand-live, 18 107 100) / <alpha-value>)",
           "live-soft": "#D4E9DD",
         },
@@ -86,8 +118,8 @@ module.exports = {
           success: "rgb(var(--state-success, 40 117 69) / <alpha-value>)",
           warning: "rgb(var(--state-warning, 217 119 6) / <alpha-value>)",
           error: "rgb(var(--state-error, 220 38 38) / <alpha-value>)",
-          info: productTokens.colors.accent,
-          live: productTokens.colors.accent,
+          info: "#126B64",
+          live: "#126B64",
         },
         // Trace-viewer semantic tokens: back the Tailwind color by the
         // `--trace-*` CSS variable (RGB triplet) so `.dark` on <html>
