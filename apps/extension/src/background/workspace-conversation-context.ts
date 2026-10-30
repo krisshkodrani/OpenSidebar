@@ -4,6 +4,7 @@ import type { PersistenceStorageArea } from "./environment/types";
 const MAX_MESSAGES = 8;
 const MAX_CONTEXT_CHARS = 1600;
 const MAX_LINE_CHARS = 260;
+const MAX_REFERENCED_ANSWER_CHARS = 6000;
 
 type CurrentChat = { text: string; messageId?: string; timestamp?: number };
 
@@ -19,6 +20,26 @@ function entryText(entry: Partial<ChatEntry>): string {
   return normalize(entry.content || completionSummary);
 }
 
+function referencesEarlierAnswer(text: string): boolean {
+  const artifact = "(?:summary|answer|response|message|draft|text|writeup|explanation)";
+  return new RegExp(
+    `(?:\\b(?:above|previous|earlier|last)\\b.{0,80}\\b${artifact}\\b|` +
+    `\\b${artifact}\\b.{0,80}\\b(?:above|previous|earlier|last)\\b|` +
+    `\\byour\\s+${artifact}\\b)`,
+    "i",
+  ).test(text);
+}
+
+function formatBrief(entries: Partial<ChatEntry>[]): string {
+  return entries
+    .map((entry) => {
+      const role = entry.role === "user" ? "User" : "Assistant";
+      return `- ${role}: ${entryText(entry).slice(0, MAX_LINE_CHARS)}`;
+    })
+    .join("\n")
+    .slice(0, MAX_CONTEXT_CHARS);
+}
+
 export async function buildWorkspaceConversationContext(
   storage: PersistenceStorageArea,
   workspaceId: string,
@@ -28,7 +49,7 @@ export async function buildWorkspaceConversationContext(
   const stored = (await storage.get(storageKey))[storageKey];
   if (!Array.isArray(stored)) return "";
   const currentText = normalize(current.text);
-  return (stored as Partial<ChatEntry>[])
+  const recent = (stored as Partial<ChatEntry>[])
     .filter((entry) => {
       if (entry.isStreaming) return false;
       if (entry.role !== "user" && entry.role !== "assistant") return false;
@@ -43,11 +64,16 @@ export async function buildWorkspaceConversationContext(
         return false;
       return entryText(entry).length > 0;
     })
-    .slice(-MAX_MESSAGES)
-    .map((entry) => {
-      const role = entry.role === "user" ? "User" : "Assistant";
-      return `- ${role}: ${entryText(entry).slice(0, MAX_LINE_CHARS)}`;
-    })
-    .join("\n")
-    .slice(0, MAX_CONTEXT_CHARS);
+    .slice(-MAX_MESSAGES);
+  const lastAnswer = referencesEarlierAnswer(currentText)
+    ? recent.findLast((entry) => entry.role === "assistant")
+    : undefined;
+  if (!lastAnswer) return formatBrief(recent);
+
+  const answer = entryText(lastAnswer);
+  const truncated = answer.length > MAX_REFERENCED_ANSWER_CHARS;
+  return `${formatBrief(recent.filter((entry) => entry !== lastAnswer))}\n\n` +
+    "Earlier assistant response referenced by the current request:\n" +
+    answer.slice(0, MAX_REFERENCED_ANSWER_CHARS) +
+    (truncated ? "\n[Earlier response truncated; recheck the source before copying it in full.]" : "");
 }
