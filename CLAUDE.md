@@ -1,10 +1,14 @@
+# CLAUDE.md
+
+This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
+
 # OpenSidebar
 
 Manifest V3 Chrome extension: an LLM browser agent that sees, clicks, and
 navigates the web. Nx + pnpm monorepo. Deep policy lives in `AGENTS.md`; this
 file is the fast operational orientation.
 
-## Commands (Windows / PowerShell; pnpm@11, Node 22+)
+## Commands (pnpm@11, Node 22+; scripts run on `tsx`, so they work on Windows and Linux)
 
 | Task | Command |
 | --- | --- |
@@ -13,35 +17,39 @@ file is the fast operational orientation.
 | One test file | `pnpm exec vitest run --config apps/extension/vitest.config.ts <path>` |
 | Lint | `pnpm run lint` |
 | Typecheck | `pnpm run typecheck` (tsc `-b`, project refs) |
-| **Verify (run before finishing)** | `pnpm run verify` — lint + typecheck + test + build + dist-check |
+| Script tests | `pnpm run scripts:test` (`tsx --test scripts/*.test.ts`) |
+| Decomposition budgets | `node scripts/loop-ratchet.mjs --report` |
+| **Verify (run before finishing)** | `pnpm run verify` — ui-token check + RFC-decision check + ratchet + UI-palette check + E2E list + lint + typecheck + test + script tests + build + dist-check |
 | E2E (staged) | `pnpm run test:e2e:easy` → `:medium` → `:hard` (needs API key; headed Chrome) |
 
 Run `easy` before `medium` before `hard` unless scoped to one failing test.
 
 ## Where things live
 
+The extension (`apps/extension`) is the only app in this repo. Shared code is in `packages/` (`shared-types`, `prompts`, `observability-schema`, `trace-sync`, `ui-tokens`). The hosted backend, web app, site and ModelBench are in the private `opensidebar-platform` repo.
+
 - `apps/extension/src/background` — agent runtime: orchestrator, agent loop, tools, LLM client, skills, checkpoints.
 - `apps/extension/src/content` — content script, DOM tagging, page actions.
 - `apps/extension/src/sidepanel` — React/Zustand UI (sidepanel + overlay harness).
 - `apps/extension/src/trace-viewer` — trace/analytics UI.
 - `packages/shared-types/src/messages.ts` — the cross-context contract:
-  `RuntimeMessage`, a ~62-variant union composed of per-domain sub-unions
+  `RuntimeMessage`, a union composed of per-domain sub-unions
   (session / progress / interaction / content-protocol / skills / watch-mode /
-  e2e) defined in `packages/shared-types/src/messages/`. Add a new message to
+  cloud-traces / remote-missions / personal-data-sync / e2e) defined in `packages/shared-types/src/messages/`. Add a new message to
   its domain module, not the barrel. Domain-scoped consumers should type
   against the sub-union (e.g. `ContentProtocolMessage`).
 - `docs/architecture/` — per-subsystem docs (agent-loop, orchestrator, perception-layer, runtime-boundaries, …).
 
 ### Landmines (read before editing)
 
-- `background/agent/loop.ts` (~3.4K lines; `AgentLoop` ≈ 73 methods; under the
+- `background/agent/loop.ts` (~2.9K lines; `AgentLoop` ≈ 63 methods; under the
   decomposition ratchet — see below) and `background/orchestrator/index.ts`
   (~3.0K lines) remain the primary giant files. The
   `background/agent/completion-kernel.ts` façade is ~54 lines after LP-16
   extraction. The big `agent/completion/` analysis modules
   (`workflow-confirmation-analysis.ts` ~2.2K, `read-answer-analysis.ts` ~2.4K)
   are the next tier — same care applies. (`background/tools/index.ts` is now a
-  ~130-line barrel; the bulk lives in `register-*.ts` modules .) Sizes drift — trust
+  ~120-line barrel; the bulk lives in `register-*.ts` modules. `background/orchestrator/skills.ts` ~1.0K is also a named landmine.) Sizes drift — trust
   `node scripts/loop-ratchet.mjs --report` over this prose.
 - **The decomposition ratchet guards all of this** (LP-15 Phase 11, generalized
   in LP-16 Phase 0): `scripts/loop-ratchet.mjs` runs in the lint step and fails
@@ -68,7 +76,7 @@ Run `easy` before `medium` before `hard` unless scoped to one failing test.
   `agent/completion/pipeline.ts` (kernel decides accept/reject first; the
   absorbed pre-pipeline guard chain runs as ordered stages after it — their
   `legacy_done_guards` basis strings are historical vocabulary, not a parallel
-  implementation). The golden corpus in `tests/fixtures/completion-corpus/`
+  implementation). The golden corpus in `apps/extension/tests/fixtures/completion-corpus/`
   must replay byte-identical — regenerate with `UPDATE_COMPLETION_CORPUS=1`
   only when you intend a semantic change.
 - Prefer the existing small `background/agent/*-policy.ts` modules over adding more
