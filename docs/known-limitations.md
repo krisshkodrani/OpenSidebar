@@ -11,6 +11,8 @@ browser agent rather than guaranteed production automation.
   identifies a visible editor surface. This path passed a local browser test;
   [Google Docs text entry](https://github.com/krisshkodrani/OpenSidebar/issues/139)
   remains unverified on a real document.
+- Follow-up requests referring to an earlier answer carry up to 6,000 characters
+  of that answer; longer answers are marked as truncated and need source rechecking.
 - The verifier and `DONE` hardening reduce premature completion, but they depend
   on available page evidence. Users should review sensitive results before acting
   on them.
